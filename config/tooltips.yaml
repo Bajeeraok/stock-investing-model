@@ -1,0 +1,15 @@
+# Phase 5: One-line explanations for indicators (inline education)
+# Display with --explain or in run output
+
+composite_buy: "0-100 score from trend (MA50/200), RSI, MACD; higher = stronger setup"
+trend_score: "Price vs MA50 vs MA200; 100 = strong uptrend, 0 = strong downtrend"
+rsi: "14-day RSI; >70 overbought, <30 oversold"
+macd_hist: "MACD histogram; positive = bullish momentum, negative = bearish"
+ma20: "20-day moving average; short-term trend"
+ma50: "50-day moving average; medium-term trend"
+ma200: "200-day moving average; long-term trend"
+regime: "UP (score>=60), NEUTRAL, DOWN (score<=40)"
+signal: "BUY (score>=70), HOLD, SELL (score<=30)"
+earnings_note: "Reduce confidence or avoid trading near earnings"
+thesis: "Why you own it; review when regime/score changes"
+exit_condition: "When to trim or sell; model nudges when conditions match"

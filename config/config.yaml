@@ -1,0 +1,123 @@
+# Stock Investing Model - config
+# Your holdings from Main + Rollover IRA + Positions (all tickers)
+
+watchlist:
+  - SPY
+  - QQQ
+  - GLD
+  - SLV
+  - AAPL
+  - MSFT
+  - NVDA
+  - GOOGL
+  - TSLA
+  - META
+  - AMZN
+  - CRWD
+  - LLY
+  - PANW
+  - AVGO
+  - BLK
+  - BABA
+
+# Your actual holdings for portfolio "doctor" - update quantities as needed
+portfolio:
+  - ticker: NVDA
+    quantity: 1   # adjust to match your shares
+  - ticker: GOOGL
+    quantity: 1
+  - ticker: AAPL
+    quantity: 1
+  - ticker: TSLA
+    quantity: 1
+  - ticker: META
+    quantity: 1
+  - ticker: MSFT
+    quantity: 1
+  - ticker: QQQ
+    quantity: 1
+  - ticker: SPY
+    quantity: 1
+  - ticker: AMZN
+    quantity: 1
+  - ticker: SLV
+    quantity: 1
+  - ticker: GLD
+    quantity: 1
+  - ticker: CRWD
+    quantity: 1
+  - ticker: LLY
+    quantity: 1
+  - ticker: PANW
+    quantity: 1
+  - ticker: AVGO
+    quantity: 1
+  - ticker: BLK
+    quantity: 1
+  - ticker: BABA
+    quantity: 1
+
+# Score bands (0-100): BUY >= buy_min, SELL <= sell_max, else HOLD
+score:
+  buy_min: 70
+  sell_max: 30
+
+# Regime bands: UP >= up_min, DOWN <= down_max, else NEUTRAL
+regime:
+  up_min: 60
+  down_max: 40
+
+# Alert when score moves by this much (points)
+alert_score_delta: 15
+
+# Concentration: alert if any single position > this % of portfolio
+concentration_alert_pct: 20
+
+# Cash deployment: suggest watchlist tickers not in portfolio with score >= this
+cash_deploy_min_score: 70
+
+# Alerts (optional) - leave empty to skip sending; alerts still print to console
+# Email (SMTP):
+# alerts:
+#   email:
+#     smtp_host: smtp.gmail.com
+#     smtp_port: 587
+#     user: your-email@gmail.com
+#     password: your-app-password
+#     from_addr: your-email@gmail.com
+#     to_addrs: your-email@gmail.com
+# Telegram:
+# alerts:
+#   telegram:
+#     bot_token: YOUR_BOT_TOKEN
+#     chat_id: YOUR_CHAT_ID
+alerts: {}
+
+# Opportunity scan: identify tickers with long-term growth potential (daily)
+# Set run_opportunity_scan: false to skip (faster run)
+run_opportunity_scan: true
+opportunity_universe: []   # Empty = use built-in list (~55 liquid S&P leaders)
+# Or add your own: [AAPL, MSFT, ...]; combine with watchlist for discovery
+opportunity_criteria:
+  min_score: 70           # Composite score >= this
+  require_regime_up: true # Must be UP regime
+  max_rsi: 75             # Exclude overbought (RSI > this)
+  min_macd_hist: 0        # Require MACD histogram >= 0 (momentum positive)
+  max_results: 25         # Cap output list
+
+# Phase 4: Data & earnings
+# Add fmp_api_key for FMP (optional); leave empty for yfinance
+data:
+  period: 5y
+  fmp_api_key: ""   # Optional: https://financialmodelingprep.com/
+earnings:
+  days_warning: 14  # Flag when earnings within N days
+  score_reduction: 20  # Reduce score by this when within days_warning
+
+# Phase 4: Backtest (run: python scripts/backtest_simple.py)
+backtest_tickers: [SPY, QQQ]
+
+# Phase 5: Thesis & behavior
+run_thesis_check: true
+run_what_changed: true
+show_tooltips: false  # Set true to print indicator explanations at end

@@ -1,0 +1,17 @@
+# Thesis storage: per ticker, why you own it and when to exit
+# Add entries when you buy. The model will show nudges when conditions match.
+#
+# Example:
+# AAPL:
+#   thesis: "iPhone ecosystem, services growth, capital returns"
+#   exit_condition: "trim if regime DOWN; sell if score < 30"
+#   added_date: "2024-01-15"
+#
+# MSFT:
+#   thesis: "Cloud growth, AI integration"
+#   exit_condition: "trim if DOWN"
+#   added_date: "2024-02-01"
+#
+# Add entries when you buy. Or run: python scripts/add_thesis.py AAPL "thesis" "exit condition"
+# Leave empty if you prefer.
+theses: {}

@@ -1,0 +1,11 @@
+# Stock Investing Model - dependencies
+# Python 3.10+ recommended
+
+yfinance>=0.2.36
+pandas>=2.0.0
+numpy>=1.24.0
+pyyaml>=6.0
+
+# API
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
