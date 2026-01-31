@@ -22,23 +22,25 @@ A **decision-support** system for retail investors: confidence score (0–100), 
 
 ```bash
 cd stock-investing-model
-pip install -r requirements.txt
-python scripts/run_daily.py
+pip install -r backend/requirements.txt
+cd backend && python scripts/run_daily.py
 ```
 
-Edit `config/config.yaml` to set your **watchlist** and optional **portfolio** (ticker + quantity).
+Edit `backend/config/config.yaml` to set your **watchlist** and optional **portfolio** (ticker + quantity).
 
 ## Project layout
 
-- `config/config.yaml` – watchlist, portfolio, score/regime bands, opportunity scan
-- `signals/` – fetch OHLCV, indicators, composite score, regime
-- `opportunity/` – scan universe for long-term growth potential
-- `scripts/run_daily.py` – daily run (use Task Scheduler / cron after market close)
-- `scripts/run_opportunity_scan.py` – standalone opportunity scan (faster than full run)
-- `data/last_run.json` – previous run state for alerts
-- `data/theses.yaml` – thesis + exit condition per ticker (Phase 5)
-- `scripts/backtest_simple.py` – backtest score vs forward returns (Phase 4)
-- `scripts/add_thesis.py` – add thesis for ticker (Phase 5)
+- **web/** – Next.js frontend (React, Tailwind, dashboard)
+- **backend/** – Python API, signals, scripts
+  - `backend/config/config.yaml` – watchlist, portfolio, score/regime bands, opportunity scan
+  - `backend/signals/` – fetch OHLCV, indicators, composite score, regime
+  - `backend/opportunity/` – scan universe for long-term growth potential
+  - `backend/scripts/run_daily.py` – daily run (use Task Scheduler / cron after market close)
+  - `backend/scripts/run_opportunity_scan.py` – standalone opportunity scan (faster than full run)
+  - `backend/data/last_run.json` – previous run state for alerts
+  - `backend/data/theses.yaml` – thesis + exit condition per ticker (Phase 5)
+  - `backend/scripts/backtest_simple.py` – backtest score vs forward returns (Phase 4)
+  - `backend/scripts/add_thesis.py` – add thesis for ticker (Phase 5)
 - `ANALYSIS_AND_RECOMMENDATIONS.md` – analysis and recommendations
 - `IMPLEMENTATION_ROADMAP.md` – phased implementation checklist
 
@@ -70,7 +72,7 @@ Leave `alerts: {}` to skip sending; alerts still print to console.
 Identifies tickers with strong technical setup (uptrend, momentum, not overbought) as **candidates to research**—not buy recommendations.
 
 - **Included in** `run_daily.py` by default (`run_opportunity_scan: true` in config)
-- **Standalone**: `python scripts/run_opportunity_scan.py` (faster when you only want discovery)
+- **Standalone**: `cd backend && python scripts/run_opportunity_scan.py` (faster when you only want discovery)
 - **Config**: `opportunity_universe` (empty = built-in ~55 liquid S&P leaders), `opportunity_criteria` (min_score, max_rsi, etc.)
 - **Excludes** portfolio tickers so you see new names to consider
 
@@ -91,12 +93,12 @@ Open [http://localhost:3001](http://localhost:3001).
 ## Guardrails
 
 - **Decision support only** – no auto-trading; you confirm every trade
-- **Backtest before trust** – run `python scripts/backtest_simple.py` to validate score vs forward returns
+- **Backtest before trust** – run `cd backend && python scripts/backtest_simple.py` to validate score vs forward returns
 - **EOD only** – built for swing/position horizon, not intraday
 
 ## Next steps
 
-1. Update quantities in config/config.yaml to match your holdings
+1. Update quantities in backend/config/config.yaml to match your holdings
 2. Schedule daily run (Task Scheduler / cron) after market close
 3. Configure alerts (optional) “doctor” - see Alerts section above
 4. Add paid data + backtest (Phase 4) when’re ready

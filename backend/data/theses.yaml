@@ -12,6 +12,6 @@
 #   exit_condition: "trim if DOWN"
 #   added_date: "2024-02-01"
 #
-# Add entries when you buy. Or run: python scripts/add_thesis.py AAPL "thesis" "exit condition"
+# Add entries when you buy. Or run from backend: python scripts/add_thesis.py AAPL "thesis" "exit condition"
 # Leave empty if you prefer.
 theses: {}

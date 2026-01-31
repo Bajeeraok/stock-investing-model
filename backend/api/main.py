@@ -1,6 +1,6 @@
 """
 FastAPI backend for Stock Investing Model dashboard.
-Run: uvicorn api.main:app --reload
+Run from backend folder: cd backend && uvicorn api.main:app --reload
 """
 from __future__ import annotations
 

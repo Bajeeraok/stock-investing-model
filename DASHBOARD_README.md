@@ -8,7 +8,7 @@ A cutting-edge dashboard built with **FastAPI** (backend) and **Next.js + React*
 
 ```bash
 # Backend (from project root)
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 
 # Frontend
 cd web
@@ -19,7 +19,7 @@ npm install
 
 **Terminal 1 - FastAPI backend:**
 ```bash
-cd stock-investing-model
+cd stock-investing-model/backend
 python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
 ```
 

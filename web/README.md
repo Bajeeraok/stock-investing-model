@@ -14,7 +14,7 @@ npm install
 1. **Start the FastAPI backend** (from project root):
 
    ```bash
-   cd ..
+   cd ../backend
    python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8002
    ```
 

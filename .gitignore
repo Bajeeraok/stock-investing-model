@@ -21,6 +21,7 @@ out/
 
 # Data & secrets (do NOT commit API keys)
 data/last_run.json
+backend/data/last_run.json
 *.key
 .env.local
 .env.*.local

@@ -114,7 +114,7 @@ earnings:
   days_warning: 14  # Flag when earnings within N days
   score_reduction: 20  # Reduce score by this when within days_warning
 
-# Phase 4: Backtest (run: python scripts/backtest_simple.py)
+# Phase 4: Backtest (run from backend: python scripts/backtest_simple.py)
 backtest_tickers: [SPY, QQQ]
 
 # Phase 5: Thesis & behavior

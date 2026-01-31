@@ -47,7 +47,7 @@ export default function Home() {
         <div className="text-center p-8 bg-slate-900 rounded-xl border border-red-500/30">
           <p className="text-red-400 font-medium">Error: {error}</p>
           <p className="text-slate-400 text-sm mt-2">Make sure the FastAPI server is running:</p>
-          <code className="block mt-2 p-2 bg-slate-800 rounded text-emerald-400 text-sm">python -m uvicorn api.main:app --reload --port 8002</code>
+          <code className="block mt-2 p-2 bg-slate-800 rounded text-emerald-400 text-sm">cd backend && python -m uvicorn api.main:app --reload --port 8002</code>
           <button
             onClick={refresh}
             className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium"
