@@ -3,7 +3,7 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import type { Signal } from "@/app/page";
 
-export function ScoreChart({ signals }: { signals: Signal[] }) {
+export function ScoreChart({ signals, onTickerClick }: { signals: Signal[]; onTickerClick?: (ticker: string) => void }) {
   const data = signals
     .filter((s) => s.composite_buy != null && !s.error)
     .sort((a, b) => (b.composite_buy ?? 0) - (a.composite_buy ?? 0))
@@ -30,7 +30,12 @@ export function ScoreChart({ signals }: { signals: Signal[] }) {
               formatter={(value: number) => [value.toFixed(1), "Score"]}
               labelFormatter={(label) => `Ticker: ${label}`}
             />
-            <Bar dataKey="score" radius={[4, 4, 0, 0]}>
+            <Bar
+              dataKey="score"
+              radius={[4, 4, 0, 0]}
+              onClick={(e: { payload?: { ticker?: string } }) => e?.payload?.ticker && onTickerClick?.(e.payload.ticker)}
+              cursor={onTickerClick ? "pointer" : undefined}
+            >
               {data.map((entry, i) => (
                 <Cell key={i} fill={entry.fill} />
               ))}

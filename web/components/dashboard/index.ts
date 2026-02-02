@@ -1,4 +1,10 @@
 export { StoryAlerts } from "./StoryAlerts";
+export { TickerDetailModal } from "./TickerDetailModal";
+export { AddTickerBar } from "./AddTickerBar";
+export { CryptoSection } from "./CryptoSection";
+export { CrossAssetSection } from "./CrossAssetSection";
+export { Best2026Section } from "./Best2026Section";
+export { ToggleSection } from "./ToggleSection";
 export { PortfolioSummary } from "./PortfolioSummary";
 export { SignalsTable } from "./SignalsTable";
 export { PortfolioHoldings } from "./PortfolioHoldings";
@@ -8,3 +14,7 @@ export { ThesisCheck } from "./ThesisCheck";
 export { WhatChanged } from "./WhatChanged";
 export { RegimeChart } from "./RegimeChart";
 export { ScoreChart } from "./ScoreChart";
+export { BacktestStatus } from "./BacktestStatus";
+export { EconomicCalendarSection } from "./EconomicCalendarSection";
+export { GuidelinesBanner } from "./GuidelinesBanner";
+export { FMPPlanStatus } from "./FMPPlanStatus";

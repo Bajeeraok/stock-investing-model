@@ -3,7 +3,7 @@
 import type { ThesisCheck as ThesisCheckType } from "@/app/page";
 import { FileText } from "lucide-react";
 
-export function ThesisCheck({ items }: { items: ThesisCheckType[] }) {
+export function ThesisCheck({ items, onTickerClick }: { items: ThesisCheckType[]; onTickerClick?: (ticker: string) => void }) {
   return (
     <div className="space-y-4">
       {items.map((t) => (
@@ -13,7 +13,13 @@ export function ThesisCheck({ items }: { items: ThesisCheckType[] }) {
         >
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-2 mb-2">
-              <span className="font-mono font-medium text-emerald-400">{t.ticker}</span>
+              {onTickerClick ? (
+                <button type="button" onClick={() => onTickerClick(t.ticker)} className="font-mono font-medium text-emerald-400 hover:underline cursor-pointer">
+                  {t.ticker}
+                </button>
+              ) : (
+                <span className="font-mono font-medium text-emerald-400">{t.ticker}</span>
+              )}
               <FileText className="h-4 w-4 text-slate-500" />
             </div>
             {t.nudge && (

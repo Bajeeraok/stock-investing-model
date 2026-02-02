@@ -1,11 +1,60 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
 
-export function SignalsTable({ signals }: { signals: Signal[] }) {
+const DEFAULT_HORIZONS = {
+  short_term: "~1 mo",
+  medium_term: "~3–6 mo",
+  long_term: "1–2 yr",
+};
+
+export function SignalsTable({
+  signals,
+  horizons,
+  onTickerClick,
+  riskSizing,
+  cotByTicker,
+}: {
+  signals: Signal[];
+  horizons?: { short_term: string; medium_term: string; long_term: string } | null;
+  onTickerClick?: (ticker: string) => void;
+  riskSizing?: { risk_pct: number; stop_pct: number };
+  cotByTicker?: Record<string, string>;
+}) {
+  const h = horizons || DEFAULT_HORIZONS;
+  const [sortBy, setSortBy] = useState<"ticker" | "score" | "regime" | "rsi">("score");
+  const sorted = useMemo(() => {
+    const arr = [...signals];
+    arr.sort((a, b) => {
+      if (sortBy === "ticker") return (a.ticker ?? "").localeCompare(b.ticker ?? "");
+      if (sortBy === "score") return (b.composite_buy ?? 0) - (a.composite_buy ?? 0);
+      if (sortBy === "regime") {
+        const ord = { UP: 0, NEUTRAL: 1, DOWN: 2 };
+        return (ord[a.regime as keyof typeof ord] ?? 1) - (ord[b.regime as keyof typeof ord] ?? 1);
+      }
+      if (sortBy === "rsi") return (b.rsi ?? 0) - (a.rsi ?? 0);
+      return 0;
+    });
+    return arr;
+  }, [signals, sortBy]);
+
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
+      <div className="flex items-center justify-end gap-2 px-4 py-2 bg-slate-800/50 border-b border-slate-700">
+        <span className="text-xs text-slate-400">Sort by:</span>
+        <select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+          className="text-xs bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-300"
+        >
+          <option value="score">Score</option>
+          <option value="ticker">Ticker</option>
+          <option value="regime">Regime</option>
+          <option value="rsi">RSI</option>
+        </select>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
@@ -13,15 +62,25 @@ export function SignalsTable({ signals }: { signals: Signal[] }) {
               <th className="px-4 py-3 font-medium">Ticker</th>
               <th className="px-4 py-3 font-medium">Close</th>
               <th className="px-4 py-3 font-medium">Score</th>
+              <th className="px-4 py-3 font-medium" title="Liquidity score – placeholder for future; grey-out low-LIS tickers">LIS</th>
               <th className="px-4 py-3 font-medium">RSI</th>
               <th className="px-4 py-3 font-medium">Regime</th>
               <th className="px-4 py-3 font-medium">Signal</th>
-              <th className="px-4 py-3 font-medium">Short / Medium / Long</th>
+              <th className="px-4 py-3 font-medium" title="COT positioning (GLD/SLV/USO): Crowded Long/Short, Normal, Under-owned">Positioning</th>
+              <th className="px-4 py-3 font-medium" title="Buy: add on pullback. Sell: trim when overbought/weak. Support: break below = caution">
+                Buy / Sell / Support
+              </th>
+              <th className="px-4 py-3 font-medium" title={`Short ${h.short_term} / Medium ${h.medium_term} / Long ${h.long_term}`}>
+                Short / Medium / Long
+              </th>
+              <th className="px-4 py-3 font-medium" title="Vol: today vs 20d avg. DD: % below 52w high">
+                Vol / DD
+              </th>
               <th className="px-4 py-3 font-medium">Notes</th>
             </tr>
           </thead>
           <tbody>
-            {signals.map((r) => (
+            {sorted.map((r) => (
               <tr
                 key={r.ticker}
                 className={clsx(
@@ -29,9 +88,28 @@ export function SignalsTable({ signals }: { signals: Signal[] }) {
                   r.story_change && "bg-amber-500/5"
                 )}
               >
-                <td className="px-4 py-3 font-mono font-medium">{r.ticker}</td>
                 <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => onTickerClick?.(r.ticker)}
+                    className={clsx(
+                      "font-mono font-medium hover:underline cursor-pointer",
+                      onTickerClick && "text-emerald-400 hover:text-emerald-300"
+                    )}
+                  >
+                    {r.ticker}
+                  </button>
+                </td>
+                <td
+                  className="px-4 py-3"
+                  title={r.risk_sizing ? `At ${riskSizing?.risk_pct ?? 1}% risk and ${r.risk_sizing.stop_pct}% stop: $${r.risk_sizing.size_dollars.toLocaleString()} (~${r.risk_sizing.shares} shares)` : undefined}
+                >
                   {r.close != null ? `$${r.close.toFixed(2)}` : "-"}
+                  {r.risk_sizing && (
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      ~{r.risk_sizing.shares} sh
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <span
@@ -44,6 +122,9 @@ export function SignalsTable({ signals }: { signals: Signal[] }) {
                   >
                     {r.composite_buy != null ? r.composite_buy.toFixed(1) : "-"}
                   </span>
+                </td>
+                <td className="px-4 py-3 text-slate-500 text-xs" title="Liquidity score – placeholder for future">
+                  –
                 </td>
                 <td className="px-4 py-3 text-slate-300">{r.rsi != null ? r.rsi.toFixed(1) : "-"}</td>
                 <td className="px-4 py-3">
@@ -70,10 +151,55 @@ export function SignalsTable({ signals }: { signals: Signal[] }) {
                     {r.signal ?? "-"}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-xs text-slate-400" title="COT positioning (GLD/SLV/USO)">
+                  {cotByTicker?.[r.ticker] ?? "–"}
+                </td>
+                <td className="px-4 py-3 text-sm">
+                  <span className="text-emerald-400/90" title="Add on pullback">{r.suggested_buy_price != null ? `$${r.suggested_buy_price.toFixed(2)}` : "-"}</span>
+                  <span className="text-slate-500 mx-1">/</span>
+                  <span className="text-red-400/90" title="Consider trim/exit when overbought or weak">{r.suggested_sell_price != null ? `$${r.suggested_sell_price.toFixed(2)}` : "-"}</span>
+                  {r.support_level != null && (
+                    <>
+                      <span className="text-slate-500 mx-1">/</span>
+                      <span className="text-amber-400/90" title="Support to watch; break below = caution">${r.support_level.toFixed(2)}</span>
+                    </>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-sm text-slate-400">
-                  {[r.short_suggestion, r.medium_suggestion, r.long_suggestion]
-                    .filter(Boolean)
-                    .join(" / ") || "-"}
+                  <div>
+                    {[r.short_suggestion, r.medium_suggestion, r.long_suggestion]
+                      .filter(Boolean)
+                      .join(" / ") || "-"}
+                    {(r.st_band || r.mt_band || r.lt_band) && (
+                      <div className="text-xs text-slate-500 mt-1 space-y-0.5" title="ST: stop–target. MT: vol band. LT: fair+consensus">
+                        {r.st_band && (
+                          <span className="block">ST: ${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)}</span>
+                        )}
+                        {r.mt_band && (
+                          <span className="block">MT: ${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)}</span>
+                        )}
+                        {r.lt_band && (
+                          <span className="block">
+                            LT: ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)}
+                            {r.lt_band_low_confidence && " (low conf)"}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-xs text-slate-400">
+                  {r.volume_ratio != null && (
+                    <span className={r.volume_unusual ? "text-amber-400 font-medium" : ""} title="Volume vs 20d avg">
+                      {r.volume_ratio.toFixed(1)}x
+                    </span>
+                  )}
+                  {r.drawdown_52w != null && (
+                    <span className="ml-2" title="% below 52w high">
+                      {r.drawdown_52w >= 0 ? "" : ""}{r.drawdown_52w}%
+                    </span>
+                  )}
+                  {r.volume_ratio == null && r.drawdown_52w == null && "-"}
                 </td>
                 <td className="px-4 py-3 text-sm">
                   {r.earnings_note && (

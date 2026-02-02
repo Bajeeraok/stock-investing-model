@@ -1,0 +1,304 @@
+"""
+FMP (Financial Modeling Prep) API client.
+Fetches economic calendar, treasury, price targets, insider stats.
+Detects plan limits and returns status for UI display.
+"""
+from __future__ import annotations
+
+import json as _json
+import urllib.request
+from datetime import date, timedelta
+from typing import Any
+
+BASE = "https://financialmodelingprep.com/stable"
+# Legacy v3/v4 for some endpoints
+BASE_V3 = "https://financialmodelingprep.com/api/v3"
+BASE_V4 = "https://financialmodelingprep.com/api/v4"
+
+
+# Feature -> minimum plan (for display when unavailable)
+FMP_PLAN_MAP = {
+    "economic_calendar": "Starter",
+    "treasury_rates": "Basic",
+    "price_target": "Starter",
+    "insider_stats": "Starter",
+    "analyst_grades": "Starter",
+    "profile": "Basic",
+    "key_metrics": "Basic",
+    "institutional_13f": "Ultimate",
+    "earnings_transcripts": "Ultimate",
+    "etf_holdings": "Ultimate",
+}
+
+
+def _request(url: str, api_key: str) -> tuple[Any | None, str | None]:
+    """
+    Make FMP request. Returns (data, error).
+    error is set when: HTTP error, plan limit, or invalid response.
+    """
+    sep = "&" if "?" in url else "?"
+    full_url = f"{url}{sep}apikey={api_key}"
+    try:
+        req = urllib.request.Request(full_url)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode()
+            data = _json.loads(raw)
+        if isinstance(data, dict) and data.get("Error"):
+            return None, data.get("Error", "Unknown error")
+        return data, None
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return None, f"Plan limit (HTTP {e.code})"
+        return None, str(e)
+    except Exception as e:
+        return None, str(e)
+
+
+def get_api_key(config: dict) -> str | None:
+    return config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key") or None
+
+
+def fetch_batch_quote(config: dict, symbols: list[str]) -> tuple[dict[str, dict], str | None]:
+    """
+    Fetch quotes for multiple symbols in a single request.
+    Returns (ticker -> {price, close, ...}, error). Use for latest price to stay under API limits.
+    FMP endpoint: stable/batch-quote?symbols=AAPL,MSFT,...
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return {}, "No FMP API key"
+    if not symbols:
+        return {}, None
+    # Dedupe and limit; FMP may cap symbols per request
+    seen: set[str] = set()
+    unique = [s for s in symbols if s and s not in seen and not seen.add(s)]
+    symbols_param = ",".join(unique[:200])  # cap to avoid URL/plan limits
+    url = f"{BASE}/batch-quote?symbols={symbols_param}"
+    data, err = _request(url, api_key)
+    if err:
+        return {}, err
+    if not isinstance(data, list):
+        return {}, "Unexpected batch-quote response"
+    out: dict[str, dict] = {}
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        sym = row.get("symbol") or row.get("Symbol")
+        if not sym:
+            continue
+        # Prefer 'price' or 'close' for latest
+        price = row.get("price") if row.get("price") is not None else row.get("close")
+        if price is None:
+            price = row.get("last")
+        try:
+            out[sym] = {"price": float(price)} if price is not None else {}
+        except (TypeError, ValueError):
+            out[sym] = {}
+    return out, None
+
+
+def fetch_economic_calendar(config: dict, days: int = 7) -> tuple[list[dict], str | None]:
+    """
+    Economic calendar for next N days. Returns (events, error).
+    Requires Starter+ plan.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    today = date.today()
+    to_d = today + timedelta(days=days)
+    url = f"{BASE}/economic-calendar?from={today}&to={to_d}"
+    data, err = _request(url, api_key)
+    if err:
+        return [], err
+    if isinstance(data, list):
+        return data[:50], None
+    return [], "Unexpected response"
+
+
+def fetch_treasury_rates(config: dict) -> tuple[list[dict] | None, str | None]:
+    """Latest treasury rates (10Y, etc.). Returns (rates, error)."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE}/treasury-rates"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data:
+        return data, None
+    if isinstance(data, dict):
+        return [data], None
+    return None, "No data"
+
+
+def get_10y_rate(rates: list[dict] | None) -> float | None:
+    """Extract 10Y treasury rate from FMP response."""
+    if not rates or not isinstance(rates, list):
+        return None
+    r = rates[0] if isinstance(rates[0], dict) else None
+    if not r:
+        return None
+    for key in ("10Y", "10 year", "10 Year", "tenYear", "10", "ten_year"):
+        val = r.get(key)
+        if val is not None:
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def fetch_price_target(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """Analyst price target summary. Returns (summary, error). Requires Starter+."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE}/price-target-summary?symbol={ticker}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data:
+        return data[0], None
+    if isinstance(data, dict):
+        return data, None
+    return None, "No data"
+
+
+def fetch_price_target_consensus(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """Analyst consensus: high, low, median. For LT band blend."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE}/price-target-consensus?symbol={ticker}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data:
+        return data[0], None
+    if isinstance(data, dict):
+        return data, None
+    return None, "No data"
+
+
+def fetch_analyst_estimates(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """Forward EPS from analyst estimates. For LT fair-value band."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE}/analyst-estimates?symbol={ticker}&period=annual&page=0&limit=5"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data:
+        item = data[0]
+        eps = item.get("eps") or item.get("epsEstimate") or item.get("estimatedEps")
+        if eps is not None:
+            return {"eps_fwd": float(eps)}, None
+        return data[0], None
+    if isinstance(data, dict) and data.get("eps") is not None:
+        return {"eps_fwd": float(data["eps"])}, None
+    return None, "No data"
+
+
+def fetch_insider_stats(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """Insider trading statistics. Returns (stats, error). Requires Starter+."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE}/insider-trading/statistics?symbol={ticker}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, dict):
+        return data, None
+    if isinstance(data, list) and data:
+        return data[0] if isinstance(data[0], dict) else None, None
+    return None, "No data"
+
+
+def fetch_profile(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """
+    Company profile: sector, industry, beta, mktCap, country.
+    For LT score, fair PE style (quality growth vs mature), sector benchmark.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE_V3}/profile/{ticker}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0], None
+    if isinstance(data, dict):
+        return data, None
+    return None, "No data"
+
+
+def fetch_key_metrics_ttm(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """
+    Key metrics TTM: trailingPE, forwardPE, roe, operatingMargin, netMargin, debtToEquity, etc.
+    For LT quality/valuation score and fair PE range.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    url = f"{BASE_V3}/key-metrics-ttm/{ticker}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0], None
+    if isinstance(data, dict):
+        return data, None
+    return None, "No data"
+
+
+def run_fmp_plan_check(config: dict) -> dict:
+    """
+    Probe FMP endpoints to see which features work.
+    Returns: {
+        "has_key": bool,
+        "available": [{"feature": str, "plan": str}],
+        "unavailable": [{"feature": str, "suggested_plan": str, "error": str}],
+    }
+    """
+    api_key = get_api_key(config)
+    result = {
+        "has_key": bool(api_key),
+        "available": [],
+        "unavailable": [],
+    }
+    if not api_key:
+        result["unavailable"] = [
+            {"feature": "All FMP features", "suggested_plan": "Starter ($22/mo) or Ultimate ($149/mo)", "error": "Add fmp_api_key to config"},
+        ]
+        return result
+
+    checks = [
+        ("economic_calendar", lambda: fetch_economic_calendar(config, 1)),
+        ("treasury_rates", lambda: fetch_treasury_rates(config)),
+        ("price_target", lambda: fetch_price_target(config, "AAPL")),
+        ("insider_stats", lambda: fetch_insider_stats(config, "AAPL")),
+    ]
+    for name, fn in checks:
+        plan = FMP_PLAN_MAP.get(name, "?")
+        try:
+            out, err = fn()
+            if err:
+                result["unavailable"].append({
+                    "feature": name.replace("_", " ").title(),
+                    "suggested_plan": plan,
+                    "error": err[:80] if err else "Unknown",
+                })
+            else:
+                result["available"].append({"feature": name.replace("_", " ").title(), "plan": plan})
+        except Exception as e:
+            result["unavailable"].append({
+                "feature": name.replace("_", " ").title(),
+                "suggested_plan": plan,
+                "error": str(e)[:80],
+            })
+
+    return result

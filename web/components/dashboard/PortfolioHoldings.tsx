@@ -3,16 +3,20 @@
 import type { PortfolioHolding } from "@/app/page";
 import { clsx } from "clsx";
 
-export function PortfolioHoldings({ holdings }: { holdings: PortfolioHolding[] }) {
+export function PortfolioHoldings({ holdings, onTickerClick }: { holdings: PortfolioHolding[]; onTickerClick?: (ticker: string) => void }) {
   const sorted = [...holdings].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  const hasAccounts = holdings.some((h) => h.account);
+  const hasGainLoss = holdings.some((h) => h.gain_loss != null);
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="bg-slate-800/80 text-left text-sm text-slate-400">
+              {hasAccounts && <th className="px-4 py-3 font-medium">Account</th>}
               <th className="px-4 py-3 font-medium">Ticker</th>
               <th className="px-4 py-3 font-medium">Value</th>
+              {hasGainLoss && <th className="px-4 py-3 font-medium">Gain/Loss</th>}
               <th className="px-4 py-3 font-medium">%</th>
               <th className="px-4 py-3 font-medium">Score</th>
               <th className="px-4 py-3 font-medium">Regime</th>
@@ -20,12 +24,33 @@ export function PortfolioHoldings({ holdings }: { holdings: PortfolioHolding[] }
             </tr>
           </thead>
           <tbody>
-            {sorted.map((h) => (
-              <tr key={h.ticker} className="border-t border-slate-700/50 hover:bg-slate-800/30">
-                <td className="px-4 py-3 font-mono font-medium">{h.ticker}</td>
+            {sorted.map((h, i) => (
+              <tr key={h.account ? `${h.account}-${h.ticker}-${i}` : h.ticker} className="border-t border-slate-700/50 hover:bg-slate-800/30">
+                {hasAccounts && <td className="px-4 py-3 text-slate-400">{h.account ?? "-"}</td>}
+                <td className="px-4 py-3">
+                  {onTickerClick ? (
+                    <button type="button" onClick={() => onTickerClick(h.ticker)} className="font-mono font-medium text-emerald-400 hover:underline cursor-pointer">
+                      {h.ticker}
+                    </button>
+                  ) : (
+                    <span className="font-mono font-medium">{h.ticker}</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">
                   {h.value != null ? `$${h.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "-"}
                 </td>
+                {hasGainLoss && (
+                  <td className="px-4 py-3">
+                    {h.gain_loss != null ? (
+                      <span className={h.gain_loss >= 0 ? "text-emerald-400" : "text-red-400"}>
+                        {h.gain_loss >= 0 ? "+" : ""}${h.gain_loss.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {h.gain_loss_pct != null ? ` (${h.gain_loss_pct >= 0 ? "+" : ""}${h.gain_loss_pct}%)` : ""}
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-3 text-slate-400">
                   {h.pct != null ? `${h.pct.toFixed(1)}%` : "-"}
                 </td>

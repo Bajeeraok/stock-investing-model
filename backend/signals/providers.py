@@ -130,6 +130,104 @@ def _get_earnings_yfinance(ticker: str) -> dict | None:
     return None
 
 
+# Sector -> SPDR ETF for industry benchmark
+_SECTOR_ETF = {
+    "technology": "XLK",
+    "financial services": "XLF",
+    "financials": "XLF",
+    "healthcare": "XLV",
+    "health care": "XLV",
+    "consumer cyclical": "XLY",
+    "consumer discretionary": "XLY",
+    "consumer defensive": "XLP",
+    "consumer staples": "XLP",
+    "communication services": "XLC",
+    "communications": "XLC",
+    "energy": "XLE",
+    "industrials": "XLI",
+    "basic materials": "XLB",
+    "materials": "XLB",
+    "real estate": "XLRE",
+    "utilities": "XLU",
+}
+
+
+def get_sector_and_industry(ticker: str) -> dict:
+    """
+    Get sector and industry for a ticker via yfinance.
+    Returns {sector, industry, sector_etf, sector_etf_name}.
+    """
+    if yf is None:
+        return {}
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+        sector = (info.get("sector") or "").strip().lower()
+        industry = (info.get("industry") or "").strip()
+        sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
+        return {
+            "sector": sector.replace("-", " ").title() if sector else None,
+            "industry": industry or None,
+            "sector_etf": sector_etf,
+            "sector_etf_name": f"{sector_etf} ({sector.replace('-', ' ').title()})" if sector else "SPY (Market)",
+        }
+    except Exception:
+        return {"sector": None, "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
+
+
+def get_peers(ticker: str, config: dict | None = None) -> list[str]:
+    """
+    Get peer tickers (same industry/sector). Uses FMP if api_key, else yfinance fallback.
+    Returns list of up to 8 peer tickers, excluding the ticker itself.
+    """
+    config = config or {}
+    api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
+    if api_key:
+        peers = _get_peers_fmp(ticker, api_key)
+        if peers:
+            return peers[:8]
+    return _get_peers_yfinance(ticker)
+
+
+def _get_peers_fmp(ticker: str, api_key: str) -> list[str]:
+    """FMP Stock Peers API - returns peers in same sector, similar market cap."""
+    if urllib is None:
+        return []
+    url = f"https://financialmodelingprep.com/api/v4/stock_peers?symbol={ticker}&apikey={api_key}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url), timeout=10) as resp:
+            data = _json.loads(resp.read().decode())
+        if isinstance(data, list) and data and "peersList" in data[0]:
+            peers = data[0].get("peersList", [])
+            return [p for p in peers if p and p.upper() != ticker.upper()][:8]
+    except Exception:
+        pass
+    return []
+
+
+def _get_peers_yfinance(ticker: str) -> list[str]:
+    """
+    Fallback: use watchlist/config or static peer groups for common tickers.
+    yfinance does not expose peers directly; we use a curated mapping.
+    """
+    _STATIC_PEERS = {
+        "AAPL": ["MSFT", "GOOGL", "META", "AMZN", "NVDA"],
+        "MSFT": ["AAPL", "GOOGL", "AMZN", "META", "NVDA"],
+        "GOOGL": ["AAPL", "MSFT", "META", "AMZN"],
+        "META": ["GOOGL", "AAPL", "AMZN", "SNAP", "PINS"],
+        "AMZN": ["AAPL", "MSFT", "GOOGL", "WMT", "COST"],
+        "NVDA": ["AMD", "INTC", "AVGO", "QCOM", "MSFT"],
+        "TSLA": ["F", "GM", "RIVN", "LCID", "NIO"],
+        "CRWD": ["PANW", "ZS", "FTNT", "OKTA", "S"],
+        "LLY": ["JNJ", "PFE", "MRK", "ABBV", "UNH"],
+        "PANW": ["CRWD", "FTNT", "ZS", "CHKP", "OKTA"],
+        "AVGO": ["NVDA", "QCOM", "INTC", "AMD", "MU"],
+        "BLK": ["SCHW", "GS", "MS", "JPM", "C"],
+        "BABA": ["JD", "PDD", "TCEHY", "AMZN"],
+    }
+    return _STATIC_PEERS.get(ticker.upper(), [])[:6]
+
+
 def _get_earnings_fmp(ticker: str, api_key: str) -> dict | None:
     if urllib is None:
         return None

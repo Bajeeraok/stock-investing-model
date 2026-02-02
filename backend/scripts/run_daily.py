@@ -1,12 +1,13 @@
 """
 Daily run: fetch watchlist -> compute signals -> print table; optional persistence for alerts.
 Run after market close (e.g. cron / Task Scheduler).
+Stores EOD snapshots in data/eod/ for historical tracking.
 """
 from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add project root so we can import signals
@@ -14,28 +15,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import yaml
+from config_loader import load_config
 from alerts.notifier import send_alert_digest
 from behavior.thesis import load_theses, get_nudge
 from behavior.what_changed import what_changed
 from opportunity.scanner import run_opportunity_scan
 from portfolio.doctor import portfolio_report
-from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_config
+from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_config, fetch_ohlcv_with_volume
 from signals.indicators import multi_horizon_scores
 from signals.providers import get_next_earnings
 from signals.regime import get_regime, get_signal
-
-
-def load_config() -> dict:
-    config_path = ROOT / "config" / "config.yaml"
-    if not config_path.exists():
-        return {
-            "watchlist": ["SPY", "QQQ", "GLD", "SLV", "AAPL", "MSFT"],
-            "score": {"buy_min": 70, "sell_max": 30},
-            "regime": {"up_min": 60, "down_max": 40},
-            "data": {"period": "5y"},
-        }
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
+from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
 
 
 def load_last_run(path: Path | None = None) -> dict[str, dict] | None:
@@ -52,7 +42,11 @@ def load_last_run(path: Path | None = None) -> dict[str, dict] | None:
         return None
 
 
-def run_signals(config: dict) -> list[dict]:
+def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) -> list[dict]:
+    """
+    Run signals for watchlist. When prices_by_ticker is provided (e.g. from FMP batch quote),
+    use yfinance for historical OHLCV and overlay latest close from batch quote to save API calls.
+    """
     watchlist = config.get("watchlist", [])
     period = config.get("data", {}).get("period", "5y")
     score_cfg = config.get("score", {})
@@ -71,10 +65,30 @@ def run_signals(config: dict) -> list[dict]:
     score_red = earnings_cfg.get("score_reduction", 20)
 
     results = []
+    use_fmp = bool(config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key"))
+    use_batch_quote = bool(prices_by_ticker)  # when True, we use yfinance for OHLCV and overlay close
     for ticker in watchlist:
-        close = fetch_ohlcv_with_config(ticker, period, config)
-        if close is None:
-            close = fetch_ohlcv_safe(ticker, period)
+        close = None
+        volume = None
+        if use_batch_quote:
+            # Single FMP batch quote already used; get history from yfinance to stay under API limit
+            close, volume = fetch_ohlcv_with_volume(ticker, period)
+            if close is None:
+                close = fetch_ohlcv_safe(ticker, period)
+            if close is not None and prices_by_ticker and ticker in prices_by_ticker:
+                # Overlay latest close from FMP batch quote
+                batch_price = prices_by_ticker.get(ticker)
+                if batch_price is not None:
+                    close = close.copy()
+                    close.iloc[-1] = batch_price
+        elif use_fmp:
+            close = fetch_ohlcv_with_config(ticker, period, config)
+            if close is None:
+                close = fetch_ohlcv_safe(ticker, period)
+        else:
+            close, volume = fetch_ohlcv_with_volume(ticker, period)
+            if close is None:
+                close = fetch_ohlcv_safe(ticker, period)
         if close is None:
             results.append({
                 "ticker": ticker,
@@ -109,6 +123,55 @@ def run_signals(config: dict) -> list[dict]:
                 regime = get_regime(composite_buy, up_min, down_max)
                 signal = get_signal(composite_buy, buy_min, sell_max)
 
+        # Volume vs 20d average (unusual activity)
+        volume_ratio = None
+        volume_unusual = False
+        if volume is not None and len(volume) >= 20:
+            today_vol = float(volume.iloc[-1]) if len(volume) else 0
+            avg_vol = float(volume.iloc[-21:-1].mean()) if len(volume) >= 21 else float(volume.iloc[-20:].mean())
+            if avg_vol and avg_vol > 0:
+                volume_ratio = round(today_vol / avg_vol, 2)
+                volume_unusual = volume_ratio >= 2.0
+
+        # Drawdown (52w high) and ATR (14d)
+        drawdown_52w = None
+        atr_14 = None
+        if len(close) >= 252:
+            high_52w = float(close.iloc[-252:].max())
+            if high_52w and high_52w > 0:
+                drawdown_52w = round(100 * (float(close.iloc[-1]) - high_52w) / high_52w, 1)
+        if len(close) >= 15:
+            # ATR proxy: 14d std of daily returns * current price (avg $ move per day)
+            returns = close.pct_change().dropna().iloc[-14:]
+            if len(returns) >= 10:
+                vol = float(returns.std())
+                if vol > 0:
+                    atr_14 = round(float(vol * close.iloc[-1]), 2)
+
+        vol_6m = compute_vol_6m(close)
+        swing_high_20d, swing_low_20d = compute_swing_high_low(close, 20)
+
+        # FMP analyst data for LT band (cached) – optional
+        eps_fwd = None
+        cons_low = None
+        cons_high = None
+        fair_pe_low = 18
+        fair_pe_high = 25
+        if use_fmp:
+            try:
+                from signals.fmp_client import fetch_analyst_estimates, fetch_price_target_consensus, get_api_key
+                from signals.cache import cached_financial_estimates, cached_price_target_consensus
+                if get_api_key(config):
+                    est = cached_financial_estimates(ticker, lambda: fetch_analyst_estimates(config, ticker))
+                    if est and isinstance(est, dict):
+                        eps_fwd = est.get("eps_fwd")
+                    cons = cached_price_target_consensus(ticker, lambda: fetch_price_target_consensus(config, ticker))
+                    if cons and isinstance(cons, dict):
+                        cons_low = cons.get("low") or cons.get("priceWhenPosted") or cons.get("adjLow")
+                        cons_high = cons.get("high") or cons.get("adjHigh")
+            except Exception:
+                pass
+
         # Story-change detection: regime flip or score drop
         story_change = None
         if last_run and ticker in last_run:
@@ -122,9 +185,10 @@ def run_signals(config: dict) -> list[dict]:
                 if delta >= alert_delta:
                     story_change = f"SCORE DROP: {prev_score:.0f} -> {composite_buy:.0f} (-{delta:.0f})"
 
-        results.append({
+        row = {
             "ticker": ticker,
             "close": sig["close"],
+            "price": sig["close"],
             "trend_score": sig["trend_score"],
             "rsi": sig["rsi"],
             "ma20": sig.get("ma20"),
@@ -140,16 +204,33 @@ def run_signals(config: dict) -> list[dict]:
             "short_suggestion": sig.get("short_suggestion"),
             "medium_suggestion": sig.get("medium_suggestion"),
             "long_suggestion": sig.get("long_suggestion"),
+            "short_reason": sig.get("short_reason"),
+            "medium_reason": sig.get("medium_reason"),
+            "long_reason": sig.get("long_reason"),
+            "suggested_buy_price": sig.get("suggested_buy_price"),
+            "suggested_sell_price": sig.get("suggested_sell_price"),
+            "support_level": sig.get("support_level"),
             "story_change": story_change,
-        })
+            "volume_ratio": volume_ratio,
+            "volume_unusual": volume_unusual,
+            "drawdown_52w": drawdown_52w,
+            "atr_14": atr_14,
+            "vol_6m": vol_6m,
+            "swing_high_20d": swing_high_20d,
+            "swing_low_20d": swing_low_20d,
+            "eps_fwd": eps_fwd,
+            "cons_low": cons_low,
+            "cons_high": cons_high,
+            "fair_pe_low": fair_pe_low,
+            "fair_pe_high": fair_pe_high,
+        }
+        add_target_bands(row)
+        results.append(row)
     return results
 
 
-def save_last_run(results: list[dict], path: Path | None = None) -> None:
-    if path is None:
-        path = ROOT / "data" / "last_run.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+def _eod_payload(results: list[dict]) -> dict:
+    return {
         "run_date": datetime.now().isoformat(),
         "run_results": [
             {
@@ -161,12 +242,67 @@ def save_last_run(results: list[dict], path: Path | None = None) -> None:
                 "ma20": r.get("ma20"),
                 "ma50": r.get("ma50"),
                 "macd_hist": r.get("macd_hist"),
+                "close": r.get("close"),
             }
             for r in results
         ],
     }
+
+
+def save_last_run(results: list[dict], path: Path | None = None) -> None:
+    if path is None:
+        path = ROOT / "data" / "last_run.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = _eod_payload(results)
     with open(path, "w") as f:
         json.dump(payload, f, indent=2)
+
+
+def save_eod_snapshot(results: list[dict], date_str: str | None = None) -> Path | None:
+    """Save daily EOD snapshot to data/eod/YYYY-MM-DD.json for historical tracking."""
+    date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+    eod_dir = ROOT / "data" / "eod"
+    eod_dir.mkdir(parents=True, exist_ok=True)
+    path = eod_dir / f"{date_str}.json"
+    payload = _eod_payload(results)
+    payload["snapshot_date"] = date_str
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+    return path
+
+
+def load_eod_snapshot(date_str: str) -> dict[str, dict] | None:
+    """Load EOD snapshot for a date. Returns ticker -> {...} or None."""
+    path = ROOT / "data" / "eod" / f"{date_str}.json"
+    if not path.exists():
+        return None
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return {r["ticker"]: r for r in data.get("run_results", [])}
+    except Exception:
+        return None
+
+
+def prune_old_eod_snapshots(retention_days: int) -> int:
+    """Delete EOD snapshots older than retention_days. Returns count deleted."""
+    if retention_days <= 0:
+        return 0
+    eod_dir = ROOT / "data" / "eod"
+    if not eod_dir.exists():
+        return 0
+    cutoff = (datetime.now() - timedelta(days=retention_days)).date()
+    deleted = 0
+    for p in eod_dir.glob("*.json"):
+        try:
+            # Parse YYYY-MM-DD from filename
+            d = datetime.strptime(p.stem, "%Y-%m-%d").date()
+            if d < cutoff:
+                p.unlink()
+                deleted += 1
+        except ValueError:
+            pass
+    return deleted
 
 
 def main() -> None:
@@ -207,11 +343,21 @@ def main() -> None:
         print(f"  {r['ticker']:6}  Short: {short:14}  Medium: {med:14}  Long: {long_s}")
 
     # Phase 3: Portfolio doctor (full report)
-    portfolio = config.get("portfolio", [])
-    if isinstance(portfolio, list) and portfolio and isinstance(portfolio[0], dict):
-        holdings = portfolio
-    else:
-        holdings = [{"ticker": t, "quantity": 1} for t in config.get("watchlist", [])]
+    holdings = []
+    portfolios = config.get("portfolios", {})
+    if portfolios and isinstance(portfolios, dict):
+        for account_name, account_holdings in portfolios.items():
+            if isinstance(account_holdings, list):
+                for h in account_holdings:
+                    entry = dict(h) if isinstance(h, dict) else {"ticker": h, "quantity": 1}
+                    entry["account"] = account_name
+                    holdings.append(entry)
+    if not holdings:
+        portfolio = config.get("portfolio", [])
+        if isinstance(portfolio, list) and portfolio and isinstance(portfolio[0], dict):
+            holdings = portfolio
+        else:
+            holdings = [{"ticker": t, "quantity": 1} for t in config.get("watchlist", [])]
 
     report = portfolio_report(
         holdings=holdings,
@@ -318,7 +464,7 @@ def main() -> None:
             prev = last_run.get(r["ticker"])
             if not prev:
                 continue
-            diffs = what_changed(prev, r)
+            diffs, _ = what_changed(prev, r)
             if diffs:
                 changed.append((r["ticker"], diffs))
         if changed:
@@ -360,6 +506,16 @@ def main() -> None:
     # Persist for next-run alerts
     save_last_run(results)
     print("\nSaved to data/last_run.json (story-change alerts on next run).")
+
+    # EOD snapshot for historical tracking
+    retention = config.get("eod_retention_days", 90)
+    snapshot_path = save_eod_snapshot(results)
+    if snapshot_path:
+        print(f"Saved EOD snapshot to data/eod/{snapshot_path.name}")
+    if retention > 0:
+        pruned = prune_old_eod_snapshots(retention)
+        if pruned:
+            print(f"Pruned {pruned} old EOD snapshot(s) (keeping last {retention} days).")
 
 
 if __name__ == "__main__":

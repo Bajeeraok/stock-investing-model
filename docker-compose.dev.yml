@@ -1,0 +1,40 @@
+# Stock Investing Model - Development (hot reload)
+# Usage: docker compose -f docker-compose.dev.yml up --build
+#
+# Backend: code changes auto-restart uvicorn
+# Web: Next.js dev server hot-reloads on save
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001,http://web:3001
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/data
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8002 --reload
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3001"
+    environment:
+      - BACKEND_API_URL=http://backend:8002
+      - PORT=3001
+      - WATCHPACK_POLLING=true
+    volumes:
+      - ./web:/app
+      - /app/node_modules  # preserve container's node_modules (from npm ci)
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:

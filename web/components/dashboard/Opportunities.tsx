@@ -4,7 +4,7 @@ import type { Opportunity } from "@/app/page";
 import { Sparkles } from "lucide-react";
 import { clsx } from "clsx";
 
-export function Opportunities({ items }: { items: Opportunity[] }) {
+export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; onTickerClick?: (ticker: string) => void }) {
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-slate-700 bg-slate-900/30 p-6 text-center text-slate-400">
@@ -29,7 +29,15 @@ export function Opportunities({ items }: { items: Opportunity[] }) {
           <tbody>
             {items.map((o) => (
               <tr key={o.ticker} className="border-t border-slate-700/50 hover:bg-slate-800/30">
-                <td className="px-4 py-3 font-mono font-medium">{o.ticker}</td>
+                <td className="px-4 py-3">
+                  {onTickerClick ? (
+                    <button type="button" onClick={() => onTickerClick(o.ticker)} className="font-mono font-medium text-emerald-400 hover:underline cursor-pointer">
+                      {o.ticker}
+                    </button>
+                  ) : (
+                    <span className="font-mono font-medium">{o.ticker}</span>
+                  )}
+                </td>
                 <td className="px-4 py-3">${o.close.toFixed(2)}</td>
                 <td className="px-4 py-3">
                   <span className={clsx(

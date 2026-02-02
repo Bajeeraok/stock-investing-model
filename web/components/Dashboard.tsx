@@ -1,9 +1,14 @@
 "use client";
 
-import { AlertTriangle, RefreshCw, TrendingUp, Wallet, Target, FileText, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, BarChart3, Calendar, RefreshCw, TrendingUp, Wallet, Target, FileText, Sparkles } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
+  AddTickerBar,
+  Best2026Section,
+  CryptoSection,
+  CrossAssetSection,
   StoryAlerts,
   PortfolioSummary,
   SignalsTable,
@@ -14,7 +19,13 @@ import {
   WhatChanged,
   RegimeChart,
   ScoreChart,
-} from "./dashboard";
+  TickerDetailModal,
+  ToggleSection,
+  BacktestStatus,
+  EconomicCalendarSection,
+  GuidelinesBanner,
+  FMPPlanStatus,
+} from "./dashboard/index";
 
 interface Props {
   data: DashboardData;
@@ -23,6 +34,7 @@ interface Props {
 }
 
 export function Dashboard({ data, onRefresh, loading }: Props) {
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   return (
     <div className="min-h-screen">
       {/* Header */}
@@ -46,81 +58,118 @@ export function Dashboard({ data, onRefresh, loading }: Props) {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Story Alerts */}
-        {data.story_changes.length > 0 && <StoryAlerts items={data.story_changes} />}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+        <AddTickerBar onAdded={onRefresh} />
+      </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <PortfolioSummary report={data.portfolio} />
-        </div>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
+        {/* Story Alerts - always visible when present */}
+        {data.story_changes.length > 0 && <StoryAlerts items={data.story_changes} onTickerClick={setSelectedTicker} />}
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ScoreChart signals={data.signals} />
-          <RegimeChart report={data.portfolio} />
-        </div>
+        {/* Event risk - always visible when present */}
+        {(data.earnings_risk_count ?? 0) > 0 && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-amber-400 shrink-0" />
+            <p className="text-amber-200 font-medium">
+              {data.earnings_risk_count} holding{data.earnings_risk_count === 1 ? "" : "s"} with earnings in next week – scores may be volatile
+            </p>
+          </div>
+        )}
 
-        {/* Signals Table */}
-        <section>
-          <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-            <Target className="h-5 w-5 text-emerald-500" />
-            Daily Signals
-          </h2>
-          <SignalsTable signals={data.signals} />
-        </section>
+        {/* Cross-asset guidelines */}
+        {data.guidelines && data.guidelines.length > 0 && (
+          <GuidelinesBanner guidelines={data.guidelines} />
+        )}
 
-        {/* Portfolio Holdings */}
-        <section>
-          <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-            <Wallet className="h-5 w-5 text-emerald-500" />
-            Portfolio Holdings
-          </h2>
-          <PortfolioHoldings holdings={data.portfolio.per_holding} />
-        </section>
+        {/* FMP plan status – upgrade path when features unavailable */}
+        {data.fmp_plan_status && (
+          <FMPPlanStatus status={data.fmp_plan_status} />
+        )}
 
-        {/* Consider Trim */}
+        {/* Backtesting status - lazy load when expanded */}
+        <ToggleSection id="backtest" title="Backtesting status" icon={<BarChart3 className="h-5 w-5 text-emerald-500" />} defaultOpen={false}>
+          <BacktestStatus />
+        </ToggleSection>
+
+        {/* Crypto + Cross-asset + Event calendar + 2026 best - toggle */}
+        <ToggleSection id="markets" title="Crypto & Cross-asset" icon={<TrendingUp className="h-5 w-5 text-emerald-500" />} defaultOpen={true}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
+            {data.crypto?.length ? <CryptoSection items={data.crypto} /> : null}
+            {data.cross_asset?.length ? <CrossAssetSection items={data.cross_asset} /> : null}
+            <EconomicCalendarSection events={data.economic_calendar ?? []} />
+            {data.best_2026?.length ? <Best2026Section items={data.best_2026} onTickerClick={setSelectedTicker} /> : null}
+          </div>
+        </ToggleSection>
+
+        {/* Summary Cards - toggle */}
+        <ToggleSection id="summary" title="Portfolio Summary" icon={<Wallet className="h-5 w-5 text-emerald-500" />} defaultOpen={true}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <PortfolioSummary report={data.portfolio} />
+          </div>
+        </ToggleSection>
+
+        {/* Charts - toggle */}
+        <ToggleSection id="charts" title="Score & Regime Charts" icon={<Target className="h-5 w-5 text-emerald-500" />} defaultOpen={true}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <ScoreChart signals={data.signals} onTickerClick={setSelectedTicker} />
+            <RegimeChart report={data.portfolio} />
+          </div>
+        </ToggleSection>
+
+        {/* Daily Signals - toggle */}
+        <ToggleSection id="signals" title="Daily Signals" icon={<Target className="h-5 w-5 text-emerald-500" />} badge={data.signals?.length} defaultOpen={true}>
+          {data.macro_regime && (
+            <p className={clsx(
+              "text-sm font-medium mb-3 px-3 py-2 rounded-lg border",
+              data.macro_regime === "Risk-On" && "text-emerald-400 border-emerald-500/30 bg-emerald-500/5",
+              data.macro_regime === "Risk-Off" && "text-red-400 border-red-500/30 bg-red-500/5",
+              data.macro_regime === "Neutral" && "text-slate-400 border-slate-600 bg-slate-800/50"
+            )}>
+              Macro regime: {data.macro_regime}
+            </p>
+          )}
+          <p className="text-sm text-slate-500 mb-4">
+            <span className="text-slate-400">Buy:</span> add-on · <span className="text-slate-400">Sell:</span> trim when overbought/weak · <span className="text-slate-400">Support:</span> watch level ·
+            <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> 1–2 yr
+          </p>
+          <SignalsTable signals={data.signals} horizons={data.config?.horizons} onTickerClick={setSelectedTicker} riskSizing={data.config?.risk_sizing} cotByTicker={data.cot_by_ticker} />
+        </ToggleSection>
+
+        {/* Portfolio Holdings - toggle */}
+        <ToggleSection id="holdings" title="Portfolio Holdings" icon={<Wallet className="h-5 w-5 text-emerald-500" />} badge={data.portfolio?.per_holding?.length} defaultOpen={true}>
+          <PortfolioHoldings holdings={data.portfolio.per_holding} onTickerClick={setSelectedTicker} />
+        </ToggleSection>
+
+        {/* Consider Trim - toggle */}
         {data.trim_candidates.length > 0 && (
-          <section>
-            <h2 className="flex items-center gap-2 text-lg font-semibold mb-4 text-amber-400">
-              <AlertTriangle className="h-5 w-5" />
-              Consider Trim (protect gains)
-            </h2>
-            <TrimCandidates items={data.trim_candidates} />
-          </section>
+          <ToggleSection id="trim" title="Consider Trim (protect gains)" icon={<AlertTriangle className="h-5 w-5 text-amber-400" />} badge={data.trim_candidates.length} defaultOpen={false}>
+            <TrimCandidates items={data.trim_candidates} onTickerClick={setSelectedTicker} />
+          </ToggleSection>
         )}
 
-        {/* Opportunities */}
-        <section>
-          <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-            <Sparkles className="h-5 w-5 text-emerald-500" />
-            Daily Opportunities (long-term potential)
-          </h2>
-          <Opportunities items={data.opportunities} />
-        </section>
+        {/* Opportunities - toggle */}
+        <ToggleSection id="opps" title="Daily Opportunities" icon={<Sparkles className="h-5 w-5 text-emerald-500" />} badge={data.opportunities?.length} defaultOpen={false}>
+          <Opportunities items={data.opportunities} onTickerClick={setSelectedTicker} />
+        </ToggleSection>
 
-        {/* Thesis Check */}
+        {/* Thesis Check - toggle */}
         {data.thesis_check.length > 0 && (
-          <section>
-            <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-              <FileText className="h-5 w-5 text-emerald-500" />
-              Thesis Check
-            </h2>
-            <ThesisCheck items={data.thesis_check} />
-          </section>
+          <ToggleSection id="thesis" title="Thesis Check" icon={<FileText className="h-5 w-5 text-emerald-500" />} badge={data.thesis_check.length} defaultOpen={false}>
+            <ThesisCheck items={data.thesis_check} onTickerClick={setSelectedTicker} />
+          </ToggleSection>
         )}
 
-        {/* What Changed */}
+        {/* What Changed - toggle */}
         {data.what_changed.length > 0 && (
-          <section>
-            <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
-              <RefreshCw className="h-5 w-5 text-emerald-500" />
-              What Changed (vs last run)
-            </h2>
-            <WhatChanged items={data.what_changed} />
-          </section>
+          <ToggleSection id="changed" title="What Changed (vs last run)" icon={<RefreshCw className="h-5 w-5 text-emerald-500" />} badge={data.what_changed.length} defaultOpen={true}>
+            <WhatChanged items={data.what_changed} onTickerClick={setSelectedTicker} />
+          </ToggleSection>
         )}
       </main>
+
+      {selectedTicker && (
+        <TickerDetailModal ticker={selectedTicker} onClose={() => setSelectedTicker(null)} />
+      )}
     </div>
   );
 }

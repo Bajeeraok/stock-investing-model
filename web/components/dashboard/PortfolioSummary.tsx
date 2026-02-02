@@ -39,10 +39,21 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
           Largest
         </div>
         {report.largest_position ? (
-          <p className="text-lg font-semibold text-slate-200">
-            {report.largest_position.ticker}{" "}
-            <span className="text-slate-400 font-normal">({report.largest_position.pct.toFixed(1)}%)</span>
-          </p>
+          <>
+            <p className="text-lg font-semibold text-slate-200">
+              {report.largest_position.ticker}{" "}
+              <span className="text-slate-400 font-normal">({report.largest_position.pct.toFixed(1)}%)</span>
+              {report.largest_position.score != null && (
+                <span className="text-slate-500 font-normal ml-1">
+                  score {report.largest_position.score.toFixed(0)}
+                  {report.largest_position.regime && ` (${report.largest_position.regime})`}
+                </span>
+              )}
+            </p>
+            {report.top3_pct != null && report.top3_pct > 0 && (
+              <p className="text-slate-500 text-xs mt-1">Top 3 = {report.top3_pct}% of portfolio</p>
+            )}
+          </>
         ) : (
           <p className="text-slate-400">-</p>
         )}
@@ -50,6 +61,24 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
           <p className="text-amber-400 text-xs mt-1">Concentration alert</p>
         )}
       </div>
+      {report.sector_allocation && report.sector_allocation.length > 0 && (
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 md:col-span-2 lg:col-span-4">
+          <div className="flex items-center gap-2 text-slate-400 text-sm mb-2">Sector allocation</div>
+          <div className="flex flex-wrap gap-2">
+            {report.sector_allocation.map((s) => (
+              <span key={s.sector} className="px-2 py-1 rounded bg-slate-800 text-slate-300 text-sm">
+                {s.sector}: {s.pct}%
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {report.correlation_alerts && report.correlation_alerts.length > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 md:col-span-2 lg:col-span-4">
+          <div className="text-amber-400 text-sm mb-1">High correlation (&gt;0.8)</div>
+          <p className="text-slate-400 text-xs">{report.correlation_alerts.join(" · ")}</p>
+        </div>
+      )}
     </>
   );
 }

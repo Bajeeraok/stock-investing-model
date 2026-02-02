@@ -54,11 +54,24 @@ def run_backtest(
         key = f"{lo:.0f}-{hi:.0f}"
         bucket_returns[key] = {m: [] for m in forward_months}
 
+    # By year/quarter: period_key -> bucket -> month -> [returns]
+    by_year_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
+    by_quarter_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
+
     for i in range(200, len(close) - max(forward_months) * trading_days_per_month):
         score = _composite_for_row(close, i)
         if score is None:
             continue
         price_today = close.iloc[i]
+        dt = close.index[i]
+        if hasattr(dt, "year"):
+            year_str = str(dt.year)
+            q = (getattr(dt, "month", 1) - 1) // 3 + 1
+            quarter_str = f"{dt.year}-Q{q}"
+        else:
+            year_str = str(pd.Timestamp(dt).year)
+            quarter_str = f"{pd.Timestamp(dt).year}-Q{(pd.Timestamp(dt).month - 1) // 3 + 1}"
+
         bucket_key = None
         for (lo, hi) in buckets:
             if lo <= score < hi:
@@ -66,30 +79,67 @@ def run_backtest(
                 break
         if bucket_key is None:
             continue
+
         for months in forward_months:
             j = min(i + months * trading_days_per_month, len(close) - 1)
             price_fwd = close.iloc[j]
             ret = (price_fwd - price_today) / price_today
             bucket_returns[bucket_key][months].append(ret)
+            # By year
+            if year_str not in by_year_raw:
+                by_year_raw[year_str] = {bk: {m: [] for m in forward_months} for bk in [f"{lo:.0f}-{hi:.0f}" for (lo, hi) in buckets]}
+            if bucket_key not in by_year_raw[year_str]:
+                by_year_raw[year_str][bucket_key] = {m: [] for m in forward_months}
+            by_year_raw[year_str][bucket_key][months].append(ret)
+            # By quarter
+            if quarter_str not in by_quarter_raw:
+                by_quarter_raw[quarter_str] = {bk: {m: [] for m in forward_months} for bk in [f"{lo:.0f}-{hi:.0f}" for (lo, hi) in buckets]}
+            if bucket_key not in by_quarter_raw[quarter_str]:
+                by_quarter_raw[quarter_str][bucket_key] = {m: [] for m in forward_months}
+            by_quarter_raw[quarter_str][bucket_key][months].append(ret)
+
+    def _stats(vals: list[float]) -> dict:
+        """Return avg_return_pct, hit_rate, count, margin_of_error_pct (95% CI)."""
+        if not vals:
+            return {"avg_return_pct": None, "hit_rate": None, "count": 0, "margin_of_error_pct": None}
+        n = len(vals)
+        mean_pct = round(100 * np.mean(vals), 2)
+        hit_rate = round(100 * np.mean([1 if v > 0 else 0 for v in vals]), 1)
+        if n >= 2:
+            std = np.std(vals, ddof=1)
+            moe = 1.96 * std / (n ** 0.5)
+            margin_of_error_pct = round(100 * moe, 2)
+        else:
+            margin_of_error_pct = None
+        return {"avg_return_pct": mean_pct, "hit_rate": hit_rate, "count": n, "margin_of_error_pct": margin_of_error_pct}
+
+    def _aggregate(period_returns: dict) -> dict:
+        out = {}
+        for period_key, bucket_data in period_returns.items():
+            out[period_key] = {}
+            for key, months_data in bucket_data.items():
+                out[period_key][key] = {}
+                for months in forward_months:
+                    vals = months_data.get(months, [])
+                    out[period_key][key][months] = _stats(vals)
+        return out
 
     results = {}
     for key in bucket_returns:
         results[key] = {}
         for months in forward_months:
             vals = bucket_returns[key][months]
-            if vals:
-                results[key][months] = {
-                    "avg_return_pct": round(100 * np.mean(vals), 2),
-                    "hit_rate": round(100 * np.mean([1 if v > 0 else 0 for v in vals]), 1),
-                    "count": len(vals),
-                }
-            else:
-                results[key][months] = {"avg_return_pct": None, "hit_rate": None, "count": 0}
+            results[key][months] = _stats(vals)
+
+    by_year = _aggregate(by_year_raw)
+    by_quarter = _aggregate(by_quarter_raw)
 
     return {
         "ticker": ticker,
         "period": period,
         "buckets": results,
+        "by_year": by_year,
+        "by_quarter": by_quarter,
         "suggested_buy_min": _suggest_band(results, "buy"),
         "suggested_sell_max": _suggest_band(results, "sell"),
     }

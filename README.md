@@ -26,7 +26,7 @@ pip install -r backend/requirements.txt
 cd backend && python scripts/run_daily.py
 ```
 
-Edit `backend/config/config.yaml` to set your **watchlist** and optional **portfolio** (ticker + quantity).
+Edit `backend/config/config.yaml` to set your **watchlist** and optional **portfolio** (ticker + quantity). Or use the **Add ticker** bar and **Excel upload** in the dashboard—no config edit needed.
 
 ## Project layout
 
@@ -38,6 +38,7 @@ Edit `backend/config/config.yaml` to set your **watchlist** and optional **portf
   - `backend/scripts/run_daily.py` – daily run (use Task Scheduler / cron after market close)
   - `backend/scripts/run_opportunity_scan.py` – standalone opportunity scan (faster than full run)
   - `backend/data/last_run.json` – previous run state for alerts
+  - `backend/data/eod/YYYY-MM-DD.json` – daily EOD snapshots (from run_daily) for historical tracking
   - `backend/data/theses.yaml` – thesis + exit condition per ticker (Phase 5)
   - `backend/scripts/backtest_simple.py` – backtest score vs forward returns (Phase 4)
   - `backend/scripts/add_thesis.py` – add thesis for ticker (Phase 5)
@@ -82,13 +83,49 @@ A web dashboard displays all features. See **DASHBOARD_README.md** for setup.
 
 ```bash
 # Terminal 1 - API
-python -m uvicorn api.main:app --reload --port 8002
+cd backend && python -m uvicorn api.main:app --reload --port 8002
 
 # Terminal 2 - Frontend
 cd web && npm run dev
 ```
 
 Open [http://localhost:3001](http://localhost:3001).
+
+## Docker
+
+**Production** (build & run):
+```bash
+docker compose up --build
+```
+
+**Development** (hot reload – recommended for local dev):
+```bash
+docker compose -f docker-compose.dev.yml up --build
+
+# Or use convenience scripts
+.\scripts\dev.ps1               # Windows
+./scripts/dev.sh                # Linux/macOS
+```
+
+- Backend: file changes auto-restart uvicorn
+- Web: Next.js dev server hot-reloads on save
+- **Backend**: http://localhost:8002 | **Web**: http://localhost:3001
+
+## Deploy to Railway
+
+See **scripts/deploy-railway.md** for step-by-step instructions to deploy backend and web to [Railway](https://railway.app).
+
+## Add tickers & upload portfolio (no config edit)
+
+- **Add ticker**: Use the bar below the header in the dashboard. Tickers persist in `backend/data/user_overrides.json`.
+- **Upload portfolio**: Upload an Excel file with columns `ticker`, `quantity`, `cost_basis`. Give it a portfolio name (e.g. IRA, Taxable). See **BACKTEST_SIGNALS.md** for template.
+
+## Backtesting signals
+
+The model does **not** auto-adjust. To tune thresholds:
+- Run `run_daily.py` daily to build EOD snapshots.
+- Run `cd backend && python scripts/backtest_signals.py` to compare predictions vs actual returns.
+- See **BACKTEST_SIGNALS.md** for error margin analysis and tuning suggestions.
 
 ## Guardrails
 

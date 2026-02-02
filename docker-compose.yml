@@ -1,0 +1,48 @@
+# Stock Investing Model - Docker Compose
+# Usage: docker compose up --build
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - CORS_ORIGINS=http://localhost:3001,http://web:3001
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - backend_data:/app/data
+    depends_on:
+      - redis
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        BACKEND_API_URL: http://backend:8002
+    ports:
+      - "3001:3001"
+    environment:
+      - BACKEND_API_URL=http://backend:8002
+      - PORT=3001
+    depends_on:
+      - backend
+
+volumes:
+  backend_data:
+  redis_data:

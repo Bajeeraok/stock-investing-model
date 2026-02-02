@@ -1,0 +1,13 @@
+# Stock Investing Model - Backend (dev with hot reload)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies only (code mounted at runtime)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+EXPOSE 8002
+
+# Hot reload: --reload watches for file changes
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]

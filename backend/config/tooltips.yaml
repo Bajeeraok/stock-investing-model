@@ -1,5 +1,16 @@
 # Phase 5: One-line explanations for indicators (inline education)
 # Display with --explain or in run output
+#
+# RULE LOGIC (tied to config score/regime):
+# - LT score >= buy_min (70) and regime UP -> HOLD/ADD for medium/long
+# - LT score 40-70 -> HOLD/NEUTRAL
+# - LT score < sell_max (30) or regime DOWN -> CONSIDER TRIM / AVOID NEW
+# - Earnings <= 5 days -> append "Earnings in X days – consider waiting"
+
+# Time horizons for short/medium/long
+short_term: "~1 month (2–4 weeks); MA20 vs MA50 + RSI; tactical entry/exit"
+medium_term: "~3–6 months; composite score (MA50/200, RSI, MACD); main swing signal"
+long_term: "1–2 years; price vs MA200, trend alignment; position bias"
 
 composite_buy: "0-100 score from trend (MA50/200), RSI, MACD; higher = stronger setup"
 trend_score: "Price vs MA50 vs MA200; 100 = strong uptrend, 0 = strong downtrend"
@@ -13,3 +24,6 @@ signal: "BUY (score>=70), HOLD, SELL (score<=30)"
 earnings_note: "Reduce confidence or avoid trading near earnings"
 thesis: "Why you own it; review when regime/score changes"
 exit_condition: "When to trim or sell; model nudges when conditions match"
+suggested_buy_price: "MA50 (add on pullback) or MA200 (value); consider buying near this level"
+suggested_sell_price: "Consider trim/exit when overbought (RSI≥70) or score weak (≤35); only when actionable"
+support_level: "MA20 support; break below = caution (not a sell price)"

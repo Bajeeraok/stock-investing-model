@@ -51,6 +51,34 @@ def fetch_ohlcv_safe(ticker: str, period: str = "5y") -> pd.Series | None:
         return None
 
 
+def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series | None, pd.Series | None]:
+    """Fetch close and volume. Returns (close, volume) or (close, None) if volume unavailable."""
+    if yf is None:
+        return None, None
+    try:
+        data = yf.download(ticker, period=period, progress=False, threads=False, auto_adjust=True)
+    except Exception:
+        return None, None
+    if data is None or data.empty or len(data) < 20:
+        return None, None
+    if isinstance(data.columns, pd.MultiIndex):
+        close = data["Close"].iloc[:, 0] if data["Close"].ndim > 1 else data["Close"]
+        vol = data["Volume"].iloc[:, 0] if "Volume" in data.columns and data["Volume"].ndim > 1 else (data["Volume"] if "Volume" in data.columns else None)
+    else:
+        for col in ("Adj Close", "Close"):
+            if col in data.columns:
+                close = data[col]
+                break
+        else:
+            close = data.iloc[:, 0]
+        vol = data["Volume"] if "Volume" in data.columns else None
+    close = pd.Series(close, name="close").dropna()
+    if len(close) < 20:
+        return None, None
+    volume = pd.Series(vol, name="volume").dropna() if vol is not None and not vol.empty else None
+    return close, volume
+
+
 def fetch_ohlcv_with_config(ticker: str, period: str, config: dict | None) -> pd.Series | None:
     """Use FMP if api_key in config, else yfinance."""
     try:

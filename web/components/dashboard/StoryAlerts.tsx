@@ -3,7 +3,7 @@
 import { AlertTriangle } from "lucide-react";
 import type { Signal } from "@/app/page";
 
-export function StoryAlerts({ items }: { items: Signal[] }) {
+export function StoryAlerts({ items, onTickerClick }: { items: Signal[]; onTickerClick?: (ticker: string) => void }) {
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -16,7 +16,13 @@ export function StoryAlerts({ items }: { items: Signal[] }) {
             key={r.ticker}
             className="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-900/80"
           >
-            <span className="font-mono font-medium text-slate-200">{r.ticker}</span>
+            {onTickerClick ? (
+              <button type="button" onClick={() => onTickerClick(r.ticker)} className="font-mono font-medium text-emerald-400 hover:underline cursor-pointer">
+                {r.ticker}
+              </button>
+            ) : (
+              <span className="font-mono font-medium text-slate-200">{r.ticker}</span>
+            )}
             <span className="text-amber-300 text-sm">{r.story_change}</span>
           </div>
         ))}

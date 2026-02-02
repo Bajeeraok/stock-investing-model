@@ -20,44 +20,56 @@ watchlist:
   - BLK
   - BABA
 
-# Your actual holdings for portfolio "doctor" - update quantities as needed
-portfolio:
-  - ticker: NVDA
-    quantity: 1   # adjust to match your shares
-  - ticker: GOOGL
-    quantity: 1
-  - ticker: AAPL
-    quantity: 1
-  - ticker: TSLA
-    quantity: 1
-  - ticker: META
-    quantity: 1
-  - ticker: MSFT
-    quantity: 1
-  - ticker: QQQ
-    quantity: 1
-  - ticker: SPY
-    quantity: 1
-  - ticker: AMZN
-    quantity: 1
-  - ticker: SLV
-    quantity: 1
-  - ticker: GLD
-    quantity: 1
-  - ticker: CRWD
-    quantity: 1
-  - ticker: LLY
-    quantity: 1
-  - ticker: PANW
-    quantity: 1
-  - ticker: AVGO
-    quantity: 1
-  - ticker: BLK
-    quantity: 1
-  - ticker: BABA
-    quantity: 1
+# Your actual holdings for portfolio "doctor"
+# Option A: Multiple portfolios (IRA, Taxable, 401k, etc.)
+# cost_basis = optional avg cost per share; enables P&L display
+portfolios:
+  IRA:
+    - ticker: NVDA
+      quantity: 154
+      cost_basis: 44.06   # optional: avg $/share
+    - ticker: MSFT
+      quantity: 5
+      cost_basis: 394.00
+    - ticker: SPY
+      quantity: 0.26
+      cost_basis: 179.91
+    - ticker: META
+      quantity: 10
+      cost_basis: 242   # optional: avg $/share
+    - ticker: TSLA
+      quantity: 3
+      cost_basis: 162.00
+    - ticker: GLD
+      quantity: 15.72
+      cost_basis: 399.91
+      
+      
+      
+
+    
+  Taxable:
+    - ticker: NVDA
+      quantity: 2
+      cost_basis: 400.00
+    - ticker: QQQ
+      quantity: 5
+  "401k":
+    - ticker: SPY
+      quantity: 100
+    - ticker: GLD
+      quantity: 10
+
+# Option B: Single flat portfolio (legacy - use if you prefer)
+# portfolio:
+#   - ticker: NVDA
+#     quantity: 1
+#   - ticker: AAPL
+#     quantity: 10
+#     cost_basis: 150.00
 
 # Score bands (0-100): BUY >= buy_min, SELL <= sell_max, else HOLD
+# Rule logic: score >= buy_min + regime UP -> HOLD/ADD; score <= sell_max -> CONSIDER TRIM
 score:
   buy_min: 70
   sell_max: 30
@@ -76,22 +88,26 @@ concentration_alert_pct: 20
 # Cash deployment: suggest watchlist tickers not in portfolio with score >= this
 cash_deploy_min_score: 70
 
-# Alerts (optional) - leave empty to skip sending; alerts still print to console
-# Email (SMTP):
-# alerts:
-#   email:
-#     smtp_host: smtp.gmail.com
-#     smtp_port: 587
-#     user: your-email@gmail.com
-#     password: your-app-password
-#     from_addr: your-email@gmail.com
-#     to_addrs: your-email@gmail.com
-# Telegram:
+# Risk sizing: suggested position size at 1% risk, 10% stop (for Daily Signals tooltip)
+risk_sizing:
+  risk_pct: 1       # Risk this % of portfolio per trade
+  default_stop_pct: 10   # Assume 10% stop loss distance
+
+# Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
+# Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
+alerts:
+  email:
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    user: ""                    # e.g. yourname@gmail.com
+    password: ""                # Gmail App Password (16 chars)
+    from_addr: ""               # e.g. yourname@gmail.com
+    to_addrs: []                # e.g. [yourname@gmail.com] or ["a@x.com", "b@x.com"]
+# Or use Telegram instead:
 # alerts:
 #   telegram:
 #     bot_token: YOUR_BOT_TOKEN
 #     chat_id: YOUR_CHAT_ID
-alerts: {}
 
 # Opportunity scan: identify tickers with long-term growth potential (daily)
 # Set run_opportunity_scan: false to skip (faster run)
@@ -106,18 +122,43 @@ opportunity_criteria:
   max_results: 25         # Cap output list
 
 # Phase 4: Data & earnings
-# Add fmp_api_key for FMP (optional); leave empty for yfinance
+# See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
   period: 5y
-  fmp_api_key: ""   # Optional: https://financialmodelingprep.com/
+  use_fmp_batch_quote: true   # One FMP batch-quote per load (watchlist + portfolio + opportunities) to stay under 200/day; OHLCV from yfinance
+  fmp_api_key: "6aRwanR4sXBzOicYLIHXIeIutlaTpmZz"                    # FMP – prices, treasury, calendar, analysts, profile, key-metrics
+  fred_api_key: "35b8f3e904ea9e4fdb6f2b7a67622cc6"                   # FRED – 10Y, inflation exp (T10YIE), real yield (free: fred.stlouisfed.org/docs/api/api_key.html)
+  tradingeconomics_api_key: ""       # TradingEconomics – economic calendar (placeholder)
+  alpha_vantage_api_key: "VH0UTQUCKJWIXI3U"          # Alpha Vantage – news sentiment (free tier: 5/min, 500/day)
+  benzinga_api_key: ""               # Benzinga – news, options flow (placeholder)
+  etf_flows_api_key: ""              # ETF flows (SPY, QQQ, GLD) – placeholder; systematic feeds usually paid
 earnings:
   days_warning: 14  # Flag when earnings within N days
   score_reduction: 20  # Reduce score by this when within days_warning
 
 # Phase 4: Backtest (run from backend: python scripts/backtest_simple.py)
-backtest_tickers: [SPY, QQQ]
+# Dashboard "Backtesting status" section uses GLD, QQQ, SPY with backtest_period
+backtest_tickers: [GLD, QQQ, SPY]
+backtest_period: 10y   # Years of history for backtest (displayed in UI)
 
 # Phase 5: Thesis & behavior
 run_thesis_check: true
 run_what_changed: true
 show_tooltips: false  # Set true to print indicator explanations at end
+
+# EOD snapshots: run_daily.py saves daily results to data/eod/YYYY-MM-DD.json
+# for historical tracking. Set to 0 to keep forever.
+eod_retention_days: 90
+
+# Crypto section (BTC, ETH) - same signals as equities
+crypto_watchlist:
+  - BTC-USD
+  - ETH-USD
+
+# Cross-asset (DXY=USD, GLD=gold, USO=oil, VIX) - daily % change
+cross_asset_tickers:
+  - DX-Y.NYB
+  - GLD
+  - USO
+  - SLV
+  - "^VIX"

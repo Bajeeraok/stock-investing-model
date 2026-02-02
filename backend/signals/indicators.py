@@ -169,6 +169,12 @@ def multi_horizon_scores(close: pd.Series) -> dict:
             "short_suggestion": "HOLD",
             "medium_suggestion": "HOLD",
             "long_suggestion": "HOLD",
+            "short_reason": "insufficient data",
+            "medium_reason": "insufficient data",
+            "long_reason": "insufficient data",
+            "suggested_buy_price": None,
+            "suggested_sell_price": None,
+            "support_level": None,
         }
 
     row = df.iloc[-1]
@@ -203,14 +209,95 @@ def multi_horizon_scores(close: pd.Series) -> dict:
             return "CONSIDER TRIM"
         return "HOLD"
 
+    def _short_reason() -> str:
+        """Brief reasoning for short-term (weeks) suggestion."""
+        parts = []
+        if pd.notna(ma20) and pd.notna(ma50) and ma50 > 0:
+            if c > ma20 > ma50:
+                parts.append("price above MA20 & MA50 (uptrend)")
+            elif c < ma20 < ma50:
+                parts.append("price below MA20 & MA50 (downtrend)")
+            else:
+                parts.append("mixed MA setup")
+        rsi_val_f = float(rsi_val) if pd.notna(rsi_val) else None
+        if rsi_val_f is not None:
+            if rsi_val_f >= 70:
+                parts.append(f"RSI {rsi_val_f:.0f} overbought")
+            elif rsi_val_f <= 30:
+                parts.append(f"RSI {rsi_val_f:.0f} oversold")
+        return "; ".join(parts) if parts else "insufficient data"
+
+    def _medium_reason() -> str:
+        """Brief reasoning for medium-term (months) suggestion."""
+        parts = []
+        comp = sig["composite_buy"]
+        if pd.notna(ma50) and pd.notna(ma200) and ma200 > 0:
+            if c > ma50 > ma200:
+                parts.append("price > MA50 > MA200 (uptrend)")
+            elif c < ma50 < ma200:
+                parts.append("price < MA50 < MA200 (downtrend)")
+            else:
+                parts.append("mixed trend")
+        if pd.notna(rsi_val):
+            rv = float(rsi_val)
+            if rv >= 70:
+                parts.append("RSI overbought")
+            elif rv <= 30:
+                parts.append("RSI oversold")
+        macd = sig.get("macd_hist")
+        if macd is not None:
+            parts.append("MACD bullish" if macd > 0 else "MACD bearish")
+        return "; ".join(parts) if parts else f"score {comp:.0f}"
+
+    def _long_reason() -> str:
+        """Brief reasoning for long-term (1–2 yr) suggestion."""
+        parts = []
+        if pd.notna(ma200) and ma200 > 0 and pd.notna(ma50):
+            pct_above = 100 * (c - ma200) / ma200
+            if c > ma200:
+                parts.append(f"price {pct_above:.1f}% above MA200")
+            else:
+                parts.append(f"price below MA200")
+            if ma50 > ma200:
+                parts.append("MA50 > MA200 (bullish structure)")
+            else:
+                parts.append("MA50 < MA200 (weaker structure)")
+        return "; ".join(parts) if parts else "insufficient data"
+
+    # Suggested sell price: only when actionable (overbought trim or weak exit) = current price
+    # Do NOT use MA20 as "sell" - that's support to watch; selling at $186 when at $191 makes no sense
+    suggested_sell_price = None
+    if not pd.isna(rsi_val) and rsi_val >= 70:
+        suggested_sell_price = round(float(c), 2)  # Consider trim at overbought
+    elif sig["composite_buy"] <= 35:
+        suggested_sell_price = round(float(c), 2)  # Consider exit when score weak
+
+    # Suggested buy price: only when NOT in sell mode – don't encourage adds when we say exit
+    # When SELL, showing "buy at MA50" is confusing (e.g. PANW down, sell signal, why buy at 193?)
+    suggested_buy_price = None
+    if suggested_sell_price is None:  # Only show buy level when we're not recommending exit
+        if pd.notna(ma50) and ma50 > 0 and c > ma50:
+            suggested_buy_price = round(float(ma50), 2)  # Add on dip to MA50
+        elif pd.notna(ma200) and ma200 > 0:
+            suggested_buy_price = round(float(ma200), 2)  # Value entry at MA200
+
+    # Support level: MA20 when price above it - break below = caution (NOT a sell price)
+    support_level = None
+    if pd.notna(ma20) and ma20 > 0 and c > ma20:
+        support_level = round(float(ma20), 2)  # Watch: break below MA20 may signal weakness
+
     return {
         **sig,
         "ma20": round(float(ma20), 2) if pd.notna(ma20) else None,
         "ma50": round(float(ma50), 2) if pd.notna(ma50) else None,
+        "ma200": round(float(ma200), 2) if pd.notna(ma200) else None,
         "short_term": short_term,
         "medium_term": medium_term,
         "long_term": long_term,
         "short_suggestion": _sugg(short_term),
         "medium_suggestion": _sugg(medium_term),
         "long_suggestion": _sugg(long_term),
+        "suggested_buy_price": suggested_buy_price,
+        "suggested_sell_price": suggested_sell_price,
+        "support_level": support_level,
     }
