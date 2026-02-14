@@ -24,6 +24,12 @@ signal: "BUY (score>=70), HOLD, SELL (score<=30)"
 earnings_note: "Reduce confidence or avoid trading near earnings"
 thesis: "Why you own it; review when regime/score changes"
 exit_condition: "When to trim or sell; model nudges when conditions match"
-suggested_buy_price: "MA50 (add on pullback) or MA200 (value); consider buying near this level"
+suggested_buy_price: "MA50 (add on pullback) or MA200 (value); consider buying near this level. Omitted when in sell mode (RSI≥70 or score≤35) so we don't encourage adds while suggesting trim/exit"
 suggested_sell_price: "Consider trim/exit when overbought (RSI≥70) or score weak (≤35); only when actionable"
 support_level: "MA20 support; break below = caution (not a sell price)"
+
+# Price-target accuracy (dashboard section)
+st_target_err_pct: "|close − short-term target| / close. ≤5% = good; 5–10% = amber; >10% = consider tweak for that ticker"
+support_err_pct: "|close − MA20| / close. MA20 lags; ≤5% good, >10% common in fast moves"
+mape_pct: "Mean absolute % error across tickers for this level. Lower = model tracks close better. ≤5–8% = acceptable; >8% ST = consider ATR tweak"
+accuracy_acceptable: "No tweak: ST target err ≤5% per ticker, MAPE ≤5–8%. Tweak: ST MAPE >8% or many tickers with err >10%"

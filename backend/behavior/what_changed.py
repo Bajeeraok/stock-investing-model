@@ -28,6 +28,20 @@ def what_changed(prev: dict | None, curr: dict) -> tuple[list[str], str]:
     curr_regime = curr.get("regime")
     prev_score = prev.get("composite_buy")
     curr_score = curr.get("composite_buy")
+    prev_short = prev.get("short_suggestion")
+    curr_short = curr.get("short_suggestion")
+    prev_medium = prev.get("medium_suggestion")
+    curr_medium = curr.get("medium_suggestion")
+    prev_long = prev.get("long_suggestion")
+    curr_long = curr.get("long_suggestion")
+
+    # Suggestion changes (short / medium / long)
+    if prev_long is not None and curr_long is not None and prev_long != curr_long:
+        changes.append(f"Long-term: {prev_long} → {curr_long}")
+    if prev_medium is not None and curr_medium is not None and prev_medium != curr_medium:
+        changes.append(f"Medium-term: {prev_medium} → {curr_medium}")
+    if prev_short is not None and curr_short is not None and prev_short != curr_short:
+        changes.append(f"Short-term: {prev_short} → {curr_short}")
 
     # MA50 vs MA20 cross
     if prev_ma20 is not None and prev_ma50 is not None and curr_ma20 is not None and curr_ma50 is not None:

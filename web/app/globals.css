@@ -9,9 +9,15 @@
   --accent: #22c55e;
 }
 
+/* Slightly larger base for readability (Tailwind 1rem = 16px by default) */
+html {
+  font-size: 106.25%; /* ~17px base so text-sm ≈ 15px, text-base ≈ 17px */
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
+  font-size: 1rem;
 }
 
 @layer utilities {

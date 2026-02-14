@@ -10,6 +10,11 @@ const DEFAULT_HORIZONS = {
   long_term: "1–2 yr",
 };
 
+const POSITIONING_TOOLTIPS: Record<string, string> = {
+  long: "Crowded long (CFTC): specs very long, reversal risk.",
+  short: "Crowded short (CFTC): specs very short, reversal risk.",
+};
+
 export function SignalsTable({
   signals,
   horizons,
@@ -58,7 +63,7 @@ export function SignalsTable({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="bg-slate-800/80 text-left text-sm text-slate-400">
+            <tr className="bg-slate-800/80 text-left text-base text-slate-400">
               <th className="px-4 py-3 font-medium">Ticker</th>
               <th className="px-4 py-3 font-medium">Close</th>
               <th className="px-4 py-3 font-medium">Score</th>
@@ -66,7 +71,9 @@ export function SignalsTable({
               <th className="px-4 py-3 font-medium">RSI</th>
               <th className="px-4 py-3 font-medium">Regime</th>
               <th className="px-4 py-3 font-medium">Signal</th>
-              <th className="px-4 py-3 font-medium" title="COT positioning (GLD/SLV/USO): Crowded Long/Short, Normal, Under-owned">Positioning</th>
+              <th className="px-4 py-3 font-medium" title="CFTC Commitment of Traders: speculative positioning in the related commodity (GLD=Gold, SLV=Silver, USO=Oil). Crowded Long/Short = reversal risk.">
+                Positioning
+              </th>
               <th className="px-4 py-3 font-medium" title="Buy: add on pullback. Sell: trim when overbought/weak. Support: break below = caution">
                 Buy / Sell / Support
               </th>
@@ -123,7 +130,7 @@ export function SignalsTable({
                     {r.composite_buy != null ? r.composite_buy.toFixed(1) : "-"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-500 text-xs" title="Liquidity score – placeholder for future">
+                <td className="px-4 py-3 text-slate-500 text-sm" title="Liquidity score – placeholder for future">
                   –
                 </td>
                 <td className="px-4 py-3 text-slate-300">{r.rsi != null ? r.rsi.toFixed(1) : "-"}</td>
@@ -151,7 +158,7 @@ export function SignalsTable({
                     {r.signal ?? "-"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-xs text-slate-400" title="COT positioning (GLD/SLV/USO)">
+                <td className="px-4 py-3 text-sm text-slate-400" title="COT positioning (GLD/SLV/USO)">
                   {cotByTicker?.[r.ticker] ?? "–"}
                 </td>
                 <td className="px-4 py-3 text-sm">
@@ -165,7 +172,7 @@ export function SignalsTable({
                     </>
                   )}
                 </td>
-                <td className="px-4 py-3 text-sm text-slate-400">
+                <td className="px-4 py-3 text-base text-slate-400">
                   <div>
                     {[r.short_suggestion, r.medium_suggestion, r.long_suggestion]
                       .filter(Boolean)
@@ -188,7 +195,7 @@ export function SignalsTable({
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-xs text-slate-400">
+                <td className="px-4 py-3 text-sm text-slate-400">
                   {r.volume_ratio != null && (
                     <span className={r.volume_unusual ? "text-amber-400 font-medium" : ""} title="Volume vs 20d avg">
                       {r.volume_ratio.toFixed(1)}x
@@ -201,12 +208,26 @@ export function SignalsTable({
                   )}
                   {r.volume_ratio == null && r.drawdown_52w == null && "-"}
                 </td>
-                <td className="px-4 py-3 text-sm">
+                <td className="px-4 py-3 text-base">
                   {r.earnings_note && (
                     <span className="text-amber-400">{r.earnings_note}</span>
                   )}
                   {r.story_change && (
                     <span className="text-amber-400 ml-1">• {r.story_change}</span>
+                  )}
+                  {cotByTicker?.[r.ticker] && (
+                    <span className="block text-amber-200/90 text-xs mt-1">
+                      <span title={String(cotByTicker[r.ticker]).toLowerCase().includes("long")
+                        ? "Crowded Long (CFTC): Speculators (non-commercial traders) hold a very large net long position in the related commodity futures (e.g. gold for GLD, silver for SLV)—typically ≥45% of total open interest. The CFTC publishes this weekly. Historically, such extreme positioning often precedes a pullback, so we flag it as reversal risk and suggest not adding size."
+                        : "Crowded Short (CFTC): Speculators hold a very large net short position in the related commodity futures—typically ≥45% of open interest. Extreme shorts have often preceded short-covering rallies. We flag this as reversal risk."}>
+                        {String(cotByTicker[r.ticker]).toLowerCase().includes("long")
+                          ? "• Positioning: Crowded Long (CFTC) — specs very long, reversal risk."
+                          : "• Positioning: Crowded Short (CFTC) — specs very short, reversal risk."}
+                      </span>
+                      <span className="block text-amber-100/95 text-sm mt-1 font-medium" title="From CFTC Commitment of Traders report: speculative (non-commercial) % of open interest. ≥45% long or short = extreme.">
+                        What it means: Speculators’ net position in the related commodity is extreme (≥45% of open interest). Often a contrarian signal; consider not adding size.
+                      </span>
+                    </span>
                   )}
                 </td>
               </tr>

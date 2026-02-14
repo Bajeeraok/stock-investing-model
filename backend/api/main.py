@@ -43,7 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger.info("Backend: importing dashboard router...")
-from api.routers import dashboard
+from api.routers import dashboard, chat
 
 logger.info("Backend: imports complete.")
 
@@ -77,6 +77,7 @@ app.add_middleware(
 )
 
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
+app.include_router(chat.router, prefix="/api", tags=["chat"])
 
 
 @app.on_event("startup")

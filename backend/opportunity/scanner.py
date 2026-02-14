@@ -2,12 +2,14 @@
 Opportunity scanner: identify tickers with long-term growth potential on a daily basis.
 Uses technical setup (strong trend, momentum, not overbought) as a first-pass filter.
 Treat as "candidates to research," not buy recommendations.
+
+Edge cases: volume filter (low liquidity), IPO/low history, earnings window exclusion.
 """
 from __future__ import annotations
 
 import pandas as pd
 
-from signals.fetcher import fetch_ohlcv_safe
+from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_volume
 from signals.indicators import compute_indicators, composite_score
 from signals.regime import get_regime
 
@@ -62,6 +64,9 @@ def run_opportunity_scan(
     down_max: float = 40,
     exclude_from_watchlist: list[str] | None = None,
     max_results: int = 25,
+    min_volume_ratio: float | None = 0.5,
+    exclude_earnings_days: int | None = None,
+    config: dict | None = None,
 ) -> list[dict]:
     """
     Scan universe for tickers with long-term growth potential.
@@ -75,18 +80,28 @@ def run_opportunity_scan(
 
     exclude_from_watchlist: tickers to exclude (e.g. already in portfolio)
     max_results: cap output list
+    min_volume_ratio: exclude when volume < this fraction of 20d avg (None = no filter)
+    exclude_earnings_days: exclude when earnings in next N days (None = no filter; needs config for FMP)
+    config: for earnings exclusion (get_next_earnings)
     """
     if universe is None or len(universe) == 0:
         universe = DEFAULT_UNIVERSE
     exclude = set(exclude_from_watchlist or [])
 
+    # IPO/low-history: need 200+ bars for MA200 proxy
+    min_bars = 200
+
     opportunities = []
     for ticker in universe:
         if ticker in exclude:
             continue
-        close = fetch_ohlcv_safe(ticker, period)
+        close, volume = fetch_ohlcv_with_volume(ticker, period)
+        if close is None:
+            close = fetch_ohlcv_safe(ticker, period)
         if close is None:
             continue
+        if len(close) < min_bars:
+            continue  # IPO or insufficient history - low confidence
         sig = composite_score(close)
         regime = get_regime(sig["composite_buy"], up_min, down_max)
         if not _passes_long_term_criteria(
@@ -109,7 +124,7 @@ def run_opportunity_scan(
             reasons.append("momentum positive")
         reason = "; ".join(reasons) if reasons else "score/regime pass"
 
-        opportunities.append({
+        opp = {
             "ticker": ticker,
             "close": sig["close"],
             "composite_buy": sig["composite_buy"],
@@ -117,7 +132,10 @@ def run_opportunity_scan(
             "rsi": sig["rsi"],
             "regime": regime,
             "reason": reason,
-        })
+        }
+        if len(close) < 252:
+            opp["low_history"] = True  # Flag: less than 1y data (recent IPO etc)
+        opportunities.append(opp)
 
     opportunities.sort(key=lambda x: -x["composite_buy"])
     return opportunities[:max_results]

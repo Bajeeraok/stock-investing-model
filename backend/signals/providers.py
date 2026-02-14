@@ -45,15 +45,20 @@ def _fetch_ohlcv_yfinance(ticker: str, period: str) -> pd.Series | None:
         return None
     if data is None or data.empty or len(data) < 50:
         return None
+    close = None
     if isinstance(data.columns, pd.MultiIndex):
-        close = data["Close"].iloc[:, 0] if data["Close"].ndim > 1 else data["Close"]
-    else:
+        close_col = data.get("Close")
+        if close_col is not None:
+            close = close_col.iloc[:, 0] if getattr(close_col, "ndim", 1) > 1 else close_col
+    if close is None:
         for col in ("Adj Close", "Close"):
             if col in data.columns:
                 close = data[col]
                 break
-        else:
+        if close is None and len(data.columns) > 0:
             close = data.iloc[:, 0]
+    if close is None:
+        return None
     close = pd.Series(close, name="close").dropna()
     return close if len(close) >= 50 else None
 
@@ -76,8 +81,10 @@ def _fetch_ohlcv_fmp(ticker: str, period: str, api_key: str) -> pd.Series | None
     df = pd.DataFrame(hist)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").set_index("date")
-    close = df["adjClose"] if "adjClose" in df.columns else df["close"]
-    return close.dropna()
+    # Lock to adjusted close only: never mix raw close with adjusted (pro-site parity).
+    if "adjClose" not in df.columns:
+        return None
+    return df["adjClose"].dropna()
 
 
 # ETFs have no earnings; skip to avoid yfinance 404 noise
@@ -155,10 +162,13 @@ _SECTOR_ETF = {
 def get_sector_and_industry(ticker: str) -> dict:
     """
     Get sector and industry for a ticker via yfinance.
-    Returns {sector, industry, sector_etf, sector_etf_name}.
+    Returns {sector, industry, sector_etf, sector_etf_name}. Skips ETFs to avoid Yahoo 404.
     """
     if yf is None:
         return {}
+    sym = (ticker or "").upper().split("-")[0]
+    if sym in _ETFS:
+        return {"sector": None, "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
     try:
         t = yf.Ticker(ticker)
         info = t.info or {}

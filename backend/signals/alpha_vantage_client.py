@@ -91,3 +91,157 @@ def get_alpha_vantage_sentiment(config: dict, ticker: str) -> tuple[dict | None,
     Alias for fetch_news_sentiment; matches data_source_stubs signature.
     """
     return fetch_news_sentiment(config, ticker, limit=10)
+
+
+def fetch_global_quote(config: dict, ticker: str) -> float | None:
+    """
+    Fetch latest close from Alpha Vantage GLOBAL_QUOTE. Returns None on error or no key.
+    Uses '08. previous close' for EOD comparison.
+    """
+    api_key = get_api_key(config)
+    if not api_key or not api_key.strip():
+        return None
+    params = {
+        "function": "GLOBAL_QUOTE",
+        "symbol": ticker.upper().split("-")[0],
+        "apikey": api_key.strip(),
+    }
+    url = f"{AV_BASE}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.debug("Alpha Vantage GLOBAL_QUOTE for %s: %s", ticker, e)
+        return None
+    if isinstance(data, dict) and data.get("Global Quote") and isinstance(data["Global Quote"], dict):
+        gq = data["Global Quote"]
+        # "08. previous close" or "05. price"
+        prev = gq.get("08. previous close") or gq.get("05. price")
+        if prev is not None:
+            try:
+                return float(prev)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def fetch_rsi(config: dict, ticker: str, time_period: int = 14) -> float | None:
+    """
+    Fetch latest RSI (14) from Alpha Vantage RSI technical indicator. Returns None on error.
+    """
+    api_key = get_api_key(config)
+    if not api_key or not api_key.strip():
+        return None
+    params = {
+        "function": "RSI",
+        "symbol": ticker.upper().split("-")[0],
+        "interval": "daily",
+        "time_period": time_period,
+        "series_type": "close",
+        "apikey": api_key.strip(),
+    }
+    url = f"{AV_BASE}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.debug("Alpha Vantage RSI for %s: %s", ticker, e)
+        return None
+    # Response: "Technical Analysis: RSI" -> date -> "RSI" value
+    tech = data.get("Technical Analysis: RSI") if isinstance(data, dict) else None
+    if not isinstance(tech, dict) or not tech:
+        return None
+    # Latest date (keys are date strings YYYY-MM-DD)
+    dates = sorted(tech.keys(), reverse=True)
+    if not dates:
+        return None
+    val = tech[dates[0]].get("RSI")
+    if val is not None:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def fetch_sma(config: dict, ticker: str, time_period: int = 20) -> float | None:
+    """
+    Fetch latest SMA from Alpha Vantage. time_period 20 or 50 for MA20/MA50. Returns None on error.
+    """
+    api_key = get_api_key(config)
+    if not api_key or not api_key.strip():
+        return None
+    params = {
+        "function": "SMA",
+        "symbol": ticker.upper().split("-")[0],
+        "interval": "daily",
+        "time_period": time_period,
+        "series_type": "close",
+        "apikey": api_key.strip(),
+    }
+    url = f"{AV_BASE}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.debug("Alpha Vantage SMA(%s) for %s: %s", time_period, ticker, e)
+        return None
+    tech = data.get("Technical Analysis: SMA") if isinstance(data, dict) else None
+    if not isinstance(tech, dict) or not tech:
+        return None
+    dates = sorted(tech.keys(), reverse=True)
+    if not dates:
+        return None
+    val = tech[dates[0]].get("SMA")
+    if val is not None:
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
+def fetch_macd(config: dict, ticker: str, fast: int = 12, slow: int = 26, signal: int = 9) -> dict | None:
+    """
+    Fetch latest MACD from Alpha Vantage. Returns { "MACD", "MACD_Signal", "MACD_Hist" } or None.
+    """
+    api_key = get_api_key(config)
+    if not api_key or not api_key.strip():
+        return None
+    params = {
+        "function": "MACD",
+        "symbol": ticker.upper().split("-")[0],
+        "interval": "daily",
+        "series_type": "close",
+        "fastperiod": fast,
+        "slowperiod": slow,
+        "signalperiod": signal,
+        "apikey": api_key.strip(),
+    }
+    url = f"{AV_BASE}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.debug("Alpha Vantage MACD for %s: %s", ticker, e)
+        return None
+    tech = data.get("Technical Analysis: MACD") if isinstance(data, dict) else None
+    if not isinstance(tech, dict) or not tech:
+        return None
+    dates = sorted(tech.keys(), reverse=True)
+    if not dates:
+        return None
+    row = tech[dates[0]]
+    out = {}
+    for key in ("MACD", "MACD_Signal", "MACD_Hist"):
+        v = row.get(key)
+        if v is not None:
+            try:
+                out[key] = float(v)
+            except (TypeError, ValueError):
+                pass
+    return out if out else None

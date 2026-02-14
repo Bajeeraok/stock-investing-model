@@ -93,6 +93,27 @@ risk_sizing:
   risk_pct: 1       # Risk this % of portfolio per trade
   default_stop_pct: 10   # Assume 10% stop loss distance
 
+# Price-target accuracy: when to interpret vs when to tweak the model
+# Report compares today's close to model levels (ST target, support, suggested buy, MT band).
+# err% = 100 * (close - level) / close (absolute value = how far close is from the level).
+# MAPE = mean absolute % error across tickers for that level.
+accuracy:
+  # Per-ticker: ST target err% and Support err% (absolute %)
+  # Below these = acceptable; no tweak needed for that ticker.
+  st_target_err_acceptable_pct: 5    # Green: err <= 5%; amber 5–10%; red > 10% → consider tweak for volatile names
+  support_err_acceptable_pct: 5      # Support (MA20) often lags; err <= 5% good, > 10% expect in fast moves
+  # Summary (MAPE across tickers): when to suggest "tweak model"
+  st_target_mape_tweak_above: 8       # If ST target MAPE > 8%, recommend adjusting target_bands (ATR mult)
+  support_mape_tweak_above: 15        # If support MAPE > 15%, note that MA20 lags (use as watch level only)
+  # Interpretation guide (shown in dashboard and script help)
+  notes:
+    - "ST target err% = |close − short-term target| / close. Low = price near our ST target (good)."
+    - "Support err% = |close − MA20| / close. MA20 lags; some error is normal in fast moves."
+    - "MAPE = average of absolute % errors across tickers for that level. Lower = model level tracks close better."
+    - "Acceptable: ST target err ≤ 5% per ticker, MAPE ≤ 5–8% overall. No tweak needed."
+    - "Consider tweak: ST target MAPE > 8% (adjust ATR in target_bands.py) or many tickers with err > 10%."
+    - "Support/MA20 is a watch level, not a precise target; high support err often means strong trend, not model bug."
+
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
 alerts:
@@ -120,18 +141,23 @@ opportunity_criteria:
   max_rsi: 75             # Exclude overbought (RSI > this)
   min_macd_hist: 0        # Require MACD histogram >= 0 (momentum positive)
   max_results: 25         # Cap output list
+  # min_volume_ratio: 0.5  # Exclude when volume < 50% of 20d avg (default 0.5)
+  # exclude_earnings_days: 5  # Exclude when earnings in next N days (needs FMP)
 
 # Phase 4: Data & earnings
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
   period: 5y
-  use_fmp_batch_quote: true   # One FMP batch-quote per load (watchlist + portfolio + opportunities) to stay under 200/day; OHLCV from yfinance
+  use_fmp_batch_quote: false  # Set true when FMP plan includes batch-quote (saves API calls); current plan = per-ticker data
   fmp_api_key: "6aRwanR4sXBzOicYLIHXIeIutlaTpmZz"                    # FMP – prices, treasury, calendar, analysts, profile, key-metrics
   fred_api_key: "35b8f3e904ea9e4fdb6f2b7a67622cc6"                   # FRED – 10Y, inflation exp (T10YIE), real yield (free: fred.stlouisfed.org/docs/api/api_key.html)
   tradingeconomics_api_key: ""       # TradingEconomics – economic calendar (placeholder)
   alpha_vantage_api_key: "VH0UTQUCKJWIXI3U"          # Alpha Vantage – news sentiment (free tier: 5/min, 500/day)
   benzinga_api_key: ""               # Benzinga – news, options flow (placeholder)
-  etf_flows_api_key: ""              # ETF flows (SPY, QQQ, GLD) – placeholder; systematic feeds usually paid
+  etf_flows_api_key: ""
+  polygon_api_key: "2XVRQvFBQ48Ozvglzc6uqjP7XHuxpKtv"
+  finnhub_apikey: "d61pbp1r01qgcobqd3dgd61pbp1r01qgcobqd3e0"
+             # ETF flows (SPY, QQQ, GLD) – placeholder; systematic feeds usually paid
 earnings:
   days_warning: 14  # Flag when earnings within N days
   score_reduction: 20  # Reduce score by this when within days_warning
@@ -148,6 +174,8 @@ show_tooltips: false  # Set true to print indicator explanations at end
 
 # EOD snapshots: run_daily.py saves daily results to data/eod/YYYY-MM-DD.json
 # for historical tracking. Set to 0 to keep forever.
+# EOD now includes price target levels (st_band, mt_band, support_level, suggested_buy_price)
+# for accuracy analysis: python scripts/accuracy_price_targets.py
 eod_retention_days: 90
 
 # Crypto section (BTC, ETH) - same signals as equities

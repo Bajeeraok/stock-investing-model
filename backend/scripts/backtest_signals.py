@@ -72,10 +72,11 @@ def main() -> None:
     buy_min = config.get("score", {}).get("buy_min", 70)
     sell_max = config.get("score", {}).get("sell_max", 30)
 
-    # Collect: for each (date, ticker) with score, get forward 1m return
-    buy_returns: list[float] = []
-    sell_returns: list[float] = []
-    hold_returns: list[float] = []
+    # Forward horizons: 1m=21, 3m=63, 6m=126 trading days
+    horizons = [(21, "1m"), (63, "3m"), (126, "6m")]
+    buy_by_horizon: dict[int, list[float]] = {d: [] for d, _ in horizons}
+    sell_by_horizon: dict[int, list[float]] = {d: [] for d, _ in horizons}
+    hold_by_horizon: dict[int, list[float]] = {d: [] for d, _ in horizons}
     pred_vs_actual: list[dict] = []
 
     for date_str in dates[-30:]:  # Last 30 snapshots
@@ -86,17 +87,21 @@ def main() -> None:
             score = row.get("composite_buy")
             if score is None:
                 continue
-            fwd = _forward_return(ticker, date_str, 21)  # ~1 month
-            if fwd is None:
-                continue
             pred = "BUY" if score >= buy_min else ("SELL" if score <= sell_max else "HOLD")
-            pred_vs_actual.append({"date": date_str, "ticker": ticker, "score": score, "pred": pred, "fwd_1m": fwd})
-            if pred == "BUY":
-                buy_returns.append(fwd)
-            elif pred == "SELL":
-                sell_returns.append(fwd)
-            else:
-                hold_returns.append(fwd)
+            entry = {"date": date_str, "ticker": ticker, "score": score, "pred": pred}
+            for days, label in horizons:
+                fwd = _forward_return(ticker, date_str, days)
+                if fwd is None:
+                    continue
+                entry[f"fwd_{label}"] = fwd
+                if pred == "BUY":
+                    buy_by_horizon[days].append(fwd)
+                elif pred == "SELL":
+                    sell_by_horizon[days].append(fwd)
+                else:
+                    hold_by_horizon[days].append(fwd)
+            if any(k.startswith("fwd_") for k in entry):
+                pred_vs_actual.append(entry)
 
     if not pred_vs_actual:
         print("No (date, ticker) pairs with forward data. Need more EOD history.")
@@ -104,7 +109,7 @@ def main() -> None:
 
     # Summary
     print("=" * 60)
-    print("SIGNAL BACKTEST (predictions vs actual 1m forward return)")
+    print("SIGNAL BACKTEST (predictions vs actual forward returns)")
     print("=" * 60)
     print(f"Thresholds: BUY >= {buy_min}, SELL <= {sell_max}")
     print(f"Data: {len(pred_vs_actual)} (date, ticker) pairs from EOD snapshots")
@@ -118,28 +123,48 @@ def main() -> None:
         hit = sum(1 for r in arr if r > 0) / len(arr) * 100
         print(f"  {label}: n={len(arr)}  avg_return={avg:.2f}%  hit_rate={hit:.1f}%")
 
-    print("Forward 1m return by prediction:")
-    _stats(buy_returns, "BUY")
-    _stats(hold_returns, "HOLD")
-    _stats(sell_returns, "SELL")
+    for days, label in horizons:
+        print(f"Forward {label} return by prediction:")
+        _stats(buy_by_horizon[days], "BUY")
+        _stats(hold_by_horizon[days], "HOLD")
+        _stats(sell_by_horizon[days], "SELL")
+        print()
+
+    # Precision / Recall (for 1m horizon)
+    buy_ret_1m = buy_by_horizon[21]
+    sell_ret_1m = sell_by_horizon[21]
+    all_pos = sum(1 for e in pred_vs_actual if (e.get("fwd_1m") or 0) > 0)
+    all_neg = sum(1 for e in pred_vs_actual if (e.get("fwd_1m") or 0) < 0)
+    tp = sum(1 for e in pred_vs_actual if e.get("pred") == "BUY" and (e.get("fwd_1m") or 0) > 0)
+    tn = sum(1 for e in pred_vs_actual if e.get("pred") == "SELL" and (e.get("fwd_1m") or 0) < 0)
+    n_buy = len(buy_ret_1m)
+    n_sell = len(sell_ret_1m)
+    precision_buy = 100 * tp / n_buy if n_buy else None
+    recall_buy = 100 * tp / all_pos if all_pos else None
+    precision_sell = 100 * tn / n_sell if n_sell else None
+    recall_sell = 100 * tn / all_neg if all_neg else None
+    print("Precision / Recall (1m horizon):")
+    if precision_buy is not None:
+        print(f"  BUY:  precision={precision_buy:.1f}% (when we said BUY, % correct)  recall={recall_buy:.1f}% (of all ups, % we flagged)" if recall_buy is not None else f"  BUY:  precision={precision_buy:.1f}%")
+    if precision_sell is not None:
+        print(f"  SELL: precision={precision_sell:.1f}% (when we said SELL, % correct)  recall={recall_sell:.1f}%" if recall_sell is not None else f"  SELL: precision={precision_sell:.1f}%")
     print()
 
-    # Error margin: when we said BUY, expected positive; when SELL, expected negative
-    buy_correct = sum(1 for r in buy_returns if r > 0) if buy_returns else 0
-    sell_correct = sum(1 for r in sell_returns if r < 0) if sell_returns else 0
-    total = len(buy_returns) + len(sell_returns)
+    # Directional accuracy
+    total = n_buy + n_sell
     if total > 0:
-        directional_accuracy = 100 * (buy_correct + sell_correct) / total
+        directional_accuracy = 100 * (tp + tn) / total
         print(f"Directional accuracy (BUY->up, SELL->down): {directional_accuracy:.1f}%")
     print()
 
     # Suggested tuning
-    if buy_returns and (sum(buy_returns) / len(buy_returns)) < 0:
+    if buy_ret_1m and (sum(buy_ret_1m) / len(buy_ret_1m)) < 0:
         print("Suggestion: BUY signals underperforming. Consider raising buy_min (e.g. 72–75).")
-    if sell_returns and (sum(sell_returns) / len(sell_returns)) > 0:
+    if sell_ret_1m and (sum(sell_ret_1m) / len(sell_ret_1m)) > 0:
         print("Suggestion: SELL signals may be early. Consider lowering sell_max (e.g. 25–28).")
     print()
-    print("For fuller backtest, run: python scripts/backtest_simple.py")
+    print("For regime validation: python scripts/regime_backtest.py")
+    print("For score buckets: python scripts/backtest_simple.py")
 
 
 if __name__ == "__main__":

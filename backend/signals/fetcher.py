@@ -3,12 +3,16 @@ Fetch daily OHLCV. Handles missing data and short history.
 """
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 
 try:
     import yfinance as yf
 except ImportError:
     yf = None
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
@@ -27,15 +31,20 @@ def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
         return None
 
     # yfinance: single ticker -> columns like Open, Close; multi -> MultiIndex
+    close = None
     if isinstance(data.columns, pd.MultiIndex):
-        close = data["Close"].iloc[:, 0] if data["Close"].ndim > 1 else data["Close"]
-    else:
+        close_col = data.get("Close")
+        if close_col is not None:
+            close = close_col.iloc[:, 0] if getattr(close_col, "ndim", 1) > 1 else close_col
+    if close is None:
         for col in ("Adj Close", "Close"):
             if col in data.columns:
                 close = data[col]
                 break
-        else:
+        if close is None and len(data.columns) > 0:
             close = data.iloc[:, 0]
+    if close is None:
+        return None
 
     close = pd.Series(close, name="close").dropna()
     if len(close) < 50:
@@ -61,22 +70,76 @@ def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series 
         return None, None
     if data is None or data.empty or len(data) < 20:
         return None, None
+    close = None
+    vol = None
     if isinstance(data.columns, pd.MultiIndex):
-        close = data["Close"].iloc[:, 0] if data["Close"].ndim > 1 else data["Close"]
-        vol = data["Volume"].iloc[:, 0] if "Volume" in data.columns and data["Volume"].ndim > 1 else (data["Volume"] if "Volume" in data.columns else None)
-    else:
+        close_col = data.get("Close")
+        if close_col is not None:
+            close = close_col.iloc[:, 0] if getattr(close_col, "ndim", 1) > 1 else close_col
+        if "Volume" in data.columns:
+            v = data["Volume"]
+            vol = v.iloc[:, 0] if getattr(v, "ndim", 1) > 1 else v
+    if close is None:
         for col in ("Adj Close", "Close"):
             if col in data.columns:
                 close = data[col]
                 break
-        else:
+        if close is None and len(data.columns) > 0:
             close = data.iloc[:, 0]
         vol = data["Volume"] if "Volume" in data.columns else None
+    if close is None:
+        return None, None
     close = pd.Series(close, name="close").dropna()
     if len(close) < 20:
         return None, None
     volume = pd.Series(vol, name="volume").dropna() if vol is not None and not vol.empty else None
     return close, volume
+
+
+def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
+    """
+    Fetch latest (delayed) quote from Yahoo for multiple symbols.
+    Downloads one ticker at a time so one failure (e.g. MSFT) does not break the whole batch.
+    Returns ticker -> last price. Use when FMP batch quote is not available (e.g. free plan).
+    """
+    if not yf or not symbols:
+        return {}
+    symbols = [s for s in symbols if s and isinstance(s, str)]
+    if not symbols:
+        return {}
+    out: dict[str, float] = {}
+    for sym in symbols:
+        try:
+            data = yf.download(
+                sym,
+                period="5d",
+                progress=False,
+                threads=False,
+                auto_adjust=True,
+            )
+            if data is None or data.empty or len(data) == 0:
+                logger.warning("[yfinance] Skipping %s: no data returned (latest price unavailable)", sym)
+                continue
+            # Single-ticker: columns are flat (Open, High, Low, Close, etc.)
+            close_col = data.get("Close") if isinstance(data, pd.DataFrame) else None
+            if close_col is None and isinstance(data, pd.DataFrame) and "Adj Close" in data.columns:
+                close_col = data["Adj Close"]
+            if close_col is not None and len(close_col) > 0:
+                last = close_col.dropna()
+                if len(last) > 0:
+                    val = last.iloc[-1]
+                    if val is not None and pd.notna(val):
+                        out[sym] = float(val)
+                    else:
+                        logger.warning("[yfinance] Skipping %s: no valid close (latest price unavailable)", sym)
+                else:
+                    logger.warning("[yfinance] Skipping %s: no valid close (latest price unavailable)", sym)
+            else:
+                logger.warning("[yfinance] Skipping %s: no Close column (latest price unavailable)", sym)
+        except Exception as e:
+            logger.warning("[yfinance] Skipping %s: %s", sym, e)
+            continue
+    return out
 
 
 def fetch_ohlcv_with_config(ticker: str, period: str, config: dict | None) -> pd.Series | None:

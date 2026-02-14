@@ -1,10 +1,23 @@
 # Stock Investing Model - Development (hot reload)
 # Usage: docker compose -f docker-compose.dev.yml up --build
+# Or with base file (redis + dev overrides): docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #
 # Backend: code changes auto-restart uvicorn
 # Web: Next.js dev server hot-reloads on save
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
   backend:
     build:
       context: ./backend
@@ -15,10 +28,38 @@ services:
       - PORT=8002
       - CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001,http://web:3001
       - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     volumes:
       - ./backend:/app
       - backend_data:/app/data
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8002 --reload
+    working_dir: /app
+    # Watch only code dirs to avoid reload loop from data/ or __pycache__ writes
+    command:
+      - uvicorn
+      - api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+      - --reload
+      - --reload-dir
+      - /app/api
+      - --reload-dir
+      - /app/signals
+      - --reload-dir
+      - /app/config
+      - --reload-dir
+      - /app/behavior
+      - --reload-dir
+      - /app/alerts
+      - --reload-dir
+      - /app/opportunity
+      - --reload-dir
+      - /app/portfolio
+      - --reload-exclude
+      - "**/__pycache__/**"
+    depends_on:
+      - redis
 
   web:
     build:
@@ -38,3 +79,4 @@ services:
 
 volumes:
   backend_data:
+  redis_data:

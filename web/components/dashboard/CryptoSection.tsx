@@ -17,23 +17,23 @@ export function CryptoSection({ items }: { items: CryptoSignal[] }) {
   if (display.length === 0) return null;
   const label = (t: string) => (t === "BTC-USD" ? "BTC" : t === "ETH-USD" ? "ETH" : t);
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">
+    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 min-w-0">
       <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
         <span className="text-amber-400">Crypto</span> (BTC, ETH)
       </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         {display.map((c) => (
           <div
             key={c.ticker}
-            className="flex items-center justify-between p-3 rounded-lg bg-slate-800/50 border border-slate-700/50"
+            className="flex items-center justify-between gap-4 p-4 rounded-lg bg-slate-800/50 border border-slate-700/50 min-w-0"
           >
-            <div>
+            <div className="min-w-0 flex-1">
               <span className="font-mono font-medium text-slate-200">{label(c.ticker)}</span>
               <p className="text-lg font-bold text-emerald-400 mt-1">
                 {c.close != null ? `$${c.close.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "-"}
               </p>
             </div>
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span
                 className={clsx(
                   "px-2 py-0.5 rounded text-xs font-medium",

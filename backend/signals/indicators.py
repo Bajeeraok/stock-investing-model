@@ -11,10 +11,19 @@ import pandas as pd
 
 
 def _rsi(close: pd.Series, window: int = 14) -> pd.Series:
+    """RSI with Wilder's smoothing (alpha=1/14). First RMA = SMA of first 14, then RMA recurrence."""
     delta = close.diff()
-    gain = delta.where(delta > 0, 0.0).rolling(window, min_periods=1).mean()
-    loss = (-delta.where(delta < 0, 0.0)).rolling(window, min_periods=1).mean()
-    rs = np.where(loss == 0, 100.0, gain / loss)
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    # Wilder's RMA: first = SMA of first 14, then RMA_t = (RMA_{t-1}*(n-1) + x_t)/n
+    avg_gain = pd.Series(index=close.index, dtype=float)
+    avg_loss = pd.Series(index=close.index, dtype=float)
+    avg_gain.iloc[window - 1] = gain.iloc[:window].mean()
+    avg_loss.iloc[window - 1] = loss.iloc[:window].mean()
+    for i in range(window, len(close)):
+        avg_gain.iloc[i] = (avg_gain.iloc[i - 1] * (window - 1) + gain.iloc[i]) / window
+        avg_loss.iloc[i] = (avg_loss.iloc[i - 1] * (window - 1) + loss.iloc[i]) / window
+    rs = np.where(avg_loss == 0, 100.0, avg_gain / avg_loss)
     return pd.Series(100 - (100 / (1 + rs)), index=close.index)
 
 
@@ -198,6 +207,9 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         above_200 = (c - ma200) / ma200
         ma50_above_200 = (ma50 - ma200) / ma200 if ma200 > 0 else 0
         long_term = 50.0 + 25 * np.clip(above_200 * 20, -2, 2) + 25 * np.clip(ma50_above_200 * 20, -1, 1)
+        # Pullback in uptrend: price below MA200 but MA50 > MA200 (structure intact) -> HOLD, not CONSIDER TRIM
+        if c < ma200 and ma50 > ma200 and long_term < 40:
+            long_term = 40.0
     else:
         long_term = 50.0
     long_term = round(max(0, min(100, long_term)), 1)
@@ -250,16 +262,17 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         return "; ".join(parts) if parts else f"score {comp:.0f}"
 
     def _long_reason() -> str:
-        """Brief reasoning for long-term (1–2 yr) suggestion."""
+        """Brief reasoning for long-term (1–2 yr) suggestion. Wording aligned with suggestion (no contradiction)."""
         parts = []
         if pd.notna(ma200) and ma200 > 0 and pd.notna(ma50):
             pct_above = 100 * (c - ma200) / ma200
             if c > ma200:
                 parts.append(f"price {pct_above:.1f}% above MA200")
             else:
-                parts.append(f"price below MA200")
+                parts.append("price below MA200")
             if ma50 > ma200:
-                parts.append("MA50 > MA200 (bullish structure)")
+                # Bullish structure: pullback in uptrend -> reason supports HOLD/ADD, not trim
+                parts.append("MA50 > MA200 (uptrend intact; add on dip or hold)")
             else:
                 parts.append("MA50 < MA200 (weaker structure)")
         return "; ".join(parts) if parts else "insufficient data"
@@ -273,13 +286,16 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         suggested_sell_price = round(float(c), 2)  # Consider exit when score weak
 
     # Suggested buy price: only when NOT in sell mode – don't encourage adds when we say exit
-    # When SELL, showing "buy at MA50" is confusing (e.g. PANW down, sell signal, why buy at 193?)
+    # When SELL (RSI≥70 or score≤35), we omit buy level to avoid "consider trim" + "buy at X" contradiction.
+    # Otherwise: prefer MA50 if price > MA50 (add on dip), else MA200 (value); fallback to MA50 if MA200 missing.
     suggested_buy_price = None
     if suggested_sell_price is None:  # Only show buy level when we're not recommending exit
         if pd.notna(ma50) and ma50 > 0 and c > ma50:
             suggested_buy_price = round(float(ma50), 2)  # Add on dip to MA50
         elif pd.notna(ma200) and ma200 > 0:
             suggested_buy_price = round(float(ma200), 2)  # Value entry at MA200
+        elif pd.notna(ma50) and ma50 > 0:
+            suggested_buy_price = round(float(ma50), 2)  # Fallback when MA200 unavailable (e.g. short history)
 
     # Support level: MA20 when price above it - break below = caution (NOT a sell price)
     support_level = None
@@ -297,6 +313,9 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         "short_suggestion": _sugg(short_term),
         "medium_suggestion": _sugg(medium_term),
         "long_suggestion": _sugg(long_term),
+        "short_reason": _short_reason(),
+        "medium_reason": _medium_reason(),
+        "long_reason": _long_reason(),
         "suggested_buy_price": suggested_buy_price,
         "suggested_sell_price": suggested_sell_price,
         "support_level": support_level,

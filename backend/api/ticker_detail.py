@@ -245,13 +245,49 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
             out["mt_band"] = row.get("mt_band")
             out["lt_band"] = row.get("lt_band")
             out["lt_band_low_confidence"] = row.get("lt_band_low_confidence")
+            out["st_checkpoints"] = row.get("st_checkpoints")
+            out["mt_checkpoints"] = row.get("mt_checkpoints")
+            out["lt_checkpoints"] = row.get("lt_checkpoints")
+            out["lt_scenarios"] = row.get("lt_scenarios")
+            out["st_level_hit"] = row.get("st_level_hit")
+            out["st_target_confidence_pct"] = row.get("st_target_confidence_pct")
+            out["mt_target_confidence_pct"] = row.get("mt_target_confidence_pct")
+
+        # Street vs model: compare LT band to analyst consensus
+        sl = out.get("cons_low")
+        sh = out.get("cons_high")
+        lt = out.get("lt_band")
+        if sl is not None and sh is not None and lt and isinstance(lt, dict):
+            try:
+                sl, sh = float(sl), float(sh)
+                ml, mh = float(lt.get("low", 0)), float(lt.get("high", 0))
+                if sl > 0 and sh > 0 and ml > 0 and mh > 0:
+                    out["street_vs_model"] = {
+                        "street_low": round(sl, 2),
+                        "street_high": round(sh, 2),
+                        "model_lt_low": round(ml, 2),
+                        "model_lt_high": round(mh, 2),
+                        "delta_low_pct": round(100 * (ml - sl) / sl, 1),
+                        "delta_high_pct": round(100 * (mh - sh) / sh, 1),
+                        "model_more_bullish": mh > sh,
+                        "divergence_pct": max(abs(100 * (ml - sl) / sl), abs(100 * (mh - sh) / sh)) if sl and sh else None,
+                    }
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
     except Exception:
         pass
     return out
 
 
+# Yahoo returns 404 "No fundamentals data found" for ETFs; skip .info for these
+_ETFS_SKIP_YAHOO_INFO = frozenset({"SPY", "QQQ", "GLD", "SLV", "DIA", "IWM", "XLF", "XLK", "XLE", "XLV", "XLP", "XLY", "XLI", "XLB", "XLU"})
+
+
 def _get_extra_info(ticker: str) -> dict:
-    """Dividend yield, 52w high/low, beta from yfinance."""
+    """Dividend yield, 52w high/low, beta from yfinance. Skips ETFs to avoid Yahoo 404."""
+    sym = (ticker or "").upper().split("-")[0]
+    if sym in _ETFS_SKIP_YAHOO_INFO:
+        return {}
     try:
         import yfinance as yf
         t = yf.Ticker(ticker)

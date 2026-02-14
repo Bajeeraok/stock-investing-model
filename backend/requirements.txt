@@ -16,3 +16,6 @@ openpyxl>=3.1.0
 
 # Cache (optional – app works without Redis)
 redis>=5.0.0
+
+# Chat copilot (optional – needs OPENAI_API_KEY)
+openai>=1.0.0

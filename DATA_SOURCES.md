@@ -4,6 +4,52 @@ Track all data sources and their status. Add API keys to `config.yaml` when read
 
 ---
 
+## 0. House style & time cut-off (pro-site parity)
+
+**Price series:** Use one adjusted series everywhere. When FMP is used, we use **FMP adjusted close only** (no raw-close fallback). For MAs, RSI, drawdowns, and returns we use the same adjusted close. Never mix raw and adjusted across indicators.
+
+**Indicator settings (house style):**
+- **MAs:** SMA 20 / 50 / 200 on adjusted close (exactly 20 / 50 / 200 trading days).
+- **RSI:** 14-period, Wilder’s smoothing (alpha = 1/14), on adjusted close.
+- **Volume ratio:** today’s volume ÷ 20-day average volume.
+
+**Return definitions:** Trading days only (not calendar months).  
+1m = 21, 3m = 63, 6m = 126, 1y = 252. Return = `P_today / P_start - 1` on adjusted close at both ends.
+
+**Time cut-off:** Decide whether “today” means last official close or a specific intraday snapshot; be consistent. Run the **nightly pipeline** (e.g. `run_daily.py`) after FMP EOD data is stable—e.g. **7–8pm ET**. When comparing to another site, compare at the same phase (both prior close, not your prior close vs their live).
+
+**QA harness:** Run `python backend/scripts/qa_indicators.py` (from repo root or with `cwd=backend`). Compares primary source (FMP when key set, else yfinance) vs reference (yfinance) for MAs, RSI, and 1m/3m/6m returns; logs mean absolute % error. Optional config: `qa_indicators.tickers`, `qa_indicators.period` (default: 1y).
+
+**Chat copilot:** Floating chat button in dashboard. Asks questions using your model data + LLM. Set `OPENAI_API_KEY` (env or `data.openai_api_key` in config). Uses gpt-4o-mini by default; override with `OPENAI_CHAT_MODEL`.
+
+---
+
+## 0b. Free data sources (besides Yahoo)
+
+All of these are free to use; most require a free API key (registration only, no payment).
+
+| Source | API key? | Free tier / notes | Good for | In this project |
+|--------|----------|-------------------|----------|------------------|
+| **Yahoo Finance** (yfinance) | No | No key; rate limits by IP | EOD prices, volume, analyst consensus, ETFs, indices (^VIX, DXY) | ✅ Primary for OHLCV, cross-asset, indicator validation |
+| **FRED** (Federal Reserve) | Yes (free) | Unlimited for normal use | Yields (DGS10), inflation expectations (T10YIE), real rates, macro series | ✅ `fred_client.py` – real yield proxy |
+| **Alpha Vantage** | Yes (free) | 5 req/min, 500/day | Prices, technicals, news sentiment, forex | ✅ Client exists; news sentiment when key set |
+| **FMP** (Financial Modeling Prep) | Yes (free) | Free tier: limited calls/day | Calendar, treasury, quotes, fundamentals, analyst ratings | ✅ Calendar, 10Y, batch quote, plan check |
+| **Finnhub** | Yes (free) | Free tier available | Real-time & historical prices, analyst targets, upgrades/downgrades, news, fundamentals | 🔲 Not integrated; good for validation/analyst data |
+| **CFTC** | No (public) or 3rd‑party key | CFTC.gov publishes COT free | Commitment of Traders – speculative positioning (gold, silver, oil) | ✅ `cot_client.py` – extremes for guidelines |
+| **Polygon.io** | Yes (free) | Free tier: delayed data | Stocks, options, forex; delayed quotes free | 🔲 Not integrated |
+| **TradingEconomics** | Yes | Paid for full API | Calendar, CPI, GDP, etc. | 🔲 Placeholder only |
+
+**For indicator validation and comparison:**
+- **Yahoo** – analyst recommendation in `indicator_validation.py` (next-day bias vs consensus).
+- **Alpha Vantage** – `alpha_vantage_client.py`: GLOBAL_QUOTE (close), RSI (14); used in `indicator_comparison.py` for close + RSI vs our values (margin of error).
+- **Polygon** – `polygon_client.py`: daily aggs last close; used in `indicator_comparison.py` for close comparison.
+- **Finnhub** – `finnhub_client.py`: quote (close), stock recommendation; used in `indicator_comparison.py` for close + bias comparison.
+- Dashboard shows **indicator comparison** (SPY, QQQ, GLD, SLV): our close/RSI/bias vs AV, Polygon, Finnhub with margin % (price) and margin abs (RSI).
+
+**Summary:** For no key at all: Yahoo + CFTC (and FRED if you get a free key). For more free data with a key: FRED, Alpha Vantage, FMP, Finnhub.
+
+---
+
 ## 1. Event Calendar (CPI, PPI, NFP, FOMC, ECB, BoE)
 
 | Source | Config key | Plan/Cost | Status | Use |

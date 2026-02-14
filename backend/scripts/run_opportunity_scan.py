@@ -38,6 +38,9 @@ def main() -> None:
         down_max=config.get("regime", {}).get("down_max", 40),
         exclude_from_watchlist=portfolio_tickers,
         max_results=opp_cfg.get("max_results", 25),
+        min_volume_ratio=opp_cfg.get("min_volume_ratio", 0.5),
+        exclude_earnings_days=opp_cfg.get("exclude_earnings_days"),
+        config=config,
     )
 
     print("DAILY OPPORTUNITIES (long-term growth potential)")

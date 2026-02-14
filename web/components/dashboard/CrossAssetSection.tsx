@@ -14,7 +14,7 @@ export function CrossAssetSection({ items }: { items: CrossAssetItem[] }) {
   const display = items.filter((c) => !c.error && c.pct_change != null);
   if (display.length === 0) return null;
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">
+    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 min-w-0">
       <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
         <span className="text-amber-400">Cross-asset</span> (DXY, Gold, Oil, VIX) – daily % change
       </h3>

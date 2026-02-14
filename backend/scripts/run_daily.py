@@ -2,6 +2,9 @@
 Daily run: fetch watchlist -> compute signals -> print table; optional persistence for alerts.
 Run after market close (e.g. cron / Task Scheduler).
 Stores EOD snapshots in data/eod/ for historical tracking.
+
+Time cut-off: For pro-site parity, run after FMP EOD data is stable (e.g. 7–8pm ET).
+Compare vs other sites at the same phase (both prior close).
 """
 from __future__ import annotations
 
@@ -229,23 +232,35 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
     return results
 
 
-def _eod_payload(results: list[dict]) -> dict:
+def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dict:
+    """Build EOD payload. include_price_targets=True adds st_band, mt_band, support_level, suggested_buy for accuracy vs close."""
+    run_results = []
+    for r in results:
+        row = {
+            "ticker": r["ticker"],
+            "composite_buy": r.get("composite_buy"),
+            "regime": r.get("regime"),
+            "rsi": r.get("rsi"),
+            "trend_score": r.get("trend_score"),
+            "ma20": r.get("ma20"),
+            "ma50": r.get("ma50"),
+            "macd_hist": r.get("macd_hist"),
+            "close": r.get("close"),
+            "short_suggestion": r.get("short_suggestion"),
+            "medium_suggestion": r.get("medium_suggestion"),
+            "long_suggestion": r.get("long_suggestion"),
+        }
+        if include_price_targets:
+            if r.get("st_band") is not None:
+                row["st_band"] = r["st_band"]
+            if r.get("mt_band") is not None:
+                row["mt_band"] = r["mt_band"]
+            row["support_level"] = r.get("support_level")
+            row["suggested_buy_price"] = r.get("suggested_buy_price")
+        run_results.append(row)
     return {
         "run_date": datetime.now().isoformat(),
-        "run_results": [
-            {
-                "ticker": r["ticker"],
-                "composite_buy": r.get("composite_buy"),
-                "regime": r.get("regime"),
-                "rsi": r.get("rsi"),
-                "trend_score": r.get("trend_score"),
-                "ma20": r.get("ma20"),
-                "ma50": r.get("ma50"),
-                "macd_hist": r.get("macd_hist"),
-                "close": r.get("close"),
-            }
-            for r in results
-        ],
+        "run_results": run_results,
     }
 
 
@@ -258,14 +273,25 @@ def save_last_run(results: list[dict], path: Path | None = None) -> None:
         json.dump(payload, f, indent=2)
 
 
-def save_eod_snapshot(results: list[dict], date_str: str | None = None) -> Path | None:
-    """Save daily EOD snapshot to data/eod/YYYY-MM-DD.json for historical tracking."""
+def save_eod_snapshot(
+    results: list[dict],
+    date_str: str | None = None,
+    next_day_outlook: list[dict] | None = None,
+    typical_move: list[dict] | None = None,
+) -> Path | None:
+    """Save daily EOD snapshot to data/eod/YYYY-MM-DD.json for historical tracking.
+    Optional next_day_outlook and typical_move (SPY/QQQ) enable model validation vs actual next-day close.
+    """
     date_str = date_str or datetime.now().strftime("%Y-%m-%d")
     eod_dir = ROOT / "data" / "eod"
     eod_dir.mkdir(parents=True, exist_ok=True)
     path = eod_dir / f"{date_str}.json"
     payload = _eod_payload(results)
     payload["snapshot_date"] = date_str
+    if next_day_outlook is not None:
+        payload["next_day_outlook"] = next_day_outlook
+    if typical_move is not None:
+        payload["typical_move"] = typical_move
     with open(path, "w") as f:
         json.dump(payload, f, indent=2)
     return path
@@ -422,6 +448,9 @@ def main() -> None:
             down_max=config.get("regime", {}).get("down_max", 40),
             exclude_from_watchlist=portfolio_tickers,
             max_results=opp_cfg.get("max_results", 25),
+            min_volume_ratio=opp_cfg.get("min_volume_ratio", 0.5),
+            exclude_earnings_days=opp_cfg.get("exclude_earnings_days"),
+            config=config,
         )
         print()
         print("=" * 60)
@@ -507,15 +536,43 @@ def main() -> None:
     save_last_run(results)
     print("\nSaved to data/last_run.json (story-change alerts on next run).")
 
-    # EOD snapshot for historical tracking
+    # EOD snapshot for historical tracking (include next_day_outlook + typical_move for SPY/QQQ validation)
     retention = config.get("eod_retention_days", 90)
-    snapshot_path = save_eod_snapshot(results)
+    next_day_outlook_eod = None
+    typical_move_eod = None
+    try:
+        from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_backtest
+        from signals.typical_move import typical_move_for_symbols
+        backtest_cache = {}
+        for sym in ["SPY", "QQQ"]:
+            try:
+                backtest_cache[sym] = run_next_day_backtest(sym, period="5y")
+            except Exception:
+                pass
+        next_day_outlook_eod = next_day_outlook_for_symbols(["SPY", "QQQ"], backtest_cache)
+        typical_move_eod = typical_move_for_symbols(["SPY", "QQQ"])
+    except Exception as e:
+        print(f"EOD validation data (next_day/typical_move) skipped: {e}")
+    snapshot_path = save_eod_snapshot(
+        results,
+        next_day_outlook=next_day_outlook_eod,
+        typical_move=typical_move_eod,
+    )
     if snapshot_path:
         print(f"Saved EOD snapshot to data/eod/{snapshot_path.name}")
     if retention > 0:
         pruned = prune_old_eod_snapshots(retention)
         if pruned:
             print(f"Pruned {pruned} old EOD snapshot(s) (keeping last {retention} days).")
+
+    # Price-target accuracy report (same results) for dashboard GET /api/accuracy
+    try:
+        from scripts.accuracy_price_targets import run_accuracy_and_save
+        acc_path = run_accuracy_and_save(results, config)
+        if acc_path:
+            print(f"Saved accuracy report to data/{acc_path.name}")
+    except Exception as e:
+        print(f"Accuracy report save skipped: {e}")
 
 
 if __name__ == "__main__":

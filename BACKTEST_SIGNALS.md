@@ -1,4 +1,15 @@
-# Backtesting Daily Signals & Model Feedback
+Target price bands (context, not promises)
+Short-term (days–weeks)
+
+Stop: $68.59 – Target: $82.29
+
+ATR-based; MA20/swing context
+
+Medium-term (months)
+
+Low: $57.21 – High: $93.67
+
+Regime + 6m volatility ban# Backtesting Daily Signals & Model Feedback
 
 ## Current Behavior
 
@@ -31,9 +42,16 @@ cd backend && python scripts/backtest_signals.py
 - Uses your actual daily predictions (BUY/HOLD/SELL).
 - Compares against 1-month forward return.
 - Reports:
-  - Avg return when model said BUY / HOLD / SELL
-  - Hit rate (BUY → positive return, SELL → negative)
-  - Suggested threshold tweaks
+  - Avg return when model said BUY / HOLD / SELL (for 1m, 3m, 6m)
+  - Precision / Recall (when we said BUY, % correct; of all ups, % we flagged)
+  - Directional accuracy and suggested threshold tweaks
+
+### 4. `backtest_targets.py` (ST/MT band hit rates)
+```bash
+cd backend && python scripts/backtest_targets.py
+```
+- For each historical date, computes st_band/mt_band, checks if price hit target or stop first.
+- Reports target_hit_pct, stop_hit_pct, neither_pct. Ideal: target 40–60%.
 
 ## Error Margin & Model Tuning
 

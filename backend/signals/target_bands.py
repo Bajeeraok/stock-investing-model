@@ -7,6 +7,13 @@ from __future__ import annotations
 from typing import Any
 
 
+def _checkpoints(low: float, high: float, n: int = 5) -> list[float]:
+    """Generate n evenly spaced price levels between low and high."""
+    if n < 2:
+        return [round(low, 2), round(high, 2)]
+    return [round(low + (high - low) * i / (n - 1), 2) for i in range(n)]
+
+
 def _st_signal_from_suggestion(sugg: str | None) -> str:
     """Map short_suggestion to BUY/SELL/HOLD for band logic."""
     if not sugg:
@@ -65,20 +72,48 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         swing_low = float(swing_low)
 
     # ---------- Short-term band (days–weeks) ----------
-    if st_signal == "BUY":
-        st_stop = max(swing_low, P - 1.5 * atr) if atr > 0 else P - 0.02 * P
-        if P < ma20:
-            st_target = ma20
-        else:
-            st_target = max(swing_high, P + 1.5 * atr) if atr > 0 else P + 0.02 * P
-    elif st_signal == "SELL":
-        st_stop = min(swing_high, P + 1.5 * atr) if atr > 0 else P + 0.02 * P
-        st_target = min(swing_low, P - 1.5 * atr) if atr > 0 else P - 0.02 * P
-    else:
-        st_stop = P - 1.0 * atr if atr > 0 else P - 0.01 * P
-        st_target = P + 1.0 * atr if atr > 0 else P + 0.01 * P
+    # Trailing re-anchor: when price hits previous target or stop, adjust bands
+    ticker = row.get("ticker")
+    prev_bands = None
+    if ticker:
+        try:
+            from signals.cache import get_cached_bands
+            prev_bands = get_cached_bands(str(ticker))
+        except Exception:
+            pass
 
-    row["st_band"] = {"low": round(st_stop, 2), "high": round(st_target, 2)}
+    st_stop = st_target = None
+    if prev_bands and isinstance(prev_bands.get("st_band"), dict):
+        prev_st = prev_bands["st_band"]
+        prev_low = prev_st.get("low")
+        prev_high = prev_st.get("high")
+        if prev_low is not None and prev_high is not None:
+            # Target hit: price closed at/above previous target → trail stop up
+            if P >= prev_high:
+                st_stop = round(prev_high, 2)  # lock in gains
+                st_target = round(P + (atr if atr > 0 else 0.02 * P), 2)
+                row["st_level_hit"] = "target"
+            # Stop hit: price closed at/below previous stop → full recompute
+            elif P <= prev_low:
+                st_stop = None  # will compute below
+                row["st_level_hit"] = "stop"
+
+    if st_stop is None or st_target is None:
+        if st_signal == "BUY":
+            st_stop = max(swing_low, P - 1.5 * atr) if atr > 0 else P - 0.02 * P
+            if P < ma20:
+                st_target = ma20
+            else:
+                st_target = max(swing_high, P + 1.5 * atr) if atr > 0 else P + 0.02 * P
+        elif st_signal == "SELL":
+            st_stop = min(swing_high, P + 1.5 * atr) if atr > 0 else P + 0.02 * P
+            st_target = min(swing_low, P - 1.5 * atr) if atr > 0 else P - 0.02 * P
+        else:
+            st_stop = P - 1.0 * atr if atr > 0 else P - 0.01 * P
+            st_target = P + 1.0 * atr if atr > 0 else P + 0.01 * P
+
+    row["st_band"] = {"low": round(float(st_stop), 2), "high": round(float(st_target), 2)}
+    row["st_checkpoints"] = _checkpoints(float(st_stop), float(st_target), 5)
 
     # ---------- Medium-term band (months) ----------
     if regime == "UP":
@@ -135,8 +170,65 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
 
     if lt_low is not None and lt_high is not None and lt_low < lt_high:
         row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
+        row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
+        # LT bear/base/bull: bear = low, base = midpoint, bull = high
+        mid = (lt_low + lt_high) / 2
+        row["lt_scenarios"] = {
+            "bear": round(lt_low, 2),
+            "base": round(mid, 2),
+            "bull": round(lt_high, 2),
+        }
     else:
-        row["lt_band"] = None
+        # Fallback: use MT band scaled for longer horizon when no analyst/consensus data
+        mt = row.get("mt_band")
+        if isinstance(mt, dict) and mt.get("low") is not None and mt.get("high") is not None:
+            mt_low = float(mt["low"])
+            mt_high = float(mt["high"])
+            lt_low = mt_low * 0.85
+            lt_high = mt_high * 1.25
+            row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
+            row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
+            row["lt_scenarios"] = {
+                "bear": round(lt_low, 2),
+                "base": round((lt_low + lt_high) / 2, 2),
+                "bull": round(lt_high, 2),
+            }
+            row["lt_band_low_confidence"] = True  # no analyst data
+        else:
+            row["lt_band"] = None
+            row["lt_checkpoints"] = None
+            row["lt_scenarios"] = None
+
+    # Backtest-based confidence for ST/MT targets (from regime × ATR-distance hit-rate table)
+    try:
+        from .target_confidence import get_target_confidence, load_hit_rates_table
+        _table = load_hit_rates_table()
+        _st_band = row.get("st_band")
+        _mt_band = row.get("mt_band")
+        if _st_band and _st_band.get("high") is not None:
+            _conf = get_target_confidence(regime, P, float(_st_band["high"]), atr, "st", _table)
+            if _conf is not None:
+                row["st_target_confidence_pct"] = _conf
+        if _mt_band and _mt_band.get("high") is not None:
+            _conf = get_target_confidence(regime, P, float(_mt_band["high"]), atr, "mt", _table)
+            if _conf is not None:
+                row["mt_target_confidence_pct"] = _conf
+    except Exception:
+        pass
+
+    # Cache bands for trailing re-anchor on next run
+    if ticker:
+        try:
+            from signals.cache import set_cached_bands
+            bands_to_cache = {
+                "st_band": row.get("st_band"),
+                "mt_band": row.get("mt_band"),
+                "lt_band": row.get("lt_band"),
+            }
+            if bands_to_cache["st_band"] and bands_to_cache["mt_band"]:
+                set_cached_bands(str(ticker), bands_to_cache)
+        except Exception:
+            pass
 
     return row
 

@@ -27,7 +27,15 @@ from scripts.run_daily import (
     run_signals,
     save_last_run,
 )
+from scripts.accuracy_price_targets import run_accuracy_and_save
 from signals.cross_asset import run_crypto_signals, run_cross_asset_daily, compute_cross_asset_guidelines
+from signals.breadth_rs import get_market_regime, apply_rotation_step_down
+from signals.typical_move import typical_move_for_symbols
+from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_backtest
+from signals.premarket import run_premarket_snapshot
+from signals.indicator_validation import validate_indicators_vs_external
+from signals.indicator_comparison import run_indicator_comparison
+from signals.validation import get_validation_records
 from signals.fmp_client import (
     fetch_batch_quote,
     fetch_economic_calendar,
@@ -38,6 +46,7 @@ from signals.fmp_client import (
 )
 from signals.fred_client import get_real_yield_proxy
 from signals.cot_client import get_cot_extremes_for_guidelines
+from signals.fetcher import fetch_yfinance_latest_prices
 
 try:
     from best_picks import get_best_picks_2026
@@ -83,10 +92,17 @@ async def get_dashboard():
     opportunity_universe = config.get("opportunity_universe") or []
     all_quote_tickers = list(dict.fromkeys([t for t in watchlist + portfolio_tickers + opportunity_universe if t]))
     prices_by_ticker = None
-    use_fmp_batch_quote = config.get("data", {}).get("use_fmp_batch_quote", True) and get_fmp_api_key(config)
+    has_fmp_key = bool(get_fmp_api_key(config))
+    use_fmp_batch_quote = config.get("data", {}).get("use_fmp_batch_quote", True) and has_fmp_key
+    logger.info("[dashboard] Batch quote check: use_fmp_batch_quote=%s, all_quote_tickers=%d", use_fmp_batch_quote, len(all_quote_tickers))
     if use_fmp_batch_quote and all_quote_tickers:
+        logger.info("[dashboard] FMP batch quote: requesting %d symbols...", len(all_quote_tickers))
         batch_quotes, batch_err = fetch_batch_quote(config, all_quote_tickers)
-        if not batch_err and batch_quotes:
+        if batch_err:
+            logger.warning("[dashboard] FMP batch quote error: %s (falling back to per-ticker data)", batch_err)
+            if "402" in str(batch_err) or "Payment" in str(batch_err):
+                logger.warning("[dashboard] FMP batch-quote may require a paid plan; using yfinance/FMP historical per ticker")
+        elif batch_quotes:
             prices_by_ticker = {}
             for sym, row in batch_quotes.items():
                 p = row.get("price")
@@ -96,11 +112,28 @@ async def get_dashboard():
                     except (TypeError, ValueError):
                         pass
             if prices_by_ticker:
-                logger.info("[dashboard] FMP batch quote: %d symbols, 1 request", len(prices_by_ticker))
+                logger.info("[dashboard] FMP batch quote: received %d prices (1 API call)", len(prices_by_ticker))
+            else:
+                logger.warning("[dashboard] FMP batch quote: no valid prices returned")
+        else:
+            logger.warning("[dashboard] FMP batch quote: empty response")
+    elif all_quote_tickers:
+        # Use yfinance (delayed) live quotes until FMP batch quote is available on paid plan
+        prices_by_ticker = fetch_yfinance_latest_prices(all_quote_tickers)
+        if prices_by_ticker:
+            logger.info("[dashboard] yfinance latest: %d prices (delayed quote)", len(prices_by_ticker))
 
     logger.info("[dashboard] section: run_signals (watchlist + indicators)...")
     results = run_signals(config, prices_by_ticker=prices_by_ticker)
     logger.info("[dashboard] section: run_signals DONE (%d tickers)", len(results) if results else 0)
+
+    # Update price-target accuracy report (same results, no extra fetch) so GET /api/accuracy is always current
+    try:
+        acc_path = run_accuracy_and_save(results, config)
+        if acc_path:
+            logger.info("[dashboard] section: accuracy report saved to %s", acc_path.name)
+    except Exception as e:
+        logger.warning("[dashboard] accuracy report save skipped: %s", e)
 
     logger.info("[dashboard] section: portfolio_report (holdings + doctor)...")
     report = portfolio_report(
@@ -216,6 +249,77 @@ async def get_dashboard():
     else:
         macro_regime = "Neutral"
 
+    # Market/sector regime (breadth proxy, tech leadership, rotation risk) and rotation step-down for tech
+    try:
+        market_regime_data = get_market_regime(period="6mo", vix=vix_val, real_yield=real_yield)
+        results = apply_rotation_step_down(results, market_regime_data)
+    except Exception:
+        market_regime_data = {}
+
+    # Next-day outlook and typical move (SPY, QQQ, GLD, SLV)
+    next_day_outlook = []
+    typical_move = []
+    try:
+        from signals.cache import cached_next_day_backtest
+        backtest_cache = {}
+        for sym in ["SPY", "QQQ", "GLD", "SLV"]:
+            try:
+                backtest_cache[sym] = cached_next_day_backtest(sym, lambda s=sym: run_next_day_backtest(s, period="5y"))
+            except Exception:
+                pass
+        next_day_outlook = next_day_outlook_for_symbols(["SPY", "QQQ", "GLD", "SLV"], backtest_cache)
+    except Exception:
+        next_day_outlook = next_day_outlook_for_symbols(["SPY", "QQQ", "GLD", "SLV"])
+    try:
+        typical_move = typical_move_for_symbols(["SPY", "QQQ", "GLD", "SLV"])
+    except Exception:
+        typical_move = []
+
+    # Indicator validation: our next-day bias vs external (Yahoo analyst consensus)
+    indicator_validation = []
+    try:
+        indicator_validation = validate_indicators_vs_external(next_day_outlook)
+    except Exception as e:
+        logger.debug("Indicator validation failed: %s", e)
+
+    # Indicator comparison: close, RSI, bias vs Alpha Vantage, Polygon, Finnhub (margin of error)
+    indicator_comparisons = []
+    try:
+        compare_tickers = ["SPY", "QQQ", "GLD", "SLV"]
+        our_by_ticker = {
+            r["ticker"]: {
+                "close": r.get("close"),
+                "rsi": r.get("rsi"),
+                "ma20": r.get("ma20"),
+                "ma50": r.get("ma50"),
+                "macd_hist": r.get("macd_hist"),
+            }
+            for r in results
+            if not r.get("error") and r.get("ticker") in compare_tickers
+        }
+        indicator_comparisons = run_indicator_comparison(config, our_by_ticker, next_day_outlook, tickers=compare_tickers)
+    except Exception as e:
+        logger.debug("Indicator comparison failed: %s", e)
+
+    # Model validation: predicted vs actual close (SPY/QQQ) from EOD snapshots
+    model_validation = {"records": [], "summary": {}}
+    try:
+        model_validation_records, model_validation_summary = get_validation_records(
+            data_root=ROOT / "data",
+            max_records=60,
+            tickers=["SPY", "QQQ"],
+        )
+        model_validation = {"records": model_validation_records, "summary": model_validation_summary}
+    except Exception as e:
+        logger.debug("Model validation failed: %s", e)
+
+    # Pre-market snapshot (futures + basket; can be slow)
+    pre_market = None
+    try:
+        pre_market = run_premarket_snapshot()
+    except Exception:
+        pre_market = {}
+
     # FMP plan status (which features work, which need upgrade)
     fmp_plan_status = {}
     try:
@@ -249,6 +353,9 @@ async def get_dashboard():
         down_max=config.get("regime", {}).get("down_max", 40),
         exclude_from_watchlist=portfolio_tickers,
         max_results=opp_cfg.get("max_results", 25),
+        min_volume_ratio=opp_cfg.get("min_volume_ratio", 0.5),
+        exclude_earnings_days=opp_cfg.get("exclude_earnings_days"),
+        config=config,
     )
     logger.info("[dashboard] section: opportunities DONE (%d)", len(opportunities))
 
@@ -334,6 +441,13 @@ async def get_dashboard():
         "economic_calendar": economic_calendar,
         "guidelines": guidelines,
         "macro_regime": macro_regime,
+        "market_regime": market_regime_data,
+        "next_day_outlook": next_day_outlook,
+        "typical_move": typical_move,
+        "indicator_validation": indicator_validation,
+        "indicator_comparisons": indicator_comparisons,
+        "model_validation": model_validation,
+        "pre_market": pre_market,
         "cot_by_ticker": cot_by_ticker,
         "fmp_plan_status": fmp_plan_status,
         "best_2026": best_2026,
@@ -494,3 +608,61 @@ async def get_last_run():
         return {"run_results": []}
     with open(path) as f:
         return json.load(f)
+
+
+def _accuracy_interpretation(config: dict) -> dict:
+    """Build interpretation thresholds and notes from config.accuracy for dashboard/API."""
+    acc = (config or {}).get("accuracy") or {}
+    return {
+        "thresholds": {
+            "st_target_err_acceptable_pct": acc.get("st_target_err_acceptable_pct", 5),
+            "support_err_acceptable_pct": acc.get("support_err_acceptable_pct", 5),
+            "st_target_mape_tweak_above": acc.get("st_target_mape_tweak_above", 8),
+            "support_mape_tweak_above": acc.get("support_mape_tweak_above", 15),
+        },
+        "notes": acc.get("notes") or [
+            "ST target err% = |close − short-term target| / close. Low = price near our ST target.",
+            "Support err% = |close − MA20| / close. MA20 lags; some error is normal in fast moves.",
+            "MAPE = mean absolute % error across tickers. Lower = model tracks close better.",
+            "Acceptable: ST target err ≤ 5% per ticker, MAPE ≤ 5–8%. No tweak needed.",
+            "Consider tweak: ST target MAPE > 8% or many tickers with err > 10%.",
+        ],
+    }
+
+
+@router.get("/accuracy")
+async def get_accuracy():
+    """
+    Price target accuracy report: model levels vs today's close.
+    Reads data/accuracy_price_targets.json (generated when dashboard/daily run executes).
+    interpretation: from config.accuracy (thresholds + notes for when err% is acceptable vs when to tweak).
+    """
+    config = _load_config()
+    interpretation = _accuracy_interpretation(config)
+
+    path = ROOT / "data" / "accuracy_price_targets.json"
+    if not path.exists():
+        return {
+            "ok": False,
+            "message": "Report not generated. Refresh the dashboard or run: cd backend && python scripts/accuracy_price_targets.py",
+            "per_ticker": [],
+            "summary": {},
+            "recommendations": [],
+            "as_of": None,
+            "interpretation": interpretation,
+        }
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return {
+            "ok": True,
+            "message": None,
+            "per_ticker": data.get("per_ticker", []),
+            "summary": data.get("summary", {}),
+            "recommendations": data.get("recommendations", []),
+            "as_of": data.get("as_of"),
+            "interpretation": interpretation,
+        }
+    except Exception as e:
+        logger.warning("Failed to load accuracy report: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

@@ -31,6 +31,7 @@ export default function Home() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
 
   const lastFetchRef = useRef<number>(0);
 
@@ -46,6 +47,7 @@ export default function Home() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
+      setLastRefreshedAt(new Date());
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load";
       console.error("[Dashboard] Fetch error:", msg, e);
@@ -98,7 +100,7 @@ export default function Home() {
   }
 
   return data ? (
-    <Dashboard data={data} onRefresh={refresh} loading={loading} />
+    <Dashboard data={data} onRefresh={refresh} loading={loading} lastRefreshedAt={lastRefreshedAt} />
   ) : null;
 }
 
@@ -176,6 +178,56 @@ export interface DashboardData {
   economic_calendar?: EconomicCalendarEvent[];
   guidelines?: { text: string; type: "caution" | "info" | "risk" }[];
   macro_regime?: "Risk-On" | "Neutral" | "Risk-Off";
+  market_regime?: {
+    market_breadth?: string;
+    tech_leadership?: string;
+    rotation_risk?: string;
+    participation_narrow?: boolean | null;
+    rs_xlk_spy?: number | null;
+    rs_qqq_spy?: number | null;
+    rs_rsp_spy?: number | null;
+  };
+  next_day_outlook?: { ticker: string; bias: string; pct_green: number | null; avg_return_pct: number | null; typical_range_pct: number | null; state_key?: string | null }[];
+  typical_move?: { ticker: string; typical_pct_1d: number; typical_pct_60d?: number; high_vol_pct?: number | null; vol_regime?: string }[];
+  indicator_validation?: { ticker: string; our_bias: string | null; source: string; external_rating: string | null; status: "aligned" | "divergent" | "no_data"; message: string }[];
+  indicator_comparisons?: {
+    ticker: string;
+    close: { ours: number | null; comparisons: { source: string; value: number; margin_pct: number | null }[]; max_margin_pct: number | null };
+    rsi: { ours: number | null; comparisons: { source: string; value: number; margin_abs: number | null }[]; max_margin_abs: number | null };
+    ma: { comparisons: { series: string; ours: number; source: string; value: number; margin_pct: number | null }[]; max_margin_pct: number | null };
+    macd: { ours: number | null; comparisons: { source: string; value: number; margin_abs: number | null }[]; max_margin_abs: number | null };
+    bias: { ours: string | null; comparisons: { source: string; rating: string | null; status: string }[] };
+  }[];
+  model_validation?: {
+    records: {
+      as_of_date: string;
+      next_date: string;
+      ticker: string;
+      prior_close: number;
+      actual_close: number;
+      actual_return_pct: number;
+      our_bias: string | null;
+      our_pct_green: number | null;
+      our_typical_range_pct: number | null;
+      direction_hit: boolean | null;
+      within_range: boolean | null;
+    }[];
+    summary: {
+      n_records: number;
+      direction_accuracy_pct: number | null;
+      direction_n: number;
+      range_hit_rate_pct: number | null;
+      range_n: number;
+    };
+  };
+  pre_market?: {
+    es_pct?: number | null;
+    nq_pct?: number | null;
+    tech_avg_pct?: number | null;
+    value_avg_pct?: number | null;
+    rotation_risk_premarket?: string;
+    message?: string | null;
+  } | null;
   cot_by_ticker?: Record<string, string>;
   fmp_plan_status?: FMPPlanStatus;
   backtest?: BacktestResult[];
@@ -219,6 +271,9 @@ export interface Signal {
   mt_band?: PriceBand | null;
   lt_band?: PriceBand | null;
   lt_band_low_confidence?: boolean;
+  rotation_stepped_down?: boolean;
+  st_target_confidence_pct?: number | null;
+  mt_target_confidence_pct?: number | null;
   error?: string;
 }
 

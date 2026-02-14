@@ -1,5 +1,6 @@
-# Stock Investing Model - Docker Compose
+# Stock Investing Model - Docker Compose (production build)
 # Usage: docker compose up --build
+# For hot reload during development use: docker compose -f docker-compose.dev.yml up --build
 
 services:
   redis:
@@ -24,6 +25,7 @@ services:
       - PORT=8002
       - CORS_ORIGINS=http://localhost:3001,http://web:3001
       - REDIS_URL=redis://redis:6379/0
+      - PYTHONPATH=/app
     volumes:
       - backend_data:/app/data
     depends_on:

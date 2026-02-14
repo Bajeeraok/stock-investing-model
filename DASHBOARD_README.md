@@ -31,6 +31,21 @@ npm run dev
 
 **Open:** [http://localhost:3001](http://localhost:3001)
 
+### Hot reload (Docker) – no rebuild after code changes
+
+Backend and web both reload automatically when you edit code:
+
+```bash
+# From project root (PowerShell or bash)
+docker compose -f docker-compose.dev.yml up --build
+```
+
+- **Backend:** Code is mounted from `./backend`; uvicorn runs with `--reload` (restarts on file save).
+- **Web:** Code is mounted from `./web`; Next.js dev server hot-reloads on save.
+- **Redis** is included for cache. No need to run `docker compose build` again after changing Python or React code—just save.
+
+Windows PowerShell shortcut: `.\scripts\dev.ps1`
+
 > **Note:** The first dashboard load runs the full analysis (signals, portfolio, opportunities) and may take **1-2 minutes**. Subsequent refreshes also trigger a full run.
 
 ## Features

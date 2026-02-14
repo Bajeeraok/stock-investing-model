@@ -18,6 +18,8 @@ TTL_ECONOMIC_CALENDAR = 6 * 3600
 TTL_FUNDAMENTALS = 12 * 3600
 TTL_PRICE_TARGET = 6 * 3600
 TTL_INSIDER_STATS = 12 * 3600
+TTL_TARGET_BANDS = 7 * 24 * 3600  # 7 days – previous bands for trailing re-anchor
+TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 
 
 def _redis_client():
@@ -157,3 +159,27 @@ def cached_price_target_consensus(ticker: str, fetch_fn):
         set_cached(key, out, TTL_PRICE_TARGET)
         return out
     return None
+
+
+def get_cached_bands(ticker: str) -> dict | None:
+    """Get last computed target bands for ticker (for trailing re-anchor)."""
+    key = cache_key("target_bands", ticker)
+    return get_cached(key)
+
+
+def set_cached_bands(ticker: str, bands: dict) -> bool:
+    """Store target bands for ticker. Used when price hits levels to re-anchor."""
+    key = cache_key("target_bands", ticker)
+    return set_cached(key, bands, TTL_TARGET_BANDS)
+
+
+def cached_next_day_backtest(ticker: str, fetch_fn):
+    """Cache next-day bias backtest (state_stats). TTL 24h."""
+    key = cache_key("next_day_backtest", ticker)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out and not out.get("error"):
+        set_cached(key, out, TTL_NEXT_DAY_BACKTEST)
+    return out
