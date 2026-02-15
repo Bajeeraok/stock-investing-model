@@ -110,6 +110,8 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
             supp = sig.get("support_level")
             rsi = sig.get("rsi")
             score = sig.get("composite_buy")
+            buy_conf = sig.get("buy_target_confidence_pct")
+            sell_conf = sig.get("sell_target_confidence_pct")
             signal_data = {
                 "short_suggestion": sig.get("short_suggestion"),
                 "medium_suggestion": sig.get("medium_suggestion"),
@@ -120,18 +122,22 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
                 "suggested_buy_price": buy_p,
                 "suggested_sell_price": sell_p,
                 "support_level": supp,
+                "buy_target_confidence_pct": buy_conf,
+                "sell_target_confidence_pct": sell_conf,
                 "ma20": sig.get("ma20"),
                 "ma50": sig.get("ma50"),
                 "ma200": sig.get("ma200"),
             }
             # Human-readable reasoning for modal (helps learn and understand)
             if buy_p is not None:
-                price_reasoning["buy"] = f"Buy: ${buy_p:.2f} – add on pullback to MA50"
+                conf_s = f" (confidence {int(buy_conf)}%)" if buy_conf is not None else ""
+                price_reasoning["buy"] = f"Buy: ${buy_p:.2f}{conf_s} – add on pullback to MA50/200"
             else:
                 price_reasoning["buy"] = "Buy: – (no add level; price below MA50 or insufficient data)"
 
             if sell_p is not None:
-                price_reasoning["sell"] = f"Sell: ${sell_p:.2f} – consider trim/exit (overbought or weak)"
+                conf_s = f" (confidence {int(sell_conf)}%)" if sell_conf is not None else ""
+                price_reasoning["sell"] = f"Sell: ${sell_p:.2f}{conf_s} – consider trim/exit (overbought or weak)"
             else:
                 rsi_s = f"RSI {rsi:.0f}" if rsi is not None else "RSI n/a"
                 score_s = f"score {score:.0f}" if score is not None else "score n/a"

@@ -162,9 +162,19 @@ export function SignalsTable({
                   {cotByTicker?.[r.ticker] ?? "–"}
                 </td>
                 <td className="px-4 py-3 text-sm">
-                  <span className="text-emerald-400/90" title="Add on pullback">{r.suggested_buy_price != null ? `$${r.suggested_buy_price.toFixed(2)}` : "-"}</span>
+                  <span className="text-emerald-400/90" title="Add on pullback; confidence = model strength for adding at this level">
+                    {r.suggested_buy_price != null ? `$${r.suggested_buy_price.toFixed(2)}` : "-"}
+                    {r.buy_target_confidence_pct != null && r.suggested_buy_price != null && (
+                      <span className="text-slate-500 text-xs ml-0.5">({r.buy_target_confidence_pct}%)</span>
+                    )}
+                  </span>
                   <span className="text-slate-500 mx-1">/</span>
-                  <span className="text-red-400/90" title="Consider trim/exit when overbought or weak">{r.suggested_sell_price != null ? `$${r.suggested_sell_price.toFixed(2)}` : "-"}</span>
+                  <span className="text-red-400/90" title="Consider trim/exit when overbought or weak; confidence = strength of sell signal">
+                    {r.suggested_sell_price != null ? `$${r.suggested_sell_price.toFixed(2)}` : "-"}
+                    {r.sell_target_confidence_pct != null && r.suggested_sell_price != null && (
+                      <span className="text-slate-500 text-xs ml-0.5">({r.sell_target_confidence_pct}%)</span>
+                    )}
+                  </span>
                   {r.support_level != null && (
                     <>
                       <span className="text-slate-500 mx-1">/</span>

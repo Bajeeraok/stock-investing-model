@@ -19,4 +19,4 @@ export { EconomicCalendarSection } from "./EconomicCalendarSection";
 export { GuidelinesBanner } from "./GuidelinesBanner";
 export { FMPPlanStatus } from "./FMPPlanStatus";
 export { ChatCopilot } from "./ChatCopilot";
-export { AccuracyPriceTargets } from "./AccuracyPriceTargets";
+export { AccuracyPriceTargets, AccuracyPriceTargetsWithBoundary } from "./AccuracyPriceTargets";

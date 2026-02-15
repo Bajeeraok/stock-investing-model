@@ -184,6 +184,8 @@ def multi_horizon_scores(close: pd.Series) -> dict:
             "suggested_buy_price": None,
             "suggested_sell_price": None,
             "support_level": None,
+            "buy_target_confidence_pct": None,
+            "sell_target_confidence_pct": None,
         }
 
     row = df.iloc[-1]
@@ -302,6 +304,25 @@ def multi_horizon_scores(close: pd.Series) -> dict:
     if pd.notna(ma20) and ma20 > 0 and c > ma20:
         support_level = round(float(ma20), 2)  # Watch: break below MA20 may signal weakness
 
+    # Confidence score (0-100) for buy/sell target to support decision-making
+    buy_target_confidence_pct = None
+    if suggested_buy_price is not None:
+        comp = sig.get("composite_buy")
+        if comp is not None:
+            comp_f = float(comp)
+            # Base: composite score (trend/RSI/MACD) = confidence in adding at this level
+            buy_target_confidence_pct = round(min(95, max(0, comp_f)), 0)
+
+    sell_target_confidence_pct = None
+    if suggested_sell_price is not None:
+        rsi_f = float(rsi_val) if pd.notna(rsi_val) else None
+        comp = sig.get("composite_buy")
+        comp_f = float(comp) if comp is not None else 50
+        # Higher confidence when RSI very overbought or score very weak
+        from_rsi = 72 + min(23, (rsi_f - 70)) if rsi_f is not None and rsi_f >= 70 else 0
+        from_score = 78 - comp_f * 0.8 if comp_f <= 35 else 0
+        sell_target_confidence_pct = round(min(95, max(50, from_rsi, from_score)), 0)
+
     return {
         **sig,
         "ma20": round(float(ma20), 2) if pd.notna(ma20) else None,
@@ -319,4 +340,6 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         "suggested_buy_price": suggested_buy_price,
         "suggested_sell_price": suggested_sell_price,
         "support_level": support_level,
+        "buy_target_confidence_pct": buy_target_confidence_pct,
+        "sell_target_confidence_pct": sell_target_confidence_pct,
     }

@@ -648,6 +648,8 @@ async def get_accuracy():
             "per_ticker": [],
             "summary": {},
             "recommendations": [],
+            "amber_tickers": [],
+            "tweak_tickers": [],
             "as_of": None,
             "interpretation": interpretation,
         }
@@ -660,6 +662,8 @@ async def get_accuracy():
             "per_ticker": data.get("per_ticker", []),
             "summary": data.get("summary", {}),
             "recommendations": data.get("recommendations", []),
+            "amber_tickers": data.get("amber_tickers", []),
+            "tweak_tickers": data.get("tweak_tickers", []),
             "as_of": data.get("as_of"),
             "interpretation": interpretation,
         }

@@ -213,6 +213,8 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
             "suggested_buy_price": sig.get("suggested_buy_price"),
             "suggested_sell_price": sig.get("suggested_sell_price"),
             "support_level": sig.get("support_level"),
+            "buy_target_confidence_pct": sig.get("buy_target_confidence_pct"),
+            "sell_target_confidence_pct": sig.get("sell_target_confidence_pct"),
             "story_change": story_change,
             "volume_ratio": volume_ratio,
             "volume_unusual": volume_unusual,

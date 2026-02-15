@@ -105,14 +105,18 @@ accuracy:
   # Summary (MAPE across tickers): when to suggest "tweak model"
   st_target_mape_tweak_above: 8       # If ST target MAPE > 8%, recommend adjusting target_bands (ATR mult)
   support_mape_tweak_above: 15        # If support MAPE > 15%, note that MA20 lags (use as watch level only)
+  # Optional manual overrides: model auto-adjusts band width by volatility (high-vol tickers get wider bands).
+  # Add tickers here only if you want to override (e.g. CRWD: 1.8). Leave empty for auto-adjust only.
+  st_target_atr_mult_overrides: {}
   # Interpretation guide (shown in dashboard and script help)
   notes:
     - "ST target err% = |close − short-term target| / close. Low = price near our ST target (good)."
     - "Support err% = |close − MA20| / close. MA20 lags; some error is normal in fast moves."
     - "MAPE = average of absolute % errors across tickers for that level. Lower = model level tracks close better."
     - "Acceptable: ST target err ≤ 5% per ticker, MAPE ≤ 5–8% overall. No tweak needed."
-    - "Consider tweak: ST target MAPE > 8% (adjust ATR in target_bands.py) or many tickers with err > 10%."
+    - "Model auto-adjusts band width by volatility (high-vol tickers get wider bands). No manual ATR config needed."
     - "Support/MA20 is a watch level, not a precise target; high support err often means strong trend, not model bug."
+    - "Amber/Tweak tickers: model auto-widens bands for high-volatility names. Manual override optional (st_target_atr_mult_overrides)."
 
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com

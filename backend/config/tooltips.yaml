@@ -26,6 +26,8 @@ thesis: "Why you own it; review when regime/score changes"
 exit_condition: "When to trim or sell; model nudges when conditions match"
 suggested_buy_price: "MA50 (add on pullback) or MA200 (value); consider buying near this level. Omitted when in sell mode (RSI≥70 or score≤35) so we don't encourage adds while suggesting trim/exit"
 suggested_sell_price: "Consider trim/exit when overbought (RSI≥70) or score weak (≤35); only when actionable"
+buy_target_confidence_pct: "0-100: how much the model supports adding at the buy target; based on composite score (trend/RSI/MACD). Higher = stronger setup for buying at that level"
+sell_target_confidence_pct: "0-100: how much the model supports trimming at the sell target; higher when RSI very overbought or score very weak. Use with price to decide sell timing"
 support_level: "MA20 support; break below = caution (not a sell price)"
 
 # Price-target accuracy (dashboard section)

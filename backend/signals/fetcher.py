@@ -128,8 +128,18 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
                 last = close_col.dropna()
                 if len(last) > 0:
                     val = last.iloc[-1]
-                    if val is not None and pd.notna(val):
-                        out[sym] = float(val)
+                    # Ensure scalar: yfinance can return Series in edge cases (e.g. AMZN), avoid "truth value of Series is ambiguous"
+                    if hasattr(val, "ndim") and getattr(val, "ndim", 0) > 0 and hasattr(val, "iloc"):
+                        val = val.iloc[-1] if len(val) > 0 else None
+                    if val is not None:
+                        try:
+                            v = float(val)
+                            if not (pd.isna(v) or v <= 0):
+                                out[sym] = v
+                            else:
+                                logger.warning("[yfinance] Skipping %s: no valid close (latest price unavailable)", sym)
+                        except (TypeError, ValueError):
+                            logger.warning("[yfinance] Skipping %s: no valid close (latest price unavailable)", sym)
                     else:
                         logger.warning("[yfinance] Skipping %s: no valid close (latest price unavailable)", sym)
                 else:

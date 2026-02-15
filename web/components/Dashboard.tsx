@@ -26,7 +26,7 @@ import {
   GuidelinesBanner,
   FMPPlanStatus,
   ChatCopilot,
-  AccuracyPriceTargets,
+  AccuracyPriceTargetsWithBoundary,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -139,7 +139,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
         {/* Price target accuracy - model levels vs today close */}
         <ToggleSection id="accuracy" title="Price target accuracy" icon={<Target className="h-5 w-5 text-amber-500" />} defaultOpen={false}>
-          <AccuracyPriceTargets />
+          <AccuracyPriceTargetsWithBoundary />
         </ToggleSection>
 
         {/* Crypto + Cross-asset + Event calendar + 2026 best - toggle */}

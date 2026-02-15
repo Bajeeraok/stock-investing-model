@@ -111,6 +111,28 @@ def compute_accuracy(results: list[dict]) -> tuple[list[dict], dict]:
     return per_ticker, summary
 
 
+def _amber_tweak_tickers(per_ticker: list[dict], config: dict) -> tuple[list[dict], list[dict]]:
+    """Split per_ticker into amber (5–10% ST err) and tweak (>10%) for dashboard and tweak guidance."""
+    acc = (config or {}).get("accuracy") or {}
+    amber_max = acc.get("st_target_err_acceptable_pct", 5)  # above this = amber until tweak_thresh
+    tweak_min = 10  # above this = consider tweak (add to atr overrides)
+    amber_tickers: list[dict] = []
+    tweak_tickers: list[dict] = []
+    for row in per_ticker:
+        pct = row.get("st_target_high_abs_pct")
+        if pct is None:
+            continue
+        try:
+            pct_f = float(pct)
+        except (TypeError, ValueError):
+            continue
+        if pct_f > tweak_min:
+            tweak_tickers.append({"ticker": row.get("ticker", ""), "st_target_err_pct": round(pct_f, 1)})
+        elif pct_f > amber_max:
+            amber_tickers.append({"ticker": row.get("ticker", ""), "st_target_err_pct": round(pct_f, 1)})
+    return amber_tickers, tweak_tickers
+
+
 def run_accuracy_and_save(results: list[dict], config: dict, out_dir: Path | None = None) -> Path | None:
     """
     Compute price-target accuracy from signal results and save to data/accuracy_price_targets.json.
@@ -120,6 +142,7 @@ def run_accuracy_and_save(results: list[dict], config: dict, out_dir: Path | Non
     try:
         per_ticker, summary = compute_accuracy(results)
         recs = recommend_tweaks(summary, config)
+        amber_tickers, tweak_tickers = _amber_tweak_tickers(per_ticker, config)
         out_dir = out_dir or ROOT / "data"
         out_dir.mkdir(parents=True, exist_ok=True)
         report = {
@@ -130,6 +153,8 @@ def run_accuracy_and_save(results: list[dict], config: dict, out_dir: Path | Non
                 for k, v in summary.items()
             },
             "recommendations": recs,
+            "amber_tickers": amber_tickers,
+            "tweak_tickers": tweak_tickers,
         }
         report_path = out_dir / "accuracy_price_targets.json"
         with open(report_path, "w") as f:
@@ -150,8 +175,9 @@ def recommend_tweaks(summary: dict, config: dict) -> list[str]:
     if st.get("mape") is not None:
         if st["mape"] > st_mape_tweak:
             recommendations.append(
-                f"Short-term target (st_band high) has high error (MAPE > {st_mape_tweak}%). Consider adjusting "
-                "ATR multiplier or horizon in backend/signals/target_bands.py (e.g. 1.5*ATR vs 1.0*ATR)."
+                f"Short-term target (st_band high) has high error (MAPE > {st_mape_tweak}%). "
+                "Model auto-adjusts band width by volatility; high-vol tickers get wider bands. "
+                "If error persists, add tickers to config.accuracy.st_target_atr_mult_overrides (e.g. CRWD: 1.8)."
             )
         elif st["mape"] < 1.5 and st.get("within_1pct", 0) == st.get("count", 0):
             recommendations.append(
@@ -347,6 +373,16 @@ def main() -> None:
     print()
 
     recs = recommend_tweaks(summary, config)
+    amber_tickers, tweak_tickers = _amber_tweak_tickers(per_ticker, config)
+
+    if amber_tickers or tweak_tickers:
+        print("Tickers to review (add to config.accuracy.st_target_atr_mult_overrides with 1.8 or 2.0 to widen band):")
+        if amber_tickers:
+            print("  Amber (5–10%): " + ", ".join(f"{t.get('ticker', '')} {t.get('st_target_err_pct', 0)}%" for t in amber_tickers))
+        if tweak_tickers:
+            print("  Consider tweak (>10%): " + ", ".join(f"{t.get('ticker', '')} {t.get('st_target_err_pct', 0)}%" for t in tweak_tickers))
+        print()
+
     if recs:
         print("Recommendations (tweak model?):")
         for r in recs:
@@ -365,6 +401,8 @@ def main() -> None:
             for k, v in summary.items()
         },
         "recommendations": recs,
+        "amber_tickers": amber_tickers,
+        "tweak_tickers": tweak_tickers,
     }
     report_path = out_dir / "accuracy_price_targets.json"
     with open(report_path, "w") as f:

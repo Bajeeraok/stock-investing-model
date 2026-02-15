@@ -98,19 +98,46 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
                 st_stop = None  # will compute below
                 row["st_level_hit"] = "stop"
 
+    # Auto-adjust band width by volatility: high-vol tickers get wider bands (better accuracy without manual config)
+    # vol6 = 6m annualized vol (e.g. 0.3 = 30%). Above 35% we scale up: 0.4->1.6, 0.5->1.8, 0.6+->2.0
+    base_mult_buy = 1.5
+    base_mult_hold = 1.0
+    if vol6 > 0.35:
+        extra = min(0.5, (vol6 - 0.35) * 2)
+        base_mult_buy = 1.5 + extra
+        base_mult_hold = 1.0 + extra
+    st_atr_mult_buy = base_mult_buy
+    st_atr_mult_hold = base_mult_hold
+    # Optional config override (if user wants manual tweak for specific tickers)
+    if ticker:
+        try:
+            from config_loader import load_config
+            cfg = load_config()
+            overrides = (cfg.get("accuracy") or {}).get("st_target_atr_mult_overrides") or {}
+            if isinstance(overrides, dict) and ticker in overrides:
+                try:
+                    mult = float(overrides[ticker])
+                    if mult > 0:
+                        st_atr_mult_buy = mult
+                        st_atr_mult_hold = mult
+                except (TypeError, ValueError):
+                    pass
+        except Exception:
+            pass
+
     if st_stop is None or st_target is None:
         if st_signal == "BUY":
-            st_stop = max(swing_low, P - 1.5 * atr) if atr > 0 else P - 0.02 * P
+            st_stop = max(swing_low, P - st_atr_mult_buy * atr) if atr > 0 else P - 0.02 * P
             if P < ma20:
                 st_target = ma20
             else:
-                st_target = max(swing_high, P + 1.5 * atr) if atr > 0 else P + 0.02 * P
+                st_target = max(swing_high, P + st_atr_mult_buy * atr) if atr > 0 else P + 0.02 * P
         elif st_signal == "SELL":
-            st_stop = min(swing_high, P + 1.5 * atr) if atr > 0 else P + 0.02 * P
-            st_target = min(swing_low, P - 1.5 * atr) if atr > 0 else P - 0.02 * P
+            st_stop = min(swing_high, P + st_atr_mult_buy * atr) if atr > 0 else P + 0.02 * P
+            st_target = min(swing_low, P - st_atr_mult_buy * atr) if atr > 0 else P - 0.02 * P
         else:
-            st_stop = P - 1.0 * atr if atr > 0 else P - 0.01 * P
-            st_target = P + 1.0 * atr if atr > 0 else P + 0.01 * P
+            st_stop = P - st_atr_mult_hold * atr if atr > 0 else P - 0.01 * P
+            st_target = P + st_atr_mult_hold * atr if atr > 0 else P + 0.01 * P
 
     row["st_band"] = {"low": round(float(st_stop), 2), "high": round(float(st_target), 2)}
     row["st_checkpoints"] = _checkpoints(float(st_stop), float(st_target), 5)

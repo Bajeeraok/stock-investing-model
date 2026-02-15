@@ -262,6 +262,8 @@ export interface Signal {
   suggested_buy_price?: number | null;
   suggested_sell_price?: number | null;
   support_level?: number | null;
+  buy_target_confidence_pct?: number | null;
+  sell_target_confidence_pct?: number | null;
   risk_sizing?: { size_dollars: number; shares: number; stop_pct: number } | null;
   volume_ratio?: number | null;
   volume_unusual?: boolean;
