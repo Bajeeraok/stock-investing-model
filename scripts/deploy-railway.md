@@ -32,12 +32,20 @@ Ensure these variables are set in Railway **Variables**:
 | **Web** | `PORT` | ✅ Set by Railway | Do not override. |
 | **Web** | `BACKEND_API_URL` | ✅ Yes | Backend API base URL (e.g. `https://your-backend-domain.up.railway.app`) |
 
-Optional:
+Optional (API keys – env vars override config.yaml; use these so you don't commit secrets):
 
 | Service | Variable | Description |
 |---------|----------|-------------|
+| Backend | `FMP_API_KEY` | FMP – prices, treasury, calendar, analysts |
+| Backend | `FRED_API_KEY` | FRED – yields, inflation expectations |
+| Backend | `ALPHA_VANTAGE_API_KEY` | News sentiment |
+| Backend | `POLYGON_API_KEY` | Polygon.io |
+| Backend | `FINNHUB_API_KEY` | Finnhub recommendations |
+| Backend | `OPENAI_API_KEY` | Chat copilot (gpt-4o-mini) |
 | Backend | `REDIS_URL` | Optional. If set, enables caching. |
 | Web | `NEXT_PUBLIC_API_URL` | Only if you need client-side direct API calls. Server-side rewrites use `BACKEND_API_URL`. |
+
+**Local:** Use `config.yaml`. **Railway:** Set env vars above; they override config. Leave API keys empty in `config.yaml` when deploying if you use env vars.
 
 ---
 

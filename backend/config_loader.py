@@ -1,12 +1,28 @@
 """
 Load config merged with user overrides (additional tickers, uploaded portfolios).
+Environment variables override config.yaml for API keys (use for Railway/deploy).
+Local: config.yaml. Production: set FMP_API_KEY, FRED_API_KEY, etc. in env.
 """
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import yaml
+
+# Env var -> config path. Env takes precedence over config.yaml.
+_API_KEY_ENV_MAP = {
+    "FMP_API_KEY": ("data", "fmp_api_key"),
+    "FRED_API_KEY": ("data", "fred_api_key"),
+    "TRADINGECONOMICS_API_KEY": ("data", "tradingeconomics_api_key"),
+    "ALPHA_VANTAGE_API_KEY": ("data", "alpha_vantage_api_key"),
+    "BENZINGA_API_KEY": ("data", "benzinga_api_key"),
+    "ETF_FLOWS_API_KEY": ("data", "etf_flows_api_key"),
+    "POLYGON_API_KEY": ("data", "polygon_api_key"),
+    "FINNHUB_API_KEY": ("data", "finnhub_apikey"),
+    "OPENAI_API_KEY": ("data", "openai_api_key"),
+}
 
 ROOT = Path(__file__).resolve().parent
 OVERRIDES_PATH = ROOT / "data" / "user_overrides.json"
@@ -42,6 +58,7 @@ def load_config(merge_overrides: bool = True) -> dict:
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
+    _overlay_env_api_keys(config)
     if not merge_overrides:
         return config
 
@@ -70,7 +87,18 @@ def load_config(merge_overrides: bool = True) -> dict:
     config = dict(config)
     config["watchlist"] = merged_watchlist
     config["portfolios"] = merged_portfolios
+    _overlay_env_api_keys(config)
     return config
+
+
+def _overlay_env_api_keys(config: dict) -> None:
+    """Override config API keys with env vars when set (Railway/deploy)."""
+    for env_name, (section, key) in _API_KEY_ENV_MAP.items():
+        val = os.getenv(env_name)
+        if val and str(val).strip():
+            if section not in config:
+                config[section] = {}
+            config[section][key] = val.strip()
 
 
 def add_ticker(ticker: str) -> bool:
