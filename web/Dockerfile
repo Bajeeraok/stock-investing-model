@@ -37,5 +37,5 @@ USER nextjs
 EXPOSE 3001
 ENV PORT=3001
 ENV HOSTNAME="0.0.0.0"
-
+# Railway overrides PORT at runtime; 3001 used locally
 CMD ["node", "server.js"]
