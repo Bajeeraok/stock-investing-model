@@ -2,12 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  async rewrites() {
-    const apiUrl = process.env.BACKEND_API_URL || 'http://localhost:8002';
-    return [
-      { source: '/api/:path*', destination: `${apiUrl}/api/:path*` },
-    ];
-  },
+  // API proxying moved to app/api/[[...path]]/route.ts with 5-min timeout
+  // to avoid ECONNRESET on long-running dashboard (1-2 min).
 };
 
 module.exports = nextConfig;
