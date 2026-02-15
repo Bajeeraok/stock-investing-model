@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { BarChart3, HelpCircle, Plus, X, Play } from "lucide-react";
 import type { BacktestResult, BacktestBucketMonth } from "@/app/page";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 const DEFAULT_TICKERS = ["SPY", "QQQ", "GLD"];
 const YEAR_OPTIONS = [2, 5, 10] as const;

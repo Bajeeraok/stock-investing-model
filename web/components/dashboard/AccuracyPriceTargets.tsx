@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Target, HelpCircle, RefreshCw, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 /** Catches render errors in accuracy section so the rest of the app does not crash */
 class AccuracyErrorBoundary extends React.Component<

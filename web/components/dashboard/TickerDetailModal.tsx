@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle } from "lucide-react";
 import { clsx } from "clsx";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export interface TickerDetail {
   ticker: string;

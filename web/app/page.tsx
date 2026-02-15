@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+// Use relative /api/* so Next.js rewrites proxy to backend (BACKEND_API_URL). No NEXT_PUBLIC needed for Railway.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTO_REFRESH_MARKET_MIN = 30;
 const AUTO_REFRESH_OFF_HOURS_MIN = 30;
 const DASHBOARD_FETCH_DEBOUNCE_MS = 2000;
@@ -86,8 +87,11 @@ export default function Home() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center p-8 bg-slate-900 rounded-xl border border-red-500/30">
           <p className="text-red-400 font-medium">Error: {error}</p>
-          <p className="text-slate-400 text-sm mt-2">Make sure the FastAPI server is running:</p>
-          <code className="block mt-2 p-2 bg-slate-800 rounded text-emerald-400 text-sm">cd backend && python -m uvicorn api.main:app --reload --port 8002</code>
+          <p className="text-slate-400 text-sm mt-2">
+            {typeof window !== "undefined" && !/^localhost|127\.0\.0\.1$/.test(window.location.hostname)
+              ? "Backend may be starting or unreachable. Check Railway logs and BACKEND_API_URL on the web service."
+              : "Local: ensure FastAPI is running — cd backend && python -m uvicorn api.main:app --reload --port 8002"}
+          </p>
           <button
             onClick={refresh}
             className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium"

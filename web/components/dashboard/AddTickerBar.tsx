@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Plus, Upload } from "lucide-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8002";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export function AddTickerBar({ onAdded }: { onAdded?: () => void }) {
   const [ticker, setTicker] = useState("");
