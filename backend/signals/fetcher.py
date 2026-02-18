@@ -60,6 +60,37 @@ def fetch_ohlcv_safe(ticker: str, period: str = "5y") -> pd.Series | None:
         return None
 
 
+def fetch_ohlcv_monthly(ticker: str, period: str = "13y") -> pd.Series | None:
+    """
+    Fetch monthly-adjusted close for long-horizon risk (max drawdown, stress bear).
+    Uses interval=1mo to reduce noise and keep data size small.
+    """
+    if yf is None:
+        return None
+    try:
+        data = yf.download(ticker, period=period, interval="1mo", progress=False, threads=False, auto_adjust=True)
+    except Exception:
+        return None
+    if data is None or data.empty or len(data) < 24:  # min ~2y monthly
+        return None
+    close = None
+    if isinstance(data.columns, pd.MultiIndex):
+        close_col = data.get("Close")
+        if close_col is not None:
+            close = close_col.iloc[:, 0] if getattr(close_col, "ndim", 1) > 1 else close_col
+    if close is None:
+        for col in ("Adj Close", "Close"):
+            if col in data.columns:
+                close = data[col]
+                break
+        if close is None and len(data.columns) > 0:
+            close = data.iloc[:, 0]
+    if close is None:
+        return None
+    close = pd.Series(close, name="close").dropna()
+    return close if len(close) >= 24 else None
+
+
 def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series | None, pd.Series | None]:
     """Fetch close and volume. Returns (close, volume) or (close, None) if volume unavailable."""
     if yf is None:

@@ -31,7 +31,6 @@ services:
       - PYTHONPATH=/app
     volumes:
       - ./backend:/app
-      - backend_data:/app/data
     working_dir: /app
     # Watch only code dirs to avoid reload loop from data/ or __pycache__ writes
     command:
@@ -78,5 +77,4 @@ services:
       - backend
 
 volumes:
-  backend_data:
   redis_data:

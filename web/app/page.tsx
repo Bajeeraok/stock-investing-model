@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 
 // Use relative /api/* so Next.js rewrites proxy to backend (BACKEND_API_URL). No NEXT_PUBLIC needed for Railway.
@@ -8,6 +8,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTO_REFRESH_MARKET_MIN = 30;
 const AUTO_REFRESH_OFF_HOURS_MIN = 30;
 const DASHBOARD_FETCH_DEBOUNCE_MS = 2000;
+/** Min ms between dashboard fetches (avoids loop + duplicate from Strict Mode). */
+const DASHBOARD_MIN_INTERVAL_MS = 30_000;
+
+// Module-level guards so they survive Strict Mode unmount/remount and prevent duplicate requests
+let dashboardFetchInProgress = false;
+let lastDashboardFetchStart = 0;
 
 /** US market hours: 9:30 AM–4:00 PM Eastern, Mon–Fri */
 function isUSMarketHours(): boolean {
@@ -38,9 +44,17 @@ export default function Home() {
 
   const refresh = useCallback(async () => {
     const now = Date.now();
+    // Per-call debounce (same as before)
     if (now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
     lastFetchRef.current = now;
 
+    // Single-flight: don't start another fetch while one is in progress (avoids Strict Mode double-mount)
+    if (dashboardFetchInProgress) return;
+    // Min interval between fetches after we've started one (avoids loop; uses module-level so it survives remount)
+    if (lastDashboardFetchStart !== 0 && now - lastDashboardFetchStart < DASHBOARD_MIN_INTERVAL_MS) return;
+
+    dashboardFetchInProgress = true;
+    lastDashboardFetchStart = now;
     setLoading(true);
     setError(null);
     try {
@@ -53,8 +67,10 @@ export default function Home() {
       const msg = e instanceof Error ? e.message : "Failed to load";
       console.error("[Dashboard] Fetch error:", msg, e);
       setError(msg);
+      lastDashboardFetchStart = 0; // allow immediate retry from error screen
     } finally {
       setLoading(false);
+      dashboardFetchInProgress = false;
     }
   }, []);
 
@@ -104,7 +120,9 @@ export default function Home() {
   }
 
   return data ? (
-    <Dashboard data={data} onRefresh={refresh} loading={loading} lastRefreshedAt={lastRefreshedAt} />
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-slate-500">Loading…</div></div>}>
+      <Dashboard data={data} onRefresh={refresh} loading={loading} lastRefreshedAt={lastRefreshedAt} />
+    </Suspense>
   ) : null;
 }
 
@@ -174,6 +192,14 @@ export interface DashboardData {
   best_2026?: Best2026Pick[];
   story_changes: Signal[];
   portfolio: PortfolioReport;
+  portfolios?: Record<string, PortfolioReport>;
+  portfolio_names?: string[];
+  portfolio_doctor_recommendations?: Record<string, PortfolioDoctorRecommendation>;
+  performance_vs_benchmark?: {
+    periods: { period: string; portfolio_pct: number | null; spy_pct: number | null; qqq_pct: number | null; vs_spy: number | null; vs_qqq: number | null }[];
+    as_of?: string | null;
+    message?: string | null;
+  };
   trim_candidates: PortfolioHolding[];
   opportunities: Opportunity[];
   thesis_check: ThesisCheck[];
@@ -202,6 +228,12 @@ export interface DashboardData {
     macd: { ours: number | null; comparisons: { source: string; value: number; margin_abs: number | null }[]; max_margin_abs: number | null };
     bias: { ours: string | null; comparisons: { source: string; rating: string | null; status: string }[] };
   }[];
+  forward_tracking?: {
+    records: { as_of_date: string; next_date: string; ticker: string; horizon_days: number; our_signal: string; actual_return_pct: number }[];
+    summary_by_horizon?: Record<number, { avg_return_pct: number; n_observations: number }>;
+    summary_by_signal?: Record<string, { avg_return_20d_pct: number; n_observations: number }>;
+    message?: string | null;
+  };
   model_validation?: {
     records: {
       as_of_date: string;
@@ -244,6 +276,28 @@ export interface DashboardData {
     risk_sizing?: { risk_pct: number; stop_pct: number };
     horizons?: { short_term: string; medium_term: string; long_term: string };
   };
+  as_of_date?: string;
+  market_scenarios?: MarketScenarioItem[];
+  macro_analog?: {
+    state: string;
+    n_observations: number;
+    avg_return_3m: number;
+    pct_positive: number;
+    one_liner: string;
+  } | null;
+}
+
+export interface MarketScenarioItem {
+  date: string;
+  name: string;
+  event_type: string;
+  scenario: {
+    avg_return_pct: number;
+    std_pct: number;
+    pct_positive: number;
+    n_events: number;
+    rationale: string;
+  } | null;
 }
 
 export interface PriceBand {
@@ -294,6 +348,7 @@ export interface PortfolioReport {
   cash_deployment: { ticker: string; score: number; regime: string }[];
   sector_allocation?: { sector: string; pct: number }[];
   correlation_alerts?: string[];
+  mega_cap_pct?: number;
 }
 
 export interface PortfolioHolding {
@@ -329,4 +384,34 @@ export interface WhatChanged {
   ticker: string;
   changes: string[];
   summary?: string;
+}
+
+export interface PortfolioDoctorTrim {
+  ticker: string;
+  current_pct: number;
+  current_value: number;
+  suggest_trim_pct: number;
+  suggest_trim_dollars: number;
+  sell_price: number | null;
+  reason: string;
+  score: number;
+  regime: string | null;
+}
+
+export interface PortfolioDoctorAdd {
+  ticker: string;
+  score: number;
+  regime: string;
+  suggest_add_pct: number;
+  suggest_add_dollars: number;
+  buy_price: number | null;
+  source: string;
+}
+
+export interface PortfolioDoctorRecommendation {
+  inputs: { risk_appetite: string; goal: string; target_portfolio_value: number | null; time_period_years: number };
+  implied_cagr_pct: number | null;
+  profile: string;
+  trim: PortfolioDoctorTrim[];
+  add: PortfolioDoctorAdd[];
 }

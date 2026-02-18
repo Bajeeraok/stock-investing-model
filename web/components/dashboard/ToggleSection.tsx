@@ -29,24 +29,33 @@ export function ToggleSection({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-3 bg-slate-800/50 hover:bg-slate-800/70 transition text-left"
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-slate-800/50 hover:bg-slate-800/70 transition text-left group"
       >
-        <div className="flex items-center gap-2">
-          {open ? (
-            <ChevronDown className="h-5 w-5 text-slate-400 shrink-0" />
-          ) : (
-            <ChevronRight className="h-5 w-5 text-slate-400 shrink-0" />
-          )}
-          {icon}
-          <h2 className="text-lg font-semibold text-slate-200">{title}</h2>
+        <div className="flex items-center gap-3">
+          <span
+            className={clsx(
+              "flex items-center justify-center w-8 h-8 rounded-lg transition",
+              open ? "bg-slate-700/80 text-emerald-400" : "bg-slate-700/50 text-slate-400 group-hover:text-slate-300"
+            )}
+          >
+            {open ? (
+              <ChevronDown className="h-5 w-5 shrink-0" aria-hidden />
+            ) : (
+              <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+            )}
+          </span>
+          <span className="[&>svg]:h-6 [&>svg]:w-6 [&>svg]:shrink-0 text-slate-400 group-hover:text-slate-300">
+            {icon}
+          </span>
+          <h2 className="text-xl font-semibold text-slate-100">{title}</h2>
           {badge != null && badge !== "" && (
-            <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-600 text-slate-300">
+            <span className="px-2.5 py-1 rounded-md text-sm font-medium bg-slate-600 text-slate-200">
               {badge}
             </span>
           )}
         </div>
       </button>
-      {open && <div className="p-4 pt-0">{children}</div>}
+      {open && <div className="p-5 pt-0">{children}</div>}
     </section>
   );
 }

@@ -20,10 +20,12 @@ import yaml
 from behavior.thesis import load_theses, get_nudge
 from behavior.what_changed import what_changed
 from opportunity.scanner import run_opportunity_scan
-from portfolio.doctor import portfolio_report
+from portfolio.doctor import portfolio_report, allocation_recommendations
+from portfolio.performance import compute_performance_vs_benchmark
 from config_loader import add_ticker as _add_ticker, add_uploaded_portfolio, load_config, remove_ticker as _remove_ticker
 from scripts.run_daily import (
     load_last_run,
+    run_eod_snapshot_only,
     run_signals,
     save_last_run,
 )
@@ -36,6 +38,7 @@ from signals.premarket import run_premarket_snapshot
 from signals.indicator_validation import validate_indicators_vs_external
 from signals.indicator_comparison import run_indicator_comparison
 from signals.validation import get_validation_records
+from signals.forward_tracking import get_forward_tracking
 from signals.fmp_client import (
     fetch_batch_quote,
     fetch_economic_calendar,
@@ -46,7 +49,9 @@ from signals.fmp_client import (
 )
 from signals.fred_client import get_real_yield_proxy
 from signals.cot_client import get_cot_extremes_for_guidelines
-from signals.fetcher import fetch_yfinance_latest_prices
+from signals.fetcher import fetch_yfinance_latest_prices, fetch_ohlcv_safe
+from signals.event_scenarios import get_upcoming_event_scenarios
+from signals.macro_analog import get_macro_analog
 
 try:
     from best_picks import get_best_picks_2026
@@ -136,32 +141,50 @@ async def get_dashboard():
         logger.warning("[dashboard] accuracy report save skipped: %s", e)
 
     logger.info("[dashboard] section: portfolio_report (holdings + doctor)...")
-    report = portfolio_report(
-        holdings=holdings,
-        results=results,
-        watchlist=config.get("watchlist", []),
-        score_cfg=config.get("score", {}),
-        concentration_threshold_pct=config.get("concentration_alert_pct", 20),
-        cash_deploy_min_score=config.get("cash_deploy_min_score", 70),
-    )
-    # Fill prices for holdings not in watchlist (no signal) from batch quote when available
-    if prices_by_ticker:
-        total_value = report.get("total_value") or 0.0
-        filled_value = 0.0
-        for h in report.get("per_holding", []):
-            if h.get("price") is None and h.get("ticker") in prices_by_ticker:
-                price = prices_by_ticker[h["ticker"]]
-                qty = h.get("quantity") or 1
-                value = qty * price
-                h["price"] = price
-                h["value"] = value
-                filled_value += value
-        if filled_value > 0:
-            total_value += filled_value
-            report["total_value"] = total_value
-            for h in report.get("per_holding", []):
-                if h.get("value") is not None and total_value > 0:
-                    h["pct"] = round(100 * h["value"] / total_value, 1)
+    portfolios_cfg = config.get("portfolios") or {}
+    portfolio_names = ["All"] + ([k for k in portfolios_cfg.keys() if isinstance(portfolios_cfg.get(k), list)] if isinstance(portfolios_cfg, dict) else [])
+    # Group holdings by account for per-portfolio reports
+    holdings_by_account: dict[str, list] = {}
+    for h in holdings:
+        acc = (h.get("account") if isinstance(h, dict) else None) or "Default"
+        holdings_by_account.setdefault(acc, []).append(dict(h) if isinstance(h, dict) else {"ticker": h, "quantity": 1})
+    if not holdings_by_account and holdings:
+        holdings_by_account["All"] = list(holdings)
+    portfolios_out: dict[str, dict] = {}
+    for name in portfolio_names:
+        if name == "All":
+            subset = holdings
+        else:
+            subset = holdings_by_account.get(name, [])
+        if not subset:
+            continue
+        rep = portfolio_report(
+            holdings=subset,
+            results=results,
+            watchlist=config.get("watchlist", []),
+            score_cfg=config.get("score", {}),
+            concentration_threshold_pct=config.get("concentration_alert_pct", 20),
+            cash_deploy_min_score=config.get("cash_deploy_min_score", 70),
+        )
+        if prices_by_ticker:
+            total_value = rep.get("total_value") or 0.0
+            filled_value = 0.0
+            for h in rep.get("per_holding", []):
+                if h.get("price") is None and h.get("ticker") in prices_by_ticker:
+                    price = prices_by_ticker[h["ticker"]]
+                    qty = h.get("quantity") or 1
+                    value = qty * price
+                    h["price"] = price
+                    h["value"] = value
+                    filled_value += value
+            if filled_value > 0:
+                total_value += filled_value
+                rep["total_value"] = total_value
+                for h in rep.get("per_holding", []):
+                    if h.get("value") is not None and total_value > 0:
+                        h["pct"] = round(100 * h["value"] / total_value, 1)
+        portfolios_out[name] = rep
+    report = portfolios_out.get("All") or (portfolios_out[portfolio_names[1]] if len(portfolio_names) > 1 else {})
     logger.info("[dashboard] section: portfolio_report DONE")
 
     # Crypto (BTC, ETH)
@@ -200,6 +223,14 @@ async def get_dashboard():
                 economic_calendar = [e for e in events[:30] if isinstance(e, dict)]
         except Exception:
             pass
+
+    # Market scenarios (what-if): upcoming events + historical reaction stats (13y)
+    market_scenarios = []
+    period_long = config.get("data", {}).get("period_long", "13y")
+    try:
+        market_scenarios = get_upcoming_event_scenarios(economic_calendar, period_long=period_long, symbol="SPY")
+    except Exception as e:
+        logger.debug("Market scenarios failed: %s", e)
 
     # Real yield (FRED): 10Y - inflation expectations; headwind for gold/growth when high
     real_yield = None
@@ -248,6 +279,13 @@ async def get_dashboard():
         macro_regime = "Risk-On"
     else:
         macro_regime = "Neutral"
+
+    # Macro analog: historical one-liner when VIX + real yield match current state
+    macro_analog = None
+    try:
+        macro_analog = get_macro_analog(vix_val, real_yield, config, period=config.get("data", {}).get("period_long", "13y"))
+    except Exception as e:
+        logger.debug("Macro analog failed: %s", e)
 
     # Market/sector regime (breadth proxy, tech leadership, rotation risk) and rotation step-down for tech
     try:
@@ -313,6 +351,18 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("Model validation failed: %s", e)
 
+    # Forward tracking: multi-horizon (5d, 20d, 60d) returns, signal accuracy
+    forward_tracking: dict = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None}
+    try:
+        forward_tracking = get_forward_tracking(
+            data_root=ROOT / "data",
+            tickers=["SPY", "QQQ"],
+            horizons=[5, 20, 60],
+        )
+    except Exception as e:
+        logger.debug("Forward tracking failed: %s", e)
+        forward_tracking["message"] = str(e)
+
     # Pre-market snapshot (futures + basket; can be slow)
     pre_market = None
     try:
@@ -344,9 +394,10 @@ async def get_dashboard():
     opportunities = run_opportunity_scan(
         universe=universe if universe else None,
         period=config.get("data", {}).get("period", "5y"),
-        min_score=opp_cfg.get("min_score", 70),
+        min_score=opp_cfg.get("min_score", 80),
         require_regime_up=opp_cfg.get("require_regime_up", True),
-        max_rsi=opp_cfg.get("max_rsi", 75),
+        min_rsi=opp_cfg.get("min_rsi", 50),
+        max_rsi=opp_cfg.get("max_rsi", 70),
         require_price_above_ma200=True,
         min_macd_hist=opp_cfg.get("min_macd_hist", 0),
         up_min=config.get("regime", {}).get("up_min", 60),
@@ -358,6 +409,50 @@ async def get_dashboard():
         config=config,
     )
     logger.info("[dashboard] section: opportunities DONE (%d)", len(opportunities))
+
+    # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
+    portfolio_doctor_recommendations = {}
+    doctor_cfg = config.get("portfolio_doctor") or {}
+    for pname, rep in portfolios_out.items():
+        try:
+            rec = allocation_recommendations(
+                report=rep,
+                results=results,
+                opportunities=opportunities,
+                best_2026=best_2026,
+                doctor_cfg=doctor_cfg,
+            )
+            portfolio_doctor_recommendations[pname] = rec
+        except Exception as e:
+            logger.debug("Portfolio Doctor for %s: %s", pname, e)
+    logger.info("[dashboard] section: portfolio_doctor DONE")
+
+    # Performance vs benchmark (portfolio vs SPY/QQQ over 1m, 3m, 6m, 1y)
+    performance_vs_benchmark = {"periods": [], "as_of": None, "message": None}
+    if holdings and (portfolios or config.get("portfolio")):
+        try:
+            merged_prices = dict(prices_by_ticker) if prices_by_ticker else {}
+            for r in results:
+                if not r.get("error") and r.get("close") is not None:
+                    merged_prices[r["ticker"]] = float(r["close"])
+            if "SPY" not in merged_prices or "QQQ" not in merged_prices:
+                yf_prices = fetch_yfinance_latest_prices(["SPY", "QQQ"])
+                if yf_prices:
+                    merged_prices.update(yf_prices)
+            performance_vs_benchmark = compute_performance_vs_benchmark(
+                holdings=holdings,
+                prices_by_ticker=merged_prices,
+                fetcher=fetch_ohlcv_safe,
+            )
+            if performance_vs_benchmark.get("periods"):
+                logger.info("[dashboard] section: performance_vs_benchmark DONE (%d periods)", len(performance_vs_benchmark["periods"]))
+            else:
+                performance_vs_benchmark["message"] = performance_vs_benchmark.get("message") or "Insufficient history"
+        except Exception as e:
+            logger.debug("Performance vs benchmark failed: %s", e)
+            performance_vs_benchmark["message"] = str(e)
+    else:
+        performance_vs_benchmark["message"] = "Add portfolios in config to see performance vs benchmark"
 
     logger.info("[dashboard] section: thesis_check + what_changed...")
     theses = load_theses()
@@ -433,12 +528,18 @@ async def get_dashboard():
     save_last_run(results)  # Save AFTER building what_changed
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE")
 
+    from datetime import datetime as _dt
+    as_of_date = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
     logger.info("[dashboard] END loading dashboard - returning response")
     return {
+        "as_of_date": as_of_date,
         "signals": results,
         "crypto": crypto_signals,
         "cross_asset": cross_asset,
         "economic_calendar": economic_calendar,
+        "market_scenarios": market_scenarios,
+        "macro_analog": macro_analog,
         "guidelines": guidelines,
         "macro_regime": macro_regime,
         "market_regime": market_regime_data,
@@ -447,12 +548,17 @@ async def get_dashboard():
         "indicator_validation": indicator_validation,
         "indicator_comparisons": indicator_comparisons,
         "model_validation": model_validation,
+        "forward_tracking": forward_tracking,
         "pre_market": pre_market,
         "cot_by_ticker": cot_by_ticker,
         "fmp_plan_status": fmp_plan_status,
         "best_2026": best_2026,
         "story_changes": story_changes,
         "portfolio": report,
+        "portfolios": portfolios_out,
+        "portfolio_names": portfolio_names,
+        "portfolio_doctor_recommendations": portfolio_doctor_recommendations,
+        "performance_vs_benchmark": performance_vs_benchmark,
         "trim_candidates": trim_candidates,
         "opportunities": opportunities,
         "thesis_check": thesis_check,
@@ -467,6 +573,11 @@ async def get_dashboard():
                 "short_term": "~1 month (2–4 weeks)",
                 "medium_term": "~3–6 months",
                 "long_term": "1–2 years",
+            },
+            "regime_plain_english": {
+                "UP": "Trend and momentum support the position; favor holding or adding on pullbacks.",
+                "NEUTRAL": "Mixed signals; hold, avoid large new adds until clarity.",
+                "DOWN": "Weak trend or momentum; consider trimming or avoiding new buys.",
             },
         },
     }
@@ -608,6 +719,101 @@ async def get_last_run():
         return {"run_results": []}
     with open(path) as f:
         return json.load(f)
+
+
+@router.post("/eod/save-from-last-run")
+def eod_save_from_last_run(snapshot_date: str | None = None):
+    """
+    Save current last_run.json to data/eod/YYYY-MM-DD.json (fast, no recompute).
+    Use after loading the dashboard: last run is already on disk; this copies it to the EOD directory.
+    snapshot_date: optional YYYY-MM-DD; if omitted, uses today EST.
+    Skips if a snapshot for that date already exists. Does not include next_day_outlook/typical_move.
+    """
+    from datetime import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    today_est = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    date_str = snapshot_date.strip() if isinstance(snapshot_date, str) and snapshot_date.strip() else today_est
+    last_run_path = ROOT / "data" / "last_run.json"
+    eod_path = ROOT / "data" / "eod" / f"{date_str}.json"
+    if eod_path.exists():
+        logger.info("[eod/save-from-last-run] Snapshot already exists for %s, skipping", date_str)
+        return {
+            "ok": True,
+            "skipped": True,
+            "message": f"EOD snapshot already exists for {date_str}",
+            "snapshot_date": date_str,
+            "snapshot_path": str(eod_path),
+        }
+    if not last_run_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail="No last run found. Load the dashboard or run POST /api/eod/run first.",
+        )
+    with open(last_run_path) as f:
+        payload = json.load(f)
+    run_results = payload.get("run_results") or []
+    if not run_results:
+        raise HTTPException(
+            status_code=400,
+            detail="last_run.json has no run_results. Load the dashboard or run POST /api/eod/run first.",
+        )
+    eod_path.parent.mkdir(parents=True, exist_ok=True)
+    payload["snapshot_date"] = date_str
+    with open(eod_path, "w") as f:
+        json.dump(payload, f, indent=2)
+    logger.info("[eod/save-from-last-run] Saved %s from last_run (%d tickers)", date_str, len(run_results))
+    return {
+        "ok": True,
+        "skipped": False,
+        "snapshot_date": date_str,
+        "snapshot_path": str(eod_path),
+        "tickers_count": len(run_results),
+    }
+
+
+@router.post("/eod/run")
+def run_eod_now(snapshot_date: str | None = None):
+    """
+    Run EOD snapshot ad-hoc: compute signals and save data/eod/YYYY-MM-DD.json.
+    snapshot_date: optional query param (YYYY-MM-DD, e.g. 2026-02-17) to save for that EST date; if omitted, uses today EST.
+    Skips if a snapshot for that date already exists (idempotent once per day when no date given).
+    May take 1-2 minutes when run. Use for manual trigger or to backfill a day.
+    """
+    from datetime import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    today_est = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    date_str = snapshot_date.strip() if isinstance(snapshot_date, str) and snapshot_date.strip() else today_est
+    eod_path = ROOT / "data" / "eod" / f"{date_str}.json"
+    if eod_path.exists():
+        logger.info("[eod/run] Snapshot already exists for %s, skipping", date_str)
+        return {
+            "ok": True,
+            "skipped": True,
+            "message": f"EOD snapshot already exists for {date_str}",
+            "snapshot_date": date_str,
+            "snapshot_path": str(eod_path),
+        }
+    config = _load_config()
+    logger.info("[eod/run] Starting EOD snapshot run for date=%s", date_str)
+    result = run_eod_snapshot_only(config, snapshot_date=date_str)
+    if result.get("error"):
+        logger.warning("[eod/run] EOD snapshot failed: %s", result["error"])
+        raise HTTPException(status_code=500, detail=result["error"])
+    logger.info("[eod/run] EOD snapshot saved: %s", result.get("snapshot_path"))
+    return {
+        "ok": True,
+        "skipped": False,
+        "snapshot_date": result.get("snapshot_date"),
+        "snapshot_path": result.get("snapshot_path"),
+        "tickers_count": result.get("tickers_count", 0),
+        "pruned": result.get("pruned", 0),
+    }
 
 
 def _accuracy_interpretation(config: dict) -> dict:

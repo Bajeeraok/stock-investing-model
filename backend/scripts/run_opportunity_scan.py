@@ -29,9 +29,10 @@ def main() -> None:
     opportunities = run_opportunity_scan(
         universe=universe if universe else None,
         period=config.get("data", {}).get("period", "5y"),
-        min_score=opp_cfg.get("min_score", 70),
+        min_score=opp_cfg.get("min_score", 80),
         require_regime_up=opp_cfg.get("require_regime_up", True),
-        max_rsi=opp_cfg.get("max_rsi", 75),
+        min_rsi=opp_cfg.get("min_rsi", 50),
+        max_rsi=opp_cfg.get("max_rsi", 70),
         require_price_above_ma200=True,
         min_macd_hist=opp_cfg.get("min_macd_hist", 0),
         up_min=config.get("regime", {}).get("up_min", 60),

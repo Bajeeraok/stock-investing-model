@@ -16,7 +16,8 @@ export function RegimeChart({ report }: { report: PortfolioReport }) {
 
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">
-      <h3 className="text-sm font-medium text-slate-400 mb-4">Regime Distribution</h3>
+      <h3 className="text-sm font-medium text-slate-400 mb-4" title="Regime distribution of portfolio holdings (only tickers you own with regime data)">Regime Distribution</h3>
+      <p className="text-xs text-slate-500 mb-3">UP = trend supports position; NEUTRAL = mixed; DOWN = consider trim or avoid new buys.</p>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>

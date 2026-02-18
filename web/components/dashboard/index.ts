@@ -1,3 +1,4 @@
+export { DashboardTabs, type TabId } from "./DashboardTabs";
 export { StoryAlerts } from "./StoryAlerts";
 export { TickerDetailModal } from "./TickerDetailModal";
 export { AddTickerBar } from "./AddTickerBar";
@@ -20,3 +21,7 @@ export { GuidelinesBanner } from "./GuidelinesBanner";
 export { FMPPlanStatus } from "./FMPPlanStatus";
 export { ChatCopilot } from "./ChatCopilot";
 export { AccuracyPriceTargets, AccuracyPriceTargetsWithBoundary } from "./AccuracyPriceTargets";
+export { PortfolioDoctorRecommendations } from "./PortfolioDoctorRecommendations";
+export { MarketScenarios } from "./MarketScenarios";
+export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";
+export { ForwardTracking } from "./ForwardTracking";

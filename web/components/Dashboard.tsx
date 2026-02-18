@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AlertTriangle, BarChart3, Calendar, RefreshCw, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { AlertTriangle, BarChart3, Calendar, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
@@ -9,6 +10,8 @@ import {
   Best2026Section,
   CryptoSection,
   CrossAssetSection,
+  DashboardTabs,
+  type TabId,
   StoryAlerts,
   PortfolioSummary,
   SignalsTable,
@@ -27,6 +30,10 @@ import {
   FMPPlanStatus,
   ChatCopilot,
   AccuracyPriceTargetsWithBoundary,
+  PortfolioDoctorRecommendations,
+  MarketScenarios,
+  PerformanceVsBenchmark,
+  ForwardTracking,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -59,9 +66,82 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
+const TAB_IDS: TabId[] = ["overview", "signals", "portfolio", "opportunities", "markets", "analysis"];
+
+function isValidTab(t: string): t is TabId {
+  return TAB_IDS.includes(t as TabId);
+}
+
 export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [refreshAgo, setRefreshAgo] = useState("");
+  const [eodSaving, setEodSaving] = useState(false);
+  const [eodMessage, setEodMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const portfolioNames = data.portfolio_names ?? (data.portfolios ? Object.keys(data.portfolios) : []);
+  const defaultPortfolio = portfolioNames[0] ?? "All";
+  const [selectedPortfolio, setSelectedPortfolio] = useState(defaultPortfolio);
+  const selectedReport = data.portfolios?.[selectedPortfolio] ?? data.portfolio;
+  const selectedTrimCandidates = (selectedReport?.per_holding ?? []).filter(
+    (h) => h.score != null && h.score < 40
+  );
+
+  const tabFromUrl = searchParams?.get("tab");
+  const [activeTab, setActiveTabState] = useState<TabId>("signals");
+
+  const setActiveTab = useCallback((id: TabId) => {
+    setActiveTabState(id);
+    if (typeof window !== "undefined") localStorage.setItem("thrive-tab", id);
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("tab", id);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    if (tabFromUrl && isValidTab(tabFromUrl)) {
+      setActiveTabState(tabFromUrl);
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("thrive-tab");
+      const tab = (saved && isValidTab(saved)) ? saved : "signals";
+      setActiveTabState(tab);
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") !== tab) {
+        params.set("tab", tab);
+        router.replace(`?${params.toString()}`, { scroll: false });
+      }
+    }
+  }, [tabFromUrl, router]);
+
+  const handleTabChange = setActiveTab;
+
+  const tabBadges: Partial<Record<TabId, number>> = {
+    signals: data.signals?.length ?? 0,
+    portfolio: selectedReport?.per_holding?.length ?? 0,
+    opportunities: data.opportunities?.length ?? 0,
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target && (e.target as HTMLElement).closest("input, textarea, select")) return;
+      const n = e.key === "1" ? 1 : e.key === "2" ? 2 : e.key === "3" ? 3 : e.key === "4" ? 4 : e.key === "5" ? 5 : e.key === "6" ? 6 : 0;
+      if (n >= 1 && n <= 6) {
+        e.preventDefault();
+        const id = TAB_IDS[n - 1];
+        setActiveTab(id);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setActiveTab]);
+  // Reset selection when data changes and current selection is no longer valid
+  useEffect(() => {
+    if (portfolioNames.length > 0 && !portfolioNames.includes(selectedPortfolio)) {
+      setSelectedPortfolio(portfolioNames[0]);
+    }
+  }, [portfolioNames, selectedPortfolio]);
   // Update "X min ago" every minute when we have a last refresh time
   useEffect(() => {
     if (!lastRefreshedAt) return;
@@ -75,104 +155,199 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
     <div className="min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur supports-[backdrop-filter]:bg-slate-950/70">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="h-8 w-8 text-emerald-500" />
-            <h1 className="text-xl font-bold text-slate-100">Thrive Alpha</h1>
+        <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <TrendingUp className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 text-emerald-500" />
+            <h1 className="text-lg sm:text-xl font-bold text-slate-100 truncate">Thrive Alpha</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
             {lastRefreshedAt && (
               <span
-                className="text-sm text-slate-500"
-                title={`Last refresh: ${formatLastRefresh(lastRefreshedAt)}. Prices and signals update on each refresh (auto every ${AUTO_REFRESH_MIN} min).`}
+                className="text-xs sm:text-sm text-slate-500 hidden sm:inline"
+                title={`Last refresh: ${formatLastRefresh(lastRefreshedAt)}`}
               >
-                Last refresh: {refreshAgo || formatLastRefresh(lastRefreshedAt)}
+                {refreshAgo || formatLastRefresh(lastRefreshedAt)}
               </span>
+            )}
+            {data.as_of_date && (
+              <span className="text-xs text-slate-600 hidden sm:inline" title="Report timestamp">As of: {new Date(data.as_of_date).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
             )}
             <button
               onClick={onRefresh}
               disabled={loading}
               className={clsx(
-                "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition",
-                "bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                "flex items-center gap-2 px-3 py-2.5 sm:px-4 rounded-lg font-medium transition min-h-[44px] sm:min-h-0",
+                "bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
               )}
             >
-              <RefreshCw className={clsx("h-4 w-4", loading && "animate-spin")} />
-              {loading ? "Refreshing..." : "Refresh"}
+              <RefreshCw className={clsx("h-4 w-4 shrink-0", loading && "animate-spin")} />
+              <span className="hidden sm:inline">{loading ? "Refreshing..." : "Refresh"}</span>
+              <span className="sm:hidden">{loading ? "…" : "Refresh"}</span>
             </button>
+            <button
+              onClick={() => {
+                if (!data) return;
+                const blob = new Blob([JSON.stringify({ as_of: data.as_of_date, portfolio: data.portfolio, portfolios: data.portfolios, signals_count: data.signals?.length, opportunities_count: data.opportunities?.length }, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `thrive-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              }}
+              className="px-3 py-2.5 sm:py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation"
+              title="Export snapshot"
+            >
+              <span className="hidden sm:inline">Export snapshot</span>
+              <span className="sm:hidden">Export</span>
+            </button>
+            <button
+              onClick={async () => {
+                if (!data || eodSaving) return;
+                setEodMessage(null);
+                setEodSaving(true);
+                try {
+                  const dateParam = data.as_of_date
+                    ? `?snapshot_date=${new Date(data.as_of_date).toISOString().slice(0, 10)}`
+                    : "";
+                  const res = await fetch(`/api/eod/save-from-last-run${dateParam}`, { method: "POST" });
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    setEodMessage({ type: "err", text: json.detail || json.error || "Save failed" });
+                    return;
+                  }
+                  if (json.skipped) {
+                    setEodMessage({ type: "ok", text: `EOD already saved for ${json.snapshot_date}` });
+                  } else {
+                    setEodMessage({ type: "ok", text: `Saved ${json.snapshot_date} (${json.tickers_count} tickers)` });
+                  }
+                  setTimeout(() => setEodMessage(null), 4000);
+                } catch (e) {
+                  setEodMessage({ type: "err", text: e instanceof Error ? e.message : "Request failed" });
+                } finally {
+                  setEodSaving(false);
+                }
+              }}
+              disabled={eodSaving || loading}
+              className={clsx(
+                "flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-lg border text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation",
+                "border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+              title="Save current run to data/eod/ (fast, no refresh)"
+            >
+              <Save className={clsx("h-4 w-4 shrink-0", eodSaving && "animate-pulse")} />
+              <span className="hidden sm:inline">{eodSaving ? "Saving…" : "Save as EOD"}</span>
+              <span className="sm:hidden">{eodSaving ? "…" : "EOD"}</span>
+            </button>
+            {eodMessage && (
+              <span className={clsx("text-xs px-2 py-1 rounded", eodMessage.type === "ok" ? "text-emerald-300 bg-emerald-900/30" : "text-amber-200 bg-amber-900/30")}>
+                {eodMessage.text}
+              </span>
+            )}
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+      <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4">
         <AddTickerBar onAdded={onRefresh} />
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
-        {/* Story Alerts - always visible when present */}
+      {/* Compact alert strip - always visible */}
+      <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
         {data.story_changes.length > 0 && <StoryAlerts items={data.story_changes} onTickerClick={setSelectedTicker} />}
-
-        {/* Event risk - always visible when present */}
         {(data.earnings_risk_count ?? 0) > 0 && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-amber-400 shrink-0" />
-            <p className="text-amber-200 font-medium">
-              {data.earnings_risk_count} holding{data.earnings_risk_count === 1 ? "" : "s"} with earnings in next week – scores may be volatile
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-2 flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-amber-400 shrink-0" />
+            <p className="text-amber-200 text-sm font-medium">
+              {data.earnings_risk_count} holding{data.earnings_risk_count === 1 ? "" : "s"} with earnings in next week
             </p>
           </div>
         )}
+        {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
+      </div>
 
-        {/* Cross-asset guidelines */}
-        {data.guidelines && data.guidelines.length > 0 && (
-          <GuidelinesBanner guidelines={data.guidelines} />
-        )}
+      {/* Tab bar */}
+      <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} />
+      </div>
 
-        {/* FMP plan status – upgrade path when features unavailable */}
-        {data.fmp_plan_status && (
-          <FMPPlanStatus status={data.fmp_plan_status} />
-        )}
+      <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-hidden">
+        <div className="overflow-y-auto overflow-x-hidden max-h-[calc(100vh-12rem)] sm:max-h-[calc(100vh-14rem)] rounded-xl border border-slate-800/80 bg-slate-900/30 backdrop-blur-sm">
+          {/* Overview tab */}
+          {activeTab === "overview" && (
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {data.fmp_plan_status && <FMPPlanStatus status={data.fmp_plan_status} />}
+              {(data.macro_regime || data.macro_analog) && (
+                <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {data.macro_regime && (
+                    <span className={clsx("text-sm font-medium", data.macro_regime === "Risk-On" && "text-emerald-400", data.macro_regime === "Risk-Off" && "text-red-400", data.macro_regime === "Neutral" && "text-slate-400")}>
+                      Macro: {data.macro_regime}
+                    </span>
+                  )}
+                  {data.macro_analog?.one_liner && (
+                    <span className="text-sm text-slate-300" title={`State: ${data.macro_analog.state}, n=${data.macro_analog.n_observations}`}>
+                      {data.macro_analog.one_liner}
+                    </span>
+                  )}
+                </div>
+              )}
+              {portfolioNames.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <label htmlFor="portfolio-select" className="text-sm text-slate-400">Portfolio:</label>
+                  <select
+                    id="portfolio-select"
+                    value={selectedPortfolio}
+                    onChange={(e) => setSelectedPortfolio(e.target.value)}
+                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {portfolioNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <ToggleSection id="overview-portfolio" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <PortfolioSummary report={selectedReport} />
+                </div>
+                {data.performance_vs_benchmark?.periods?.length ? (
+                  <div className="mt-4">
+                    <PerformanceVsBenchmark
+                      periods={data.performance_vs_benchmark.periods}
+                      message={data.performance_vs_benchmark.message}
+                      as_of={data.performance_vs_benchmark.as_of}
+                    />
+                  </div>
+                ) : data.performance_vs_benchmark?.message && (
+                  <div className="mt-4">
+                    <PerformanceVsBenchmark
+                      periods={[]}
+                      message={data.performance_vs_benchmark.message}
+                    />
+                  </div>
+                )}
+              </ToggleSection>
+              <ToggleSection id="overview-score-regime" title="Confidence & Regime Charts" icon={<Activity />} defaultOpen>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <ScoreChart signals={data.signals} onTickerClick={setSelectedTicker} />
+                  <RegimeChart report={selectedReport} />
+                </div>
+              </ToggleSection>
+            </div>
+          )}
 
-        {/* Backtesting status - lazy load when expanded */}
-        <ToggleSection id="backtest" title="Backtesting status" icon={<BarChart3 className="h-5 w-5 text-emerald-500" />} defaultOpen={false}>
-          <BacktestStatus />
-        </ToggleSection>
-
-        {/* Price target accuracy - model levels vs today close */}
-        <ToggleSection id="accuracy" title="Price target accuracy" icon={<Target className="h-5 w-5 text-amber-500" />} defaultOpen={false}>
-          <AccuracyPriceTargetsWithBoundary />
-        </ToggleSection>
-
-        {/* Crypto + Cross-asset + Event calendar + 2026 best - toggle */}
-        <ToggleSection id="markets" title="Crypto & Cross-asset" icon={<TrendingUp className="h-5 w-5 text-emerald-500" />} defaultOpen={true}>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 min-w-0 items-start">
-            {data.crypto?.length ? <div className="min-w-0"><CryptoSection items={data.crypto} /></div> : null}
-            {data.cross_asset?.length ? <div className="min-w-0"><CrossAssetSection items={data.cross_asset} /></div> : null}
-            <div className="min-w-0"><EconomicCalendarSection events={data.economic_calendar ?? []} /></div>
-            {data.best_2026?.length ? (
-              <div className="min-w-0 xl:col-span-2">
-                <Best2026Section items={data.best_2026} onTickerClick={setSelectedTicker} />
-              </div>
-            ) : null}
+          {/* Signals tab */}
+          {activeTab === "signals" && (
+            <div className="p-4 sm:p-6 space-y-4">
+          <ToggleSection id="signals-context" title="Context & rules" icon={<HelpCircle className="h-5 w-5" />} defaultOpen={false}>
+            <div className="space-y-3">
+          {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+              <strong>Do nothing guidance:</strong> When macro is Risk-Off or rotation risk is High, consider reducing new buys, stepping down tech adds, and protecting gains. Do not chase; wait for clarity.
+            </div>
+          )}
+          <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400" title="Model discipline – follow these to align with the system">
+            <strong className="text-slate-300">Model rules:</strong> Add only when confidence ≥ 70 and regime UP. Trim when confidence ≤ 30 or regime DOWN. When rotation risk High, tech suggestions step down. Rebalance review: quarterly.
           </div>
-        </ToggleSection>
-
-        {/* Summary Cards - toggle */}
-        <ToggleSection id="summary" title="Portfolio Summary" icon={<Wallet className="h-5 w-5 text-emerald-500" />} defaultOpen={true}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 min-w-0">
-            <PortfolioSummary report={data.portfolio} />
-          </div>
-        </ToggleSection>
-
-        {/* Charts - toggle */}
-        <ToggleSection id="charts" title="Score & Regime Charts" icon={<Target className="h-5 w-5 text-emerald-500" />} defaultOpen={true}>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ScoreChart signals={data.signals} onTickerClick={setSelectedTicker} />
-            <RegimeChart report={data.portfolio} />
-          </div>
-        </ToggleSection>
-
-        {/* Daily Signals - toggle */}
-        <ToggleSection id="signals" title="Daily Signals" icon={<Target className="h-5 w-5 text-emerald-500" />} badge={data.signals?.length} defaultOpen={true}>
           {data.macro_regime && (
             <p
               className={clsx(
@@ -295,184 +470,244 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </div>
             </div>
           )}
-          {data.indicator_comparisons && data.indicator_comparisons.length > 0 && (
-            <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3 mb-4">
-              <p className="text-sm font-medium text-slate-400 mb-0.5">Indicator comparison vs Yahoo, Alpha Vantage, Polygon, Finnhub</p>
-              <p className="text-sm text-slate-500 mb-1" title="Close, RSI, MA, MACD vs external APIs; margin % for price/MA, absolute for RSI/MACD.">
-                All comparable indicators; margin of error per source. See INDICATOR_COMPARISON_MATRIX.md for full coverage.
-              </p>
-              <p className="text-sm text-slate-500 mb-2" title="Free tier and API coverage limits.">
-                Alpha Vantage free tier = 5 req/min, so RSI/MA/MACD are only fetched for SPY. Yahoo close can be missing under load. Finnhub analyst bias is often unavailable for ETFs.
-              </p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead>
-                    <tr className="text-slate-500 border-b border-slate-600">
-                      <th className="py-1.5 pr-2">Ticker</th>
-                      <th className="py-1.5 pr-2">Close (margin %)</th>
-                      <th className="py-1.5 pr-2">RSI (margin)</th>
-                      <th className="py-1.5 pr-2">MA20/MA50 (margin %)</th>
-                      <th className="py-1.5 pr-2">MACD (margin)</th>
-                      <th className="py-1.5 pr-2">Bias</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.indicator_comparisons.map((c) => (
-                      <tr key={c.ticker} className="border-b border-slate-700/50">
-                        <td className="py-2 pr-2 font-medium text-slate-300">{c.ticker}</td>
-                        <td className="py-2 pr-2 text-slate-400">
-                          {c.close.comparisons.length > 0 ? (
-                            <>
-                              {c.close.comparisons.map((x) => (
-                                <span key={x.source} className="mr-1.5 text-sm">
-                                  {x.source}: {x.margin_pct != null ? `${x.margin_pct.toFixed(2)}%` : "—"}
-                                </span>
-                              ))}
-                              {c.close.max_margin_pct != null && (
-                                <span className="text-amber-400 text-sm"> (max {c.close.max_margin_pct.toFixed(2)}%)</span>
-                              )}
-                            </>
-                          ) : "—"}
-                        </td>
-                        <td className="py-2 pr-2 text-slate-400">
-                          {c.rsi.comparisons.length > 0
-                            ? c.rsi.comparisons.map((x) => (
-                                <span key={x.source}>{x.source}: {x.margin_abs != null ? `±${x.margin_abs}` : "—"}</span>
-                              ))
-                            : "—"}
-                        </td>
-                        <td className="py-2 pr-2 text-slate-400">
-                          {c.ma?.comparisons?.length > 0
-                            ? c.ma.comparisons.map((m) => (
-                                <span key={m.series} className="mr-1.5 text-sm">
-                                  {m.series}: {m.margin_pct != null ? `${m.margin_pct.toFixed(2)}%` : "—"}
-                                </span>
-                              ))
-                            : "—"}
-                          {c.ma?.max_margin_pct != null && (
-                            <span className="text-amber-400 text-sm"> (max {c.ma.max_margin_pct.toFixed(2)}%)</span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-2 text-slate-400">
-                          {c.macd?.comparisons?.length > 0
-                            ? c.macd.comparisons.map((x) => (
-                                <span key={x.source}>{x.source}: {x.margin_abs != null ? `±${x.margin_abs}` : "—"}</span>
-                              ))
-                            : "—"}
-                        </td>
-                        <td className="py-2 pr-2">
-                          {c.bias.comparisons.length > 0
-                            ? c.bias.comparisons.map((b) => (
-                                <span
-                                  key={b.source}
-                                  className={b.status === "aligned" ? "text-emerald-400" : b.status === "divergent" ? "text-amber-400" : "text-slate-500"}
-                                >
-                                  {b.source}: {b.rating ?? "—"} ({b.status})
-                                </span>
-                              ))
-                            : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          {data.model_validation && (data.model_validation.records?.length > 0 || (data.model_validation.summary?.n_records ?? 0) > 0) && (
-            <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3 mb-4">
-              <p className="text-sm font-medium text-slate-400 mb-0.5">Model validation: SPY/QQQ predicted vs actual</p>
-              <p className="text-sm text-slate-500 mb-2" title="Compares our next-day bias and typical range to the next trading day close. Run run_daily.py daily to accumulate EOD snapshots.">
-                Estimated direction and range vs actual close. Direction hit = Bullish and next day up, or Bearish and next day down. Range = actual return within our ±typical_move.
-              </p>
-              {data.model_validation.summary && (data.model_validation.summary.direction_n > 0 || data.model_validation.summary.range_n > 0) && (
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300 mb-2">
-                  {data.model_validation.summary.direction_accuracy_pct != null && (
-                    <span>Direction accuracy: <strong className="text-emerald-400">{data.model_validation.summary.direction_accuracy_pct}%</strong> ({data.model_validation.summary.direction_n} days)</span>
-                  )}
-                  {data.model_validation.summary.range_hit_rate_pct != null && (
-                    <span>Range hit rate: <strong className="text-emerald-400">{data.model_validation.summary.range_hit_rate_pct}%</strong> (actual within ±typical_move, n={data.model_validation.summary.range_n})</span>
-                  )}
-                </div>
-              )}
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
-                  <thead>
-                    <tr className="text-slate-500 border-b border-slate-600">
-                      <th className="py-1.5 pr-2">As of</th>
-                      <th className="py-1.5 pr-2">Ticker</th>
-                      <th className="py-1.5 pr-2">Our bias</th>
-                      <th className="py-1.5 pr-2">Prior close</th>
-                      <th className="py-1.5 pr-2">Actual close</th>
-                      <th className="py-1.5 pr-2">Actual %</th>
-                      <th className="py-1.5 pr-2">Dir hit</th>
-                      <th className="py-1.5 pr-2">In range</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data.model_validation.records ?? []).slice(0, 30).map((r) => (
-                      <tr key={`${r.as_of_date}-${r.ticker}`} className="border-b border-slate-700/50">
-                        <td className="py-2 pr-2 text-slate-400">{r.as_of_date}</td>
-                        <td className="py-2 pr-2 font-medium text-slate-300">{r.ticker}</td>
-                        <td className="py-2 pr-2 text-slate-400">{r.our_bias ?? "—"}</td>
-                        <td className="py-2 pr-2 text-slate-400">${r.prior_close.toFixed(2)}</td>
-                        <td className="py-2 pr-2 text-slate-400">${r.actual_close.toFixed(2)}</td>
-                        <td className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>{r.actual_return_pct >= 0 ? "+" : ""}{r.actual_return_pct.toFixed(2)}%</td>
-                        <td className="py-2 pr-2">
-                          {r.direction_hit === true && <span className="text-emerald-400">Yes</span>}
-                          {r.direction_hit === false && <span className="text-red-400">No</span>}
-                          {r.direction_hit == null && <span className="text-slate-500">—</span>}
-                        </td>
-                        <td className="py-2 pr-2">
-                          {r.within_range === true && <span className="text-emerald-400">Yes</span>}
-                          {r.within_range === false && <span className="text-amber-400">No</span>}
-                          {r.within_range == null && <span className="text-slate-500">—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-sm text-slate-500 mt-2">Requires EOD snapshots from <code className="bg-slate-700 px-1 rounded">run_daily.py</code>. See MODEL_VALIDATION.md for metrics and fine-tuning.</p>
-            </div>
-          )}
-          <p className="text-base text-slate-500 mb-4">
+          <p className="text-base text-slate-500 mb-0">
             <span className="text-slate-400">Buy:</span> add-on · <span className="text-slate-400">Sell:</span> trim when overbought/weak · <span className="text-slate-400">Support:</span> watch level ·
             <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> 1–2 yr
           </p>
+            </div>
+          </ToggleSection>
           <SignalsTable signals={data.signals} horizons={data.config?.horizons} onTickerClick={setSelectedTicker} riskSizing={data.config?.risk_sizing} cotByTicker={data.cot_by_ticker} />
-        </ToggleSection>
+            </div>
+          )}
 
-        {/* Portfolio Holdings - toggle */}
-        <ToggleSection id="holdings" title="Portfolio Holdings" icon={<Wallet className="h-5 w-5 text-emerald-500" />} badge={data.portfolio?.per_holding?.length} defaultOpen={true}>
-          <PortfolioHoldings holdings={data.portfolio.per_holding} onTickerClick={setSelectedTicker} />
-        </ToggleSection>
+          {/* Portfolio tab */}
+          {activeTab === "portfolio" && (
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {portfolioNames.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <label htmlFor="portfolio-select-2" className="text-sm text-slate-400">Portfolio:</label>
+                  <select
+                    id="portfolio-select-2"
+                    value={selectedPortfolio}
+                    onChange={(e) => setSelectedPortfolio(e.target.value)}
+                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
+                    {portfolioNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <ToggleSection id="portfolio-summary" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <PortfolioSummary report={selectedReport} />
+                </div>
+              </ToggleSection>
+              <ToggleSection id="portfolio-regime" title="Regime Chart" icon={<Activity />} defaultOpen>
+                <RegimeChart report={selectedReport} />
+              </ToggleSection>
+              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={selectedReport?.per_holding?.length ?? 0} defaultOpen>
+                {(selectedReport?.per_holding?.length ?? 0) > 0 ? (
+                  <PortfolioHoldings holdings={selectedReport?.per_holding ?? []} onTickerClick={setSelectedTicker} hideAccountColumn={selectedPortfolio !== "All"} />
+                ) : (
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
+                    <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
+                    <p className="text-slate-400 text-sm">No holdings</p>
+                    <p className="text-slate-500 text-xs mt-1">Add portfolios in config or upload via the bar above.</p>
+                  </div>
+                )}
+              </ToggleSection>
+              <ToggleSection id="portfolio-trim" title="Consider Trim" icon={<AlertTriangle />} badge={selectedTrimCandidates.length || undefined} defaultOpen>
+                {selectedTrimCandidates.length > 0 ? (
+                  <TrimCandidates items={selectedTrimCandidates} onTickerClick={setSelectedTicker} />
+                ) : (
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
+                    <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
+                    <p className="text-slate-400 text-sm">No trim candidates</p>
+                    <p className="text-slate-500 text-xs mt-1">Positions with score &lt; 40 will appear here.</p>
+                  </div>
+                )}
+              </ToggleSection>
+              <ToggleSection id="portfolio-doctor" title="Portfolio Doctor" icon={<Target />} badge={(data.portfolio_doctor_recommendations?.[selectedPortfolio]?.trim?.length ?? 0) + (data.portfolio_doctor_recommendations?.[selectedPortfolio]?.add?.length ?? 0) || undefined} defaultOpen>
+                <PortfolioDoctorRecommendations
+                  recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
+                  selectedPortfolio={selectedPortfolio}
+                  onTickerClick={setSelectedTicker}
+                />
+              </ToggleSection>
+            </div>
+          )}
 
-        {/* Consider Trim - toggle */}
-        {data.trim_candidates.length > 0 && (
-          <ToggleSection id="trim" title="Consider Trim (protect gains)" icon={<AlertTriangle className="h-5 w-5 text-amber-400" />} badge={data.trim_candidates.length} defaultOpen={false}>
-            <TrimCandidates items={data.trim_candidates} onTickerClick={setSelectedTicker} />
-          </ToggleSection>
-        )}
+          {/* Opportunities tab */}
+          {activeTab === "opportunities" && (
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={data.opportunities?.length ?? 0} defaultOpen>
+                {data.opportunities?.length ? (
+                  <Opportunities items={data.opportunities} onTickerClick={setSelectedTicker} />
+                ) : (
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
+                    <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
+                    <p className="text-slate-400 font-medium">No opportunities today</p>
+                    <p className="text-slate-500 text-sm mt-1">Tickers with score ≥ 70 and UP regime will appear here.</p>
+                  </div>
+                )}
+              </ToggleSection>
+              {data.best_2026?.length ? (
+                <ToggleSection id="opps-best-2026" title="Best 2026 picks" icon={<Target />} badge={data.best_2026.length} defaultOpen>
+                  <Best2026Section items={data.best_2026} onTickerClick={setSelectedTicker} />
+                </ToggleSection>
+              ) : null}
+              {data.thesis_check.length > 0 && (
+                <ToggleSection id="opps-thesis" title="Thesis check" icon={<FileText />} badge={data.thesis_check.length} defaultOpen>
+                  <ThesisCheck items={data.thesis_check} onTickerClick={setSelectedTicker} />
+                </ToggleSection>
+              )}
+              {data.what_changed.length > 0 && (
+                <ToggleSection id="opps-what-changed" title="What changed" icon={<RefreshCw />} badge={data.what_changed.length} defaultOpen>
+                  <WhatChanged items={data.what_changed} onTickerClick={setSelectedTicker} />
+                </ToggleSection>
+              )}
+            </div>
+          )}
 
-        {/* Opportunities - toggle */}
-        <ToggleSection id="opps" title="Daily Opportunities" icon={<Sparkles className="h-5 w-5 text-emerald-500" />} badge={data.opportunities?.length} defaultOpen={false}>
-          <Opportunities items={data.opportunities} onTickerClick={setSelectedTicker} />
-        </ToggleSection>
+          {/* Markets tab */}
+          {activeTab === "markets" && (
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
+                <MarketScenarios scenarios={data.market_scenarios ?? []} />
+              </ToggleSection>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 min-w-0 items-start">
+                {data.crypto?.length ? (
+                  <div className="min-w-0">
+                    <ToggleSection id="markets-crypto" title="Crypto" icon={<Globe />} badge={data.crypto.length} defaultOpen>
+                      <CryptoSection items={data.crypto} />
+                    </ToggleSection>
+                  </div>
+                ) : null}
+                {data.cross_asset?.length ? (
+                  <div className="min-w-0">
+                    <ToggleSection id="markets-cross-asset" title="Cross-asset" icon={<Globe />} badge={data.cross_asset.length} defaultOpen>
+                      <CrossAssetSection items={data.cross_asset} />
+                    </ToggleSection>
+                  </div>
+                ) : null}
+                <div className="min-w-0">
+                  <ToggleSection id="markets-calendar" title="Economic calendar" icon={<Calendar />} badge={data.economic_calendar?.length ?? 0} defaultOpen>
+                    <EconomicCalendarSection events={data.economic_calendar ?? []} />
+                  </ToggleSection>
+                </div>
+              </div>
+              {(!data.crypto?.length && !data.cross_asset?.length) && (
+                <p className="text-slate-500 text-sm">No market data. Check Opportunities tab for Best 2026 picks.</p>
+              )}
+            </div>
+          )}
 
-        {/* Thesis Check - toggle */}
-        {data.thesis_check.length > 0 && (
-          <ToggleSection id="thesis" title="Thesis Check" icon={<FileText className="h-5 w-5 text-emerald-500" />} badge={data.thesis_check.length} defaultOpen={false}>
-            <ThesisCheck items={data.thesis_check} onTickerClick={setSelectedTicker} />
-          </ToggleSection>
-        )}
-
-        {/* What Changed - toggle */}
-        {data.what_changed.length > 0 && (
-          <ToggleSection id="changed" title="What Changed (vs last run)" icon={<RefreshCw className="h-5 w-5 text-emerald-500" />} badge={data.what_changed.length} defaultOpen={true}>
-            <WhatChanged items={data.what_changed} onTickerClick={setSelectedTicker} />
-          </ToggleSection>
-        )}
+          {/* Analysis tab */}
+          {activeTab === "analysis" && (
+            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <ToggleSection id="analysis-backtest" title="Backtesting" icon={<BarChart3 />} defaultOpen>
+                <BacktestStatus />
+              </ToggleSection>
+              <ToggleSection id="analysis-price-target" title="Price target accuracy" icon={<Target />} defaultOpen>
+                <AccuracyPriceTargetsWithBoundary />
+              </ToggleSection>
+              {data.indicator_comparisons && data.indicator_comparisons.length > 0 && (
+                <ToggleSection id="analysis-indicator" title="Indicator comparison" icon={<Activity />} badge={data.indicator_comparisons.length} defaultOpen>
+                  <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
+                    <p className="text-sm text-slate-500 mb-2">Close, RSI, MA, MACD vs external APIs.</p>
+                    <div className="overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(50vh,400px)]">
+                      <table className="w-full text-sm text-left border-collapse min-w-[480px]">
+                        <thead>
+                          <tr className="text-slate-500 border-b border-slate-600">
+                            <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">Ticker</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Close</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">RSI</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">MA</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">MACD</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Bias</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.indicator_comparisons.map((c) => (
+                            <tr key={c.ticker} className="group border-b border-slate-700/50 hover:bg-slate-800/30">
+                              <td className="sticky left-0 z-[10] min-w-[4.5rem] w-24 py-2 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{c.ticker}</td>
+                              <td className="py-2 pr-2 text-slate-400">{c.close.comparisons.length > 0 ? `${c.close.comparisons.map((x) => `${x.source}: ${x.margin_pct != null ? `${x.margin_pct.toFixed(2)}%` : "—"}`).join("; ")}` : "—"}</td>
+                              <td className="py-2 pr-2 text-slate-400">{c.rsi.comparisons.length > 0 ? c.rsi.comparisons.map((x) => `${x.source}: ±${x.margin_abs ?? "—"}`).join("; ") : "—"}</td>
+                              <td className="py-2 pr-2 text-slate-400">{c.ma?.comparisons?.length ? c.ma.comparisons.map((m) => `${m.series}: ${m.margin_pct != null ? `${m.margin_pct.toFixed(2)}%` : "—"}`).join("; ") : "—"}</td>
+                              <td className="py-2 pr-2 text-slate-400">{c.macd?.comparisons?.length ? c.macd.comparisons.map((x) => `${x.source}: ±${x.margin_abs ?? "—"}`).join("; ") : "—"}</td>
+                              <td className="py-2 pr-2">{c.bias.comparisons.map((b) => <span key={b.source} className={b.status === "aligned" ? "text-emerald-400" : b.status === "divergent" ? "text-amber-400" : "text-slate-500"}>{b.source}: {b.rating ?? "—"}</span>)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </ToggleSection>
+              )}
+              {(data.forward_tracking?.records?.length ?? 0) > 0 && (
+                <ToggleSection id="analysis-forward" title="Forward tracking" icon={<RefreshCw />} badge={data.forward_tracking?.records?.length ?? 0} defaultOpen>
+                  <ForwardTracking
+                    records={data.forward_tracking!.records}
+                    summary_by_horizon={data.forward_tracking!.summary_by_horizon ?? {}}
+                    summary_by_signal={data.forward_tracking!.summary_by_signal ?? {}}
+                    message={data.forward_tracking?.message}
+                  />
+                </ToggleSection>
+              )}
+              {data.forward_tracking?.message && !data.forward_tracking?.records?.length && (
+                <ToggleSection id="analysis-forward-msg" title="Forward tracking" icon={<RefreshCw />} defaultOpen>
+                  <ForwardTracking
+                    records={[]}
+                    summary_by_horizon={{}}
+                    summary_by_signal={{}}
+                    message={data.forward_tracking.message}
+                  />
+                </ToggleSection>
+              )}
+              {data.model_validation && (data.model_validation.records?.length ?? 0) > 0 && (
+                <ToggleSection id="analysis-model" title="Model validation" icon={<Activity />} badge={data.model_validation?.records?.length ?? 0} defaultOpen>
+                  <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
+                    {data.model_validation.summary && (
+                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300 mb-2">
+                        {data.model_validation.summary.direction_accuracy_pct != null && (
+                          <span>Direction: <strong className="text-emerald-400">{data.model_validation.summary.direction_accuracy_pct}%</strong></span>
+                        )}
+                        {data.model_validation.summary.range_hit_rate_pct != null && (
+                          <span>Range: <strong className="text-emerald-400">{data.model_validation.summary.range_hit_rate_pct}%</strong></span>
+                        )}
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-left">
+                        <thead>
+                          <tr className="text-slate-500 border-b border-slate-600">
+                            <th className="py-1.5 pr-2">As of</th>
+                            <th className="py-1.5 pr-2">Ticker</th>
+                            <th className="py-1.5 pr-2">Bias</th>
+                            <th className="py-1.5 pr-2">Actual %</th>
+                            <th className="py-1.5 pr-2">Hit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(data.model_validation.records ?? []).slice(0, 20).map((r) => (
+                            <tr key={`${r.as_of_date}-${r.ticker}`} className="border-b border-slate-700/50">
+                              <td className="py-2 pr-2 text-slate-400">{r.as_of_date}</td>
+                              <td className="py-2 pr-2 font-medium text-slate-300">{r.ticker}</td>
+                              <td className="py-2 pr-2 text-slate-400">{r.our_bias ?? "—"}</td>
+                              <td className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>{r.actual_return_pct >= 0 ? "+" : ""}{r.actual_return_pct.toFixed(2)}%</td>
+                              <td className="py-2 pr-2">{r.direction_hit === true ? "Yes" : r.direction_hit === false ? "No" : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </ToggleSection>
+              )}
+            </div>
+          )}
+        </div>
       </main>
 
       {selectedTicker && (

@@ -137,6 +137,14 @@ def portfolio_report(
             cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", "")})
     cash_deployment.sort(key=lambda x: -x["score"])
 
+    # Theme concentration: mega-cap (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA) combined %
+    MEGA_CAP = {"AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"}
+    mega_cap_pct = 0.0
+    for h in per_holding:
+        if h.get("ticker") in MEGA_CAP and h.get("pct") is not None:
+            mega_cap_pct += h["pct"]
+    mega_cap_pct = round(mega_cap_pct, 1)
+
     # Sector allocation (aggregate by sector)
     sector_allocation = {}
     try:
@@ -188,4 +196,200 @@ def portfolio_report(
         "cash_deployment": cash_deployment[:10],  # top 10
         "sector_allocation": sector_allocation,
         "correlation_alerts": correlation_alerts[:5],  # top 5 pairs
+        "mega_cap_pct": mega_cap_pct,
+    }
+
+
+def allocation_recommendations(
+    report: dict,
+    results: list[dict],
+    opportunities: list[dict],
+    best_2026: list[dict],
+    doctor_cfg: dict | None = None,
+) -> dict:
+    """
+    Portfolio Doctor: trim/add recommendations with $ and % amounts and suggested prices.
+    Uses risk_appetite, goal, and optional target $ over time to tune aggressiveness.
+    Add candidates come from opportunities + best_2026 (deduped by ticker).
+    """
+    doctor_cfg = doctor_cfg or {}
+    risk_appetite = (doctor_cfg.get("risk_appetite") or "moderate").lower()
+    goal = (doctor_cfg.get("goal") or "medium").lower()
+    target_value = doctor_cfg.get("target_portfolio_value")
+    time_years = doctor_cfg.get("time_period_years", 10)
+    if target_value is not None:
+        try:
+            target_value = float(target_value)
+        except (TypeError, ValueError):
+            target_value = None
+    try:
+        time_years = int(time_years)
+    except (TypeError, ValueError):
+        time_years = 10
+
+    total_value = report.get("total_value") or 0.0
+    per_holding = report.get("per_holding") or []
+    results_by_ticker = {r["ticker"]: r for r in results if not r.get("error")}
+
+    # Implied CAGR from target $ and time
+    implied_cagr_pct = None
+    if target_value is not None and total_value > 0 and time_years > 0:
+        try:
+            import math
+            ratio = target_value / total_value
+            if ratio > 0:
+                implied_cagr_pct = round((ratio ** (1.0 / time_years) - 1) * 100, 1)
+        except Exception:
+            pass
+
+    # Profile: how aggressive (trim/add thresholds, position caps)
+    # Conservative: trim more (score < 45), add only top confidence, max position 15%
+    # Moderate: trim score < 40, add score >= 70, max position 20%
+    # Aggressive: trim score < 35, add score >= 65, max position 25%
+    trim_score_threshold = {"conservative": 45, "moderate": 40, "aggressive": 35}.get(risk_appetite, 40)
+    max_position_pct = {"conservative": 15, "moderate": 20, "aggressive": 25}.get(risk_appetite, 20)
+    add_min_score = {"conservative": 72, "moderate": 70, "aggressive": 65}.get(risk_appetite, 70)
+    # If implied CAGR is high, nudge toward more aggressive
+    if implied_cagr_pct is not None and implied_cagr_pct > 10:
+        trim_score_threshold = min(trim_score_threshold + 5, 50)
+    elif implied_cagr_pct is not None and implied_cagr_pct < 4:
+        trim_score_threshold = max(trim_score_threshold - 3, 35)
+
+    # ---- TRIM ----
+    trim_list = []
+    for h in per_holding:
+        if h.get("value") is None or h.get("value") <= 0 or total_value <= 0:
+            continue
+        score = h.get("score")
+        if score is None:
+            continue
+        if score > trim_score_threshold:
+            continue
+        ticker = h["ticker"]
+        current_value = float(h["value"])
+        current_pct = (h.get("pct") or 0) or round(100 * current_value / total_value, 1)
+        r = results_by_ticker.get(ticker)
+        sell_price = None
+        if r:
+            sell_price = r.get("suggested_sell_price")
+            if sell_price is None and isinstance(r.get("st_band"), dict) and r["st_band"].get("high") is not None:
+                sell_price = r["st_band"]["high"]
+            if sell_price is not None:
+                sell_price = round(float(sell_price), 2)
+            if sell_price is None and r.get("close") is not None:
+                sell_price = round(float(r["close"]), 2)
+        if sell_price is None:
+            sell_price = h.get("price")
+        if sell_price is not None:
+            sell_price = round(float(sell_price), 2)
+
+        # Suggest trim: bring position to max_position_pct or trim 25/50/75% of excess (conservative = trim more)
+        target_pct = min(current_pct, max_position_pct)
+        trim_pct_of_position = 25
+        if current_pct > max_position_pct:
+            excess_pct = current_pct - max_position_pct
+            trim_pct_of_position = min(75, max(25, round(excess_pct / current_pct * 100, 0)))
+        suggest_trim_pct = round(current_pct * (trim_pct_of_position / 100), 1)
+        suggest_trim_dollars = round(current_value * (trim_pct_of_position / 100), 2)
+        reason = f"Confidence {score:.0f}, regime {h.get('regime') or 'N/A'}"
+        if current_pct > max_position_pct:
+            reason += f"; position {current_pct}% > max {max_position_pct}%"
+
+        trim_list.append({
+            "ticker": ticker,
+            "current_pct": current_pct,
+            "current_value": round(current_value, 2),
+            "suggest_trim_pct": suggest_trim_pct,
+            "suggest_trim_dollars": suggest_trim_dollars,
+            "sell_price": sell_price,
+            "reason": reason.strip(),
+            "score": score,
+            "regime": h.get("regime"),
+        })
+    trim_list.sort(key=lambda x: (x["score"], -x["current_value"]))
+
+    # ---- ADD: merge opportunities + best_2026 (dedupe by ticker, prefer higher score) ----
+    portfolio_tickers = {h["ticker"] for h in per_holding}
+    add_candidates = []
+    seen = set()
+    for o in opportunities:
+        t = o.get("ticker")
+        if not t or t in portfolio_tickers or t in seen:
+            continue
+        score = o.get("composite_buy") or o.get("score")
+        if score is None or score < add_min_score:
+            continue
+        seen.add(t)
+        add_candidates.append({
+            "ticker": t,
+            "score": float(score),
+            "regime": o.get("regime") or "",
+            "close": o.get("close"),
+            "source": "opportunities",
+        })
+    for b in best_2026:
+        t = b.get("ticker")
+        if not t or t in portfolio_tickers or t in seen:
+            continue
+        score = b.get("score")
+        if score is None or score < add_min_score:
+            continue
+        seen.add(t)
+        add_candidates.append({
+            "ticker": t,
+            "score": float(score),
+            "regime": b.get("regime") or "",
+            "close": b.get("close"),
+            "source": "best_2026",
+        })
+    add_candidates.sort(key=lambda x: -x["score"])
+
+    # Suggest add size: equal-weight slice of "deployable" (trim proceeds or 5% of portfolio)
+    trim_proceeds = sum(x["suggest_trim_dollars"] for x in trim_list)
+    deployable = trim_proceeds if trim_proceeds > 0 else total_value * 0.05
+    add_cap = add_candidates[:12]
+    n_add = len(add_cap)
+    add_dollars_each = round(deployable / n_add, 2) if n_add else 0
+
+    add_list = []
+    for c in add_cap:
+        ticker = c["ticker"]
+        r = results_by_ticker.get(ticker)
+        buy_price = None
+        if r:
+            buy_price = r.get("suggested_buy_price")
+            if buy_price is None and isinstance(r.get("st_band"), dict) and r["st_band"].get("low") is not None:
+                buy_price = r["st_band"]["low"]
+            if buy_price is not None:
+                buy_price = round(float(buy_price), 2)
+            if buy_price is None and r.get("close") is not None:
+                buy_price = round(float(r["close"]), 2)
+        if buy_price is None and c.get("close") is not None:
+            try:
+                buy_price = round(float(c["close"]), 2)
+            except (TypeError, ValueError):
+                pass
+        suggest_add_dollars = add_dollars_each
+        suggest_add_pct = round(100 * suggest_add_dollars / total_value, 1) if total_value > 0 else 0
+        add_list.append({
+            "ticker": ticker,
+            "score": round(c["score"], 1),
+            "regime": c["regime"],
+            "suggest_add_pct": suggest_add_pct,
+            "suggest_add_dollars": suggest_add_dollars,
+            "buy_price": buy_price,
+            "source": c["source"],
+        })
+
+    return {
+        "inputs": {
+            "risk_appetite": risk_appetite,
+            "goal": goal,
+            "target_portfolio_value": target_value,
+            "time_period_years": time_years,
+        },
+        "implied_cagr_pct": implied_cagr_pct,
+        "profile": risk_appetite,
+        "trim": trim_list,
+        "add": add_list,
     }

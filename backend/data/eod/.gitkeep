@@ -1,0 +1,2 @@
+# EOD snapshots (YYYY-MM-DD.json) are written here when you run POST /api/eod/run or scripts/run_daily.py.
+# Folder is created automatically on first snapshot run if missing.

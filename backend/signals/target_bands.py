@@ -139,7 +139,16 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             st_stop = P - st_atr_mult_hold * atr if atr > 0 else P - 0.01 * P
             st_target = P + st_atr_mult_hold * atr if atr > 0 else P + 0.01 * P
 
-    row["st_band"] = {"low": round(float(st_stop), 2), "high": round(float(st_target), 2)}
+    # Ensure low <= high for display (SELL mode: stop > target, so normalize)
+    st_low = min(float(st_stop), float(st_target))
+    st_high = max(float(st_stop), float(st_target))
+    # Clamp to 52w range when available
+    range_low = row.get("range_52w_low")
+    range_high = row.get("range_52w_high")
+    if range_low is not None and range_high is not None and range_low <= range_high:
+        st_low = max(st_low, float(range_low))
+        st_high = min(st_high, float(range_high))
+    row["st_band"] = {"low": round(st_low, 2), "high": round(st_high, 2)}
     row["st_checkpoints"] = _checkpoints(float(st_stop), float(st_target), 5)
 
     # ---------- Medium-term band (months) ----------
@@ -153,7 +162,12 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         mt_down = P * (1 - 0.4 * vol6)
         mt_up = P * (1 + 0.4 * vol6)
 
-    row["mt_band"] = {"low": round(mt_down, 2), "high": round(mt_up, 2)}
+    mt_low = round(mt_down, 2)
+    mt_high = round(mt_up, 2)
+    if range_low is not None and range_high is not None and range_low <= range_high:
+        mt_low = max(mt_low, float(range_low))
+        mt_high = min(mt_high, float(range_high))
+    row["mt_band"] = {"low": mt_low, "high": mt_high}
 
     # ---------- Long-term band (1–3+ yrs) ----------
     eps_fwd = row.get("eps_fwd")
@@ -196,15 +210,20 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         lt_low = lt_high = None
 
     if lt_low is not None and lt_high is not None and lt_low < lt_high:
+        # Long-horizon stress bear: ensure bear reflects historical tail risk (10+yr monthly)
+        stress_bear_pct = row.get("stress_bear_pct")
+        if stress_bear_pct is not None and P > 0 and stress_bear_pct > 0:
+            stress_bear_price = P * (1 - stress_bear_pct / 100)
+            lt_low = min(lt_low, stress_bear_price)
         row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
         row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
         # LT bear/base/bull: bear = low, base = midpoint, bull = high
         mid = (lt_low + lt_high) / 2
-        row["lt_scenarios"] = {
-            "bear": round(lt_low, 2),
-            "base": round(mid, 2),
-            "bull": round(lt_high, 2),
-        }
+        bear, base_val, bull = round(lt_low, 2), round(mid, 2), round(lt_high, 2)
+        row["lt_scenarios"] = {"bear": bear, "base": base_val, "bull": bull}
+        # Low confidence when bull is far above base (>50% of base)
+        if base_val > 0 and abs(bull - base_val) > 0.5 * base_val:
+            row["lt_band_low_confidence"] = row.get("lt_band_low_confidence", False) or True
     else:
         # Fallback: use MT band scaled for longer horizon when no analyst/consensus data
         mt = row.get("mt_band")
@@ -213,6 +232,11 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             mt_high = float(mt["high"])
             lt_low = mt_low * 0.85
             lt_high = mt_high * 1.25
+            # Long-horizon stress bear: anchor bear level to historical tail risk
+            stress_bear_pct = row.get("stress_bear_pct")
+            if stress_bear_pct is not None and P > 0 and stress_bear_pct > 0:
+                stress_bear_price = P * (1 - stress_bear_pct / 100)
+                lt_low = min(lt_low, stress_bear_price)
             row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
             row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
             row["lt_scenarios"] = {

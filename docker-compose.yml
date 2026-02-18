@@ -27,7 +27,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app
     volumes:
-      - backend_data:/app/data
+      - ./backend/data:/app/data
     depends_on:
       - redis
 
@@ -46,5 +46,4 @@ services:
       - backend
 
 volumes:
-  backend_data:
   redis_data:

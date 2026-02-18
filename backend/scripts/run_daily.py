@@ -13,9 +13,21 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # type: ignore
+
 # Add project root so we can import signals
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+EST = ZoneInfo("America/New_York")
+
+
+def _today_est() -> str:
+    """Current date in Eastern (EST/EDT) as YYYY-MM-DD for EOD snapshot filename and 'today' check."""
+    return datetime.now(EST).strftime("%Y-%m-%d")
 
 import yaml
 from config_loader import load_config
@@ -27,7 +39,7 @@ from portfolio.doctor import portfolio_report
 from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_config, fetch_ohlcv_with_volume
 from signals.indicators import multi_horizon_scores
 from signals.providers import get_next_earnings
-from signals.regime import get_regime, get_signal
+from signals.regime import get_regime, get_regime_ma, get_signal, _ma_regime_to_display
 from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
 
 
@@ -110,9 +122,10 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
             })
             continue
 
-        sig = multi_horizon_scores(close)
+        use_spec = config.get("use_spec_regime_score", False)
+        sig = multi_horizon_scores(close, use_spec=use_spec, ticker=ticker, config=config)
         composite_buy = sig["composite_buy"]
-        regime = get_regime(composite_buy, up_min, down_max)
+        regime = _ma_regime_to_display(sig["ma_regime"]) if sig.get("ma_regime") else get_regime(composite_buy, up_min, down_max)
         signal = get_signal(composite_buy, buy_min, sell_max)
 
         # Earnings: reduce score or flag when within N days
@@ -194,6 +207,8 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
             "price": sig["close"],
             "trend_score": sig["trend_score"],
             "rsi": sig["rsi"],
+            "rsi_contrib": sig.get("rsi_contrib"),
+            "macd_contrib": sig.get("macd_contrib"),
             "ma20": sig.get("ma20"),
             "ma50": sig.get("ma50"),
             "macd_hist": sig.get("macd_hist"),
@@ -282,9 +297,10 @@ def save_eod_snapshot(
     typical_move: list[dict] | None = None,
 ) -> Path | None:
     """Save daily EOD snapshot to data/eod/YYYY-MM-DD.json for historical tracking.
+    Date is in Eastern (EST/EDT) so post-close US runs use the market date.
     Optional next_day_outlook and typical_move (SPY/QQQ) enable model validation vs actual next-day close.
     """
-    date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+    date_str = date_str or _today_est()
     eod_dir = ROOT / "data" / "eod"
     eod_dir.mkdir(parents=True, exist_ok=True)
     path = eod_dir / f"{date_str}.json"
@@ -313,13 +329,14 @@ def load_eod_snapshot(date_str: str) -> dict[str, dict] | None:
 
 
 def prune_old_eod_snapshots(retention_days: int) -> int:
-    """Delete EOD snapshots older than retention_days. Returns count deleted."""
+    """Delete EOD snapshots older than retention_days. Returns count deleted. Uses EST for cutoff."""
     if retention_days <= 0:
         return 0
     eod_dir = ROOT / "data" / "eod"
     if not eod_dir.exists():
         return 0
-    cutoff = (datetime.now() - timedelta(days=retention_days)).date()
+    today_est = datetime.now(EST).date()
+    cutoff = today_est - timedelta(days=retention_days)
     deleted = 0
     for p in eod_dir.glob("*.json"):
         try:
@@ -331,6 +348,53 @@ def prune_old_eod_snapshots(retention_days: int) -> int:
         except ValueError:
             pass
     return deleted
+
+
+def run_eod_snapshot_only(config: dict | None = None, snapshot_date: str | None = None) -> dict:
+    """
+    Run signals and save EOD snapshot only (no console report, no alerts).
+    Used by API ad-hoc trigger and by the Python scheduler.
+    snapshot_date: optional YYYY-MM-DD (e.g. 2026-02-17); if None, uses today EST.
+    Returns dict with snapshot_path (str), snapshot_date (str), tickers_count (int), pruned (int), error (str or None).
+    """
+    if config is None:
+        config = load_config()
+    result = {"snapshot_path": None, "snapshot_date": None, "tickers_count": 0, "pruned": 0, "error": None}
+    try:
+        results = run_signals(config)
+        result["tickers_count"] = len([r for r in results if not r.get("error")])
+        next_day_outlook_eod = None
+        typical_move_eod = None
+        try:
+            from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_backtest
+            from signals.typical_move import typical_move_for_symbols
+            backtest_cache = {}
+            for sym in ["SPY", "QQQ"]:
+                try:
+                    backtest_cache[sym] = run_next_day_backtest(sym, period="5y")
+                except Exception:
+                    pass
+            next_day_outlook_eod = next_day_outlook_for_symbols(["SPY", "QQQ"], backtest_cache)
+            typical_move_eod = typical_move_for_symbols(["SPY", "QQQ"])
+        except Exception:
+            pass
+        date_str = snapshot_date or _today_est()
+        snapshot_path = save_eod_snapshot(
+            results,
+            date_str=date_str,
+            next_day_outlook=next_day_outlook_eod,
+            typical_move=typical_move_eod,
+        )
+        save_last_run(results)
+        if snapshot_path:
+            result["snapshot_path"] = str(snapshot_path)
+            result["snapshot_date"] = snapshot_path.stem
+        retention = config.get("eod_retention_days", 0)
+        if retention > 0:
+            result["pruned"] = prune_old_eod_snapshots(retention)
+    except Exception as e:
+        result["error"] = str(e)
+    return result
 
 
 def main() -> None:
@@ -441,9 +505,10 @@ def main() -> None:
         opportunities = run_opportunity_scan(
             universe=universe if universe else None,
             period=config.get("data", {}).get("period", "5y"),
-            min_score=opp_cfg.get("min_score", 70),
+            min_score=opp_cfg.get("min_score", 80),
             require_regime_up=opp_cfg.get("require_regime_up", True),
-            max_rsi=opp_cfg.get("max_rsi", 75),
+            min_rsi=opp_cfg.get("min_rsi", 50),
+            max_rsi=opp_cfg.get("max_rsi", 70),
             require_price_above_ma200=True,
             min_macd_hist=opp_cfg.get("min_macd_hist", 0),
             up_min=config.get("regime", {}).get("up_min", 60),
@@ -539,7 +604,7 @@ def main() -> None:
     print("\nSaved to data/last_run.json (story-change alerts on next run).")
 
     # EOD snapshot for historical tracking (include next_day_outlook + typical_move for SPY/QQQ validation)
-    retention = config.get("eod_retention_days", 90)
+    retention = config.get("eod_retention_days", 0)
     next_day_outlook_eod = None
     typical_move_eod = None
     try:

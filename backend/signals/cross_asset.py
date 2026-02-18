@@ -101,12 +101,12 @@ def compute_cross_asset_guidelines(
         extreme = item.get("extreme")
         if extreme == "long":
             guidelines.append({
-                "text": f"Spec positioning extreme ({label}) – specs very long, reversal risk",
+                "text": f"Spec positioning ({label}): Speculators are very long futures; historically that's often been a setup for a pullback – reversal risk. Consider not adding size.",
                 "type": "caution",
             })
         else:
             guidelines.append({
-                "text": f"Spec positioning extreme ({label}) – specs very short, reversal risk",
+                "text": f"Spec positioning ({label}): Speculators are very short futures; historically that's often been a setup for a squeeze – reversal risk. Watch for sharp moves up.",
                 "type": "caution",
             })
 
@@ -114,12 +114,12 @@ def compute_cross_asset_guidelines(
     if real_yield is not None:
         if real_yield > 2.0:
             guidelines.append({
-                "text": f"Real yields elevated ({real_yield:.1f}%) – headwind for gold and growth stocks",
+                "text": f"Real yields elevated ({real_yield:.1f}%): Real cost of capital is high – headwind for gold and growth stocks. Gold and long-duration growth often underperform when real yields rise.",
                 "type": "caution",
             })
         elif real_yield > 1.5:
             guidelines.append({
-                "text": f"Real yields at {real_yield:.1f}% – watch gold/growth sensitivity",
+                "text": f"Real yields at {real_yield:.1f}%: Real cost of capital is in a range where gold and growth are sensitive; watch for impact if real yields move higher.",
                 "type": "info",
             })
 
@@ -128,7 +128,7 @@ def compute_cross_asset_guidelines(
     if dxy_pct is not None and real_yield is not None:
         if dxy_pct > 0.3 and real_yield > 1.5:
             guidelines.append({
-                "text": f"DXY strength (+{dxy_pct:.1f}%) + real yields ({real_yield:.1f}%) = gold under pressure",
+                "text": f"DXY strength (+{dxy_pct:.1f}%) and real yields ({real_yield:.1f}%): Dollar strength plus higher real rates typically put gold under pressure.",
                 "type": "caution",
             })
 

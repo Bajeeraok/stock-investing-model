@@ -20,6 +20,7 @@ TTL_PRICE_TARGET = 6 * 3600
 TTL_INSIDER_STATS = 12 * 3600
 TTL_TARGET_BANDS = 7 * 24 * 3600  # 7 days – previous bands for trailing re-anchor
 TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
+TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 
 
 def _redis_client():
@@ -159,6 +160,31 @@ def cached_price_target_consensus(ticker: str, fetch_fn):
         set_cached(key, out, TTL_PRICE_TARGET)
         return out
     return None
+
+
+def cached_key_metrics(ticker: str, fetch_fn) -> dict | None:
+    """Cache FMP key-metrics-ttm (forwardPE, roe, operatingMargin, debtToEquity). TTL 12h."""
+    key = cache_key("key_metrics", ticker)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out, _ = fetch_fn()
+    if out is not None:
+        set_cached(key, out, TTL_FUNDAMENTALS)
+        return out
+    return None
+
+
+def cached_long_horizon_risk(ticker: str, period: str, fetch_fn) -> dict | None:
+    """Cache long-horizon risk (max drawdown, stress bear). TTL 24h."""
+    key = cache_key("long_horizon_risk", ticker, period)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out is not None:
+        set_cached(key, out, TTL_LONG_HORIZON_RISK)
+    return out
 
 
 def get_cached_bands(ticker: str) -> dict | None:

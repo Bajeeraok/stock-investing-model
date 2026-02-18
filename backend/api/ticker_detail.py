@@ -93,11 +93,24 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
             volume_ratio = round(today_vol / avg_vol, 2)
             volume_unusual = volume_ratio >= 2.0
 
-    drawdown_52w = None
+    # 52-week range and drawdown from price history (252 trading days)
+    range_low = range_high = high_52w = low_52w = drawdown_52w = None
     if close_ticker is not None and len(close_ticker) >= 252 and current_price:
-        high_52w = float(close_ticker.iloc[-252:].max())
-        if high_52w and high_52w > 0:
-            drawdown_52w = round(100 * (current_price - high_52w) / high_52w, 1)
+        last_252 = close_ticker.iloc[-252:]
+        range_high = float(last_252.max())
+        range_low = float(last_252.min())
+        if range_high and range_high > 0:
+            drawdown_52w = round(100 * (current_price - range_high) / range_high, 1)
+
+    # Sanity checks for 52w range and drawdown
+    sanity_errors: list[str] = []
+    if range_low is not None and range_low < 0:
+        sanity_errors.append("range_negative")
+    if range_low is not None and range_high is not None and current_price is not None:
+        if not (range_low <= current_price <= max(range_high * 1.05, range_high + 0.01)):
+            sanity_errors.append("range_drawdown")
+    if drawdown_52w is not None and abs(drawdown_52w) > 80:
+        sanity_errors.append("drawdown_extreme")
 
     # Signal reasoning (HOLD/BUY/SELL with brief why)
     signal_data = {}
@@ -127,6 +140,12 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
                 "ma20": sig.get("ma20"),
                 "ma50": sig.get("ma50"),
                 "ma200": sig.get("ma200"),
+                "score_breakdown": {
+                    "trend": sig.get("trend_score"),
+                    "rsi": sig.get("rsi_contrib"),
+                    "macd": sig.get("macd_contrib"),
+                    "composite": sig.get("composite_buy"),
+                },
             }
             # Human-readable reasoning for modal (helps learn and understand)
             if buy_p is not None:
@@ -143,13 +162,41 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
                 score_s = f"score {score:.0f}" if score is not None else "score n/a"
                 price_reasoning["sell"] = f"Sell: – (no sell signal; {rsi_s}, {score_s})"
 
-            if supp is not None:
-                price_reasoning["support"] = f"Support: ${supp:.2f} – MA20 support; break below suggests caution"
+            supp_primary = sig.get("support_primary")
+            supp_secondary = sig.get("support_secondary")
+            if supp_primary is not None and supp_secondary is not None:
+                price_reasoning["support"] = f"Support: primary ~${supp_primary:.2f} (MA50), secondary ~${supp_secondary:.2f} (MA200)"
+            elif supp is not None:
+                price_reasoning["support"] = f"Support: ~${supp:.2f}; break below suggests caution"
             else:
-                price_reasoning["support"] = "Support: – (price below MA20 or no data)"
+                price_reasoning["support"] = "Support: – (price below MA50 or no data)"
         except Exception:
             pass
 
+    extra = _get_extra_info(ticker)
+    high_52w = extra.get("high_52w") if extra.get("high_52w") is not None else range_high
+    low_52w = extra.get("low_52w") if extra.get("low_52w") is not None else range_low
+    if extra.get("dividend_yield_error"):
+        sanity_errors.append("yield")
+    dividend_explanation = (
+        "Gold ETFs usually have ~0% dividend; they track gold price, not income."
+        if ticker in _GOLD_ETFS
+        else "Dividend yield = last 12-month dividends / current price."
+    )
+    lhr = None
+    period_long_risk = config.get("data", {}).get("period_long_risk", "13y") or "13y"
+    try:
+        from signals.long_horizon_risk import compute_long_horizon_risk
+        from signals.cache import cached_long_horizon_risk
+        lhr = cached_long_horizon_risk(ticker, period_long_risk, lambda: compute_long_horizon_risk(ticker, period_long_risk))
+    except Exception:
+        pass
+    fmp_data = _get_fmp_data(ticker, config, current_price, signal_data, close_ticker, range_low=range_low, range_high=range_high, long_horizon_risk=lhr)
+    if fmp_data.get("lt_scenarios"):
+        lt = fmp_data["lt_scenarios"]
+        bear, base, bull = lt.get("bear"), lt.get("base"), lt.get("bull")
+        if bear is not None and base is not None and bull is not None and not (bear < base < bull):
+            sanity_errors.append("bb_band_order")
     return {
         "ticker": ticker,
         "thesis": thesis_data.get("thesis", ""),
@@ -170,9 +217,14 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
         "volume_ratio": volume_ratio,
         "volume_unusual": volume_unusual,
         "drawdown_52w": drawdown_52w,
-        **_get_extra_info(ticker),
+        "high_52w": high_52w,
+        "low_52w": low_52w,
+        "dividend_yield_explanation": dividend_explanation,
+        "sanity_errors": sanity_errors,
+        "long_horizon_risk": lhr or fmp_data.get("long_horizon_risk"),
+        **extra,
         **signal_data,
-        **_get_fmp_data(ticker, config, current_price, signal_data, close_ticker),
+        **fmp_data,
     }
 
 
@@ -182,7 +234,7 @@ def _seasonal_note(ticker: str) -> str | None:
     return None
 
 
-def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal_data: dict, close) -> dict:
+def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal_data: dict, close, range_low: float | None = None, range_high: float | None = None, long_horizon_risk: dict | None = None) -> dict:
     """FMP price target, insider stats, ST/MT/LT target bands. Uses Redis cache."""
     out = {}
     try:
@@ -224,6 +276,8 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
             regime = "NEUTRAL"
             if comp is not None:
                 regime = "UP" if comp >= 60 else ("DOWN" if comp <= 40 else "NEUTRAL")
+            if long_horizon_risk:
+                out["long_horizon_risk"] = long_horizon_risk
             row = {
                 "price": current_price,
                 "close": current_price,
@@ -239,6 +293,9 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 "fair_pe_high": 25,
                 "cons_low": out.get("cons_low"),
                 "cons_high": out.get("cons_high"),
+                "range_52w_low": range_low,
+                "range_52w_high": range_high,
+                "stress_bear_pct": (long_horizon_risk or {}).get("stress_bear_pct"),
             }
             if len(close) >= 15:
                 returns = close.pct_change().dropna().iloc[-14:]
@@ -288,6 +345,9 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
 # Yahoo returns 404 "No fundamentals data found" for ETFs; skip .info for these
 _ETFS_SKIP_YAHOO_INFO = frozenset({"SPY", "QQQ", "GLD", "SLV", "DIA", "IWM", "XLF", "XLK", "XLE", "XLV", "XLP", "XLY", "XLI", "XLB", "XLU"})
 
+# Gold ETFs: ~0% dividend; ticker-aware explanation
+_GOLD_ETFS = frozenset({"GLD", "IAU", "SGOL", "GLDM", "BAR", "OUNZ"})
+
 
 def _get_extra_info(ticker: str) -> dict:
     """Dividend yield, 52w high/low, beta from yfinance. Skips ETFs to avoid Yahoo 404."""
@@ -300,8 +360,19 @@ def _get_extra_info(ticker: str) -> dict:
         info = t.info or {}
         out = {}
         dy = info.get("dividendYield") or info.get("yield")
-        if dy is not None and float(dy) > 0:
-            out["dividend_yield"] = round(float(dy) * 100, 2)
+        if dy is not None:
+            try:
+                dy_f = float(dy)
+                if dy_f > 0:
+                    # yfinance: decimal (0.005 = 0.5%) or sometimes percent (5 = 5%)
+                    yield_pct = dy_f * 100 if dy_f <= 1 else dy_f
+                    if yield_pct < 0 or yield_pct > 15:
+                        out["dividend_yield_error"] = "yield_out_of_range"
+                        out["dividend_yield"] = None
+                    else:
+                        out["dividend_yield"] = round(yield_pct, 2)
+            except (TypeError, ValueError):
+                pass
         for k, v in [("fiftyTwoWeekHigh", "high_52w"), ("fiftyTwoWeekLow", "low_52w")]:
             val = info.get(k)
             if val is not None:

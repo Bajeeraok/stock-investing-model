@@ -45,7 +45,7 @@ export function CryptoSection({ items }: { items: CryptoSignal[] }) {
                 {c.regime ?? "-"}
               </span>
               <p className="text-sm text-slate-400 mt-1">
-                Score {c.composite_buy?.toFixed(0) ?? "-"} · RSI {c.rsi?.toFixed(0) ?? "-"}
+                Confidence {c.composite_buy?.toFixed(0) ?? "-"} · RSI {c.rsi?.toFixed(0) ?? "-"}
               </p>
               <p
                 className={clsx(

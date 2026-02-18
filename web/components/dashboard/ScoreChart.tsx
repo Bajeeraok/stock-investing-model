@@ -17,7 +17,7 @@ export function ScoreChart({ signals, onTickerClick }: { signals: Signal[]; onTi
 
   return (
     <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">
-      <h3 className="text-sm font-medium text-slate-400 mb-4">Score by Ticker</h3>
+      <h3 className="text-sm font-medium text-slate-400 mb-4">Confidence by Ticker</h3>
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
@@ -27,7 +27,7 @@ export function ScoreChart({ signals, onTickerClick }: { signals: Signal[]; onTi
             <Tooltip
               contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
               labelStyle={{ color: "#f8fafc" }}
-              formatter={(value: number) => [value.toFixed(1), "Score"]}
+              formatter={(value: number) => [value.toFixed(1), "Confidence"]}
               labelFormatter={(label) => `Ticker: ${label}`}
             />
             <Bar

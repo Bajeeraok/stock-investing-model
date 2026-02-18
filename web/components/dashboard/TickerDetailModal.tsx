@@ -35,6 +35,9 @@ export interface TickerDetail {
   volume_unusual?: boolean;
   drawdown_52w?: number | null;
   dividend_yield?: number | null;
+  dividend_yield_explanation?: string | null;
+  dividend_yield_error?: string | null;
+  sanity_errors?: string[];
   high_52w?: number | null;
   low_52w?: number | null;
   beta?: number | null;
@@ -49,6 +52,7 @@ export interface TickerDetail {
   st_level_hit?: "target" | "stop" | null;
   st_target_confidence_pct?: number | null;
   mt_target_confidence_pct?: number | null;
+  score_breakdown?: { trend?: number; rsi?: number; macd?: number; composite?: number };
   street_vs_model?: {
     street_low: number;
     street_high: number;
@@ -58,6 +62,12 @@ export interface TickerDetail {
     delta_high_pct: number;
     model_more_bullish: boolean;
     divergence_pct?: number;
+  };
+  long_horizon_risk?: {
+    max_drawdown_pct: number;
+    worst_3y_return_pct?: number | null;
+    stress_bear_pct: number;
+    period_years: number;
   };
 }
 
@@ -149,6 +159,31 @@ export function TickerDetailModal({
                   <li><span className="font-medium text-slate-200">vs Market:</span> Your ticker return minus SPY. Positive = outperformance.</li>
                 </ul>
               </section>
+
+              {/* Confidence score breakdown (explainability) */}
+              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                    <BarChart3 className="h-4 w-4 text-emerald-500" />
+                    Confidence score breakdown
+                  </h3>
+                  <p className="text-slate-500 text-xs mb-2">Composite = 50% trend + 30% RSI + 20% MACD. Higher = stronger setup.</p>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    {detail.score_breakdown.trend != null && (
+                      <span className="text-slate-300">Trend: <strong className="text-slate-100">{detail.score_breakdown.trend.toFixed(0)}</strong></span>
+                    )}
+                    {detail.score_breakdown.rsi != null && (
+                      <span className="text-slate-300">RSI contrib: <strong className="text-slate-100">{detail.score_breakdown.rsi.toFixed(0)}</strong></span>
+                    )}
+                    {detail.score_breakdown.macd != null && (
+                      <span className="text-slate-300">MACD contrib: <strong className="text-slate-100">{detail.score_breakdown.macd.toFixed(0)}</strong></span>
+                    )}
+                    {detail.score_breakdown.composite != null && (
+                      <span className="text-emerald-400 font-medium">Composite: {detail.score_breakdown.composite.toFixed(0)}</span>
+                    )}
+                  </div>
+                </section>
+              )}
 
               {/* Moving averages – compare against reasoning */}
               {(detail.ma20 != null || detail.ma50 != null || detail.ma200 != null) && (
@@ -287,7 +322,7 @@ export function TickerDetailModal({
                                 )}
                               </p>
                             )}
-                            <p className="text-sm text-slate-500 mt-0.5">Fair value (EPS × P/E) blended with analyst consensus</p>
+                            <p className="text-sm text-slate-500 mt-0.5">Fair value (EPS × P/E) blended with analyst consensus. Bear level uses 10+yr stress drawdown when available.</p>
                           </>
                         ) : (
                           <p className="text-slate-500 text-base">Not available — requires analyst consensus or forward EPS (FMP)</p>
@@ -532,8 +567,17 @@ export function TickerDetailModal({
                 </section>
               )}
 
-              {/* Volume & drawdown with interpretation */}
-              {(detail.volume_ratio != null || detail.drawdown_52w != null) && (
+              {/* Sanity errors badge */}
+              {detail.sanity_errors && detail.sanity_errors.length > 0 && (
+                <section className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-base font-semibold text-amber-400 mb-2">Data quality</h3>
+                  <p className="text-sm text-slate-300">Some metrics flagged: {detail.sanity_errors.join(", ")}</p>
+                  <p className="text-xs text-slate-500 mt-1">yield = dividend out of 0–15% range; range_drawdown = price outside 52w; drawdown_extreme = |drawdown| &gt; 80%; bb_band_order = bear/base/bull inconsistent.</p>
+                </section>
+              )}
+
+              {/* Volume, drawdown, long-horizon risk */}
+              {(detail.volume_ratio != null || detail.drawdown_52w != null || detail.long_horizon_risk) && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
                   <h3 className="flex items-center gap-2 text-base font-semibold text-slate-200 mb-3">
                     <HelpCircle className="h-4 w-4" />
@@ -576,16 +620,38 @@ export function TickerDetailModal({
                         </p>
                       </div>
                     )}
-                    {detail.dividend_yield != null && detail.dividend_yield > 0 && (
+                    {(detail.dividend_yield != null && detail.dividend_yield > 0 && !detail.sanity_errors?.includes("yield")) && (
                       <div>
                         <p className="font-medium text-slate-200">Dividend yield: {detail.dividend_yield}%</p>
-                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">Annual yield. ETFs like GLD don&apos;t pay dividends.</p>
+                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">{detail.dividend_yield_explanation ?? "Dividend yield = last 12-month dividends / current price."}</p>
+                      </div>
+                    )}
+                    {detail.dividend_yield_explanation && detail.sanity_errors?.includes("yield") && (
+                      <div>
+                        <p className="font-medium text-amber-400">Dividend yield: N/A (out of range)</p>
+                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">{detail.dividend_yield_explanation}</p>
+                      </div>
+                    )}
+                    {detail.dividend_yield_explanation && (detail.dividend_yield == null || detail.dividend_yield === 0) && !detail.sanity_errors?.includes("yield") && detail.dividend_yield_explanation.includes("Gold ETFs") && (
+                      <div>
+                        <p className="font-medium text-slate-200">Dividend yield: ~0%</p>
+                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">{detail.dividend_yield_explanation}</p>
                       </div>
                     )}
                     {detail.beta != null && (
                       <div>
                         <p className="font-medium text-slate-200">Beta vs SPY: {detail.beta}</p>
                         <p className="text-slate-300 mt-2 text-sm leading-relaxed">β &gt; 1 = more volatile than market; β &lt; 1 = less. Gold (GLD) often has low/negative beta.</p>
+                      </div>
+                    )}
+                    {detail.long_horizon_risk && (
+                      <div>
+                        <p className="font-medium text-slate-200">
+                          Long-horizon risk ({detail.long_horizon_risk.period_years}y monthly)
+                        </p>
+                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">
+                          Max drawdown: {detail.long_horizon_risk.max_drawdown_pct}%. Worst 3y return: {detail.long_horizon_risk.worst_3y_return_pct != null ? `${detail.long_horizon_risk.worst_3y_return_pct}%` : "n/a"}. Stress bear: {detail.long_horizon_risk.stress_bear_pct}% (20th pct drawdown – stress tail). Used to ground bear/base/bull levels in tail events.
+                        </p>
                       </div>
                     )}
                   </div>

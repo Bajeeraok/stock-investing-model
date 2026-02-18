@@ -35,10 +35,11 @@ Edit `backend/config/config.yaml` to set your **watchlist** and optional **portf
   - `backend/config/config.yaml` – watchlist, portfolio, score/regime bands, opportunity scan
   - `backend/signals/` – fetch OHLCV, indicators, composite score, regime
   - `backend/opportunity/` – scan universe for long-term growth potential
-  - `backend/scripts/run_daily.py` – daily run (use Task Scheduler / cron after market close)
+  - `backend/scripts/run_daily.py` – full daily run (signals, report, alerts, EOD snapshot)
+  - `backend/scripts/scheduler_eod.py` – Python scheduler: run EOD snapshot daily at 8pm ET (configurable)
   - `backend/scripts/run_opportunity_scan.py` – standalone opportunity scan (faster than full run)
   - `backend/data/last_run.json` – previous run state for alerts
-  - `backend/data/eod/YYYY-MM-DD.json` – daily EOD snapshots (from run_daily) for historical tracking
+  - `backend/data/eod/YYYY-MM-DD.json` – daily EOD snapshots (from run_daily or scheduler_eod) for historical tracking
   - `backend/data/theses.yaml` – thesis + exit condition per ticker (Phase 5)
   - `backend/scripts/backtest_simple.py` – backtest score vs forward returns (Phase 4)
   - `backend/scripts/add_thesis.py` – add thesis for ticker (Phase 5)
@@ -120,10 +121,16 @@ See **scripts/deploy-railway.md** for step-by-step instructions to deploy backen
 - **Add ticker**: Use the bar below the header in the dashboard. Tickers persist in `backend/data/user_overrides.json`.
 - **Upload portfolio**: Upload an Excel file with columns `ticker`, `quantity`, `cost_basis`. Give it a portfolio name (e.g. IRA, Taxable). See **BACKTEST_SIGNALS.md** for template.
 
+## EOD snapshots
+
+To build historical snapshots for forward tracking and model validation:
+- **Manual:** `cd backend && python scripts/run_daily.py`
+- **Python scheduler:** `cd backend && python scripts/scheduler_eod.py` – runs EOD snapshot daily at 8pm ET (set `eod_schedule_time` and `eod_schedule_tz` in `config.yaml`)
+- **Ad-hoc API:** `POST /api/eod/run` (e.g. `curl -X POST http://localhost:8002/api/eod/run`) – may take 1–2 min
+
 ## Backtesting signals
 
 The model does **not** auto-adjust. To tune thresholds:
-- Run `run_daily.py` daily to build EOD snapshots.
 - Run `cd backend && python scripts/backtest_signals.py` to compare predictions vs actual returns.
 - See **BACKTEST_SIGNALS.md** for error margin analysis and tuning suggestions.
 
@@ -136,7 +143,7 @@ The model does **not** auto-adjust. To tune thresholds:
 ## Next steps
 
 1. Update quantities in backend/config/config.yaml to match your holdings
-2. Schedule daily run (Task Scheduler / cron) after market close
+2. Schedule EOD: run `python scripts/scheduler_eod.py` (Python) or use Task Scheduler / cron for `run_daily.py` after market close
 3. Configure alerts (optional) “doctor” - see Alerts section above
 4. Add paid data + backtest (Phase 4) when’re ready
 

@@ -15,10 +15,19 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
           ${report.total_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
         </p>
       </div>
+      <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 min-w-[180px]" title="Simple stress: if portfolio drops 10%">
+        <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="whitespace-nowrap">If −10%</span>
+        </div>
+        <p className="text-xl font-semibold text-amber-400">
+          ${(report.total_value * 0.9).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </p>
+      </div>
       <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 min-w-[180px]">
         <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">
           <BarChart3 className="h-4 w-4 shrink-0" />
-          <span className="whitespace-nowrap">Avg Score</span>
+          <span className="whitespace-nowrap">Avg Confidence</span>
         </div>
         <p className="text-2xl font-bold text-slate-100">{report.avg_score.toFixed(1)}</p>
       </div>
@@ -61,6 +70,12 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
           <p className="text-amber-400 text-xs mt-1">Concentration alert</p>
         )}
       </div>
+      {report.mega_cap_pct != null && report.mega_cap_pct > 0 && (
+        <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 min-w-[180px]" title="Mega-cap (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA) combined %">
+          <div className="flex items-center gap-2 text-slate-400 text-sm mb-1">Mega-cap %</div>
+          <p className="text-xl font-semibold text-slate-200">{report.mega_cap_pct}%</p>
+        </div>
+      )}
       {report.sector_allocation && report.sector_allocation.length > 0 && (
         <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5 md:col-span-2 lg:col-span-4">
           <div className="flex items-center gap-2 text-slate-400 text-sm mb-2">Sector allocation</div>

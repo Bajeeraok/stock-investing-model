@@ -27,6 +27,39 @@ def get_api_key(config: dict) -> str | None:
     return (config.get("data") or {}).get("fred_api_key") or config.get("fred_api_key") or None
 
 
+def fetch_series_range(
+    config: dict, series_id: str, start_date: str, end_date: str | None = None
+) -> tuple[list[dict], str | None]:
+    """
+    Fetch historical observations for a FRED series.
+    start_date, end_date: YYYY-MM-DD. end_date defaults to today.
+    Returns (observations, error). observations: list of {date, value}, oldest first.
+    """
+    import datetime
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FRED API key"
+    if end_date is None:
+        end_date = datetime.date.today().isoformat()
+    url = (
+        f"{FRED_BASE}?series_id={series_id}"
+        f"&api_key={api_key}&file_type=json"
+        f"&observation_start={start_date}&observation_end={end_date}"
+        f"&sort_order=asc"
+    )
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode())
+    except Exception as e:
+        logger.debug("FRED request failed: %s", e)
+        return [], str(e)
+    obs = data.get("observations") if isinstance(data, dict) else None
+    if not isinstance(obs, list):
+        return [], "Unexpected response"
+    return obs, None
+
+
 def fetch_series(config: dict, series_id: str, limit: int = 1) -> tuple[list[dict], str | None]:
     """
     Fetch latest observations for a FRED series.

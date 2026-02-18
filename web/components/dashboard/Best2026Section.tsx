@@ -33,7 +33,7 @@ export function Best2026Section({
           <thead>
             <tr className="text-left text-slate-400 border-b border-slate-700">
               <th className="py-2 pr-4 font-medium whitespace-nowrap">Ticker</th>
-              <th className="py-2 pr-4 font-medium whitespace-nowrap">Score</th>
+              <th className="py-2 pr-4 font-medium whitespace-nowrap">Confidence</th>
               <th className="py-2 pr-4 font-medium whitespace-nowrap">Regime</th>
               <th className="py-2 pr-4 font-medium whitespace-nowrap">Conf.</th>
               <th className="py-2 font-medium">Reason</th>

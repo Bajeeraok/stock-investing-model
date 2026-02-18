@@ -1,12 +1,43 @@
 /**
  * Proxy API requests to the backend with extended timeout.
- * Dashboard load can take 1-2 minutes; default proxy timeouts cause ECONNRESET.
- * Timeout: 5 minutes for long-running endpoints like /api/dashboard.
+ * Dashboard load can take 1-2 minutes (longer under load); default proxy timeouts cause ECONNRESET.
+ * Timeout: 10 minutes for /api/dashboard; 5 minutes for other endpoints.
  */
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_API_URL || "http://localhost:8002";
-const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes default
+const DASHBOARD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes for /api/dashboard
+
+function getTimeoutMs(apiPath: string): number {
+  return apiPath === "dashboard" ? DASHBOARD_TIMEOUT_MS : TIMEOUT_MS;
+}
+
+function isDashboardPath(apiPath: string): boolean {
+  return apiPath === "dashboard" || apiPath.startsWith("dashboard/");
+}
+
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number,
+  init?: RequestInit
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: { Accept: "application/json", ...(init?.headers as Record<string, string>) },
+      cache: "no-store",
+    });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    throw e;
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -17,26 +48,50 @@ export async function GET(
   const backendUrl = `${BACKEND.replace(/\/$/, "")}/api/${apiPath}`;
   const search = request.nextUrl.search;
   const url = backendUrl + search;
+  const timeoutMs = getTimeoutMs(apiPath);
+  const dashboardLike = isDashboardPath(apiPath);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const doFetch = async (): Promise<Response> => {
+    return fetchWithTimeout(url, timeoutMs);
+  };
 
   try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
+    let res = await doFetch();
+    // One retry for long-running dashboard if first attempt fails (e.g. ECONNRESET)
+    if (!res.ok && dashboardLike && res.status >= 500) {
+      console.warn("[proxy] Dashboard returned", res.status, ", retrying in 3s...");
+      await new Promise((r) => setTimeout(r, 3000));
+      res = await doFetch();
+    }
     const body = await res.text();
-    clearTimeout(timeoutId);
     return new NextResponse(body, {
       status: res.status,
       headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
     });
   } catch (e) {
-    clearTimeout(timeoutId);
-    const msg = e instanceof Error ? e.message : "Proxy failed";
-    console.error("[proxy] Failed to proxy", url, msg);
+    const isAbort = e instanceof Error && (e as Error & { name?: string }).name === "AbortError";
+    const cause = e instanceof Error && "cause" in e ? (e as Error & { cause?: unknown }).cause : null;
+    const msg = isAbort
+      ? `Request timed out after ${timeoutMs / 60000} minutes. Dashboard can take 1–2 min; check backend is running and not overloaded.`
+      : e instanceof Error ? e.message : "Proxy failed";
+    console.error("[proxy] Failed to proxy", url, msg, cause ? `(cause: ${String(cause)})` : "");
+
+    if (dashboardLike && !isAbort) {
+      try {
+        console.warn("[proxy] Retrying dashboard in 3s...");
+        await new Promise((r) => setTimeout(r, 3000));
+        const res = await doFetch();
+        const body = await res.text();
+        return new NextResponse(body, {
+          status: res.status,
+          headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
+        });
+      } catch (retryErr) {
+        const retryCause = retryErr instanceof Error && "cause" in retryErr ? (retryErr as Error & { cause?: unknown }).cause : null;
+        console.error("[proxy] Retry failed", url, retryCause ? String(retryCause) : retryErr);
+      }
+    }
+
     return NextResponse.json(
       { error: msg, url },
       { status: 502 }
@@ -50,10 +105,12 @@ export async function POST(
 ) {
   const { path = [] } = await params;
   const apiPath = path.length ? path.join("/") : "";
-  const backendUrl = `${BACKEND.replace(/\/$/, "")}/api/${apiPath}`;
+  const search = request.nextUrl.search;
+  const backendUrl = `${BACKEND.replace(/\/$/, "")}/api/${apiPath}${search}`;
 
+  const timeoutMs = getTimeoutMs(apiPath);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const contentType = request.headers.get("Content-Type");
@@ -79,7 +136,10 @@ export async function POST(
     });
   } catch (e) {
     clearTimeout(timeoutId);
-    const msg = e instanceof Error ? e.message : "Proxy failed";
+    const isAbort = e instanceof Error && (e as Error & { name?: string }).name === "AbortError";
+    const msg = isAbort
+      ? `Request timed out after ${timeoutMs / 60000} minutes.`
+      : e instanceof Error ? e.message : "Proxy failed";
     console.error("[proxy] POST failed", backendUrl, msg);
     return NextResponse.json({ error: msg }, { status: 502 });
   }

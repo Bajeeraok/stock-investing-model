@@ -47,43 +47,110 @@ export function SignalsTable({
 
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
-      <div className="flex items-center justify-end gap-2 px-4 py-2 bg-slate-800/50 border-b border-slate-700">
+      <div className="flex items-center justify-end gap-2 px-3 sm:px-4 py-2 bg-slate-800/50 border-b border-slate-700">
         <span className="text-xs text-slate-400">Sort by:</span>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-          className="text-xs bg-slate-800 border border-slate-600 rounded px-2 py-1 text-slate-300"
+          className="text-sm sm:text-xs bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
         >
-          <option value="score">Score</option>
+          <option value="score">Confidence</option>
           <option value="ticker">Ticker</option>
           <option value="regime">Regime</option>
           <option value="rsi">RSI</option>
         </select>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
+
+      {/* Mobile: card list */}
+      <div className="md:hidden divide-y divide-slate-700/50">
+        {sorted.map((r) => (
+          <button
+            key={r.ticker}
+            type="button"
+            onClick={() => onTickerClick?.(r.ticker)}
+            className={clsx(
+              "w-full text-left px-4 py-3 active:bg-slate-800/50 transition-colors",
+              r.story_change && "bg-amber-500/5"
+            )}
+          >
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <span className="font-mono font-semibold text-emerald-400 text-base">{r.ticker}</span>
+              <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <span className={clsx(
+                "font-medium text-sm",
+                (r.composite_buy ?? 0) >= 70 && "text-emerald-400",
+                (r.composite_buy ?? 0) <= 30 && "text-red-400",
+                (r.composite_buy ?? 0) > 30 && (r.composite_buy ?? 0) < 70 && "text-slate-300"
+              )}>
+                {(r.composite_buy != null ? r.composite_buy.toFixed(0) : "-")} conf
+              </span>
+              <span className={clsx(
+                "px-2 py-0.5 rounded text-xs font-medium",
+                r.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
+                r.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
+                r.regime === "DOWN" && "bg-red-500/20 text-red-400"
+              )}>
+                {r.regime ?? "-"}
+              </span>
+              <span className={clsx(
+                "text-sm font-medium",
+                r.signal === "BUY" && "text-emerald-400",
+                r.signal === "SELL" && "text-red-400",
+                r.signal === "HOLD" && "text-slate-400"
+              )}>
+                {r.signal ?? "-"}
+              </span>
+              {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
+            </div>
+            {r.earnings_note && <p className="text-amber-400 text-xs mt-1">{r.earnings_note}</p>}
+            {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
+          </button>
+        ))}
+      </div>
+
+      {/* Desktop: table with sticky header + sticky first column */}
+      <div className="hidden md:block overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(70vh,800px)]">
+        <table className="w-full min-w-[900px] text-sm border-collapse">
           <thead>
-            <tr className="bg-slate-800/80 text-left text-base text-slate-400">
-              <th className="px-4 py-3 font-medium">Ticker</th>
-              <th className="px-4 py-3 font-medium">Close</th>
-              <th className="px-4 py-3 font-medium">Score</th>
-              <th className="px-4 py-3 font-medium" title="Liquidity score – placeholder for future; grey-out low-LIS tickers">LIS</th>
-              <th className="px-4 py-3 font-medium">RSI</th>
-              <th className="px-4 py-3 font-medium">Regime</th>
-              <th className="px-4 py-3 font-medium">Signal</th>
-              <th className="px-4 py-3 font-medium" title="CFTC Commitment of Traders: speculative positioning in the related commodity (GLD=Gold, SLV=Silver, USO=Oil). Crowded Long/Short = reversal risk.">
+            <tr className="text-left text-base text-slate-400">
+              <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800/95 backdrop-blur-sm px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
+                Ticker
+              </th>
+              <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
+                Close
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 model confidence">
+                Confidence
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+                LIS
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+                RSI
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+                Regime
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+                Signal
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Positioning
               </th>
-              <th className="px-4 py-3 font-medium" title="Buy: add on pullback. Sell: trim when overbought/weak. Support: break below = caution">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Buy / Sell / Support
               </th>
-              <th className="px-4 py-3 font-medium" title={`Short ${h.short_term} / Medium ${h.medium_term} / Long ${h.long_term}`}>
-                Short / Medium / Long
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+                Short / Med / Long
               </th>
-              <th className="px-4 py-3 font-medium" title="Vol: today vs 20d avg. DD: % below 52w high">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Vol / DD
               </th>
-              <th className="px-4 py-3 font-medium">Notes</th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+                Notes
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -91,11 +158,16 @@ export function SignalsTable({
               <tr
                 key={r.ticker}
                 className={clsx(
-                  "border-t border-slate-700/50 hover:bg-slate-800/30",
+                  "group border-t border-slate-700/50 hover:bg-slate-800/30",
                   r.story_change && "bg-amber-500/5"
                 )}
               >
-                <td className="px-4 py-3">
+                <td
+                  className={clsx(
+                    "sticky left-0 z-[10] min-w-[4.5rem] w-24 px-3 py-2.5 border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]",
+                    r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => onTickerClick?.(r.ticker)}
@@ -108,7 +180,10 @@ export function SignalsTable({
                   </button>
                 </td>
                 <td
-                  className="px-4 py-3"
+                  className={clsx(
+                    "sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-2.5 border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]",
+                    r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
+                  )}
                   title={r.risk_sizing ? `At ${riskSizing?.risk_pct ?? 1}% risk and ${r.risk_sizing.stop_pct}% stop: $${r.risk_sizing.size_dollars.toLocaleString()} (~${r.risk_sizing.shares} shares)` : undefined}
                 >
                   {r.close != null ? `$${r.close.toFixed(2)}` : "-"}
@@ -118,7 +193,7 @@ export function SignalsTable({
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   <span
                     className={clsx(
                       "font-medium",
@@ -134,7 +209,7 @@ export function SignalsTable({
                   –
                 </td>
                 <td className="px-4 py-3 text-slate-300">{r.rsi != null ? r.rsi.toFixed(1) : "-"}</td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   <span
                     className={clsx(
                       "px-2 py-0.5 rounded text-xs font-medium",
@@ -146,7 +221,7 @@ export function SignalsTable({
                     {r.regime ?? "-"}
                   </span>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   <span
                     className={clsx(
                       "font-medium",

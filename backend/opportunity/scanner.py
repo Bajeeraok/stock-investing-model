@@ -29,6 +29,7 @@ def _passes_long_term_criteria(
     regime: str,
     min_score: float,
     require_regime_up: bool,
+    min_rsi: float | None,
     max_rsi: float,
     require_price_above_ma200: bool,
     min_macd_hist: float | None,
@@ -38,8 +39,11 @@ def _passes_long_term_criteria(
         return False
     if require_regime_up and regime != "UP":
         return False
-    if sig.get("rsi") is not None and sig["rsi"] > max_rsi:
+    rsi = sig.get("rsi")
+    if rsi is not None and rsi > max_rsi:
         return False  # Avoid parabolic / overbought
+    if min_rsi is not None and rsi is not None and rsi < min_rsi:
+        return False  # Spec: 50 <= RSI <= 70 sweet spot
     if require_price_above_ma200:
         # We'd need MA200 from compute_indicators - composite_score doesn't return it
         # We'll add a simple check: if trend_score is high, price is likely above MA200
@@ -55,9 +59,10 @@ def _passes_long_term_criteria(
 def run_opportunity_scan(
     universe: list[str] | None = None,
     period: str = "5y",
-    min_score: float = 70,
+    min_score: float = 80,
     require_regime_up: bool = True,
-    max_rsi: float = 75,
+    min_rsi: float | None = 50,
+    max_rsi: float = 70,
     require_price_above_ma200: bool = True,
     min_macd_hist: float | None = 0,
     up_min: float = 60,
@@ -67,6 +72,8 @@ def run_opportunity_scan(
     min_volume_ratio: float | None = 0.5,
     exclude_earnings_days: int | None = None,
     config: dict | None = None,
+    max_gap_down_pct: float | None = 5.0,
+    min_dollar_volume: float | None = None,
 ) -> list[dict]:
     """
     Scan universe for tickers with long-term growth potential.
@@ -102,10 +109,22 @@ def run_opportunity_scan(
             continue
         if len(close) < min_bars:
             continue  # IPO or insufficient history - low confidence
-        sig = composite_score(close)
-        regime = get_regime(sig["composite_buy"], up_min, down_max)
+        use_spec = bool(config and config.get("use_spec_regime_score", False))
+        sig = composite_score(close, use_spec=use_spec, ticker=ticker, config=config)
+        regime = "UP" if sig.get("ma_regime") in ("UP", "UP-HV") else get_regime(sig["composite_buy"], up_min, down_max)
+        # Gap filter: exclude if today down > max_gap_down_pct vs prev close
+        if max_gap_down_pct is not None and len(close) >= 2:
+            pct_change = 100 * (float(close.iloc[-1]) - float(close.iloc[-2])) / float(close.iloc[-2])
+            if pct_change < -max_gap_down_pct:
+                continue
+        # Dollar volume filter: avg daily dollar vol >= min_dollar_volume
+        if min_dollar_volume is not None and volume is not None and len(volume) >= 20:
+            avg_vol = float(volume.iloc[-21:-1].mean()) if len(volume) >= 21 else float(volume.iloc[-20:].mean())
+            avg_dollar = avg_vol * float(close.iloc[-1])
+            if avg_dollar < min_dollar_volume:
+                continue
         if not _passes_long_term_criteria(
-            sig, regime, min_score, require_regime_up, max_rsi,
+            sig, regime, min_score, require_regime_up, min_rsi, max_rsi,
             require_price_above_ma200, min_macd_hist,
         ):
             continue

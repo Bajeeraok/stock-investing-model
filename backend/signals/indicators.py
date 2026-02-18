@@ -106,10 +106,160 @@ def _macd_score(hist: float) -> float:
     return 50.0 + strength
 
 
-def composite_score(close: pd.Series, weights: dict | None = None) -> dict:
+def _zscore_to_score(z: float) -> float:
+    """Map z-score to 0-100 centered at 50. clamp(50 + 50*z, 0, 100)."""
+    return float(np.clip(50.0 + 50.0 * np.clip(z, -2, 2), 0, 100))
+
+
+def _trend_strength_zscore(close: pd.Series, df: pd.DataFrame) -> tuple[float, float | None]:
+    """
+    Spec: TS_raw = 0.6*(price-MA50)/MA50 + 0.4*(MA50-MA200)/MA200
+    TS = clamp(50 + 50*zscore(TS_raw), 0, 100)
+    """
+    if len(df) < 200:
+        return 50.0, None
+    ts_raw = 0.6 * (df["close"] - df["MA50"]) / df["MA50"].replace(0, np.nan) + \
+             0.4 * (df["MA50"] - df["MA200"]) / df["MA200"].replace(0, np.nan)
+    ts_raw = ts_raw.dropna()
+    if len(ts_raw) < 50:
+        return 50.0, None
+    mean_, std_ = ts_raw.mean(), ts_raw.std()
+    if std_ is None or std_ == 0 or pd.isna(std_):
+        return 50.0, float(ts_raw.iloc[-1]) if len(ts_raw) else None
+    z = (ts_raw.iloc[-1] - mean_) / std_
+    return _zscore_to_score(z), float(ts_raw.iloc[-1])
+
+
+def _momentum_zscore(close: pd.Series, rsi_val: float) -> tuple[float, float | None]:
+    """
+    Spec: r_3m, r_6m = total return; mom_raw = 0.4*r_3m + 0.4*r_6m + 0.2*((RSI14-50)/50)
+    MOM = clamp(50 + 50*zscore(mom_raw), 0, 100); if RSI>70: MOM -= 10
+    """
+    if len(close) < 127:
+        return 50.0, None
+    r_3m = (float(close.iloc[-1]) - float(close.iloc[-63])) / float(close.iloc[-63]) if len(close) >= 63 else 0
+    r_6m = (float(close.iloc[-1]) - float(close.iloc[-126])) / float(close.iloc[-126]) if len(close) >= 126 else 0
+    rsi_norm = ((rsi_val - 50) / 50) if not pd.isna(rsi_val) else 0
+    mom_raw = 0.4 * r_3m + 0.4 * r_6m + 0.2 * rsi_norm
+    # Build rolling mom_raw for zscore (simplified: use last 252 bars)
+    mom_series = []
+    for i in range(max(0, len(close) - 252), len(close) - 1):
+        if i + 126 < len(close):
+            r3 = (close.iloc[i] - close.iloc[max(0, i - 63)]) / close.iloc[max(0, i - 63)] if i >= 63 else 0
+            r6 = (close.iloc[i] - close.iloc[max(0, i - 126)]) / close.iloc[max(0, i - 126)] if i >= 126 else 0
+            rsi_i = _rsi(close.iloc[: i + 1], 14).iloc[-1] if i >= 14 else 50
+            mom_series.append(0.4 * r3 + 0.4 * r6 + 0.2 * ((rsi_i - 50) / 50))
+    if not mom_series:
+        return 50.0, mom_raw
+    arr = np.array(mom_series)
+    mean_, std_ = arr.mean(), arr.std()
+    if std_ is None or std_ == 0:
+        mom = 50.0
+    else:
+        z = (mom_raw - mean_) / std_
+        mom = _zscore_to_score(z)
+    if not pd.isna(rsi_val) and rsi_val > 70:
+        mom = max(0, mom - 10)
+    return round(mom, 1), mom_raw
+
+
+def _valuation_score(ticker: str, config: dict | None) -> tuple[float | None, float | None]:
+    """
+    VAL: forward PE vs SPY (market proxy). Cheaper = higher score.
+    Returns (VAL 0-100, raw val for debugging) or (None, None) if unavailable.
+    """
+    if not config or not ticker:
+        return None, None
+    km = _fetch_key_metrics_cached(ticker, config)
+    spy_km = _fetch_key_metrics_cached("SPY", config)
+    fwd_pe = _get_forward_pe(km)
+    spy_pe = _get_forward_pe(spy_km)
+    if fwd_pe is None or spy_pe is None or fwd_pe <= 0 or spy_pe <= 0:
+        return None, None
+    # val_raw: (sector_PE - fwd_PE) / sector_PE; cheaper => positive
+    val_raw = (spy_pe - fwd_pe) / spy_pe
+    val = float(np.clip(50.0 + 50.0 * np.clip(val_raw * 2, -1, 1), 0, 100))
+    return round(val, 1), val_raw
+
+
+def _quality_score(ticker: str, config: dict | None) -> float | None:
+    """
+    QLT: roe, operatingMargin, debtToEquity from key_metrics. Threshold-based 0-100.
+    """
+    if not config or not ticker:
+        return None
+    km = _fetch_key_metrics_cached(ticker, config)
+    if not km:
+        return None
+    roe = km.get("roe") or km.get("returnOnEquity")
+    op_margin = km.get("operatingMargin") or km.get("operatingProfitMargin")
+    de = km.get("debtToEquity")
+    # FMP: roe/operatingMargin as decimal (0.15 = 15%) or percent (15 = 15%)
+    roe_score = 50.0
+    if roe is not None:
+        try:
+            r = float(roe)
+            if r > 1:
+                r = r / 100.0  # percent format
+            roe_score = min(100, max(0, 50 + r * 250))  # 20% ROE -> 100
+        except (TypeError, ValueError):
+            pass
+    margin_score = 50.0
+    if op_margin is not None:
+        try:
+            m = float(op_margin)
+            if m > 1:
+                m = m / 100.0  # percent format
+            margin_score = min(100, max(0, 50 + m * 250))  # 20% margin -> 100
+        except (TypeError, ValueError):
+            pass
+    leverage_score = 50.0
+    if de is not None:
+        try:
+            d = float(de)
+            leverage_score = max(0, min(100, 100 - d * 50))  # D/E=0 -> 100, D/E=2 -> 0
+        except (TypeError, ValueError):
+            pass
+    qlt = 0.4 * roe_score + 0.4 * margin_score + 0.2 * leverage_score
+    return round(float(np.clip(qlt, 0, 100)), 1)
+
+
+def _get_forward_pe(km: dict | None) -> float | None:
+    if not km:
+        return None
+    v = km.get("forwardPE") or km.get("peRatio") or km.get("priceEarningsRatio")
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fetch_key_metrics_cached(ticker: str, config: dict) -> dict | None:
+    """Fetch key_metrics with cache. Returns None on error or no API key."""
+    try:
+        from signals.fmp_client import fetch_key_metrics_ttm, get_api_key
+        from signals.cache import cached_key_metrics
+        if not get_api_key(config):
+            return None
+        return cached_key_metrics(ticker, lambda: fetch_key_metrics_ttm(config, ticker))
+    except Exception:
+        return None
+
+
+def composite_score(
+    close: pd.Series,
+    weights: dict | None = None,
+    use_spec: bool = False,
+    ticker: str | None = None,
+    config: dict | None = None,
+) -> dict:
     """
     Compute composite buy score (0-100) and component values for the latest bar.
     weights: trend, rsi, macd (default 0.5, 0.3, 0.2).
+    use_spec: if True, use spec formula (TS, MOM, optional VAL, QLT, regime penalty).
+    ticker, config: required for VAL/QLT when use_spec (stocks only; ETFs skipped).
     """
     if weights is None:
         weights = {"trend": 0.5, "rsi": 0.3, "macd": 0.2}
@@ -122,6 +272,58 @@ def composite_score(close: pd.Series, weights: dict | None = None) -> dict:
     last_close = float(row["close"])
     rsi_val = float(row["RSI"])
     macd_hist = float(row["MACD_hist"])
+
+    _ETFS = {"SPY", "QQQ", "GLD", "SLV", "IWM", "DIA", "VOO", "VTI", "XLF", "XLK", "XLE", "XLV", "XLY", "XLP", "XLI", "XLB", "XLU", "XLRE"}
+    is_etf = ticker and ticker.upper().split(".")[0] in _ETFS
+
+    ma_regime = None
+    if use_spec and len(df) >= 200:
+        # Vol 20d: std of daily returns
+        ret = close.pct_change().dropna()
+        if len(ret) >= 20:
+            vol_20 = float(ret.iloc[-20:].std()) if len(ret) >= 20 else None
+            vol_20_hist = ret.rolling(20).std().dropna()
+            vol_70_pct = float(np.percentile(vol_20_hist, 70)) if len(vol_20_hist) > 10 else None
+            from signals.regime import get_regime_ma
+            ma_regime = get_regime_ma(
+                last_close, float(row["MA50"]), float(row["MA200"]),
+                vol_20, vol_70_pct,
+            )
+        ts, _ = _trend_strength_zscore(close, df)
+        mom, _ = _momentum_zscore(close, rsi_val)
+        val = None
+        qlt = None
+        use_val_qlt = config and config.get("use_spec_val_qlt", True)
+        if ticker and config and not is_etf and use_val_qlt:
+            val, _ = _valuation_score(ticker, config)
+            qlt = _quality_score(ticker, config)
+        # Spec: Score = 0.35*TS + 0.30*MOM + 0.20*VAL + 0.15*QLT
+        if val is not None and qlt is not None:
+            composite = 0.35 * ts + 0.30 * mom + 0.20 * val + 0.15 * qlt
+        elif val is not None:
+            composite = 0.50 * ts + 0.35 * mom + 0.15 * val
+        elif qlt is not None:
+            composite = 0.50 * ts + 0.40 * mom + 0.10 * qlt
+        else:
+            composite = 0.55 * ts + 0.45 * mom
+        if ma_regime and ma_regime not in ("UP", "UP-HV"):
+            composite -= 15
+        composite = max(0.0, min(100.0, round(composite, 1)))
+        out = {
+            "close": last_close,
+            "trend_score": round(ts, 1),
+            "rsi": round(rsi_val, 1),
+            "macd_hist": round(macd_hist, 4),
+            "rsi_contrib": round(mom, 1),
+            "macd_contrib": round(_macd_score(macd_hist), 1),
+            "composite_buy": composite,
+            "ma_regime": ma_regime,
+        }
+        if val is not None:
+            out["val_score"] = val
+        if qlt is not None:
+            out["qlt_score"] = qlt
+        return out
 
     trend = _trend_score_gradient(row)
     rsi_contrib = _rsi_score_asymmetric(rsi_val)
@@ -158,14 +360,21 @@ def _empty_signal(close: pd.Series) -> dict:
     }
 
 
-def multi_horizon_scores(close: pd.Series) -> dict:
+def multi_horizon_scores(
+    close: pd.Series,
+    use_spec: bool = False,
+    ticker: str | None = None,
+    config: dict | None = None,
+) -> dict:
     """
     Short (weeks), Medium (months), Long (1–2 yrs) scores for long-term investor.
     - Short: MA20 vs MA50, RSI, 5-day momentum
-    - Medium: composite (MA50/200, RSI, MACD) – main signal
+    - Medium: composite (MA50/200, RSI, MACD or spec TS+MOM+VAL+QLT) – main signal
     - Long: price vs MA200, MA50 vs MA200 alignment
+    use_spec: use spec formula (TS, MOM, optional VAL, QLT, regime penalty).
+    ticker, config: required for VAL/QLT when use_spec (stocks only).
     """
-    sig = composite_score(close)
+    sig = composite_score(close, use_spec=use_spec, ticker=ticker, config=config)
     df = compute_indicators(close)
     if df.empty or len(df) < 50:
         return {
@@ -299,10 +508,19 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         elif pd.notna(ma50) and ma50 > 0:
             suggested_buy_price = round(float(ma50), 2)  # Fallback when MA200 unavailable (e.g. short history)
 
-    # Support level: MA20 when price above it - break below = caution (NOT a sell price)
+    # Support levels: primary = MA50, secondary = MA200 (uptrend). MA20 as short-term watch.
     support_level = None
-    if pd.notna(ma20) and ma20 > 0 and c > ma20:
-        support_level = round(float(ma20), 2)  # Watch: break below MA20 may signal weakness
+    support_primary = None
+    support_secondary = None
+    if pd.notna(ma50) and ma50 > 0 and c > ma50:
+        support_primary = round(float(ma50), 2)
+    if pd.notna(ma200) and ma200 > 0 and c > ma200:
+        support_secondary = round(float(ma200), 2)
+    # Use primary (MA50) as main support when available; fallback to MA20 for short-term
+    if support_primary is not None:
+        support_level = support_primary
+    elif pd.notna(ma20) and ma20 > 0 and c > ma20:
+        support_level = round(float(ma20), 2)
 
     # Confidence score (0-100) for buy/sell target to support decision-making
     buy_target_confidence_pct = None
@@ -340,6 +558,8 @@ def multi_horizon_scores(close: pd.Series) -> dict:
         "suggested_buy_price": suggested_buy_price,
         "suggested_sell_price": suggested_sell_price,
         "support_level": support_level,
+        "support_primary": support_primary,
+        "support_secondary": support_secondary,
         "buy_target_confidence_pct": buy_target_confidence_pct,
         "sell_target_confidence_pct": sell_target_confidence_pct,
     }

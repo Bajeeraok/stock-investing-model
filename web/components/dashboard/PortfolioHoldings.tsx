@@ -3,31 +3,51 @@
 import type { PortfolioHolding } from "@/app/page";
 import { clsx } from "clsx";
 
-export function PortfolioHoldings({ holdings, onTickerClick }: { holdings: PortfolioHolding[]; onTickerClick?: (ticker: string) => void }) {
+export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }: { holdings: PortfolioHolding[]; onTickerClick?: (ticker: string) => void; hideAccountColumn?: boolean }) {
   const sorted = [...holdings].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-  const hasAccounts = holdings.some((h) => h.account);
+  const hasAccounts = !hideAccountColumn && holdings.some((h) => h.account);
   const hasGainLoss = holdings.some((h) => h.gain_loss != null);
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full">
+      <div className="overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(70vh,800px)]">
+        <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
-            <tr className="bg-slate-800/80 text-left text-sm text-slate-400">
-              {hasAccounts && <th className="px-4 py-3 font-medium">Account</th>}
-              <th className="px-4 py-3 font-medium">Ticker</th>
-              <th className="px-4 py-3 font-medium">Value</th>
-              {hasGainLoss && <th className="px-4 py-3 font-medium">Gain/Loss</th>}
-              <th className="px-4 py-3 font-medium">%</th>
-              <th className="px-4 py-3 font-medium">Score</th>
-              <th className="px-4 py-3 font-medium">Regime</th>
-              <th className="px-4 py-3 font-medium">Suggestion</th>
+            <tr className="text-left text-slate-400">
+              {hasAccounts && (
+                <th className="sticky top-0 left-0 z-[30] min-w-[5rem] w-28 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
+                  Account
+                </th>
+              )}
+              <th
+                className={clsx(
+                  "sticky top-0 z-[20] min-w-[4.5rem] w-24 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700",
+                  hasAccounts && "left-28 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] border-r border-slate-700"
+                )}
+              >
+                Ticker
+              </th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Value</th>
+              {hasGainLoss && <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Gain/Loss</th>}
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">%</th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 model confidence (trend/RSI/MACD); higher = stronger bullish setup">Confidence</th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Regime</th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Suggestion</th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((h, i) => (
-              <tr key={h.account ? `${h.account}-${h.ticker}-${i}` : h.ticker} className="border-t border-slate-700/50 hover:bg-slate-800/30">
-                {hasAccounts && <td className="px-4 py-3 text-slate-400">{h.account ?? "-"}</td>}
-                <td className="px-4 py-3">
+              <tr key={h.account ? `${h.account}-${h.ticker}-${i}` : h.ticker} className="group border-t border-slate-700/50 hover:bg-slate-800/30">
+                {hasAccounts && (
+                  <td className="sticky left-0 z-[10] min-w-[5rem] w-28 px-3 py-2.5 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">
+                    {h.account ?? "-"}
+                  </td>
+                )}
+                <td
+                  className={clsx(
+                    "sticky z-[10] min-w-[4.5rem] w-24 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30",
+                    hasAccounts ? "left-28" : "left-0"
+                  )}
+                >
                   {onTickerClick ? (
                     <button type="button" onClick={() => onTickerClick(h.ticker)} className="font-mono font-medium text-emerald-400 hover:underline cursor-pointer">
                       {h.ticker}
@@ -36,11 +56,11 @@ export function PortfolioHoldings({ holdings, onTickerClick }: { holdings: Portf
                     <span className="font-mono font-medium">{h.ticker}</span>
                   )}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   {h.value != null ? `$${h.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "-"}
                 </td>
                 {hasGainLoss && (
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2.5">
                     {h.gain_loss != null ? (
                       <span className={h.gain_loss >= 0 ? "text-emerald-400" : "text-red-400"}>
                         {h.gain_loss >= 0 ? "+" : ""}${h.gain_loss.toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -51,10 +71,10 @@ export function PortfolioHoldings({ holdings, onTickerClick }: { holdings: Portf
                     )}
                   </td>
                 )}
-                <td className="px-4 py-3 text-slate-400">
+                <td className="px-3 py-2.5 text-slate-400">
                   {h.pct != null ? `${h.pct.toFixed(1)}%` : "-"}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   <span
                     className={clsx(
                       (h.score ?? 0) >= 65 && "text-emerald-400",
@@ -65,7 +85,7 @@ export function PortfolioHoldings({ holdings, onTickerClick }: { holdings: Portf
                     {h.score != null ? h.score.toFixed(1) : "-"}
                   </span>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-2.5">
                   <span
                     className={clsx(
                       "px-2 py-0.5 rounded text-xs font-medium",
@@ -77,7 +97,12 @@ export function PortfolioHoldings({ holdings, onTickerClick }: { holdings: Portf
                     {h.regime ?? "-"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-300">{h.suggestion}</td>
+                <td className="px-3 py-2.5 text-slate-300">
+                  {h.suggestion}
+                  {h.gain_loss_pct != null && h.gain_loss_pct >= 20 && (
+                    <span className="block text-xs text-amber-400/90 mt-0.5" title="Consider holding 12+ months for long-term capital gains treatment (taxable accounts).">LTCG note</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
