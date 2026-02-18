@@ -8,6 +8,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export interface TickerDetail {
   ticker: string;
+  company_name?: string | null;
   thesis: string;
   exit_condition: string;
   short_suggestion?: string;
@@ -111,9 +112,12 @@ export function TickerDetailModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-slate-900 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <TrendingUp className="h-6 w-6 text-emerald-500" />
-            {ticker}
+          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2 flex-wrap">
+            <TrendingUp className="h-6 w-6 text-emerald-500 shrink-0" />
+            <span className="font-mono text-emerald-400">{ticker}</span>
+            {detail?.company_name && (
+              <span className="text-base font-normal text-slate-300">· {detail.company_name}</span>
+            )}
             {detail?.sector && (
               <span className="text-base font-normal text-slate-400">· {detail.sector}</span>
             )}

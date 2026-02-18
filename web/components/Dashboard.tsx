@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Calendar, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
@@ -74,7 +74,6 @@ function isValidTab(t: string): t is TabId {
 
 export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [refreshAgo, setRefreshAgo] = useState("");
   const [eodSaving, setEodSaving] = useState(false);
@@ -87,33 +86,36 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
     (h) => h.score != null && h.score < 40
   );
 
-  const tabFromUrl = searchParams?.get("tab");
   const [activeTab, setActiveTabState] = useState<TabId>("signals");
 
   const setActiveTab = useCallback((id: TabId) => {
     setActiveTabState(id);
     if (typeof window !== "undefined") localStorage.setItem("thrive-tab", id);
-    const params = new URLSearchParams(searchParams?.toString() ?? "");
-    params.set("tab", id);
-    router.replace(`?${params.toString()}`, { scroll: false });
-  }, [router, searchParams]);
-
-  useEffect(() => {
-    if (tabFromUrl && isValidTab(tabFromUrl)) {
-      setActiveTabState(tabFromUrl);
-      return;
-    }
+    // Keep URL clean: remove only tab param, preserve other query params
     if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("thrive-tab");
-      const tab = (saved && isValidTab(saved)) ? saved : "signals";
-      setActiveTabState(tab);
       const params = new URLSearchParams(window.location.search);
-      if (params.get("tab") !== tab) {
-        params.set("tab", tab);
-        router.replace(`?${params.toString()}`, { scroll: false });
+      if (params.has("tab")) {
+        params.delete("tab");
+        const path = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+        router.replace(path, { scroll: false });
       }
     }
-  }, [tabFromUrl, router]);
+  }, [router]);
+
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("thrive-tab") : null;
+    const tab = (saved && isValidTab(saved)) ? saved : "signals";
+    setActiveTabState(tab);
+    // Clear tab from URL on load if present (e.g. shared link with ?tab=)
+    if (typeof window !== "undefined" && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("tab")) {
+        params.delete("tab");
+        const path = window.location.pathname + (params.toString() ? `?${params.toString()}` : "");
+        router.replace(path, { scroll: false });
+      }
+    }
+  }, [router]);
 
   const handleTabChange = setActiveTab;
 

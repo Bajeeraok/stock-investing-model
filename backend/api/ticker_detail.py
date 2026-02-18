@@ -350,7 +350,7 @@ _GOLD_ETFS = frozenset({"GLD", "IAU", "SGOL", "GLDM", "BAR", "OUNZ"})
 
 
 def _get_extra_info(ticker: str) -> dict:
-    """Dividend yield, 52w high/low, beta from yfinance. Skips ETFs to avoid Yahoo 404."""
+    """Dividend yield, 52w high/low, beta, company name from yfinance. Skips ETFs to avoid Yahoo 404."""
     sym = (ticker or "").upper().split("-")[0]
     if sym in _ETFS_SKIP_YAHOO_INFO:
         return {}
@@ -359,6 +359,10 @@ def _get_extra_info(ticker: str) -> dict:
         t = yf.Ticker(ticker)
         info = t.info or {}
         out = {}
+        # Company name for modal header (longName preferred, e.g. "Amazon.com, Inc.")
+        name = (info.get("longName") or info.get("shortName") or "").strip()
+        if name:
+            out["company_name"] = name
         dy = info.get("dividendYield") or info.get("yield")
         if dy is not None:
             try:
