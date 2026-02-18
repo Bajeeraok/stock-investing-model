@@ -1,0 +1,448 @@
+{
+  "run_date": "2026-02-18T12:50:57.131452",
+  "run_results": [
+    {
+      "ticker": "SPY",
+      "composite_buy": 36.8,
+      "regime": "DOWN",
+      "rsi": 45.1,
+      "trend_score": 45.0,
+      "ma20": 688.71,
+      "ma50": 686.89,
+      "macd_hist": -1.2493,
+      "close": 682.8499755859375,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 677.15,
+        "high": 688.55
+      },
+      "mt_band": {
+        "low": 643.76,
+        "high": 706.31
+      },
+      "support_level": null,
+      "suggested_buy_price": 646.66
+    },
+    {
+      "ticker": "QQQ",
+      "composite_buy": 36.1,
+      "regime": "DOWN",
+      "rsi": 40.5,
+      "trend_score": 45.0,
+      "ma20": 615.34,
+      "ma50": 617.92,
+      "macd_hist": -1.9492,
+      "close": 601.2999877929688,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 590.75,
+        "high": 611.84
+      },
+      "mt_band": {
+        "low": 553.59,
+        "high": 629.93
+      },
+      "support_level": null,
+      "suggested_buy_price": 580.87
+    },
+    {
+      "ticker": "GLD",
+      "composite_buy": 65.1,
+      "regime": "UP",
+      "rsi": 50.7,
+      "trend_score": 100.0,
+      "ma20": 457.94,
+      "ma50": 425.71,
+      "macd_hist": -2.632,
+      "close": 448.20001220703125,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD/ADD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 429.4,
+        "high": 467.0
+      },
+      "mt_band": {
+        "low": 408.02,
+        "high": 515.16
+      },
+      "support_level": 425.71,
+      "suggested_buy_price": 425.71
+    },
+    {
+      "ticker": "SLV",
+      "composite_buy": 36.4,
+      "regime": "DOWN",
+      "rsi": 42.4,
+      "trend_score": 45.0,
+      "ma20": 81.56,
+      "ma50": 71.99,
+      "macd_hist": -2.6048,
+      "close": 66.37000274658203,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 56.23,
+        "high": 76.51
+      },
+      "mt_band": {
+        "low": 43.2,
+        "high": 80.27
+      },
+      "support_level": null,
+      "suggested_buy_price": 46.2
+    },
+    {
+      "ticker": "AAPL",
+      "composite_buy": 37.3,
+      "regime": "DOWN",
+      "rsi": 48.6,
+      "trend_score": 45.0,
+      "ma20": 262.52,
+      "ma50": 266.85,
+      "macd_hist": -0.2528,
+      "close": 263.8800048828125,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 257.9,
+        "high": 269.86
+      },
+      "mt_band": {
+        "low": 234.25,
+        "high": 281.66
+      },
+      "support_level": 262.52,
+      "suggested_buy_price": 239.86
+    },
+    {
+      "ticker": "MSFT",
+      "composite_buy": 12.1,
+      "regime": "DOWN",
+      "rsi": 31.0,
+      "trend_score": 0.0,
+      "ma20": 429.34,
+      "ma50": 459.33,
+      "macd_hist": -1.741,
+      "close": 396.8599853515625,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "CONSIDER TRIM",
+      "long_suggestion": "CONSIDER TRIM",
+      "st_band": {
+        "low": 377.9,
+        "high": 415.82
+      },
+      "mt_band": {
+        "low": 347.37,
+        "high": 426.55
+      },
+      "support_level": null,
+      "suggested_buy_price": null
+    },
+    {
+      "ticker": "NVDA",
+      "composite_buy": 53.2,
+      "regime": "NEUTRAL",
+      "rsi": 49.7,
+      "trend_score": 90.1,
+      "ma20": 185.24,
+      "ma50": 184.51,
+      "macd_hist": 0.032,
+      "close": 184.97000122070312,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD/ADD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 179.56,
+        "high": 190.38
+      },
+      "mt_band": {
+        "low": 159.07,
+        "high": 210.87
+      },
+      "support_level": 184.51,
+      "suggested_buy_price": 184.51
+    },
+    {
+      "ticker": "GOOGL",
+      "composite_buy": 34.5,
+      "regime": "DOWN",
+      "rsi": 30.0,
+      "trend_score": 45.0,
+      "ma20": 326.5,
+      "ma50": 320.86,
+      "macd_hist": -4.3867,
+      "close": 302.0199890136719,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "CONSIDER TRIM",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 298.26,
+        "high": 305.78
+      },
+      "mt_band": {
+        "low": 258.51,
+        "high": 328.12
+      },
+      "support_level": null,
+      "suggested_buy_price": null
+    },
+    {
+      "ticker": "TSLA",
+      "composite_buy": 56.3,
+      "regime": "NEUTRAL",
+      "rsi": 42.2,
+      "trend_score": 45.0,
+      "ma20": 423.38,
+      "ma50": 443.23,
+      "macd_hist": 0.2527,
+      "close": 410.6300048828125,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 394.18,
+        "high": 427.08
+      },
+      "mt_band": {
+        "low": 337.23,
+        "high": 484.03
+      },
+      "support_level": null,
+      "suggested_buy_price": 385.8
+    },
+    {
+      "ticker": "META",
+      "composite_buy": 19.6,
+      "regime": "DOWN",
+      "rsi": 42.6,
+      "trend_score": 11.4,
+      "ma20": 666.83,
+      "ma50": 658.11,
+      "macd_hist": -5.3889,
+      "close": 639.2899780273438,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "CONSIDER TRIM",
+      "long_suggestion": "CONSIDER TRIM",
+      "st_band": {
+        "low": 617.44,
+        "high": 661.14
+      },
+      "mt_band": {
+        "low": 533.42,
+        "high": 702.81
+      },
+      "support_level": null,
+      "suggested_buy_price": null
+    },
+    {
+      "ticker": "AMZN",
+      "composite_buy": 41.2,
+      "regime": "NEUTRAL",
+      "rsi": 26.7,
+      "trend_score": 45.0,
+      "ma20": 225.49,
+      "ma50": 229.83,
+      "macd_hist": -3.9049,
+      "close": 201.14999389648438,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD",
+      "st_band": {
+        "low": 195.45,
+        "high": 206.85
+      },
+      "mt_band": {
+        "low": 176.17,
+        "high": 226.13
+      },
+      "support_level": null,
+      "suggested_buy_price": 223.71
+    },
+    {
+      "ticker": "CRWD",
+      "composite_buy": 13.799999999999997,
+      "regime": "DOWN",
+      "rsi": 42.0,
+      "trend_score": 0.0,
+      "ma20": 431.82,
+      "ma50": 461.36,
+      "macd_hist": 0.8267,
+      "close": 414.2850036621094,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "CONSIDER TRIM",
+      "long_suggestion": "CONSIDER TRIM",
+      "st_band": {
+        "low": 377.16,
+        "high": 439.63
+      },
+      "mt_band": {
+        "low": 331.3,
+        "high": 464.07
+      },
+      "support_level": null,
+      "suggested_buy_price": null
+    },
+    {
+      "ticker": "LLY",
+      "composite_buy": 37.3,
+      "regime": "DOWN",
+      "rsi": 48.8,
+      "trend_score": 45.0,
+      "ma20": 1043.02,
+      "ma50": 1048.22,
+      "macd_hist": -1.0179,
+      "close": 1036.050048828125,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 972.78,
+        "high": 1099.32
+      },
+      "mt_band": {
+        "low": 851.43,
+        "high": 1146.82
+      },
+      "support_level": null,
+      "suggested_buy_price": 861.42
+    },
+    {
+      "ticker": "PANW",
+      "composite_buy": 13.2,
+      "regime": "DOWN",
+      "rsi": 37.8,
+      "trend_score": 0.0,
+      "ma20": 172.26,
+      "ma50": 182.25,
+      "macd_hist": -0.2256,
+      "close": 163.5,
+      "short_suggestion": "CONSIDER TRIM",
+      "medium_suggestion": "CONSIDER TRIM",
+      "long_suggestion": "CONSIDER TRIM",
+      "st_band": {
+        "low": 154.77,
+        "high": 171.18
+      },
+      "mt_band": {
+        "low": 139.33,
+        "high": 178.0
+      },
+      "support_level": null,
+      "suggested_buy_price": null
+    },
+    {
+      "ticker": "AVGO",
+      "composite_buy": 37.3,
+      "regime": "DOWN",
+      "rsi": 48.9,
+      "trend_score": 45.0,
+      "ma20": 328.94,
+      "ma50": 344.83,
+      "macd_hist": 1.5055,
+      "close": 332.5400085449219,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 320.27,
+        "high": 344.81
+      },
+      "mt_band": {
+        "low": 252.4,
+        "high": 380.63
+      },
+      "support_level": 328.94,
+      "suggested_buy_price": 312.69
+    },
+    {
+      "ticker": "BLK",
+      "composite_buy": 36.8,
+      "regime": "DOWN",
+      "rsi": 45.5,
+      "trend_score": 45.0,
+      "ma20": 1096.58,
+      "ma50": 1091.44,
+      "macd_hist": -4.0745,
+      "close": 1072.6700439453125,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD",
+      "st_band": {
+        "low": 1053.78,
+        "high": 1091.56
+      },
+      "mt_band": {
+        "low": 943.09,
+        "high": 1150.42
+      },
+      "support_level": null,
+      "suggested_buy_price": 1071.43
+    },
+    {
+      "ticker": "BABA",
+      "composite_buy": 16.200000000000003,
+      "regime": "DOWN",
+      "rsi": 41.4,
+      "trend_score": 45.0,
+      "ma20": 166.01,
+      "ma50": 159.33,
+      "macd_hist": -1.7259,
+      "close": 155.42999267578125,
+      "short_suggestion": "HOLD",
+      "medium_suggestion": "HOLD",
+      "long_suggestion": "HOLD/ADD",
+      "st_band": {
+        "low": 151.56,
+        "high": 159.3
+      },
+      "mt_band": {
+        "low": 118.12,
+        "high": 177.82
+      },
+      "support_level": null,
+      "suggested_buy_price": 143.76
+    }
+  ],
+  "snapshot_date": "2026-02-17",
+  "next_day_outlook": [
+    {
+      "bias": "Neutral",
+      "pct_green": 52.3,
+      "avg_return_pct": 0.02,
+      "typical_range_pct": 1.9,
+      "state_key": "below_both|neutral|low",
+      "ticker": "SPY"
+    },
+    {
+      "bias": "Neutral",
+      "pct_green": 50.6,
+      "avg_return_pct": -0.18,
+      "typical_range_pct": 2.44,
+      "state_key": "below_both|neutral|low",
+      "ticker": "QQQ"
+    }
+  ],
+  "typical_move": [
+    {
+      "ticker": "SPY",
+      "typical_pct_1d": 0.9,
+      "typical_pct_60d": 0.72,
+      "high_vol_pct": 1.35,
+      "vol_regime": "Elevated"
+    },
+    {
+      "ticker": "QQQ",
+      "typical_pct_1d": 1.19,
+      "typical_pct_60d": 1.01,
+      "high_vol_pct": null,
+      "vol_regime": "Normal"
+    }
+  ]
+}
