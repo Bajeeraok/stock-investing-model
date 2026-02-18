@@ -99,7 +99,7 @@ export function ForwardTracking({
         </div>
       )}
 
-      <div className="overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(50vh,400px)]">
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full text-sm text-left border-collapse min-w-[400px]">
           <thead>
             <tr className="text-slate-500 border-b border-slate-600">

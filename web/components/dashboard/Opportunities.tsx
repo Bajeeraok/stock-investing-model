@@ -47,7 +47,7 @@ export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; 
       </div>
 
       {/* Desktop: table with sticky header + sticky Ticker & Close */}
-      <div className="hidden md:block overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(70vh,800px)]">
+      <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[640px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-slate-400">

@@ -270,8 +270,8 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
         <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} />
       </div>
 
-      <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-hidden">
-        <div className="overflow-y-auto overflow-x-hidden max-h-[calc(100vh-12rem)] sm:max-h-[calc(100vh-14rem)] rounded-xl border border-slate-800/80 bg-slate-900/30 backdrop-blur-sm">
+      <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+        <div className="rounded-xl border border-slate-800/80 bg-slate-900/30 backdrop-blur-sm">
           {/* Overview tab */}
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -616,7 +616,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 <ToggleSection id="analysis-indicator" title="Indicator comparison" icon={<Activity />} badge={data.indicator_comparisons.length} defaultOpen>
                   <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
                     <p className="text-sm text-slate-500 mb-2">Close, RSI, MA, MACD vs external APIs.</p>
-                    <div className="overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(50vh,400px)]">
+                    <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
                       <table className="w-full text-sm text-left border-collapse min-w-[480px]">
                         <thead>
                           <tr className="text-slate-500 border-b border-slate-600">

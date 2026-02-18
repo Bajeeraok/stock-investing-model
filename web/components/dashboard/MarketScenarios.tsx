@@ -28,7 +28,7 @@ export function MarketScenarios({ scenarios }: { scenarios: EventScenario[] }) {
       <p className="text-slate-500 text-sm">
         What-if: historical next-day move for SPY around similar events (12–13y). Not a forecast.
       </p>
-      <div className="overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(60vh,500px)] rounded-xl border border-slate-700">
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch] rounded-xl border border-slate-700">
         <table className="w-full text-sm border-collapse min-w-[520px]">
           <thead>
             <tr className="text-left text-slate-400">

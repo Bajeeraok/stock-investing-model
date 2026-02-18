@@ -111,7 +111,7 @@ export function SignalsTable({
       </div>
 
       {/* Desktop: table with sticky header + sticky first column */}
-      <div className="hidden md:block overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(70vh,800px)]">
+      <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[900px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">

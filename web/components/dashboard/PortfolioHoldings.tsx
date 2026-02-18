@@ -9,7 +9,7 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
   const hasGainLoss = holdings.some((h) => h.gain_loss != null);
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
-      <div className="overflow-auto [-webkit-overflow-scrolling:touch] max-h-[min(70vh,800px)]">
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <table className="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr className="text-left text-slate-400">

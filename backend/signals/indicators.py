@@ -498,15 +498,18 @@ def multi_horizon_scores(
 
     # Suggested buy price: only when NOT in sell mode – don't encourage adds when we say exit
     # When SELL (RSI≥70 or score≤35), we omit buy level to avoid "consider trim" + "buy at X" contradiction.
-    # Otherwise: prefer MA50 if price > MA50 (add on dip), else MA200 (value); fallback to MA50 if MA200 missing.
+    # Only suggest a level at or below current price: MA50 when price > MA50 (add on dip), else MA200 (value).
+    # Never suggest MA50 when price < MA50 (that would be above market – not a pullback level).
     suggested_buy_price = None
     if suggested_sell_price is None:  # Only show buy level when we're not recommending exit
         if pd.notna(ma50) and ma50 > 0 and c > ma50:
             suggested_buy_price = round(float(ma50), 2)  # Add on dip to MA50
         elif pd.notna(ma200) and ma200 > 0:
-            suggested_buy_price = round(float(ma200), 2)  # Value entry at MA200
-        elif pd.notna(ma50) and ma50 > 0:
-            suggested_buy_price = round(float(ma50), 2)  # Fallback when MA200 unavailable (e.g. short history)
+            suggested_buy_price = round(float(ma200), 2)  # Value / add on dip to MA200
+        # When price < MA50 and MA200 missing: do not use MA50 (it's above price); leave None
+    # Sanity: never suggest a buy level above current price (would imply "buy above market")
+    if suggested_buy_price is not None and suggested_buy_price > c:
+        suggested_buy_price = None
 
     # Support levels: primary = MA50, secondary = MA200 (uptrend). MA20 as short-term watch.
     support_level = None

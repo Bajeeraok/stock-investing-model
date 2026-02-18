@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle } from "lucide-react";
+import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { clsx } from "clsx";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -81,6 +81,14 @@ export function TickerDetailModal({
   const [detail, setDetail] = useState<TickerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [quickRefOpen, setQuickRefOpen] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   useEffect(() => {
     if (!ticker) return;
@@ -129,35 +137,41 @@ export function TickerDetailModal({
           )}
           {detail && !loading && (
             <>
-              {/* Quick reference – bullet summary for retail investors */}
-              <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4 mb-4">
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-400 mb-3">
-                  <HelpCircle className="h-4 w-4" />
-                  Quick reference – What each metric means
-                </h3>
-                <ul className="space-y-2 text-base text-slate-300 list-disc list-inside">
-                  <li><span className="font-medium text-slate-200">Price vs MAs:</span> Price &gt; MA50 &gt; MA200 = uptrend. Price &lt; MA50 &lt; MA200 = downtrend.</li>
-                  <li><span className="font-medium text-slate-200">MA20:</span> Short-term trend. Price above = bullish; break below = watch for weakness.</li>
-                  <li><span className="font-medium text-slate-200">MA50:</span> Medium-term trend. Often used for add-on pullbacks.</li>
-                  <li><span className="font-medium text-slate-200">MA200:</span> Long-term trend. Price above = broader uptrend intact.</li>
-                  <li><span className="font-medium text-emerald-400">Buy:</span> Suggested add level (e.g. pullback to MA50). Only shown when no sell signal.</li>
-                  <li><span className="font-medium text-red-400">Sell:</span> Actionable trim/exit when overbought (RSI high) or score weak.</li>
-                  <li><span className="font-medium text-amber-400">Support:</span> MA20 when price is above it. Break below = caution, not a sell trigger.</li>
-                  <li><span className="font-medium text-slate-200">Position size:</span> Normal size when macro is calm; reduce size when guidelines show elevated risk (real yields, VIX, crowded positioning).</li>
-                  <li><span className="font-medium text-amber-400">Crowded Long:</span> CFTC data — speculators very long (≥45% of open interest) in the related commodity (e.g. GLD=gold). Reversal risk; consider not adding size.</li>
-                  <li><span className="font-medium text-amber-400">Crowded Short:</span> CFTC data — speculators very short; squeeze/reversal risk.</li>
-                  <li><span className="font-medium text-slate-200">Macro regime:</span> Risk-On (low VIX, low real yields) vs Risk-Off (high VIX or high real yields). Affects position sizing.</li>
-                  <li><span className="font-medium text-slate-200">Rotation risk:</span> Tech leadership (XLK/QQQ vs SPY) weakening + weak breadth. High = tech suggestions stepped down (ADD→HOLD); tighten buy zones.</li>
-                  <li><span className="font-medium text-slate-200">Short (~1 mo):</span> MA20 vs MA50 + RSI. Quick momentum view.</li>
-                  <li><span className="font-medium text-slate-200">Medium (~3–6 mo):</span> Composite score. Main signal for adds/trims.</li>
-                  <li><span className="font-medium text-slate-200">Long (1–2 yr):</span> Price vs MA200. Big-picture trend.</li>
-                  <li><span className="font-medium text-slate-200">Vol vs 20d avg:</span> Today&apos;s volume ÷ 20-day average. ≥2× = unusual; interpret with price direction.</li>
-                  <li><span className="font-medium text-slate-200">Drawdown 52w:</span> % below 52-week high. Larger negative = farther from peak.</li>
-                  <li><span className="font-medium text-slate-200">52w range:</span> Low–high. Near high = extended; near low = value or weakness.</li>
-                  <li><span className="font-medium text-slate-200">Dividend yield:</span> Annual yield. Income component of total return.</li>
-                  <li><span className="font-medium text-slate-200">Beta:</span> Volatility vs SPY. β &gt; 1 = more volatile; β &lt; 1 = less.</li>
-                  <li><span className="font-medium text-slate-200">vs Market:</span> Your ticker return minus SPY. Positive = outperformance.</li>
-                </ul>
+              {/* Quick reference – collapsible so modal has less vertical scroll */}
+              <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden mb-4">
+                <button
+                  type="button"
+                  onClick={() => setQuickRefOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-emerald-500/10 transition-colors"
+                >
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+                    <HelpCircle className="h-4 w-4 shrink-0" />
+                    Quick reference – What each metric means
+                  </h3>
+                  {quickRefOpen ? (
+                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
+                  )}
+                </button>
+                {quickRefOpen && (
+                  <div className="px-4 pb-4 pt-0 border-t border-emerald-500/20">
+                    <ul className="space-y-1.5 text-sm text-slate-300 list-disc list-inside columns-1 sm:columns-2 gap-x-4">
+                      <li><span className="font-medium text-slate-200">Price vs MAs:</span> Price &gt; MA50 &gt; MA200 = uptrend; below = downtrend.</li>
+                      <li><span className="font-medium text-slate-200">MA20/50/200:</span> Short/medium/long trend. Above = bullish.</li>
+                      <li><span className="font-medium text-emerald-400">Buy:</span> Suggested add level (e.g. pullback to MA50).</li>
+                      <li><span className="font-medium text-red-400">Sell:</span> Trim/exit when overbought or score weak.</li>
+                      <li><span className="font-medium text-amber-400">Support:</span> MA20; break below = caution.</li>
+                      <li><span className="font-medium text-slate-200">Position size:</span> Reduce when guidelines show elevated risk.</li>
+                      <li><span className="font-medium text-amber-400">Crowded Long/Short:</span> CFTC specs extreme; reversal risk.</li>
+                      <li><span className="font-medium text-slate-200">Macro regime:</span> Risk-On vs Risk-Off; affects sizing.</li>
+                      <li><span className="font-medium text-slate-200">Rotation risk:</span> High = tech stepped down (ADD→HOLD).</li>
+                      <li><span className="font-medium text-slate-200">Short/Med/Long:</span> ~1 mo / ~3–6 mo / 1–2 yr view.</li>
+                      <li><span className="font-medium text-slate-200">Vol, Drawdown 52w, 52w range:</span> Volume vs avg; % off high; low–high.</li>
+                      <li><span className="font-medium text-slate-200">Dividend, Beta, vs Market:</span> Yield; volatility vs SPY; outperformance.</li>
+                    </ul>
+                  </div>
+                )}
               </section>
 
               {/* Confidence score breakdown (explainability) */}
