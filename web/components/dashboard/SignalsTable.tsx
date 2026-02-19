@@ -203,6 +203,9 @@ export function SignalsTable({
                     )}
                   >
                     {r.composite_buy != null ? r.composite_buy.toFixed(1) : "-"}
+                    {r.confidence_tag === "low (bear/neutral market)" && (
+                      <span className="text-amber-400 text-xs ml-1" title="Scores down-weighted when SPY regime is BEAR/NEUTRAL">(low)</span>
+                    )}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-500 text-sm" title="Liquidity score – placeholder for future">
@@ -294,6 +297,11 @@ export function SignalsTable({
                   {r.volume_ratio == null && r.drawdown_52w == null && "-"}
                 </td>
                 <td className="px-4 py-3 text-base">
+                  {r.score_label && ["Extended / high risk of pullback", "Oversold / speculative bounce"].includes(r.score_label) && (
+                    <span className={r.score_label.startsWith("Extended") ? "text-amber-400" : "text-slate-400"} title="Regime-aware label">
+                      • {r.score_label}
+                    </span>
+                  )}
                   {r.earnings_note && (
                     <span className="text-amber-400">{r.earnings_note}</span>
                   )}

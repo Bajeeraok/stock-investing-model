@@ -39,7 +39,15 @@ from portfolio.doctor import portfolio_report
 from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_config, fetch_ohlcv_with_volume
 from signals.indicators import multi_horizon_scores
 from signals.providers import get_next_earnings
-from signals.regime import get_regime, get_regime_ma, get_signal, _ma_regime_to_display
+from signals.regime import (
+    get_regime,
+    get_regime_ma,
+    get_signal,
+    _ma_regime_to_display,
+    get_global_market_regime,
+    get_score_label,
+    get_vix_min_hit_rate,
+)
 from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
 
 
@@ -57,10 +65,17 @@ def load_last_run(path: Path | None = None) -> dict[str, dict] | None:
         return None
 
 
-def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) -> list[dict]:
+def run_signals(
+    config: dict,
+    prices_by_ticker: dict[str, float] | None = None,
+    vix: float | None = None,
+    hit_rate_context: dict | None = None,
+) -> list[dict]:
     """
     Run signals for watchlist. When prices_by_ticker is provided (e.g. from FMP batch quote),
     use yfinance for historical OHLCV and overlay latest close from batch quote to save API calls.
+    vix: optional VIX level for score multiplier; if None, fetches ^VIX.
+    hit_rate_context: optional {add_hit_rate_pct: float} from forward_tracking for hit-rate gate.
     """
     watchlist = config.get("watchlist", [])
     period = config.get("data", {}).get("period", "5y")
@@ -80,6 +95,27 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
     score_red = earnings_cfg.get("score_reduction", 20)
 
     results = []
+    # Global market regime (5-level: STRONG_BULL, BULL, NEUTRAL, BEAR, STRONG_BEAR)
+    global_market_regime = None
+    mr_cfg = config.get("market_regime") or {}
+    if mr_cfg.get("enabled", True):
+        index_ticker = mr_cfg.get("index_ticker", "SPY")
+        min_days = mr_cfg.get("min_days_confirm", 3)
+        close_spy = fetch_ohlcv_safe(index_ticker, period)
+        if close_spy is not None and len(close_spy) >= 200:
+            global_market_regime = get_global_market_regime(close_spy, min_days_confirm=min_days)
+
+    # VIX: for score multiplier and hit-rate gate; fetch if not provided
+    mr_cfg_vix = (config.get("market_regime") or {}).get("use_vix_multiplier", True)
+    mr_cfg_gate = (config.get("market_regime") or {}).get("use_hit_rate_gate", True)
+    if vix is None and (mr_cfg_vix or mr_cfg_gate):
+        try:
+            vix_close = fetch_ohlcv_safe("^VIX", "1mo")
+            if vix_close is not None and len(vix_close) > 0:
+                vix = float(vix_close.iloc[-1])
+        except Exception:
+            pass
+
     use_fmp = bool(config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key"))
     use_batch_quote = bool(prices_by_ticker)  # when True, we use yfinance for OHLCV and overlay close
     for ticker in watchlist:
@@ -123,10 +159,39 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
             continue
 
         use_spec = config.get("use_spec_regime_score", False)
-        sig = multi_horizon_scores(close, use_spec=use_spec, ticker=ticker, config=config)
+        sig = multi_horizon_scores(
+            close, use_spec=use_spec, ticker=ticker, config=config,
+            market_regime=global_market_regime,
+            vix=vix if mr_cfg_vix else None,
+        )
         composite_buy = sig["composite_buy"]
         regime = _ma_regime_to_display(sig["ma_regime"]) if sig.get("ma_regime") else get_regime(composite_buy, up_min, down_max)
         signal = get_signal(composite_buy, buy_min, sell_max)
+
+        # Inverted BUY/ADD in BEAR/STRONG_BEAR: never emit BUY or ADD; cap to HOLD
+        if global_market_regime in ("BEAR", "STRONG_BEAR"):
+            if signal in ("BUY",):
+                signal = "HOLD"
+            short_s = sig.get("short_suggestion")
+            med_s = sig.get("medium_suggestion")
+            long_s = sig.get("long_suggestion")
+            if short_s and short_s in ("HOLD/ADD",):
+                sig["short_suggestion"] = "HOLD"
+            if med_s and med_s in ("HOLD/ADD",):
+                sig["medium_suggestion"] = "HOLD"
+            if long_s and long_s in ("HOLD/ADD",):
+                sig["long_suggestion"] = "HOLD"
+
+        # Hit rate gate: suppress BUY/ADD when historical ADD hit rate < VIX-based threshold
+        add_hit_rate = (hit_rate_context or {}).get("add_hit_rate_pct")
+        min_hit_rate = get_vix_min_hit_rate(vix) * 100.0 if vix else 55.0
+        if mr_cfg_gate and add_hit_rate is not None and vix is not None and vix >= 20:
+            if add_hit_rate < min_hit_rate:
+                if signal == "BUY":
+                    signal = "HOLD"
+                for k in ("short_suggestion", "medium_suggestion", "long_suggestion"):
+                    if sig.get(k) == "HOLD/ADD":
+                        sig[k] = "HOLD"
 
         # Earnings: reduce score or flag when within N days
         earnings_note = None
@@ -234,6 +299,9 @@ def run_signals(config: dict, prices_by_ticker: dict[str, float] | None = None) 
             "volume_ratio": volume_ratio,
             "volume_unusual": volume_unusual,
             "drawdown_52w": drawdown_52w,
+            "score_label": get_score_label(composite_buy, global_market_regime),
+            "confidence_tag": "low (bear/neutral market)" if global_market_regime and global_market_regime not in ("BULL", "STRONG_BULL") else "normal",
+            "_global_market_regime": global_market_regime,
             "atr_14": atr_14,
             "vol_6m": vol_6m,
             "swing_high_20d": swing_high_20d,

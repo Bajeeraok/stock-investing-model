@@ -350,18 +350,29 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400" title="Model discipline – follow these to align with the system">
             <strong className="text-slate-300">Model rules:</strong> Add only when confidence ≥ 70 and regime UP. Trim when confidence ≤ 30 or regime DOWN. When rotation risk High, tech suggestions step down. Rebalance review: quarterly.
           </div>
-          {data.macro_regime && (
+          {(data.macro_regime || data.global_market_regime) && (
             <p
               className={clsx(
-                "text-sm font-medium mb-2 px-3 py-2 rounded-lg border inline-flex items-center gap-2",
+                "text-sm font-medium mb-2 px-3 py-2 rounded-lg border inline-flex items-center gap-2 flex-wrap",
                 data.macro_regime === "Risk-On" && "text-emerald-400 border-emerald-500/30 bg-emerald-500/5",
                 data.macro_regime === "Risk-Off" && "text-red-400 border-red-500/30 bg-red-500/5",
-                data.macro_regime === "Neutral" && "text-slate-400 border-slate-600 bg-slate-800/50"
+                data.macro_regime === "Neutral" && "text-slate-400 border-slate-600 bg-slate-800/50",
+                !data.macro_regime && "text-slate-400 border-slate-600 bg-slate-800/50"
               )}
-              title="Risk-On: low VIX, low real yields. Risk-Off: high VIX or high real yields. Affects position sizing and caution."
+              title="Macro: VIX/real yields. Market: SPY vs MA200 (BULL/BEAR/NEUTRAL). Affects position sizing."
             >
-              <span className="inline-flex items-center gap-1.5">
-                Macro regime: {data.macro_regime}
+              <span className="inline-flex items-center gap-1.5 flex-wrap">
+                {data.macro_regime && <>Macro regime: {data.macro_regime}</>}
+                {data.macro_regime && data.global_market_regime && " · "}
+                {data.global_market_regime && (
+                  <span className={clsx(
+                    data.global_market_regime === "BULL" && "text-emerald-400",
+                    data.global_market_regime === "BEAR" && "text-red-400",
+                    data.global_market_regime === "NEUTRAL" && "text-slate-400"
+                  )}>
+                    SPY regime: {data.global_market_regime}
+                  </span>
+                )}
                 <HelpCircle className="h-3.5 w-3.5 text-slate-500 cursor-help shrink-0" aria-label="Macro regime explanation" />
               </span>
             </p>

@@ -106,6 +106,34 @@ def _macd_score(hist: float) -> float:
     return 50.0 + strength
 
 
+def _overbought_penalty(
+    rsi: float,
+    close: float,
+    ma200: float | None,
+    rsi_70_penalty: int = 5,
+    rsi_80_penalty: int = 5,
+    extension_20_penalty: int = 5,
+    extension_35_penalty: int = 5,
+) -> float:
+    """
+    Penalty when price is extended and RSI is high (cuts 70-100 signals before drawdowns).
+    RSI > 70: +5; RSI > 80: +5 more. Extension > 20% above MA200: +5; > 35%: +5 more.
+    """
+    penalty = 0.0
+    if not pd.isna(rsi):
+        if rsi > 80:
+            penalty += rsi_80_penalty + rsi_70_penalty
+        elif rsi > 70:
+            penalty += rsi_70_penalty
+    if ma200 is not None and ma200 > 0 and close > 0:
+        extension = (close - ma200) / ma200
+        if extension > 0.35:
+            penalty += extension_35_penalty + extension_20_penalty
+        elif extension > 0.20:
+            penalty += extension_20_penalty
+    return penalty
+
+
 def _zscore_to_score(z: float) -> float:
     """Map z-score to 0-100 centered at 50. clamp(50 + 50*z, 0, 100)."""
     return float(np.clip(50.0 + 50.0 * np.clip(z, -2, 2), 0, 100))
@@ -308,6 +336,16 @@ def composite_score(
             composite = 0.55 * ts + 0.45 * mom
         if ma_regime and ma_regime not in ("UP", "UP-HV"):
             composite -= 15
+        ob_cfg = (config or {}).get("overbought_penalty") or {}
+        if ob_cfg.get("enabled", True):
+            penalty = _overbought_penalty(
+                rsi_val, last_close, float(row["MA200"]) if pd.notna(row["MA200"]) and row["MA200"] > 0 else None,
+                rsi_70_penalty=ob_cfg.get("rsi_70_penalty", 5),
+                rsi_80_penalty=ob_cfg.get("rsi_80_penalty", 5),
+                extension_20_penalty=ob_cfg.get("extension_20_penalty", 5),
+                extension_35_penalty=ob_cfg.get("extension_35_penalty", 5),
+            )
+            composite = max(0.0, composite - penalty)
         composite = max(0.0, min(100.0, round(composite, 1)))
         out = {
             "close": last_close,
@@ -334,6 +372,17 @@ def composite_score(
         + weights["rsi"] * rsi_contrib
         + weights["macd"] * macd_contrib
     )
+    ob_cfg = (config or {}).get("overbought_penalty") or {}
+    if ob_cfg.get("enabled", True):
+        ma200_val = float(row["MA200"]) if pd.notna(row["MA200"]) and row["MA200"] > 0 else None
+        penalty = _overbought_penalty(
+            rsi_val, last_close, ma200_val,
+            rsi_70_penalty=ob_cfg.get("rsi_70_penalty", 5),
+            rsi_80_penalty=ob_cfg.get("rsi_80_penalty", 5),
+            extension_20_penalty=ob_cfg.get("extension_20_penalty", 5),
+            extension_35_penalty=ob_cfg.get("extension_35_penalty", 5),
+        )
+        composite = max(0.0, composite - penalty)
     composite = max(0.0, min(100.0, round(composite, 1)))
 
     return {
@@ -365,6 +414,8 @@ def multi_horizon_scores(
     use_spec: bool = False,
     ticker: str | None = None,
     config: dict | None = None,
+    market_regime: str | None = None,
+    vix: float | None = None,
 ) -> dict:
     """
     Short (weeks), Medium (months), Long (1–2 yrs) scores for long-term investor.
@@ -373,8 +424,19 @@ def multi_horizon_scores(
     - Long: price vs MA200, MA50 vs MA200 alignment
     use_spec: use spec formula (TS, MOM, optional VAL, QLT, regime penalty).
     ticker, config: required for VAL/QLT when use_spec (stocks only).
+    market_regime: 5-level (STRONG_BULL, BULL, NEUTRAL, BEAR, STRONG_BEAR) – regime multipliers applied.
+    vix: VIX level – calm amplifies, elevated+ suppresses (VIX multiplier on final score).
     """
     sig = composite_score(close, use_spec=use_spec, ticker=ticker, config=config)
+    raw = float(sig.get("composite_buy") or 50)
+    # Regime multiplier (replace flat -10): BEAR/STRONG_BEAR suppress high scores
+    if market_regime:
+        from signals.regime import get_regime_multiplier, get_vix_multiplier
+        reg_mult, _ = get_regime_multiplier(market_regime, raw)
+        adjusted = min(100.0, raw * reg_mult)
+        vix_mult, _ = get_vix_multiplier(vix)
+        adjusted = min(100.0, adjusted * vix_mult)
+        sig = {**sig, "composite_buy": round(adjusted, 1)}
     df = compute_indicators(close)
     if df.empty or len(df) < 50:
         return {

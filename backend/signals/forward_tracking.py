@@ -149,9 +149,12 @@ def get_forward_tracking(
     summary_by_signal = {}
     for sig, returns in by_signal_20.items():
         if returns:
+            n_pos = sum(1 for r in returns if r > 0)
+            hit_rate_pct = round(100 * n_pos / len(returns), 1) if returns else 0.0
             summary_by_signal[sig] = {
                 "avg_return_20d_pct": round(sum(returns) / len(returns), 2),
                 "n_observations": len(returns),
+                "hit_rate_pct": hit_rate_pct,
             }
 
     return {

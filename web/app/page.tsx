@@ -208,6 +208,7 @@ export interface DashboardData {
   economic_calendar?: EconomicCalendarEvent[];
   guidelines?: { text: string; type: "caution" | "info" | "risk" }[];
   macro_regime?: "Risk-On" | "Neutral" | "Risk-Off";
+  global_market_regime?: "BULL" | "BEAR" | "NEUTRAL" | null;
   market_regime?: {
     market_breadth?: string;
     tech_leadership?: string;
@@ -334,6 +335,8 @@ export interface Signal {
   rotation_stepped_down?: boolean;
   st_target_confidence_pct?: number | null;
   mt_target_confidence_pct?: number | null;
+  score_label?: string | null;
+  confidence_tag?: string | null;
   error?: string;
 }
 

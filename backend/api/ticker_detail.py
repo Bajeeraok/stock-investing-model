@@ -1,13 +1,14 @@
 """
 Ticker detail: thesis, earnings, benchmarks (SPY, industry ETF, peers), model accuracy.
+Uses parallel fetches and 5-min cache to reduce timeout risk.
 """
 from __future__ import annotations
 
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-import sys
-
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -20,6 +21,8 @@ try:
     import pandas as pd
 except ImportError:
     pd = None
+
+_MAX_PEERS_RETURNS = 2  # Fewer peer fetches = faster (was 4)
 
 
 def _returns_over_periods(close: pd.Series, periods_days: dict) -> dict:
@@ -42,45 +45,117 @@ def _returns_over_periods(close: pd.Series, periods_days: dict) -> dict:
 def get_ticker_detail(ticker: str, config: dict) -> dict:
     """
     Full ticker detail: thesis, earnings, sector, peers, benchmark comparison.
+    Uses 5-min cache (Redis) and parallel fetches to reduce timeout risk.
     """
+    period = config.get("data", {}).get("period", "2y") or "2y"
+    config_hash = period
+    try:
+        from signals.cache import cached_ticker_detail
+        return cached_ticker_detail(
+            ticker.upper(),
+            config_hash,
+            lambda: _fetch_ticker_detail_impl(ticker, config),
+        )
+    except Exception:
+        return _fetch_ticker_detail_impl(ticker, config)
+
+
+def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
+    """Inner implementation (called with or without cache)."""
     ticker = ticker.upper()
     theses = load_theses()
     thesis_data = theses.get(ticker, {})
-
-    # Sector & industry
-    sector_info = get_sector_and_industry(ticker) or {}
-    sector_etf = sector_info.get("sector_etf", "SPY")
-
-    # Peers (exclude ETFs)
-    peers_raw = get_peers(ticker, config)
-    peers = [str(p).upper() for p in (peers_raw or []) if str(p).upper() not in ("SPY", "QQQ", "GLD", "SLV")][:6]
-
-    # Earnings
-    earnings = get_next_earnings(ticker, config)
-
-    # Price data for ticker, SPY, sector ETF
     period = config.get("data", {}).get("period", "2y") or "2y"
-    close_ticker, volume = fetch_ohlcv_with_volume(ticker, period)
-    if close_ticker is None:
-        close_ticker = fetch_ohlcv_safe(ticker, period)
-    close_spy = fetch_ohlcv_safe("SPY", period)
-    close_sector = fetch_ohlcv_safe(sector_etf, period) if sector_etf != "SPY" else close_spy
-
     periods = {"1m": 21, "3m": 63, "6m": 126, "1y": 252}
 
-    ret_ticker = _returns_over_periods(close_ticker, periods)
-    ret_spy = _returns_over_periods(close_spy, periods)
-    ret_sector = _returns_over_periods(close_sector, periods)
+    # Phase 1: sector, peers, earnings, ticker OHLCV, SPY OHLCV in parallel
+    sector_info: dict = {}
+    peers_raw: list = []
+    earnings = None
+    close_ticker = None
+    volume = None
+    close_spy = None
 
-    # Peer returns (sample)
+    def _sector():
+        return get_sector_and_industry(ticker) or {}
+
+    def _peers():
+        return get_peers(ticker, config) or []
+
+    def _earn():
+        return get_next_earnings(ticker, config)
+
+    def _ticker_ohlcv():
+        c, v = fetch_ohlcv_with_volume(ticker, period)
+        if c is None:
+            c = fetch_ohlcv_safe(ticker, period)
+        return c, v
+
+    def _spy():
+        return fetch_ohlcv_safe("SPY", period)
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        f_sector = ex.submit(_sector)
+        f_peers = ex.submit(_peers)
+        f_earn = ex.submit(_earn)
+        f_ticker = ex.submit(_ticker_ohlcv)
+        f_spy = ex.submit(_spy)
+        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy]):
+            try:
+                r = f.result()
+                if f is f_sector:
+                    sector_info = r
+                elif f is f_peers:
+                    peers_raw = r
+                elif f is f_earn:
+                    earnings = r
+                elif f is f_ticker:
+                    close_ticker, volume = r or (None, None)
+                elif f is f_spy:
+                    close_spy = r
+            except Exception:
+                pass
+
+    sector_etf = sector_info.get("sector_etf", "SPY")
+    peers = [str(p).upper() for p in peers_raw if str(p).upper() not in ("SPY", "QQQ", "GLD", "SLV")][:6]
+
+    # Phase 2: sector ETF (if != SPY) and peer OHLCV in parallel
+    close_sector = close_spy
     peer_returns = []
-    for p in peers[:4]:
-        c = fetch_ohlcv_safe(p, period)
-        r = _returns_over_periods(c, periods)
-        if r:
-            peer_returns.append({"ticker": p, "returns": r})
 
-    # Current price
+    def _sector_ohlcv():
+        return ("sector", fetch_ohlcv_safe(sector_etf, period) if sector_etf != "SPY" else None)
+
+    def _peer_ohlcv(p: str):
+        c = fetch_ohlcv_safe(p, period)
+        return ("peer", p, _returns_over_periods(c, periods) if c is not None else None)
+
+    with ThreadPoolExecutor(max_workers=1 + _MAX_PEERS_RETURNS) as ex:
+        tasks = [ex.submit(_sector_ohlcv)]
+        for p in peers[:_MAX_PEERS_RETURNS]:
+            tasks.append(ex.submit(_peer_ohlcv, p))
+        for f in as_completed(tasks):
+            try:
+                r = f.result()
+                if r[0] == "sector" and r[1] is not None:
+                    close_sector = r[1]
+                elif r[0] == "peer" and r[2]:
+                    peer_returns.append({"ticker": r[1], "returns": r[2]})
+            except Exception:
+                pass
+
+    if close_sector is None:
+        close_sector = close_spy
+    if close_ticker is None:
+        close_ticker, volume = fetch_ohlcv_with_volume(ticker, period), None
+        if close_ticker is None:
+            close_ticker = fetch_ohlcv_safe(ticker, period)
+
+    ret_ticker = _returns_over_periods(close_ticker, periods) if close_ticker is not None else {}
+    ret_spy = _returns_over_periods(close_spy, periods) if close_spy is not None else {}
+    ret_sector = _returns_over_periods(close_sector, periods) if close_sector is not None else {}
+
+    # Current price (close_ticker can be None from fetch failure)
     current_price = float(close_ticker.iloc[-1]) if close_ticker is not None and not close_ticker.empty else None
 
     # Volume vs 20d avg, drawdown 52w

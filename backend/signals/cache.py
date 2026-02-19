@@ -21,6 +21,7 @@ TTL_INSIDER_STATS = 12 * 3600
 TTL_TARGET_BANDS = 7 * 24 * 3600  # 7 days – previous bands for trailing re-anchor
 TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
+TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
 
 
 def _redis_client():
@@ -197,6 +198,18 @@ def set_cached_bands(ticker: str, bands: dict) -> bool:
     """Store target bands for ticker. Used when price hits levels to re-anchor."""
     key = cache_key("target_bands", ticker)
     return set_cached(key, bands, TTL_TARGET_BANDS)
+
+
+def cached_ticker_detail(ticker: str, config_hash: str, fetch_fn):
+    """Cache full ticker detail response. TTL 5 min. config_hash = hash of relevant config (period)."""
+    key = cache_key("ticker_detail", ticker, config_hash)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict) and out.get("ticker"):
+        set_cached(key, out, TTL_TICKER_DETAIL)
+    return out
 
 
 def cached_next_day_backtest(ticker: str, fetch_fn):

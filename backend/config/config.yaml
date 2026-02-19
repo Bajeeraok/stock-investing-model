@@ -195,6 +195,23 @@ portfolios:
 use_spec_regime_score: false   # set true to use spec formula (MA regime + zscore TS/MOM)
 use_spec_val_qlt: true         # when use_spec_regime_score, add VAL (forward PE vs SPY) and QLT (roe, margin, leverage) for stocks
 
+# Global market regime (5-level: STRONG_BULL, BULL, NEUTRAL, BEAR, STRONG_BEAR)
+# Regime multipliers adjust scores; VIX overlay amplifies when calm, suppresses when elevated.
+market_regime:
+  enabled: true
+  index_ticker: SPY
+  min_days_confirm: 3          # require N consecutive days above/below MA200 to reduce whipsaws
+  use_vix_multiplier: true     # apply VIX overlay (calm 1.1x, elevated 0.8x, high 0.5x, extreme 0.2x)
+  use_hit_rate_gate: true      # suppress BUY/ADD when ADD hit rate < VIX-based threshold (VIX >= 20)
+
+# Overbought penalty: cuts 70-100 signals when RSI high + price extended above MA200
+overbought_penalty:
+  enabled: true
+  rsi_70_penalty: 5            # RSI > 70
+  rsi_80_penalty: 5            # RSI > 80 (additional)
+  extension_20_penalty: 5      # price > 20% above MA200
+  extension_35_penalty: 5      # price > 35% above MA200 (additional)
+
 # Score bands (0-100): BUY >= buy_min, SELL <= sell_max, else HOLD
 # Rule logic: score >= buy_min + regime UP -> HOLD/ADD; score <= sell_max -> CONSIDER TRIM
 score:

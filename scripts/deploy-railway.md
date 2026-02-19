@@ -9,9 +9,29 @@ Deploy the Stock Investing Model (backend + web) to [Railway](https://railway.ap
 
 ---
 
-## Redis: Not Required
+## Redis (Optional but Recommended)
 
-**Redis is optional.** The app runs without it. When `REDIS_URL` is unset, the cache layer is a no-op and all features work. Redis only speeds up repeated fetches (backtest, price targets, fundamentals). For Railway deploy you can skip Redis to keep it simple.
+**Redis is optional** – the app runs without it. When `REDIS_URL` is unset, the cache layer is a no-op. Redis speeds up:
+
+- Backtest, price targets, fundamentals (FMP)
+- Ticker detail modal (5-min cache)
+- Long-horizon risk, next-day bias
+
+### Add Redis on Railway
+
+1. In your Railway project, click **+ New** (or `Ctrl/Cmd + K`)
+2. Select **Database** → **Add Redis** (or use the [Redis template](https://railway.com/template/redis))
+3. Railway provisions Redis and exposes `REDIS_URL` on the Redis service
+
+### Connect Backend to Redis
+
+In the **Backend** service → **Variables** → **New Variable**:
+
+| Variable   | Value                          |
+|-----------|----------------------------------|
+| `REDIS_URL` | `${{Redis.REDIS_URL}}`         |
+
+Replace `Redis` with your Redis service name if different (check the service name in the project canvas). Railway injects the private URL so the backend connects over the internal network (no egress charges).
 
 ---
 
@@ -42,7 +62,7 @@ Optional (API keys – env vars override config.yaml; use these so you don't com
 | Backend | `POLYGON_API_KEY` | Polygon.io |
 | Backend | `FINNHUB_API_KEY` | Finnhub recommendations |
 | Backend | `OPENAI_API_KEY` | Chat copilot (gpt-4o-mini) |
-| Backend | `REDIS_URL` | Optional. If set, enables caching. |
+| Backend | `REDIS_URL` | Optional. Use `${{Redis.REDIS_URL}}` to reference Railway Redis. |
 | Web | `NEXT_PUBLIC_API_URL` | Only if you need client-side direct API calls. Server-side rewrites use `BACKEND_API_URL`. |
 
 **Local:** Use `config.yaml`. **Railway:** Set env vars above; they override config. Leave API keys empty in `config.yaml` when deploying if you use env vars.
@@ -65,6 +85,7 @@ Optional (API keys – env vars override config.yaml; use these so you don't com
 4. **Settings** → **Networking** → **Generate Domain** (e.g. `backend-production-xxxx.up.railway.app`)
 5. **Variables** → Add:
    - `CORS_ORIGINS`: `https://your-web-domain.up.railway.app` (add after web is deployed)
+   - `REDIS_URL`: `${{Redis.REDIS_URL}}` (if you added Redis; replace `Redis` with your Redis service name)
 
 ### 3. Add Web Service
 
@@ -125,6 +146,7 @@ Config in these files overrides dashboard settings. Env vars (e.g. `CORS_ORIGINS
 - [ ] Backend: `CORS_ORIGINS` includes web domain(s)
 - [ ] Web: `BACKEND_API_URL` points to backend URL (no trailing slash)
 - [ ] Both services have generated domains (Railway sets `PORT` automatically)
+- [ ] Redis (optional): Backend has `REDIS_URL=${{Redis.REDIS_URL}}` if Redis was added
 
 ---
 

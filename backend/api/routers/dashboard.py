@@ -128,8 +128,27 @@ async def get_dashboard():
         if prices_by_ticker:
             logger.info("[dashboard] yfinance latest: %d prices (delayed quote)", len(prices_by_ticker))
 
+    # Forward tracking (before run_signals) for hit-rate gate: suppress BUY/ADD when ADD hit rate < VIX threshold
+    hit_rate_context = None
+    try:
+        ft = get_forward_tracking(
+            data_root=ROOT / "data",
+            tickers=["SPY", "QQQ"],
+            horizons=[20],
+        )
+        sb = ft.get("summary_by_signal") or {}
+        add_info = sb.get("HOLD/ADD")
+        if add_info and isinstance(add_info, dict) and add_info.get("hit_rate_pct") is not None:
+            hit_rate_context = {"add_hit_rate_pct": float(add_info["hit_rate_pct"])}
+    except Exception as e:
+        logger.debug("Forward tracking for hit-rate gate: %s", e)
+
     logger.info("[dashboard] section: run_signals (watchlist + indicators)...")
-    results = run_signals(config, prices_by_ticker=prices_by_ticker)
+    results = run_signals(
+        config,
+        prices_by_ticker=prices_by_ticker,
+        hit_rate_context=hit_rate_context,
+    )
     logger.info("[dashboard] section: run_signals DONE (%d tickers)", len(results) if results else 0)
 
     # Update price-target accuracy report (same results, no extra fetch) so GET /api/accuracy is always current
@@ -543,6 +562,10 @@ async def get_dashboard():
         "guidelines": guidelines,
         "macro_regime": macro_regime,
         "market_regime": market_regime_data,
+        "global_market_regime": next(
+            (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
+            None,
+        ),
         "next_day_outlook": next_day_outlook,
         "typical_move": typical_move,
         "indicator_validation": indicator_validation,
