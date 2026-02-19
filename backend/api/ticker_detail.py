@@ -126,10 +126,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     def _sector_ohlcv():
         return ("sector", fetch_ohlcv_safe(sector_etf, period) if sector_etf != "SPY" else None)
 
-    def _peer_ohlcv(p: str):
-        c = fetch_ohlcv_safe(p, period)
-        return ("peer", p, _returns_over_periods(c, periods) if c is not None else None)
+    def _peer_ohlcv(peer_sym: str):
+        # Fix 2: Explicit peer symbol per call so cache/closure never reuse wrong ticker.
+        c = fetch_ohlcv_safe(peer_sym, period)
+        ret = _returns_over_periods(c, periods) if c is not None else None
+        return ("peer", peer_sym, ret)
 
+    seen_peer_signatures: dict = {}  # (1m, 3m, 6m, 1y) -> ticker for deduplication detection
     with ThreadPoolExecutor(max_workers=1 + _MAX_PEERS_RETURNS) as ex:
         tasks = [ex.submit(_sector_ohlcv)]
         for p in peers[:_MAX_PEERS_RETURNS]:
@@ -140,7 +143,18 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 if r[0] == "sector" and r[1] is not None:
                     close_sector = r[1]
                 elif r[0] == "peer" and r[2]:
-                    peer_returns.append({"ticker": r[1], "returns": r[2]})
+                    pr_ticker, pr_returns = r[1], r[2]
+                    sig = tuple(pr_returns.get(lbl) for lbl in ["1m", "3m", "6m", "1y"])
+                    if sig in seen_peer_signatures and sig != (None, None, None, None):
+                        # Flag duplicate data (e.g. API returning same series for different tickers).
+                        peer_returns.append({
+                            "ticker": pr_ticker,
+                            "returns": pr_returns,
+                            "data_quality_warning": f"Same returns as {seen_peer_signatures[sig]}",
+                        })
+                    else:
+                        seen_peer_signatures[sig] = pr_ticker
+                        peer_returns.append({"ticker": pr_ticker, "returns": pr_returns})
             except Exception:
                 pass
 
@@ -151,9 +165,17 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         if close_ticker is None:
             close_ticker = fetch_ohlcv_safe(ticker, period)
 
+    # Fix 1: Compute benchmark from explicitly separate series so ticker and SPY never share data.
     ret_ticker = _returns_over_periods(close_ticker, periods) if close_ticker is not None else {}
     ret_spy = _returns_over_periods(close_spy, periods) if close_spy is not None else {}
     ret_sector = _returns_over_periods(close_sector, periods) if close_sector is not None else {}
+
+    # Sanity: if ticker and SPY returns are identical in all periods, refetch SPY once (breaks cache/confusion).
+    if ret_ticker and ret_spy and set(ret_ticker.keys()) == set(ret_spy.keys()):
+        all_same = all(ret_ticker.get(k) == ret_spy.get(k) for k in ret_ticker)
+        if all_same and ticker.upper() != "SPY":
+            close_spy = fetch_ohlcv_safe("SPY", period)
+            ret_spy = _returns_over_periods(close_spy, periods) if close_spy is not None else ret_spy
 
     # Current price (close_ticker can be None from fetch failure)
     current_price = float(close_ticker.iloc[-1]) if close_ticker is not None and not close_ticker.empty else None
@@ -287,6 +309,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "benchmark_spy": ret_spy or {},
         "benchmark_industry": ret_sector or {},
         "peer_returns": peer_returns or [],
+        "earnings_history": _get_earnings_history(ticker),
+        "sector_specific": _get_sector_specific_metrics(ticker, sector_info.get("sector")),
+        "rate_sensitivity": _get_rate_sensitivity(ticker, close_ticker),
         "seasonal_note": _seasonal_note(ticker),
         "price_reasoning": price_reasoning,
         "volume_ratio": volume_ratio,
@@ -307,6 +332,142 @@ def _seasonal_note(ticker: str) -> str | None:
     """Brief seasonal/events note - placeholder for future enhancement."""
     # Could add: earnings season patterns, sector rotation notes
     return None
+
+
+# Fix 5: Earnings history (last 4Q actual vs estimate, beat/miss)
+def _get_earnings_history(ticker: str) -> dict:
+    """Last 4 quarters EPS: actual, estimate, beat/miss. Missing in original detail."""
+    if ticker in _ETFS_SKIP_YAHOO_INFO:
+        return {}
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        eq = getattr(t, "quarterly_earnings", None)
+        if eq is None or (hasattr(eq, "empty") and eq.empty):
+            return {}
+        history = []
+        for idx, row in eq.head(4).iterrows():
+            actual = row.get("Reported EPS") or row.get("actual") or row.get("epsActual")
+            estimate = row.get("Estimated EPS") or row.get("estimate") or row.get("epsEstimate")
+            if actual is not None and estimate is not None and estimate != 0:
+                beat_pct = round((float(actual) - float(estimate)) / abs(float(estimate)) * 100, 1)
+                status = "Beat" if beat_pct > 0 else "Missed"
+            else:
+                beat_pct = None
+                status = "N/A"
+            history.append({
+                "quarter": str(idx),
+                "actual": round(float(actual), 2) if actual is not None else None,
+                "estimate": round(float(estimate), 2) if estimate is not None else None,
+                "beat_pct": beat_pct,
+                "status": status,
+            })
+        beats = [h for h in history if h["status"] == "Beat"]
+        beat_rate = round(len(beats) / len(history) * 100) if history else 0
+        return {
+            "history": history,
+            "beat_rate": beat_rate,
+            "summary": f"Beat estimates {len(beats)}/{len(history)} of last quarters ({beat_rate}%)",
+        }
+    except Exception:
+        return {}
+
+
+# Fix 5: Sector-specific metrics (AUM for financials, etc.)
+_FINANCIAL_TICKERS = frozenset(
+    {"BLK", "GS", "MS", "JPM", "BAC", "WFC", "BX", "APO", "KKR", "CG", "ARES", "SCHW", "C"}
+)
+
+
+def _get_sector_specific_metrics(ticker: str, sector: str | None) -> dict:
+    """AUM-style and financial metrics for financials; tech metrics for tech."""
+    sym = (ticker or "").upper().split("-")[0]
+    if sym in _ETFS_SKIP_YAHOO_INFO:
+        return {}
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+        info = t.info or {}
+        out = {}
+        sector = (sector or "").lower()
+        if sym in _FINANCIAL_TICKERS or "financial" in sector:
+            aum = info.get("totalAssets") or info.get("enterpriseValue")
+            if aum is not None:
+                try:
+                    aum_b = round(float(aum) / 1e9, 1)
+                    out["aum_billions"] = aum_b
+                    out["aum_formatted"] = f"${aum_b:.1f}B"
+                except (TypeError, ValueError):
+                    pass
+            if info.get("priceToBook") is not None:
+                try:
+                    out["price_to_book"] = round(float(info["priceToBook"]), 2)
+                except (TypeError, ValueError):
+                    pass
+            if info.get("returnOnEquity") is not None:
+                try:
+                    out["roe_pct"] = round(float(info["returnOnEquity"]) * 100, 1)
+                except (TypeError, ValueError):
+                    pass
+            if info.get("profitMargins") is not None:
+                try:
+                    out["net_margin_pct"] = round(float(info["profitMargins"]) * 100, 1)
+                except (TypeError, ValueError):
+                    pass
+        if "technology" in sector or "tech" in sector:
+            if info.get("priceToSalesTrailing12Months") is not None:
+                try:
+                    out["ps_ratio"] = round(float(info["priceToSalesTrailing12Months"]), 2)
+                except (TypeError, ValueError):
+                    pass
+            if info.get("grossMargins") is not None:
+                try:
+                    out["gross_margins_pct"] = round(float(info["grossMargins"]) * 100, 1)
+                except (TypeError, ValueError):
+                    pass
+        return out
+    except Exception:
+        return {}
+
+
+# Fix 5: Rate sensitivity (correlation with TLT) for financials
+def _get_rate_sensitivity(ticker: str, close_ticker: pd.Series | None) -> dict:
+    """Correlation of ticker returns with TLT (rates proxy). Important for BLK, financials."""
+    if close_ticker is None or len(close_ticker) < 60 or ticker in _ETFS_SKIP_YAHOO_INFO:
+        return {}
+    try:
+        import yfinance as yf
+        import time
+        t = yf.Ticker(ticker)
+        ticker_monthly = close_ticker.resample("ME").last().pct_change().dropna()
+        time.sleep(0.3)
+        tlt = yf.Ticker("TLT")
+        tlt_hist = tlt.history(period="2y")
+        if tlt_hist is None or tlt_hist.empty or "Close" not in tlt_hist.columns:
+            return {}
+        tlt_monthly = tlt_hist["Close"].resample("ME").last().pct_change().dropna()
+        aligned = pd.concat([ticker_monthly, tlt_monthly], axis=1, join="inner").dropna()
+        aligned.columns = ["ticker", "tlt"]
+        if len(aligned) < 12:
+            return {}
+        corr = float(aligned.corr().iloc[0, 1])
+        if corr > 0.4:
+            interpretation = "Highly rate-sensitive (falls when rates rise)"
+        elif corr > 0.2:
+            interpretation = "Moderately rate-sensitive"
+        elif corr > -0.2:
+            interpretation = "Rate neutral"
+        elif corr > -0.4:
+            interpretation = "Benefits from rising rates"
+        else:
+            interpretation = "Strong beneficiary of rising rates"
+        return {
+            "correlation_with_tlt": round(corr, 3),
+            "interpretation": interpretation,
+            "note": "TLT = 20yr Treasury ETF. Positive correlation = rate-sensitive.",
+        }
+    except Exception:
+        return {}
 
 
 def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal_data: dict, close, range_low: float | None = None, range_high: float | None = None, long_horizon_risk: dict | None = None) -> dict:

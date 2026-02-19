@@ -174,6 +174,13 @@ export interface BacktestBucketMonth {
   margin_of_error_pct?: number | null;
 }
 
+export interface BacktestValidation {
+  valid: boolean;
+  issues: string[];
+  fixes: string[];
+  data_quality_score: number;
+}
+
 export interface BacktestResult {
   ticker: string;
   period: string;
@@ -183,6 +190,7 @@ export interface BacktestResult {
   by_quarter?: Record<string, Record<string, Record<number, BacktestBucketMonth>>>;
   suggested_buy_min?: string;
   suggested_sell_max?: string;
+  validation?: BacktestValidation;
 }
 
 export interface DashboardData {
@@ -264,6 +272,21 @@ export interface DashboardData {
     value_avg_pct?: number | null;
     rotation_risk_premarket?: string;
     message?: string | null;
+  } | null;
+  /** Full pre-market engine (6 categories, 15 sources); from scheduler file or /api/pre-market */
+  pre_market_full?: {
+    timestamp: string;
+    composite_score: number;
+    bias: string;
+    confidence: number;
+    minutes_to_open: number;
+    top_bullish: string[];
+    top_bearish: string[];
+    key_risks: string[];
+    sector_plays: Record<string, string[]>;
+    signals: { name: string; category: string; score: number; weight: number; raw_value: string; direction: string; confidence: number; note?: string }[];
+    message?: string;
+    rotation_risk_premarket?: string;
   } | null;
   cot_by_ticker?: Record<string, string>;
   fmp_plan_status?: FMPPlanStatus;

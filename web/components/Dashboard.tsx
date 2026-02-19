@@ -34,6 +34,9 @@ import {
   MarketScenarios,
   PerformanceVsBenchmark,
   ForwardTracking,
+  PreMarketPanel,
+  PreMarketStrip,
+  type PreMarketData,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -85,6 +88,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   const selectedTrimCandidates = (selectedReport?.per_holding ?? []).filter(
     (h) => h.score != null && h.score < 40
   );
+  const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
   const [activeTab, setActiveTabState] = useState<TabId>("signals");
 
@@ -163,6 +167,15 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
             <h1 className="text-lg sm:text-xl font-bold text-slate-100 truncate">Thrive Alpha</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+            <button
+              type="button"
+              onClick={() => setActiveTab("markets")}
+              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-slate-100 text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation"
+              title="Open Pre-Market Signal Engine (Markets tab)"
+            >
+              <Activity className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Pre-market</span>
+            </button>
             {lastRefreshedAt && (
               <span
                 className="text-xs sm:text-sm text-slate-500 hidden sm:inline"
@@ -400,7 +413,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               )}
             </p>
           )}
-          {data.pre_market?.message && data.pre_market.rotation_risk_premarket && data.pre_market.rotation_risk_premarket !== "Low" && (
+          {data.pre_market?.message && data.pre_market.rotation_risk_premarket && data.pre_market.rotation_risk_premarket !== "Low" && !preMarketFull && (
             <div
               className={clsx(
                 "text-sm mb-3 px-3 py-2 rounded-lg border inline-flex items-start gap-2",
@@ -411,6 +424,18 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
             >
               <HelpCircle className="h-3.5 w-3.5 text-slate-500 cursor-help shrink-0 mt-0.5" aria-label="Pre-market explanation" />
               <span>{data.pre_market.message}</span>
+            </div>
+          )}
+          {preMarketFull && (
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <PreMarketStrip data={preMarketFull} />
+              <button
+                type="button"
+                onClick={() => setActiveTab("markets")}
+                className="text-xs text-emerald-400 hover:text-emerald-300 underline"
+              >
+                Open full panel →
+              </button>
             </div>
           )}
           {((data.next_day_outlook?.length ?? 0) > 0 || (data.typical_move?.length ?? 0) > 0 || (data.indicator_validation?.length ?? 0) > 0) && (
@@ -463,7 +488,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 Our model vs external consensus; aligned = same direction, divergent = different.
               </p>
               <p className="text-sm text-slate-500 mb-2" title="Yahoo does not provide analyst recommendations for ETFs.">
-                ETFs: Yahoo does not provide analyst consensus for SPY/QQQ/GLD/SLV, so external shows &quot;No data&quot; by design.
+                ETFs: Yahoo does not provide analyst consensus for SPY/QQQ/GLD/SLV, so external shows "No data" by design.
               </p>
               <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
                 {data.indicator_validation.map((v) => (
@@ -537,7 +562,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
                     <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
                     <p className="text-slate-400 text-sm">No trim candidates</p>
-                    <p className="text-slate-500 text-xs mt-1">Positions with score &lt; 40 will appear here.</p>
+                    <p className="text-slate-500 text-xs mt-1">Positions with score {'<'} 40 will appear here.</p>
                   </div>
                 )}
               </ToggleSection>
@@ -586,6 +611,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Markets tab */}
           {activeTab === "markets" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen>
+                <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
+              </ToggleSection>
               <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
                 <MarketScenarios scenarios={data.market_scenarios ?? []} />
               </ToggleSection>

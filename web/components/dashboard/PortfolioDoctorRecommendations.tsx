@@ -28,7 +28,7 @@ export function PortfolioDoctorRecommendations({
       <p className="text-slate-500 text-sm">When you have multiple accounts (e.g. IRA + Taxable), prefer trimming in IRA first to avoid taxable gains; trim in Taxable when you want to realize losses or rebalance.</p>
       {/* Inputs summary + audit */}
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
-        <h4 className="text-sm font-medium text-slate-400 mb-2">Settings &amp; assumptions (from config)</h4>
+        <h4 className="text-sm font-medium text-slate-400 mb-2">Settings & assumptions (from config)</h4>
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300">
           <span><strong className="text-slate-400">Risk:</strong> {inputs.risk_appetite}</span>
           <span><strong className="text-slate-400">Goal:</strong> {inputs.goal}</span>

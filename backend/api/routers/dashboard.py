@@ -389,6 +389,16 @@ async def get_dashboard():
     except Exception:
         pre_market = {}
 
+    # Pre-market full (6 classes, 15 sources) — from scheduler-written file if present
+    pre_market_full = None
+    try:
+        pre_market_file = ROOT / "data" / "pre_market_latest.json"
+        if pre_market_file.exists():
+            with open(pre_market_file) as _f:
+                pre_market_full = json.load(_f)
+    except Exception:
+        pre_market_full = None
+
     # FMP plan status (which features work, which need upgrade)
     fmp_plan_status = {}
     try:
@@ -573,6 +583,7 @@ async def get_dashboard():
         "model_validation": model_validation,
         "forward_tracking": forward_tracking,
         "pre_market": pre_market,
+        "pre_market_full": pre_market_full,
         "cot_by_ticker": cot_by_ticker,
         "fmp_plan_status": fmp_plan_status,
         "best_2026": best_2026,
@@ -629,10 +640,13 @@ async def get_backtest(tickers: str = "SPY", years: int = 2):
     years = max(2, min(10, years))
     period = f"{years}y"
     from scripts.backtest_simple import run_backtest as _run_backtest
+    from signals.backtest_validation import validate_backtest_result
     out = []
     from signals.cache import cached_backtest
     for t in ticker_list[:6]:
         result = cached_backtest(t, period, lambda ticker=t, per=period: _run_backtest(ticker, per))
+        if result and "error" not in result:
+            result["validation"] = validate_backtest_result(result)
         out.append(result)
     return {"backtest": out, "backtest_years": years, "backtest_period": period}
 
@@ -718,6 +732,36 @@ async def upload_portfolio(
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/pre-market")
+async def get_pre_market():
+    """
+    Pre-market signal engine (6 categories, 15 sources). Reads from data/pre_market_latest.json
+    if present (written by scripts/pre_market_scheduler.py); otherwise runs engine once and returns.
+    """
+    pre_market_file = ROOT / "data" / "pre_market_latest.json"
+    try:
+        if pre_market_file.exists():
+            with open(pre_market_file) as f:
+                data = json.load(f)
+            if data.get("composite_score") is not None and data.get("bias") and data.get("signals") is not None:
+                return data
+    except Exception as e:
+        logger.debug("Pre-market file read failed: %s", e)
+    try:
+        from signals.premarket_engine import PreMarketEngine
+        from scripts.pre_market_scheduler import report_to_dict
+        engine = PreMarketEngine()
+        report = engine.run(verbose=False)
+        data = report_to_dict(report)
+        pre_market_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(pre_market_file, "w") as f:
+            json.dump(data, f, indent=2)
+        return data
+    except Exception as e:
+        logger.exception("Pre-market engine failed: %s", e)
+        raise HTTPException(status_code=503, detail=f"Pre-market data unavailable: {e}")
 
 
 @router.get("/ticker/{ticker}")

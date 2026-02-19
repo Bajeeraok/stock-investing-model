@@ -31,7 +31,7 @@ export interface TickerDetail {
   returns: Record<string, number>;
   benchmark_spy: Record<string, number>;
   benchmark_industry: Record<string, number>;
-  peer_returns: { ticker: string; returns: Record<string, number> }[];
+  peer_returns: { ticker: string; returns: Record<string, number>; data_quality_warning?: string }[];
   volume_ratio?: number | null;
   volume_unusual?: boolean;
   drawdown_52w?: number | null;
@@ -69,6 +69,17 @@ export interface TickerDetail {
     worst_3y_return_pct?: number | null;
     stress_bear_pct: number;
     period_years: number;
+  };
+  earnings_history?: {
+    history: { quarter: string; actual: number | null; estimate: number | null; beat_pct: number | null; status: string }[];
+    beat_rate: number;
+    summary: string;
+  };
+  sector_specific?: Record<string, number | string>;
+  rate_sensitivity?: {
+    correlation_with_tlt: number;
+    interpretation: string;
+    note: string;
   };
 }
 
@@ -161,7 +172,7 @@ export function TickerDetailModal({
                 {quickRefOpen && (
                   <div className="px-4 pb-4 pt-0 border-t border-emerald-500/20">
                     <ul className="space-y-1.5 text-sm text-slate-300 list-disc list-inside columns-1 sm:columns-2 gap-x-4">
-                      <li><span className="font-medium text-slate-200">Price vs MAs:</span> Price &gt; MA50 &gt; MA200 = uptrend; below = downtrend.</li>
+                      <li><span className="font-medium text-slate-200">Price vs MAs:</span> Price {'>'} MA50 {'>'} MA200 = uptrend; below = downtrend.</li>
                       <li><span className="font-medium text-slate-200">MA20/50/200:</span> Short/medium/long trend. Above = bullish.</li>
                       <li><span className="font-medium text-emerald-400">Buy:</span> Suggested add level (e.g. pullback to MA50).</li>
                       <li><span className="font-medium text-red-400">Sell:</span> Trim/exit when overbought or score weak.</li>
@@ -237,7 +248,7 @@ export function TickerDetailModal({
                     )}
                   </div>
                   <p className="text-sm text-slate-500 mt-2">
-                    Compare against reasons: price &gt; MA50 &gt; MA200 = uptrend; price &lt; MA50 &lt; MA200 = downtrend.
+                    Compare against reasons: price {'>'} MA50 {'>'} MA200 = uptrend; price {'<'} MA50 {'<'} MA200 = downtrend.
                   </p>
                 </section>
               )}
@@ -477,6 +488,45 @@ export function TickerDetailModal({
                 </section>
               )}
 
+              {/* Earnings history (Fix 5): last 4Q actual vs estimate, beat/miss */}
+              {detail.earnings_history && (detail.earnings_history.history?.length ?? 0) > 0 && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">
+                    <Calendar className="h-4 w-4 text-emerald-500" />
+                    Earnings history
+                  </h3>
+                  <p className="text-slate-400 text-xs mb-2">{detail.earnings_history.summary}</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-slate-500">
+                          <th className="pr-3 py-1">Quarter</th>
+                          <th className="pr-3 py-1">Actual</th>
+                          <th className="pr-3 py-1">Estimate</th>
+                          <th className="py-1">Beat/Miss</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(detail.earnings_history.history ?? []).map((q, i) => (
+                          <tr key={i} className="border-t border-slate-700/50 text-slate-300">
+                            <td className="pr-3 py-1">{q.quarter}</td>
+                            <td className="pr-3 py-1">{q.actual != null ? q.actual : "–"}</td>
+                            <td className="pr-3 py-1">{q.estimate != null ? q.estimate : "–"}</td>
+                            <td className="py-1">
+                              {q.beat_pct != null ? (
+                                <span className={q.status === "Beat" ? "text-emerald-400" : "text-red-400"}>
+                                  {q.beat_pct > 0 ? "+" : ""}{q.beat_pct}% {q.status}
+                                </span>
+                              ) : "N/A"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
               {/* Benchmark comparison */}
               <section>
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-3">
@@ -562,7 +612,12 @@ export function TickerDetailModal({
                         </tr>
                         {detail.peer_returns.map((pr) => (
                           <tr key={pr.ticker} className="border-t border-slate-700/50">
-                            <td className="px-4 py-2 font-mono text-slate-300">{pr.ticker}</td>
+                            <td className="px-4 py-2 font-mono text-slate-300">
+                              {pr.ticker}
+                              {pr.data_quality_warning && (
+                                <span className="text-amber-400 text-xs ml-1" title={pr.data_quality_warning}>⚠</span>
+                              )}
+                            </td>
                             {periods.map((p) => (
                               <td key={p} className="px-4 py-2">
                                 {pr.returns[p] != null ? (
@@ -585,12 +640,41 @@ export function TickerDetailModal({
                 </section>
               )}
 
+              {/* Sector-specific (Fix 5): AUM, P/B, ROE for financials; P/S, margins for tech */}
+              {detail.sector_specific && Object.keys(detail.sector_specific).length > 0 && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">Sector metrics</h3>
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    {Object.entries(detail.sector_specific).map(([k, v]) => (
+                      v != null && (
+                        <span key={k} className="text-slate-300">
+                          <span className="text-slate-500">{k.replace(/_/g, " ")}:</span>{" "}
+                          <span className="text-slate-100">{typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(2)) : v}</span>
+                        </span>
+                      )
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Rate sensitivity (Fix 5): correlation with TLT */}
+              {detail.rate_sensitivity && !("error" in detail.rate_sensitivity) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">Rate sensitivity</h3>
+                  <p className="text-slate-300 text-sm">
+                    Corr with TLT: <span className="font-mono text-slate-100">{detail.rate_sensitivity.correlation_with_tlt}</span>
+                    {" · "}{detail.rate_sensitivity.interpretation}
+                  </p>
+                  <p className="text-slate-500 text-xs mt-1">{detail.rate_sensitivity.note}</p>
+                </section>
+              )}
+
               {/* Sanity errors badge */}
               {detail.sanity_errors && detail.sanity_errors.length > 0 && (
                 <section className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
                   <h3 className="flex items-center gap-2 text-base font-semibold text-amber-400 mb-2">Data quality</h3>
                   <p className="text-sm text-slate-300">Some metrics flagged: {detail.sanity_errors.join(", ")}</p>
-                  <p className="text-xs text-slate-500 mt-1">yield = dividend out of 0–15% range; range_drawdown = price outside 52w; drawdown_extreme = |drawdown| &gt; 80%; bb_band_order = bear/base/bull inconsistent.</p>
+                  <p className="text-xs text-slate-500 mt-1">yield = dividend out of 0–15% range; range_drawdown = price outside 52w; drawdown_extreme = |drawdown| {'>'} 80%; bb_band_order = bear/base/bull inconsistent.</p>
                 </section>
               )}
 
@@ -609,7 +693,7 @@ export function TickerDetailModal({
                           {detail.volume_unusual && " (unusual)"}
                         </p>
                         <p className="text-slate-300 mt-2 text-sm leading-relaxed">
-                          Today&apos;s volume is {detail.volume_ratio}× the 20-day average. {detail.volume_unusual ? "Orange = unusual (≥2×). High volume often signals news, institutional activity, or a potential breakout—interpret with price direction (up = buying interest, down = selling pressure)." : "Normal range. Volume &lt; 2× avg is typical."}
+                          Today&apos;s volume is {detail.volume_ratio}× the 20-day average. {detail.volume_unusual ? "Orange = unusual (≥2×). High volume often signals news, institutional activity, or a potential breakout—interpret with price direction (up = buying interest, down = selling pressure)." : "Normal range. Volume < 2× avg is typical."}
                         </p>
                         {detail.volume_unusual && (
                           <p className="text-amber-200 mt-2 text-sm font-medium leading-relaxed">
@@ -659,7 +743,7 @@ export function TickerDetailModal({
                     {detail.beta != null && (
                       <div>
                         <p className="font-medium text-slate-200">Beta vs SPY: {detail.beta}</p>
-                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">β &gt; 1 = more volatile than market; β &lt; 1 = less. Gold (GLD) often has low/negative beta.</p>
+                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">β {'>'} 1 = more volatile than market; β {'<'} 1 = less. Gold (GLD) often has low/negative beta.</p>
                       </div>
                     )}
                     {detail.long_horizon_risk && (

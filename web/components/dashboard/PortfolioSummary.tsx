@@ -90,7 +90,7 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
       )}
       {report.correlation_alerts && report.correlation_alerts.length > 0 && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 md:col-span-2 lg:col-span-4">
-          <div className="text-amber-400 text-base mb-1">High correlation (&gt;0.8)</div>
+          <div className="text-amber-400 text-base mb-1">High correlation ({'>'}0.8)</div>
           <p className="text-slate-400 text-sm">{report.correlation_alerts.join(" · ")}</p>
         </div>
       )}

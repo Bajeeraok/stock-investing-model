@@ -332,6 +332,19 @@ export function BacktestStatus() {
                     <p className="px-4 py-3 text-sm text-slate-500">No by-quarter data.</p>
                   )}
                 </div>
+                {r.validation && !r.validation.valid && r.validation.issues.length > 0 && (
+                  <div className="px-4 py-2 bg-amber-500/10 border-t border-amber-500/30 text-sm">
+                    <p className="font-medium text-amber-400 mb-1">Data quality</p>
+                    <ul className="list-disc list-inside text-amber-200/90 space-y-0.5">
+                      {r.validation.issues.slice(0, 3).map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
+                    {r.validation.data_quality_score != null && (
+                      <p className="text-amber-400/80 text-xs mt-1">Score: {r.validation.data_quality_score}/100</p>
+                    )}
+                  </div>
+                )}
                 <div className="px-4 py-3 bg-slate-800/30 border-t border-slate-700 space-y-2">
                   <div className="flex items-start gap-3 text-sm text-slate-300">
                     <HelpCircle className="h-5 w-5 text-amber-500/80 flex-shrink-0 mt-0.5" />
