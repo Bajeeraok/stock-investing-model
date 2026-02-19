@@ -39,6 +39,19 @@ def _redis_client():
         return None
 
 
+def redis_status() -> dict:
+    """Return Redis connection status for dashboard. Does not raise."""
+    try:
+        url = os.environ.get("REDIS_URL", "").strip()
+        configured = bool(url and url.lower() not in ("", "0", "false", "none"))
+        r = _redis_client()
+        connected = r is not None
+        return {"configured": configured, "connected": connected}
+    except Exception as e:
+        logger.debug("redis_status: %s", e)
+        return {"configured": False, "connected": False}
+
+
 def _serialize(val: Any) -> str:
     if isinstance(val, (dict, list)):
         return json.dumps(val, default=str)

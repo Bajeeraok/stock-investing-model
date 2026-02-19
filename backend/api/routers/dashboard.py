@@ -404,6 +404,41 @@ async def get_dashboard():
     except Exception:
         pre_market_full = None
 
+    # EOD snapshot list (data/eod/*.json) — same path locally and on Railway (app data dir)
+    eod_snapshots: list[dict] = []
+    try:
+        eod_dir = ROOT / "data" / "eod"
+        if eod_dir.exists():
+            for p in sorted(eod_dir.glob("*.json"), reverse=True):
+                try:
+                    stem = p.stem
+                    if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
+                        size_bytes = p.stat().st_size
+                        run_date = None
+                        try:
+                            with open(p) as _f:
+                                data = json.load(_f)
+                            run_date = data.get("run_date") or data.get("snapshot_date")
+                        except Exception:
+                            pass
+                        eod_snapshots.append({
+                            "date": stem,
+                            "size_bytes": size_bytes,
+                            "run_date": run_date,
+                        })
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.debug("EOD snapshot list failed: %s", e)
+
+    # Redis connection status for dashboard indicator
+    redis_status_out: dict = {"configured": False, "connected": False}
+    try:
+        from signals.cache import redis_status as _redis_status
+        redis_status_out = _redis_status()
+    except Exception as e:
+        logger.debug("Redis status failed: %s", e)
+
     # FMP plan status (which features work, which need upgrade)
     fmp_plan_status = {}
     try:
@@ -584,10 +619,10 @@ async def get_dashboard():
                 if not r.get("error") and r.get("ticker")
             ]
             portfolio_value_t1 = float(report.get("total_value") or 100_000)
-            regime_t1 = (
-                next((r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
+            regime_t1 = next(
+                (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
                 "BULL",
-            )[0] or "BULL"
+            )
             # Limit tickers to avoid long yfinance fetches
             all_tickers = list(dict.fromkeys([h["ticker"] for h in holdings_for_tier1] + [s["ticker"] for s in signals_for_tier1]))[:15]
             holdings_for_tier1 = [h for h in holdings_for_tier1 if h["ticker"] in all_tickers]
@@ -635,6 +670,8 @@ async def get_dashboard():
         "forward_tracking": forward_tracking,
         "pre_market": pre_market,
         "pre_market_full": pre_market_full,
+        "eod_snapshots": eod_snapshots,
+        "redis_status": redis_status_out,
         "cot_by_ticker": cot_by_ticker,
         "fmp_plan_status": fmp_plan_status,
         "best_2026": best_2026,
@@ -959,6 +996,66 @@ def run_eod_now(snapshot_date: str | None = None):
         "snapshot_path": result.get("snapshot_path"),
         "tickers_count": result.get("tickers_count", 0),
         "pruned": result.get("pruned", 0),
+    }
+
+
+@router.post("/eod/upload")
+async def eod_upload(
+    file: UploadFile = File(...),
+    snapshot_date: str | None = Form(None),
+):
+    """
+    Upload an EOD snapshot JSON file. Saved to configured EOD directory (data/eod/).
+    snapshot_date: optional YYYY-MM-DD; if omitted, inferred from payload run_date/snapshot_date or filename.
+    """
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="JSON file required")
+    try:
+        content = await file.read()
+        data = json.loads(content)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+    if not data.get("run_results") and not data.get("run_date"):
+        raise HTTPException(
+            status_code=400,
+            detail="File must look like an EOD snapshot (run_results or run_date).",
+        )
+    date_str = None
+    if snapshot_date and isinstance(snapshot_date, str):
+        s = snapshot_date.strip()
+        if len(s) == 10 and s[4] == "-" and s[7] == "-":
+            date_str = s
+    if not date_str and data.get("run_date"):
+        rd = data["run_date"]
+        if isinstance(rd, str) and len(rd) >= 10:
+            date_str = rd[:10]
+    if not date_str and data.get("snapshot_date"):
+        sd = data["snapshot_date"]
+        if isinstance(sd, str) and len(sd) >= 10:
+            date_str = sd[:10]
+    if not date_str and file.filename:
+        import re
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})", file.filename.replace(".json", ""))
+        if m:
+            date_str = m.group(1)
+    if not date_str:
+        from datetime import datetime as _dt
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # type: ignore
+        date_str = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    eod_dir = ROOT / "data" / "eod"
+    eod_dir.mkdir(parents=True, exist_ok=True)
+    eod_path = eod_dir / f"{date_str}.json"
+    with open(eod_path, "w") as f:
+        json.dump(data, f, indent=2)
+    logger.info("[eod/upload] Saved %s (%d bytes, %d tickers)", date_str, len(content), len(data.get("run_results") or []))
+    return {
+        "ok": True,
+        "snapshot_date": date_str,
+        "snapshot_path": str(eod_path),
+        "tickers_count": len(data.get("run_results") or []),
     }
 
 

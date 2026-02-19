@@ -80,7 +80,7 @@ def get_forward_tracking(
         eod_dir = Path(__file__).resolve().parent.parent / "data" / _EOD_DIR_NAME
 
     syms = tickers or ["SPY", "QQQ"]
-    horizon_list = horizons or [5, 20, 60]
+    horizon_list = list(horizons or [5, 20, 60])
 
     dates = _list_eod_dates(eod_dir)
     if len(dates) < 2:
@@ -90,6 +90,11 @@ def get_forward_tracking(
             "summary_by_signal": {},
             "message": "Need at least 2 EOD snapshots. Run run_daily.py regularly.",
         }
+    # With only 2 snapshots, add 1-day horizon so we get (D, D+1) pairs and can verify tracking
+    if len(dates) == 2 and 1 not in horizon_list:
+        horizon_list = [1] + horizon_list
+    elif len(dates) < 6 and 1 not in horizon_list:
+        horizon_list = [1] + horizon_list
 
     records: list[dict[str, Any]] = []
     by_horizon: dict[int, list[float]] = {h: [] for h in horizon_list}

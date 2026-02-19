@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Calendar, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield } from "lucide-react";
+import { AlertTriangle, BarChart3, Calendar, Database, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
@@ -38,6 +38,7 @@ import {
   PreMarketStrip,
   type PreMarketData,
   RiskDashboard,
+  EodAndSystemPanel,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -658,6 +659,13 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Analysis tab */}
           {activeTab === "analysis" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen>
+                <EodAndSystemPanel
+                  eodSnapshots={data.eod_snapshots ?? []}
+                  redisStatus={data.redis_status}
+                  onRefresh={onRefresh}
+                />
+              </ToggleSection>
               <ToggleSection id="analysis-backtest" title="Backtesting" icon={<BarChart3 />} defaultOpen>
                 <BacktestStatus />
               </ToggleSection>

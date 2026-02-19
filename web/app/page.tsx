@@ -315,6 +315,10 @@ export interface DashboardData {
   exit_levels?: import("@/components/dashboard/index").ExitLevelsData[];
   earnings_impacts?: import("@/components/dashboard/index").EarningsImpactData[];
   concentration?: import("@/components/dashboard/index").ConcentrationData;
+  /** EOD snapshot files in data/eod/ (date, size_bytes, run_date) */
+  eod_snapshots?: { date: string; size_bytes: number; run_date?: string | null }[];
+  /** Redis: configured (REDIS_URL set) and connected (ping ok) */
+  redis_status?: { configured: boolean; connected: boolean };
 }
 
 export interface MarketScenarioItem {
