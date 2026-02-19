@@ -309,6 +309,12 @@ export interface DashboardData {
     pct_positive: number;
     one_liner: string;
   } | null;
+  /** Tier 1 risk engine: position sizing, drawdown sim, exit levels, earnings impacts, concentration */
+  position_sizing?: import("@/components/dashboard/index").PositionSizingData[];
+  drawdown_sim?: import("@/components/dashboard/index").DrawdownSimData[];
+  exit_levels?: import("@/components/dashboard/index").ExitLevelsData[];
+  earnings_impacts?: import("@/components/dashboard/index").EarningsImpactData[];
+  concentration?: import("@/components/dashboard/index").ConcentrationData;
 }
 
 export interface MarketScenarioItem {

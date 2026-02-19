@@ -15,19 +15,29 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _min_bars_for_period(period: str) -> int:
+    """Minimum number of bars required; short periods (e.g. 5d) need only 2 for prior/last."""
+    period_lower = (period or "").strip().lower()
+    if period_lower in ("1d", "5d", "1wk", "5day"):
+        return 2
+    return 50
+
+
 def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
     """
     Download adjusted close for ticker. Returns None if insufficient data or error.
+    For short periods (e.g. 5d) requires at least 2 bars; for long periods requires 50+.
     """
     if yf is None:
         raise ImportError("Install yfinance: pip install yfinance")
 
+    min_bars = _min_bars_for_period(period)
     try:
         data = yf.download(ticker, period=period, progress=False, threads=False, auto_adjust=True)
     except Exception:
         return None
 
-    if data is None or data.empty or len(data) < 50:
+    if data is None or data.empty or len(data) < min_bars:
         return None
 
     # yfinance: single ticker -> columns like Open, Close; multi -> MultiIndex
@@ -47,7 +57,7 @@ def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
         return None
 
     close = pd.Series(close, name="close").dropna()
-    if len(close) < 50:
+    if len(close) < min_bars:
         return None
     return close
 

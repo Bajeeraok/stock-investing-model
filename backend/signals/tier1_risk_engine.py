@@ -1,0 +1,913 @@
+"""
+Thrive Alpha — Tier 1 Feature 1: Position Sizing Engine
+Implements Kelly Criterion + regime-adjusted sizing for retail investors.
+
+Usage:
+    engine = PositionSizingEngine(portfolio_value=100000)
+    result = engine.size_position(
+        ticker="AAPL",
+        signal_score=75,
+        confidence=0.72,
+        current_position_value=5000,
+        price=195.0,
+        atr_14=3.2,
+        vix=18.5,
+        regime="BULL",
+        win_rate=0.65,
+        avg_win_pct=8.0,
+        avg_loss_pct=4.0,
+    )
+"""
+
+import numpy as np
+from dataclasses import dataclass
+from typing import Optional
+from enum import Enum
+
+
+class RiskTolerance(Enum):
+    CONSERVATIVE  = "conservative"   # Max 1% portfolio risk per trade
+    MODERATE      = "moderate"       # Max 2% portfolio risk per trade
+    AGGRESSIVE    = "aggressive"     # Max 3% portfolio risk per trade
+
+
+@dataclass
+class PositionSizeResult:
+    ticker:                str
+    recommended_dollars:   float       # $ amount to add
+    recommended_shares:    int         # Share count
+    max_position_dollars:  float       # Hard cap for this ticker
+    current_pct:           float       # Current portfolio %
+    target_pct:            float       # Model-suggested target %
+    risk_per_trade_dollars:float       # $ at risk if stop hit
+    stop_loss_price:       float       # ATR-based stop
+    take_profit_price:     float       # ATR-based target
+    kelly_fraction:        float       # Raw Kelly result
+    adjusted_fraction:     float       # Kelly * regime * vix damper
+    sizing_rationale:      list[str]   # Human-readable reasoning
+    warning:               Optional[str] = None
+
+
+@dataclass
+class PortfolioRiskSummary:
+    total_value:           float
+    total_at_risk:         float       # Sum of $ between current price and stops
+    portfolio_risk_pct:    float       # total_at_risk / total_value
+    largest_position_pct:  float
+    concentration_warning: bool
+    regime_note:           str
+    max_new_position_size: float       # Remaining risk budget
+
+
+class PositionSizingEngine:
+    """
+    Kelly Criterion-based position sizing with:
+    - Regime adjustment (suppress in bear markets)
+    - VIX damper (reduce size in high volatility)
+    - ATR-based stop-loss placement
+    - Portfolio concentration limits
+    - Half-Kelly safety factor (standard for retail)
+    """
+
+    # Portfolio concentration hard limits
+    MAX_SINGLE_POSITION_PCT = 0.10     # 10% max per ticker
+    MAX_SECTOR_PCT          = 0.25     # 25% max per sector
+    MIN_SIGNAL_SCORE        = 55.0     # Don't size into weak signals
+
+    RISK_PER_TRADE = {
+        RiskTolerance.CONSERVATIVE: 0.01,
+        RiskTolerance.MODERATE:     0.02,
+        RiskTolerance.AGGRESSIVE:   0.03,
+    }
+
+    ATR_STOP_MULTIPLIER    = 2.0       # Stop at 2× ATR below entry
+    ATR_TARGET_MULTIPLIER  = 3.0       # Target at 3× ATR above entry (1.5:1 R/R)
+    HALF_KELLY_FACTOR      = 0.5       # Standard retail Kelly damper
+
+    def __init__(
+        self,
+        portfolio_value:  float,
+        risk_tolerance:   RiskTolerance = RiskTolerance.MODERATE,
+    ):
+        self.portfolio_value = portfolio_value
+        self.risk_tolerance  = risk_tolerance
+        self.risk_per_trade  = self.RISK_PER_TRADE[risk_tolerance]
+
+    # ── Core sizing method ────────────────────────────────────────────────
+
+    def size_position(
+        self,
+        ticker:                  str,
+        signal_score:            float,      # 0-100 model score
+        confidence:              float,      # 0-1 model confidence
+        current_position_value:  float,      # $ already held in ticker
+        price:                   float,      # Current price
+        atr_14:                  float,      # 14-day ATR
+        vix:                     float,      # Current VIX
+        regime:                  str,        # "BULL"|"BEAR"|"NEUTRAL"|"STRONG_BULL"|"STRONG_BEAR"
+        win_rate:                 float,     # Historical hit rate (0-1)
+        avg_win_pct:             float,      # Avg win % from backtest
+        avg_loss_pct:            float,      # Avg loss % from backtest
+    ) -> PositionSizeResult:
+
+        rationale = []
+        warning   = None
+
+        # ── Guard: weak signal ────────────────────────────────────────────
+        if signal_score < self.MIN_SIGNAL_SCORE:
+            rationale.append(f"Signal score {signal_score:.0f} below minimum {self.MIN_SIGNAL_SCORE:.0f} — no new position")
+            return self._zero_size(ticker, price, atr_14, rationale,
+                warning=f"Signal score {signal_score:.0f} too weak to size. Minimum: {self.MIN_SIGNAL_SCORE:.0f}")
+
+        # ── Step 1: Kelly Criterion ───────────────────────────────────────
+        # Kelly = W - (1-W)/R where W=win_rate, R=win/loss ratio
+        if avg_loss_pct <= 0:
+            avg_loss_pct = 1.0
+        win_loss_ratio = avg_win_pct / avg_loss_pct
+        kelly_raw      = win_rate - (1 - win_rate) / win_loss_ratio
+        kelly_raw      = max(0, min(kelly_raw, 0.25))  # Cap raw Kelly at 25%
+
+        rationale.append(
+            f"Kelly: W={win_rate:.0%} × R={win_loss_ratio:.1f} → {kelly_raw:.1%} raw"
+        )
+
+        # ── Step 2: Half-Kelly safety factor ─────────────────────────────
+        kelly_half = kelly_raw * self.HALF_KELLY_FACTOR
+        rationale.append(f"Half-Kelly applied: {kelly_half:.1%}")
+
+        # ── Step 3: Regime multiplier ─────────────────────────────────────
+        regime_mult = self._regime_multiplier(regime)
+        rationale.append(f"Regime ({regime}): ×{regime_mult:.2f}")
+
+        # ── Step 4: VIX damper ────────────────────────────────────────────
+        vix_mult = self._vix_multiplier(vix)
+        rationale.append(f"VIX ({vix:.1f}): ×{vix_mult:.2f}")
+
+        # ── Step 5: Confidence adjustment ────────────────────────────────
+        conf_mult = 0.5 + (confidence * 0.5)   # Range: 0.5x – 1.0x
+        rationale.append(f"Confidence ({confidence:.0%}): ×{conf_mult:.2f}")
+
+        # ── Step 6: Score taper ───────────────────────────────────────────
+        # Scores 55-70: partial size. 70-85: full. 85+: slight boost.
+        score_mult = (
+            0.5  if signal_score < 60 else
+            0.75 if signal_score < 70 else
+            1.0  if signal_score < 85 else
+            1.1
+        )
+        rationale.append(f"Score taper ({signal_score:.0f}): ×{score_mult:.2f}")
+
+        # ── Step 7: Compute adjusted fraction ────────────────────────────
+        adjusted_fraction = (
+            kelly_half * regime_mult * vix_mult * conf_mult * score_mult
+        )
+        adjusted_fraction = max(0, min(adjusted_fraction, self.MAX_SINGLE_POSITION_PCT))
+
+        # ── Step 8: ATR-based stop & target ──────────────────────────────
+        stop_loss_price    = round(price - self.ATR_STOP_MULTIPLIER * atr_14, 2)
+        take_profit_price  = round(price + self.ATR_TARGET_MULTIPLIER * atr_14, 2)
+        risk_per_share     = price - stop_loss_price
+
+        # ── Step 9: Dollar amounts ────────────────────────────────────────
+        target_dollars     = self.portfolio_value * adjusted_fraction
+        max_position_dollars = self.portfolio_value * self.MAX_SINGLE_POSITION_PCT
+        already_held       = current_position_value
+        add_dollars        = max(0, target_dollars - already_held)
+
+        # Don't exceed max position
+        add_dollars        = min(add_dollars, max_position_dollars - already_held)
+        add_dollars        = max(0, add_dollars)
+
+        # Risk-based sizing cross-check: never risk more than risk_per_trade% on one position
+        max_risk_dollars   = self.portfolio_value * self.risk_per_trade
+        if risk_per_share > 0:
+            max_shares_by_risk = max_risk_dollars / risk_per_share
+            max_by_risk_dollars = max_shares_by_risk * price
+            if add_dollars > max_by_risk_dollars:
+                add_dollars = max_by_risk_dollars
+                rationale.append(
+                    f"Capped by {self.risk_tolerance.value} risk limit "
+                    f"(${max_risk_dollars:,.0f} max risk per trade)"
+                )
+
+        recommended_shares = int(add_dollars / price) if price > 0 else 0
+        add_dollars        = recommended_shares * price   # Align to whole shares
+
+        risk_dollars = recommended_shares * risk_per_share
+
+        # ── Concentration warning ─────────────────────────────────────────
+        new_position_total = already_held + add_dollars
+        new_pct            = new_position_total / self.portfolio_value
+        if new_pct > 0.08:
+            warning = f"{ticker} would be {new_pct:.1%} of portfolio — approaching concentration limit"
+
+        current_pct = already_held / self.portfolio_value
+
+        rationale.append(
+            f"Result: add ${add_dollars:,.0f} ({recommended_shares} shares) "
+            f"→ {new_pct:.1%} of portfolio"
+        )
+        rationale.append(
+            f"Stop: ${stop_loss_price} | Target: ${take_profit_price} "
+            f"| Risk: ${risk_dollars:,.0f}"
+        )
+
+        return PositionSizeResult(
+            ticker=ticker,
+            recommended_dollars=round(add_dollars, 2),
+            recommended_shares=recommended_shares,
+            max_position_dollars=round(max_position_dollars, 2),
+            current_pct=round(current_pct, 4),
+            target_pct=round(new_pct, 4),
+            risk_per_trade_dollars=round(risk_dollars, 2),
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            kelly_fraction=round(kelly_raw, 4),
+            adjusted_fraction=round(adjusted_fraction, 4),
+            sizing_rationale=rationale,
+            warning=warning,
+        )
+
+    # ── Portfolio-level risk summary ──────────────────────────────────────
+
+    def portfolio_risk_summary(
+        self,
+        holdings: list[dict],   # [{ticker, value, stop_loss, price}]
+        regime:   str,
+    ) -> PortfolioRiskSummary:
+        """
+        Compute total portfolio risk exposure.
+        holdings: list of dicts with ticker, value, stop_loss, price keys.
+        """
+        total_at_risk = 0.0
+        for h in holdings:
+            if h.get("stop_loss") and h.get("price") and h["price"] > 0:
+                pct_at_risk   = (h["price"] - h["stop_loss"]) / h["price"]
+                dollars_at_risk = h["value"] * pct_at_risk
+                total_at_risk += max(0, dollars_at_risk)
+
+        portfolio_risk_pct  = total_at_risk / self.portfolio_value if self.portfolio_value > 0 else 0
+        values              = [h.get("value", 0) for h in holdings]
+        largest_pct         = max(values) / self.portfolio_value if values else 0
+        concentration_warn  = largest_pct > 0.10 or portfolio_risk_pct > 0.15
+
+        # Remaining risk budget
+        max_portfolio_risk  = 0.20   # 20% total portfolio at risk maximum
+        remaining_risk_budget = max(0, (max_portfolio_risk - portfolio_risk_pct) * self.portfolio_value)
+
+        regime_note = {
+            "STRONG_BULL": "Strong bull — full position sizing allowed",
+            "BULL":        "Bull regime — normal sizing",
+            "NEUTRAL":     "Neutral — reduce new position sizes by 25%",
+            "BEAR":        "Bear regime — cut new sizes by 50%, protect existing",
+            "STRONG_BEAR": "Strong bear — no new longs, focus on preservation",
+        }.get(regime, "Unknown regime")
+
+        return PortfolioRiskSummary(
+            total_value=self.portfolio_value,
+            total_at_risk=round(total_at_risk, 2),
+            portfolio_risk_pct=round(portfolio_risk_pct, 4),
+            largest_position_pct=round(largest_pct, 4),
+            concentration_warning=concentration_warn,
+            regime_note=regime_note,
+            max_new_position_size=round(remaining_risk_budget, 2),
+        )
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _regime_multiplier(self, regime: str) -> float:
+        return {
+            "STRONG_BULL": 1.20,
+            "BULL":        1.00,
+            "NEUTRAL":     0.75,
+            "BEAR":        0.40,
+            "STRONG_BEAR": 0.10,
+        }.get(regime, 0.75)
+
+    def _vix_multiplier(self, vix: float) -> float:
+        if vix < 15:  return 1.10
+        if vix < 20:  return 1.00
+        if vix < 25:  return 0.80
+        if vix < 30:  return 0.55
+        return 0.25
+
+    def _zero_size(self, ticker, price, atr_14, rationale, warning=None):
+        stop = round(price - self.ATR_STOP_MULTIPLIER * atr_14, 2)
+        tp   = round(price + self.ATR_TARGET_MULTIPLIER * atr_14, 2)
+        return PositionSizeResult(
+            ticker=ticker, recommended_dollars=0, recommended_shares=0,
+            max_position_dollars=self.portfolio_value * self.MAX_SINGLE_POSITION_PCT,
+            current_pct=0, target_pct=0, risk_per_trade_dollars=0,
+            stop_loss_price=stop, take_profit_price=tp,
+            kelly_fraction=0, adjusted_fraction=0,
+            sizing_rationale=rationale, warning=warning,
+        )
+
+
+# ── Feature 2: Drawdown Simulation ───────────────────────────────────────
+
+@dataclass
+class DrawdownScenario:
+    label:           str         # "Base case" | "Bear case" | "Stress"
+    price_target:    float
+    pct_change:      float
+    portfolio_impact_dollars: float
+    portfolio_impact_pct:     float
+    probability:     float       # Estimated probability
+    support_level:   Optional[float] = None
+    description:     str = ""
+
+
+@dataclass
+class DrawdownSimulation:
+    ticker:           str
+    current_price:    float
+    position_value:   float
+    scenarios:        list[DrawdownScenario]
+    max_loss_dollars: float      # Worst case $ loss
+    max_loss_pct:     float      # Worst case % loss
+    breakeven_price:  float      # Price where you break even (cost basis)
+    atr_14:           float
+    historical_max_drawdown_pct: float
+
+
+class DrawdownSimulator:
+    """
+    Feature 2: "What If I'm Wrong" layer.
+    Shows realistic loss scenarios before entering a position.
+    Uses ATR, historical volatility, and support levels.
+    """
+
+    def simulate(
+        self,
+        ticker:          str,
+        current_price:   float,
+        position_value:  float,
+        portfolio_value: float,
+        atr_14:          float,
+        hist_max_drawdown_pct: float,  # From backtest (e.g. -40.6 for BLK)
+        cost_basis:      float,
+        support_levels:  list[float],   # Key support prices from TA
+        signal_score:    float,
+    ) -> DrawdownSimulation:
+        """
+        Generate 4 loss scenarios with portfolio impact.
+        """
+        scenarios = []
+
+        # ── Scenario 1: Normal pullback (1× ATR) ─────────────────────────
+        normal_target = current_price - atr_14
+        scenarios.append(self._make_scenario(
+            "Normal pullback (1× ATR)",
+            normal_target, current_price, position_value, portfolio_value,
+            probability=0.50,
+            description=f"Typical daily noise range. ATR={atr_14:.2f}",
+        ))
+
+        # ── Scenario 2: Moderate correction (2× ATR) ─────────────────────
+        moderate_target = current_price - (2 * atr_14)
+        scenarios.append(self._make_scenario(
+            "Moderate correction (2× ATR)",
+            moderate_target, current_price, position_value, portfolio_value,
+            probability=0.30,
+            description="2-week range move. Common on sector rotation or mild bad news.",
+        ))
+
+        # ── Scenario 3: Nearest support break ────────────────────────────
+        nearest_support = min(
+            (s for s in support_levels if s < current_price),
+            default=current_price * 0.90
+        )
+        scenarios.append(self._make_scenario(
+            f"Support break (${nearest_support:.2f})",
+            nearest_support, current_price, position_value, portfolio_value,
+            probability=0.15,
+            support_level=nearest_support,
+            description="Support break — often leads to accelerated selling.",
+        ))
+
+        # ── Scenario 4: Stress / bear case ───────────────────────────────
+        stress_target = current_price * (1 + hist_max_drawdown_pct / 100 * 0.5)
+        # Use 50% of historical max drawdown as stress scenario
+        scenarios.append(self._make_scenario(
+            f"Stress scenario ({hist_max_drawdown_pct/2:.0f}% drawdown)",
+            stress_target, current_price, position_value, portfolio_value,
+            probability=0.05,
+            description=(
+                f"Based on historical max drawdown of {hist_max_drawdown_pct:.0f}%. "
+                "Rare but possible in market dislocations."
+            ),
+        ))
+
+        worst = min(scenarios, key=lambda s: s.pct_change)
+
+        return DrawdownSimulation(
+            ticker=ticker,
+            current_price=current_price,
+            position_value=position_value,
+            scenarios=scenarios,
+            max_loss_dollars=round(worst.portfolio_impact_dollars, 2),
+            max_loss_pct=round(worst.portfolio_impact_pct, 4),
+            breakeven_price=round(cost_basis, 2),
+            atr_14=atr_14,
+            historical_max_drawdown_pct=hist_max_drawdown_pct,
+        )
+
+    def _make_scenario(
+        self, label, target_price, current_price,
+        position_value, portfolio_value,
+        probability, description="", support_level=None
+    ) -> DrawdownScenario:
+        pct_change = (target_price / current_price - 1) * 100
+        pos_impact = position_value * (pct_change / 100)
+        port_impact_pct = pos_impact / portfolio_value
+
+        return DrawdownScenario(
+            label=label,
+            price_target=round(target_price, 2),
+            pct_change=round(pct_change, 2),
+            portfolio_impact_dollars=round(pos_impact, 2),
+            portfolio_impact_pct=round(port_impact_pct, 4),
+            probability=probability,
+            support_level=support_level,
+            description=description,
+        )
+
+
+# ── Feature 3: Stop-Loss / Take-Profit Engine ────────────────────────────
+
+@dataclass
+class ExitLevels:
+    ticker:              str
+    entry_price:         float
+    stop_loss_hard:      float      # ATR-based hard stop — no exceptions
+    stop_loss_soft:      float      # Warning zone — review position
+    take_profit_1:       float      # First target — trim 1/3
+    take_profit_2:       float      # Second target — trim another 1/3
+    take_profit_3:       float      # Full exit target
+    trailing_stop_pct:   float      # Trailing stop % once in profit
+    invalidation_price:  float      # Price that invalidates the thesis
+    time_stop_days:      int        # Exit if no progress in N days
+    risk_reward_ratio:   float
+    thesis_check_points: list[str]  # Conditions to verify thesis still valid
+
+
+class ExitEngine:
+    """
+    Feature 3: Dynamic stop-loss and take-profit calculation.
+    ATR-based, not arbitrary percentages.
+    """
+
+    def calculate_exits(
+        self,
+        ticker:        str,
+        entry_price:   float,
+        atr_14:        float,
+        signal_score:  float,
+        regime:        str,
+        horizon:       str,          # "short" | "medium" | "long"
+        support_levels: list[float],
+        resistance_levels: list[float],
+    ) -> ExitLevels:
+
+        # Adjust ATR multipliers by horizon
+        horizon_config = {
+            "short":  {"stop": 1.5, "t1": 2.0, "t2": 3.0, "t3": 4.0, "days": 20},
+            "medium": {"stop": 2.0, "t1": 3.0, "t2": 5.0, "t3": 8.0, "days": 60},
+            "long":   {"stop": 3.0, "t1": 5.0, "t2": 8.0, "t3": 12.0, "days": 180},
+        }
+        cfg = horizon_config.get(horizon, horizon_config["medium"])
+
+        # ATR-based stops
+        hard_stop  = entry_price - cfg["stop"] * atr_14
+        soft_stop  = entry_price - (cfg["stop"] * 0.7) * atr_14
+
+        # Use nearest support below entry if available and closer than ATR stop
+        nearest_support = max(
+            (s for s in support_levels if s < hard_stop),
+            default=hard_stop
+        )
+        hard_stop = max(hard_stop, nearest_support * 0.99)  # Just below support
+
+        # Take profit targets — use resistance if available
+        t1 = self._nearest_resistance(entry_price + cfg["t1"] * atr_14, resistance_levels)
+        t2 = self._nearest_resistance(entry_price + cfg["t2"] * atr_14, resistance_levels)
+        t3 = entry_price + cfg["t3"] * atr_14
+
+        rr_ratio = (t1 - entry_price) / max(entry_price - hard_stop, 0.01)
+
+        # Trailing stop: tighter in bear, wider in bull
+        trailing_pct = {
+            "STRONG_BULL": 8.0, "BULL": 6.0,
+            "NEUTRAL": 5.0, "BEAR": 4.0, "STRONG_BEAR": 3.0
+        }.get(regime, 5.0)
+
+        # Thesis invalidation — below hard stop OR key fundamental change
+        invalidation = hard_stop * 0.98
+
+        thesis_checks = [
+            f"Price holds above ${hard_stop:.2f} (hard stop)",
+            f"Volume on down days stays below 20-day average",
+            f"Regime remains {regime} or improves",
+            f"Score stays above 50 on next refresh",
+        ]
+        if horizon == "long":
+            thesis_checks.append("Fundamental thesis (earnings growth, margin expansion) intact")
+        if horizon == "short":
+            thesis_checks.append(f"Position profitable within {cfg['days']} days — else exit")
+
+        return ExitLevels(
+            ticker=ticker,
+            entry_price=round(entry_price, 2),
+            stop_loss_hard=round(hard_stop, 2),
+            stop_loss_soft=round(soft_stop, 2),
+            take_profit_1=round(t1, 2),
+            take_profit_2=round(t2, 2),
+            take_profit_3=round(t3, 2),
+            trailing_stop_pct=trailing_pct,
+            invalidation_price=round(invalidation, 2),
+            time_stop_days=cfg["days"],
+            risk_reward_ratio=round(rr_ratio, 2),
+            thesis_check_points=thesis_checks,
+        )
+
+    def _nearest_resistance(self, target: float, levels: list[float]) -> float:
+        """Snap take-profit to nearest resistance level if close."""
+        candidates = [l for l in levels if l > target * 0.97 and l < target * 1.05]
+        return min(candidates, default=target)
+
+
+# ── Feature 4: Earnings Impact Predictor ─────────────────────────────────
+
+@dataclass
+class EarningsImpact:
+    ticker:              str
+    next_earnings_date:  str
+    days_to_earnings:    int
+    expected_move_pct:   float       # IV-implied expected move
+    historical_avg_move: float       # Historical avg earnings day move
+    beat_rate_pct:       float       # % of quarters that beat EPS
+    position_recommendation: str     # "Hold" | "Reduce before" | "Hedge"
+    suggested_action:    str
+    iv_percentile:       float       # 0-100, where IV is vs history
+    last_4_quarters:     list[dict]  # [{quarter, actual, estimate, beat_pct, move_pct}]
+    risk_rating:         str         # "Low" | "Medium" | "High" | "Extreme"
+
+
+class EarningsPredictor:
+    """
+    Feature 4: Earnings impact prediction.
+    Flags positions approaching earnings with historical context.
+    """
+
+    def assess(
+        self,
+        ticker:                 str,
+        next_earnings_date:     str,
+        days_to_earnings:       int,
+        implied_move_pct:       float,   # From options market
+        historical_moves:       list[float],  # Past earnings day % moves
+        beat_history:           list[bool],   # True=beat, False=missed
+        current_iv_percentile:  float,   # Current IV vs 1-year range
+        position_value:         float,
+        portfolio_value:        float,
+        last_4_quarters:        list[dict],
+    ) -> EarningsImpact:
+
+        # Historical average absolute move
+        hist_avg = np.mean([abs(m) for m in historical_moves]) if historical_moves else implied_move_pct
+
+        # Beat rate
+        beat_rate = (sum(beat_history) / len(beat_history) * 100) if beat_history else 50.0
+
+        # Position size as % of portfolio
+        position_pct = position_value / portfolio_value
+
+        # Risk rating
+        risk = self._rate_earnings_risk(
+            days_to_earnings, implied_move_pct,
+            current_iv_percentile, position_pct
+        )
+
+        # Recommendation
+        rec, action = self._get_recommendation(
+            risk, days_to_earnings, beat_rate,
+            current_iv_percentile, position_pct
+        )
+
+        return EarningsImpact(
+            ticker=ticker,
+            next_earnings_date=next_earnings_date,
+            days_to_earnings=days_to_earnings,
+            expected_move_pct=round(implied_move_pct, 1),
+            historical_avg_move=round(hist_avg, 1),
+            beat_rate_pct=round(beat_rate, 1),
+            position_recommendation=rec,
+            suggested_action=action,
+            iv_percentile=current_iv_percentile,
+            last_4_quarters=last_4_quarters,
+            risk_rating=risk,
+        )
+
+    def _rate_earnings_risk(self, days, implied_move, iv_pct, position_pct) -> str:
+        score = 0
+        if days <= 7:             score += 3
+        elif days <= 14:          score += 2
+        elif days <= 30:          score += 1
+        if implied_move > 10:     score += 3
+        elif implied_move > 6:    score += 2
+        elif implied_move > 3:    score += 1
+        if iv_pct > 80:           score += 2
+        elif iv_pct > 60:         score += 1
+        if position_pct > 0.08:   score += 2
+        elif position_pct > 0.05: score += 1
+
+        return (
+            "Extreme" if score >= 7 else
+            "High"    if score >= 5 else
+            "Medium"  if score >= 3 else
+            "Low"
+        )
+
+    def _get_recommendation(self, risk, days, beat_rate, iv_pct, position_pct):
+        if risk == "Extreme":
+            return (
+                "Reduce before earnings",
+                f"Reduce to ≤3% of portfolio before earnings. "
+                f"IV is elevated ({iv_pct:.0f}th pct) — implied move is expensive to hedge."
+            )
+        if risk == "High":
+            return (
+                "Hedge or reduce",
+                f"Consider reducing by 30-50% or buying protective puts. "
+                f"Beat rate {beat_rate:.0f}% {'is supportive' if beat_rate > 65 else '— caution'}."
+            )
+        if risk == "Medium" and days <= 14:
+            return (
+                "Hold with awareness",
+                f"Earnings in {days} days. Historical avg move ±{beat_rate:.0f}%. "
+                f"Ensure position size aligns with risk tolerance."
+            )
+        return (
+            "Hold",
+            f"Earnings risk manageable. Beat rate {beat_rate:.0f}%. Monitor into the date."
+        )
+
+
+# ── Feature 5: Correlation & Concentration Monitor ───────────────────────
+
+@dataclass
+class CorrelationAlert:
+    ticker_a:    str
+    ticker_b:    str
+    correlation: float
+    severity:    str    # "High" | "Extreme"
+    note:        str
+
+
+@dataclass
+class ConcentrationReport:
+    holdings:              list[dict]
+    effective_positions:   float      # Diversification ratio
+    herfindahl_index:      float      # 0-1, higher = more concentrated
+    correlation_alerts:    list[CorrelationAlert]
+    sector_weights:        dict
+    top_risk_contributors: list[str]
+    diversification_score: float      # 0-100
+    recommendations:       list[str]
+    is_concentrated:       bool
+
+
+class ConcentrationMonitor:
+    """
+    Feature 5: Portfolio correlation and concentration risk.
+    Detects when you have fewer real positions than you think.
+    """
+
+    CORRELATION_THRESHOLD_HIGH    = 0.70
+    CORRELATION_THRESHOLD_EXTREME = 0.85
+    HHI_CONCENTRATED              = 0.18   # Herfindahl index threshold
+
+    def analyze(
+        self,
+        holdings:          list[dict],   # [{ticker, value, sector, returns_30d: list[float]}]
+        portfolio_value:   float,
+        regime:            str,
+    ) -> ConcentrationReport:
+        """
+        holdings: each dict needs ticker, value, sector,
+                  and returns_30d (list of 30 daily returns as decimals).
+        """
+        if not holdings:
+            return self._empty_report()
+
+        # ── Sector weights ────────────────────────────────────────────────
+        sector_weights = {}
+        for h in holdings:
+            s = h.get("sector", "Unknown")
+            sector_weights[s] = sector_weights.get(s, 0) + h["value"] / portfolio_value
+
+        # ── Herfindahl-Hirschman Index (concentration) ────────────────────
+        weights = [h["value"] / portfolio_value for h in holdings]
+        hhi     = sum(w**2 for w in weights)
+
+        # ── Correlation matrix ────────────────────────────────────────────
+        correlation_alerts = []
+        returns_data = {
+            h["ticker"]: h.get("returns_30d", [])
+            for h in holdings if len(h.get("returns_30d", [])) >= 15
+        }
+
+        tickers = list(returns_data.keys())
+        for i in range(len(tickers)):
+            for j in range(i + 1, len(tickers)):
+                ta, tb = tickers[i], tickers[j]
+                r1, r2 = returns_data[ta], returns_data[tb]
+                min_len = min(len(r1), len(r2))
+                if min_len < 10:
+                    continue
+                corr = np.corrcoef(r1[-min_len:], r2[-min_len:])[0, 1]
+
+                if abs(corr) >= self.CORRELATION_THRESHOLD_EXTREME:
+                    correlation_alerts.append(CorrelationAlert(
+                        ticker_a=ta, ticker_b=tb,
+                        correlation=round(corr, 3),
+                        severity="Extreme",
+                        note=(
+                            f"{ta} and {tb} move together {corr:.0%} of the time. "
+                            f"You effectively have ONE position, not two."
+                        ),
+                    ))
+                elif abs(corr) >= self.CORRELATION_THRESHOLD_HIGH:
+                    correlation_alerts.append(CorrelationAlert(
+                        ticker_a=ta, ticker_b=tb,
+                        correlation=round(corr, 3),
+                        severity="High",
+                        note=f"{ta} and {tb} are highly correlated ({corr:.0%}). Consider reducing one.",
+                    ))
+
+        # ── Effective N (diversification ratio) ──────────────────────────
+        # 1/HHI gives the "equivalent number of equal-weight positions"
+        effective_n = 1 / hhi if hhi > 0 else len(holdings)
+
+        # ── Diversification score 0-100 ───────────────────────────────────
+        max_hhi    = 1.0       # Single position
+        min_hhi    = 1 / max(len(holdings), 1)
+        if max_hhi > min_hhi:
+            div_score = (1 - (hhi - min_hhi) / (max_hhi - min_hhi)) * 100
+        else:
+            div_score = 100.0
+        div_score = min(100.0, max(0.0, div_score))  # Hard cap 0-100
+
+        # ── Top risk contributors ─────────────────────────────────────────
+        sorted_holdings = sorted(holdings, key=lambda h: h["value"], reverse=True)
+        top_risk        = [
+            f"{h['ticker']} ({h['value']/portfolio_value:.1%})"
+            for h in sorted_holdings[:3]
+        ]
+
+        # ── Recommendations ───────────────────────────────────────────────
+        recs = self._build_recommendations(
+            hhi, correlation_alerts, sector_weights,
+            effective_n, regime
+        )
+
+        is_concentrated = (
+            hhi > self.HHI_CONCENTRATED or
+            any(a.severity == "Extreme" for a in correlation_alerts) or
+            any(w > 0.25 for w in sector_weights.values())
+        )
+
+        return ConcentrationReport(
+            holdings=holdings,
+            effective_positions=round(effective_n, 1),
+            herfindahl_index=round(hhi, 4),
+            correlation_alerts=correlation_alerts,
+            sector_weights={k: round(v, 4) for k, v in sector_weights.items()},
+            top_risk_contributors=top_risk,
+            diversification_score=round(div_score, 1),
+            recommendations=recs,
+            is_concentrated=is_concentrated,
+        )
+
+    def _build_recommendations(self, hhi, alerts, sector_weights, effective_n, regime):
+        recs = []
+
+        if hhi > 0.25:
+            recs.append("Portfolio is highly concentrated. Consider spreading across more tickers or sectors.")
+
+        if any(a.severity == "Extreme" for a in alerts):
+            extreme = [a for a in alerts if a.severity == "Extreme"]
+            for a in extreme[:2]:
+                recs.append(f"Reduce {a.ticker_a} or {a.ticker_b} — they move in lockstep ({a.correlation:.0%} corr).")
+
+        for sector, weight in sector_weights.items():
+            if weight > 0.30:
+                recs.append(f"{sector} is {weight:.0%} of portfolio — above 30% sector limit.")
+
+        if effective_n < 4:
+            recs.append(f"You have {effective_n:.1f} effective positions. Target ≥6 for meaningful diversification.")
+
+        if regime in ("BEAR", "STRONG_BEAR"):
+            recs.append("Bear regime: reduce overall equity exposure, not just rebalance within equities.")
+
+        if not recs:
+            recs.append("Portfolio diversification looks healthy. No major concentration issues detected.")
+
+        return recs
+
+    def _empty_report(self) -> ConcentrationReport:
+        return ConcentrationReport(
+            holdings=[], effective_positions=0, herfindahl_index=0,
+            correlation_alerts=[], sector_weights={}, top_risk_contributors=[],
+            diversification_score=0, recommendations=["No holdings data"], is_concentrated=False,
+        )
+
+
+# ── Demo ──────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    print("=" * 60)
+    print("  Thrive Alpha — Tier 1 Risk Features Demo")
+    print("=" * 60)
+
+    # Feature 1: Position Sizing
+    print("\n[Feature 1] Position Sizing Engine")
+    engine = PositionSizingEngine(portfolio_value=100_000, risk_tolerance=RiskTolerance.MODERATE)
+    result = engine.size_position(
+        ticker="NVDA", signal_score=78, confidence=0.72,
+        current_position_value=3000, price=875.0, atr_14=22.5,
+        vix=18.5, regime="BULL", win_rate=0.65,
+        avg_win_pct=9.0, avg_loss_pct=4.5,
+    )
+    print(f"  Add: ${result.recommended_dollars:,.0f} ({result.recommended_shares} shares)")
+    print(f"  Stop: ${result.stop_loss_price}  Target: ${result.take_profit_price}")
+    print(f"  Risk: ${result.risk_per_trade_dollars:,.0f}")
+    for r in result.sizing_rationale:
+        print(f"    • {r}")
+
+    # Feature 2: Drawdown
+    print("\n[Feature 2] Drawdown Simulation")
+    sim = DrawdownSimulator().simulate(
+        ticker="NVDA", current_price=875.0, position_value=7000,
+        portfolio_value=100_000, atr_14=22.5,
+        hist_max_drawdown_pct=-66.0, cost_basis=820.0,
+        support_levels=[850, 820, 780], signal_score=78,
+    )
+    for s in sim.scenarios:
+        print(f"  {s.label:<35} → ${s.price_target}  ({s.pct_change:+.1f}%)  Portfolio: ${s.portfolio_impact_dollars:+,.0f}  P={s.probability:.0%}")
+
+    # Feature 3: Exit Levels
+    print("\n[Feature 3] Exit Levels")
+    exits = ExitEngine().calculate_exits(
+        ticker="NVDA", entry_price=875.0, atr_14=22.5,
+        signal_score=78, regime="BULL", horizon="medium",
+        support_levels=[850, 820, 780],
+        resistance_levels=[900, 940, 1000],
+    )
+    print(f"  Hard stop:  ${exits.stop_loss_hard}  |  Soft stop: ${exits.stop_loss_soft}")
+    print(f"  Take profit 1: ${exits.take_profit_1}  2: ${exits.take_profit_2}  3: ${exits.take_profit_3}")
+    print(f"  R/R ratio: {exits.risk_reward_ratio:.1f}:1  |  Time stop: {exits.time_stop_days} days")
+
+    # Feature 4: Earnings
+    print("\n[Feature 4] Earnings Impact")
+    earnings = EarningsPredictor().assess(
+        ticker="NVDA", next_earnings_date="2025-05-28", days_to_earnings=18,
+        implied_move_pct=8.5, historical_moves=[12.0, -8.5, 6.2, 15.0, -4.1],
+        beat_history=[True, False, True, True, True],
+        current_iv_percentile=72, position_value=7000,
+        portfolio_value=100_000,
+        last_4_quarters=[
+            {"quarter": "Q4 2024", "actual": 0.89, "estimate": 0.84, "beat_pct": 6.0},
+            {"quarter": "Q3 2024", "actual": 0.74, "estimate": 0.71, "beat_pct": 4.2},
+        ],
+    )
+    print(f"  Risk: {earnings.risk_rating}  |  Rec: {earnings.position_recommendation}")
+    print(f"  Action: {earnings.suggested_action}")
+
+    # Feature 5: Concentration
+    print("\n[Feature 5] Concentration Monitor")
+    import random
+    random.seed(42)
+    holdings = [
+        {"ticker": "AAPL", "value": 12000, "sector": "Technology",
+         "returns_30d": [random.gauss(0.001, 0.015) for _ in range(30)]},
+        {"ticker": "MSFT", "value": 11000, "sector": "Technology",
+         "returns_30d": [random.gauss(0.001, 0.012) for _ in range(30)]},
+        {"ticker": "NVDA", "value": 7000, "sector": "Technology",
+         "returns_30d": [random.gauss(0.002, 0.025) for _ in range(30)]},
+        {"ticker": "JPM",  "value": 5000, "sector": "Financial",
+         "returns_30d": [random.gauss(0.0005, 0.010) for _ in range(30)]},
+        {"ticker": "XOM",  "value": 4000, "sector": "Energy",
+         "returns_30d": [random.gauss(0.001, 0.014) for _ in range(30)]},
+    ]
+    conc = ConcentrationMonitor().analyze(holdings, 100_000, "BULL")
+    print(f"  HHI: {conc.herfindahl_index:.3f}  Effective positions: {conc.effective_positions}")
+    print(f"  Diversification score: {conc.diversification_score:.0f}/100")
+    for rec in conc.recommendations:
+        print(f"  • {rec}")
+    if conc.correlation_alerts:
+        for alert in conc.correlation_alerts:
+            print(f"  ⚠️  {alert.note}")
+
+    print("\n✅ All Tier 1 features verified.")

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Calendar, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity } from "lucide-react";
+import { AlertTriangle, BarChart3, Calendar, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
@@ -37,6 +37,7 @@ import {
   PreMarketPanel,
   PreMarketStrip,
   type PreMarketData,
+  RiskDashboard,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -571,6 +572,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
                   selectedPortfolio={selectedPortfolio}
                   onTickerClick={setSelectedTicker}
+                />
+              </ToggleSection>
+              <ToggleSection id="portfolio-risk" title="Risk Management" icon={<Shield />} defaultOpen={false}>
+                <RiskDashboard
+                  positionSizing={data.position_sizing}
+                  drawdownSim={data.drawdown_sim}
+                  exitLevels={data.exit_levels}
+                  earningsImpacts={data.earnings_impacts}
+                  concentration={data.concentration}
+                  portfolioValue={selectedReport?.total_value ?? 0}
                 />
               </ToggleSection>
             </div>

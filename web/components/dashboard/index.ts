@@ -26,3 +26,13 @@ export { MarketScenarios } from "./MarketScenarios";
 export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";
 export { ForwardTracking } from "./ForwardTracking";
 export { PreMarketPanel, PreMarketStrip, type PreMarketData, type PreMarketSignal } from "./PreMarketPanel";
+export {
+  RiskDashboard,
+  type PositionSizingData,
+  type DrawdownSimData,
+  type ExitLevelsData,
+  type EarningsImpactData,
+  type ConcentrationData,
+  type CorrelationAlert,
+  type DrawdownScenario,
+} from "./Tier1RiskFeatures";

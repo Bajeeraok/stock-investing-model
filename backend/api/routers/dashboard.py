@@ -54,6 +54,11 @@ from signals.event_scenarios import get_upcoming_event_scenarios
 from signals.macro_analog import get_macro_analog
 
 try:
+    from signals.tier1_api_bridge import generate_tier1_payload
+except ImportError:
+    generate_tier1_payload = None
+
+try:
     from best_picks import get_best_picks_2026
 except ImportError:
     get_best_picks_2026 = None
@@ -557,11 +562,57 @@ async def get_dashboard():
     save_last_run(results)  # Save AFTER building what_changed
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE")
 
+    # Tier 1 risk features (position sizing, drawdown, exits, earnings, concentration)
+    tier1_payload = {}
+    if generate_tier1_payload and report.get("per_holding") and report.get("total_value"):
+        try:
+            holdings_for_tier1 = [
+                {"ticker": h["ticker"], "value": float(h.get("value") or 0), "cost_basis": h.get("cost_basis")}
+                for h in report["per_holding"]
+                if h.get("value") is not None and (h.get("value") or 0) > 0
+            ]
+            signals_for_tier1 = [
+                {
+                    "ticker": r["ticker"],
+                    "score": float(r.get("composite_buy") or 50),
+                    "confidence": min(1.0, max(0, (r.get("composite_buy") or 50) / 100)),
+                    "win_rate": 0.60,
+                    "avg_win_pct": 7.0,
+                    "avg_loss_pct": 4.0,
+                }
+                for r in results
+                if not r.get("error") and r.get("ticker")
+            ]
+            portfolio_value_t1 = float(report.get("total_value") or 100_000)
+            regime_t1 = (
+                next((r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
+                "BULL",
+            )[0] or "BULL"
+            # Limit tickers to avoid long yfinance fetches
+            all_tickers = list(dict.fromkeys([h["ticker"] for h in holdings_for_tier1] + [s["ticker"] for s in signals_for_tier1]))[:15]
+            holdings_for_tier1 = [h for h in holdings_for_tier1 if h["ticker"] in all_tickers]
+            signals_for_tier1 = [s for s in signals_for_tier1 if s["ticker"] in all_tickers]
+            if holdings_for_tier1 or signals_for_tier1:
+                tier1_payload = generate_tier1_payload(
+                    holdings=holdings_for_tier1,
+                    signals=signals_for_tier1,
+                    portfolio_value=portfolio_value_t1,
+                    regime=regime_t1,
+                    horizon="medium",
+                )
+                logger.info("[dashboard] Tier 1 risk payload: sizing=%d drawdown=%d exits=%d earnings=%d",
+                    len(tier1_payload.get("position_sizing", [])),
+                    len(tier1_payload.get("drawdown_sim", [])),
+                    len(tier1_payload.get("exit_levels", [])),
+                    len(tier1_payload.get("earnings_impacts", [])),
+                )
+        except Exception as e:
+            logger.warning("[dashboard] Tier 1 risk engine failed: %s", e)
+
     from datetime import datetime as _dt
     as_of_date = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    logger.info("[dashboard] END loading dashboard - returning response")
-    return {
+    out = {
         "as_of_date": as_of_date,
         "signals": results,
         "crypto": crypto_signals,
@@ -615,6 +666,9 @@ async def get_dashboard():
             },
         },
     }
+    out.update(tier1_payload)
+    logger.info("[dashboard] END loading dashboard - returning response")
+    return out
 
 
 @router.get("/signals")
@@ -734,11 +788,30 @@ async def upload_portfolio(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _is_premarket_hours_et() -> bool:
+    """True if current time is US pre-market (weekday 4:00–9:30 AM ET)."""
+    from datetime import datetime as _dt
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    now = _dt.now(ZoneInfo("America/New_York"))
+    if now.weekday() >= 5:
+        return False
+    hour, minute = now.hour, now.minute
+    if hour < 4:
+        return False
+    if hour < 9:
+        return True
+    return hour == 9 and minute < 30
+
+
 @router.get("/pre-market")
 async def get_pre_market():
     """
     Pre-market signal engine (6 categories, 15 sources). Reads from data/pre_market_latest.json
-    if present (written by scripts/pre_market_scheduler.py); otherwise runs engine once and returns.
+    if present (written by scripts/pre_market_scheduler.py). Runs the engine only during
+    pre-market hours (weekday 4:00–9:30 AM ET); outside that window returns cached file or 503.
     """
     pre_market_file = ROOT / "data" / "pre_market_latest.json"
     try:
@@ -749,6 +822,12 @@ async def get_pre_market():
                 return data
     except Exception as e:
         logger.debug("Pre-market file read failed: %s", e)
+    if not _is_premarket_hours_et():
+        raise HTTPException(
+            status_code=503,
+            detail="Pre-market data is only generated before the open (4:00–9:30 AM ET, weekdays). "
+                   "Run scripts/pre_market_scheduler.py during that window, or use the last cached snapshot.",
+        )
     try:
         from signals.premarket_engine import PreMarketEngine
         from scripts.pre_market_scheduler import report_to_dict
