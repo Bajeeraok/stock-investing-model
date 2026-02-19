@@ -439,6 +439,23 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("Redis status failed: %s", e)
 
+    # Insider & institutional flow (SEC EDGAR Form 4 — free, no API key). Cached 12h.
+    insider_flow: dict = {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None}
+    try:
+        from signals.edgar_insider import run_insider_flow
+        from signals.cache import cached_edgar_insider_flow
+        watchlist_tickers = list(dict.fromkeys([r.get("ticker") for r in results if r.get("ticker")]))[:15]
+        if watchlist_tickers:
+            insider_flow = cached_edgar_insider_flow(
+                watchlist_tickers,
+                lambda: run_insider_flow(watchlist_tickers, max_form4_per_ticker=2, days_lookback=90),
+            )
+            if not isinstance(insider_flow, dict):
+                insider_flow = {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": "No data"}
+    except Exception as e:
+        logger.debug("Insider flow failed: %s", e)
+        insider_flow["message"] = str(e)
+
     # FMP plan status (which features work, which need upgrade)
     fmp_plan_status = {}
     try:
@@ -672,6 +689,7 @@ async def get_dashboard():
         "pre_market_full": pre_market_full,
         "eod_snapshots": eod_snapshots,
         "redis_status": redis_status_out,
+        "insider_flow": insider_flow,
         "cot_by_ticker": cot_by_ticker,
         "fmp_plan_status": fmp_plan_status,
         "best_2026": best_2026,

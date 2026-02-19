@@ -22,6 +22,7 @@ TTL_TARGET_BANDS = 7 * 24 * 3600  # 7 days – previous bands for trailing re-an
 TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
+TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
 
 
 def _redis_client():
@@ -234,4 +235,18 @@ def cached_next_day_backtest(ticker: str, fetch_fn):
     out = fetch_fn()
     if out and not out.get("error"):
         set_cached(key, out, TTL_NEXT_DAY_BACKTEST)
+    return out
+
+
+def cached_edgar_insider_flow(tickers: list[str], fetch_fn):
+    """Cache SEC EDGAR insider flow (Form 4) by watchlist. TTL 12h."""
+    import hashlib
+    tag = ",".join(sorted(t.strip().upper() for t in tickers if t)[:80])
+    key = cache_key("edgar_insider", hashlib.md5(tag.encode()).hexdigest()[:16])
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    out = fetch_fn()
+    if out and isinstance(out, dict):
+        set_cached(key, out, TTL_EDGAR_INSIDER)
     return out

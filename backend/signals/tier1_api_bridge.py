@@ -198,13 +198,16 @@ def generate_tier1_payload(
         md = market_data[ticker]
         holding_value = next((h["value"] for h in holdings if h["ticker"] == ticker), 0.0)
 
+        atr_14 = md.get("atr_14")
+        if atr_14 is None:
+            atr_14 = md["price"] * 0.02  # fallback ~2% of price
         result = sizing_engine.size_position(
             ticker=ticker,
             signal_score=sig.get("score", 50),
             confidence=sig.get("confidence", 0.60),
             current_position_value=holding_value,
             price=md["price"],
-            atr_14=md["atr_14"],
+            atr_14=float(atr_14),
             vix=vix,
             regime=regime,
             win_rate=sig.get("win_rate", 0.60),
@@ -236,15 +239,18 @@ def generate_tier1_payload(
             continue
         md = market_data[ticker]
 
+        cost_basis = h.get("cost_basis")
+        if cost_basis is None or (isinstance(cost_basis, float) and (cost_basis != cost_basis)):  # None or NaN
+            cost_basis = md["price"]
         sim = dd_simulator.simulate(
             ticker=ticker,
             current_price=md["price"],
             position_value=h["value"],
             portfolio_value=portfolio_value,
-            atr_14=md["atr_14"],
-            hist_max_drawdown_pct=md["hist_max_drawdown"],
-            cost_basis=h.get("cost_basis", md["price"]),
-            support_levels=md["support_levels"],
+            atr_14=md.get("atr_14") or 0.0,
+            hist_max_drawdown_pct=md.get("hist_max_drawdown") or -20.0,
+            cost_basis=float(cost_basis),
+            support_levels=md.get("support_levels") or [],
             signal_score=next((s["score"] for s in signals if s["ticker"] == ticker), 50),
         )
         drawdown_out.append({
@@ -280,15 +286,19 @@ def generate_tier1_payload(
             continue
         md = market_data[ticker]
 
+        entry_price = h.get("cost_basis") or md["price"]
+        if entry_price is None or (isinstance(entry_price, float) and entry_price != entry_price):
+            entry_price = md["price"]
+        atr_exit = md.get("atr_14") or (md["price"] * 0.02)
         exits = exit_engine.calculate_exits(
             ticker=ticker,
-            entry_price=h.get("cost_basis", md["price"]),
-            atr_14=md["atr_14"],
+            entry_price=float(entry_price),
+            atr_14=float(atr_exit),
             signal_score=next((s["score"] for s in signals if s["ticker"] == ticker), 50),
             regime=regime,
             horizon=horizon,
-            support_levels=md["support_levels"],
-            resistance_levels=md["resistance_levels"],
+            support_levels=md.get("support_levels") or [],
+            resistance_levels=md.get("resistance_levels") or [],
         )
         exit_out.append({
             "ticker":              exits.ticker,

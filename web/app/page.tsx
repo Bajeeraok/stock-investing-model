@@ -319,6 +319,13 @@ export interface DashboardData {
   eod_snapshots?: { date: string; size_bytes: number; run_date?: string | null }[];
   /** Redis: configured (REDIS_URL set) and connected (ping ok) */
   redis_status?: { configured: boolean; connected: boolean };
+  /** SEC EDGAR Form 4 insider buys/sells (free data) */
+  insider_flow?: {
+    insider_buys: { ticker: string; filing_date: string; shares: number; edgar_url: string }[];
+    insider_sells: { ticker: string; filing_date: string; shares: number; edgar_url: string }[];
+    ticker_activities?: { ticker: string; filing_date: string; edgar_url: string; buys_shares: number; sells_shares: number }[];
+    message?: string | null;
+  };
 }
 
 export interface MarketScenarioItem {

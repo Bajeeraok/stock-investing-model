@@ -39,6 +39,7 @@ import {
   type PreMarketData,
   RiskDashboard,
   EodAndSystemPanel,
+  InsiderFlowTracker,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -617,6 +618,15 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   <WhatChanged items={data.what_changed} onTickerClick={setSelectedTicker} />
                 </ToggleSection>
               )}
+              <ToggleSection
+                id="opps-insider-flow"
+                title="Insider & Institutional Flow"
+                icon={<TrendingUp />}
+                badge={data.insider_flow?.insider_buys?.length ?? 0}
+                defaultOpen
+              >
+                <InsiderFlowTracker data={data.insider_flow} />
+              </ToggleSection>
             </div>
           )}
 

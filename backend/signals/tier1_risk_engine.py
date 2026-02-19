@@ -400,6 +400,7 @@ class DrawdownSimulator:
         ))
 
         worst = min(scenarios, key=lambda s: s.pct_change)
+        _cost = cost_basis if cost_basis is not None else current_price
 
         return DrawdownSimulation(
             ticker=ticker,
@@ -408,7 +409,7 @@ class DrawdownSimulator:
             scenarios=scenarios,
             max_loss_dollars=round(worst.portfolio_impact_dollars, 2),
             max_loss_pct=round(worst.portfolio_impact_pct, 4),
-            breakeven_price=round(cost_basis, 2),
+            breakeven_price=round(_cost, 2),
             atr_14=atr_14,
             historical_max_drawdown_pct=hist_max_drawdown_pct,
         )
@@ -516,9 +517,10 @@ class ExitEngine:
         if horizon == "short":
             thesis_checks.append(f"Position profitable within {cfg['days']} days — else exit")
 
+        _entry = entry_price if entry_price is not None else (hard_stop + t1) / 2
         return ExitLevels(
             ticker=ticker,
-            entry_price=round(entry_price, 2),
+            entry_price=round(_entry, 2),
             stop_loss_hard=round(hard_stop, 2),
             stop_loss_soft=round(soft_stop, 2),
             take_profit_1=round(t1, 2),
@@ -783,7 +785,7 @@ class ConcentrationMonitor:
             effective_positions=round(effective_n, 1),
             herfindahl_index=round(hhi, 4),
             correlation_alerts=correlation_alerts,
-            sector_weights={k: round(v, 4) for k, v in sector_weights.items()},
+            sector_weights={k: round(v if v is not None else 0, 4) for k, v in sector_weights.items()},
             top_risk_contributors=top_risk,
             diversification_score=round(div_score, 1),
             recommendations=recs,
