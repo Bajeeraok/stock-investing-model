@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 /**
  * Tier1RiskFeatures.tsx
@@ -761,23 +761,36 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
 //  COMBINED RISK DASHBOARD â€” drop into Portfolio tab
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+type ExitHorizon = "short" | "medium" | "long";
+
 interface RiskDashboardProps {
-  positionSizing?:  PositionSizingData[];
-  drawdownSim?:     DrawdownSimData[];
-  exitLevels?:      ExitLevelsData[];
-  earningsImpacts?: EarningsImpactData[];
-  concentration?:   ConcentrationData;
-  portfolioValue?:  number;
+  positionSizing?:       PositionSizingData[];
+  drawdownSim?:          DrawdownSimData[];
+  exitLevels?:           ExitLevelsData[];
+  exitLevelsByHorizon?:  { short?: ExitLevelsData[]; medium?: ExitLevelsData[]; long?: ExitLevelsData[] };
+  earningsImpacts?:      EarningsImpactData[];
+  concentration?:        ConcentrationData;
+  portfolioValue?:      number;
 }
 
+const HORIZON_LABELS: Record<ExitHorizon, string> = {
+  short:  "Short-term (20d)",
+  medium: "Medium-term (60d)",
+  long:   "Long-term (180d)",
+};
+
 export function RiskDashboard({
-  positionSizing, drawdownSim, exitLevels,
+  positionSizing, drawdownSim, exitLevels, exitLevelsByHorizon,
   earningsImpacts, concentration, portfolioValue = 0,
 }: RiskDashboardProps) {
+  const [exitHorizon, setExitHorizon] = useState<ExitHorizon>("medium");
+  const effectiveExitLevels =
+    exitLevelsByHorizon?.[exitHorizon] ?? exitLevels ?? [];
+  const hasExitByHorizon = Boolean(exitLevelsByHorizon?.short?.length || exitLevelsByHorizon?.medium?.length || exitLevelsByHorizon?.long?.length);
   const earningsUrgent = (earningsImpacts ?? []).filter(e => e.days_to_earnings <= 14).length;
   const concAlert      = concentration?.is_concentrated;
   const hasAnyData     = positionSizing?.length || drawdownSim?.length ||
-                          exitLevels?.length || earningsImpacts?.length || concentration;
+                          effectiveExitLevels?.length || exitLevels?.length || earningsImpacts?.length || concentration;
 
   if (!hasAnyData) {
     return (
@@ -830,12 +843,30 @@ export function RiskDashboard({
       ) : null}
 
       {/* Feature 3 */}
-      {exitLevels?.length ? (
+      {(effectiveExitLevels?.length || exitLevels?.length) ? (
         <Collapsible
           title="Exit Levels â€” Stop Loss & Take Profit"
-          badgeEl={<Badge label={`${exitLevels.length} tickers`} color="blue" />}
+          badgeEl={
+            hasExitByHorizon ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={exitHorizon}
+                  onChange={(e) => setExitHorizon(e.target.value as ExitHorizon)}
+                  className="rounded border border-slate-600 bg-slate-800 text-slate-200 text-xs px-2 py-1 focus:border-emerald-500 focus:outline-none"
+                  aria-label="Time horizon"
+                >
+                  {(["short", "medium", "long"] as const).map((h) => (
+                    <option key={h} value={h}>{HORIZON_LABELS[h]}</option>
+                  ))}
+                </select>
+                <Badge label={`${effectiveExitLevels.length} tickers`} color="blue" />
+              </div>
+            ) : (
+              <Badge label={`${exitLevels?.length ?? 0} tickers`} color="blue" />
+            )
+          }
         >
-          <ExitLevelsPanel items={exitLevels} />
+          <ExitLevelsPanel items={effectiveExitLevels.length ? effectiveExitLevels : (exitLevels ?? [])} />
         </Collapsible>
       ) : null}
 

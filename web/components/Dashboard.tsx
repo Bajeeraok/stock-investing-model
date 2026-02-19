@@ -40,6 +40,7 @@ import {
   RiskDashboard,
   EodAndSystemPanel,
   InsiderFlowTracker,
+  TaxAwareExitPanel,
 } from "./dashboard/index";
 
 const AUTO_REFRESH_MIN = 30;
@@ -569,6 +570,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </div>
                 )}
               </ToggleSection>
+              <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
+                <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={setSelectedTicker} />
+              </ToggleSection>
               <ToggleSection id="portfolio-doctor" title="Portfolio Doctor" icon={<Target />} badge={(data.portfolio_doctor_recommendations?.[selectedPortfolio]?.trim?.length ?? 0) + (data.portfolio_doctor_recommendations?.[selectedPortfolio]?.add?.length ?? 0) || undefined} defaultOpen>
                 <PortfolioDoctorRecommendations
                   recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
@@ -581,6 +585,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   positionSizing={data.position_sizing}
                   drawdownSim={data.drawdown_sim}
                   exitLevels={data.exit_levels}
+                  exitLevelsByHorizon={data.exit_levels_by_horizon}
                   earningsImpacts={data.earnings_impacts}
                   concentration={data.concentration}
                   portfolioValue={selectedReport?.total_value ?? 0}

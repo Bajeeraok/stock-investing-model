@@ -313,6 +313,12 @@ export interface DashboardData {
   position_sizing?: import("@/components/dashboard/index").PositionSizingData[];
   drawdown_sim?: import("@/components/dashboard/index").DrawdownSimData[];
   exit_levels?: import("@/components/dashboard/index").ExitLevelsData[];
+  /** Exit levels by time horizon (short 20d / medium 60d / long 180d) */
+  exit_levels_by_horizon?: {
+    short?: import("@/components/dashboard/index").ExitLevelsData[];
+    medium?: import("@/components/dashboard/index").ExitLevelsData[];
+    long?: import("@/components/dashboard/index").ExitLevelsData[];
+  };
   earnings_impacts?: import("@/components/dashboard/index").EarningsImpactData[];
   concentration?: import("@/components/dashboard/index").ConcentrationData;
   /** EOD snapshot files in data/eod/ (date, size_bytes, run_date) */
@@ -324,6 +330,11 @@ export interface DashboardData {
     insider_buys: { ticker: string; filing_date: string; shares: number; edgar_url: string }[];
     insider_sells: { ticker: string; filing_date: string; shares: number; edgar_url: string }[];
     ticker_activities?: { ticker: string; filing_date: string; edgar_url: string; buys_shares: number; sells_shares: number }[];
+    message?: string | null;
+  };
+  /** Tax-aware exit: positions approaching 1-year LTCG (add purchase_date to holdings) */
+  tax_aware_exits?: {
+    items: { ticker: string; days_held: number; days_to_ltcg: number; gain: number; tax_savings_if_hold: number; recommendation: string; account?: string; score?: number; regime?: string }[];
     message?: string | null;
   };
 }

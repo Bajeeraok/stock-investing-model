@@ -277,43 +277,47 @@ def generate_tier1_payload(
             "historical_max_drawdown_pct": sim.historical_max_drawdown_pct,
         })
 
-    # ── Feature 3: Exit Levels ────────────────────────────────────────────
-    print("  [3] Exit levels...")
-    exit_out = []
+    # ── Feature 3: Exit Levels (short / medium / long horizon) ─────────────
+    print("  [3] Exit levels (short, medium, long)...")
+    exit_by_horizon: dict[str, list] = {"short": [], "medium": [], "long": []}
     for h in holdings:
         ticker = h["ticker"]
         if ticker not in market_data:
             continue
         md = market_data[ticker]
-
         entry_price = h.get("cost_basis") or md["price"]
         if entry_price is None or (isinstance(entry_price, float) and entry_price != entry_price):
             entry_price = md["price"]
         atr_exit = md.get("atr_14") or (md["price"] * 0.02)
-        exits = exit_engine.calculate_exits(
-            ticker=ticker,
-            entry_price=float(entry_price),
-            atr_14=float(atr_exit),
-            signal_score=next((s["score"] for s in signals if s["ticker"] == ticker), 50),
-            regime=regime,
-            horizon=horizon,
-            support_levels=md.get("support_levels") or [],
-            resistance_levels=md.get("resistance_levels") or [],
-        )
-        exit_out.append({
-            "ticker":              exits.ticker,
-            "entry_price":         exits.entry_price,
-            "stop_loss_hard":      exits.stop_loss_hard,
-            "stop_loss_soft":      exits.stop_loss_soft,
-            "take_profit_1":       exits.take_profit_1,
-            "take_profit_2":       exits.take_profit_2,
-            "take_profit_3":       exits.take_profit_3,
-            "trailing_stop_pct":   exits.trailing_stop_pct,
-            "invalidation_price":  exits.invalidation_price,
-            "time_stop_days":      exits.time_stop_days,
-            "risk_reward_ratio":   exits.risk_reward_ratio,
-            "thesis_check_points": exits.thesis_check_points,
-        })
+        score = next((s["score"] for s in signals if s["ticker"] == ticker), 50)
+        support_levels = md.get("support_levels") or []
+        resistance_levels = md.get("resistance_levels") or []
+        for h_name in ("short", "medium", "long"):
+            exits = exit_engine.calculate_exits(
+                ticker=ticker,
+                entry_price=float(entry_price),
+                atr_14=float(atr_exit),
+                signal_score=score,
+                regime=regime,
+                horizon=h_name,
+                support_levels=support_levels,
+                resistance_levels=resistance_levels,
+            )
+            exit_by_horizon[h_name].append({
+                "ticker":              exits.ticker,
+                "entry_price":         exits.entry_price,
+                "stop_loss_hard":      exits.stop_loss_hard,
+                "stop_loss_soft":      exits.stop_loss_soft,
+                "take_profit_1":       exits.take_profit_1,
+                "take_profit_2":       exits.take_profit_2,
+                "take_profit_3":       exits.take_profit_3,
+                "trailing_stop_pct":   exits.trailing_stop_pct,
+                "invalidation_price":  exits.invalidation_price,
+                "time_stop_days":      exits.time_stop_days,
+                "risk_reward_ratio":   exits.risk_reward_ratio,
+                "thesis_check_points": exits.thesis_check_points,
+            })
+    exit_out = exit_by_horizon.get(horizon, exit_by_horizon["medium"])
 
     # ── Feature 4: Earnings Impact ────────────────────────────────────────
     print("  [4] Earnings assessment...")
@@ -403,9 +407,10 @@ def generate_tier1_payload(
           f"Alerts: {len(conc.correlation_alerts)}")
 
     return {
-        "position_sizing":  position_sizing_out,
-        "drawdown_sim":     drawdown_out,
-        "exit_levels":      exit_out,
-        "earnings_impacts": earnings_out,
-        "concentration":    concentration_out,
+        "position_sizing":         position_sizing_out,
+        "drawdown_sim":            drawdown_out,
+        "exit_levels":             exit_out,
+        "exit_levels_by_horizon":  exit_by_horizon,
+        "earnings_impacts":        earnings_out,
+        "concentration":           concentration_out,
     }

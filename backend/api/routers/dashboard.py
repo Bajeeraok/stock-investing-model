@@ -561,6 +561,20 @@ async def get_dashboard():
 
     trim_candidates = [h for h in report["per_holding"] if h.get("score") is not None and h["score"] < 40]
 
+    # Tax-aware exit optimizer: positions approaching 1-year LTCG threshold (federal + SC state)
+    tax_aware_exits_out: dict = {"items": [], "message": None}
+    try:
+        from portfolio.tax_aware_exit import tax_aware_exits as _tax_aware_exits
+        tax_cfg = config.get("tax_aware_exit") or {}
+        tax_aware_exits_out = _tax_aware_exits(
+            report.get("per_holding") or [],
+            results,
+            config=config,
+            taxable_accounts=tax_cfg.get("taxable_accounts"),
+        )
+    except Exception as e:
+        logger.debug("Tax-aware exits failed: %s", e)
+
     # What changed: compare new results vs previous run (before we overwrite)
     what_changed_list = []
     for r in results:
@@ -699,6 +713,7 @@ async def get_dashboard():
         "portfolio_names": portfolio_names,
         "portfolio_doctor_recommendations": portfolio_doctor_recommendations,
         "performance_vs_benchmark": performance_vs_benchmark,
+        "tax_aware_exits": tax_aware_exits_out,
         "trim_candidates": trim_candidates,
         "opportunities": opportunities,
         "thesis_check": thesis_check,
@@ -832,6 +847,12 @@ async def upload_portfolio(
                         h["cost_basis"] = round(cb, 2)
                 except (ValueError, TypeError):
                     pass
+            for date_col in ("purchase_date", "acquisition_date", "date", "purchase"):
+                if date_col in df.columns:
+                    raw = row.get(date_col)
+                    if pd.notna(raw) and str(raw).strip():
+                        h["purchase_date"] = str(raw).strip()[:10]
+                        break
             holdings.append(h)
         if not holdings:
             raise HTTPException(status_code=400, detail="No valid tickers found in Excel")

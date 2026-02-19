@@ -23,6 +23,7 @@ watchlist:
 # Your actual holdings for portfolio "doctor"
 # Option A: Multiple portfolios (IRA, Taxable, 401k, etc.)
 # cost_basis = optional avg cost per share; enables P&L display
+# purchase_date = optional YYYY-MM-DD for tax-aware exit (hold to 1-year LTCG suggestion)
 portfolios:
   IRA:
     - ticker: NVDA
@@ -351,3 +352,15 @@ cross_asset_tickers:
   - USO
   - SLV
   - "^VIX"
+
+# Tax-aware exit optimizer: flag positions approaching 1-year (LTCG) threshold
+# Add purchase_date (YYYY-MM-DD) to holdings in config or Excel upload to enable
+# taxable_accounts: only show suggestions for these (e.g. Taxable); omit to include all
+# Rates: federal + state (e.g. SC 7%). Short-term = ordinary income; long-term = cap gains
+tax_aware_exit:
+  taxable_accounts: ["Taxable"]   # or null to include all accounts
+  st_fed_pct: 32
+  st_state_pct: 7
+  lt_fed_pct: 15
+  lt_state_pct: 7
+  approaching_days: 90   # flag when this many days or fewer until LTCG

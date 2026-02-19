@@ -56,6 +56,7 @@ def portfolio_report(
         qty = h.get("quantity", 1) if isinstance(h, dict) else 1
         cost_basis = h.get("cost_basis") if isinstance(h, dict) else None
         account = h.get("account") if isinstance(h, dict) else None
+        purchase_date = (h.get("purchase_date") or h.get("acquisition_date")) if isinstance(h, dict) else None
         r = results_by_ticker.get(ticker)
         if not r or r.get("close") is None:
             entry = {"ticker": ticker, "quantity": qty, "price": None, "value": None, "pct": None, "score": None, "regime": None, "suggestion": "N/A"}
@@ -81,6 +82,8 @@ def portfolio_report(
                 entry["gain_loss_pct"] = round(100 * (value - (qty * cost)) / (qty * cost), 1) if cost > 0 else None
             except (TypeError, ValueError):
                 pass
+        if purchase_date is not None:
+            entry["purchase_date"] = purchase_date
         per_holding.append(entry)
 
     # Fill pct
