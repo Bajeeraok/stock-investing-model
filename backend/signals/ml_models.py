@@ -172,6 +172,7 @@ def predict_probability(
     force_retrain: bool = False,
     config: dict | None = None,
     horizon_key: str = "short",
+    inference_only: bool = False,
 ) -> float | None:
     """
     Return P(threshold gain in horizon days) for the LATEST bar in df.
@@ -180,6 +181,9 @@ def predict_probability(
     Returns None if lightgbm is not installed or insufficient data.
 
     horizon_key: "short" (20d), "medium" (60d), or "long" (120d).
+    inference_only: if True, returns None when no cached model exists instead
+      of triggering training. Use this during dashboard/table load to avoid
+      blocking the response on a potentially long training job.
     """
     try:
         import lightgbm as lgb  # noqa: F401
@@ -188,6 +192,10 @@ def predict_probability(
         return None
 
     if df is None or "close" not in df.columns or len(df) < MIN_TRAIN_BARS:
+        return None
+
+    # Inference-only mode: never block the caller on training
+    if inference_only and not _model_path(ticker, horizon_key).exists():
         return None
 
     needs_retrain = force_retrain or model_needs_retrain(ticker, config, horizon_key)
@@ -217,6 +225,7 @@ def predict_all_horizons(
     df: pd.DataFrame,
     force_retrain: bool = False,
     config: dict | None = None,
+    inference_only: bool = False,
 ) -> dict[str, dict]:
     """
     Return ML probability predictions for all three horizons.
@@ -234,7 +243,7 @@ def predict_all_horizons(
     """
     result: dict[str, dict] = {}
     for h_key, meta in HORIZONS.items():
-        prob      = predict_probability(ticker, df, force_retrain, config, h_key)
+        prob      = predict_probability(ticker, df, force_retrain, config, h_key, inference_only)
         threshold = get_target_gain(ticker, h_key)
         result[h_key] = {
             "prob":           prob,
@@ -348,8 +357,21 @@ def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") ->
         "regime_warnings":  warnings_list,
     }
     try:
+        import warnings as _warnings
         probs = model.predict_proba(X_test)[:, 1]
-        metrics["auc"]         = round(float(roc_auc_score(y_test, probs)), 3)
+
+        # ROC AUC requires both classes present in y_true — guard explicitly.
+        # This happens when the 20% test split or a small regime subset lands
+        # entirely on one label (all positive or all negative), which is more
+        # likely for longer horizons (60d/120d) where returns trend in one direction.
+        if y_test.nunique() >= 2:
+            with _warnings.catch_warnings():
+                _warnings.simplefilter("ignore")   # suppress UndefinedMetricWarning
+                metrics["auc"] = round(float(roc_auc_score(y_test, probs)), 3)
+        else:
+            metrics["auc"] = None
+            metrics["auc_note"] = f"test set has only one class (base_rate={y_test.mean():.2f}) — AUC undefined"
+
         metrics["brier_score"] = round(float(brier_score_loss(y_test, probs)), 3)
         metrics["base_rate"]   = round(float(y.mean()), 3)
         imp = dict(zip(X_train.columns, model.feature_importances_))
@@ -365,13 +387,20 @@ def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") ->
                 if mask.sum() < 20:
                     auc_by_regime[lbl] = f"n={mask.sum()} (too few)"
                     continue
+                subset_y = y_test[mask]
+                if subset_y.nunique() < 2:
+                    # Only one class in this regime slice — AUC not meaningful
+                    auc_by_regime[lbl] = f"one-class (base={subset_y.mean():.2f})"
+                    continue
                 try:
-                    sub_auc = roc_auc_score(y_test[mask], probs[mask.values])
+                    with _warnings.catch_warnings():
+                        _warnings.simplefilter("ignore")
+                        sub_auc = roc_auc_score(subset_y, probs[mask.values])
                     auc_by_regime[lbl] = round(float(sub_auc), 3)
                     if sub_auc < 0.52:
                         warnings_list.append(
                             f"AUC {sub_auc:.3f} in {lbl} regime — model has no edge here; "
-                            "do not rely on ML signal during {lbl} conditions"
+                            f"do not rely on ML signal during {lbl} conditions"
                         )
                 except Exception:
                     auc_by_regime[lbl] = "n/a"

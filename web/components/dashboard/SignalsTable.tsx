@@ -4,6 +4,56 @@ import { useState, useMemo } from "react";
 import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
 
+// ── Signal badge — all 6 tiers ────────────────────────────────────────────────
+// Replaces the old BUY/HOLD/SELL with a multi-layer signal that requires both
+// technical (confluence) AND ML to agree before emitting BUY.
+const SIGNAL_STYLES: Record<string, { bg: string; text: string; border: string; title: string }> = {
+  "STRONG BUY": {
+    bg: "bg-emerald-500/25", text: "text-emerald-200", border: "border-emerald-400/60",
+    title: "Confluence ≥72 AND ML prob ≥55% — both technical and ML strongly aligned",
+  },
+  "BUY": {
+    bg: "bg-green-500/20", text: "text-green-300", border: "border-green-400/40",
+    title: "Confluence ≥65 AND ML prob ≥40% — technical and ML both confirm entry",
+  },
+  "WATCH": {
+    bg: "bg-blue-500/15", text: "text-blue-300", border: "border-blue-400/40",
+    title: "Technical signals strong but ML probability < 40% — wait for ML confirmation before entering",
+  },
+  "HOLD": {
+    bg: "bg-slate-500/20", text: "text-slate-300", border: "border-slate-500/40",
+    title: "Mixed signals — neither a clear entry nor exit",
+  },
+  "REDUCE": {
+    bg: "bg-amber-500/20", text: "text-amber-300", border: "border-amber-400/40",
+    title: "Confluence or ML turning bearish — consider trimming position",
+  },
+  "SELL": {
+    bg: "bg-red-500/20", text: "text-red-300", border: "border-red-400/40",
+    title: "Technical signals bearish (confluence-only mode — no ML yet)",
+  },
+  "AVOID": {
+    bg: "bg-red-600/25", text: "text-red-200", border: "border-red-500/50",
+    title: "Confluence ≤35 AND ML prob < 20% — both technical and ML bearish",
+  },
+};
+
+function SignalBadge({ signal }: { signal: string | null | undefined }) {
+  const s = (signal ?? "HOLD").toUpperCase();
+  const style = SIGNAL_STYLES[s] ?? SIGNAL_STYLES["HOLD"];
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center px-2 py-0.5 rounded border text-xs font-semibold whitespace-nowrap",
+        style.bg, style.text, style.border,
+      )}
+      title={style.title}
+    >
+      {s}
+    </span>
+  );
+}
+
 // ── Mini signal-dot helper ────────────────────────────────────────────────────
 // Shows 3 compact dots (Trend / RSI / MACD) below the confluence number so the
 // user can instantly see WHICH signals are aligned without opening the modal.
@@ -28,6 +78,27 @@ function SignalDot({ type, dir }: { type: "trend" | "rsi" | "macd"; dir: string 
   );
 }
 
+function MLProbPill({ prob }: { prob: number | null | undefined }) {
+  if (prob == null) return (
+    <span className="text-[10px] text-slate-600 font-mono" title="ML model not yet trained for this ticker — run daily training to populate">
+      ML –
+    </span>
+  );
+  const pct = Math.round(prob * 100);
+  const colour =
+    pct >= 60 ? "text-emerald-300 bg-emerald-500/15 border-emerald-500/30" :
+    pct >= 40 ? "text-amber-300  bg-amber-500/15  border-amber-500/30"  :
+                "text-red-300    bg-red-500/15    border-red-500/30";
+  return (
+    <span
+      className={clsx("text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border", colour)}
+      title={`ML short-term: ${pct}% probability of gaining threshold% in 20 days (LightGBM). Click ticker for full 7-layer breakdown.`}
+    >
+      ML {pct}%
+    </span>
+  );
+}
+
 function ConfluenceCell({ signal: r }: { signal: Signal }) {
   const score    = r.confluence_score ?? r.composite_buy;
   const scorePct = score != null ? Math.floor(score) : null;
@@ -41,18 +112,22 @@ function ConfluenceCell({ signal: r }: { signal: Signal }) {
   const macd  = (r.macd_signal  ?? (r.signal === "BUY" ? "UP" : r.signal === "SELL" ? "DOWN" : "NEUTRAL")).toUpperCase();
 
   return (
-    <div>
-      <span
-        className={clsx("font-semibold tabular-nums", colour)}
-        title="Confluence Score: degree of Trend + RSI + MACD + Regime agreement. Click ticker for 7-layer ML Confidence."
-      >
-        {scorePct != null ? scorePct : "–"}
-      </span>
-      {r.confidence_tag === "low (bear/neutral market)" && (
-        <span className="text-amber-400 text-[10px] ml-1" title="Score down-weighted in BEAR/NEUTRAL market regime">↓</span>
-      )}
-      {/* Mini signal dots: Trend · RSI · MACD */}
-      <div className="flex items-center gap-1 mt-1" title="Signal alignment: Trend · RSI · MACD">
+    <div className="space-y-1">
+      {/* Row 1: confluence score + ML probability pill side-by-side */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span
+          className={clsx("font-semibold tabular-nums text-sm", colour)}
+          title="Confluence: how much do Trend + RSI + MACD + Regime agree on direction? Click ticker for full 7-layer ML Confidence."
+        >
+          {scorePct != null ? scorePct : "–"}
+          {r.confidence_tag === "low (bear/neutral market)" && (
+            <span className="text-amber-400 text-[10px] ml-0.5" title="Score down-weighted in BEAR/NEUTRAL regime">↓</span>
+          )}
+        </span>
+        <MLProbPill prob={r.ml_short_prob} />
+      </div>
+      {/* Row 2: mini signal dots */}
+      <div className="flex items-center gap-1" title="Signal alignment: Trend · RSI · MACD">
         <SignalDot type="trend" dir={trend} />
         <SignalDot type="rsi"   dir={rsi}   />
         <SignalDot type="macd"  dir={macd}  />
@@ -147,6 +222,7 @@ export function SignalsTable({
                   ? (r.confluence_score ?? r.composite_buy)!.toFixed(0)
                   : "-")}<span className="text-slate-600"> cf</span>
               </span>
+              <MLProbPill prob={r.ml_short_prob} />
               <span className={clsx(
                 "px-2 py-0.5 rounded text-xs font-medium",
                 r.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
@@ -155,14 +231,7 @@ export function SignalsTable({
               )}>
                 {r.regime ?? "-"}
               </span>
-              <span className={clsx(
-                "text-sm font-medium",
-                r.signal === "BUY" && "text-emerald-400",
-                r.signal === "SELL" && "text-red-400",
-                r.signal === "HOLD" && "text-slate-400"
-              )}>
-                {r.signal ?? "-"}
-              </span>
+              <SignalBadge signal={r.signal} />
               {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
             </div>
             {r.earnings_note && <p className="text-amber-400 text-xs mt-1">{r.earnings_note}</p>}
@@ -277,16 +346,7 @@ export function SignalsTable({
                   </span>
                 </td>
                 <td className="px-3 py-2.5">
-                  <span
-                    className={clsx(
-                      "font-medium",
-                      r.signal === "BUY" && "text-emerald-400",
-                      r.signal === "HOLD" && "text-slate-400",
-                      r.signal === "SELL" && "text-red-400"
-                    )}
-                  >
-                    {r.signal ?? "-"}
-                  </span>
+                  <SignalBadge signal={r.signal} />
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-400" title="COT positioning (GLD/SLV/USO)">
                   {cotByTicker?.[r.ticker] ?? "–"}

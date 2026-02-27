@@ -392,6 +392,7 @@ export interface Signal {
   trend_signal?: string | null;   // "UP" | "NEUTRAL" | "DOWN"
   rsi_signal?: string | null;
   macd_signal?: string | null;
+  ml_short_prob?: number | null;  // P(threshold gain in 20d) from LightGBM, 0-1
   error?: string;
 }
 

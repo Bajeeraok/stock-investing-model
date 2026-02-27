@@ -42,6 +42,7 @@ from signals.providers import get_next_earnings
 from signals.regime import (
     get_regime,
     get_regime_ma,
+    get_ml_aware_signal,
     get_signal,
     _ma_regime_to_display,
     get_global_market_regime,
@@ -165,12 +166,42 @@ def run_signals(
             vix=vix if mr_cfg_vix else None,
         )
         composite_buy = sig["composite_buy"]
-        regime = _ma_regime_to_display(sig["ma_regime"]) if sig.get("ma_regime") else get_regime(composite_buy, up_min, down_max)
-        signal = get_signal(composite_buy, buy_min, sell_max)
 
-        # Inverted BUY/ADD in BEAR/STRONG_BEAR: never emit BUY or ADD; cap to HOLD
+        # ── ML short-term probability (inference-only — never trains here) ─
+        # Uses the cached LightGBM model for this ticker if it exists.
+        # inference_only=True means: return None rather than trigger training
+        # during dashboard load. Training runs separately on a scheduled basis.
+        ml_short_prob: float | None = None
+        try:
+            import pandas as _pd
+            from signals.ml_models import predict_probability as _ml_predict
+            _df = _pd.DataFrame({"close": close})
+            if volume is not None:
+                _df["volume"] = volume
+            ml_short_prob = _ml_predict(
+                ticker, _df,
+                force_retrain=False,
+                horizon_key="short",
+                inference_only=True,   # skip training; return None if no cached model
+            )
+        except Exception:
+            pass  # graceful — ML column simply shows N/A
+        regime = _ma_regime_to_display(sig["ma_regime"]) if sig.get("ma_regime") else get_regime(composite_buy, up_min, down_max)
+
+        # Multi-layer signal: requires BOTH confluence AND ML to agree for BUY.
+        # When ML is not yet trained, falls back to confluence-only (preserves
+        # existing behaviour until models are available).
+        confluence_score = sig.get("confluence_score") or composite_buy
+        signal = get_ml_aware_signal(
+            confluence_score,
+            ml_short_prob=ml_short_prob,
+            buy_min=buy_min,
+            sell_max=sell_max,
+        )
+
+        # Inverted BUY in BEAR/STRONG_BEAR: never emit BUY or STRONG BUY; cap to HOLD/WATCH
         if global_market_regime in ("BEAR", "STRONG_BEAR"):
-            if signal in ("BUY",):
+            if signal in ("BUY", "STRONG BUY"):
                 signal = "HOLD"
             short_s = sig.get("short_suggestion")
             med_s = sig.get("medium_suggestion")
@@ -182,12 +213,12 @@ def run_signals(
             if long_s and long_s in ("HOLD/ADD",):
                 sig["long_suggestion"] = "HOLD"
 
-        # Hit rate gate: suppress BUY/ADD when historical ADD hit rate < VIX-based threshold
+        # Hit rate gate: suppress BUY when historical ADD hit rate < VIX-based threshold
         add_hit_rate = (hit_rate_context or {}).get("add_hit_rate_pct")
         min_hit_rate = get_vix_min_hit_rate(vix) * 100.0 if vix else 55.0
         if mr_cfg_gate and add_hit_rate is not None and vix is not None and vix >= 20:
             if add_hit_rate < min_hit_rate:
-                if signal == "BUY":
+                if signal in ("BUY", "STRONG BUY"):
                     signal = "HOLD"
                 for k in ("short_suggestion", "medium_suggestion", "long_suggestion"):
                     if sig.get(k) == "HOLD/ADD":
@@ -202,7 +233,12 @@ def run_signals(
                 earnings_note = f"Earnings in {days_until} days"
                 composite_buy = max(0, composite_buy - score_red)
                 regime = get_regime(composite_buy, up_min, down_max)
-                signal = get_signal(composite_buy, buy_min, sell_max)
+                # Re-derive signal with earnings-reduced score and ML
+                earnings_confluence = max(0.0, (sig.get("confluence_score") or composite_buy) - score_red)
+                signal = get_ml_aware_signal(
+                    earnings_confluence, ml_short_prob=ml_short_prob,
+                    buy_min=buy_min, sell_max=sell_max,
+                )
 
         # Volume vs 20d average (unusual activity)
         volume_ratio = None
@@ -278,6 +314,14 @@ def run_signals(
             "ma50": sig.get("ma50"),
             "macd_hist": sig.get("macd_hist"),
             "composite_buy": composite_buy,
+            # Confluence score — explicit 4-signal agreement (Trend+RSI+MACD+Regime)
+            "confluence_score": sig.get("confluence_score"),
+            "trend_signal":     sig.get("trend_signal"),
+            "rsi_signal":       sig.get("rsi_signal"),
+            "macd_signal":      sig.get("macd_signal"),
+            # ML short-term probability — LightGBM inference from cached model (0-1)
+            # None when no model trained yet; never triggers training during dashboard load
+            "ml_short_prob": ml_short_prob,
             "regime": regime,
             "signal": signal,
             "earnings_note": earnings_note,

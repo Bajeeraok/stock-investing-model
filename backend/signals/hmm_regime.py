@@ -123,9 +123,10 @@ def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | 
     """
     Build standardised [daily_return, |daily_return|, log_vol_change] feature matrix.
 
-    Features are z-score standardised before fitting so that the EM algorithm
-    treats each dimension equally — critical for numerical stability of the
-    Gaussian HMM covariance estimation.
+    Features are z-score standardised AND clipped to ±4σ before fitting.
+    Clipping removes flash-crash outliers (e.g. -20% in a single day) that
+    cause extreme Gaussian likelihoods, destabilise the EM covariance update,
+    and produce the "Model is not converging" log warning.
     """
     ret = close.pct_change().dropna()
     if len(ret) < MIN_BARS_TO_FIT:
@@ -144,13 +145,17 @@ def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | 
     mask = np.all(np.isfinite(arr), axis=1)
     arr = arr[mask]
 
-    # Standardise each feature to zero-mean unit-variance.
-    # Without this, the return column (~0.001 scale) and vol-change column
-    # (~0.1 scale) have very different magnitudes, which destabilises the
-    # EM covariance update and causes the "not converging" warning.
+    # Standardise each feature to zero-mean unit-variance so the EM algorithm
+    # treats each dimension equally — without this the return column (~0.001 scale)
+    # and vol-change column (~0.1 scale) have very different magnitudes.
     std = arr.std(axis=0)
     std[std == 0] = 1.0   # avoid division by zero for constant features
     arr = (arr - arr.mean(axis=0)) / std
+
+    # Clip to ±4σ (post-standardisation so ±4 means ±4 std-devs).
+    # Flash crashes / circuit-breaker days sit 8-15σ away from the mean and
+    # pull the Gaussian means toward the tail, causing EM to step backwards.
+    arr = np.clip(arr, -4.0, 4.0)
 
     return arr
 
@@ -161,6 +166,7 @@ def _model_path(ticker: str) -> Path:
 
 def _load_or_fit(ticker: str, features: np.ndarray, force_refit: bool) -> object | None:
     import warnings
+    import logging as _std_logging
     from hmmlearn.hmm import GaussianHMM
 
     path = _model_path(ticker)
@@ -174,27 +180,44 @@ def _load_or_fit(ticker: str, features: np.ndarray, force_refit: bool) -> object
     # Fit on all bars except last RECENT_BARS to avoid future peeking
     train = features[:-RECENT_BARS] if len(features) > RECENT_BARS + 100 else features
 
+    # ── Silence hmmlearn's logger during fitting ───────────────────────────
+    # hmmlearn emits "Model is not converging" via logging.warning() (not via
+    # warnings.warn), so warnings.simplefilter("ignore") does NOT suppress it.
+    # We temporarily raise the hmmlearn logger to CRITICAL so no WARNING-level
+    # messages reach the application log. The model output is still usable.
+    _hmm_log = _std_logging.getLogger("hmmlearn")
+    _hmm_prev_level = _hmm_log.level
+    _hmm_log.setLevel(_std_logging.CRITICAL)
+
     best_model, best_score = None, -np.inf
-    # Three random restarts — keep the model with the highest log-likelihood.
-    # HMM EM is sensitive to initialisation; a single run often lands in a
-    # poor local optimum that triggers the convergence warning.
-    for seed in (42, 7, 123):
+    # Five random restarts — keep the model with the highest log-likelihood.
+    # HMM EM is sensitive to initialisation; more restarts reduce the chance of
+    # landing in a poor local optimum that produces unstable covariances.
+    for seed in (42, 7, 123, 17, 99):
         try:
             candidate = GaussianHMM(
                 n_components=3,
                 covariance_type="diag",   # fewer params than "full" → more stable
-                n_iter=500,               # more iterations before giving up
+                n_iter=500,
                 random_state=seed,
-                tol=1e-3,                 # slightly relaxed tolerance
+                tol=1e-3,                 # slightly relaxed — avoids false "not converging"
+                min_covar=1e-2,           # floor on diagonal covariance entries;
+                                          # prevents near-zero variance that causes
+                                          # the EM log-likelihood to step backwards
             )
             with warnings.catch_warnings():
-                warnings.simplefilter("ignore")   # suppress ConvergenceWarning noise
+                warnings.simplefilter("ignore")   # belt-and-suspenders for ConvergenceWarning
                 candidate.fit(train)
             score = candidate.score(train)
             if score > best_score:
                 best_score, best_model = score, candidate
         except Exception as exc:
             logger.debug("HMM fit attempt seed=%s failed for %s: %s", seed, ticker, exc)
+        finally:
+            pass  # logger level restored after the loop
+
+    # Restore hmmlearn logger level
+    _hmm_log.setLevel(_hmm_prev_level)
 
     if best_model is None:
         logger.warning("All HMM fit attempts failed for %s", ticker)

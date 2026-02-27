@@ -175,3 +175,53 @@ def get_signal(composite_buy: float, buy_min: float = 70, sell_max: float = 30) 
     if composite_buy <= sell_max:
         return "SELL"
     return "HOLD"
+
+
+def get_ml_aware_signal(
+    confluence: float,
+    ml_short_prob: float | None = None,
+    buy_min: float = 65,
+    sell_max: float = 35,
+) -> str:
+    """
+    Multi-layer signal that requires BOTH technical (confluence) AND ML to agree
+    before emitting BUY. Falls back to confluence-only when ML not yet trained.
+
+    Tiers (when ML available):
+      STRONG BUY — confluence ≥ 72 AND ML ≥ 55%  (both strongly aligned)
+      BUY        — confluence ≥ buy_min AND ML ≥ 40%  (both confirm)
+      WATCH      — confluence ≥ buy_min but ML < 40%  (technical looks good, ML cautious)
+                   → do NOT buy; wait for ML to confirm or check full 7-layer
+      HOLD       — neither extreme
+      REDUCE     — confluence ≤ sell_max OR ML < 20%  (at least one is bearish)
+      AVOID      — confluence ≤ sell_max AND ML < 20%  (both bearish)
+
+    Without ML (inference_only returned None):
+      Falls back to BUY/HOLD/SELL purely from confluence so existing behaviour
+      is preserved until models are trained.
+
+    Why 40% ML threshold for BUY?
+      Short-term models are calibrated for ~18% base rate (P(5%+ in 20d) for SPY).
+      40% = ~2.2× the base rate — a meaningful signal, not noise.
+    """
+    if ml_short_prob is not None:
+        if confluence >= 72 and ml_short_prob >= 0.55:
+            return "STRONG BUY"
+        if confluence >= buy_min and ml_short_prob >= 0.40:
+            return "BUY"
+        if confluence >= buy_min and ml_short_prob < 0.40:
+            return "WATCH"   # technical strong but ML not confirming
+        if confluence <= sell_max and ml_short_prob < 0.20:
+            return "AVOID"
+        if confluence <= sell_max or ml_short_prob < 0.20:
+            return "REDUCE"
+        return "HOLD"
+
+    # ── Fallback: confluence-only (no ML model yet) ───────────────────────
+    if confluence >= 70:
+        return "BUY"
+    if confluence >= buy_min:
+        return "BUY"
+    if confluence <= sell_max:
+        return "SELL"
+    return "HOLD"
