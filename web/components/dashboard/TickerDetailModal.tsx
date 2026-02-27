@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity } from "lucide-react";
 import { clsx } from "clsx";
+import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
+import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -90,9 +92,11 @@ export function TickerDetailModal({
   ticker: string;
   onClose: () => void;
 }) {
-  const [detail, setDetail] = useState<TickerDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail]         = useState<TickerDetail | null>(null);
+  const [confidence, setConfidence]  = useState<ConfidenceData | null>(null);
+  const [unified, setUnified]        = useState<UnifiedSignalData | null>(null);
+  const [loading, setLoading]        = useState(true);
+  const [error, setError]            = useState<string | null>(null);
   const [quickRefOpen, setQuickRefOpen] = useState(false);
 
   useEffect(() => {
@@ -106,12 +110,29 @@ export function TickerDetailModal({
     if (!ticker) return;
     setLoading(true);
     setError(null);
-    const url = API_BASE ? `${API_BASE}/api/ticker/${ticker}` : `/api/ticker/${ticker}`;
-    fetch(url)
+    setConfidence(null);
+    setUnified(null);
+
+    const base = (path: string) => API_BASE ? `${API_BASE}${path}` : path;
+
+    // Main ticker detail (required)
+    fetch(base(`/api/ticker/${ticker}`))
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then(setDetail)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+
+    // Confidence engine (optional — runs in background, shows when ready)
+    fetch(base(`/api/confidence/${ticker}`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setConfidence(d))
+      .catch(() => {/* graceful — confidence unavailable */});
+
+    // Unified signal engine (optional — runs in background)
+    fetch(base(`/api/unified-signal/${ticker}`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setUnified(d))
+      .catch(() => {/* graceful — unified signal unavailable */});
   }, [ticker]);
 
   const periods = ["1m", "3m", "6m", "1y"];
@@ -212,6 +233,26 @@ export function TickerDetailModal({
                     )}
                   </div>
                 </section>
+              )}
+
+              {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
+              {confidence ? (
+                <ConfidenceBreakdown data={confidence} />
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Loading ML confidence breakdown…</span>
+                </div>
+              )}
+
+              {/* ── Unified Signal Engine (regime + pattern + momentum) ─ */}
+              {unified ? (
+                <PatternSignalCard data={unified} />
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Loading pattern signal engine…</span>
+                </div>
               )}
 
               {/* Moving averages – compare against reasoning */}

@@ -986,6 +986,51 @@ async def get_ticker_detail(ticker: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/confidence/{ticker}")
+async def get_confidence(ticker: str):
+    """
+    7-layer ConfidenceEngine breakdown for a single ticker.
+    Returns: confidence (0-1), action, breakdown per layer, disqualifiers, risk_factors, watch_levels.
+    Layers: HMM regime, pattern+technical, LightGBM prob, options sentiment, insider, fundamentals, NLP.
+    Gracefully degrades — missing layers are redistributed. Safe to call any time.
+    """
+    ticker = ticker.upper().strip()
+    try:
+        from signals.confidence_engine import run_confidence
+        result = run_confidence(ticker)
+        return result
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"Confidence engine unavailable: {e}")
+    except Exception as e:
+        logger.exception("Confidence engine error for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/unified-signal/{ticker}")
+async def get_unified_signal(ticker: str):
+    """
+    Unified Signal Engine: 3-layer confluence (regime + pattern + momentum) with regime gating.
+    Returns: regime, pattern_score, momentum_score, confluence, action, Kelly multiplier, narrative.
+    Runs in ~1-2s (fetches 2y OHLCV, no ML training required).
+    """
+    ticker = ticker.upper().strip()
+    try:
+        from signals.unified_signal_engine import run_unified_signal
+        from signals.fetcher import fetch_ohlcv_dataframe
+        df = fetch_ohlcv_dataframe(ticker, period="2y")
+        if df is None or df.empty:
+            raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
+        result = run_unified_signal(df, ticker)
+        return result
+    except HTTPException:
+        raise
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"Unified signal engine unavailable: {e}")
+    except Exception as e:
+        logger.exception("Unified signal error for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/last-run")
 async def get_last_run():
     """Last run state for comparison."""

@@ -185,9 +185,9 @@ interface PreMarketPanelProps {
 
 export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-market" }: PreMarketPanelProps) {
   const [data, setData] = useState<PreMarketData | null>(initialData ?? null);
-  // Show spinner only when we have no data at all yet; background refresh is silent
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // null = no error | string = fetch error | "unavailable" = 503 (expected outside pre-market)
+  const [error, setError] = useState<string | "unavailable" | null>(null);
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
 
   const fetchData = useCallback(async (silent = false) => {
@@ -196,22 +196,27 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
     try {
       const url = API_BASE ? `${API_BASE}${apiEndpoint}` : apiEndpoint;
       const res = await fetch(url);
+      if (res.status === 503) {
+        // Expected outside pre-market hours when no cached file exists — not a hard error
+        if (!data) setError("unavailable");
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       setData(json);
       setLastFetch(new Date());
     } catch (e) {
-      // On silent background refresh, keep stale data rather than show error
+      // On silent background refresh, keep existing data rather than show error
       if (!silent) setError(e instanceof Error ? e.message : "Failed to fetch pre-market data");
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [apiEndpoint]);
+  }, [apiEndpoint, data]);
 
-  // Always fetch fresh on mount — initialData may be from SSR/yesterday
+  // Always fetch fresh on mount — initialData may be stale SSR data from yesterday.
+  // Silent=true when initialData exists so it shows while the refresh happens in background.
   useEffect(() => {
-    // Show full spinner only if there's nothing to display yet
-    fetchData(!initialData ? false : true);
+    fetchData(!!initialData);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -268,7 +273,15 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
       </div>
 
       <div className="p-4 space-y-4">
-        {error && (
+        {error === "unavailable" && (
+          <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-6 text-center space-y-2">
+            <Activity className="h-6 w-6 text-slate-600 mx-auto" />
+            <p className="text-sm font-medium text-slate-400">Pre-market signals not yet available</p>
+            <p className="text-xs text-slate-600">Data is generated at 4:00 AM ET on trading days.<br />Check back before market open or run the pre-market scheduler.</p>
+          </div>
+        )}
+
+        {error && error !== "unavailable" && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <div>
