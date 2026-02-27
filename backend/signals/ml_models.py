@@ -1,29 +1,45 @@
 """
 LightGBM-based price prediction for Thrive Alpha.
 
-Predicts P(10%+ gain in next 20 trading days) from purely technical + price features.
-Output is a calibrated probability (0-1), not a raw signal — this maps directly
-to the confidence score and is far more useful than buy/sell labels.
+Predicts probability of forward return exceeding a threshold over three horizons,
+covering all retail investor types:
+
+  Short-term  (20d / ~1 month)  — swing traders, momentum players
+  Medium-term (60d / ~3 months) — position traders, quarterly rebalancers
+  Long-term  (120d / ~6 months) — buy-and-hold, accumulation strategies
+
+Why not a single threshold?
+  Different assets and horizons have very different base rates.
+  10% in 20 days is a 3-5% event for SPY → model always outputs low probability.
+  Calibrating thresholds per asset type + horizon keeps each model's positive
+  class rate at ~15-25%, giving meaningful discrimination (20-70% output range).
+
+Horizon × asset-type gain thresholds (target ~18% base rate each):
+                     20d    60d    120d
+  broad_etf / default:  5%    10%    15%
+  gold / commodity:     3%     6%    10%
+  bonds / defensive:    3%     6%    10%
+  high-beta growth:     8%    15%    25%
 
 Walk-forward training discipline:
   - Features are computed only from data available at each bar (no lookahead)
-  - Target is the forward 20-day return (labelled at training time, not inference)
+  - Separate model file per ticker × horizon (lgbm_{ticker}_{horizon}.pkl)
   - Train/test split: 80% chronological (not random) to prevent data leakage
 
-Model persistence: backend/data/models/lgbm_{ticker}.pkl
 Graceful degradation: returns None if lightgbm is not installed.
 
 Features (all backward-looking):
-  dist_from_52w_low     — how far off the annual low
-  dist_from_ma50/200    — trend context
-  rsi_14                — momentum
-  rsi_slope_5d          — is RSI recovering?
-  macd_hist             — momentum signal
-  macd_hist_slope_3d    — is MACD turning?
-  bollinger_pct_b       — position within BB bands
-  volume_ratio_20d      — unusual volume activity
-  price_ret_5d/20d/60d  — multi-horizon momentum
-  above_ma50/200        — binary trend flags
+  dist_from_52w_low/high — annual range context
+  dist_from_ma50/200     — trend context
+  rsi_14 + rsi_slope_5d  — momentum + recovery signal
+  macd_hist + slope_3d   — momentum direction
+  bollinger_pct_b        — mean-reversion context
+  volume_ratio_20d       — unusual volume
+  price_ret_5d/20d/60d   — multi-horizon momentum
+  vol_20d                — realised volatility
+  regime_is_{bull/bear/transition/high_vol} — regime-aware inputs
+  bear_depth             — how deep in drawdown
+  drawdown_from_1y_high  — drawdown context
 """
 from __future__ import annotations
 
@@ -39,13 +55,74 @@ logger = logging.getLogger(__name__)
 MODELS_DIR = Path(__file__).resolve().parent.parent / "data" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-TARGET_GAIN_PCT   = 0.10    # 10% gain threshold
-TARGET_HORIZON    = 20      # trading days forward
 MIN_TRAIN_BARS    = 400     # Minimum bars before we attempt training
 TRAIN_SPLIT_RATIO = 0.80    # Chronological split (not random)
 
 DEFAULT_RETRAIN_DAYS = 7    # Retrain weekly if no config available
 DEFAULT_LGBM_PERIOD  = "5y"
+
+# ── Three prediction horizons ──────────────────────────────────────────────────
+# Each trains a separate model → lgbm_{ticker}_{horizon_key}.pkl
+# Covers short-term traders (20d), position traders (60d), accumulators (120d)
+HORIZONS: dict[str, dict] = {
+    "short":  {"days": 20,  "label": "1 month",  "description": "Short-term"},
+    "medium": {"days": 60,  "label": "3 months", "description": "Medium-term"},
+    "long":   {"days": 120, "label": "6 months", "description": "Long-term"},
+}
+
+# ── Per-horizon, per-asset-type return thresholds ─────────────────────────────
+# Calibrated so each group has ~15-25% positive class rate.
+_GAIN_THRESHOLDS: dict[str, dict[str, float]] = {
+    "short": {
+        "gold_commodity": 0.03,  # 3%  — low daily vol; 3% is meaningful in 20d
+        "bond_defensive": 0.03,
+        "broad_etf":      0.05,  # 5%  — SPY, QQQ, IWM
+        "growth_high":    0.08,  # 8%  — NVDA, TSLA, AMD
+        "default":        0.05,
+    },
+    "medium": {
+        "gold_commodity": 0.06,  # 6%  — meaningful 3-month move for gold
+        "bond_defensive": 0.06,
+        "broad_etf":      0.10,  # 10% — 3-month SPY target
+        "growth_high":    0.15,  # 15% — 3-month growth target
+        "default":        0.10,
+    },
+    "long": {
+        "gold_commodity": 0.10,  # 10% — 6-month gold target
+        "bond_defensive": 0.10,
+        "broad_etf":      0.15,  # 15% — 6-month SPY target
+        "growth_high":    0.25,  # 25% — 6-month growth target
+        "default":        0.15,
+    },
+}
+
+_GOLD_COMMODITY = {"GLD", "SLV", "GDX", "GDXJ", "IAU", "SIL", "PSLV", "USO", "UCO", "DBO"}
+_BOND_DEFENSIVE = {"TLT", "IEF", "SHY", "BND", "AGG", "XLU", "VPU", "SCHD"}
+_GROWTH_HIGH    = {"NVDA", "TSLA", "AMD", "SMCI", "MSTR", "COIN", "PLTR", "RIVN", "LCID",
+                   "BTC-USD", "ETH-USD", "CRSP", "ASAN", "SNOW"}
+
+
+def get_target_gain(ticker: str, horizon_key: str = "short") -> float:
+    """Return the forward-return threshold for ticker × horizon."""
+    t = ticker.upper()
+    thresholds = _GAIN_THRESHOLDS.get(horizon_key, _GAIN_THRESHOLDS["short"])
+    if t in _GOLD_COMMODITY:
+        return thresholds["gold_commodity"]
+    if t in _BOND_DEFENSIVE:
+        return thresholds["bond_defensive"]
+    if t in _GROWTH_HIGH:
+        return thresholds["growth_high"]
+    return thresholds["default"]
+
+
+def _interpret_prob(prob: float | None) -> str:
+    """Human-readable probability interpretation for UI display."""
+    if prob is None:   return "Unavailable"
+    if prob >= 0.65:   return "Strong"
+    if prob >= 0.50:   return "Bullish"
+    if prob >= 0.35:   return "Neutral"
+    if prob >= 0.20:   return "Cautious"
+    return "Weak"
 
 
 def get_lgbm_period(ticker: str, config: dict | None = None) -> str:
@@ -68,13 +145,13 @@ def get_lgbm_period(ticker: str, config: dict | None = None) -> str:
     return DEFAULT_LGBM_PERIOD
 
 
-def model_needs_retrain(ticker: str, config: dict | None = None) -> bool:
+def model_needs_retrain(ticker: str, config: dict | None = None, horizon_key: str = "short") -> bool:
     """
     Return True if model is missing or older than retrain_interval_days.
-    Called at the start of each daily run to decide train vs load.
+    Each horizon has its own pkl file; all three are checked during predict_all_horizons.
     """
     import time
-    path = _model_path(ticker)
+    path = _model_path(ticker, horizon_key)
     if not path.exists():
         return True
     ml_cfg = (config or {}).get("ml_models", {})
@@ -94,35 +171,35 @@ def predict_probability(
     df: pd.DataFrame,
     force_retrain: bool = False,
     config: dict | None = None,
+    horizon_key: str = "short",
 ) -> float | None:
     """
-    Return P(10%+ gain in 20 trading days) for the LATEST bar in df.
+    Return P(threshold gain in horizon days) for the LATEST bar in df.
 
     df must have at least a 'close' column; 'volume' is used if present.
     Returns None if lightgbm is not installed or insufficient data.
+
+    horizon_key: "short" (20d), "medium" (60d), or "long" (120d).
     """
     try:
         import lightgbm as lgb  # noqa: F401
     except (ImportError, OSError) as e:
-        # OSError = libgomp.so.1 missing (slim Docker image without libgomp1)
-        # Fix: add `libgomp1` to Dockerfile apt-get install
         logger.debug("lightgbm unavailable (%s: %s) — ML probability skipped", type(e).__name__, e)
         return None
 
     if df is None or "close" not in df.columns or len(df) < MIN_TRAIN_BARS:
         return None
 
-    needs_retrain = force_retrain or model_needs_retrain(ticker, config)
-    model = _load_or_train(ticker, df, needs_retrain)
+    needs_retrain = force_retrain or model_needs_retrain(ticker, config, horizon_key)
+    model = _load_or_train(ticker, df, needs_retrain, horizon_key)
     if model is None:
         return None
 
-    features_df = build_features(df)
+    features_df = build_features(df, ticker, horizon_key)
     if features_df is None or features_df.empty:
         return None
 
-    # Use only the last complete row (no target needed — inference only)
-    last_row = features_df.drop(columns=["target"], errors="ignore").iloc[[-1]]
+    last_row = features_df.drop(columns=["target", "regime_label"], errors="ignore").iloc[[-1]]
     last_row = last_row.select_dtypes(include=[np.number]).dropna(axis=1)
     if last_row.empty:
         return None
@@ -131,11 +208,46 @@ def predict_probability(
         prob = float(model.predict_proba(last_row)[0, 1])
         return round(prob, 3)
     except Exception as exc:
-        logger.warning("LGBM inference failed for %s: %s", ticker, exc)
+        logger.warning("LGBM inference failed for %s [%s]: %s", ticker, horizon_key, exc)
         return None
 
 
-def train_and_save(ticker: str, df: pd.DataFrame) -> dict:
+def predict_all_horizons(
+    ticker: str,
+    df: pd.DataFrame,
+    force_retrain: bool = False,
+    config: dict | None = None,
+) -> dict[str, dict]:
+    """
+    Return ML probability predictions for all three horizons.
+
+    Returns a dict keyed by horizon ("short", "medium", "long"), each containing:
+      prob            — probability 0-1 (None if model unavailable)
+      threshold_pct   — return % the model is predicting (e.g. 5 for "5% gain")
+      horizon_days    — number of trading days (20 / 60 / 120)
+      label           — human label ("1 month" / "3 months" / "6 months")
+      description     — "Short-term" / "Medium-term" / "Long-term"
+      interpretation  — "Strong" / "Bullish" / "Neutral" / "Cautious" / "Weak"
+
+    Use this for the UI breakdown panel. Use predict_probability() for a single
+    horizon when you only need one value (e.g. the lgbm_probability layer score).
+    """
+    result: dict[str, dict] = {}
+    for h_key, meta in HORIZONS.items():
+        prob      = predict_probability(ticker, df, force_retrain, config, h_key)
+        threshold = get_target_gain(ticker, h_key)
+        result[h_key] = {
+            "prob":           prob,
+            "threshold_pct":  round(threshold * 100),
+            "horizon_days":   meta["days"],
+            "label":          meta["label"],
+            "description":    meta["description"],
+            "interpretation": _interpret_prob(prob),
+        }
+    return result
+
+
+def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") -> dict:
     """
     Train LightGBM on historical df with regime-aware weighting.
 
@@ -159,7 +271,7 @@ def train_and_save(ticker: str, df: pd.DataFrame) -> dict:
     except (ImportError, OSError) as e:
         return {"error": f"lightgbm/sklearn unavailable ({type(e).__name__}: {e})"}
 
-    features_df = build_features(df)
+    features_df = build_features(df, ticker, horizon_key)
     if features_df is None or len(features_df) < MIN_TRAIN_BARS:
         return {"error": f"Insufficient labelled data ({len(features_df) if features_df is not None else 0} bars)"}
 
@@ -224,7 +336,7 @@ def train_and_save(ticker: str, df: pd.DataFrame) -> dict:
         callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(-1)],
     )
 
-    path = _model_path(ticker)
+    path = _model_path(ticker, horizon_key)
     with open(path, "wb") as f:
         pickle.dump(model, f)
 
@@ -275,20 +387,23 @@ def train_and_save(ticker: str, df: pd.DataFrame) -> dict:
 # Feature engineering — all backward-looking, no future data
 # ---------------------------------------------------------------------------
 
-def build_features(df: pd.DataFrame) -> pd.DataFrame | None:
+def build_features(
+    df: pd.DataFrame,
+    ticker: str = "",
+    horizon_key: str = "short",
+) -> pd.DataFrame | None:
     """
     Build feature matrix from OHLCV DataFrame.
     Each row uses only data up to and including that bar (no future leakage).
 
-    Includes explicit regime features so the model knows WHAT KIND OF MARKET
-    it is operating in — not just price levels. This prevents the model from
-    treating a 2020-crash bar identically to a 2021-bull bar.
+    The same feature set is used for all horizons; only the target label changes.
+    Target: P(forward_return >= threshold) over horizon_days.
 
     Regime label column (used for sample weighting, NOT as an input feature):
-      BULL       — price > MA50 > MA200 (trending uptrend)
-      BEAR       — price < MA50 < MA200 (confirmed downtrend)
-      HIGH_VOL   — either regime but realised vol > 70th percentile (crash/spike)
-      TRANSITION — everything else (sideways, mixed MA structure)
+      BULL       — price > MA50 > MA200
+      BEAR       — price < MA50 < MA200
+      HIGH_VOL   — realised vol > 70th percentile (crash / volatility spike)
+      TRANSITION — everything else
     """
     if df is None or "close" not in df.columns or len(df) < 60:
         return None
@@ -370,10 +485,12 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame | None:
     labels[is_high_vol]   = "HIGH_VOL"   # overrides bull/bear label when vol spikes
     out["regime_label"] = labels
 
-    # ── Target ────────────────────────────────────────────────────────────
-    fwd_ret    = close.shift(-TARGET_HORIZON) / close - 1
-    out["target"] = (fwd_ret >= TARGET_GAIN_PCT).astype(float)
-    out.loc[out.index[-TARGET_HORIZON:], "target"] = np.nan
+    # ── Target — horizon- and asset-type-aware ────────────────────────────
+    horizon_days = HORIZONS.get(horizon_key, HORIZONS["short"])["days"]
+    target_gain  = get_target_gain(ticker, horizon_key)
+    fwd_ret      = close.shift(-horizon_days) / close - 1
+    out["target"] = (fwd_ret >= target_gain).astype(float)
+    out.loc[out.index[-horizon_days:], "target"] = np.nan
 
     return out.replace([np.inf, -np.inf], np.nan)
 
@@ -382,23 +499,28 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame | None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _model_path(ticker: str) -> Path:
-    return MODELS_DIR / f"lgbm_{ticker.upper()}.pkl"
+def _model_path(ticker: str, horizon_key: str = "short") -> Path:
+    return MODELS_DIR / f"lgbm_{ticker.upper()}_{horizon_key}.pkl"
 
 
-def _load_or_train(ticker: str, df: pd.DataFrame, force_retrain: bool) -> object | None:
-    path = _model_path(ticker)
+def _load_or_train(
+    ticker: str,
+    df: pd.DataFrame,
+    force_retrain: bool,
+    horizon_key: str = "short",
+) -> object | None:
+    path = _model_path(ticker, horizon_key)
     if path.exists() and not force_retrain:
         try:
             with open(path, "rb") as f:
                 return pickle.load(f)
         except Exception:
-            logger.debug("LGBM cache corrupt for %s — retraining", ticker)
-    result = train_and_save(ticker, df)
+            logger.debug("LGBM cache corrupt for %s [%s] — retraining", ticker, horizon_key)
+    result = train_and_save(ticker, df, horizon_key)
     if "error" in result:
-        logger.warning("LGBM training failed for %s: %s", ticker, result["error"])
+        logger.warning("LGBM training failed for %s [%s]: %s", ticker, horizon_key, result["error"])
         return None
-    path = _model_path(ticker)
+    path = _model_path(ticker, horizon_key)
     if path.exists():
         with open(path, "rb") as f:
             return pickle.load(f)

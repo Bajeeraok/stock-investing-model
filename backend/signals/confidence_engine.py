@@ -131,13 +131,21 @@ class ConfidenceEngine:
         # Catches ImportError (lightgbm not installed) and OSError (libgomp.so.1
         # missing on slim Docker images — fixed by adding libgomp1 to Dockerfile,
         # but we degrade gracefully in the meantime so the engine still runs).
+        ml_horizons: dict | None = None
         if df is not None:
             try:
-                from signals.ml_models import predict_probability
-                lgbm_prob = predict_probability(ticker, df)
+                from signals.ml_models import predict_all_horizons
+                ml_horizons = predict_all_horizons(ticker, df)
+                # Use short-term probability as the layer score
+                short = ml_horizons.get("short", {})
+                lgbm_prob = short.get("prob")
                 if lgbm_prob is not None:
                     scores["lgbm_probability"] = lgbm_prob
-                    labels["lgbm_probability"] = f"{lgbm_prob*100:.0f}% prob of 10%+ gain in 20d"
+                    thr = short.get("threshold_pct", 5)
+                    labels["lgbm_probability"] = (
+                        f"{lgbm_prob*100:.0f}% prob of {thr}%+ gain in 20d "
+                        f"({short.get('interpretation', '')})"
+                    )
                 else:
                     logger.debug("LGBM model not trained for %s — skipping layer", ticker)
             except (ImportError, OSError) as e:
@@ -239,6 +247,7 @@ class ConfidenceEngine:
                 }
                 for k in self.weights
             },
+            "ml_horizons":     ml_horizons,   # short / medium / long horizon probs
             "disqualifiers":   disqualifiers,
             "risk_factors":    risk_factors,
             "watch_levels":    watch_levels,
@@ -366,7 +375,7 @@ def _build_risk_factors(
         risks.append("HMM assigns <40% probability to bull state — regime is uncertain")
     lgbm_val = scores.get("lgbm_probability")
     if lgbm_val is not None and lgbm_val < 0.35:
-        risks.append(f"ML model gives only {lgbm_val*100:.0f}% probability of 10%+ gain — weak ML signal")
+        risks.append(f"ML model gives only {lgbm_val*100:.0f}% short-term probability — weak near-term signal")
     return risks
 
 

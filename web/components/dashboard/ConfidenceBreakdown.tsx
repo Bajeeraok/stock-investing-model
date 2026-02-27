@@ -40,6 +40,21 @@ export interface WatchLevels {
   note:               string;
 }
 
+export interface MLHorizonEntry {
+  prob:            number | null;
+  threshold_pct:   number;   // e.g. 5 means "P(5%+ gain)"
+  horizon_days:    number;   // 20 / 60 / 120
+  label:           string;   // "1 month" / "3 months" / "6 months"
+  description:     string;   // "Short-term" / "Medium-term" / "Long-term"
+  interpretation:  string;   // "Strong" / "Bullish" / "Neutral" / "Cautious" / "Weak"
+}
+
+export interface MLHorizons {
+  short:  MLHorizonEntry;
+  medium: MLHorizonEntry;
+  long:   MLHorizonEntry;
+}
+
 export interface ConfidenceData {
   ticker:          string;
   confidence:      number;          // 0-1
@@ -53,6 +68,7 @@ export interface ConfidenceData {
     fundamental_score: BreakdownLayer;
     nlp_sentiment:     BreakdownLayer;
   };
+  ml_horizons?:    MLHorizons;
   disqualifiers:   string[];
   risk_factors:    string[];
   watch_levels?:   WatchLevels;
@@ -78,24 +94,123 @@ const LAYER_META: Record<string, { name: string; icon: React.ElementType }> = {
 //  Sub-components
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Colour helpers — standardised thresholds across all bars
+// ─────────────────────────────────────────────────────────────────────────────
+
+function scoreColourClass(pct: number | null, type: "text" | "bg") {
+  if (pct === null) return type === "text" ? "text-slate-600" : "bg-slate-700/50";
+  if (pct >= 70)   return type === "text" ? "text-emerald-400" : "bg-emerald-500";
+  if (pct >= 40)   return type === "text" ? "text-amber-400"   : "bg-amber-500";
+                   return type === "text" ? "text-red-400"     : "bg-red-500";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ML Horizons panel — Short / Medium / Long term probability rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+const INTERP_COLOUR: Record<string, { text: string; bg: string; border: string }> = {
+  Strong:      { text: "text-emerald-300", bg: "bg-emerald-500/15", border: "border-emerald-500/30" },
+  Bullish:     { text: "text-green-300",   bg: "bg-green-500/15",   border: "border-green-500/30"   },
+  Neutral:     { text: "text-amber-300",   bg: "bg-amber-500/15",   border: "border-amber-500/30"   },
+  Cautious:    { text: "text-orange-300",  bg: "bg-orange-500/15",  border: "border-orange-500/30"  },
+  Weak:        { text: "text-red-300",     bg: "bg-red-500/15",     border: "border-red-500/30"     },
+  Unavailable: { text: "text-slate-500",   bg: "bg-slate-700/20",   border: "border-slate-600/30"   },
+};
+
+function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
+  const rows: [string, MLHorizonEntry][] = [
+    ["short",  horizons.short],
+    ["medium", horizons.medium],
+    ["long",   horizons.long],
+  ];
+
+  return (
+    <div className="mt-2 rounded-lg bg-slate-800/60 border border-slate-700/40 overflow-hidden">
+      {/* Header */}
+      <div className="grid grid-cols-[100px_1fr_52px_90px] gap-x-3 px-3 py-1.5 bg-slate-800/80 border-b border-slate-700/40">
+        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Horizon</span>
+        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Probability</span>
+        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide text-right">Prob</span>
+        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide text-right">Signal</span>
+      </div>
+
+      {/* Rows */}
+      {rows.map(([key, h]) => {
+        const probPct  = h.prob != null ? Math.round(h.prob * 100) : null;
+        const barWidth = probPct ?? 0;
+        const barColour =
+          probPct == null  ? "bg-slate-700" :
+          probPct >= 65    ? "bg-emerald-500" :
+          probPct >= 50    ? "bg-green-500" :
+          probPct >= 35    ? "bg-amber-500" :
+          probPct >= 20    ? "bg-orange-500" :
+                             "bg-red-500";
+        const interpKey  = h.interpretation ?? "Unavailable";
+        const ic         = INTERP_COLOUR[interpKey] ?? INTERP_COLOUR.Unavailable;
+
+        return (
+          <div key={key} className="grid grid-cols-[100px_1fr_52px_90px] gap-x-3 items-center px-3 py-2.5 border-b border-slate-700/30 last:border-b-0">
+            {/* Horizon label */}
+            <div>
+              <p className="text-xs font-semibold text-slate-200">{h.description}</p>
+              <p className="text-[11px] text-slate-500">{h.label} · P({h.threshold_pct}%+)</p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden">
+              <div
+                className={clsx("h-full rounded-full transition-all duration-500", barColour)}
+                style={{ width: `${barWidth}%` }}
+              />
+            </div>
+
+            {/* Probability % */}
+            <span className={clsx("text-xs font-bold font-mono text-right",
+              probPct == null  ? "text-slate-500" :
+              probPct >= 65    ? "text-emerald-300" :
+              probPct >= 50    ? "text-green-300" :
+              probPct >= 35    ? "text-amber-300" :
+              probPct >= 20    ? "text-orange-300" : "text-red-300"
+            )}>
+              {probPct != null ? `${probPct}%` : "N/A"}
+            </span>
+
+            {/* Interpretation badge */}
+            <div className="flex justify-end">
+              <span className={clsx(
+                "text-[11px] font-semibold px-2 py-0.5 rounded border",
+                ic.text, ic.bg, ic.border
+              )}>
+                {interpKey}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
 function ConfidenceGauge({ value }: { value: number }) {
   const pct = Math.round(value * 100);
   const colour =
-    pct >= 75 ? "#10b981" :
-    pct >= 60 ? "#22c55e" :
-    pct >= 45 ? "#f59e0b" :
-    pct >= 30 ? "#f97316" : "#ef4444";
+    pct >= 70 ? "#10b981" :
+    pct >= 40 ? "#f59e0b" : "#ef4444";
 
-  // SVG half-ring gauge
   const r = 38, cx = 50, cy = 52;
-  const angle  = (pct / 100) * 180;
-  const rad    = (angle - 180) * (Math.PI / 180);
-  const endX   = cx + r * Math.cos(rad);
-  const endY   = cy + r * Math.sin(rad);
-  const lArc   = angle > 180 ? 1 : 0;
+  const angle = (pct / 100) * 180;
+  const rad   = (angle - 180) * (Math.PI / 180);
+  const endX  = cx + r * Math.cos(rad);
+  const endY  = cy + r * Math.sin(rad);
+  const lArc  = angle > 180 ? 1 : 0;
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center shrink-0">
       <svg viewBox="0 0 100 58" className="w-28 h-14">
         <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
               fill="none" stroke="#1e293b" strokeWidth="9" strokeLinecap="round" />
@@ -106,24 +221,41 @@ function ConfidenceGauge({ value }: { value: number }) {
         <text x="50" y="49" textAnchor="middle" fontSize="17" fontWeight="800"
               fill={colour} dominantBaseline="auto">{pct}%</text>
       </svg>
-      <span className="text-[10px] text-slate-400 -mt-1">Confidence</span>
+      <span className="text-[10px] text-slate-400 -mt-1">ML Confidence</span>
     </div>
   );
 }
 
-function ActionBadge({ action }: { action: string }) {
+function ActionBadge({ action, confidence }: { action: string; confidence: number }) {
   const a = action.toUpperCase();
   const cfg =
-    a === "STRONG BUY" ? { bg: "bg-emerald-500/20", text: "text-emerald-200", border: "border-emerald-400/50", Icon: TrendingUp } :
-    a === "BUY"        ? { bg: "bg-green-500/20",   text: "text-green-200",   border: "border-green-400/50",   Icon: TrendingUp } :
-    a === "REDUCE"     ? { bg: "bg-amber-500/20",   text: "text-amber-200",   border: "border-amber-400/50",   Icon: TrendingDown } :
-    a === "AVOID"      ? { bg: "bg-red-500/20",     text: "text-red-200",     border: "border-red-400/50",     Icon: TrendingDown } :
-                         { bg: "bg-slate-500/20",   text: "text-slate-200",   border: "border-slate-400/50",   Icon: Eye };
+    a.includes("STRONG BUY") ? { bg: "bg-emerald-500/20", text: "text-emerald-200", border: "border-emerald-400/50", Icon: TrendingUp } :
+    a.includes("BUY")        ? { bg: "bg-green-500/20",   text: "text-green-200",   border: "border-green-400/50",   Icon: TrendingUp } :
+    a.includes("REDUCE")     ? { bg: "bg-amber-500/20",   text: "text-amber-200",   border: "border-amber-400/50",   Icon: TrendingDown } :
+    a.includes("AVOID")      ? { bg: "bg-red-500/20",     text: "text-red-200",     border: "border-red-400/50",     Icon: TrendingDown } :
+                               { bg: "bg-slate-500/20",   text: "text-slate-200",   border: "border-slate-400/50",   Icon: Eye };
+
+  // Position size suggestion from confidence
+  const sizeHint =
+    confidence >= 0.70 ? "up to 8% position" :
+    confidence >= 0.55 ? "up to 4% position" :
+    confidence >= 0.40 ? "up to 2% position" : "1% max — wait for confirmation";
+
+  // Re-evaluate trigger
+  const reeval =
+    a.includes("REDUCE") || a.includes("AVOID")
+      ? `Re-evaluate if ML prob crosses 25% or pattern score > 60`
+      : null;
+
   return (
-    <span className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold", cfg.bg, cfg.text, cfg.border)}>
-      <cfg.Icon size={12} />
-      {action}
-    </span>
+    <div className="space-y-1">
+      <span className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold", cfg.bg, cfg.text, cfg.border)}>
+        <cfg.Icon size={12} />
+        {action}
+      </span>
+      <p className="text-xs text-slate-300 pl-0.5">{sizeHint}</p>
+      {reeval && <p className="text-[11px] text-slate-400 pl-0.5">{reeval}</p>}
+    </div>
   );
 }
 
@@ -142,44 +274,171 @@ function RegimePill({ regime }: { regime: string }) {
 }
 
 function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer }) {
-  const meta  = LAYER_META[layerKey] ?? { name: layerKey, icon: Activity };
-  const Icon  = meta.icon;
-  const pct   = layer.score != null ? Math.round(layer.score * 100) : null;
-  const wPct  = Math.round(layer.weight * 100);
+  const meta = LAYER_META[layerKey] ?? { name: layerKey, icon: Activity };
+  const Icon = meta.icon;
+  const wPct = Math.round((layer.weight ?? 0) * 100);
+  const available = layer.available && layer.score != null;
+  const pct = available ? Math.round((layer.score as number) * 100) : null;
 
-  const barColour =
-    pct == null       ? "bg-slate-700"    :
-    pct >= 70         ? "bg-emerald-500"  :
-    pct >= 50         ? "bg-green-500"    :
-    pct >= 35         ? "bg-amber-500"    : "bg-red-500";
+  // Simplify the label — strip raw numbers, keep the human-readable part
+  const rawLabel = layer.label ?? "";
+  const cleanLabel = (() => {
+    if (!available) return rawLabel || "Data unavailable — not counted in score";
+    // e.g. "Pattern 18/100-technical 61/100 — Volume drying up..." → keep after "—"
+    const dashIdx = rawLabel.indexOf(" — ");
+    if (dashIdx !== -1) return rawLabel.slice(dashIdx + 3);
+    return rawLabel;
+  })();
+
+  // Score-aware label colour so the description visually echoes the result
+  const labelColour = !available
+    ? "text-slate-500 italic"
+    : pct != null && pct >= 70 ? "text-emerald-300/90"
+    : pct != null && pct >= 40 ? "text-amber-300/90"
+    : "text-red-300/80";
 
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <Icon size={12} className="text-slate-400 shrink-0" />
-          <span className="text-[11px] text-slate-300 truncate">{meta.name}</span>
-          <span className="text-[10px] text-slate-600 shrink-0">({wPct}%)</span>
+          <Icon size={13} className={available ? "text-slate-400" : "text-slate-600"} />
+          <span className={clsx("text-xs font-medium truncate", available ? "text-slate-200" : "text-slate-500")}>
+            {meta.name}
+          </span>
+          <span className="text-[11px] text-slate-500 shrink-0">({wPct}%)</span>
         </div>
-        <span className={clsx(
-          "text-[11px] font-mono font-semibold shrink-0",
-          pct == null       ? "text-slate-600" :
-          pct >= 70         ? "text-emerald-400" :
-          pct >= 50         ? "text-green-400"   :
-          pct >= 35         ? "text-amber-400"   : "text-red-400"
-        )}>
-          {pct != null ? `${pct}%` : "—"}
+        <span className={clsx("text-xs font-mono font-bold shrink-0", scoreColourClass(pct, "text"))}>
+          {pct != null ? `${pct}%` : "N/A"}
         </span>
       </div>
-      <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-        <div
-          className={clsx("h-full rounded-full transition-all", barColour)}
-          style={{ width: pct != null ? `${pct}%` : "0%" }}
-        />
+
+      {/* Bar — shows dashed outline for unavailable layers */}
+      <div className={clsx(
+        "w-full rounded-full h-2 overflow-hidden",
+        available ? "bg-slate-800" : "bg-slate-800/40 border border-dashed border-slate-700"
+      )}>
+        {available && pct != null && (
+          <div className={clsx("h-full rounded-full transition-all", scoreColourClass(pct, "bg"))}
+               style={{ width: `${pct}%` }} />
+        )}
       </div>
-      {layer.label && (
-        <p className="text-[10px] text-slate-500 pl-4 leading-snug">{layer.label}</p>
+
+      {/* Label — larger, score-aware colour */}
+      <p className={clsx("text-xs pl-4 leading-snug", labelColour)}>
+        {cleanLabel}
+      </p>
+    </div>
+  );
+}
+
+/** Weighted math table — shows exactly how 45% is computed from the layers. */
+function WeightedMathTable({ breakdown, confidence }: {
+  breakdown: Record<string, BreakdownLayer>;
+  confidence: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const rows = Object.entries(breakdown).map(([key, layer]) => {
+    const meta   = LAYER_META[key] ?? { name: key, icon: Activity };
+    const wPct   = Math.round((layer.weight ?? 0) * 100);
+    const sPct   = layer.available && layer.score != null ? Math.round((layer.score as number) * 100) : null;
+    const contrib = sPct != null ? ((layer.score as number) * (layer.weight ?? 0)) : 0;
+    return { key, name: meta.name, wPct, sPct, contrib };
+  });
+
+  const activeWeightTotal = Object.values(breakdown)
+    .filter(l => l.available && l.score != null)
+    .reduce((s, l) => s + (l.weight ?? 0), 0);
+
+  return (
+    <div className="border-t border-slate-700/40 pt-3">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors w-full font-medium"
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span>How is {Math.round(confidence * 100)}% calculated?</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-lg bg-slate-800/50 p-3 text-xs space-y-1.5 font-mono">
+          <div className="grid grid-cols-[1fr_44px_44px_56px] gap-x-2 text-slate-400 mb-1.5 uppercase text-[11px] font-sans font-semibold tracking-wide">
+            <span>Layer</span><span className="text-right">Wt</span>
+            <span className="text-right">Score</span><span className="text-right">Contrib</span>
+          </div>
+          {rows.map(r => (
+            <div key={r.key} className="grid grid-cols-[1fr_44px_44px_56px] gap-x-2">
+              <span className={r.sPct != null ? "text-slate-200" : "text-slate-500"}>{r.name}</span>
+              <span className="text-right text-slate-400">{r.wPct}%</span>
+              <span className={clsx("text-right font-semibold", scoreColourClass(r.sPct, "text"))}>
+                {r.sPct != null ? `${r.sPct}%` : "—"}
+              </span>
+              <span className="text-right text-slate-300">
+                {r.sPct != null ? `= ${(r.contrib * 100).toFixed(1)}` : "—"}
+              </span>
+            </div>
+          ))}
+          <div className="border-t border-slate-600/50 pt-1.5 mt-1 grid grid-cols-[1fr_44px_44px_56px] gap-x-2">
+            <span className="text-slate-300 col-span-3 font-sans">Normalised ÷ {Math.round(activeWeightTotal * 100)}% active weight</span>
+            <span className="text-right text-emerald-400 font-bold">= {Math.round(confidence * 100)}%</span>
+          </div>
+          <p className="text-[11px] text-slate-400 pt-1 font-sans">
+            Unavailable layers (N/A) are excluded and their weight is redistributed.
+          </p>
+        </div>
       )}
+    </div>
+  );
+}
+
+/** "What would flip this to BUY?" — most actionable section for a trader. */
+function FlipToBuy({ breakdown, action }: {
+  breakdown: Record<string, BreakdownLayer>;
+  action: string;
+}) {
+  const isBullish = action.toUpperCase().includes("BUY");
+  if (isBullish) return null;
+
+  const TARGETS: Record<string, { threshold: number; label: string }> = {
+    lgbm_probability:  { threshold: 0.40, label: "ML Probability" },
+    pattern_technical: { threshold: 0.60, label: "Pattern Score" },
+    options_sentiment: { threshold: 0.50, label: "Options Sentiment" },
+    regime_hmm:        { threshold: 0.60, label: "Regime (HMM)" },
+    fundamental_score: { threshold: 0.55, label: "Fundamentals" },
+  };
+
+  const gaps = Object.entries(TARGETS)
+    .map(([key, target]) => {
+      const layer = breakdown[key];
+      if (!layer) return null;
+      const score = layer.available && layer.score != null ? (layer.score as number) : null;
+      const needed = target.threshold;
+      if (score !== null && score >= needed) return null; // already passing
+      return { label: target.label, needed: Math.round(needed * 100), current: score !== null ? Math.round(score * 100) : null };
+    })
+    .filter(Boolean) as { label: string; needed: number; current: number | null }[];
+
+  if (gaps.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-blue-500/25 bg-blue-500/8 p-3.5 space-y-2.5">
+      <p className="text-xs font-semibold text-blue-200 flex items-center gap-1.5">
+        <Zap size={13} />
+        What would upgrade this to BUY?
+      </p>
+      <div className="space-y-2">
+        {gaps.map((g, i) => (
+          <div key={i} className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-300 font-medium">{g.label}</span>
+            <div className="flex items-center gap-1.5 text-xs font-mono">
+              <span className={clsx("font-semibold", g.current != null ? scoreColourClass(g.current, "text") : "text-slate-500")}>
+                {g.current != null ? `${g.current}%` : "N/A"}
+              </span>
+              <span className="text-slate-500">→</span>
+              <span className="text-blue-300 font-semibold">needs {g.needed}%+</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -189,14 +448,16 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
-  const [showDetails, setShowDetails] = useState(false);
+  const [showWatchLevels, setShowWatchLevels] = useState(false);
 
   // Defensive defaults — backend may return null instead of []
   const disqualifiers = data.disqualifiers ?? [];
   const riskFactors   = data.risk_factors   ?? [];
   const breakdown     = data.breakdown      ?? {};
+  const confidence    = data.confidence     ?? 0;
+  const mlHorizons    = data.ml_horizons    ?? null;
 
-  const isStrongSignal   = (data.confidence ?? 0) >= 0.75;
+  const isStrongSignal   = confidence >= 0.75;
   const hasDisqualifiers = disqualifiers.length > 0;
 
   return (
@@ -204,19 +465,19 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       "rounded-xl border bg-slate-900 p-5 space-y-4",
       isStrongSignal ? "border-emerald-500/40" : "border-slate-700/60"
     )}>
-      {/* Header */}
+      {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-bold text-white">{data.ticker}</span>
             <RegimePill regime={data.market_regime ?? "UNKNOWN"} />
           </div>
-          <ActionBadge action={data.action ?? "WATCH"} />
+          <ActionBadge action={data.action ?? "WATCH"} confidence={confidence} />
           <p className="text-[11px] text-slate-500">
-            {data.n_layers_active ?? 0}/7 signal layers active
+            {data.n_layers_active ?? 0}/7 layers active · click ticker to refresh
           </p>
         </div>
-        <ConfidenceGauge value={data.confidence ?? 0} />
+        <ConfidenceGauge value={confidence} />
       </div>
 
       {/* Strong signal highlight */}
@@ -241,68 +502,58 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         </div>
       )}
 
-      {/* Signal breakdown bars */}
+      {/* Signal breakdown bars — N/A placeholders for unavailable layers */}
       <div className="space-y-3">
         {Object.entries(breakdown).map(([key, layer]) => (
-          <LayerBar key={key} layerKey={key} layer={layer as BreakdownLayer} />
+          <div key={key}>
+            <LayerBar layerKey={key} layer={layer as BreakdownLayer} />
+            {/* ML Horizons panel expands below the lgbm_probability bar */}
+            {key === "lgbm_probability" && mlHorizons && (
+              <MLHorizonsPanel horizons={mlHorizons} />
+            )}
+          </div>
         ))}
       </div>
+
+      {/* Weighted math — expandable "how is 45% calculated?" */}
+      <WeightedMathTable breakdown={breakdown as Record<string, BreakdownLayer>} confidence={confidence} />
+
+      {/* What would flip this to BUY */}
+      <FlipToBuy breakdown={breakdown as Record<string, BreakdownLayer>} action={data.action ?? "WATCH"} />
 
       {/* Risk factors */}
       {riskFactors.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-            Key Risks
-          </p>
+          <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Key Risks</p>
           {riskFactors.map((r, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-slate-400">
-              <AlertTriangle size={11} className="text-amber-500 mt-0.5 shrink-0" />
+            <div key={i} className="flex items-start gap-1.5 text-xs text-slate-300">
+              <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
               {r}
             </div>
           ))}
         </div>
       )}
 
-      {/* Watch levels (expandable) */}
+      {/* Watch levels — expandable */}
       {data.watch_levels && (
-        <>
+        <div className="border-t border-slate-700/40 pt-3">
           <button
-            onClick={() => setShowDetails(v => !v)}
+            onClick={() => setShowWatchLevels(v => !v)}
             className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-300 transition-colors w-full"
           >
-            {showDetails ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {showWatchLevels ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             <span>Watch levels & thesis invalidation</span>
           </button>
-
-          {showDetails && (
-            <div className="bg-slate-800/60 rounded-lg p-3 space-y-2">
-              <WatchRow
-                label="Invalidation price"
-                value={`$${data.watch_levels.invalidation_below.toFixed(2)}`}
-                highlight="red"
-                note="Break below = exit"
-              />
-              <WatchRow
-                label="Support (MA50)"
-                value={`$${data.watch_levels.key_support_ma50.toFixed(2)}`}
-                highlight="amber"
-              />
-              <WatchRow
-                label="Support (MA200)"
-                value={`$${data.watch_levels.key_support_ma200.toFixed(2)}`}
-                highlight="amber"
-              />
-              <WatchRow
-                label="Current price"
-                value={`$${data.watch_levels.current_price.toFixed(2)}`}
-                highlight="green"
-              />
-              <p className="text-[10px] text-slate-500 leading-snug pt-1">
-                {data.watch_levels.note}
-              </p>
+          {showWatchLevels && (
+            <div className="mt-2 bg-slate-800/60 rounded-lg p-3 space-y-2">
+              <WatchRow label="Invalidation price" value={`$${data.watch_levels.invalidation_below.toFixed(2)}`} highlight="red" note="Break below = exit" />
+              <WatchRow label="Support (MA50)"     value={`$${data.watch_levels.key_support_ma50.toFixed(2)}`}   highlight="amber" />
+              <WatchRow label="Support (MA200)"    value={`$${data.watch_levels.key_support_ma200.toFixed(2)}`}  highlight="amber" />
+              <WatchRow label="Current price"      value={`$${data.watch_levels.current_price.toFixed(2)}`}      highlight="green" />
+              <p className="text-[11px] text-slate-400 leading-snug pt-1">{data.watch_levels.note}</p>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );

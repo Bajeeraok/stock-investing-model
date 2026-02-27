@@ -459,6 +459,10 @@ def multi_horizon_scores(
             "support_level": None,
             "buy_target_confidence_pct": None,
             "sell_target_confidence_pct": None,
+            "confluence_score": 50.0,
+            "trend_signal":     "NEUTRAL",
+            "rsi_signal":       "NEUTRAL",
+            "macd_signal":      "NEUTRAL",
         }
 
     row = df.iloc[-1]
@@ -608,6 +612,62 @@ def multi_horizon_scores(
         from_score = 78 - comp_f * 0.8 if comp_f <= 35 else 0
         sell_target_confidence_pct = round(min(95, max(50, from_rsi, from_score)), 0)
 
+    # ── Confluence Score — explicit 4-signal agreement (0-100) ───────────────
+    # Unlike composite_buy (which uses regime as a hidden multiplier), each of
+    # the four components here is an explicit, equal-weight contributor so the
+    # number clearly means "what fraction of independent signals agree it's bullish".
+    #
+    # Weights: Trend 30% + RSI zone 25% + MACD direction 20% + Regime 25%
+    #
+    # This is the right metric for the main table because:
+    #   - composite_buy = good internal score but not human-interpretable
+    #   - ML confidence = probabilistic, expensive to compute for all tickers
+    #   - Confluence = fast, transparent, communicates signal agreement
+
+    # Component 1: Trend alignment (price vs MA50 vs MA200 structure)
+    if pd.notna(ma50) and pd.notna(ma200) and ma200 > 0:
+        if c > ma50 > ma200:       trend_comp = 85.0  # confirmed uptrend
+        elif c > ma200 >= ma50:    trend_comp = 65.0  # above 200, MA50 lagging
+        elif c > ma50:             trend_comp = 60.0  # above 50, MA50/200 mixed
+        elif c < ma50 < ma200:     trend_comp = 15.0  # confirmed downtrend
+        else:                      trend_comp = 38.0  # below 50 or mixed
+    else:
+        trend_comp = 50.0
+    trend_signal = "UP" if trend_comp >= 65 else ("DOWN" if trend_comp <= 35 else "NEUTRAL")
+
+    # Component 2: RSI zone (recovery from oversold = best setup, overbought = poor entry)
+    _rsi_f = float(rsi_val) if pd.notna(rsi_val) else 50.0
+    if _rsi_f < 25:     rsi_comp = 40.0  # deeply oversold, panic — not yet confirmed
+    elif _rsi_f < 40:   rsi_comp = 78.0  # oversold recovery zone — ideal entry
+    elif _rsi_f < 55:   rsi_comp = 70.0  # healthy momentum
+    elif _rsi_f < 70:   rsi_comp = 52.0  # slightly elevated but acceptable
+    else:               rsi_comp = 22.0  # overbought — poor new entry
+    rsi_signal = "UP" if rsi_comp >= 65 else ("DOWN" if rsi_comp <= 35 else "NEUTRAL")
+
+    # Component 3: MACD histogram direction (positive = buying pressure, negative = selling)
+    _macd = float(sig.get("macd_hist") or 0)
+    if _macd > 0:   macd_comp = 75.0
+    elif _macd < 0: macd_comp = 25.0
+    else:           macd_comp = 50.0
+    macd_signal = "UP" if macd_comp >= 65 else ("DOWN" if macd_comp <= 35 else "NEUTRAL")
+
+    # Component 4: Regime (explicit contributor, not just a multiplier)
+    _mr = market_regime or sig.get("ma_regime", "NEUTRAL")
+    regime_comp = {
+        "STRONG_BULL": 92.0, "BULL": 80.0, "UP": 80.0,
+        "NEUTRAL": 50.0,
+        "BEAR": 20.0, "DOWN": 20.0, "STRONG_BEAR": 8.0,
+    }.get(str(_mr).upper(), 50.0)
+
+    confluence_score = round(
+        0.30 * trend_comp +
+        0.25 * rsi_comp +
+        0.20 * macd_comp +
+        0.25 * regime_comp,
+        1,
+    )
+    confluence_score = max(0.0, min(99.0, confluence_score))  # cap at 99 — never perfect
+
     return {
         **sig,
         "ma20": round(float(ma20), 2) if pd.notna(ma20) else None,
@@ -629,4 +689,9 @@ def multi_horizon_scores(
         "support_secondary": support_secondary,
         "buy_target_confidence_pct": buy_target_confidence_pct,
         "sell_target_confidence_pct": sell_target_confidence_pct,
+        # Confluence score + per-component signals for UI display
+        "confluence_score":  confluence_score,
+        "trend_signal":      trend_signal,   # "UP" / "NEUTRAL" / "DOWN"
+        "rsi_signal":        rsi_signal,
+        "macd_signal":       macd_signal,
     }

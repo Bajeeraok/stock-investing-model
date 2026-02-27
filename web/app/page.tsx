@@ -388,6 +388,10 @@ export interface Signal {
   mt_target_confidence_pct?: number | null;
   score_label?: string | null;
   confidence_tag?: string | null;
+  confluence_score?: number | null;
+  trend_signal?: string | null;   // "UP" | "NEUTRAL" | "DOWN"
+  rsi_signal?: string | null;
+  macd_signal?: string | null;
   error?: string;
 }
 

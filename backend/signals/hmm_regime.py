@@ -120,7 +120,13 @@ def get_hmm_regime(
 # ---------------------------------------------------------------------------
 
 def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | None:
-    """Build [daily_return, |daily_return|, log_vol_change] feature matrix."""
+    """
+    Build standardised [daily_return, |daily_return|, log_vol_change] feature matrix.
+
+    Features are z-score standardised before fitting so that the EM algorithm
+    treats each dimension equally — critical for numerical stability of the
+    Gaussian HMM covariance estimation.
+    """
     ret = close.pct_change().dropna()
     if len(ret) < MIN_BARS_TO_FIT:
         return None
@@ -136,7 +142,17 @@ def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | 
     arr = np.column_stack(feats)
     # Remove rows with NaN / inf (can appear at boundaries)
     mask = np.all(np.isfinite(arr), axis=1)
-    return arr[mask]
+    arr = arr[mask]
+
+    # Standardise each feature to zero-mean unit-variance.
+    # Without this, the return column (~0.001 scale) and vol-change column
+    # (~0.1 scale) have very different magnitudes, which destabilises the
+    # EM covariance update and causes the "not converging" warning.
+    std = arr.std(axis=0)
+    std[std == 0] = 1.0   # avoid division by zero for constant features
+    arr = (arr - arr.mean(axis=0)) / std
+
+    return arr
 
 
 def _model_path(ticker: str) -> Path:
@@ -144,6 +160,7 @@ def _model_path(ticker: str) -> Path:
 
 
 def _load_or_fit(ticker: str, features: np.ndarray, force_refit: bool) -> object | None:
+    import warnings
     from hmmlearn.hmm import GaussianHMM
 
     path = _model_path(ticker)
@@ -154,23 +171,42 @@ def _load_or_fit(ticker: str, features: np.ndarray, force_refit: bool) -> object
         except Exception:
             logger.debug("HMM cache corrupt for %s — refitting", ticker)
 
-    try:
-        model = GaussianHMM(
-            n_components=3,
-            covariance_type="full",
-            n_iter=200,
-            random_state=42,
-            tol=1e-4,
-        )
-        # Fit on all bars except last RECENT_BARS to avoid future peeking
-        train = features[:-RECENT_BARS] if len(features) > RECENT_BARS + 100 else features
-        model.fit(train)
-        with open(path, "wb") as f:
-            pickle.dump(model, f)
-        return model
-    except Exception as exc:
-        logger.warning("HMM fit failed for %s: %s", ticker, exc)
+    # Fit on all bars except last RECENT_BARS to avoid future peeking
+    train = features[:-RECENT_BARS] if len(features) > RECENT_BARS + 100 else features
+
+    best_model, best_score = None, -np.inf
+    # Three random restarts — keep the model with the highest log-likelihood.
+    # HMM EM is sensitive to initialisation; a single run often lands in a
+    # poor local optimum that triggers the convergence warning.
+    for seed in (42, 7, 123):
+        try:
+            candidate = GaussianHMM(
+                n_components=3,
+                covariance_type="diag",   # fewer params than "full" → more stable
+                n_iter=500,               # more iterations before giving up
+                random_state=seed,
+                tol=1e-3,                 # slightly relaxed tolerance
+            )
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")   # suppress ConvergenceWarning noise
+                candidate.fit(train)
+            score = candidate.score(train)
+            if score > best_score:
+                best_score, best_model = score, candidate
+        except Exception as exc:
+            logger.debug("HMM fit attempt seed=%s failed for %s: %s", seed, ticker, exc)
+
+    if best_model is None:
+        logger.warning("All HMM fit attempts failed for %s", ticker)
         return None
+
+    try:
+        with open(path, "wb") as f:
+            pickle.dump(best_model, f)
+    except Exception:
+        pass   # model still usable in memory even if persist fails
+
+    return best_model
 
 
 def _error_result(msg: str) -> dict:
