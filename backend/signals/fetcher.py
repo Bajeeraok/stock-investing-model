@@ -52,6 +52,33 @@ def _resolve_download_kwargs(period: str) -> dict:
     return {"period": p}
 
 
+def _download_with_crumb_retry(ticker: str, **kwargs) -> "pd.DataFrame | None":
+    """
+    yfinance wrapper that retries once on 401 Invalid Crumb by clearing
+    the session cache and forcing a fresh crumb fetch.
+    Yahoo Finance rotates crumbs ~every hour; a stale crumb causes 401s
+    that resolve automatically on the next request after a session reset.
+    """
+    if yf is None:
+        return None
+    try:
+        return yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
+    except Exception as e:
+        if "401" in str(e) or "Invalid Crumb" in str(e) or "Unauthorized" in str(e):
+            try:
+                # Force yfinance to get a new session/crumb
+                import yfinance.base as _yfbase  # type: ignore
+                if hasattr(_yfbase, "_DFS"):
+                    _yfbase._DFS.clear()
+            except Exception:
+                pass
+            try:
+                return yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
+            except Exception:
+                return None
+        return None
+
+
 def _min_bars_for_period(period: str) -> int:
     """Minimum number of bars required; short periods (e.g. 5d) need only 2 for prior/last."""
     period_lower = (period or "").strip().lower()
@@ -69,11 +96,8 @@ def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
         raise ImportError("Install yfinance: pip install yfinance")
 
     min_bars = _min_bars_for_period(period)
-    try:
-        kwargs = _resolve_download_kwargs(period)
-        data = yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
-    except Exception:
-        return None
+    kwargs = _resolve_download_kwargs(period)
+    data = _download_with_crumb_retry(ticker, **kwargs)
 
     if data is None or data.empty or len(data) < min_bars:
         return None
@@ -116,11 +140,8 @@ def fetch_ohlcv_monthly(ticker: str, period: str = "20y") -> pd.Series | None:
     """
     if yf is None:
         return None
-    try:
-        kwargs = _resolve_download_kwargs(period)
-        data = yf.download(ticker, interval="1mo", progress=False, threads=False, auto_adjust=True, **kwargs)
-    except Exception:
-        return None
+    kwargs = _resolve_download_kwargs(period)
+    data = _download_with_crumb_retry(ticker, interval="1mo", **kwargs)
     if data is None or data.empty or len(data) < 24:  # min ~2y monthly
         return None
     close = None
@@ -145,11 +166,8 @@ def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series 
     """Fetch close and volume. Returns (close, volume) or (close, None) if volume unavailable."""
     if yf is None:
         return None, None
-    try:
-        kwargs = _resolve_download_kwargs(period)
-        data = yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
-    except Exception:
-        return None, None
+    kwargs = _resolve_download_kwargs(period)
+    data = _download_with_crumb_retry(ticker, **kwargs)
     if data is None or data.empty or len(data) < 20:
         return None, None
     close = None
@@ -242,11 +260,8 @@ def fetch_ohlcv_dataframe(ticker: str, period: str = "2y") -> pd.DataFrame | Non
     """
     if yf is None:
         return None
-    try:
-        kwargs = _resolve_download_kwargs(period)
-        data = yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
-    except Exception:
-        return None
+    kwargs = _resolve_download_kwargs(period)
+    data = _download_with_crumb_retry(ticker, **kwargs)
     if data is None or data.empty or len(data) < 60:
         return None
 

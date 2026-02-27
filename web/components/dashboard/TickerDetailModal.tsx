@@ -6,6 +6,16 @@ import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 
+// Lightweight try/catch wrappers so a bad API response never crashes the modal
+function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
+  try { return <ConfidenceBreakdown data={data} />; }
+  catch { return null; }
+}
+function PatternSignalCardSafe({ data }: { data: UnifiedSignalData }) {
+  try { return <PatternSignalCard data={data} />; }
+  catch { return null; }
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export interface TickerDetail {
@@ -261,7 +271,7 @@ export function TickerDetailModal({
 
               {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
               {confidence ? (
-                <ConfidenceBreakdown data={confidence} />
+                <ConfidenceBreakdownSafe data={confidence} />
               ) : (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
                   <Activity className="h-4 w-4 shrink-0" />
@@ -271,7 +281,7 @@ export function TickerDetailModal({
 
               {/* ── Unified Signal Engine (regime + pattern + momentum) ─ */}
               {unified ? (
-                <PatternSignalCard data={unified} />
+                <PatternSignalCardSafe data={unified} />
               ) : (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
                   <Activity className="h-4 w-4 shrink-0" />

@@ -128,7 +128,7 @@ def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | 
     feats = [ret.values, np.abs(ret.values)]
 
     if volume is not None:
-        vol_aligned = volume.reindex(ret.index).fillna(method="ffill").fillna(1)
+        vol_aligned = volume.reindex(ret.index).ffill().fillna(1)
         log_vol = np.log(vol_aligned.values.clip(1))
         log_vol_change = np.diff(log_vol, prepend=log_vol[0])
         feats.append(log_vol_change)

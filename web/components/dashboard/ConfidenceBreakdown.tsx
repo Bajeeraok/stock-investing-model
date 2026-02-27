@@ -191,8 +191,13 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
 export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
   const [showDetails, setShowDetails] = useState(false);
 
-  const isStrongSignal = data.confidence >= 0.75;
-  const hasDisqualifiers = data.disqualifiers.length > 0;
+  // Defensive defaults — backend may return null instead of []
+  const disqualifiers = data.disqualifiers ?? [];
+  const riskFactors   = data.risk_factors   ?? [];
+  const breakdown     = data.breakdown      ?? {};
+
+  const isStrongSignal   = (data.confidence ?? 0) >= 0.75;
+  const hasDisqualifiers = disqualifiers.length > 0;
 
   return (
     <div className={clsx(
@@ -204,14 +209,14 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-bold text-white">{data.ticker}</span>
-            <RegimePill regime={data.market_regime} />
+            <RegimePill regime={data.market_regime ?? "UNKNOWN"} />
           </div>
-          <ActionBadge action={data.action} />
+          <ActionBadge action={data.action ?? "WATCH"} />
           <p className="text-[11px] text-slate-500">
-            {data.n_layers_active}/7 signal layers active
+            {data.n_layers_active ?? 0}/7 signal layers active
           </p>
         </div>
-        <ConfidenceGauge value={data.confidence} />
+        <ConfidenceGauge value={data.confidence ?? 0} />
       </div>
 
       {/* Strong signal highlight */}
@@ -227,7 +232,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       {/* Hard disqualifiers */}
       {hasDisqualifiers && (
         <div className="space-y-1.5">
-          {data.disqualifiers.map((d, i) => (
+          {disqualifiers.map((d, i) => (
             <div key={i} className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
               <AlertTriangle size={12} className="text-red-400 mt-0.5 shrink-0" />
               <span className="text-xs text-red-300">{d}</span>
@@ -238,18 +243,18 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
 
       {/* Signal breakdown bars */}
       <div className="space-y-3">
-        {Object.entries(data.breakdown).map(([key, layer]) => (
-          <LayerBar key={key} layerKey={key} layer={layer} />
+        {Object.entries(breakdown).map(([key, layer]) => (
+          <LayerBar key={key} layerKey={key} layer={layer as BreakdownLayer} />
         ))}
       </div>
 
       {/* Risk factors */}
-      {data.risk_factors.length > 0 && (
+      {riskFactors.length > 0 && (
         <div className="space-y-1">
           <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
             Key Risks
           </p>
-          {data.risk_factors.map((r, i) => (
+          {riskFactors.map((r, i) => (
             <div key={i} className="flex items-start gap-1.5 text-xs text-slate-400">
               <AlertTriangle size={11} className="text-amber-500 mt-0.5 shrink-0" />
               {r}
