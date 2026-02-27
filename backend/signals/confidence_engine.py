@@ -128,14 +128,22 @@ class ConfidenceEngine:
             labels["pattern_technical"] = f"Technical score {composite_score:.0f}/100 (no OHLCV for pattern)"
 
         # ── Layer 3: LightGBM probability ────────────────────────────────
+        # Catches ImportError (lightgbm not installed) and OSError (libgomp.so.1
+        # missing on slim Docker images — fixed by adding libgomp1 to Dockerfile,
+        # but we degrade gracefully in the meantime so the engine still runs).
         if df is not None:
-            from signals.ml_models import predict_probability
-            lgbm_prob = predict_probability(ticker, df)
-            if lgbm_prob is not None:
-                scores["lgbm_probability"] = lgbm_prob
-                labels["lgbm_probability"] = f"{lgbm_prob*100:.0f}% prob of 10%+ gain in 20d"
-            else:
-                logger.debug("LGBM unavailable for %s — skipping", ticker)
+            try:
+                from signals.ml_models import predict_probability
+                lgbm_prob = predict_probability(ticker, df)
+                if lgbm_prob is not None:
+                    scores["lgbm_probability"] = lgbm_prob
+                    labels["lgbm_probability"] = f"{lgbm_prob*100:.0f}% prob of 10%+ gain in 20d"
+                else:
+                    logger.debug("LGBM model not trained for %s — skipping layer", ticker)
+            except (ImportError, OSError) as e:
+                logger.warning("LightGBM unavailable (%s) — skipping layer for %s", type(e).__name__, ticker)
+            except Exception as e:
+                logger.warning("LightGBM predict failed for %s: %s — skipping layer", ticker, e)
 
         # ── Layer 4: Options sentiment ────────────────────────────────────
         _ETFS = {"SPY", "QQQ", "GLD", "SLV", "IWM", "DIA", "VOO", "VTI",

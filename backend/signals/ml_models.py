@@ -103,8 +103,10 @@ def predict_probability(
     """
     try:
         import lightgbm as lgb  # noqa: F401
-    except ImportError:
-        logger.debug("lightgbm not installed — ML probability unavailable")
+    except (ImportError, OSError) as e:
+        # OSError = libgomp.so.1 missing (slim Docker image without libgomp1)
+        # Fix: add `libgomp1` to Dockerfile apt-get install
+        logger.debug("lightgbm unavailable (%s: %s) — ML probability skipped", type(e).__name__, e)
         return None
 
     if df is None or "close" not in df.columns or len(df) < MIN_TRAIN_BARS:
@@ -154,8 +156,8 @@ def train_and_save(ticker: str, df: pd.DataFrame) -> dict:
     try:
         import lightgbm as lgb
         from sklearn.metrics import roc_auc_score, brier_score_loss
-    except ImportError:
-        return {"error": "lightgbm or scikit-learn not installed"}
+    except (ImportError, OSError) as e:
+        return {"error": f"lightgbm/sklearn unavailable ({type(e).__name__}: {e})"}
 
     features_df = build_features(df)
     if features_df is None or len(features_df) < MIN_TRAIN_BARS:

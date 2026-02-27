@@ -54,7 +54,7 @@ export function SignalsTable({
           onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
           className="text-sm sm:text-xs bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
         >
-          <option value="score">Confidence</option>
+          <option value="score">Score</option>
           <option value="ticker">Ticker</option>
           <option value="regime">Regime</option>
           <option value="rsi">RSI</option>
@@ -84,7 +84,7 @@ export function SignalsTable({
                 (r.composite_buy ?? 0) <= 30 && "text-red-400",
                 (r.composite_buy ?? 0) > 30 && (r.composite_buy ?? 0) < 70 && "text-slate-300"
               )}>
-                {(r.composite_buy != null ? r.composite_buy.toFixed(0) : "-")} conf
+                {(r.composite_buy != null ? r.composite_buy.toFixed(0) : "-")}<span className="text-slate-600">/100</span>
               </span>
               <span className={clsx(
                 "px-2 py-0.5 rounded text-xs font-medium",
@@ -121,8 +121,9 @@ export function SignalsTable({
               <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
                 Close
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 model confidence">
-                Confidence
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help" title="Technical signal strength (0–100 z-score composite: trend + RSI + MACD). NOT a probability — click any ticker to see the 7-layer ML confidence breakdown.">
+                Score
+                <span className="ml-1 text-[10px] text-slate-600 font-normal">/100</span>
               </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 LIS
@@ -201,8 +202,9 @@ export function SignalsTable({
                       (r.composite_buy ?? 0) < 70 && (r.composite_buy ?? 0) > 30 && "text-slate-300",
                       (r.composite_buy ?? 0) <= 30 && "text-red-400"
                     )}
+                    title="Technical signal strength (0–100). Click ticker for 7-layer ML probability breakdown."
                   >
-                    {r.composite_buy != null ? r.composite_buy.toFixed(1) : "-"}
+                    {r.composite_buy != null ? Math.min(r.composite_buy, 99).toFixed(0) : "-"}
                     {r.confidence_tag === "low (bear/neutral market)" && (
                       <span className="text-amber-400 text-xs ml-1" title="Scores down-weighted when SPY regime is BEAR/NEUTRAL">(low)</span>
                     )}

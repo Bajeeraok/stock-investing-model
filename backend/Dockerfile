@@ -3,7 +3,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
+# libgomp1  — required by LightGBM (OpenMP runtime); stripped from slim images
+# libgcc-s1 — required by hmmlearn / scipy on slim images
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 \
+        libgcc-s1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
