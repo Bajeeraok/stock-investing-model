@@ -336,41 +336,87 @@ def _seasonal_note(ticker: str) -> str | None:
 
 # Fix 5: Earnings history (last 4Q actual vs estimate, beat/miss)
 def _get_earnings_history(ticker: str) -> dict:
-    """Last 4 quarters EPS: actual, estimate, beat/miss. Missing in original detail."""
+    """
+    Last 4 quarters EPS: actual, estimate, beat/miss.
+    Uses earnings_dates (current yfinance API) — quarterly_earnings and
+    Ticker.earnings were deprecated and now return 401 from Yahoo Finance.
+    """
     if ticker in _ETFS_SKIP_YAHOO_INFO:
         return {}
     try:
+        import warnings
         import yfinance as yf
         t = yf.Ticker(ticker)
-        eq = getattr(t, "quarterly_earnings", None)
-        if eq is None or (hasattr(eq, "empty") and eq.empty):
+
+        # earnings_dates: index=datetime, cols=['EPS Estimate','Reported EPS','Surprise(%)']
+        # Only past rows (Reported EPS not NaN) are actual quarters.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # suppress yfinance deprecation noise
+            ed = getattr(t, "earnings_dates", None)
+
+        if ed is None or (hasattr(ed, "empty") and ed.empty):
             return {}
+
+        import pandas as pd
+        # Keep only past quarters that have a reported EPS
+        reported_col = next((c for c in ed.columns if "reported" in c.lower()), None)
+        estimate_col = next((c for c in ed.columns if "estimate" in c.lower()), None)
+        surprise_col = next((c for c in ed.columns if "surprise" in c.lower()), None)
+
+        if reported_col is None:
+            return {}
+
+        past = ed[ed[reported_col].notna()].head(4)
+        if past.empty:
+            return {}
+
         history = []
-        for idx, row in eq.head(4).iterrows():
-            actual = row.get("Reported EPS") or row.get("actual") or row.get("epsActual")
-            estimate = row.get("Estimated EPS") or row.get("estimate") or row.get("epsEstimate")
+        for dt, row in past.iterrows():
+            actual   = _safe_float(row.get(reported_col))
+            estimate = _safe_float(row.get(estimate_col)) if estimate_col else None
+            surprise = _safe_float(row.get(surprise_col)) if surprise_col else None
+
             if actual is not None and estimate is not None and estimate != 0:
-                beat_pct = round((float(actual) - float(estimate)) / abs(float(estimate)) * 100, 1)
-                status = "Beat" if beat_pct > 0 else "Missed"
+                beat_pct = surprise if surprise is not None else round(
+                    (actual - estimate) / abs(estimate) * 100, 1
+                )
+                status = "Beat" if (beat_pct or 0) > 0 else "Missed"
             else:
-                beat_pct = None
-                status = "N/A"
+                beat_pct, status = None, "N/A"
+
+            # Format date as "Q1 2025" style when possible
+            try:
+                quarter_label = pd.Timestamp(dt).strftime("%b %Y")
+            except Exception:
+                quarter_label = str(dt)[:10]
+
             history.append({
-                "quarter": str(idx),
-                "actual": round(float(actual), 2) if actual is not None else None,
-                "estimate": round(float(estimate), 2) if estimate is not None else None,
-                "beat_pct": beat_pct,
-                "status": status,
+                "quarter":  quarter_label,
+                "actual":   round(actual, 2) if actual is not None else None,
+                "estimate": round(estimate, 2) if estimate is not None else None,
+                "beat_pct": round(beat_pct, 1) if beat_pct is not None else None,
+                "status":   status,
             })
+
         beats = [h for h in history if h["status"] == "Beat"]
         beat_rate = round(len(beats) / len(history) * 100) if history else 0
         return {
-            "history": history,
+            "history":   history,
             "beat_rate": beat_rate,
-            "summary": f"Beat estimates {len(beats)}/{len(history)} of last quarters ({beat_rate}%)",
+            "summary":   f"Beat estimates {len(beats)}/{len(history)} of last quarters ({beat_rate}%)",
         }
     except Exception:
         return {}
+
+
+def _safe_float(v) -> float | None:
+    """Return float or None; handles NaN/None/strings gracefully."""
+    try:
+        import math
+        f = float(v)
+        return None if math.isnan(f) else f
+    except (TypeError, ValueError):
+        return None
 
 
 # Fix 5: Sector-specific metrics (AUM for financials, etc.)

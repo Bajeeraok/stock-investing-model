@@ -210,26 +210,50 @@ export function TickerDetailModal({
                 )}
               </section>
 
-              {/* Confidence score breakdown (explainability) */}
+              {/* Rule-based signal components (0-100 strength scores, not probabilities) */}
               {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
                     <BarChart3 className="h-4 w-4 text-emerald-500" />
-                    Confidence score breakdown
+                    Technical signal strength
                   </h3>
-                  <p className="text-slate-500 text-xs mb-2">Composite = 50% trend + 30% RSI + 20% MACD. Higher = stronger setup.</p>
-                  <div className="flex flex-wrap gap-3 text-sm">
+                  <p className="text-slate-500 text-xs mb-3">
+                    Rule-based z-score indicators (0–100 = signal strength, not probability).
+                    Composite = 50% trend + 30% RSI + 20% MACD.
+                    See 7-layer ML breakdown below for calibrated probability.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                     {detail.score_breakdown.trend != null && (
-                      <span className="text-slate-300">Trend: <strong className="text-slate-100">{detail.score_breakdown.trend.toFixed(0)}</strong></span>
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Trend</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
                     )}
                     {detail.score_breakdown.rsi != null && (
-                      <span className="text-slate-300">RSI contrib: <strong className="text-slate-100">{detail.score_breakdown.rsi.toFixed(0)}</strong></span>
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">RSI</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
                     )}
                     {detail.score_breakdown.macd != null && (
-                      <span className="text-slate-300">MACD contrib: <strong className="text-slate-100">{detail.score_breakdown.macd.toFixed(0)}</strong></span>
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">MACD</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
                     )}
                     {detail.score_breakdown.composite != null && (
-                      <span className="text-emerald-400 font-medium">Composite: {detail.score_breakdown.composite.toFixed(0)}</span>
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Composite</p>
+                        <p className="font-mono font-semibold text-emerald-400">
+                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
                     )}
                   </div>
                 </section>

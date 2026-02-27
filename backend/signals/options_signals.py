@@ -38,24 +38,40 @@ def fetch_options_signals(ticker: str) -> dict:
     Returns dict with:
         pc_ratio, atm_iv, iv_rank, max_pain, options_score (0-1),
         options_label (human-readable), error (if any)
+
+    Yahoo Finance restricts options data for some tickers/regions and returns
+    HTTP 401 Unauthorized.  We catch this cleanly and return a neutral 0.5
+    score so the ConfidenceEngine layer degrades gracefully instead of crashing.
     """
     try:
         import yfinance as yf
     except ImportError:
         return {"error": "yfinance not installed", "options_score": 0.5}
 
+    # Suppress yfinance's internal HTTP-error log lines (401, 404, etc.)
+    # They appear as ERROR lines in our server logs even when we handle them.
+    import logging as _logging
+    _yf_logger = _logging.getLogger("yfinance")
+    _prev_level = _yf_logger.level
+    _yf_logger.setLevel(_logging.CRITICAL)
+
     try:
         t = yf.Ticker(ticker)
         expiries = t.options
         if not expiries:
-            return {"error": "no options data", "options_score": 0.5}
+            return {"error": "no options data (ticker may not have listed options)", "options_score": 0.5}
 
         # Use nearest expiry for real-time signals
         chain = t.option_chain(expiries[0])
         calls = chain.calls
         puts  = chain.puts
     except Exception as exc:
-        return {"error": str(exc), "options_score": 0.5}
+        err_str = str(exc)
+        if "401" in err_str or "Unauthorized" in err_str:
+            return {"error": "options data unavailable (Yahoo Finance 401 — no subscription)", "options_score": 0.5}
+        return {"error": err_str, "options_score": 0.5}
+    finally:
+        _yf_logger.setLevel(_prev_level)
 
     # Current price
     try:
@@ -127,7 +143,9 @@ def _compute_iv_rank(ticker: str, current_iv: float) -> float | None:
     (true historical IV data requires paid data feeds).
     """
     try:
+        import logging as _logging
         import yfinance as yf
+        _logging.getLogger("yfinance").setLevel(_logging.CRITICAL)
         data = yf.download(ticker, period="1y", progress=False, auto_adjust=True, threads=False)
         if data is None or len(data) < 60:
             return None
