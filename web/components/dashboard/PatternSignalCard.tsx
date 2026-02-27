@@ -171,11 +171,18 @@ function ConfluenceBar({ value }: { value: number }) {
 export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
   const [expanded, setExpanded] = useState(false);
 
-  const isHighConviction = data.confluence >= 0.70 && data.pattern_score >= 70;
+  // Defensive defaults — backend may return null instead of []
+  const patternSignals  = data.pattern_signals  ?? [];
+  const momentumSignals = data.momentum_signals ?? [];
+  const confluence      = data.confluence       ?? 0;
+  const patternScore    = data.pattern_score    ?? 0;
+  const kellyMult       = data.confluence_kelly_mult ?? 1;
+
+  const isHighConviction = confluence >= 0.70 && patternScore >= 70;
   const hasWarning       = !!data.warning;
 
-  const kellyBoost  = data.confluence_kelly_mult > 1.05;
-  const kellyReduce = data.confluence_kelly_mult < 0.95;
+  const kellyBoost  = kellyMult > 1.05;
+  const kellyReduce = kellyMult < 0.95;
 
   return (
     <div className={clsx(
@@ -186,10 +193,10 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-white text-base">{data.ticker}</span>
-          <RegimeBadge regime={data.regime} />
-          <ActionBadge action={data.action} />
+          <RegimeBadge regime={data.regime ?? "UNKNOWN"} />
+          <ActionBadge action={data.action ?? "WATCH"} />
         </div>
-        <BottomScoreMeter score={data.pattern_score} />
+        <BottomScoreMeter score={patternScore} />
       </div>
 
       {/* High-conviction alert */}
@@ -211,34 +218,34 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       )}
 
       {/* Confluence bar */}
-      <ConfluenceBar value={data.confluence} />
+      <ConfluenceBar value={confluence} />
 
       {/* Scores row */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="bg-slate-800 rounded-lg p-2">
           <div className="text-[10px] text-slate-400 mb-0.5">Technical</div>
-          <div className="text-sm font-bold text-white">{data.composite_score.toFixed(0)}</div>
+          <div className="text-sm font-bold text-white">{(data.composite_score ?? 0).toFixed(0)}</div>
         </div>
         <div className="bg-slate-800 rounded-lg p-2">
           <div className="text-[10px] text-slate-400 mb-0.5">Pattern</div>
           <div className={clsx("text-sm font-bold",
-            data.pattern_score >= 70 ? "text-emerald-400" :
-            data.pattern_score >= 45 ? "text-amber-400"   : "text-slate-400"
-          )}>{data.pattern_score.toFixed(0)}</div>
+            patternScore >= 70 ? "text-emerald-400" :
+            patternScore >= 45 ? "text-amber-400"   : "text-slate-400"
+          )}>{patternScore.toFixed(0)}</div>
         </div>
         <div className="bg-slate-800 rounded-lg p-2">
           <div className="text-[10px] text-slate-400 mb-0.5">Kelly ×</div>
           <div className={clsx("text-sm font-bold",
             kellyBoost  ? "text-emerald-400" :
             kellyReduce ? "text-red-400"     : "text-slate-300"
-          )}>{data.confluence_kelly_mult.toFixed(2)}</div>
+          )}>{kellyMult.toFixed(2)}</div>
         </div>
       </div>
 
       {/* Pattern signals */}
-      {data.pattern_signals.length > 0 && (
+      {patternSignals.length > 0 && (
         <div className="space-y-1">
-          {data.pattern_signals.map((s, i) => (
+          {patternSignals.map((s, i) => (
             <div key={i} className="flex items-start gap-1.5 text-xs text-slate-300">
               <TrendingUp size={11} className="text-emerald-400 mt-0.5 shrink-0" />
               {s}
@@ -248,9 +255,9 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       )}
 
       {/* Momentum signals */}
-      {data.momentum_signals.length > 0 && (
+      {momentumSignals.length > 0 && (
         <div className="space-y-1">
-          {data.momentum_signals.map((s, i) => (
+          {momentumSignals.map((s, i) => (
             <div key={i} className="flex items-start gap-1.5 text-xs text-slate-400">
               <Activity size={11} className="text-blue-400 mt-0.5 shrink-0" />
               {s}
