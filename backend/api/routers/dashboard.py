@@ -882,41 +882,97 @@ def _is_premarket_hours_et() -> bool:
     return hour == 9 and minute < 30
 
 
+def _premarket_file_is_from_today(data: dict) -> bool:
+    """Return True if the cached pre-market snapshot's timestamp is from today (ET)."""
+    ts = data.get("timestamp", "")
+    if not ts:
+        return False
+    try:
+        from datetime import datetime as _dt
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # type: ignore
+        et = ZoneInfo("America/New_York")
+        # Accept ISO-8601 with or without timezone suffix
+        file_dt = _dt.fromisoformat(ts.replace("Z", "+00:00"))
+        file_date = file_dt.astimezone(et).date()
+        today = _dt.now(et).date()
+        return file_date == today
+    except Exception:
+        return False  # If we can't parse, treat as stale
+
+
 @router.get("/pre-market")
 async def get_pre_market():
     """
-    Pre-market signal engine (6 categories, 15 sources). Reads from data/pre_market_latest.json
-    if present (written by scripts/pre_market_scheduler.py). Runs the engine only during
-    pre-market hours (weekday 4:00–9:30 AM ET); outside that window returns cached file or 503.
+    Pre-market signal engine (6 categories, 15 sources).
+
+    Priority order:
+      1. Cached file from TODAY  → return immediately (fresh)
+      2. In pre-market hours     → run engine live, save file, return
+      3. Cached file from a PREVIOUS day → return with stale=True flag so the
+         UI can show a "last updated yesterday" warning instead of hiding the data
+      4. Nothing + outside pre-market → 503
     """
     pre_market_file = ROOT / "data" / "pre_market_latest.json"
+    cached: dict | None = None
+
     try:
         if pre_market_file.exists():
             with open(pre_market_file) as f:
-                data = json.load(f)
-            if data.get("composite_score") is not None and data.get("bias") and data.get("signals") is not None:
-                return data
+                cached = json.load(f)
+            if not (cached.get("composite_score") is not None and cached.get("bias") and cached.get("signals") is not None):
+                cached = None  # Malformed — discard
     except Exception as e:
         logger.debug("Pre-market file read failed: %s", e)
-    if not _is_premarket_hours_et():
-        raise HTTPException(
-            status_code=503,
-            detail="Pre-market data is only generated before the open (4:00–9:30 AM ET, weekdays). "
-                   "Run scripts/pre_market_scheduler.py during that window, or use the last cached snapshot.",
-        )
-    try:
-        from signals.premarket_engine import PreMarketEngine
-        from scripts.pre_market_scheduler import report_to_dict
-        engine = PreMarketEngine()
-        report = engine.run(verbose=False)
-        data = report_to_dict(report)
-        pre_market_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(pre_market_file, "w") as f:
-            json.dump(data, f, indent=2)
-        return data
-    except Exception as e:
-        logger.exception("Pre-market engine failed: %s", e)
-        raise HTTPException(status_code=503, detail=f"Pre-market data unavailable: {e}")
+        cached = None
+
+    # ── Case 1: fresh file from today ──────────────────────────────────────
+    if cached and _premarket_file_is_from_today(cached):
+        cached.pop("stale", None)  # Clean up stale flag if somehow present
+        return cached
+
+    # ── Case 2: in pre-market hours → run engine live ─────────────────────
+    if _is_premarket_hours_et():
+        try:
+            from signals.premarket_engine import PreMarketEngine
+            from scripts.pre_market_scheduler import report_to_dict
+            engine = PreMarketEngine()
+            report = engine.run(verbose=False)
+            data = report_to_dict(report)
+            pre_market_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(pre_market_file, "w") as f:
+                json.dump(data, f, indent=2)
+            return data
+        except Exception as e:
+            logger.exception("Pre-market engine failed: %s", e)
+            # Fall through to serve stale cache if available
+
+    # ── Case 3: stale cached file from a previous day ─────────────────────
+    if cached:
+        ts = cached.get("timestamp", "")
+        try:
+            from datetime import datetime as _dt
+            try:
+                from zoneinfo import ZoneInfo
+            except ImportError:
+                from backports.zoneinfo import ZoneInfo  # type: ignore
+            et = ZoneInfo("America/New_York")
+            file_dt = _dt.fromisoformat(ts.replace("Z", "+00:00"))
+            date_str = file_dt.astimezone(et).strftime("%b %d")
+        except Exception:
+            date_str = "a previous day"
+        cached["stale"] = True
+        cached["stale_message"] = f"Showing pre-market data from {date_str} — refreshes at 4:00 AM ET on trading days"
+        return cached
+
+    # ── Case 4: no data at all ─────────────────────────────────────────────
+    raise HTTPException(
+        status_code=503,
+        detail="Pre-market data is only generated before the open (4:00–9:30 AM ET, weekdays). "
+               "Run scripts/pre_market_scheduler.py during that window, or use the last cached snapshot.",
+    )
 
 
 @router.get("/ticker/{ticker}")

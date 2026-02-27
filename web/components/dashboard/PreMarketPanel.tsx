@@ -35,6 +35,8 @@ export interface PreMarketData {
   minutes_to_open: number;
   message?: string;
   rotation_risk_premarket?: "High" | "Medium" | "Low";
+  stale?: boolean;
+  stale_message?: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -183,12 +185,13 @@ interface PreMarketPanelProps {
 
 export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-market" }: PreMarketPanelProps) {
   const [data, setData] = useState<PreMarketData | null>(initialData ?? null);
-  const [loading, setLoading] = useState(!initialData);
+  // Show spinner only when we have no data at all yet; background refresh is silent
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const url = API_BASE ? `${API_BASE}${apiEndpoint}` : apiEndpoint;
@@ -198,25 +201,38 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
       setData(json);
       setLastFetch(new Date());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch pre-market data");
+      // On silent background refresh, keep stale data rather than show error
+      if (!silent) setError(e instanceof Error ? e.message : "Failed to fetch pre-market data");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [apiEndpoint]);
 
+  // Always fetch fresh on mount — initialData may be from SSR/yesterday
   useEffect(() => {
-    if (!initialData) fetchData();
-  }, [initialData, fetchData]);
+    // Show full spinner only if there's nothing to display yet
+    fetchData(!initialData ? false : true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    // During pre-market: refresh every 5 min (prices moving fast)
+    // Outside pre-market: refresh every 30 min (stale check + scheduler may have run)
+    const getInterval = () => {
       const now = new Date();
-      const hour = now.getHours();
-      const min = now.getMinutes();
-      const isPreMarket = (hour >= 4 && hour < 9) || (hour === 9 && min < 30);
-      if (isPreMarket) fetchData();
-    }, 10 * 60 * 1000);
-    return () => clearInterval(interval);
+      const h = now.getHours(), m = now.getMinutes();
+      const isPreMarket = (h >= 4 && h < 9) || (h === 9 && m < 30);
+      return isPreMarket ? 5 * 60 * 1000 : 30 * 60 * 1000;
+    };
+    let timeout: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timeout = setTimeout(() => {
+        fetchData(true);
+        schedule();
+      }, getInterval());
+    };
+    schedule();
+    return () => clearTimeout(timeout);
   }, [fetchData]);
 
   const grouped = data ? Object.entries(
@@ -244,7 +260,7 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
         </div>
         <div className="flex items-center gap-3">
           {lastFetch && <span className="text-xs text-slate-600 hidden sm:inline">{lastFetch.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })} ET</span>}
-          <button type="button" onClick={fetchData} disabled={loading} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:bg-slate-800 text-xs disabled:opacity-50 transition-colors">
+          <button type="button" onClick={() => fetchData(false)} disabled={loading} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:bg-slate-800 text-xs disabled:opacity-50 transition-colors">
             <RefreshCw className={clsx("h-3 w-3", loading && "animate-spin")} />
             <span>{loading ? "Fetching…" : "Refresh"}</span>
           </button>
@@ -259,6 +275,13 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
               <p className="font-medium">Could not fetch pre-market data</p>
               <p className="text-amber-300/70 text-xs mt-0.5">{error}</p>
             </div>
+          </div>
+        )}
+
+        {data?.stale && (
+          <div className="rounded-lg border border-slate-600/50 bg-slate-800/40 px-3 py-2 text-slate-400 text-xs flex items-center gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+            <span>{data.stale_message ?? "Showing cached pre-market data — refreshes at 4:00 AM ET on trading days"}</span>
           </div>
         )}
 

@@ -306,8 +306,8 @@ opportunity_criteria:
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
   period: 5y         # Live signals, indicators, ATR, vol, MA (short-term); keep 5y for responsiveness
-  period_long: 13y   # What-if only: event scenarios (FOMC/CPI reaction stats); NOT used for live signals
-  period_long_risk: 13y   # Long-horizon risk: max drawdown, stress bear, worst 3y (monthly data; captures tail events)
+  period_long: 20y   # What-if only: event scenarios (FOMC/CPI reaction stats); NOT used for live signals
+  period_long_risk: 20y   # Long-horizon risk: max drawdown, stress bear, worst 3y (monthly data; 2007-present = 2008 crisis included)
   use_fmp_batch_quote: false  # Set true when FMP plan includes batch-quote (saves API calls); current plan = per-ticker data
   fmp_api_key: "6aRwanR4sXBzOicYLIHXIeIutlaTpmZz"                    # FMP – prices, treasury, calendar, analysts, profile, key-metrics
   fred_api_key: "35b8f3e904ea9e4fdb6f2b7a67622cc6"                   # FRED – 10Y, inflation exp (T10YIE), real yield (free: fred.stlouisfed.org/docs/api/api_key.html)
@@ -324,8 +324,48 @@ earnings:
 
 # Phase 4: Backtest (run from backend: python scripts/backtest_simple.py)
 # Dashboard "Backtesting status" section uses GLD, QQQ, SPY with backtest_period
-backtest_tickers: [GLD, QQQ, SPY]
-backtest_period: 10y   # Years of history for backtest (displayed in UI)
+backtest_tickers: [SPY, QQQ, GLD, XLE, XLF, IWM]
+# SPY/QQQ/GLD: core ETFs | XLE: energy (rough 2014-16, 2020) | XLF: financials (rough 2008) | IWM: small caps (tougher regime than SPY)
+# Broader mix tests whether the signal holds across sectors, not just survivorship-biased winners.
+
+# Round-trip transaction cost for backtests (commission + slippage, as fraction)
+backtest_transaction_cost: 0.003  # 0.30% = ~0.10% commission + 0.05% slippage each way
+backtest_period: 20y   # Years of history for backtest (2007-present; covers 2008-09 crisis, 2020, 2022)
+
+# ── ML model training configuration ─────────────────────────────────────────
+ml_models:
+  enabled: true                  # Set false to skip ML layer entirely (uses rule-based only)
+  retrain_interval_days: 7       # Retrain weekly (checks model file age at run time)
+  hmm_period: 2y                 # HMM only needs 2 years to identify 3 regime fingerprints
+  # LightGBM training periods by ticker group:
+  #   Stable ETFs / large-caps:   20y  (2007-present: 2008 crisis, 2018, 2020, 2022 all included)
+  #   Growth / momentum stocks:   5y   (pre-2019 behaviour is structurally different)
+  #   Volatile / newer listings:  3y   (older data teaches wrong patterns)
+  lgbm_period_default: 5y
+  lgbm_period_overrides:
+    # 20y = 2007-present: captures 2008-09 financial crisis + all modern regimes
+    SPY:   20y
+    QQQ:   20y   # QQQ exists since 1999; 20y gives us 2007 onward
+    GLD:   20y   # GLD launched Nov 2004; 20y gives full available history
+    SLV:   20y   # SLV launched Apr 2006
+    IWM:   20y
+    XLE:   20y   # Energy: 2008 oil spike + 2014-16 bust + 2020 crash all included
+    XLF:   20y   # Financials: 2008 crisis is THE most important event for this sector
+    AAPL:  20y
+    MSFT:  20y
+    GOOGL: 20y
+    AMZN:  20y
+    # Growth/momentum: pre-2019 behaviour is structurally different; keep at 5y
+    TSLA:  5y
+    NVDA:  5y
+    META:  5y    # IPO 2012; could use 10y but pre-2018 Meta is a different company
+    AMD:   5y
+    AVGO:  5y
+    LLY:   5y
+    # Newer / structural-change tickers: short history is more relevant
+    BABA:  3y
+    CRSP:  3y
+    ASAN:  3y
 
 # Phase 5: Thesis & behavior
 run_thesis_check: true

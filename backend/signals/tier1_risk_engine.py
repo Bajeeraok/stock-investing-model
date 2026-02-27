@@ -108,6 +108,7 @@ class PositionSizingEngine:
         win_rate:                 float,     # Historical hit rate (0-1)
         avg_win_pct:             float,      # Avg win % from backtest
         avg_loss_pct:            float,      # Avg loss % from backtest
+        confluence_score:        float = 1.0,  # 0-1 from UnifiedSignalEngine (default 1.0 = no effect)
     ) -> PositionSizeResult:
 
         rationale = []
@@ -157,9 +158,23 @@ class PositionSizingEngine:
         )
         rationale.append(f"Score taper ({signal_score:.0f}): ×{score_mult:.2f}")
 
+        # ── Step 6.5: Confluence multiplier (pattern + momentum agreement) ─
+        # Maps confluence 0–1 → 0.50–1.50× (default 1.0 when no pattern data)
+        # Strong pattern + technical agreement boosts Kelly up to 1.50×;
+        # weak/no pattern confirmation reduces it to 0.50×.
+        if confluence_score < 0.33:
+            conf_pattern_mult = 0.50 + confluence_score * 1.52   # 0.50 → ~1.00
+        elif confluence_score < 0.67:
+            conf_pattern_mult = 1.00
+        else:
+            conf_pattern_mult = 1.00 + (confluence_score - 0.67) * 1.52  # 1.00 → ~1.50
+        conf_pattern_mult = max(0.25, min(1.50, conf_pattern_mult))
+        if confluence_score != 1.0:   # Only log when actually provided
+            rationale.append(f"Pattern confluence ({confluence_score:.2f}): ×{conf_pattern_mult:.2f}")
+
         # ── Step 7: Compute adjusted fraction ────────────────────────────
         adjusted_fraction = (
-            kelly_half * regime_mult * vix_mult * conf_mult * score_mult
+            kelly_half * regime_mult * vix_mult * conf_mult * score_mult * conf_pattern_mult
         )
         adjusted_fraction = max(0, min(adjusted_fraction, self.MAX_SINGLE_POSITION_PCT))
 

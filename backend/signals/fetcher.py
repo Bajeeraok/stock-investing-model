@@ -1,9 +1,16 @@
 """
 Fetch daily OHLCV. Handles missing data and short history.
+
+Extended period support:
+  yfinance only accepts period strings up to "10y". For longer histories
+  (e.g. "17y" to capture 2007-2024 including the financial crisis),
+  _resolve_download_kwargs() converts "Ny" where N > 10 into a start= date.
+  This means "17y", "16y", "15y" all work transparently.
 """
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -13,6 +20,36 @@ except ImportError:
     yf = None
 
 logger = logging.getLogger(__name__)
+
+# yfinance only accepts these period strings natively
+_YF_NATIVE_PERIODS = {"1d","5d","1mo","3mo","6mo","1y","2y","5y","10y","ytd","max"}
+
+
+def _resolve_download_kwargs(period: str) -> dict:
+    """
+    Convert a period string to yfinance download kwargs.
+
+    Native periods (≤ 10y, 'max', 'ytd') are passed as period=.
+    Extended periods like '17y', '16y', '15y' are converted to start= date
+    because yfinance does not support period strings beyond 10y.
+
+    Examples:
+        "5y"  → {"period": "5y"}
+        "17y" → {"start": "2007-01-15"}   (today minus 17 years)
+        "max" → {"period": "max"}
+    """
+    p = (period or "10y").strip().lower()
+    if p in _YF_NATIVE_PERIODS:
+        return {"period": p}
+    if p.endswith("y"):
+        try:
+            years = int(p[:-1])
+            start_dt = datetime.now() - timedelta(days=int(years * 365.25))
+            return {"start": start_dt.strftime("%Y-%m-%d")}
+        except ValueError:
+            pass
+    # Unrecognised format — fall back to passing as-is and let yfinance error
+    return {"period": p}
 
 
 def _min_bars_for_period(period: str) -> int:
@@ -26,14 +63,15 @@ def _min_bars_for_period(period: str) -> int:
 def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
     """
     Download adjusted close for ticker. Returns None if insufficient data or error.
-    For short periods (e.g. 5d) requires at least 2 bars; for long periods requires 50+.
+    Supports extended periods (e.g. "17y") beyond yfinance's native "10y" cap.
     """
     if yf is None:
         raise ImportError("Install yfinance: pip install yfinance")
 
     min_bars = _min_bars_for_period(period)
     try:
-        data = yf.download(ticker, period=period, progress=False, threads=False, auto_adjust=True)
+        kwargs = _resolve_download_kwargs(period)
+        data = yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
     except Exception:
         return None
 
@@ -70,15 +108,17 @@ def fetch_ohlcv_safe(ticker: str, period: str = "5y") -> pd.Series | None:
         return None
 
 
-def fetch_ohlcv_monthly(ticker: str, period: str = "13y") -> pd.Series | None:
+def fetch_ohlcv_monthly(ticker: str, period: str = "20y") -> pd.Series | None:
     """
     Fetch monthly-adjusted close for long-horizon risk (max drawdown, stress bear).
+    Default 20y (Feb 2006-present) captures full 2008 crisis, 2020, 2022 and 2025.
     Uses interval=1mo to reduce noise and keep data size small.
     """
     if yf is None:
         return None
     try:
-        data = yf.download(ticker, period=period, interval="1mo", progress=False, threads=False, auto_adjust=True)
+        kwargs = _resolve_download_kwargs(period)
+        data = yf.download(ticker, interval="1mo", progress=False, threads=False, auto_adjust=True, **kwargs)
     except Exception:
         return None
     if data is None or data.empty or len(data) < 24:  # min ~2y monthly
@@ -106,7 +146,8 @@ def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series 
     if yf is None:
         return None, None
     try:
-        data = yf.download(ticker, period=period, progress=False, threads=False, auto_adjust=True)
+        kwargs = _resolve_download_kwargs(period)
+        data = yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
     except Exception:
         return None, None
     if data is None or data.empty or len(data) < 20:
@@ -191,6 +232,47 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
             logger.warning("[yfinance] Skipping %s: %s", sym, e)
             continue
     return out
+
+
+def fetch_ohlcv_dataframe(ticker: str, period: str = "2y") -> pd.DataFrame | None:
+    """
+    Fetch OHLCV as a DataFrame with columns: close, high, low, volume.
+    Required by pattern_signals.py for Bollinger Bands, 52-week low, volume climax.
+    Returns None on error or insufficient data (< 60 bars).
+    """
+    if yf is None:
+        return None
+    try:
+        kwargs = _resolve_download_kwargs(period)
+        data = yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
+    except Exception:
+        return None
+    if data is None or data.empty or len(data) < 60:
+        return None
+
+    # Normalise MultiIndex vs flat columns
+    def _get_col(name: str) -> pd.Series | None:
+        if isinstance(data.columns, pd.MultiIndex):
+            col = data.get(name)
+            if col is not None:
+                return col.iloc[:, 0] if getattr(col, "ndim", 1) > 1 else col
+            return None
+        return data.get(name)
+
+    close  = _get_col("Close")
+    high   = _get_col("High")
+    low    = _get_col("Low")
+    volume = _get_col("Volume")
+
+    if close is None:
+        return None
+
+    out = pd.DataFrame({"close": close})
+    if high   is not None: out["high"]   = high
+    if low    is not None: out["low"]    = low
+    if volume is not None: out["volume"] = volume
+    out = out.dropna(subset=["close"])
+    return out if len(out) >= 60 else None
 
 
 def fetch_ohlcv_with_config(ticker: str, period: str, config: dict | None) -> pd.Series | None:

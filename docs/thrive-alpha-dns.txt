@@ -1,0 +1,3 @@
+Type Name Value
+CName       @   70hoxzsl.up.railway.app
+TXT _railway-verify railway-verify=8b0003ab3681e6472cd91ba9f381790b020d9a2bafc4106ccfc0fd10542c945d

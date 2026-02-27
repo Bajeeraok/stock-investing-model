@@ -151,10 +151,12 @@ def _trend_strength_zscore(close: pd.Series, df: pd.DataFrame) -> tuple[float, f
     ts_raw = ts_raw.dropna()
     if len(ts_raw) < 50:
         return 50.0, None
-    mean_, std_ = ts_raw.mean(), ts_raw.std()
+    current_val = float(ts_raw.iloc[-1])
+    history = ts_raw.iloc[:-1]  # exclude current bar from normalization distribution
+    mean_, std_ = history.mean(), history.std()
     if std_ is None or std_ == 0 or pd.isna(std_):
-        return 50.0, float(ts_raw.iloc[-1]) if len(ts_raw) else None
-    z = (ts_raw.iloc[-1] - mean_) / std_
+        return 50.0, current_val
+    z = (current_val - mean_) / std_
     return _zscore_to_score(z), float(ts_raw.iloc[-1])
 
 
