@@ -15,6 +15,23 @@ def _suggestion(score: float | None, buy_min: float = 65, sell_max: float = 35) 
     return "HOLD"
 
 
+def _suggestion_from_confidence(confidence: float | None, action: str | None) -> str:
+    """Map 7-layer confidence action to portfolio suggestion."""
+    if confidence is None and not action:
+        return "N/A"
+    if action:
+        if action in ("STRONG BUY", "BUY"):
+            return "HOLD/ADD"
+        if action in ("REDUCE", "AVOID"):
+            return "CONSIDER TRIM"
+    if confidence is not None:
+        if confidence >= 0.65:
+            return "HOLD/ADD"
+        if confidence < 0.45:
+            return "CONSIDER TRIM"
+    return "HOLD"
+
+
 def portfolio_report(
     holdings: list[dict],
     results: list[dict],
@@ -22,6 +39,7 @@ def portfolio_report(
     score_cfg: dict | None = None,
     concentration_threshold_pct: float = 20.0,
     cash_deploy_min_score: float = 70.0,
+    confidence_by_ticker: dict | None = None,
 ) -> dict:
     """
     Build full portfolio report.
@@ -32,6 +50,7 @@ def portfolio_report(
     score_cfg: {buy_min, sell_max} for suggestions
     concentration_threshold_pct: alert if any position > this % of portfolio
     cash_deploy_min_score: min score for "deploy cash" suggestions
+    confidence_by_ticker: optional {ticker: {confidence, action, breakdown, ...}} from run_confidence (7-layer)
 
     Returns dict with:
       - per_holding: [{ticker, quantity, price, value, pct, score, regime, suggestion}]
@@ -69,8 +88,13 @@ def portfolio_report(
         total_value += value
         score = r.get("composite_buy")
         regime = r.get("regime", "")
-        suggestion = _suggestion(score, buy_min, sell_max)
-        entry = {"ticker": ticker, "quantity": qty, "price": price, "value": value, "pct": None, "score": score, "regime": regime, "suggestion": suggestion}
+        conf_data = (confidence_by_ticker or {}).get(ticker)
+        if conf_data is not None and conf_data.get("confidence") is not None:
+            suggestion = _suggestion_from_confidence(conf_data.get("confidence"), conf_data.get("action"))
+            entry = {"ticker": ticker, "quantity": qty, "price": price, "value": value, "pct": None, "score": score, "regime": regime, "suggestion": suggestion, "confidence": round(conf_data["confidence"] * 100, 1), "action": conf_data.get("action")}
+        else:
+            suggestion = _suggestion(score, buy_min, sell_max)
+            entry = {"ticker": ticker, "quantity": qty, "price": price, "value": value, "pct": None, "score": score, "regime": regime, "suggestion": suggestion}
         if account:
             entry["account"] = account
         if cost_basis is not None:
@@ -126,7 +150,7 @@ def portfolio_report(
             if h["pct"] is not None and h["pct"] > concentration_threshold_pct:
                 concentration_alert.append(h["ticker"])
 
-    # Cash deployment: watchlist tickers NOT in portfolio with score >= threshold
+    # Cash deployment: watchlist tickers NOT in portfolio with score/confidence >= threshold
     portfolio_tickers = {h.get("ticker") if isinstance(h, dict) else h for h in holdings}
     cash_deployment = []
     for r in results:
@@ -136,9 +160,15 @@ def portfolio_report(
         if t in portfolio_tickers:
             continue
         score = r.get("composite_buy")
-        if score is not None and score >= cash_deploy_min_score:
+        conf_data = (confidence_by_ticker or {}).get(t)
+        use_confidence = conf_data is not None and conf_data.get("confidence") is not None
+        if use_confidence:
+            conf_val = conf_data["confidence"]
+            if conf_val >= 0.65:  # BUY or better
+                cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", ""), "confidence": round(conf_val * 100, 1), "action": conf_data.get("action")})
+        elif score is not None and score >= cash_deploy_min_score:
             cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", "")})
-    cash_deployment.sort(key=lambda x: -x["score"])
+    cash_deployment.sort(key=lambda x: -(x.get("confidence") if x.get("confidence") is not None else (x.get("score") or 0)))
 
     # Theme concentration: mega-cap (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA) combined %
     MEGA_CAP = {"AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"}
@@ -209,11 +239,14 @@ def allocation_recommendations(
     opportunities: list[dict],
     best_2026: list[dict],
     doctor_cfg: dict | None = None,
+    confidence_by_ticker: dict | None = None,
 ) -> dict:
     """
     Portfolio Doctor: trim/add recommendations with $ and % amounts and suggested prices.
     Uses risk_appetite, goal, and optional target $ over time to tune aggressiveness.
     Add candidates come from opportunities + best_2026 (deduped by ticker).
+    When confidence_by_ticker is provided (7-layer run_confidence), uses calibrated
+    confidence for trim/add thresholds and ranking instead of technical score.
     """
     doctor_cfg = doctor_cfg or {}
     risk_appetite = (doctor_cfg.get("risk_appetite") or "moderate").lower()
@@ -246,29 +279,37 @@ def allocation_recommendations(
             pass
 
     # Profile: how aggressive (trim/add thresholds, position caps)
-    # Conservative: trim more (score < 45), add only top confidence, max position 15%
-    # Moderate: trim score < 40, add score >= 70, max position 20%
-    # Aggressive: trim score < 35, add score >= 65, max position 25%
+    # Score scale (0-100) when confidence not available; confidence scale (0-1) when available
     trim_score_threshold = {"conservative": 45, "moderate": 40, "aggressive": 35}.get(risk_appetite, 40)
+    trim_conf_threshold = {"conservative": 0.45, "moderate": 0.45, "aggressive": 0.40}.get(risk_appetite, 0.45)
     max_position_pct = {"conservative": 15, "moderate": 20, "aggressive": 25}.get(risk_appetite, 20)
     add_min_score = {"conservative": 72, "moderate": 70, "aggressive": 65}.get(risk_appetite, 70)
-    # If implied CAGR is high, nudge toward more aggressive
+    add_min_conf = {"conservative": 0.72, "moderate": 0.65, "aggressive": 0.58}.get(risk_appetite, 0.65)
+    # If implied CAGR is high, nudge toward more aggressive (trim weak positions to redeploy)
     if implied_cagr_pct is not None and implied_cagr_pct > 10:
         trim_score_threshold = min(trim_score_threshold + 5, 50)
+        trim_conf_threshold = min(trim_conf_threshold + 0.05, 0.50)
     elif implied_cagr_pct is not None and implied_cagr_pct < 4:
         trim_score_threshold = max(trim_score_threshold - 3, 35)
+        trim_conf_threshold = max(trim_conf_threshold - 0.05, 0.35)
 
     # ---- TRIM ----
+    conf_map = confidence_by_ticker or {}
     trim_list = []
     for h in per_holding:
         if h.get("value") is None or h.get("value") <= 0 or total_value <= 0:
             continue
-        score = h.get("score")
-        if score is None:
-            continue
-        if score > trim_score_threshold:
-            continue
         ticker = h["ticker"]
+        score = h.get("score")
+        conf_data = conf_map.get(ticker)
+        conf_val = conf_data.get("confidence") if conf_data and isinstance(conf_data, dict) else None
+        use_conf = conf_val is not None
+        if use_conf:
+            if conf_val > trim_conf_threshold:
+                continue
+        else:
+            if score is None or score > trim_score_threshold:
+                continue
         current_value = float(h["value"])
         current_pct = (h.get("pct") or 0) or round(100 * current_value / total_value, 1)
         r = results_by_ticker.get(ticker)
@@ -294,7 +335,10 @@ def allocation_recommendations(
             trim_pct_of_position = min(75, max(25, round(excess_pct / current_pct * 100, 0)))
         suggest_trim_pct = round(current_pct * (trim_pct_of_position / 100), 1)
         suggest_trim_dollars = round(current_value * (trim_pct_of_position / 100), 2)
-        reason = f"Confidence {score:.0f}, regime {h.get('regime') or 'N/A'}"
+        if use_conf:
+            reason = f"7-layer confidence {conf_val*100:.0f}% ({conf_data.get('action') or 'N/A'}), regime {h.get('regime') or 'N/A'}"
+        else:
+            reason = f"Score {score:.0f}, regime {h.get('regime') or 'N/A'}"
         if current_pct > max_position_pct:
             reason += f"; position {current_pct}% > max {max_position_pct}%"
 
@@ -308,10 +352,12 @@ def allocation_recommendations(
             "reason": reason.strip(),
             "score": score,
             "regime": h.get("regime"),
+            "confidence": round(conf_val * 100, 1) if conf_val is not None else None,
+            "action": conf_data.get("action") if conf_data else None,
         })
-    trim_list.sort(key=lambda x: (x["score"], -x["current_value"]))
+    trim_list.sort(key=lambda x: ((x.get("confidence") if x.get("confidence") is not None else x["score"] or 0), -x["current_value"]))
 
-    # ---- ADD: merge opportunities + best_2026 (dedupe by ticker, prefer higher score) ----
+    # ---- ADD: merge opportunities + best_2026 (dedupe by ticker, prefer higher confidence/score) ----
     portfolio_tickers = {h["ticker"] for h in per_holding}
     add_candidates = []
     seen = set()
@@ -320,32 +366,48 @@ def allocation_recommendations(
         if not t or t in portfolio_tickers or t in seen:
             continue
         score = o.get("composite_buy") or o.get("score")
-        if score is None or score < add_min_score:
+        conf_data = conf_map.get(t)
+        conf_val = conf_data.get("confidence") if conf_data and isinstance(conf_data, dict) else None
+        use_conf = conf_val is not None and conf_val >= add_min_conf
+        use_score = score is not None and score >= add_min_score
+        if not use_conf and not use_score:
             continue
         seen.add(t)
         add_candidates.append({
             "ticker": t,
-            "score": float(score),
+            "score": float(score) if score is not None else None,
             "regime": o.get("regime") or "",
             "close": o.get("close"),
             "source": "opportunities",
+            "confidence": round(conf_val * 100, 1) if conf_val is not None else None,
+            "action": conf_data.get("action") if conf_data else None,
         })
     for b in best_2026:
         t = b.get("ticker")
         if not t or t in portfolio_tickers or t in seen:
             continue
         score = b.get("score")
-        if score is None or score < add_min_score:
+        conf_data = conf_map.get(t)
+        conf_val = conf_data.get("confidence") if conf_data and isinstance(conf_data, dict) else None
+        use_conf = conf_val is not None and conf_val >= add_min_conf
+        use_score = score is not None and score >= add_min_score
+        if not use_conf and not use_score:
             continue
         seen.add(t)
         add_candidates.append({
             "ticker": t,
-            "score": float(score),
+            "score": float(score) if score is not None else None,
             "regime": b.get("regime") or "",
             "close": b.get("close"),
             "source": "best_2026",
+            "confidence": round(conf_val * 100, 1) if conf_val is not None else None,
+            "action": conf_data.get("action") if conf_data else None,
         })
-    add_candidates.sort(key=lambda x: -x["score"])
+    def _add_sort_key(x):
+        c = x.get("confidence")
+        s = x.get("score") or 0
+        return -(c if c is not None else s)
+    add_candidates.sort(key=_add_sort_key)
 
     # Suggest add size: equal-weight slice of "deployable" (trim proceeds or 5% of portfolio)
     trim_proceeds = sum(x["suggest_trim_dollars"] for x in trim_list)
@@ -374,15 +436,20 @@ def allocation_recommendations(
                 pass
         suggest_add_dollars = add_dollars_each
         suggest_add_pct = round(100 * suggest_add_dollars / total_value, 1) if total_value > 0 else 0
-        add_list.append({
+        entry = {
             "ticker": ticker,
-            "score": round(c["score"], 1),
+            "score": round(c["score"], 1) if c.get("score") is not None else None,
             "regime": c["regime"],
             "suggest_add_pct": suggest_add_pct,
             "suggest_add_dollars": suggest_add_dollars,
             "buy_price": buy_price,
             "source": c["source"],
-        })
+        }
+        if c.get("confidence") is not None:
+            entry["confidence"] = c["confidence"]
+        if c.get("action"):
+            entry["action"] = c["action"]
+        add_list.append(entry)
 
     return {
         "inputs": {

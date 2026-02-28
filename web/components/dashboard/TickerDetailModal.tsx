@@ -5,6 +5,7 @@ import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, 
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
+import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -102,12 +103,13 @@ export function TickerDetailModal({
   ticker: string;
   onClose: () => void;
 }) {
-  const [detail, setDetail]         = useState<TickerDetail | null>(null);
-  const [confidence, setConfidence]  = useState<ConfidenceData | null>(null);
-  const [unified, setUnified]        = useState<UnifiedSignalData | null>(null);
-  const [loading, setLoading]        = useState(true);
-  const [error, setError]            = useState<string | null>(null);
-  const [quickRefOpen, setQuickRefOpen] = useState(false);
+  const [detail, setDetail]               = useState<TickerDetail | null>(null);
+  const [confidence, setConfidence]        = useState<ConfidenceData | null>(null);
+  const [unified, setUnified]              = useState<UnifiedSignalData | null>(null);
+  const [priceTargets, setPriceTargets]    = useState<PriceTargetsData | null>(null);
+  const [loading, setLoading]              = useState(true);
+  const [error, setError]                  = useState<string | null>(null);
+  const [quickRefOpen, setQuickRefOpen]    = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -122,6 +124,7 @@ export function TickerDetailModal({
     setError(null);
     setConfidence(null);
     setUnified(null);
+    setPriceTargets(null);
 
     const base = (path: string) => API_BASE ? `${API_BASE}${path}` : path;
 
@@ -143,6 +146,12 @@ export function TickerDetailModal({
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setUnified(d))
       .catch(() => {/* graceful — unified signal unavailable */});
+
+    // Price targets + scenario analysis (optional — runs in background)
+    fetch(base(`/api/price-targets/${ticker}`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && !d.error && setPriceTargets(d))
+      .catch(() => {/* graceful — price targets unavailable */});
   }, [ticker]);
 
   const periods = ["1m", "3m", "6m", "1y"];
@@ -286,6 +295,18 @@ export function TickerDetailModal({
                 <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
                   <Activity className="h-4 w-4 shrink-0" />
                   <span>Loading pattern signal engine…</span>
+                </div>
+              )}
+
+              {/* ── Price Targets & Scenario Analysis ──────────────────── */}
+              {priceTargets ? (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
+                  <PriceTargetsPanel data={priceTargets} />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Computing price targets &amp; scenarios…</span>
                 </div>
               )}
 

@@ -18,6 +18,7 @@ import { useState } from "react";
 import {
   AlertTriangle, TrendingUp, TrendingDown, Shield,
   Activity, Eye, Info, ChevronDown, ChevronRight, Zap,
+  Ban, Tag, Layers, ArrowRight, CheckCircle,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -55,9 +56,86 @@ export interface MLHorizons {
   long:   MLHorizonEntry;
 }
 
+// ── Pre-flight types (mirrors signal_fusion.py / asset_classifier.py output) ─
+
+export interface PreFlightFlag {
+  type:    "error" | "warn" | "info";
+  message: string;
+}
+
+export interface CoherenceData {
+  level:              "HIGH" | "MODERATE" | "LOW" | "INCOHERENT";
+  std_dev:            number | null;
+  mean:               number | null;
+  spread:             number | null;
+  active_layer_count: number;
+  tradeable:          boolean;
+  is_contrarian:      boolean;
+  message:            string;
+}
+
+export interface TransitionBonusData {
+  bonus_active:    boolean;
+  upgrade:         string | null;
+  position_bonus:  number | null;
+  rationale:       string | null;
+  days_to_confirm: number | null;
+}
+
+export interface RSIDirectionData {
+  signal:        string;
+  label:         string;
+  rsi_current:   number;
+  delta:         number;
+  pattern_bonus: number;
+  is_oversold:   boolean;
+  is_overbought: boolean;
+}
+
+export interface DivergenceData {
+  score:            number;
+  label:            "EXTREME" | "HIGH" | "MODERATE" | "LOW";
+  is_high_conflict: boolean;
+  direction:        string;
+}
+
+export interface RegimeTransitionData {
+  shift_probability: number;
+  days_estimate:     string;
+  label:             string;
+}
+
+export interface PlaybookScenario {
+  scenario_id:    number;
+  name:           string;
+  condition_desc: string;
+  condition_met:  boolean;
+  mode:           string;
+  action:         string;
+  details:        Record<string, string>;
+  conflict_score: string;
+}
+
+export interface PreFlightData {
+  is_scoreable:      boolean;
+  asset_type:        string | null;
+  asset_name:        string;
+  weight_label:      string;
+  flags:             PreFlightFlag[];
+  coherence:         CoherenceData | null;
+  transition_bonus:  TransitionBonusData | null;
+  rsi_direction:     RSIDirectionData | null;
+  divergence:        DivergenceData | null;
+  regime_transition: RegimeTransitionData | null;
+  playbook:          PlaybookScenario[];
+  current_mode:      string | null;
+  current_action:    string | null;
+  position_size:     string | null;
+}
+
 export interface ConfidenceData {
   ticker:          string;
-  confidence:      number;          // 0-1
+  confidence:      number | null;   // null for INCOMPATIBLE instruments
   action:          string;
   breakdown: {
     regime_hmm:        BreakdownLayer;
@@ -74,6 +152,7 @@ export interface ConfidenceData {
   watch_levels?:   WatchLevels;
   market_regime:   string;
   n_layers_active: number;
+  pre_flight?:     PreFlightData;   // new — asset classification + coherence + playbook
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -444,6 +523,261 @@ function FlipToBuy({ breakdown, action }: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  Pre-flight sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Red banner for instruments that cannot be scored (UVXY, VXX, VIXY) */
+function IncompatibleBanner({ ticker, name, flags }: { ticker: string; name: string; flags: PreFlightFlag[] }) {
+  return (
+    <div className="rounded-xl border border-red-500/50 bg-red-500/10 p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <Ban size={18} className="text-red-400 shrink-0" />
+        <div>
+          <p className="text-sm font-bold text-red-300">{ticker} — {name}</p>
+          <p className="text-xs text-red-400/80">Standard equity model cannot score this instrument</p>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {flags.map((f, i) => (
+          <div key={i} className="flex items-start gap-2 text-xs">
+            <AlertTriangle size={12} className="text-red-400 mt-0.5 shrink-0" />
+            <span className="text-red-300/90">{f.message}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-slate-400 border-t border-red-500/20 pt-2">
+        Volatility ETFs (UVXY, VXX, VIXY) behave inversely to equities. ML models trained on equities
+        produce misleading signals. Use a dedicated VIX analysis approach instead.
+      </p>
+    </div>
+  );
+}
+
+/** Asset type + weight profile tag in the header */
+function AssetTypeBadge({ assetType, weightLabel }: { assetType: string | null; weightLabel: string }) {
+  if (!assetType) return null;
+  const colour =
+    assetType === "ETF_COMMODITY"      ? "text-yellow-300 bg-yellow-500/10 border-yellow-500/30" :
+    assetType === "ETF_EQUITY"         ? "text-blue-300   bg-blue-500/10   border-blue-500/30"   :
+    assetType === "ETF_VOLATILITY"     ? "text-red-300    bg-red-500/10    border-red-500/30"     :
+    assetType === "EQUITY_ADR"         ? "text-purple-300 bg-purple-500/10 border-purple-500/30"  :
+    assetType === "EQUITY_SPECULATIVE" ? "text-orange-300 bg-orange-500/10 border-orange-500/30"  :
+    assetType === "EQUITY_DEFENSIVE"   ? "text-teal-300   bg-teal-500/10   border-teal-500/30"    :
+                                         "text-slate-300  bg-slate-500/10  border-slate-500/30";
+  const short = assetType.replace("EQUITY_", "").replace("ETF_", "ETF·");
+  return (
+    <span className={clsx("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide", colour)}
+          title={weightLabel}>
+      <Tag size={9} />
+      {short}
+    </span>
+  );
+}
+
+/** Pre-flight flags (warn/info/error) from asset classifier */
+function PreFlightFlags({ flags }: { flags: PreFlightFlag[] }) {
+  if (!flags || flags.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      {flags.map((f, i) => {
+        const isErr  = f.type === "error";
+        const isWarn = f.type === "warn";
+        return (
+          <div key={i} className={clsx(
+            "flex items-start gap-2 rounded-lg px-3 py-2 border text-xs",
+            isErr  ? "bg-red-500/10 border-red-500/30 text-red-300" :
+            isWarn ? "bg-amber-500/10 border-amber-500/30 text-amber-300" :
+                     "bg-slate-700/30 border-slate-600/30 text-slate-400"
+          )}>
+            {isErr  ? <Ban size={11} className="shrink-0 mt-0.5" /> :
+             isWarn ? <AlertTriangle size={11} className="shrink-0 mt-0.5" /> :
+                      <Info size={11} className="shrink-0 mt-0.5" />}
+            {f.message}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Coherence badge — signals agreement level */
+function CoherenceBadge({ coherence }: { coherence: CoherenceData }) {
+  const cfg =
+    coherence.level === "HIGH"       ? { colour: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30", dot: "bg-emerald-400" } :
+    coherence.level === "MODERATE"   ? { colour: "text-amber-300   bg-amber-500/10   border-amber-500/30",   dot: "bg-amber-400"   } :
+    coherence.level === "LOW"        ? { colour: "text-orange-300  bg-orange-500/10  border-orange-500/30",  dot: "bg-orange-400"  } :
+                                       { colour: "text-red-300     bg-red-500/10     border-red-500/30",     dot: "bg-red-400"     };
+  return (
+    <span className={clsx("inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide", cfg.colour)}
+          title={coherence.message}>
+      <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", cfg.dot)} />
+      {coherence.level}
+      {coherence.std_dev != null && <span className="opacity-60 lowercase tracking-normal">·σ{coherence.std_dev}</span>}
+    </span>
+  );
+}
+
+/** ⚡ Transition bonus banner (BABA-type: HMM transition + ML confirming) */
+function TransitionBonusBanner({ bonus }: { bonus: TransitionBonusData }) {
+  if (!bonus.bonus_active) return null;
+  return (
+    <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/35 rounded-lg px-3 py-2.5">
+      <Zap size={14} className="text-amber-400 mt-0.5 shrink-0" />
+      <div className="space-y-0.5">
+        <p className="text-xs font-semibold text-amber-200">
+          ⚡ Transition Bonus Active
+          {bonus.upgrade && <span className="ml-1.5 font-normal text-amber-300/80">→ {bonus.upgrade}</span>}
+        </p>
+        {bonus.rationale && <p className="text-[11px] text-amber-300/70">{bonus.rationale}</p>}
+        {bonus.days_to_confirm && (
+          <p className="text-[11px] text-slate-400">Estimated ~{bonus.days_to_confirm} days to bull confirmation</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Regime shift outlook row — forward-looking HMM probability */
+function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
+  const pct   = rt.shift_probability;
+  const watch = rt.label === "WATCH_CLOSELY";
+  return (
+    <div className={clsx(
+      "rounded-lg px-3 py-2.5 border space-y-1.5",
+      watch ? "bg-amber-500/8 border-amber-500/25" : "bg-slate-800/40 border-slate-700/30"
+    )}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <ArrowRight size={12} className={watch ? "text-amber-400" : "text-slate-500"} />
+          <span className="text-xs font-semibold text-slate-200">Regime Shift Outlook</span>
+          {watch && <span className="text-[10px] text-amber-400 font-semibold uppercase tracking-wide">Watch Closely</span>}
+        </div>
+        <span className={clsx("text-xs font-mono font-bold", pct >= 40 ? "text-amber-300" : "text-slate-400")}>
+          {pct.toFixed(0)}%
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-slate-700/60 overflow-hidden">
+        <div className={clsx("h-full rounded-full", pct >= 40 ? "bg-amber-500" : "bg-slate-600")}
+             style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <p className="text-[11px] text-slate-400">
+        {pct.toFixed(0)}% probability of regime shift within {rt.days_estimate}
+      </p>
+    </div>
+  );
+}
+
+/** Signal divergence (options vs ML conflict) indicator */
+function DivergenceRow({ div: d }: { div: DivergenceData }) {
+  if (!d) return null;
+  const cfg =
+    d.label === "EXTREME"  ? { colour: "text-red-300 bg-red-500/10 border-red-500/30" } :
+    d.label === "HIGH"     ? { colour: "text-orange-300 bg-orange-500/10 border-orange-500/30" } :
+    d.label === "MODERATE" ? { colour: "text-amber-300 bg-amber-500/10 border-amber-500/30" } :
+                             { colour: "text-slate-400 bg-slate-700/20 border-slate-600/20" };
+  const dirLabel = d.direction === "OPTIONS_BULLISH_ML_BEARISH"
+    ? "Options bullish, ML bearish — possible contrarian setup"
+    : "ML bullish, Options bearish — model vs smart money conflict";
+  return (
+    <div className={clsx("flex items-start gap-2 rounded-lg px-3 py-2 border text-xs", cfg.colour)}>
+      <Layers size={12} className="mt-0.5 shrink-0" />
+      <div>
+        <span className="font-semibold">Signal Conflict: {d.label}</span>
+        <span className="text-[11px] opacity-75 ml-1.5">({d.score.toFixed(0)}pt gap)</span>
+        <p className="text-[11px] opacity-75 mt-0.5">{dirLabel}</p>
+      </div>
+    </div>
+  );
+}
+
+/** RSI direction sub-indicator — is RSI turning up from oversold? */
+function RSIDirectionPill({ rsi }: { rsi: RSIDirectionData }) {
+  const bullish = rsi.signal === "OVERSOLD_REVERSAL" || rsi.signal === "OVERBOUGHT_MOMENTUM";
+  const bearish = rsi.signal === "OVERSOLD_FALLING"  || rsi.signal === "OVERBOUGHT_REVERSAL";
+  const colour =
+    bullish ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/25" :
+    bearish ? "text-red-300     bg-red-500/10     border-red-500/25"     :
+              "text-slate-400   bg-slate-700/20   border-slate-600/20";
+  const bonusLabel = rsi.pattern_bonus > 0 ? `+${rsi.pattern_bonus}pt` : rsi.pattern_bonus < 0 ? `${rsi.pattern_bonus}pt` : null;
+  return (
+    <div className="flex items-center gap-2 pl-4 mt-1">
+      <span className={clsx("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border", colour)}>
+        RSI {rsi.rsi_current.toFixed(0)} · {rsi.label.split(" — ")[0]}
+        {bonusLabel && <span className="ml-1 opacity-70">{bonusLabel}</span>}
+      </span>
+    </div>
+  );
+}
+
+/** Collapsible conditional playbook */
+function PlaybookSection({ playbook }: { playbook: PlaybookScenario[] }) {
+  const [open, setOpen] = useState(false);
+  if (!playbook || playbook.length === 0) return null;
+  const active = playbook.find(s => s.condition_met);
+
+  return (
+    <div className="border-t border-slate-700/40 pt-3">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors w-full font-medium"
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span>Conditional Playbook</span>
+        {active && (
+          <span className="ml-1.5 text-[10px] text-amber-300 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded font-semibold">
+            ACTIVE: {active.name}
+          </span>
+        )}
+        {!active && (
+          <span className="ml-1.5 text-[10px] text-slate-500">
+            {playbook.length} scenarios — none triggered
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2">
+          {playbook.map(s => (
+            <div key={s.scenario_id} className={clsx(
+              "rounded-lg border p-3 space-y-2",
+              s.condition_met
+                ? "bg-amber-500/10 border-amber-500/30"
+                : "bg-slate-800/30 border-slate-700/30 opacity-70"
+            )}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {s.condition_met
+                    ? <CheckCircle size={13} className="text-amber-400 shrink-0" />
+                    : <div className="w-3 h-3 rounded-full border border-slate-600 shrink-0" />}
+                  <span className={clsx("text-xs font-semibold", s.condition_met ? "text-amber-200" : "text-slate-400")}>
+                    {s.scenario_id}. {s.name}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-500 shrink-0">{s.mode.replace(/_/g, " ")}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 pl-5">{s.condition_desc}</p>
+              <p className={clsx("text-xs font-medium pl-5", s.condition_met ? "text-amber-300" : "text-slate-400")}>
+                → {s.action}
+              </p>
+              {s.condition_met && Object.entries(s.details).length > 0 && (
+                <div className="pl-5 space-y-1">
+                  {Object.entries(s.details).map(([k, v]) => (
+                    <div key={k} className="flex items-baseline gap-1.5 text-[11px]">
+                      <span className="text-slate-500 capitalize">{k.replace(/_/g, " ")}:</span>
+                      <span className="text-slate-300">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  Main card
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -456,14 +790,37 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
   const breakdown     = data.breakdown      ?? {};
   const confidence    = data.confidence     ?? 0;
   const mlHorizons    = data.ml_horizons    ?? null;
+  const pf            = data.pre_flight;
+
+  // INCOMPATIBLE instrument (UVXY etc.) — show blocked banner, nothing else
+  if (pf && !pf.is_scoreable) {
+    return (
+      <IncompatibleBanner
+        ticker={data.ticker}
+        name={pf.asset_name}
+        flags={pf.flags ?? []}
+      />
+    );
+  }
 
   const isStrongSignal   = confidence >= 0.75;
   const hasDisqualifiers = disqualifiers.length > 0;
+  const coherence        = pf?.coherence ?? null;
+  const transitionBonus  = pf?.transition_bonus ?? null;
+  const rsiDir           = pf?.rsi_direction ?? null;
+  const divergence       = pf?.divergence ?? null;
+  const regimeTrans      = pf?.regime_transition ?? null;
+  const playbook         = pf?.playbook ?? [];
+  const pfFlags          = pf?.flags ?? [];
+  // Only show non-INCOHERENT coherence message since INCOHERENT is in disqualifiers
+  const incoherent       = coherence?.level === "INCOHERENT";
 
   return (
     <div className={clsx(
       "rounded-xl border bg-slate-900 p-5 space-y-4",
-      isStrongSignal ? "border-emerald-500/40" : "border-slate-700/60"
+      isStrongSignal  ? "border-emerald-500/40" :
+      incoherent      ? "border-red-500/40"     :
+                        "border-slate-700/60"
     )}>
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
@@ -471,17 +828,39 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-bold text-white">{data.ticker}</span>
             <RegimePill regime={data.market_regime ?? "UNKNOWN"} />
+            {pf?.asset_type && (
+              <AssetTypeBadge assetType={pf.asset_type} weightLabel={pf.weight_label} />
+            )}
+            {coherence && <CoherenceBadge coherence={coherence} />}
           </div>
           <ActionBadge action={data.action ?? "WATCH"} confidence={confidence} />
           <p className="text-[11px] text-slate-500">
-            {data.n_layers_active ?? 0}/7 layers active · click ticker to refresh
+            {data.n_layers_active ?? 0}/7 layers active
+            {pf?.weight_label && <span className="ml-1.5 opacity-60">· {pf.weight_label}</span>}
           </p>
         </div>
         <ConfidenceGauge value={confidence} />
       </div>
 
+      {/* Pre-flight flags (geopolitical risk, macro driver, sentiment amplification etc.) */}
+      {pfFlags.length > 0 && <PreFlightFlags flags={pfFlags} />}
+
+      {/* Incoherent signal warning — blocks trading */}
+      {incoherent && (
+        <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2.5">
+          <AlertTriangle size={13} className="text-red-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-red-300">Incoherent signals — do not trade on this</p>
+            <p className="text-[11px] text-red-400/70 mt-0.5">{coherence?.message}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Transition bonus banner */}
+      {transitionBonus && <TransitionBonusBanner bonus={transitionBonus} />}
+
       {/* Strong signal highlight */}
-      {isStrongSignal && !hasDisqualifiers && (
+      {isStrongSignal && !hasDisqualifiers && !incoherent && (
         <div className="flex items-start gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2.5">
           <Zap size={13} className="text-emerald-400 mt-0.5 shrink-0" />
           <span className="text-xs text-emerald-300">
@@ -502,11 +881,18 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         </div>
       )}
 
+      {/* Signal divergence (options vs ML) */}
+      {divergence && divergence.is_high_conflict && <DivergenceRow div={divergence} />}
+
       {/* Signal breakdown bars — N/A placeholders for unavailable layers */}
       <div className="space-y-3">
         {Object.entries(breakdown).map(([key, layer]) => (
           <div key={key}>
             <LayerBar layerKey={key} layer={layer as BreakdownLayer} />
+            {/* RSI direction sub-indicator expands below the pattern_technical bar */}
+            {key === "pattern_technical" && rsiDir && (
+              <RSIDirectionPill rsi={rsiDir} />
+            )}
             {/* ML Horizons panel expands below the lgbm_probability bar */}
             {key === "lgbm_probability" && mlHorizons && (
               <MLHorizonsPanel horizons={mlHorizons} />
@@ -514,6 +900,9 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           </div>
         ))}
       </div>
+
+      {/* Regime shift outlook */}
+      {regimeTrans && <RegimeTransitionRow rt={regimeTrans} />}
 
       {/* Weighted math — expandable "how is 45% calculated?" */}
       <WeightedMathTable breakdown={breakdown as Record<string, BreakdownLayer>} confidence={confidence} />
@@ -555,6 +944,9 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           )}
         </div>
       )}
+
+      {/* Conditional playbook */}
+      <PlaybookSection playbook={playbook} />
     </div>
   );
 }
@@ -597,7 +989,7 @@ export function ConfidenceBreakdownList({
     );
   }
 
-  const sorted = [...items].sort((a, b) => b.confidence - a.confidence);
+  const sorted = [...items].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
 
   return (
     <div className="space-y-3">

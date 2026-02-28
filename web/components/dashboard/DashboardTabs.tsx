@@ -1,15 +1,16 @@
 "use client";
 
-import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3 } from "lucide-react";
+import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, FlaskConical } from "lucide-react";
 import { clsx } from "clsx";
 
 const TABS = [
-  { id: "overview", label: "Overview", shortcut: "1", icon: LayoutDashboard },
-  { id: "signals", label: "Signals", shortcut: "2", icon: LineChart },
-  { id: "portfolio", label: "Portfolio", shortcut: "3", icon: Wallet },
-  { id: "opportunities", label: "Opportunities", shortcut: "4", icon: Sparkles },
-  { id: "markets", label: "Markets", shortcut: "5", icon: TrendingUp },
-  { id: "analysis", label: "Analysis", shortcut: "6", icon: BarChart3 },
+  { id: "overview",    label: "Overview",    shortcut: "1", icon: LayoutDashboard },
+  { id: "signals",     label: "Signals",     shortcut: "2", icon: LineChart       },
+  { id: "portfolio",   label: "Portfolio",   shortcut: "3", icon: Wallet          },
+  { id: "opportunities", label: "Opportunities", shortcut: "4", icon: Sparkles    },
+  { id: "markets",     label: "Markets",     shortcut: "5", icon: TrendingUp      },
+  { id: "analysis",    label: "Analysis",    shortcut: "6", icon: BarChart3       },
+  { id: "testsuite",   label: "Test Suite",  shortcut: "7", icon: FlaskConical    },
 ] as const;
 
 export type TabId = (typeof TABS)[number]["id"];

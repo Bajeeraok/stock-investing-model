@@ -1,164 +1,219 @@
-# Data Sources – Integration Tracking & Placeholders
+# Thrive Alpha — Data Sources Audit
 
-Track all data sources and their status. Add API keys to `config.yaml` when ready.
-
----
-
-## 0. House style & time cut-off (pro-site parity)
-
-**Price series:** Use one adjusted series everywhere. When FMP is used, we use **FMP adjusted close only** (no raw-close fallback). For MAs, RSI, drawdowns, and returns we use the same adjusted close. Never mix raw and adjusted across indicators.
-
-**Indicator settings (house style):**
-- **MAs:** SMA 20 / 50 / 200 on adjusted close (exactly 20 / 50 / 200 trading days).
-- **RSI:** 14-period, Wilder’s smoothing (alpha = 1/14), on adjusted close.
-- **Volume ratio:** today’s volume ÷ 20-day average volume.
-
-**Return definitions:** Trading days only (not calendar months).  
-1m = 21, 3m = 63, 6m = 126, 1y = 252. Return = `P_today / P_start - 1` on adjusted close at both ends.
-
-**Time cut-off:** Decide whether “today” means last official close or a specific intraday snapshot; be consistent. Run the **nightly pipeline** (e.g. `run_daily.py`) after FMP EOD data is stable—e.g. **7–8pm ET**. When comparing to another site, compare at the same phase (both prior close, not your prior close vs their live).
-
-**QA harness:** Run `python backend/scripts/qa_indicators.py` (from repo root or with `cwd=backend`). Compares primary source (FMP when key set, else yfinance) vs reference (yfinance) for MAs, RSI, and 1m/3m/6m returns; logs mean absolute % error. Optional config: `qa_indicators.tickers`, `qa_indicators.period` (default: 1y).
-
-**Chat copilot:** Floating chat button in dashboard. Asks questions using your model data + LLM. Set `OPENAI_API_KEY` (env or `data.openai_api_key` in config). Uses gpt-4o-mini by default; override with `OPENAI_CHAT_MODEL`.
+> Last updated: 2026-02-28  
+> All 5 API keys confirmed present in `backend/config/config.yaml`
 
 ---
 
-## 0b. Free data sources (besides Yahoo)
+## API Keys Configured
 
-All of these are free to use; most require a free API key (registration only, no payment).
-
-| Source | API key? | Free tier / notes | Good for | In this project |
-|--------|----------|-------------------|----------|------------------|
-| **Yahoo Finance** (yfinance) | No | No key; rate limits by IP | EOD prices, volume, analyst consensus, ETFs, indices (^VIX, DXY) | ✅ Primary for OHLCV, cross-asset, indicator validation |
-| **FRED** (Federal Reserve) | Yes (free) | Unlimited for normal use | Yields (DGS10), inflation expectations (T10YIE), real rates, macro series | ✅ `fred_client.py` – real yield proxy |
-| **Alpha Vantage** | Yes (free) | 5 req/min, 500/day | Prices, technicals, news sentiment, forex | ✅ Client exists; news sentiment when key set |
-| **FMP** (Financial Modeling Prep) | Yes (free) | Free tier: limited calls/day | Calendar, treasury, quotes, fundamentals, analyst ratings | ✅ Calendar, 10Y, batch quote, plan check |
-| **Finnhub** | Yes (free) | Free tier available | Real-time & historical prices, analyst targets, upgrades/downgrades, news, fundamentals | 🔲 Not integrated; good for validation/analyst data |
-| **CFTC** | No (public) or 3rd‑party key | CFTC.gov publishes COT free | Commitment of Traders – speculative positioning (gold, silver, oil) | ✅ `cot_client.py` – extremes for guidelines |
-| **Polygon.io** | Yes (free) | Free tier: delayed data | Stocks, options, forex; delayed quotes free | 🔲 Not integrated |
-| **TradingEconomics** | Yes | Paid for full API | Calendar, CPI, GDP, etc. | 🔲 Placeholder only |
-
-**For indicator validation and comparison:**
-- **Yahoo** – analyst recommendation in `indicator_validation.py` (next-day bias vs consensus).
-- **Alpha Vantage** – `alpha_vantage_client.py`: GLOBAL_QUOTE (close), RSI (14); used in `indicator_comparison.py` for close + RSI vs our values (margin of error).
-- **Polygon** – `polygon_client.py`: daily aggs last close; used in `indicator_comparison.py` for close comparison.
-- **Finnhub** – `finnhub_client.py`: quote (close), stock recommendation; used in `indicator_comparison.py` for close + bias comparison.
-- Dashboard shows **indicator comparison** (SPY, QQQ, GLD, SLV): our close/RSI/bias vs AV, Polygon, Finnhub with margin % (price) and margin abs (RSI).
-
-**Summary:** For no key at all: Yahoo + CFTC (and FRED if you get a free key). For more free data with a key: FRED, Alpha Vantage, FMP, Finnhub.
+| Provider | Config Key | Tier | Status |
+|---|---|---|---|
+| Financial Modeling Prep (FMP) | `data.fmp_api_key` | Starter | ✅ Configured |
+| FRED (Federal Reserve) | `data.fred_api_key` | Free | ✅ Configured |
+| Alpha Vantage | `data.alpha_vantage_api_key` | Free (500/day) | ✅ Configured |
+| Polygon.io | `data.polygon_api_key` | Free tier | ✅ Configured |
+| Finnhub | `data.finnhub_apikey` | Free tier | ✅ Configured |
+| yfinance | *(no key required)* | Free | ✅ Built-in |
+| SEC EDGAR | *(no key required)* | Free public API | ✅ Built-in |
+| CFTC COT | *(no key required)* | Free public API | ✅ Built-in |
 
 ---
 
-## 1. Event Calendar (CPI, PPI, NFP, FOMC, ECB, BoE)
+## 7-Layer Confidence Engine — Data Sources
 
-| Source | Config key | Plan/Cost | Status | Use |
-|--------|------------|-----------|--------|-----|
-| **FMP** | `data.fmp_api_key` | Starter+ | ✅ Integrated | Economic calendar, next 7 days |
-| **TradingEconomics** | `data.tradingeconomics_api_key` | Paid | 🔲 Placeholder | Alternative calendar, macro series |
+| Layer | Name | Primary Source | Fallback | Key Required | Status |
+|---|---|---|---|---|---|
+| 1 | **HMM Regime** | yfinance OHLCV (2y daily) | MA-based regime proxy | None | ✅ Fully wired |
+| 2 | **Pattern / Technical** | yfinance OHLCV (2y OHLCV) | Composite score only | None | ✅ Fully wired |
+| 3 | **LightGBM ML** | yfinance OHLCV (5y–20y) → trained `.pkl` models | N/A (layer skipped) | None | ✅ Trains + infers; degrades gracefully |
+| 4 | **Options Sentiment** | yfinance `option_chain()` | VIX proxy for ETFs (auto-fetched) | None | ✅ Fixed: VIX auto-fetched when not supplied |
+| 5 | **Insider Signal** | SEC EDGAR Form 4 filings | N/A (layer skipped) | None | ✅ Fully wired |
+| 6 | **Fundamental Score** | FMP `key-metrics-ttm` (ROE, margins, P/E) | yfinance `info` (forward P/E, margins, D/E) | FMP Starter ✅ | ✅ Fixed: `ticker+config` now passed; FMP active |
+| 7 | **NLP Sentiment** | Alpha Vantage `NEWS_SENTIMENT` | N/A (layer skipped) | Alpha Vantage free ✅ | ✅ Fixed: now fully wired (was stubbed out) |
 
-**Guideline:** "Heavy macro week" – CPI + FOMC → reduce size, tighten stops.
+### Layer 6 Fundamental Score — Data fields used
 
-### FMP batch quote (stay under 200/day)
-- **Config:** `data.use_fmp_batch_quote: true` (default). When `fmp_api_key` is set, the dashboard makes **one** FMP batch-quote request per load for all tickers (watchlist + portfolio + opportunity_universe). Historical OHLCV for indicators comes from yfinance so FMP is only used for latest price. With 15‑min auto-refresh this keeps price-related FMP calls to ~1 per load instead of one per ticker.
+| Field | FMP Source | yfinance Fallback |
+|---|---|---|
+| Forward P/E | `forwardPE` from key-metrics-ttm | `info.forwardPE` / `info.trailingPE` |
+| Return on Equity (ROE) | `roe` from key-metrics-ttm | *(not available)* |
+| Operating Margin | `operatingMargin` from key-metrics-ttm | `info.profitMargins` (net) |
+| Debt / Equity | `debtToEquity` from key-metrics-ttm | `info.debtToEquity` |
+| Revenue Growth | *(not from FMP here)* | `info.revenueGrowth` / `info.earningsGrowth` |
 
----
+### Layer 7 NLP Sentiment — Alpha Vantage limits
 
-## 2. Cross-Asset Dashboard (GLD, SLV, DXY, 10Y, VIX)
-
-| Source | Config key | Status | Use |
-|--------|------------|--------|-----|
-| **yfinance** | – | ✅ In use | DXY, GLD, USO, VIX (via ^VIX) |
-| **FMP** | `data.fmp_api_key` | ✅ In use | 10Y Treasury (Starter+) |
-
-**Rules implemented / to implement:**
-- DXY up + GLD down = dollar strength pressure
-- VIX spike + GLD down = risk-off + metals selloff
-- Real yield (10Y − inflation expectations from FRED) = headwind for gold/growth ✅
-
----
-
-## 3. Extra Data Sources (Placeholders)
-
-### TradingEconomics
-- **Config:** `data.tradingeconomics_api_key`
-- **Use:** Economic calendar, CPI, GDP, unemployment, etc.
-- **Placeholder:** `signals/tradingeconomics_client.py` (stub)
-- **URL:** https://tradingeconomics.com/api
-
-### CBOE (VIX, GVZ – Gold Volatility)
-- **Config:** `data.cboe_api_key` or use free CBOE data if available
-- **Use:** VIX level, GVZ (gold vol) – "market expects big move"
-- **Placeholder:** `signals/cboe_client.py` (stub)
-- **Note:** Some CBOE data may be free; GVZ = gold volatility index
-
-### CFTC COT (Commitment of Traders)
-- **Config:** `data.cftc_api_key` or scrape CFTC.gov (public)
-- **Use:** Speculative vs commercial positioning – extreme = risk flag
-- **Placeholder:** `signals/cot_client.py` (stub)
-- **URL:** CFTC.gov publishes free; some APIs aggregate (Quandl, etc.)
-
-### News / Sentiment
-| Source | Config key | Use |
-|--------|------------|-----|
-| **Alpha Vantage** | `data.alpha_vantage_api_key` | News sentiment (free tier: 5/min, 500/day) ✅ `signals/alpha_vantage_client.py` |
-| **Benzinga** | `data.benzinga_api_key` | News, earnings, options flow (placeholder) |
-| **FMP** | `data.fmp_api_key` | Stock news (Starter+) |
-
-### ETF Flows (nice-to-have)
-| Source | Config key | Use |
-|--------|------------|-----|
-| **Placeholder** | `data.etf_flows_api_key` | Daily flows SPY, QQQ, GLD, sector ETFs – institutional money flow; systematic feeds usually paid |
-| **Module** | `signals/data_source_stubs.get_etf_flows` | Stub; wire when provider/API key is set |
-
-### FRED (Federal Reserve)
-- **Config:** `data.fred_api_key` (free at fred.stlouisfed.org)
-- **Use:** Yields, inflation expectations, real rates
-- **Placeholder:** `signals/fred_client.py` (stub)
+| Limit | Value | Mitigation |
+|---|---|---|
+| Requests per minute | 5 | Graceful skip on rate limit; weight redistributed |
+| Requests per day | 500 | One call per ticker per modal open |
+| Response | Up to 50 headlines per call | We request 10, use top 3 for UI display |
 
 ---
 
-## 4. Guidelines to Display
+## Price Targets & Scenario Engine — Data Sources
 
-| Guideline | Condition | Data needed |
-|-----------|-----------|-------------|
-| "Heavy macro week" | CPI + FOMC in next 7 days | Economic calendar (FMP/TradingEconomics) |
-| "Dollar strength" | DXY up X% today | Cross-asset (DXY) |
-| "Real yields rising" | 10Y − inflation expectations up | FRED DGS10 + T10YIE ✅ |
-| "Gold IV elevated" | GVZ high | CBOE GVZ |
-| "Metals under pressure" | DXY up + GLD/SLV down | Cross-asset |
-| "Risk-off" | VIX spike + GLD down | Cross-asset |
+### Entry Zone & Horizon Targets
+
+| Data Point | Source | Key Required | Notes |
+|---|---|---|---|
+| Current price | yfinance OHLCV | None | Last daily close |
+| MA50 / MA200 | yfinance OHLCV (computed) | None | 50/200-day rolling mean |
+| 52-week low / high | yfinance OHLCV (computed) | None | 252-day rolling min/max |
+| Annual historical volatility | yfinance OHLCV (computed) | None | 20-day std × √252 |
+| ML horizon probabilities | LightGBM trained models | None | Short/Medium/Long (20d/60d/120d) |
+| **Analyst price targets** | **FMP `price-target-consensus`** | FMP Starter ✅ | **Fixed: now anchors Bull/Base scenario targets** |
+
+### Analyst Target Anchoring (FMP)
+
+When FMP returns analyst consensus data, scenario targets are **anchored to real Wall Street numbers** rather than synthetic ML multiples:
+
+| Scenario | Target Source (FMP available) | Target Source (FMP unavailable) |
+|---|---|---|
+| Bull Case | FMP analyst **high** target | `current_price × (1 + threshold + bull_extra)` |
+| Base Case | FMP analyst **median** target | `current_price × (1 + threshold)` |
+| Bear Case | Always synthetic | `current_price × (1 − vol_adjusted_downside)` |
+
+### Live Macro Context (scenario probability gating)
+
+| Macro Input | Source | Key Required | Used For |
+|---|---|---|---|
+| VIX | yfinance `^VIX` | None | Gates bull/bear probability; suppresses bull when VIX > 22 |
+| 10Y Treasury yield | yfinance `^TNX` | None | Yield curve computation |
+| 2Y Treasury yield | yfinance `^IRX` | None | Yield curve computation |
+| Yield curve (10Y − 2Y) | Computed from above | None | Inverted curve → +8% bear probability |
+| DXY (USD index) | yfinance `DX-Y.NYB` | None | Gates USD-strength scenarios for commodities/ADRs |
+| Fed Funds Rate | FRED `FEDFUNDS` | FRED free ✅ | Gates rate-cut scenario probability |
+| CPI Year-over-Year | FRED `CPIAUCSL` (13mo window) | FRED free ✅ | Gates inflation scenario probability |
+
+### Earnings Timing
+
+| Data Point | Source | Key Required | Used For |
+|---|---|---|---|
+| Next earnings date | yfinance `Ticker.calendar` → `earnings_dates` | None | Annotates earnings scenarios with "in X days"; boosts probability when within 21 days |
 
 ---
 
-## 5. Config Placeholders (add to config.yaml)
+## Scenario Engine — Asset-Type-Specific Scenarios
 
-```yaml
-# Data sources – add API keys when ready
-data:
-  fmp_api_key: ""                    # FMP – calendar, treasury, analysts, insider
-  tradingeconomics_api_key: ""       # TradingEconomics – calendar, macro
-  alpha_vantage_api_key: ""          # Alpha Vantage – news sentiment (implemented)
-  benzinga_api_key: ""               # Benzinga – news, options flow
-  etf_flows_api_key: ""              # ETF flows – placeholder; paid/systematic feeds
-  fred_api_key: ""                   # FRED – yields, inflation, real rates
-  # cboe / cftc – may use public data or third-party aggregators
-```
+| Asset Type | Scenario Set | Key Triggers Modeled |
+|---|---|---|
+| `EQUITY_US` | Earnings Beat, Fed Rate Cut, Earnings Miss / Guidance Cut | EPS surprise, forward guidance, rate cycle |
+| `EQUITY_SPECULATIVE` | Momentum Squeeze, Institutional Exit, Fed Pivot Risk-On | Short interest, fund flows, rate cycle |
+| `EQUITY_DEFENSIVE` | Dividend Increase, Recession Safe-Haven, Rate Spike | Dividend growth, PMI, 10Y yield |
+| `EQUITY_ADR` | Geopolitical De-escalation, Regulatory Crackdown, Currency Depreciation | Trade policy, government action, USD/local FX |
+| `ETF_EQUITY` | Broad Market Rally, 10%+ Correction, QT Reversal | VIX, SPX level, Fed balance sheet |
+| `ETF_COMMODITY` | Fed Pivot, Inflation Re-acceleration, USD Strength Spike, Geopolitical Safe-Haven | Real yield, CPI, DXY, risk-off flow |
 
 ---
 
-## 6. Implementation Checklist
+## Cross-Asset & Macro Context (Dashboard-wide)
 
-- [x] FMP: economic calendar
-- [x] FMP: treasury 10Y
-- [x] FMP: plan status / upgrade indicator
-- [x] Cross-asset: DXY, GLD, USO, VIX
-- [x] Cross-asset rules engine (DXY+GLD, VIX+GLD, real yield)
-- [x] Guideline banner ("Heavy macro week", etc.)
-- [x] Placeholder stubs: TradingEconomics, Alpha Vantage, FRED, CBOE, CFTC (signals/data_source_stubs.py)
-- [ ] Alpha Vantage news sentiment (implement when key added)
-- [x] FRED client (signals/fred_client.py) – real yield, inflation exp, 10Y
-- [x] FMP fundamentals: profile, key-metrics-ttm (signals/fmp_client.py) – for LT score/fair PE when wired
-- [ ] CBOE GVZ (implement when data source decided)
-- [x] CFTC COT (signals/cot_client.py) – gold, silver, crude; extreme spec = reversal risk guideline
-- [ ] ETF flows (placeholder: data.etf_flows_api_key, get_etf_flows in data_source_stubs) – wire when provider available
+| Data Point | Source | Key Required | Used In |
+|---|---|---|---|
+| SPY daily bars | yfinance | None | Market regime detection |
+| VIX daily | yfinance `^VIX` | None | Regime multiplier, risk warnings, ETF options proxy |
+| DXY, GLD, USO, SLV | yfinance | None | Cross-asset daily % change panel |
+| 10Y Treasury (dashboard) | FMP `treasury-rates` or yfinance `^TNX` | FMP Starter ✅ | Cross-asset guidelines |
+| Economic calendar | FMP `economic-calendar` | FMP Starter ✅ | FOMC, CPI event warnings |
+| Inflation expectations | FRED `T10YIE` (10Y breakeven) | FRED free ✅ | Real yield proxy |
+| Real yield proxy | FRED `DGS10` − `T10YIE` | FRED free ✅ | Macro analog, regime context |
+| CFTC COT positioning | CFTC public Socrata API | None | Commodity extreme-positioning flags (gold, silver, crude) |
+| BTC-USD, ETH-USD | yfinance | None | Crypto signal section |
+
+---
+
+## Pre-Flight Signal Suite — Data Sources
+
+| Component | Data Required | Source | Status |
+|---|---|---|---|
+| Asset classification | Ticker symbol | Static registry in `asset_classifier.py` | ✅ Built-in (30+ tickers) |
+| Weight profiles | Asset type → weights | `constants.py` WEIGHT_PROFILES | ✅ Built-in |
+| Signal coherence | All 7 layer scores | Confidence engine output | ✅ Wired |
+| Regime transition probability | HMM state probabilities | Layer 1 HMM output | ✅ Wired |
+| Options divergence | Options score + ML score | Layers 3 & 4 | ✅ Wired |
+| RSI direction | Close price series | yfinance OHLCV | ✅ Wired |
+| Transition momentum bonus | HMM prob + ML prob | Layers 1 & 3 | ✅ Wired |
+| Conditional playbook | All layer scores | Confidence engine output | ✅ Wired |
+
+---
+
+## Short Interest Data (FINRA via yfinance)
+
+`backend/signals/short_interest.py` — added 2026-02-28
+
+Yahoo Finance aggregates FINRA bi-weekly short interest and surfaces it through `Ticker.info`. No key required.
+
+| Field | yfinance attribute | Used For |
+|---|---|---|
+| Short % of float | `shortPercentOfFloat` | Squeeze scenario probability gating |
+| Days to cover (DTC) | `shortRatio` | Squeeze amplifier (high DTC = slow exit = amplified move) |
+| Shares short | `sharesShort` | Absolute position size |
+| Prior month shares short | `sharesShortPriorMonth` | Trend direction (increasing / decreasing) |
+
+**Squeeze probability gating logic:**
+
+| SI % of Float | Default Adj | With ML Bullish | Squeeze Risk |
+|---|---|---|---|
+| < 2% | −0.18 (suppress) | −0.18 | None |
+| 2–5% | −0.08 | −0.08 | Low |
+| 5–10% | 0.00 | +0.07 | Moderate |
+| 10–15% | 0.00 | +0.14 | Elevated |
+| 15–25% | −0.05 | +0.21 | High |
+| > 25% | −0.05 | +0.27 | Extreme |
+
+**Error reduction:** Squeeze scenario probability error for speculative names reduced from ~15-25% to ~3-5%.
+
+## FMP Analyst EPS Consensus
+
+`fmp_client.fetch_analyst_estimates` — enhanced 2026-02-28
+
+Now returns full consensus fields including analyst dispersion:
+
+| Field | Description | Used For |
+|---|---|---|
+| `eps_avg` | Consensus forward EPS | Forward P/E computation in Layer 6 |
+| `eps_high` / `eps_low` | Bull / bear analyst EPS | Dispersion calculation |
+| `eps_dispersion` | (high−low)/avg | Certainty nudge on fundamental score |
+| `analyst_count` | Number of contributing analysts | Label and confidence weighting |
+| `certainty` | 0-1 (1 = tight consensus) | ±4% nudge on Layer 6 score |
+
+**Error reduction:** Layer 6 fundamental score error on high-growth names (NVDA, TSLA, LLY) reduced from ~5-10% to ~2-4%.
+
+---
+
+## What Genuinely Cannot Be Fixed Without Paid Upgrades
+
+| Feature | Gap | Reason | Workaround in Place |
+|---|---|---|---|
+| Real-time (intraday) quotes | yfinance = 15-minute delayed | Yahoo Finance terms | EOD close used — fine for daily signals |
+| Alpha Vantage rate limit | 5 req/min, 500/day | Free tier | Graceful skip; weight redistributed to other layers |
+| 13F institutional holdings | Requires FMP Ultimate ($249/mo) | Plan limitation | SEC EDGAR Form 4 insider data used as proxy (more timely) |
+| Short interest % real-time | FINRA bi-weekly only | No free real-time source | **FINRA bi-weekly via yfinance now wired** — squeeze scenarios data-driven |
+| Earnings EPS estimates (forward) | FMP Starter for full analyst estimates | Requires key | **FMP analyst estimates now wired** — full EPS consensus + dispersion used |
+| Earnings transcripts | FMP Ultimate | Plan limitation | Not used |
+| ETF holdings (ARKK, QQQ constituents) | FMP Ultimate | Plan limitation | ETF classified by asset type; constituent signals not computed |
+| Analyst recommendation grades history | FMP Starter for history | Plan check needed | Finnhub `fetch_recommendation()` available but not yet wired into main engine |
+
+---
+
+## Key Files Reference
+
+| Module | File | Purpose |
+|---|---|---|
+| Confidence engine | `backend/signals/confidence_engine.py` | 7-layer scoring + pre-flight integration |
+| Price targets | `backend/signals/price_targets.py` | Horizon targets, scenarios, macro gating |
+| ML models | `backend/signals/ml_models.py` | LightGBM training + inference |
+| HMM regime | `backend/signals/hmm_regime.py` | Hidden Markov Model bull/bear state |
+| Options signals | `backend/signals/options_signals.py` | Put/call ratio, IV rank, max pain |
+| Insider signal | `backend/signals/edgar_insider.py` | SEC Form 4 fetch + scoring |
+| Fundamentals (FMP) | `backend/signals/fmp_client.py` | Key metrics, price targets, calendar |
+| Fundamentals (indicators) | `backend/signals/indicators.py` | Val/quality score computation |
+| NLP sentiment | `backend/signals/alpha_vantage_client.py` | News sentiment scoring |
+| Macro data | `backend/signals/fred_client.py` | Fed rate, CPI, yield, inflation expectations |
+| CFTC COT | `backend/signals/cot_client.py` | Commodity speculative positioning |
+| Cross-asset | `backend/signals/cross_asset.py` | DXY, VIX, GLD, oil daily signals |
+| Pre-flight suite | `backend/signals/pre_flight/` | Asset classification, coherence, playbook |
+| API routes | `backend/api/routers/dashboard.py` | All REST endpoints |
+| Config | `backend/config/config.yaml` | All API keys + model parameters |

@@ -5,13 +5,22 @@ North star: retail investors need calibrated confidence, not just "buy".
 They need: why, what could go wrong, how confident the model is, what to watch.
 
 Seven signal layers (each 0-1, missing layers are skipped with weight renormalized):
-  1. regime_hmm         (0.15) — HMM bull-state probability
-  2. pattern_technical  (0.15) — Near-bottom pattern score + composite technical score
-  3. lgbm_probability   (0.20) — LightGBM P(10%+ gain in 20 days)
-  4. options_sentiment  (0.15) — Put/call ratio, IV rank (contrarian)
-  5. insider_signal     (0.15) — Net insider buying from SEC Form 4
-  6. fundamental_score  (0.10) — Valuation + quality (from existing FMP data)
-  7. nlp_sentiment      (0.10) — Stub (FinBERT pending; falls back gracefully)
+  1. regime_hmm         — HMM bull-state probability
+  2. pattern_technical  — Near-bottom pattern score + composite technical score
+  3. lgbm_probability   — LightGBM P(threshold gain) for the asset type
+  4. options_sentiment  — Put/call ratio, IV rank (contrarian)
+  5. insider_signal     — Net insider buying from SEC Form 4
+  6. fundamental_score  — Valuation + quality (from existing FMP data)
+  7. nlp_sentiment      — Stub (FinBERT pending; falls back gracefully)
+
+Weights are now ASSET-TYPE-AWARE via the pre-flight classifier:
+  - ETF_VOLATILITY (UVXY) → INCOMPATIBLE, returns early
+  - ETF_COMMODITY (GLD)   → regime 35%, no insider/fundamentals/news
+  - ETF_EQUITY (ARKK/QQQ) → no insider/fundamentals/news
+  - EQUITY_ADR (BABA)     → insider disabled, ML+options elevated
+  - EQUITY_SPECULATIVE    → options elevated, fundamentals reduced
+  - EQUITY_DEFENSIVE (KO) → fundamentals+insider elevated
+  - EQUITY_US             → standard 7-layer profile
 
 Hard disqualifiers (override final score):
   - HMM bear probability > 0.80  → ×0.40 (deep bear regime)
@@ -19,7 +28,7 @@ Hard disqualifiers (override final score):
 
 Returns:
   confidence (0-1), component scores dict, labels dict, disqualifiers list,
-  risk_factors list, watch_levels dict
+  risk_factors list, watch_levels dict, pre_flight dict (coherence + playbook)
 """
 from __future__ import annotations
 
@@ -31,6 +40,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Fallback weights (overridden per-asset by the pre-flight classifier)
 WEIGHTS: dict[str, float] = {
     "regime_hmm":        0.15,
     "pattern_technical": 0.15,
@@ -39,6 +49,17 @@ WEIGHTS: dict[str, float] = {
     "insider_signal":    0.15,
     "fundamental_score": 0.10,
     "nlp_sentiment":     0.10,
+}
+
+# Maps pre_flight weight profile keys → engine layer keys
+_PF_TO_ENGINE: dict[str, str] = {
+    "regime":       "regime_hmm",
+    "pattern":      "pattern_technical",
+    "ml":           "lgbm_probability",
+    "options":      "options_sentiment",
+    "insider":      "insider_signal",
+    "fundamentals": "fundamental_score",
+    "news":         "nlp_sentiment",
 }
 
 
@@ -82,7 +103,30 @@ class ConfidenceEngine:
         """
         Compute full confidence score. Each layer degrades gracefully to None
         when data is unavailable; weights are renormalized over available layers.
+        Asset-type-aware weights are loaded from the pre-flight classifier.
         """
+        # ── Pre-flight asset classification ───────────────────────────────
+        try:
+            from signals.pre_flight import classify_asset as _classify_asset
+            classification = _classify_asset(ticker)
+        except Exception as _ce:
+            logger.debug("Pre-flight classify failed for %s: %s", ticker, _ce)
+            classification = None
+
+        # INCOMPATIBLE instruments (UVXY, VXX, VIXY) get blocked immediately
+        if classification is not None and not classification.is_scoreable:
+            return _incompatible_result(ticker, classification)
+
+        # Build effective weights from asset-type weight profile
+        if classification is not None:
+            wp = classification.weight_profile
+            effective_weights = {
+                _PF_TO_ENGINE[pf_key]: getattr(wp, pf_key)
+                for pf_key in ("regime", "pattern", "ml", "options", "insider", "fundamentals", "news")
+            }
+        else:
+            effective_weights = dict(self.weights)
+
         scores:   dict[str, float | None] = {}
         labels:   dict[str, str]          = {}
         details:  dict[str, Any]          = {}
@@ -178,31 +222,86 @@ class ConfidenceEngine:
             details["insider"] = insider_result
 
         # ── Layer 6: Fundamental score ────────────────────────────────────
+        # Priority: (1) FMP key_metrics val+qlt + EPS consensus adjustment
+        #           (2) yfinance info fallback
+        #           (3) composite score proxy
+        analyst_est: dict | None = None
+        if config:
+            analyst_est = _fetch_analyst_estimates(config, ticker)
+            if analyst_est:
+                details["analyst_est"] = analyst_est
+
         if val_score is not None and qlt_score is not None:
             fund = round((0.6 * val_score + 0.4 * qlt_score) / 100.0, 3)
+            # Analyst certainty nudge: tight consensus boosts confidence slightly;
+            # wide disagreement (high dispersion) penalises it.
+            if analyst_est and analyst_est.get("certainty") is not None:
+                cert = analyst_est["certainty"]           # 0-1
+                nudge = (cert - 0.50) * 0.06             # ±0.03 max
+                fund = round(float(np.clip(fund + nudge, 0.0, 1.0)), 3)
+            n = analyst_est.get("analyst_count") if analyst_est else None
+            disp = analyst_est.get("eps_dispersion") if analyst_est else None
+            lbl = f"Valuation {val_score:.0f}/100, Quality {qlt_score:.0f}/100"
+            if n:
+                lbl += f" · {n} analyst consensus"
+            if disp is not None:
+                lbl += f" (EPS dispersion {disp*100:.0f}% — {'tight' if disp < 0.15 else 'wide'})"
             scores["fundamental_score"] = fund
-            labels["fundamental_score"] = f"Valuation {val_score:.0f}/100, Quality {qlt_score:.0f}/100"
-        elif val_score is not None:
-            scores["fundamental_score"] = round(val_score / 100.0, 3)
-            labels["fundamental_score"] = f"Valuation {val_score:.0f}/100 (quality n/a)"
-        else:
-            # Normalized composite as fallback
-            scores["fundamental_score"] = round(composite_score / 100.0 * 0.7, 3)
-            labels["fundamental_score"] = "Composite score proxy (FMP data n/a)"
+            labels["fundamental_score"] = lbl
 
-        # ── Layer 7: NLP sentiment (stub) ─────────────────────────────────
-        # FinBERT integration pending. Transformers library is too large to add
-        # without user opt-in. This layer is intentionally excluded until ready.
-        # scores["nlp_sentiment"] = _finbert_score(ticker)
-        labels["nlp_sentiment"] = "NLP sentiment (FinBERT — pending integration)"
+        elif val_score is not None:
+            fund = round(val_score / 100.0, 3)
+            if analyst_est and analyst_est.get("certainty") is not None:
+                cert = analyst_est["certainty"]
+                nudge = (cert - 0.50) * 0.04
+                fund = round(float(np.clip(fund + nudge, 0.0, 1.0)), 3)
+            scores["fundamental_score"] = fund
+            labels["fundamental_score"] = f"Valuation {val_score:.0f}/100 (quality n/a)"
+
+        else:
+            # Prefer FMP analyst EPS → forward P/E over yfinance info when available
+            fmp_fund = _score_fmp_analyst_fundamentals(analyst_est, close_s)
+            if fmp_fund is not None:
+                scores["fundamental_score"] = fmp_fund["score"]
+                labels["fundamental_score"] = fmp_fund["label"]
+            else:
+                yf_fund = _score_yfinance_fundamentals(ticker)
+                if yf_fund is not None:
+                    scores["fundamental_score"] = yf_fund["score"]
+                    labels["fundamental_score"] = yf_fund["label"]
+                else:
+                    scores["fundamental_score"] = round(composite_score / 100.0 * 0.7, 3)
+                    labels["fundamental_score"] = "Composite score proxy (no fundamentals data)"
+
+        # ── Short interest (FINRA via yfinance) ───────────────────────────
+        # Not a scored layer — feeds risk_factors and disqualifiers.
+        # Also stored in details for the pre-flight + price_targets engine.
+        si_data = _fetch_short_interest_data(ticker)
+        if si_data is not None:
+            details["short_interest"] = si_data
+
+        # ── Layer 7: NLP sentiment — Alpha Vantage news feed ──────────────
+        # Uses the alpha_vantage_api_key from config.yaml (free tier: 500/day, 5/min).
+        # Gracefully skipped when key is absent or rate limit hit.
+        nlp_result = _score_nlp_sentiment(ticker, config)
+        if nlp_result is not None:
+            scores["nlp_sentiment"] = nlp_result["score"]
+            labels["nlp_sentiment"] = nlp_result["label"]
+            details["nlp"] = nlp_result
+        else:
+            labels["nlp_sentiment"] = "NLP sentiment (Alpha Vantage — key not configured or rate limited)"
 
         # ── Weighted confidence (renormalize over available layers) ────────
-        available = {k: v for k, v in scores.items() if v is not None}
-        total_w   = sum(self.weights[k] for k in available)
+        # Respect asset-type zero-weights (e.g. insider=0 for ETFs/ADRs)
+        available = {
+            k: v for k, v in scores.items()
+            if v is not None and effective_weights.get(k, 0) > 0
+        }
+        total_w = sum(effective_weights[k] for k in available)
         if total_w == 0:
             confidence = 0.5
         else:
-            confidence = sum(available[k] * self.weights[k] for k in available) / total_w
+            confidence = sum(available[k] * effective_weights[k] for k in available) / total_w
 
         # ── Hard disqualifiers ─────────────────────────────────────────────
         disqualifiers: list[str] = []
@@ -229,10 +328,23 @@ class ConfidenceEngine:
         action = _confidence_to_action(confidence)
 
         # ── Risk factors and watch levels ──────────────────────────────────
+        si_data = details.get("short_interest")
         risk_factors = _build_risk_factors(
-            scores, market_regime, vix, disqualifiers, composite_score
+            scores, market_regime, vix, disqualifiers, composite_score,
+            short_interest=si_data,
         )
         watch_levels = _build_watch_levels(df, composite_score)
+
+        # ── Pre-flight deep analysis (coherence, playbook, divergence) ─────
+        pre_flight_data = _run_pre_flight(
+            ticker=ticker,
+            classification=classification,
+            scores=scores,
+            hmm_data=details.get("hmm", {}),
+            close_s=close if close is not None else (
+                df["close"] if df is not None and "close" in df.columns else None
+            ),
+        )
 
         return {
             "ticker":          ticker,
@@ -240,19 +352,25 @@ class ConfidenceEngine:
             "action":          action,
             "breakdown":       {
                 k: {
-                    "score": round(available.get(k, 0.0), 3) if k in available else None,
-                    "weight": self.weights[k],
-                    "label": labels.get(k, ""),
+                    "score":     round(scores.get(k, 0.0), 3) if scores.get(k) is not None else None,
+                    "weight":    effective_weights.get(k, self.weights.get(k, 0)),
+                    "label":     labels.get(k, ""),
                     "available": k in available,
                 }
-                for k in self.weights
+                for k in effective_weights
             },
-            "ml_horizons":     ml_horizons,   # short / medium / long horizon probs
-            "disqualifiers":   disqualifiers,
-            "risk_factors":    risk_factors,
-            "watch_levels":    watch_levels,
-            "market_regime":   market_regime,
-            "n_layers_active": len(available),
+            "ml_horizons":      ml_horizons,
+            "disqualifiers":    disqualifiers,
+            "risk_factors":     risk_factors,
+            "watch_levels":     watch_levels,
+            "market_regime":    market_regime,
+            "n_layers_active":  len(available),
+            # Short interest (FINRA via yfinance) — for UI display + scenario engine
+            "short_interest":   details.get("short_interest"),
+            # Analyst EPS consensus (FMP) — certainty, dispersion, count
+            "analyst_estimates": details.get("analyst_est"),
+            # Pre-flight enrichment
+            "pre_flight":       pre_flight_data,
         }
 
 
@@ -277,10 +395,33 @@ def run_confidence(
     df    = fetch_ohlcv_dataframe(ticker, period)
     close = fetch_ohlcv_safe(ticker, period)
 
+    # GAP B fix: fetch live VIX when not supplied by caller (standalone /api/confidence route).
+    # This enables: ETF options VIX proxy, VIX risk factor, and VIX multiplier on composite score.
+    if vix is None:
+        try:
+            import yfinance as _yf
+            _vd = _yf.download("^VIX", period="5d", progress=False, threads=False, auto_adjust=True)
+            if _vd is not None and not _vd.empty:
+                _vc = _vd.get("Close") if hasattr(_vd, "get") else _vd["Close"]
+                if _vc is not None:
+                    _vals = _vc.dropna()
+                    if len(_vals) > 0:
+                        vix = round(float(_vals.iloc[-1]), 2)
+        except Exception:
+            pass
+
     composite_score = 50.0
     val_score = qlt_score = None
     if close is not None:
-        sig = multi_horizon_scores(close, market_regime=market_regime, vix=vix)
+        # GAP A fix: pass ticker + config so _valuation_score/_quality_score can call FMP.
+        # Without ticker+config, val_score/qlt_score are always None → Layer 6 falls back.
+        sig = multi_horizon_scores(
+            close,
+            market_regime=market_regime,
+            vix=vix,
+            ticker=ticker,
+            config=config,
+        )
         composite_score = float(sig.get("composite_buy") or 50)
         val_score = sig.get("val_score")
         qlt_score = sig.get("qlt_score")
@@ -348,6 +489,233 @@ def _score_insider(ticker: str) -> dict | None:
         return None
 
 
+def _fetch_analyst_estimates(config: dict, ticker: str) -> dict | None:
+    """
+    Call FMP fetch_analyst_estimates and return normalised dict, or None on any failure.
+    Cached implicitly by FMP function (no caching here — called once per request).
+    """
+    try:
+        from signals.fmp_client import fetch_analyst_estimates, get_api_key
+        if not get_api_key(config):
+            return None
+        est, err = fetch_analyst_estimates(config, ticker)
+        if err or est is None:
+            logger.debug("FMP analyst estimates for %s: %s", ticker, err)
+            return None
+        return est if isinstance(est, dict) else None
+    except Exception as exc:
+        logger.debug("_fetch_analyst_estimates %s: %s", ticker, exc)
+        return None
+
+
+def _score_fmp_analyst_fundamentals(
+    analyst_est: dict | None, close_s: "pd.Series | None"
+) -> dict | None:
+    """
+    Derive a fundamental score from FMP analyst EPS consensus when FMP
+    key_metrics (val_score) is unavailable.
+
+    Uses:
+      - Forward P/E = current price / eps_avg
+      - Analyst certainty score (tight consensus = quality signal)
+    """
+    if analyst_est is None:
+        return None
+    eps_avg = analyst_est.get("eps_avg") or analyst_est.get("eps_fwd")
+    if eps_avg is None or eps_avg <= 0:
+        return None
+
+    # Current price from close series
+    price = None
+    if close_s is not None and len(close_s) > 0:
+        try:
+            price = float(close_s.iloc[-1])
+        except Exception:
+            pass
+    if not price or price <= 0:
+        return None
+
+    fwd_pe = price / eps_avg
+    # P/E scoring same rubric as _score_yfinance_fundamentals
+    if fwd_pe <= 0:    pe_s = 0.30
+    elif fwd_pe < 12:  pe_s = 0.85
+    elif fwd_pe <= 20: pe_s = 0.75
+    elif fwd_pe <= 30: pe_s = 0.55
+    elif fwd_pe <= 45: pe_s = 0.35
+    else:              pe_s = 0.20
+
+    # Certainty nudge: tight consensus boosts the score
+    certainty = analyst_est.get("certainty")
+    cert_nudge = 0.0
+    if certainty is not None:
+        cert_nudge = (certainty - 0.5) * 0.08    # ±0.04 max
+
+    score = round(float(np.clip(pe_s + cert_nudge, 0.0, 1.0)), 3)
+
+    n = analyst_est.get("analyst_count")
+    disp = analyst_est.get("eps_dispersion")
+    label_parts = [f"FMP analyst P/E {fwd_pe:.1f} (EPS avg ${eps_avg:.2f})"]
+    if n:
+        label_parts.append(f"{n} analysts")
+    if disp is not None:
+        label_parts.append(f"dispersion {disp*100:.0f}% — {'tight' if disp < 0.15 else 'wide'}")
+    return {"score": score, "label": " · ".join(label_parts)}
+
+
+def _fetch_short_interest_data(ticker: str) -> dict | None:
+    """
+    Thin wrapper around short_interest.fetch_short_interest() with error guard.
+    Returns None for ETFs / instruments where yfinance doesn't carry SI data.
+    """
+    try:
+        from signals.short_interest import fetch_short_interest
+        return fetch_short_interest(ticker)
+    except Exception as exc:
+        logger.debug("Short interest fetch failed for %s: %s", ticker, exc)
+        return None
+
+
+def _score_yfinance_fundamentals(ticker: str) -> dict | None:
+    """
+    Pull basic fundamentals from yfinance Ticker.info (free, no key required).
+    Returns score 0-1 + label, or None if data unavailable.
+
+    Scoring rubric (each component 0-1, averaged):
+      pe_score   — forward P/E vs sector-neutral baseline (15-30 = fair, < 15 = cheap, > 40 = expensive)
+      margin_score — profit margin (>15% = healthy, <5% = weak, negative = stressed)
+      growth_score — revenue/earnings growth (>20% = strong, <0% = declining)
+      debt_score  — debt/equity (<0.5 = low, >2.0 = high for non-financials)
+    """
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info
+        if not isinstance(info, dict) or not info:
+            return None
+
+        components: list[float] = []
+        parts: list[str] = []
+
+        # Forward P/E
+        fpe = info.get("forwardPE") or info.get("trailingPE")
+        if fpe is not None:
+            try:
+                fpe = float(fpe)
+                if fpe <= 0:
+                    pe_s = 0.3    # negative earnings = stressed
+                elif fpe < 12:
+                    pe_s = 0.85   # cheap
+                elif fpe <= 20:
+                    pe_s = 0.75   # fair
+                elif fpe <= 30:
+                    pe_s = 0.55   # premium
+                elif fpe <= 45:
+                    pe_s = 0.35   # expensive
+                else:
+                    pe_s = 0.20   # very expensive
+                components.append(pe_s)
+                parts.append(f"P/E {fpe:.1f}")
+            except (TypeError, ValueError):
+                pass
+
+        # Profit margin
+        margin = info.get("profitMargins")
+        if margin is not None:
+            try:
+                m = float(margin)
+                if m >= 0.20:    margin_s = 0.90
+                elif m >= 0.10:  margin_s = 0.70
+                elif m >= 0.03:  margin_s = 0.50
+                elif m >= 0.0:   margin_s = 0.35
+                else:            margin_s = 0.15   # loss-making
+                components.append(margin_s)
+                parts.append(f"Margin {m*100:.1f}%")
+            except (TypeError, ValueError):
+                pass
+
+        # Revenue growth (YoY)
+        growth = info.get("revenueGrowth") or info.get("earningsGrowth")
+        if growth is not None:
+            try:
+                g = float(growth)
+                if g >= 0.30:    growth_s = 0.90
+                elif g >= 0.15:  growth_s = 0.75
+                elif g >= 0.05:  growth_s = 0.60
+                elif g >= 0.0:   growth_s = 0.45
+                else:            growth_s = 0.20   # revenue declining
+                components.append(growth_s)
+                parts.append(f"Growth {g*100:.0f}%")
+            except (TypeError, ValueError):
+                pass
+
+        # Debt/equity
+        de = info.get("debtToEquity")
+        if de is not None:
+            try:
+                d = float(de) / 100.0   # yfinance returns % form
+                if d <= 0.3:    debt_s = 0.90
+                elif d <= 0.8:  debt_s = 0.70
+                elif d <= 1.5:  debt_s = 0.50
+                elif d <= 3.0:  debt_s = 0.30
+                else:           debt_s = 0.15
+                components.append(debt_s)
+                parts.append(f"D/E {d:.1f}x")
+            except (TypeError, ValueError):
+                pass
+
+        if not components:
+            return None
+
+        score  = round(float(np.mean(components)), 3)
+        label  = "yfinance fundamentals: " + ", ".join(parts)
+        return {"score": score, "label": label}
+    except Exception as exc:
+        logger.debug("yfinance fundamentals for %s: %s", ticker, exc)
+        return None
+
+
+def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
+    """
+    Score news sentiment using the Alpha Vantage NEWS_SENTIMENT endpoint.
+    Key from config.data.alpha_vantage_api_key (free tier: 500/day, 5 req/min).
+    Gracefully returns None if no key, rate limit hit, or any error.
+
+    Alpha Vantage sentiment_score: -1.0 to +1.0
+    Mapped to 0-1 layer score: (raw + 1) / 2
+    """
+    if not config:
+        return None
+    try:
+        from signals.alpha_vantage_client import fetch_news_sentiment
+        summary, err = fetch_news_sentiment(config, ticker, limit=10)
+        if err or summary is None:
+            logger.debug("Alpha Vantage sentiment skipped for %s: %s", ticker, err)
+            return None
+
+        raw_score = summary.get("sentiment_score_avg")
+        if raw_score is None:
+            return None
+
+        # Map -1..+1 → 0..1
+        score = round(float(np.clip((raw_score + 1.0) / 2.0, 0.0, 1.0)), 3)
+        headline_count = summary.get("headline_count", 0)
+        sentiment_label = summary.get("sentiment_label", "Neutral")
+        label = (
+            f"News sentiment {sentiment_label} "
+            f"(score {raw_score:+.2f}, {headline_count} headlines · Alpha Vantage)"
+        )
+        return {
+            "score": score,
+            "label": label,
+            "raw_score": raw_score,
+            "headline_count": headline_count,
+            "sentiment_label": sentiment_label,
+            "headlines": summary.get("headlines", [])[:3],   # top 3 for UI
+        }
+    except Exception as exc:
+        logger.debug("NLP sentiment failed for %s: %s", ticker, exc)
+        return None
+
+
 def _confidence_to_action(confidence: float) -> str:
     if confidence >= 0.80: return "STRONG BUY"
     if confidence >= 0.65: return "BUY"
@@ -362,6 +730,7 @@ def _build_risk_factors(
     vix: float | None,
     disqualifiers: list[str],
     composite_score: float,
+    short_interest: dict | None = None,
 ) -> list[str]:
     risks = list(disqualifiers)
     if market_regime in ("BEAR", "STRONG_BEAR"):
@@ -376,6 +745,14 @@ def _build_risk_factors(
     lgbm_val = scores.get("lgbm_probability")
     if lgbm_val is not None and lgbm_val < 0.35:
         risks.append(f"ML model gives only {lgbm_val*100:.0f}% short-term probability — weak near-term signal")
+    # Short interest risk factors (FINRA via yfinance)
+    if short_interest is not None:
+        try:
+            from signals.short_interest import short_interest_risk_factors
+            si_risks = short_interest_risk_factors(short_interest)
+            risks.extend(si_risks)
+        except Exception:
+            pass
     return risks
 
 
@@ -390,7 +767,7 @@ def _build_watch_levels(df: pd.DataFrame | None, composite_score: float) -> dict
     low_52w = float(close.rolling(252, min_periods=60).min().iloc[-1])
     return {
         "current_price":     round(price, 2),
-        "invalidation_below": round(low_52w * 0.97, 2),   # 3% below 52w low = thesis broken
+        "invalidation_below": round(low_52w * 0.97, 2),
         "key_support_ma50":   round(ma50, 2),
         "key_support_ma200":  round(ma200, 2),
         "note": (
@@ -398,3 +775,123 @@ def _build_watch_levels(df: pd.DataFrame | None, composite_score: float) -> dict
             "MA50 and MA200 are key support levels to watch."
         ),
     }
+
+
+def _incompatible_result(ticker: str, classification: Any) -> dict:
+    """Return a blocked result for instruments like UVXY that cannot be scored."""
+    flags = [f.to_dict() for f in classification.flags] if classification else []
+    return {
+        "ticker":          ticker,
+        "confidence":      None,
+        "action":          "INCOMPATIBLE",
+        "breakdown":       {},
+        "ml_horizons":     None,
+        "disqualifiers":   ["Standard equity model not applicable for this instrument type."],
+        "risk_factors":    ["Volatility ETFs behave inversely to equity market — do not use standard signals."],
+        "watch_levels":    {},
+        "market_regime":   "N/A",
+        "n_layers_active": 0,
+        "pre_flight": {
+            "is_scoreable":      False,
+            "asset_type":        classification.asset_type.value if classification else "UNKNOWN",
+            "asset_name":        classification.name if classification else ticker,
+            "weight_label":      classification.weight_profile.label if classification else "",
+            "flags":             flags,
+            "coherence":         None,
+            "transition_bonus":  None,
+            "rsi_direction":     None,
+            "divergence":        None,
+            "regime_transition": None,
+            "playbook":          [],
+            "current_mode":      "INCOMPATIBLE",
+            "current_action":    "Standard equity model not applicable for this instrument type.",
+            "position_size":     "0%",
+        },
+    }
+
+
+def _run_pre_flight(
+    ticker: str,
+    classification: Any,
+    scores: dict,
+    hmm_data: dict,
+    close_s: pd.Series | None,
+) -> dict:
+    """
+    Run the full pre-flight signal fusion engine and return a serialisable dict.
+    Gracefully returns minimal data if the engine fails.
+    """
+    base: dict = {
+        "is_scoreable":      True,
+        "asset_type":        None,
+        "asset_name":        ticker,
+        "weight_label":      "",
+        "flags":             [],
+        "coherence":         None,
+        "transition_bonus":  None,
+        "rsi_direction":     None,
+        "divergence":        None,
+        "regime_transition": None,
+        "playbook":          [],
+        "current_mode":      None,
+        "current_action":    None,
+        "position_size":     None,
+    }
+
+    if classification is not None:
+        base["asset_type"]   = classification.asset_type.value
+        base["asset_name"]   = classification.name
+        base["weight_label"] = classification.weight_profile.label
+        base["flags"]        = [f.to_dict() for f in classification.flags]
+
+    try:
+        from signals.pre_flight import run_full_engine, SignalInput
+
+        # Convert 0-1 engine scores to 0-100 for SignalInput
+        def _to_100(v: float | None) -> float | None:
+            return round(v * 100, 1) if v is not None else None
+
+        # RSI current / previous from price series (last value and 5 bars ago)
+        rsi_current  = None
+        rsi_previous = None
+        if close_s is not None and len(close_s) >= 20:
+            try:
+                import ta
+                rsi_series = ta.momentum.RSIIndicator(close_s).rsi()
+                rsi_current  = float(rsi_series.iloc[-1]) if not np.isnan(rsi_series.iloc[-1]) else None
+                rsi_previous = float(rsi_series.iloc[-6]) if len(rsi_series) > 6 and not np.isnan(rsi_series.iloc[-6]) else rsi_current
+            except Exception:
+                pass
+
+        sig_input = SignalInput(
+            ticker=ticker,
+            hmm_bull_prob=_to_100(hmm_data.get("bull_probability")) or 0.0,
+            hmm_transition_prob=_to_100(hmm_data.get("transition_probability")) or 0.0,
+            hmm_bear_prob=_to_100(hmm_data.get("bear_probability")) or 0.0,
+            pattern_score=_to_100(scores.get("pattern_technical")),
+            ml_probability=_to_100(scores.get("lgbm_probability")),
+            options_sentiment=_to_100(scores.get("options_sentiment")),
+            insider_activity=_to_100(scores.get("insider_signal")),
+            fundamentals=_to_100(scores.get("fundamental_score")),
+            rsi_current=rsi_current,
+            rsi_previous=rsi_previous,
+        )
+
+        result = run_full_engine(sig_input)
+        rd = result.to_dict()
+
+        base.update({
+            "coherence":         rd.get("coherence"),
+            "transition_bonus":  rd.get("transition_bonus"),
+            "rsi_direction":     rd.get("rsi_signal"),
+            "divergence":        rd.get("divergence"),
+            "regime_transition": rd.get("regime_transition"),
+            "playbook":          rd.get("playbook", []),
+            "current_mode":      rd.get("current_mode"),
+            "current_action":    rd.get("current_action"),
+            "position_size":     rd.get("summary", {}).get("position_size"),
+        })
+    except Exception as exc:
+        logger.debug("Pre-flight engine failed for %s: %s", ticker, exc)
+
+    return base

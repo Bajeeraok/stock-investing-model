@@ -182,23 +182,87 @@ def fetch_price_target_consensus(config: dict, ticker: str) -> tuple[dict | None
 
 
 def fetch_analyst_estimates(config: dict, ticker: str) -> tuple[dict | None, str | None]:
-    """Forward EPS from analyst estimates. For LT fair-value band."""
+    """
+    Forward analyst EPS/Revenue consensus from FMP analyst-estimates endpoint.
+
+    Returns a normalised dict with:
+        eps_avg        — consensus forward EPS (mean of analyst estimates)
+        eps_high       — most optimistic analyst EPS estimate
+        eps_low        — most pessimistic analyst EPS estimate
+        eps_dispersion — (high - low) / avg; >0.20 = high analyst disagreement
+        analyst_count  — number of analysts contributing EPS estimates
+        rev_avg        — consensus forward revenue (USD)
+        certainty      — 0-1 score: 1 = tight consensus, 0 = wide disagreement
+        eps_fwd        — alias for eps_avg (backward-compat)
+    """
     api_key = get_api_key(config)
     if not api_key:
         return None, "No FMP API key"
-    url = f"{BASE}/analyst-estimates?symbol={ticker}&period=annual&page=0&limit=5"
+    url = f"{BASE}/analyst-estimates?symbol={ticker}&period=annual&page=0&limit=2"
     data, err = _request(url, api_key)
     if err:
         return None, err
+
+    item = None
     if isinstance(data, list) and data:
-        item = data[0]
-        eps = item.get("eps") or item.get("epsEstimate") or item.get("estimatedEps")
-        if eps is not None:
-            return {"eps_fwd": float(eps)}, None
-        return data[0], None
-    if isinstance(data, dict) and data.get("eps") is not None:
-        return {"eps_fwd": float(data["eps"])}, None
-    return None, "No data"
+        item = data[0] if isinstance(data[0], dict) else None
+    elif isinstance(data, dict):
+        item = data
+    if not item:
+        return None, "No analyst estimate data"
+
+    def _f(keys: list[str]) -> float | None:
+        for k in keys:
+            v = item.get(k)
+            if v is not None:
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    def _i(keys: list[str]) -> int | None:
+        for k in keys:
+            v = item.get(k)
+            if v is not None:
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    pass
+        return None
+
+    eps_avg  = _f(["estimatedEpsAvg", "epsEstimate", "estimatedEps", "eps"])
+    eps_high = _f(["estimatedEpsHigh"])
+    eps_low  = _f(["estimatedEpsLow"])
+    rev_avg  = _f(["estimatedRevenueAvg", "estimatedRevenue", "revenueEstimate"])
+    n_eps    = _i(["numberAnalystEstimatedEps", "numberOfAnalysts", "numAnalysts"])
+    n_rev    = _i(["numberAnalystsEstimatedRevenue"])
+    analyst_count = n_eps or n_rev
+
+    if eps_avg is None:
+        return None, "No EPS estimate in response"
+
+    # Dispersion: (high - low) / avg — measures analyst disagreement
+    eps_dispersion = None
+    if eps_high is not None and eps_low is not None and eps_avg != 0:
+        eps_dispersion = round(abs(eps_high - eps_low) / abs(eps_avg), 4)
+
+    # Certainty score 0-1: tight consensus = 1, wide = 0
+    # Dispersion < 0.10 = high certainty, > 0.40 = very uncertain
+    certainty = None
+    if eps_dispersion is not None:
+        certainty = round(max(0.0, min(1.0, 1.0 - eps_dispersion / 0.40)), 3)
+
+    return {
+        "eps_avg":        round(eps_avg, 4),
+        "eps_high":       round(eps_high, 4) if eps_high is not None else None,
+        "eps_low":        round(eps_low,  4) if eps_low  is not None else None,
+        "eps_dispersion": eps_dispersion,
+        "analyst_count":  analyst_count,
+        "rev_avg":        round(rev_avg, 0) if rev_avg is not None else None,
+        "certainty":      certainty,
+        "eps_fwd":        round(eps_avg, 4),   # backward-compat alias
+    }, None
 
 
 def fetch_insider_stats(config: dict, ticker: str) -> tuple[dict | None, str | None]:

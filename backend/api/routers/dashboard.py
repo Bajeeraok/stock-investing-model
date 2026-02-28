@@ -50,6 +50,7 @@ from signals.fmp_client import (
 from signals.fred_client import get_real_yield_proxy
 from signals.cot_client import get_cot_extremes_for_guidelines
 from signals.fetcher import fetch_yfinance_latest_prices, fetch_ohlcv_safe
+from signals.confidence_engine import run_confidence
 from signals.event_scenarios import get_upcoming_event_scenarios
 from signals.macro_analog import get_macro_analog
 
@@ -174,6 +175,23 @@ async def get_dashboard():
         holdings_by_account.setdefault(acc, []).append(dict(h) if isinstance(h, dict) else {"ticker": h, "quantity": 1})
     if not holdings_by_account and holdings:
         holdings_by_account["All"] = list(holdings)
+
+    # 7-layer confidence for holdings (used by Portfolio Doctor)
+    confidence_by_ticker: dict = {}
+    holdings_tickers = list(dict.fromkeys(h.get("ticker") if isinstance(h, dict) else h for h in holdings))
+    if holdings_tickers:
+        try:
+            for ticker in holdings_tickers:
+                try:
+                    conf = run_confidence(ticker, config=config)
+                    if conf.get("confidence") is not None:
+                        confidence_by_ticker[ticker] = conf
+                except Exception as e:
+                    logger.debug("Confidence for %s: %s", ticker, e)
+            logger.info("[dashboard] confidence for %d holdings tickers", len(confidence_by_ticker))
+        except Exception as e:
+            logger.debug("Confidence fetch failed: %s", e)
+
     portfolios_out: dict[str, dict] = {}
     for name in portfolio_names:
         if name == "All":
@@ -189,6 +207,7 @@ async def get_dashboard():
             score_cfg=config.get("score", {}),
             concentration_threshold_pct=config.get("concentration_alert_pct", 20),
             cash_deploy_min_score=config.get("cash_deploy_min_score", 70),
+            confidence_by_ticker=confidence_by_ticker,
         )
         if prices_by_ticker:
             total_value = rep.get("total_value") or 0.0
@@ -496,6 +515,24 @@ async def get_dashboard():
     )
     logger.info("[dashboard] section: opportunities DONE (%d)", len(opportunities))
 
+    # Confidence for add candidates (opportunities + best_2026)
+    portfolio_tickers_set = {h.get("ticker") if isinstance(h, dict) else h for h in holdings}
+    add_candidate_tickers = list(dict.fromkeys(
+        [o.get("ticker") for o in opportunities if o.get("ticker") and o.get("ticker") not in portfolio_tickers_set]
+        + [b.get("ticker") for b in best_2026 if b.get("ticker") and b.get("ticker") not in portfolio_tickers_set]
+    ))
+    for ticker in add_candidate_tickers:
+        if ticker in confidence_by_ticker:
+            continue
+        try:
+            conf = run_confidence(ticker, config=config)
+            if conf.get("confidence") is not None:
+                confidence_by_ticker[ticker] = conf
+        except Exception as e:
+            logger.debug("Confidence for add candidate %s: %s", ticker, e)
+    if add_candidate_tickers:
+        logger.info("[dashboard] confidence for %d add candidates", sum(1 for t in add_candidate_tickers if t in confidence_by_ticker))
+
     # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
     portfolio_doctor_recommendations = {}
     doctor_cfg = config.get("portfolio_doctor") or {}
@@ -507,6 +544,7 @@ async def get_dashboard():
                 opportunities=opportunities,
                 best_2026=best_2026,
                 doctor_cfg=doctor_cfg,
+                confidence_by_ticker=confidence_by_ticker,
             )
             portfolio_doctor_recommendations[pname] = rec
         except Exception as e:
@@ -997,7 +1035,8 @@ async def get_confidence(ticker: str):
     ticker = ticker.upper().strip()
     try:
         from signals.confidence_engine import run_confidence
-        result = run_confidence(ticker)
+        config = _load_config()
+        result = run_confidence(ticker, config=config)
         return result
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"Confidence engine unavailable: {e}")
@@ -1029,6 +1068,127 @@ async def get_unified_signal(ticker: str):
     except Exception as e:
         logger.exception("Unified signal error for %s: %s", ticker, e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/price-targets/{ticker}")
+async def get_price_targets(ticker: str, regime: str = "NEUTRAL"):
+    """
+    Consolidated buy/sell zones, expected returns, and scenario analysis for a ticker.
+
+    Returns per-horizon (short/medium/long):
+      - Entry zone anchored to MA50/MA200/52w-low
+      - Base / bull / bear price targets
+      - Expected return (probability-weighted)
+      - Stop loss and risk/reward ratio
+
+    Plus 5-6 scenarios (3 universal + up to 3 asset-specific):
+      - Fed rate cuts, earnings beat/miss, momentum squeeze, geopolitical events, etc.
+    """
+    ticker = ticker.upper().strip()
+    try:
+        from signals.price_targets import run_price_targets
+        config = _load_config()
+        result = run_price_targets(ticker, market_regime=regime.upper(), config=config)
+        return result
+    except Exception as e:
+        logger.exception("Price targets error for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/classify/{ticker}")
+async def get_classify(ticker: str):
+    """
+    Pre-flight asset classification for a single ticker.
+    Returns asset type, weight profile, pre-flight flags, and scoreability.
+    Fast — no data fetching, just registry lookup + flag generation.
+    Call this when user types a new ticker to show asset type badge and warnings immediately.
+    """
+    ticker = ticker.upper().strip()
+    try:
+        from signals.pre_flight import classify_asset
+        result = classify_asset(ticker)
+        return result.to_dict()
+    except Exception as e:
+        logger.exception("Asset classify error for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test-suite")
+async def run_test_suite(body: dict):
+    """
+    Batch pre-flight classification + optional confidence for a list of tickers.
+    Used by the Signal Test Suite tab to verify model behavior across asset types.
+
+    Request body:
+      { "tickers": ["NVDA", "GLD", ...], "include_confidence": false }
+
+    Returns list of results per ticker, each with:
+      - classification (asset_type, weight_profile, flags, is_scoreable)
+      - confidence (full 7-layer breakdown) if include_confidence=True
+      - timing stats
+    """
+    from signals.pre_flight import classify_asset, get_registered_tickers
+    import time
+
+    tickers = [t.upper().strip() for t in (body.get("tickers") or get_registered_tickers())]
+    include_confidence = bool(body.get("include_confidence", False))
+    results = []
+
+    for ticker in tickers:
+        t0 = time.perf_counter()
+        row: dict = {"ticker": ticker, "classification": None, "confidence": None, "error": None, "elapsed_ms": 0}
+        try:
+            cls = classify_asset(ticker)
+            row["classification"] = cls.to_dict()
+        except Exception as e:
+            row["error"] = f"classify failed: {e}"
+            results.append(row)
+            continue
+
+        if include_confidence:
+            try:
+                from signals.confidence_engine import run_confidence
+                row["confidence"] = run_confidence(ticker)
+            except Exception as e:
+                row["confidence"] = {"error": str(e)}
+
+        row["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        results.append(row)
+
+    scoreable   = sum(1 for r in results if r.get("classification", {}) and r["classification"].get("is_scoreable"))
+    incompat    = sum(1 for r in results if r.get("classification", {}) and not r["classification"].get("is_scoreable"))
+    total_flags = sum(len(r["classification"].get("flags", [])) for r in results if r.get("classification"))
+    bonus_count = sum(
+        1 for r in results
+        if r.get("confidence") and r["confidence"].get("pre_flight", {}).get("transition_bonus", {}) and
+           r["confidence"]["pre_flight"]["transition_bonus"].get("bonus_active")
+    )
+
+    return {
+        "tickers":     tickers,
+        "total":       len(results),
+        "scoreable":   scoreable,
+        "incompatible": incompat,
+        "total_flags": total_flags,
+        "bonus_active": bonus_count,
+        "results":     results,
+    }
+
+
+@router.get("/registry")
+async def get_registry():
+    """Return all tickers in the pre-flight asset registry grouped by asset type."""
+    from signals.pre_flight import get_registered_tickers, get_tickers_by_type
+    from signals.pre_flight.constants import AssetType
+    registry: dict = {}
+    for at in AssetType:
+        tickers = get_tickers_by_type(at)
+        if tickers:
+            registry[at.value] = tickers
+    return {
+        "total": sum(len(v) for v in registry.values()),
+        "by_type": registry,
+    }
 
 
 @router.get("/last-run")

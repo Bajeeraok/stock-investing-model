@@ -42,6 +42,7 @@ import {
   InsiderFlowTracker,
   TaxAwareExitPanel,
 } from "./dashboard/index";
+import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 
 const AUTO_REFRESH_MIN = 30;
 
@@ -73,7 +74,7 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
-const TAB_IDS: TabId[] = ["overview", "signals", "portfolio", "opportunities", "markets", "analysis"];
+const TAB_IDS: TabId[] = ["overview", "signals", "portfolio", "opportunities", "markets", "analysis", "testsuite"];
 
 function isValidTab(t: string): t is TabId {
   return TAB_IDS.includes(t as TabId);
@@ -780,6 +781,13 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </div>
                 </ToggleSection>
               )}
+            </div>
+          )}
+
+          {/* ── Test Suite tab ── */}
+          {activeTab === "testsuite" && (
+            <div className="p-4 sm:p-6">
+              <SignalTestSuite />
             </div>
           )}
         </div>
