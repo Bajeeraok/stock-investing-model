@@ -137,7 +137,70 @@ class ConfidenceEngine:
         # ── Layer 1: HMM regime ────────────────────────────────────────────
         if close_s is not None and len(close_s) >= 252:
             from signals.hmm_regime import get_hmm_regime
-            hmm = get_hmm_regime(ticker, close_s, vol_s)
+            # Earnings-aware regime validation (Scenario 5 alignment):
+            # within 5 days post-earnings, a sharp selloff can make HMM lag.
+            # We compute context cheaply from existing close series + cached earnings date lookup.
+            days_since_earnings = None
+            post_earnings_return_pct = None
+            post_earnings_volume_ratio = None
+            most_recent_earnings_date = None
+            try:
+                from signals.providers import get_most_recent_earnings
+                e = get_most_recent_earnings(ticker)
+                if e and e.get("days_since") is not None and e.get("date"):
+                    most_recent_earnings_date = str(e["date"])
+                    days_since_earnings = int(e["days_since"])
+                    # Approximate post-earnings return since last earnings date.
+                    # Uses last close on/before the earnings date as baseline.
+                    try:
+                        e_dt = pd.Timestamp(str(e["date"]))
+                        c = close_s.dropna()
+                        idx = c.index
+                        if isinstance(idx, pd.DatetimeIndex) and getattr(idx, "tz", None) is not None:
+                            c = c.copy()
+                            c.index = c.index.tz_localize(None)
+                        v = None
+                        if vol_s is not None:
+                            v = vol_s.dropna()
+                            if isinstance(v.index, pd.DatetimeIndex) and getattr(v.index, "tz", None) is not None:
+                                v = v.copy()
+                                v.index = v.index.tz_localize(None)
+                        baseline = c.loc[c.index <= e_dt]
+                        if not baseline.empty:
+                            base_close = float(baseline.iloc[-1])
+                            last_close = float(c.iloc[-1])
+                            if base_close > 0:
+                                post_earnings_return_pct = (last_close / base_close - 1.0) * 100.0
+                        # Volume ratio: first trading day after earnings vs prior 20d avg
+                        if v is not None and not v.empty:
+                            pre = v.loc[v.index <= e_dt].tail(20)
+                            post = v.loc[v.index > e_dt]
+                            if not pre.empty and not post.empty:
+                                pre_avg = float(pre.mean())
+                                post_day = float(post.iloc[0])
+                                if pre_avg > 0:
+                                    post_earnings_volume_ratio = post_day / pre_avg
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            earnings_context = {
+                "most_recent_earnings_date": most_recent_earnings_date,
+                "days_since_earnings": days_since_earnings,
+                "post_earnings_return_pct": round(float(post_earnings_return_pct), 2) if post_earnings_return_pct is not None else None,
+                "post_earnings_volume_ratio": round(float(post_earnings_volume_ratio), 2) if post_earnings_volume_ratio is not None else None,
+            }
+
+            hmm = get_hmm_regime(
+                ticker,
+                close_s,
+                vol_s,
+                most_recent_earnings_date=most_recent_earnings_date,
+                days_since_earnings=days_since_earnings,
+                post_earnings_return_pct=post_earnings_return_pct,
+                post_earnings_volume_ratio=post_earnings_volume_ratio,
+            )
             if hmm and not hmm.get("error"):
                 scores["regime_hmm"] = hmm["bull_probability"]
                 labels["regime_hmm"] = (
@@ -148,8 +211,20 @@ class ConfidenceEngine:
                 details["hmm"] = hmm
             else:
                 # Fall back to MA-based regime proxy
-                scores["regime_hmm"] = _regime_to_prob(market_regime)
+                bull_p = _regime_to_prob(market_regime)
+                scores["regime_hmm"] = bull_p
                 labels["regime_hmm"] = f"{market_regime} regime (MA-based fallback)"
+                # Keep a minimal HMM payload so the pre-flight playbook can still be earnings-aware.
+                details["hmm"] = {
+                    "bull_probability": bull_p,
+                    "transition_probability": round(max(0.0, 1.0 - bull_p) * 0.6, 3),
+                    "bear_probability": round(max(0.0, 1.0 - bull_p) * 0.4, 3),
+                    "dominant_state": market_regime if market_regime in ("BULL", "BEAR", "TRANSITION", "STRONG_BULL") else "TRANSITION",
+                    "dominant_state_validated": market_regime if market_regime in ("BULL", "BEAR", "TRANSITION", "STRONG_BULL") else "TRANSITION",
+                    "ma_conflict": None,
+                    "earnings_context": earnings_context,
+                    "error": (hmm or {}).get("error") if isinstance(hmm, dict) else "HMM unavailable",
+                }
         else:
             scores["regime_hmm"] = _regime_to_prob(market_regime)
             labels["regime_hmm"] = f"{market_regime} (no HMM — insufficient history)"
@@ -877,6 +952,10 @@ def _run_pre_flight(
             fundamentals=_to_100(scores.get("fundamental_score")),
             rsi_current=rsi_current,
             rsi_previous=rsi_previous,
+            earnings_date=(hmm_data.get("earnings_context") or {}).get("most_recent_earnings_date"),
+            days_since_earnings=(hmm_data.get("earnings_context") or {}).get("days_since_earnings"),
+            post_earnings_return_pct=(hmm_data.get("earnings_context") or {}).get("post_earnings_return_pct"),
+            post_earnings_volume_ratio=(hmm_data.get("earnings_context") or {}).get("post_earnings_volume_ratio"),
         )
 
         result = run_full_engine(sig_input)

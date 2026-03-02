@@ -525,7 +525,14 @@ def run_conditional_playbook(
             scenario_id=5,
             name="Earnings Catalyst",
             condition_desc="Within 5 days post-earnings AND price drops >5% on volume",
-            condition_met=False,  # Evaluated dynamically near earnings date
+            condition_met=bool(
+                (s.days_since_earnings is not None and s.days_since_earnings <= 5)
+                and (s.post_earnings_return_pct is not None and s.post_earnings_return_pct <= -5.0)
+                and (
+                    s.post_earnings_volume_ratio is None
+                    or s.post_earnings_volume_ratio >= 1.5
+                )
+            ),
             mode=SignalMode.HOLD_WATCH,
             action="Re-run full playbook with fresh signals on earnings+1",
             conflict_score="DYNAMIC",
@@ -535,6 +542,9 @@ def run_conditional_playbook(
                 "position_size":    "Up to 40% of remaining dry powder",
                 "note":             "Earnings reset all signals. Re-evaluate fresh on earnings+1 day.",
                 "earnings_date":    s.earnings_date or "Unknown",
+                "days_since_earnings": s.days_since_earnings,
+                "post_earnings_return_pct": s.post_earnings_return_pct,
+                "post_earnings_volume_ratio": s.post_earnings_volume_ratio,
             },
         ),
     ]

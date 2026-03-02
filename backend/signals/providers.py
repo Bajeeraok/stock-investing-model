@@ -5,6 +5,7 @@ FMP: https://financialmodelingprep.com/developer/docs - add api_key to config.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -106,6 +107,42 @@ def get_next_earnings(ticker: str, config: dict | None = None) -> dict | None:
         if info:
             return info
     return _get_earnings_yfinance(ticker)
+
+
+def get_most_recent_earnings(ticker: str) -> dict | None:
+    """
+    Get most recent earnings date (past). Returns {date, days_since} or None.
+
+    Notes:
+      - Uses yfinance only.
+      - Intended for event-aware regime validation (e.g., post-earnings overrides).
+    """
+    if ticker.upper() in _ETFS:
+        return None
+    if yf is None:
+        return None
+    try:
+        t = yf.Ticker(ticker)
+        ed = getattr(t, "earnings_dates", None)
+        if ed is None or getattr(ed, "empty", True):
+            return None
+        idx = ed.index
+        if not isinstance(idx, pd.DatetimeIndex):
+            return None
+        idx = idx.tz_localize(None) if getattr(idx, "tz", None) is not None else idx
+        now = pd.Timestamp.now().tz_localize(None)
+        past = idx[idx <= now]
+        if len(past) == 0:
+            return None
+        last_d = past[-1]
+        days_since = int((now.normalize() - last_d.normalize()).days)
+        return {"date": last_d.strftime("%Y-%m-%d"), "days_since": days_since}
+    except Exception:
+        return None
+
+
+# Cache (per-process) to avoid repeated yfinance calls during dashboard runs
+get_most_recent_earnings = lru_cache(maxsize=512)(get_most_recent_earnings)
 
 
 def _get_earnings_yfinance(ticker: str) -> dict | None:

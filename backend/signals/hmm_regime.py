@@ -34,6 +34,153 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 MIN_BARS_TO_FIT = 252   # Need at least 1 year to fit meaningfully
 RECENT_BARS     = 60    # Bars used to estimate current regime probability
 
+# Regime sanity thresholds (percent gaps)
+# Avoid noise: a tiny -0.4% dip below MA50 should not flip the regime.
+MA50_CONFLICT_THRESHOLD_PCT = 1.5   # % below MA50 to trigger conflict
+MA200_CONFLICT_THRESHOLD_PCT = 3.0  # % below MA200 to trigger stronger conflict
+
+
+def validate_regime(
+    *,
+    ticker: str,
+    hmm_dominant: str,  # "BULL" | "TRANSITION" | "BEAR" (optionally "STRONG_BULL")
+    last_close: float,
+    ma20: float,
+    ma50: float,
+    ma200: float,
+    prev_close: float | None = None,
+    prev_ma50: float | None = None,
+    days_since_earnings: int | None = None,
+    post_earnings_return_pct: float | None = None,
+    use_gap_threshold: bool = True,
+) -> dict:
+    """
+    Cross-validate HMM regime against MA structure.
+
+    Returns a dict with:
+      - resolved_regime: validated regime to use downstream
+      - conflict: whether we overrode / downgraded
+      - conflict_severity: LOW | MEDIUM | HIGH
+      - gaps and a momentum hint (moving_toward_ma50)
+
+    Designed so we can embed this directly into the HMM payload returned by `get_hmm_regime()`.
+    """
+    gap_ma50 = (last_close - ma50) / ma50 * 100.0 if ma50 else 0.0
+    gap_ma200 = (last_close - ma200) / ma200 * 100.0 if ma200 else 0.0
+
+    prev_gap_ma50 = None
+    if prev_close is not None and prev_ma50 not in (None, 0):
+        prev_gap_ma50 = (prev_close - float(prev_ma50)) / float(prev_ma50) * 100.0
+
+    gap_trend_ma50 = None
+    moving_toward_ma50 = None
+    if prev_gap_ma50 is not None:
+        gap_trend_ma50 = gap_ma50 - prev_gap_ma50
+        # If we were below MA50, "toward" means the gap is getting less negative.
+        # If we were above MA50, "toward" means the gap is shrinking.
+        moving_toward_ma50 = (abs(gap_ma50) < abs(prev_gap_ma50))
+
+    below_ma50 = gap_ma50 < 0
+    below_ma200 = gap_ma200 < 0
+    below_ma50_strong = gap_ma50 <= -MA50_CONFLICT_THRESHOLD_PCT if use_gap_threshold else below_ma50
+    below_ma200_strong = gap_ma200 <= -MA200_CONFLICT_THRESHOLD_PCT if use_gap_threshold else below_ma200
+
+    above_stack = (last_close > ma50) and (ma50 > ma200)
+    strong_bull_stack = (last_close > ma20) and (ma20 > ma50) and (ma50 > ma200)
+
+    ma_regime = (
+        "BULL" if above_stack else
+        "BEAR" if below_ma200_strong else
+        "TRANSITION"
+    )
+
+    resolved = hmm_dominant
+    conflict = False
+    severity = "none"
+    reason = None
+    note = "HMM and MA agree"
+
+    # ── Post-earnings override ─────────────────────────────────────────────
+    # If we're within a short window after earnings and the stock sold off hard
+    # AND is meaningfully below MA50, force TRANSITION (HMM can lag post-event).
+    post_earnings_override = (
+        days_since_earnings is not None
+        and days_since_earnings <= 5
+        and post_earnings_return_pct is not None
+        and post_earnings_return_pct <= -5.0
+        and gap_ma50 <= -3.0
+        and hmm_dominant in ("BULL", "STRONG_BULL")
+    )
+    if post_earnings_override:
+        resolved = "TRANSITION"
+        conflict = True
+        severity = "HIGH"
+        reason = "POST_EARNINGS_OVERRIDE"
+        note = (
+            f"Post-earnings override: {abs(gap_ma50):.1f}% below MA50, HMM lagging"
+        )
+
+    # If the post-earnings override triggers, keep TRANSITION regardless of MA200.
+    if post_earnings_override:
+        pass
+    elif hmm_dominant == "BULL":
+        if ma_regime == "BEAR":
+            resolved = "BEAR"
+            conflict = True
+            severity = "HIGH"
+            reason = "HMM_BULL_BUT_BELOW_MA200"
+            note = f"HMM overridden: price {gap_ma50:+.2f}% vs MA50"
+        elif below_ma50_strong:
+            resolved = "TRANSITION"
+            conflict = True
+            severity = "MEDIUM"
+            reason = "HMM_BULL_BUT_BELOW_MA50"
+            note = f"HMM overridden: price {gap_ma50:+.2f}% vs MA50"
+            # Momentum nuance: if the gap is improving quickly, keep the override but lower severity.
+            if gap_trend_ma50 is not None and gap_trend_ma50 >= 0.50:
+                severity = "LOW"
+        elif below_ma50 and below_ma200:
+            # Borderline: below both but within thresholds → do NOT override by default.
+            # We only override if the MA200 gap is meaningfully negative.
+            if below_ma200_strong:
+                resolved = "TRANSITION"
+                conflict = True
+                severity = "MEDIUM"
+                reason = "HMM_BULL_BORDERLINE_BELOW_MAS"
+                note = f"HMM overridden: price {gap_ma50:+.2f}% vs MA50"
+
+    elif hmm_dominant == "BEAR":
+        if above_stack:
+            resolved = "TRANSITION"
+            conflict = True
+            severity = "MEDIUM"
+            reason = "HMM_BEAR_BUT_ABOVE_STACK"
+            note = f"HMM overclaiming Bear: price {gap_ma50:+.2f}% vs MA50"
+
+    elif hmm_dominant == "STRONG_BULL":
+        # Not currently emitted by our 3-state HMM, but kept for compatibility if added later.
+        if not strong_bull_stack:
+            resolved = ma_regime if ma_regime in ("BULL", "TRANSITION") else "TRANSITION"
+            conflict = True
+            severity = "LOW"
+            reason = "HMM_STRONG_BULL_NO_MA_STACK"
+            note = "STRONG_BULL downgraded: MA stack not aligned"
+
+    return {
+        "resolved_regime": resolved,
+        "ma_regime": ma_regime,
+        "conflict": conflict,
+        "conflict_severity": severity,
+        "reason": reason,
+        "note": note,
+        "gap_ma50_pct": round(gap_ma50, 2),
+        "gap_ma200_pct": round(gap_ma200, 2),
+        "gap_trend_ma50_pct": round(gap_trend_ma50, 2) if gap_trend_ma50 is not None else None,
+        "moving_toward_ma50": moving_toward_ma50,
+        "days_since_earnings": days_since_earnings,
+        "post_earnings_return_pct": round(float(post_earnings_return_pct), 2) if post_earnings_return_pct is not None else None,
+    }
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -44,6 +191,10 @@ def get_hmm_regime(
     close: pd.Series,
     volume: pd.Series | None = None,
     force_refit: bool = False,
+    most_recent_earnings_date: str | None = None,
+    days_since_earnings: int | None = None,
+    post_earnings_return_pct: float | None = None,
+    post_earnings_volume_ratio: float | None = None,
 ) -> dict | None:
     """
     Fit (or load) a 3-state HMM and return current regime probabilities.
@@ -105,8 +256,7 @@ def get_hmm_regime(
     )
 
     # Cross-check against observable MA structure (sanity guard).
-    # If HMM says BULL but price is below both MA50 and MA200, treat as TRANSITION.
-    # If HMM says BEAR but price is above both MA50 and MA200, treat as TRANSITION.
+    # Uses % gap thresholds to avoid flip-flopping on marginal dips (e.g., -0.4% below MA50).
     dominant_validated = dominant
     conflict = None
     try:
@@ -114,35 +264,55 @@ def get_hmm_regime(
             close_s = close.dropna()
             if len(close_s) >= 200:
                 last_close = float(close_s.iloc[-1])
+                ma20 = float(close_s.rolling(20, min_periods=20).mean().iloc[-1])
                 ma50 = float(close_s.rolling(50, min_periods=50).mean().iloc[-1])
                 ma200 = float(close_s.rolling(200, min_periods=200).mean().iloc[-1])
-                below_both = (last_close < ma50) and (last_close < ma200)
-                above_both = (last_close > ma50) and (last_close > ma200)
-                if dominant == "BULL" and below_both:
-                    dominant_validated = "TRANSITION"
+                prev_close = float(close_s.iloc[-2]) if len(close_s) >= 2 else None
+                prev_ma50 = (
+                    float(close_s.rolling(50, min_periods=50).mean().iloc[-2])
+                    if len(close_s) >= 51
+                    else None
+                )
+                v = validate_regime(
+                    ticker=ticker,
+                    hmm_dominant=dominant,
+                    last_close=last_close,
+                    ma20=ma20,
+                    ma50=ma50,
+                    ma200=ma200,
+                    prev_close=prev_close,
+                    prev_ma50=prev_ma50,
+                    days_since_earnings=days_since_earnings,
+                    post_earnings_return_pct=post_earnings_return_pct,
+                    use_gap_threshold=True,
+                )
+
+                dominant_validated = v["resolved_regime"]
+                if v["conflict"]:
                     conflict = {
-                        "reason": "HMM_BULL_BUT_BELOW_MAS",
+                        "reason": v["reason"],
+                        "severity": v["conflict_severity"],
+                        "note": v["note"],
+                        "gap_ma50_pct": v["gap_ma50_pct"],
+                        "gap_ma200_pct": v["gap_ma200_pct"],
+                        "gap_trend_ma50_pct": v["gap_trend_ma50_pct"],
+                        "moving_toward_ma50": v["moving_toward_ma50"],
+                        "days_since_earnings": v["days_since_earnings"],
+                        "post_earnings_return_pct": v["post_earnings_return_pct"],
                         "last_close": round(last_close, 2),
                         "ma50": round(ma50, 2),
                         "ma200": round(ma200, 2),
                     }
-                elif dominant == "BEAR" and above_both:
-                    dominant_validated = "TRANSITION"
-                    conflict = {
-                        "reason": "HMM_BEAR_BUT_ABOVE_MAS",
-                        "last_close": round(last_close, 2),
-                        "ma50": round(ma50, 2),
-                        "ma200": round(ma200, 2),
-                    }
-                if conflict:
                     logger.info(
-                        "[hmm] %s regime conflict: dominant=%s → validated=%s (close=%.2f ma50=%.2f ma200=%.2f)",
+                        "[hmm] %s regime conflict: dominant=%s → validated=%s (close=%.2f ma50=%.2f ma200=%.2f) [gap_ma50=%+.2f%% severity=%s]",
                         ticker,
                         dominant,
                         dominant_validated,
-                        conflict["last_close"],
-                        conflict["ma50"],
-                        conflict["ma200"],
+                        last_close,
+                        ma50,
+                        ma200,
+                        float(v["gap_ma50_pct"]),
+                        v["conflict_severity"],
                     )
     except Exception:
         pass
@@ -154,6 +324,12 @@ def get_hmm_regime(
         "dominant_state":         dominant,
         "dominant_state_validated": dominant_validated,
         "ma_conflict":           conflict,
+        "earnings_context": {
+            "most_recent_earnings_date": most_recent_earnings_date,
+            "days_since_earnings": days_since_earnings,
+            "post_earnings_return_pct": round(float(post_earnings_return_pct), 2) if post_earnings_return_pct is not None else None,
+            "post_earnings_volume_ratio": round(float(post_earnings_volume_ratio), 2) if post_earnings_volume_ratio is not None else None,
+        },
         "state_means_daily_ret":  [round(float(means[i]), 5) for i in order],
         "n_bars_fit":             len(features),
         "error":                  None,

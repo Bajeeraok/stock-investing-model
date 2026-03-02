@@ -47,6 +47,9 @@ class SignalInput:
 
     # Optional metadata
     earnings_date: Optional[str] = None
+    days_since_earnings: Optional[int] = None
+    post_earnings_return_pct: Optional[float] = None
+    post_earnings_volume_ratio: Optional[float] = None
     note:          Optional[str] = None
 
 
