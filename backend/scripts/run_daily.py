@@ -257,8 +257,17 @@ def run_signals(
             high_52w = float(close.iloc[-252:].max())
             if high_52w and high_52w > 0:
                 drawdown_52w = round(100 * (float(close.iloc[-1]) - high_52w) / high_52w, 1)
-        if len(close) >= 15:
-            # ATR proxy: 14d std of daily returns * current price (avg $ move per day)
+        # Proper daily ATR(14) using True Range (requires high/low/close).
+        # Falls back to prior proxy only if OHLC is unavailable.
+        try:
+            from signals.fetcher import fetch_ohlcv_dataframe
+            from signals.volatility import atr14_from_ohlcv_df
+            ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
+            atr_14 = atr14_from_ohlcv_df(ohlcv_df)
+        except Exception:
+            atr_14 = None
+        if atr_14 is None and len(close) >= 15:
+            # Fallback proxy (older behaviour): 14d std of daily returns * current price
             returns = close.pct_change().dropna().iloc[-14:]
             if len(returns) >= 10:
                 vol = float(returns.std())

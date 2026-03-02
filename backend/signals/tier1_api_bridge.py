@@ -21,6 +21,7 @@ from .tier1_risk_engine import (
     DrawdownSimulator, ExitEngine,
     EarningsPredictor, ConcentrationMonitor,
 )
+from .volatility import atr14_from_ohlcv_df
 
 
 # ─────────────────────────────────────────────────────────────
@@ -50,13 +51,9 @@ def fetch_ticker_data(ticker: str) -> dict:
         low    = hist["Low"]
         volume = hist["Volume"]
 
-        # ATR(14)
-        tr     = pd.concat([
-            high - low,
-            (high - close.shift()).abs(),
-            (low  - close.shift()).abs(),
-        ], axis=1).max(axis=1)
-        atr_14 = float(tr.rolling(14).mean().iloc[-1])
+        # Proper daily ATR(14) using True Range + Wilder smoothing
+        ohlcv_df = pd.DataFrame({"close": close, "high": high, "low": low, "volume": volume}).dropna()
+        atr_14 = atr14_from_ohlcv_df(ohlcv_df) or float((close.pct_change().dropna().tail(14).std() or 0) * float(close.iloc[-1]))
 
         # 30-day daily returns
         returns_30d = close.pct_change().dropna().tail(30).tolist()
@@ -77,17 +74,23 @@ def fetch_ticker_data(ticker: str) -> dict:
         rv_30d      = float(returns_30d[-20:] and np.std(returns_30d[-20:]) * np.sqrt(252) * 100) if len(returns_30d) >= 20 else 30.0
 
         info = t.info or {}
+        sector_info = {}
+        try:
+            from .providers import get_sector_and_industry
+            sector_info = get_sector_and_industry(ticker) or {}
+        except Exception:
+            sector_info = {}
 
         return {
             "ticker":             ticker,
             "price":              float(close.iloc[-1]),
-            "atr_14":             round(atr_14, 2),
+            "atr_14":             round(float(atr_14), 2) if atr_14 is not None else None,
             "returns_30d":        [round(r, 6) for r in returns_30d],
             "support_levels":     support_levels,
             "resistance_levels":  resistance_levels,
             "hist_max_drawdown":  round(max_dd, 1),
             "rv_30d_pct":         round(rv_30d, 1),
-            "sector":             info.get("sector", "Unknown"),
+            "sector":             sector_info.get("sector") or info.get("sector") or "Unknown",
             "next_earnings_date": info.get("earningsDate", [None])[0] if isinstance(info.get("earningsDate"), list) else None,
             "beta":               info.get("beta", 1.0),
             "cost_basis":         float(close.iloc[-1]),  # Use current price if no cost basis
@@ -210,7 +213,7 @@ def generate_tier1_payload(
             atr_14=float(atr_14),
             vix=vix,
             regime=regime,
-            win_rate=sig.get("win_rate", 0.60),
+            win_rate=sig.get("win_rate"),  # if missing, engine derives from score/confidence/regime
             avg_win_pct=sig.get("avg_win_pct", 7.0),
             avg_loss_pct=sig.get("avg_loss_pct", 4.0),
         )

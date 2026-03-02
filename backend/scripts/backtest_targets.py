@@ -16,6 +16,8 @@ from signals.fetcher import fetch_ohlcv_safe
 from signals.indicators import composite_score
 from signals.regime import get_regime
 from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
+from signals.fetcher import fetch_ohlcv_dataframe
+from signals.volatility import atr_series_wilder
 
 
 def _st_hit_first(close, i: int, stop: float, target: float, days: int) -> str | None:
@@ -36,7 +38,15 @@ def run_target_calibration(
     mt_days: int = 126,
 ) -> dict:
     """Compute ST and MT band hit rates."""
-    close = fetch_ohlcv_safe(ticker, period)
+    ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
+    close = None
+    atr_ser = None
+    if ohlcv_df is not None and not ohlcv_df.empty and "close" in ohlcv_df.columns:
+        close = ohlcv_df["close"]
+        if {"high", "low", "close"}.issubset(set(ohlcv_df.columns)):
+            atr_ser = atr_series_wilder(ohlcv_df["high"], ohlcv_df["low"], ohlcv_df["close"], window=14)
+    if close is None:
+        close = fetch_ohlcv_safe(ticker, period)
     if close is None or len(close) < 300:
         return {"error": f"Insufficient data for {ticker}"}
 
@@ -65,10 +75,19 @@ def run_target_calibration(
             swing_h = max(P, ma20)
         if swing_l is None:
             swing_l = min(P, ma20)
-        returns = subset.pct_change().dropna().iloc[-14:]
-        atr = 0.02 * P
-        if len(returns) >= 10 and float(returns.std()) > 0:
-            atr = float(returns.std() * P)
+        atr = None
+        if atr_ser is not None and len(atr_ser) > i:
+            try:
+                a = float(atr_ser.iloc[i])
+                if a > 0:
+                    atr = a
+            except Exception:
+                atr = None
+        if atr is None:
+            returns = subset.pct_change().dropna().iloc[-14:]
+            atr = 0.02 * P
+            if len(returns) >= 10 and float(returns.std()) > 0:
+                atr = float(returns.std() * P)
 
         row = {
             "ticker": ticker,

@@ -243,6 +243,29 @@ export interface DashboardData {
     summary_by_signal?: Record<string, { avg_return_20d_pct: number; n_observations: number }>;
     message?: string | null;
   };
+  paper_trading?: {
+    log?: { date: string; seen: number; appended: number } | null;
+    fill?: { updated: number; message?: string | null } | null;
+    summary?: { status: string; completed?: number; win_rate_pct?: number | null; avg_return_pct?: number | null; avg_win_pct?: number | null; avg_loss_pct?: number | null; message?: string } | null;
+    recent?: Array<{
+      date: string;
+      ticker: string;
+      signal: string;
+      ml_confidence?: number | null;
+      regime?: string | null;
+      entry_price?: number | null;
+      target_1?: number | null;
+      hard_stop?: number | null;
+      atr_14?: number | null;
+      model_score?: number | null;
+      horizon_trading_days?: number | null;
+      next_date?: string | null;
+      actual_price?: number | null;
+      return_pct?: number | null;
+      hit_target?: number | null;
+      outcome?: string | null;
+    }>;
+  };
   model_validation?: {
     records: {
       as_of_date: string;
@@ -404,7 +427,7 @@ export interface PortfolioReport {
   largest_position: { ticker: string; pct: number; value: number; score?: number; regime?: string } | null;
   top3_pct?: number;
   concentration_alert: string[];
-  cash_deployment: { ticker: string; score: number; regime: string }[];
+  cash_deployment: { ticker: string; score?: number | null; confidence?: number | null; action?: string | null; regime: string }[];
   sector_allocation?: { sector: string; pct: number }[];
   correlation_alerts?: string[];
   mega_cap_pct?: number;
@@ -415,6 +438,10 @@ export interface PortfolioHolding {
   value: number | null;
   pct: number | null;
   score: number | null;
+  /** 7-layer calibrated confidence (0-100), when available */
+  confidence?: number | null;
+  /** 7-layer action label (STRONG BUY/BUY/HOLD/REDUCE/AVOID), when available */
+  action?: string | null;
   regime: string | null;
   suggestion: string;
   account?: string;
@@ -453,13 +480,17 @@ export interface PortfolioDoctorTrim {
   suggest_trim_dollars: number;
   sell_price: number | null;
   reason: string;
-  score: number;
+  score: number | null;
+  confidence?: number | null;
+  action?: string | null;
   regime: string | null;
 }
 
 export interface PortfolioDoctorAdd {
   ticker: string;
-  score: number;
+  score: number | null;
+  confidence?: number | null;
+  action?: string | null;
   regime: string;
   suggest_add_pct: number;
   suggest_add_dollars: number;

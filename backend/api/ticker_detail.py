@@ -579,7 +579,16 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 "range_52w_high": range_high,
                 "stress_bear_pct": (long_horizon_risk or {}).get("stress_bear_pct"),
             }
-            if len(close) >= 15:
+            # Proper daily ATR(14) (True Range) for target bands
+            try:
+                from signals.fetcher import fetch_ohlcv_dataframe
+                from signals.volatility import atr14_from_ohlcv_df
+                ohlcv_df = fetch_ohlcv_dataframe(ticker, "6mo")
+                row["atr14"] = atr14_from_ohlcv_df(ohlcv_df)
+            except Exception:
+                row["atr14"] = None
+            if row.get("atr14") is None and len(close) >= 15:
+                # Fallback proxy (older behaviour): 14d std of daily returns * current price
                 returns = close.pct_change().dropna().iloc[-14:]
                 if len(returns) >= 10:
                     vol = float(returns.std())

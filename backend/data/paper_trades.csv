@@ -1,0 +1,1 @@
+date,ticker,signal,ml_confidence,regime,entry_price,target_1,hard_stop,atr_14,model_score,kelly_pct,horizon_trading_days,next_date,actual_price,return_pct,hit_target,outcome

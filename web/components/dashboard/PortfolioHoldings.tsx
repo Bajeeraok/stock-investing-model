@@ -29,7 +29,7 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Value</th>
               {hasGainLoss && <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Gain/Loss</th>}
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">%</th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 model confidence (trend/RSI/MACD); higher = stronger bullish setup">Confidence</th>
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 calibrated confidence (7-layer engine). Falls back to composite score when confidence is unavailable.">Confidence</th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Regime</th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Suggestion</th>
             </tr>
@@ -75,15 +75,20 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
                   {h.pct != null ? `${h.pct.toFixed(1)}%` : "-"}
                 </td>
                 <td className="px-3 py-2.5">
+                  {(() => {
+                    const val = (h.confidence ?? h.score);
+                    return (
                   <span
                     className={clsx(
-                      (h.score ?? 0) >= 65 && "text-emerald-400",
-                      (h.score ?? 0) < 65 && (h.score ?? 0) > 35 && "text-slate-300",
-                      (h.score ?? 0) <= 35 && "text-red-400"
+                      (val ?? 0) >= 65 && "text-emerald-400",
+                      (val ?? 0) < 65 && (val ?? 0) > 35 && "text-slate-300",
+                      (val ?? 0) <= 35 && "text-red-400"
                     )}
                   >
-                    {h.score != null ? h.score.toFixed(1) : "-"}
+                    {val != null ? val.toFixed(1) : "-"}
                   </span>
+                    );
+                  })()}
                 </td>
                 <td className="px-3 py-2.5">
                   <span
@@ -99,6 +104,20 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
                 </td>
                 <td className="px-3 py-2.5 text-slate-300">
                   {h.suggestion}
+                  {h.action && (
+                    <span
+                      className={clsx(
+                        "ml-2 inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium",
+                        (h.action === "STRONG BUY" || h.action === "BUY") && "bg-emerald-500/15 text-emerald-300",
+                        (h.action === "HOLD / WATCH") && "bg-slate-500/20 text-slate-300",
+                        (h.action === "REDUCE") && "bg-amber-500/15 text-amber-300",
+                        (h.action === "AVOID") && "bg-red-500/15 text-red-300"
+                      )}
+                      title="7-layer engine action"
+                    >
+                      {h.action}
+                    </span>
+                  )}
                   {h.gain_loss_pct != null && h.gain_loss_pct >= 20 && (
                     <span className="block text-xs text-amber-400/90 mt-0.5" title="Consider holding 12+ months for long-term capital gains treatment (taxable accounts).">LTCG note</span>
                   )}

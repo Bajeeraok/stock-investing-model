@@ -19,6 +19,9 @@ export interface EodSnapshotItem {
 export interface RedisStatus {
   configured: boolean;
   connected: boolean;
+  source?: string | null;
+  scheme?: string | null;
+  error?: string | null;
 }
 
 interface EodAndSystemPanelProps {
@@ -85,17 +88,19 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, onRefresh }: EodA
         {!redis.configured ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
             <AlertCircle className="h-3.5 w-3.5" />
-            Not configured (REDIS_URL)
+            Not configured (set REDIS_URL / REDIS_PRIVATE_URL)
           </span>
         ) : redis.connected ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
             <CheckCircle className="h-3.5 w-3.5" />
-            Connected
+            Connected{redis.source ? ` (${redis.source})` : ""}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 text-xs text-amber-400">
             <XCircle className="h-3.5 w-3.5" />
-            Not connected
+            <span title={redis.error ?? undefined}>
+              Not connected{redis.source ? ` (${redis.source}${redis.scheme ? `, ${redis.scheme}` : ""})` : ""}
+            </span>
           </span>
         )}
       </div>

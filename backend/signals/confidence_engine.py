@@ -350,6 +350,8 @@ class ConfidenceEngine:
             "ticker":          ticker,
             "confidence":      confidence,
             "action":          action,
+            # HMM debug payload (includes MA conflict override info)
+            "hmm":             details.get("hmm"),
             "breakdown":       {
                 k: {
                     "score":     round(scores.get(k, 0.0), 3) if scores.get(k) is not None else None,

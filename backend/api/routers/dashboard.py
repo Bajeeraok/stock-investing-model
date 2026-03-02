@@ -134,6 +134,9 @@ async def get_dashboard():
         if prices_by_ticker:
             logger.info("[dashboard] yfinance latest: %d prices (delayed quote)", len(prices_by_ticker))
 
+    # Paper trading container (populated after run_signals)
+    paper_trading: dict = {"summary": None, "recent": [], "log": None, "fill": None}
+
     # Forward tracking (before run_signals) for hit-rate gate: suppress BUY/ADD when ADD hit rate < VIX threshold
     hit_rate_context = None
     try:
@@ -156,6 +159,16 @@ async def get_dashboard():
         hit_rate_context=hit_rate_context,
     )
     logger.info("[dashboard] section: run_signals DONE (%d tickers)", len(results) if results else 0)
+
+    # Paper trading log: capture today's signals (idempotent by date+ticker+signal)
+    try:
+        from signals.paper_trade_logger import PaperTradeLogger
+        pt = PaperTradeLogger(data_root=ROOT / "data")
+        paper_log = pt.log_signals_from_results(results, only_actionable=False)
+        logger.info("[dashboard] paper trades logged: %s", paper_log)
+        paper_trading["log"] = paper_log
+    except Exception as e:
+        logger.debug("Paper trading log failed: %s", e)
 
     # Update price-target accuracy report (same results, no extra fetch) so GET /api/accuracy is always current
     try:
@@ -405,6 +418,18 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("Forward tracking failed: %s", e)
         forward_tracking["message"] = str(e)
+
+    # Paper trading: backfill outcomes + summary (log happens earlier right after run_signals)
+    try:
+        from signals.paper_trade_logger import PaperTradeLogger
+        pt = PaperTradeLogger(data_root=ROOT / "data")
+        paper_trading["fill"] = pt.fill_outcomes()
+        paper_trading["summary"] = pt.get_performance_summary(min_completed=60)
+        paper_trading["recent"] = pt.get_recent(limit=40)
+    except Exception as e:
+        logger.debug("Paper trading summary failed: %s", e)
+        paper_trading = paper_trading if isinstance(paper_trading, dict) else {"summary": None, "recent": [], "log": None, "fill": None}
+        paper_trading["summary"] = {"status": "error", "message": str(e)}
 
     # Pre-market snapshot (futures + basket; can be slow)
     pre_market = None
@@ -679,8 +704,13 @@ async def get_dashboard():
                 {
                     "ticker": r["ticker"],
                     "score": float(r.get("composite_buy") or 50),
-                    "confidence": min(1.0, max(0, (r.get("composite_buy") or 50) / 100)),
-                    "win_rate": 0.60,
+                    "confidence": (
+                        float(confidence_by_ticker.get(r["ticker"], {}).get("confidence"))
+                        if isinstance(confidence_by_ticker.get(r["ticker"]), dict) and confidence_by_ticker.get(r["ticker"], {}).get("confidence") is not None
+                        else min(1.0, max(0, (r.get("composite_buy") or 50) / 100))
+                    ),
+                    # Let Tier1 engine derive win rate dynamically (avoids hardcoded 60%)
+                    "win_rate": None,
                     "avg_win_pct": 7.0,
                     "avg_loss_pct": 4.0,
                 }
@@ -737,6 +767,7 @@ async def get_dashboard():
         "indicator_comparisons": indicator_comparisons,
         "model_validation": model_validation,
         "forward_tracking": forward_tracking,
+        "paper_trading": paper_trading,
         "pre_market": pre_market,
         "pre_market_full": pre_market_full,
         "eod_snapshots": eod_snapshots,

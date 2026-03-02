@@ -104,11 +104,56 @@ def get_hmm_regime(
         "TRANSITION"
     )
 
+    # Cross-check against observable MA structure (sanity guard).
+    # If HMM says BULL but price is below both MA50 and MA200, treat as TRANSITION.
+    # If HMM says BEAR but price is above both MA50 and MA200, treat as TRANSITION.
+    dominant_validated = dominant
+    conflict = None
+    try:
+        if close is not None and len(close) >= 200:
+            close_s = close.dropna()
+            if len(close_s) >= 200:
+                last_close = float(close_s.iloc[-1])
+                ma50 = float(close_s.rolling(50, min_periods=50).mean().iloc[-1])
+                ma200 = float(close_s.rolling(200, min_periods=200).mean().iloc[-1])
+                below_both = (last_close < ma50) and (last_close < ma200)
+                above_both = (last_close > ma50) and (last_close > ma200)
+                if dominant == "BULL" and below_both:
+                    dominant_validated = "TRANSITION"
+                    conflict = {
+                        "reason": "HMM_BULL_BUT_BELOW_MAS",
+                        "last_close": round(last_close, 2),
+                        "ma50": round(ma50, 2),
+                        "ma200": round(ma200, 2),
+                    }
+                elif dominant == "BEAR" and above_both:
+                    dominant_validated = "TRANSITION"
+                    conflict = {
+                        "reason": "HMM_BEAR_BUT_ABOVE_MAS",
+                        "last_close": round(last_close, 2),
+                        "ma50": round(ma50, 2),
+                        "ma200": round(ma200, 2),
+                    }
+                if conflict:
+                    logger.info(
+                        "[hmm] %s regime conflict: dominant=%s → validated=%s (close=%.2f ma50=%.2f ma200=%.2f)",
+                        ticker,
+                        dominant,
+                        dominant_validated,
+                        conflict["last_close"],
+                        conflict["ma50"],
+                        conflict["ma200"],
+                    )
+    except Exception:
+        pass
+
     return {
         "bull_probability":       round(bull_prob, 3),
         "transition_probability": round(transition_prob, 3),
         "bear_probability":       round(bear_prob, 3),
         "dominant_state":         dominant,
+        "dominant_state_validated": dominant_validated,
+        "ma_conflict":           conflict,
         "state_means_daily_ret":  [round(float(means[i]), 5) for i in order],
         "n_bars_fit":             len(features),
         "error":                  None,

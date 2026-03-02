@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Calendar, Database, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield } from "lucide-react";
+import { AlertTriangle, BarChart3, Calendar, Database, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
@@ -34,6 +34,7 @@ import {
   MarketScenarios,
   PerformanceVsBenchmark,
   ForwardTracking,
+  PaperTradingPanel,
   PreMarketPanel,
   PreMarketStrip,
   type PreMarketData,
@@ -91,7 +92,11 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   const [selectedPortfolio, setSelectedPortfolio] = useState(defaultPortfolio);
   const selectedReport = data.portfolios?.[selectedPortfolio] ?? data.portfolio;
   const selectedTrimCandidates = (selectedReport?.per_holding ?? []).filter(
-    (h) => h.score != null && h.score < 40
+    (h) => (
+      (h.action ? (h.action === "REDUCE" || h.action === "AVOID") : false) ||
+      (typeof h.suggestion === "string" && h.suggestion.toLowerCase().includes("trim")) ||
+      (h.score != null && h.score < 40)
+    )
   );
   const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
@@ -567,7 +572,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
                     <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
                     <p className="text-slate-400 text-sm">No trim candidates</p>
-                    <p className="text-slate-500 text-xs mt-1">Positions with score {'<'} 40 will appear here.</p>
+                    <p className="text-slate-500 text-xs mt-1">Positions with action REDUCE/AVOID (or score {'<'} 40 fallback) will appear here.</p>
                   </div>
                 )}
               </ToggleSection>
@@ -729,6 +734,17 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                     summary_by_signal={data.forward_tracking!.summary_by_signal ?? {}}
                     message={data.forward_tracking?.message}
                   />
+                </ToggleSection>
+              )}
+              {data.paper_trading && (
+                <ToggleSection
+                  id="analysis-paper"
+                  title="Paper trading"
+                  icon={<FlaskConical />}
+                  badge={data.paper_trading?.summary?.completed ?? undefined}
+                  defaultOpen={false}
+                >
+                  <PaperTradingPanel data={data} />
                 </ToggleSection>
               )}
               {data.forward_tracking?.message && !data.forward_tracking?.records?.length && (

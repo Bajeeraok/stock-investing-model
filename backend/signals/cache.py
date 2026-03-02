@@ -25,11 +25,33 @@ TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
 
 
+def _redis_url() -> tuple[str | None, str | None]:
+    """
+    Return (url, source_env_var) for Redis.
+
+    Railway/managed services may expose multiple env vars; we standardize on REDIS_URL
+    but accept common alternatives so "configured" works out of the box.
+    """
+    candidates = (
+        "REDIS_URL",
+        "REDIS_PRIVATE_URL",
+        "REDIS_TLS_URL",
+        "UPSTASH_REDIS_URL",
+        "UPSTASH_REDIS_TLS_URL",
+    )
+    for name in candidates:
+        raw = os.environ.get(name, "")
+        url = (raw or "").strip()
+        if url and url.lower() not in ("", "0", "false", "none"):
+            return url, name
+    return None, None
+
+
 def _redis_client():
     """Lazy Redis connection. Returns None if Redis unavailable or disabled."""
     try:
-        url = os.environ.get("REDIS_URL", "").strip()
-        if not url or url.lower() in ("", "0", "false", "none"):
+        url, _src = _redis_url()
+        if not url:
             return None
         import redis
         r = redis.from_url(url, decode_responses=True, socket_connect_timeout=3)
@@ -43,14 +65,30 @@ def _redis_client():
 def redis_status() -> dict:
     """Return Redis connection status for dashboard. Does not raise."""
     try:
-        url = os.environ.get("REDIS_URL", "").strip()
-        configured = bool(url and url.lower() not in ("", "0", "false", "none"))
-        r = _redis_client()
-        connected = r is not None
-        return {"configured": configured, "connected": connected}
+        url, src = _redis_url()
+        configured = bool(url)
+        # Provide non-sensitive diagnostics (never return the URL itself)
+        scheme = None
+        if url and "://" in url:
+            scheme = url.split("://", 1)[0].lower()
+        err = None
+        connected = False
+        try:
+            r = _redis_client()
+            connected = r is not None
+        except Exception as e:
+            err = str(e)[:160]
+            connected = False
+        return {
+            "configured": configured,
+            "connected": connected,
+            "source": src,
+            "scheme": scheme,
+            "error": err if (configured and not connected) else None,
+        }
     except Exception as e:
         logger.debug("redis_status: %s", e)
-        return {"configured": False, "connected": False}
+        return {"configured": False, "connected": False, "source": None, "scheme": None, "error": None}
 
 
 def _serialize(val: Any) -> str:

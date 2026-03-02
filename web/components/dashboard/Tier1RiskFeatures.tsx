@@ -316,7 +316,15 @@ export function PositionSizingPanel({ items }: { items: PositionSizingData[] }) 
       <Collapsible title="Sizing rationale" defaultOpen={false}>
         <ol className="space-y-1">
           {data.sizing_rationale.map((r, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
+            <li
+              key={i}
+              className={clsx(
+                "flex items-start gap-2 text-xs",
+                r.startsWith("Win rate derived") || r.startsWith("Win rate input")
+                  ? "text-emerald-300"
+                  : "text-slate-400"
+              )}
+            >
               <span className="text-slate-600 shrink-0 font-mono w-4">{i + 1}.</span>
               {r}
             </li>

@@ -162,27 +162,54 @@ _SECTOR_ETF = {
 def get_sector_and_industry(ticker: str) -> dict:
     """
     Get sector and industry for a ticker via yfinance.
-    Returns {sector, industry, sector_etf, sector_etf_name}. Skips ETFs to avoid Yahoo 404.
+    Returns {sector, industry, sector_etf, sector_etf_name}.
+    Uses a fallback map for common ETFs and known yfinance misfires to avoid "Unknown".
     """
     if yf is None:
         return {}
     sym = (ticker or "").upper().split("-")[0]
+    _FALLBACK = {
+        "SPY": ("Market", "S&P 500 Index ETF", "SPY", "SPY (Market)"),
+        "QQQ": ("Technology", "Nasdaq 100 Index ETF", "QQQ", "QQQ (Technology)"),
+        "IWM": ("Small Caps", "Russell 2000 Index ETF", "IWM", "IWM (Small Caps)"),
+        "DIA": ("Market", "Dow Jones Index ETF", "DIA", "DIA (Market)"),
+        "GLD": ("Commodities", "Gold ETF", "GLD", "GLD (Commodities)"),
+        "SLV": ("Commodities", "Silver ETF", "SLV", "SLV (Commodities)"),
+    }
+    if sym in _FALLBACK:
+        sector, industry, sector_etf, sector_etf_name = _FALLBACK[sym]
+        return {"sector": sector, "industry": industry, "sector_etf": sector_etf, "sector_etf_name": sector_etf_name}
     if sym in _ETFS:
-        return {"sector": None, "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
+        # Sector ETFs: label as their own sector rather than null
+        return {"sector": "Market", "industry": "ETF", "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
     try:
         t = yf.Ticker(ticker)
         info = t.info or {}
         sector = (info.get("sector") or "").strip().lower()
         industry = (info.get("industry") or "").strip()
+        if not sector:
+            # Try pre-flight registry for special instruments / common misfires
+            try:
+                from signals.pre_flight.asset_classifier import ASSET_REGISTRY  # type: ignore
+                meta = ASSET_REGISTRY.get(sym)
+                if meta and getattr(meta, "sector", None):
+                    return {
+                        "sector": str(meta.sector),
+                        "industry": industry or None,
+                        "sector_etf": "SPY",
+                        "sector_etf_name": "SPY (Market)",
+                    }
+            except Exception:
+                pass
         sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
         return {
-            "sector": sector.replace("-", " ").title() if sector else None,
+            "sector": sector.replace("-", " ").title() if sector else "Unknown",
             "industry": industry or None,
             "sector_etf": sector_etf,
             "sector_etf_name": f"{sector_etf} ({sector.replace('-', ' ').title()})" if sector else "SPY (Market)",
         }
     except Exception:
-        return {"sector": None, "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
+        return {"sector": "Unknown", "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
 
 
 def get_peers(ticker: str, config: dict | None = None) -> list[str]:

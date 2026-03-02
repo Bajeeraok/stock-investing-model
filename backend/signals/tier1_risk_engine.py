@@ -105,7 +105,7 @@ class PositionSizingEngine:
         atr_14:                  float,      # 14-day ATR
         vix:                     float,      # Current VIX
         regime:                  str,        # "BULL"|"BEAR"|"NEUTRAL"|"STRONG_BULL"|"STRONG_BEAR"
-        win_rate:                 float,     # Historical hit rate (0-1)
+        win_rate:                 float | None,     # Historical hit rate (0-1). If None, derived from score/confidence/regime.
         avg_win_pct:             float,      # Avg win % from backtest
         avg_loss_pct:            float,      # Avg loss % from backtest
         confluence_score:        float = 1.0,  # 0-1 from UnifiedSignalEngine (default 1.0 = no effect)
@@ -120,8 +120,13 @@ class PositionSizingEngine:
             return self._zero_size(ticker, price, atr_14, rationale,
                 warning=f"Signal score {signal_score:.0f} too weak to size. Minimum: {self.MIN_SIGNAL_SCORE:.0f}")
 
-        # ── Step 1: Kelly Criterion ───────────────────────────────────────
+        # ── Step 1: Win rate + Kelly Criterion ────────────────────────────
         # Kelly = W - (1-W)/R where W=win_rate, R=win/loss ratio
+        if win_rate is None:
+            win_rate, note = self._derive_win_rate(signal_score, confidence, regime)
+            rationale.append(note)
+        else:
+            rationale.append(f"Win rate input: W={win_rate:.0%}")
         if avg_loss_pct <= 0:
             avg_loss_pct = 1.0
         win_loss_ratio = avg_win_pct / avg_loss_pct
@@ -298,6 +303,40 @@ class PositionSizingEngine:
             "BEAR":        0.40,
             "STRONG_BEAR": 0.10,
         }.get(regime, 0.75)
+
+    @staticmethod
+    def _derive_win_rate(signal_score: float, confidence: float, regime: str) -> tuple[float, str]:
+        """
+        Derive a conservative win-rate proxy from model score + confidence + regime.
+
+        This avoids hardcoding a single W (e.g. 60%) for every ticker, and makes the
+        Kelly chain transparent via sizing_rationale.
+        """
+        score = float(signal_score)
+        score = 0.0 if np.isnan(score) else score
+        score = float(np.clip(score, 0.0, 100.0))
+        conf = float(np.clip(float(confidence), 0.0, 1.0))
+        reg = str(regime or "NEUTRAL").upper()
+
+        # Score: 50 → 0.50, 70 → ~0.56, 85 → ~0.61, 100 → 0.65
+        score_component = 0.50 + (score - 50.0) * (0.15 / 50.0)
+        # Confidence: baseline at 0.50, allow ±5pp adjustment
+        conf_component = (conf - 0.50) * 0.10
+        # Regime adjustment
+        regime_adj = {
+            "STRONG_BULL":  0.03,
+            "BULL":         0.01,
+            "NEUTRAL":     -0.02,
+            "BEAR":        -0.05,
+            "STRONG_BEAR": -0.08,
+        }.get(reg, -0.02)
+
+        w = float(np.clip(score_component + conf_component + regime_adj, 0.35, 0.75))
+        note = (
+            "Win rate derived from score/regime/confidence: "
+            f"score→{score_component:.0%} + conf→{conf_component:+.0%} + regime→{regime_adj:+.0%} = W={w:.0%}"
+        )
+        return w, note
 
     def _vix_multiplier(self, vix: float) -> float:
         if vix < 15:  return 1.10

@@ -49,13 +49,34 @@ def run_target_confidence_backtest(
     from .regime import get_regime
     from .target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
 
-    close = fetcher(ticker, period)
+    # Prefer full OHLCV so ATR(14) is true-range based (not return-vol proxy)
+    ohlcv_df = None
+    try:
+        from .fetcher import fetch_ohlcv_dataframe
+        ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
+    except Exception:
+        ohlcv_df = None
+
+    close = None
+    if ohlcv_df is not None and not ohlcv_df.empty and "close" in ohlcv_df.columns:
+        close = ohlcv_df["close"]
+    else:
+        close = fetcher(ticker, period)
+
     if close is None:
         return {"error": f"Insufficient data for {ticker} (fetch returned None – check network and yfinance)", "st_buckets": {}, "mt_buckets": {}}
     if len(close) < 300:
         return {"error": f"Insufficient data for {ticker} (got {len(close)} bars, need 300+). Try period='5y' or check data source.", "st_buckets": {}, "mt_buckets": {}}
 
     close = close.sort_index()
+    atr_series = None
+    try:
+        if ohlcv_df is not None and {"high", "low", "close"}.issubset(set(ohlcv_df.columns)):
+            from .volatility import atr_series_wilder
+            ohlcv_df = ohlcv_df.sort_index()
+            atr_series = atr_series_wilder(ohlcv_df["high"], ohlcv_df["low"], ohlcv_df["close"], window=14)
+    except Exception:
+        atr_series = None
 
     def _hit_first(close_ser, i: int, stop: float, target: float, days: int) -> str | None:
         for j in range(1, min(days + 1, len(close_ser) - i)):
@@ -92,10 +113,20 @@ def run_target_confidence_backtest(
             swing_h = max(P, ma20)
         if swing_l is None:
             swing_l = min(P, ma20)
-        returns = subset.pct_change().dropna().iloc[-14:]
-        atr = 0.02 * P
-        if len(returns) >= 10 and float(returns.std()) > 0:
-            atr = float(returns.std() * P)
+        atr = None
+        if atr_series is not None and len(atr_series) > i:
+            try:
+                a = float(atr_series.iloc[i])
+                if a > 0:
+                    atr = a
+            except Exception:
+                atr = None
+        if atr is None:
+            # Fallback proxy (older behaviour) for environments where OHLC is unavailable
+            returns = subset.pct_change().dropna().iloc[-14:]
+            atr = 0.02 * P
+            if len(returns) >= 10 and float(returns.std()) > 0:
+                atr = float(returns.std() * P)
 
         row = {
             "ticker": ticker,
@@ -119,7 +150,7 @@ def run_target_confidence_backtest(
         if st_stop is None or st_target is None:
             continue
 
-        dist_st = (float(st_target) - P) / atr if atr > 0 else 0
+        dist_st = (float(st_target) - P) / atr if atr and atr > 0 else 0
         bucket_st = _atr_bucket(dist_st)
         res_st = _hit_first(close, i, float(st_stop), float(st_target), st_days)
         if res_st == "target":
@@ -133,7 +164,7 @@ def run_target_confidence_backtest(
             mt_low = mt.get("low")
             mt_high = mt.get("high")
             if mt_low is not None and mt_high is not None:
-                dist_mt = (float(mt_high) - P) / atr if atr > 0 else 0
+                dist_mt = (float(mt_high) - P) / atr if atr and atr > 0 else 0
                 bucket_mt = _atr_bucket(dist_mt)
                 res_mt = _hit_first(close, i, float(mt_low), float(mt_high), mt_days)
                 if res_mt == "target":

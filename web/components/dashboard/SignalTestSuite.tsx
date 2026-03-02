@@ -81,6 +81,16 @@ interface ConfidenceResult {
   action: string;
   n_layers_active: number;
   breakdown: Record<string, BreakdownLayer>;
+  hmm?: {
+    dominant_state?: string;
+    dominant_state_validated?: string;
+    ma_conflict?: {
+      reason?: string;
+      last_close?: number;
+      ma50?: number;
+      ma200?: number;
+    } | null;
+  } | null;
   pre_flight?: {
     coherence: CoherenceResult | null;
     transition_bonus: TransitionBonus | null;
@@ -442,6 +452,39 @@ function TickerCard({ result, onRunAnalysis }: {
                       </div>
                     </div>
                   )}
+
+                {/* HMM regime sanity (validated vs MA structure) */}
+                {conf?.hmm && (conf.hmm.dominant_state || conf.hmm.dominant_state_validated || conf.hmm.ma_conflict) && (
+                  <div className="mt-3 pt-3 border-t border-slate-700/30">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">
+                      HMM Regime Sanity
+                    </p>
+                    <div className="text-xs text-slate-300 space-y-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">HMM dominant</span>
+                        <span className="font-mono">{conf.hmm.dominant_state ?? "—"}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Validated</span>
+                        <span className={clsx("font-mono", conf.hmm.ma_conflict ? "text-amber-300" : "text-slate-200")}>
+                          {conf.hmm.dominant_state_validated ?? "—"}
+                        </span>
+                      </div>
+                      {conf.hmm.ma_conflict && (
+                        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 mt-2">
+                          <p className="text-[11px] text-amber-200 font-mono">
+                            Conflict: {conf.hmm.ma_conflict.reason ?? "MA_STRUCTURE_OVERRIDE"}
+                          </p>
+                          {(conf.hmm.ma_conflict.last_close != null || conf.hmm.ma_conflict.ma50 != null || conf.hmm.ma_conflict.ma200 != null) && (
+                            <p className="text-[11px] text-amber-200/70 font-mono mt-1">
+                              close={conf.hmm.ma_conflict.last_close ?? "—"} · ma50={conf.hmm.ma_conflict.ma50 ?? "—"} · ma200={conf.hmm.ma_conflict.ma200 ?? "—"}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
                 </div>
               )}
 
