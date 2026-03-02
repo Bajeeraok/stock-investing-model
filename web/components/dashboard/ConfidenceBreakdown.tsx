@@ -418,10 +418,13 @@ function WeightedMathTable({ breakdown, confidence }: {
   const [open, setOpen] = useState(false);
   const rows = Object.entries(breakdown).map(([key, layer]) => {
     const meta   = LAYER_META[key] ?? { name: key, icon: Activity };
-    const wPct   = Math.round((layer.weight ?? 0) * 100);
-    const sPct   = layer.available && layer.score != null ? Math.round((layer.score as number) * 100) : null;
-    const contrib = sPct != null ? ((layer.score as number) * (layer.weight ?? 0)) : 0;
-    return { key, name: meta.name, wPct, sPct, contrib };
+    const wRaw   = (layer.weight ?? 0) as number;
+    const sRaw   = layer.available && layer.score != null ? (layer.score as number) : null;
+    const wPct   = Math.round(wRaw * 100);
+    const sPct   = sRaw != null ? Math.round(sRaw * 100) : null;
+    // IMPORTANT: contrib must use raw decimals (not rounded score buckets) to avoid 20%×48 showing as 8.0.
+    const contrib = sRaw != null ? (sRaw * wRaw) : 0;
+    return { key, name: meta.name, wPct, sPct, contrib, wRaw, sRaw };
   });
 
   const activeWeightTotal = Object.values(breakdown)
@@ -452,7 +455,7 @@ function WeightedMathTable({ breakdown, confidence }: {
                 {r.sPct != null ? `${r.sPct}%` : "—"}
               </span>
               <span className="text-right text-slate-300">
-                {r.sPct != null ? `= ${(r.contrib * 100).toFixed(1)}` : "—"}
+                {r.sPct != null ? `${r.wPct}%×${r.sPct}% = ${(r.contrib * 100).toFixed(1)}` : "—"}
               </span>
             </div>
           ))}

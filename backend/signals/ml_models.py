@@ -214,6 +214,8 @@ def predict_probability(
 
     try:
         prob = float(model.predict_proba(last_row)[0, 1])
+        # Cap ML output so it never hits exactly 0% or 100% (stability + UI sanity).
+        prob = min(max(prob, 0.02), 0.98)
         return round(prob, 3)
     except Exception as exc:
         logger.warning("LGBM inference failed for %s [%s]: %s", ticker, horizon_key, exc)

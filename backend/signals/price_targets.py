@@ -879,6 +879,14 @@ def run_price_targets(
         except Exception as _ate:
             logger.debug("FMP price target fetch for %s: %s", ticker, _ate)
 
+    # Compute analyst-implied returns (for display) safely in this scope
+    analyst_median = analyst_targets.get("median") or analyst_targets.get("mean")
+    analyst_high   = analyst_targets.get("high")
+    analyst_low    = analyst_targets.get("low")
+    analyst_median_ret = round((float(analyst_median) / price - 1) * 100, 1) if analyst_median and price > 0 else None
+    analyst_high_ret   = round((float(analyst_high)   / price - 1) * 100, 1) if analyst_high   and price > 0 else None
+    analyst_low_ret    = round((float(analyst_low)    / price - 1) * 100, 1) if analyst_low    and price > 0 else None
+
     # ── Live macro context (VIX, 10Y, Fed rate, CPI, DXY) ────────────────
     macro = _fetch_macro_context(config)
     logger.debug("Macro context for %s: %s", ticker, macro)

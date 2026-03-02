@@ -40,9 +40,11 @@ def compute_indicators(close: pd.Series) -> pd.DataFrame:
     """Compute MA20, MA50, MA200, RSI(14), MACD. Drops leading NaNs where needed."""
     df = pd.DataFrame({"close": close})
 
-    df["MA20"] = close.rolling(20, min_periods=1).mean()
-    df["MA50"] = close.rolling(50, min_periods=1).mean()
-    df["MA200"] = close.rolling(200, min_periods=1).mean()
+    # Market-standard windows on daily data (SMA). Use full window min_periods so early values are NaN
+    # rather than a shorter SMA that can diverge from external sources.
+    df["MA20"] = close.rolling(20, min_periods=20).mean()
+    df["MA50"] = close.rolling(50, min_periods=50).mean()
+    df["MA200"] = close.rolling(200, min_periods=200).mean()
     df["RSI"] = _rsi(close, 14)
     macd_line, signal_line, hist = _macd(close, 12, 26, 9)
     df["MACD"] = macd_line

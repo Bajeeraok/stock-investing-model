@@ -104,6 +104,11 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, onRefresh }: EodA
           </span>
         )}
       </div>
+      {!redis.connected && redis.error && (
+        <p className="text-xs text-slate-500 -mt-2">
+          <span className="text-slate-400">Redis error:</span> {redis.error}
+        </p>
+      )}
 
       {/* EOD snapshot list */}
       <div>
