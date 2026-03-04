@@ -212,6 +212,7 @@ def get_sector_and_industry(ticker: str) -> dict:
         "DIA": ("Market", "Dow Jones Index ETF", "DIA", "DIA (Market)"),
         "GLD": ("Commodities", "Gold ETF", "GLD", "GLD (Commodities)"),
         "SLV": ("Commodities", "Silver ETF", "SLV", "SLV (Commodities)"),
+        "AVGO": ("Technology", "Semiconductors", "XLK", "XLK (Technology)"),
     }
     if sym in _FALLBACK:
         sector, industry, sector_etf, sector_etf_name = _FALLBACK[sym]

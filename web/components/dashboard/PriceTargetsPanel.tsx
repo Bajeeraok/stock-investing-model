@@ -604,7 +604,7 @@ function ScenarioRow({ s, price }: { s: Scenario; price: number }) {
 // Main panel
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function PriceTargetsPanel({ data }: { data: PriceTargetsData }) {
+export function PriceTargetsPanel({ data, hideHorizonZones }: { data: PriceTargetsData; hideHorizonZones?: boolean }) {
   const [showScenarios, setShowScenarios] = useState(true);
 
   if (data.error) {
@@ -630,7 +630,8 @@ export function PriceTargetsPanel({ data }: { data: PriceTargetsData }) {
         <div>
           <h3 className="text-sm font-bold text-slate-100">Price Targets & Scenario Analysis</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Entry zones anchored to MA50 / MA200 / 52w-low · {scenarios.length} scenarios ·
+            {hideHorizonZones ? "Entry logic in Investor Decision Summary above · " : "Entry zones anchored to MA50 / MA200 / 52w-low · "}
+            {scenarios.length} scenarios ·
             <span className="text-emerald-400 ml-1">{bullScenarios} bullish</span>
             <span className="text-slate-500"> / </span>
             <span className="text-red-400">{bearScenarios} bearish</span>
@@ -657,8 +658,8 @@ export function PriceTargetsPanel({ data }: { data: PriceTargetsData }) {
       {/* ── Technical level anchors ── */}
       <TechnicalLevelsBar lv={data.technical_levels} price={data.current_price} />
 
-      {/* ── Horizon cards ── */}
-      {hasHorizons && (
+      {/* ── Horizon cards (hidden when Investor Decision Summary is shown to avoid conflicting entry logic) ── */}
+      {!hideHorizonZones && hasHorizons && (
         <div className="space-y-2">
           <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">
             Buy / Sell Zones by Horizon

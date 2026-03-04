@@ -411,6 +411,9 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
                     net_margin_pct=margin or 15.0,
                     de_ratio=de or 0.5,
                 )
+                # Cap heuristic fair value so we don't show extreme undervaluation (e.g. 49%)
+                if fair_value is not None and fair_value > current_price * 1.35:
+                    fair_value = round(current_price * 1.35, 2)
         except Exception:
             pass
     if fair_value is None or fair_value <= 0:

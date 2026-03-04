@@ -317,7 +317,7 @@ export function TickerDetailModal({
               {/* ── Price Targets & Scenario Analysis ──────────────────── */}
               {priceTargets ? (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
-                  <PriceTargetsPanel data={priceTargets} />
+                  <PriceTargetsPanel data={priceTargets} hideHorizonZones={!!detail.investor_summary} />
                 </div>
               ) : (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">

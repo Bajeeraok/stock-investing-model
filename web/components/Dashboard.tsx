@@ -302,7 +302,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {data.fmp_plan_status && <FMPPlanStatus status={data.fmp_plan_status} />}
-              <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen>
+              <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen={false}>
                 <AlertsPanel onTickerClick={setSelectedTicker} />
               </ToggleSection>
               {(data.macro_regime || data.macro_analog) && (
@@ -583,7 +583,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
                 <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={setSelectedTicker} />
               </ToggleSection>
-              <ToggleSection id="portfolio-doctor" title="Portfolio Doctor" icon={<Target />} badge={(data.portfolio_doctor_recommendations?.[selectedPortfolio]?.trim?.length ?? 0) + (data.portfolio_doctor_recommendations?.[selectedPortfolio]?.add?.length ?? 0) || undefined} defaultOpen>
+              <ToggleSection id="portfolio-doctor" title="Portfolio Doctor" icon={<Target />} badge={(data.portfolio_doctor_recommendations?.[selectedPortfolio]?.trim?.length ?? 0) + (data.portfolio_doctor_recommendations?.[selectedPortfolio]?.add?.length ?? 0) || undefined} defaultOpen={false}>
                 <PortfolioDoctorRecommendations
                   recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
                   selectedPortfolio={selectedPortfolio}
@@ -648,7 +648,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Markets tab */}
           {activeTab === "markets" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen>
+              <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen={false}>
                 <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
               </ToggleSection>
               <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
@@ -684,17 +684,17 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Analysis tab */}
           {activeTab === "analysis" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen>
+              <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen={false}>
                 <EodAndSystemPanel
                   eodSnapshots={data.eod_snapshots ?? []}
                   redisStatus={data.redis_status}
                   onRefresh={onRefresh}
                 />
               </ToggleSection>
-              <ToggleSection id="analysis-backtest" title="Backtesting" icon={<BarChart3 />} defaultOpen>
+              <ToggleSection id="analysis-backtest" title="Backtesting" icon={<BarChart3 />} defaultOpen={false}>
                 <BacktestStatus />
               </ToggleSection>
-              <ToggleSection id="analysis-price-target" title="Price target accuracy" icon={<Target />} defaultOpen>
+              <ToggleSection id="analysis-price-target" title="Price target accuracy" icon={<Target />} defaultOpen={false}>
                 <AccuracyPriceTargetsWithBoundary />
               </ToggleSection>
               {data.indicator_comparisons && data.indicator_comparisons.length > 0 && (
