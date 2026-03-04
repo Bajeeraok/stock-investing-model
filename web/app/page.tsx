@@ -16,6 +16,8 @@ const DASHBOARD_MIN_INTERVAL_MS = 30_000;
 // Module-level guards so they survive Strict Mode unmount/remount and prevent duplicate requests
 let dashboardFetchInProgress = false;
 let lastDashboardFetchStart = 0;
+/** Time of last initial effect run; used to skip duplicate run from React Strict Mode (same ~tick). */
+let lastInitialEffectRun = 0;
 
 /** US market hours: 9:30 AM–4:00 PM Eastern, Mon–Fri */
 function isUSMarketHours(): boolean {
@@ -62,7 +64,11 @@ export default function Home() {
     try {
       const res = await fetch(API_BASE ? `${API_BASE}/api/dashboard` : "/api/dashboard");
       if (!res.ok) {
-        let errMsg = `HTTP ${res.status}`;
+        let errMsg = res.status === 503
+          ? "Service temporarily unavailable (503)"
+          : res.status === 502
+            ? "Bad gateway (502) — proxy could not get a response from the backend"
+            : `HTTP ${res.status}`;
         try {
           const errBody = await res.json();
           if (errBody && typeof errBody.error === "string") errMsg = errBody.error;
@@ -90,6 +96,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const now = Date.now();
+    if (now - lastInitialEffectRun < DASHBOARD_FETCH_DEBOUNCE_MS) return;
+    lastInitialEffectRun = now;
     refresh();
   }, [refresh]);
 
@@ -117,13 +126,14 @@ export default function Home() {
   }
 
   if (error) {
-    const isTimeout =
+    const isBackendBusy =
       error.includes("timed out") ||
       error.includes("Timeout") ||
       error.includes("502") ||
+      error.includes("503") ||
       error.includes("still be loading");
-    const hint = isTimeout
-      ? "Backend is likely still fetching data (check backend logs). Wait a minute and click Retry."
+    const hint = isBackendBusy
+      ? "Backend may be starting, overloaded, or still building the dashboard. Wait a minute and click Retry. Check Railway backend logs if it persists."
       : typeof window !== "undefined" && !/^localhost|127\.0\.0\.1$/.test(window.location.hostname)
         ? "Backend may be starting or unreachable. Check Railway logs and BACKEND_API_URL on the web service."
         : "Local: ensure FastAPI is running — cd backend && python -m uvicorn api.main:app --reload --port 8002";

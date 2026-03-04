@@ -73,7 +73,16 @@ def _load_config():
 
 @router.get("/dashboard")
 async def get_dashboard():
-    """Full dashboard data - runs signals, portfolio, opportunities. May take 1-2 min."""
+    """Full dashboard data - runs signals, portfolio, opportunities. May take 1-2 min. Uses Redis cache (3 min TTL) when available."""
+    try:
+        from signals.cache import get_cached_dashboard
+        cached = get_cached_dashboard()
+        if cached is not None:
+            logger.info("[dashboard] serving from Redis cache")
+            return cached
+    except Exception as e:
+        logger.debug("[dashboard] cache check skipped: %s", e)
+
     logger.info("[dashboard] START loading dashboard")
     logger.info("[dashboard] section: config + last_run...")
     config = _load_config()
@@ -810,6 +819,11 @@ async def get_dashboard():
         },
     }
     out.update(tier1_payload)
+    try:
+        from signals.cache import set_cached_dashboard
+        set_cached_dashboard(out)
+    except Exception as e:
+        logger.debug("[dashboard] cache set skipped: %s", e)
     logger.info("[dashboard] END loading dashboard - returning response")
     return out
 

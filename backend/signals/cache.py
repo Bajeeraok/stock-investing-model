@@ -1,7 +1,16 @@
 """
 Redis cache layer for non–signal-critical data.
-Cache policy: backtest, economic calendar, fundamentals, price targets, insider stats.
-No cache: price, MAs, RSI, MACD, cross-asset.
+
+Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
+  - dashboard: full dashboard JSON (3 min) – avoids re-run on retry/refresh
+  - backtest, next_day_backtest (24h)
+  - economic_calendar (6h)
+  - price_target, price_target_consensus (6h)
+  - insider_stats, financial_estimates, key_metrics (12h)
+  - long_horizon_risk (24h), target_bands (7d)
+  - ticker_detail (5 min), edgar_insider_flow (12h)
+
+Not cached (by design): live price, MAs, RSI, MACD, cross-asset (signal-critical).
 """
 from __future__ import annotations
 
@@ -23,6 +32,7 @@ TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
+TTL_DASHBOARD = 3 * 60  # 3 min – full dashboard JSON (avoids re-running on retry/refresh)
 
 
 def _redis_url() -> tuple[str | None, str | None]:
@@ -335,3 +345,18 @@ def cached_edgar_insider_flow(tickers: list[str], fetch_fn):
     if out and isinstance(out, dict):
         set_cached(key, out, TTL_EDGAR_INSIDER)
     return out
+
+
+def get_cached_dashboard() -> dict | None:
+    """Return cached full dashboard payload if present and Redis available. TTL 3 min."""
+    key = cache_key("dashboard", "default")
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict) and hit.get("config") is not None:
+        return hit
+    return None
+
+
+def set_cached_dashboard(payload: dict) -> bool:
+    """Store full dashboard payload in Redis. TTL 3 min."""
+    key = cache_key("dashboard", "default")
+    return set_cached(key, payload, TTL_DASHBOARD)
