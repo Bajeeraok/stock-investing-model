@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -43,7 +44,20 @@ def _eod_dir(data_root: Path | None = None) -> Path:
     return d
 
 
+def _mtm_history_file(data_root: Path | None = None) -> Path:
+    root = data_root or _default_data_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "paper_trades_mtm.jsonl"
+
+
+def _mtm_index_file(data_root: Path | None = None) -> Path:
+    root = data_root or _default_data_root()
+    root.mkdir(parents=True, exist_ok=True)
+    return root / "paper_trades_mtm_index.json"
+
+
 _FIELDS = [
+    "trade_id",
     "date",
     "ticker",
     "signal",
@@ -62,6 +76,14 @@ _FIELDS = [
     "return_pct",
     "hit_target",
     "outcome",
+    # Mark-to-market (filled daily from latest EOD snapshot)
+    "mtm_date",
+    "mtm_price",
+    "mtm_return_pct",
+    # Rolling daily reference (compare signal-date entry vs latest close)
+    "rolling_entry_price",
+    "rolling_pnl",
+    "rolling_return_pct",
 ]
 
 
@@ -76,6 +98,11 @@ def _safe_float(x: Any) -> float | None:
 
 def _today_str() -> str:
     return datetime.now().strftime("%Y-%m-%d")
+
+
+def _trade_id(date: str, ticker: str, signal: str) -> str:
+    raw = f"{date}|{ticker}|{signal}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
 
 
 @dataclass
@@ -94,7 +121,9 @@ class PaperTradeRecord:
     horizon_trading_days: int = 20  # ~30 calendar days
 
     def to_row(self) -> dict[str, Any]:
+        tid = _trade_id(self.date, self.ticker, self.signal)
         return {
+            "trade_id": tid,
             "date": self.date,
             "ticker": self.ticker,
             "signal": self.signal,
@@ -112,6 +141,12 @@ class PaperTradeRecord:
             "return_pct": None,
             "hit_target": None,
             "outcome": None,
+            "mtm_date": None,
+            "mtm_price": None,
+            "mtm_return_pct": None,
+            "rolling_entry_price": None,
+            "rolling_pnl": None,
+            "rolling_return_pct": None,
         }
 
 
@@ -143,6 +178,8 @@ class PaperTradeLogger:
 
     def _write_all(self, rows: list[dict[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        for row in rows:
+            self._ensure_trade_id(row)
         with open(self.path, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=_FIELDS)
             w.writeheader()
@@ -154,6 +191,18 @@ class PaperTradeLogger:
     @staticmethod
     def _dedupe_key(row: dict[str, Any]) -> tuple[str, str, str]:
         return (str(row.get("date") or ""), str(row.get("ticker") or ""), str(row.get("signal") or ""))
+
+    @staticmethod
+    def _ensure_trade_id(row: dict[str, Any]) -> str:
+        tid = str(row.get("trade_id") or "").strip()
+        if tid:
+            return tid
+        d = str(row.get("date") or "")
+        t = str(row.get("ticker") or "")
+        s = str(row.get("signal") or "")
+        tid = _trade_id(d, t, s)
+        row["trade_id"] = tid
+        return tid
 
     def log_signal(self, rec: PaperTradeRecord) -> bool:
         """
@@ -222,6 +271,65 @@ class PaperTradeLogger:
             except Exception:
                 continue
         return {"date": date_str, "seen": n_seen, "appended": n_appended}
+
+    def sync_targets_stops_from_results(self, results: list[dict[str, Any]] | None = None, max_rows: int = 500) -> dict[str, Any]:
+        """
+        Update target_1 and hard_stop for open trades from the latest model output.
+        Entry price is left unchanged (cost basis = price at signal date).
+
+        If results is provided (e.g. from run_signals), use that; else use latest EOD snapshot run_results.
+        """
+        rows = self._read_all()
+        if not rows:
+            return {"updated": 0, "message": "No paper trades logged yet."}
+
+        run_by_ticker: dict[str, dict] = {}
+        if results is not None:
+            for r in (results or []):
+                if isinstance(r, dict) and r.get("ticker"):
+                    run_by_ticker[(r.get("ticker") or "").upper()] = r
+        else:
+            dates = self._list_eod_dates()
+            if not dates:
+                return {"updated": 0, "message": "No EOD snapshots; pass results or run EOD first."}
+            snap = self._load_snapshot(dates[-1])
+            if snap:
+                for r in (snap.get("run_results") or []):
+                    if isinstance(r, dict) and r.get("ticker"):
+                        run_by_ticker[(r.get("ticker") or "").upper()] = r
+
+        if not run_by_ticker:
+            return {"updated": 0, "message": "No run results to sync from."}
+
+        updated = 0
+        for row in rows[:max_rows]:
+            try:
+                if row.get("outcome"):
+                    continue
+                t = (row.get("ticker") or "").upper()
+                run = run_by_ticker.get(t)
+                if not run:
+                    continue
+                st = run.get("st_band") if isinstance(run.get("st_band"), dict) else None
+                if not st:
+                    continue
+                target_1 = _safe_float(st.get("high"))
+                hard_stop = _safe_float(st.get("low"))
+                changed = False
+                if target_1 is not None:
+                    row["target_1"] = round(target_1, 2)
+                    changed = True
+                if hard_stop is not None:
+                    row["hard_stop"] = round(hard_stop, 2)
+                    changed = True
+                if changed:
+                    updated += 1
+            except Exception:
+                continue
+
+        if updated:
+            self._write_all(rows)
+        return {"updated": updated, "message": None}
 
     # ----- Outcomes (backfill) -----
 
@@ -307,6 +415,172 @@ class PaperTradeLogger:
             self._write_all(rows)
         return {"updated": updated, "message": None}
 
+    def mark_to_market(self, max_rows: int = 500) -> dict[str, Any]:
+        """
+        Update open trades daily using the latest available EOD snapshot.
+        This gives you a running return% even before the 20-trading-day horizon is reached.
+        Does not set HIT/MISS; that remains the job of fill_outcomes().
+        """
+        rows = self._read_all()
+        if not rows:
+            return {"updated": 0, "message": "No paper trades logged yet."}
+
+        dates = self._list_eod_dates()
+        if not dates:
+            return {"updated": 0, "message": "No EOD snapshots found (data/eod is empty)."}
+
+        latest = dates[-1]
+        snap = self._load_snapshot(latest)
+        if not snap:
+            return {"updated": 0, "message": f"Latest EOD snapshot unreadable: {latest}"}
+
+        run_by_ticker = {r.get("ticker"): r for r in (snap.get("run_results") or []) if isinstance(r, dict)}
+        updated = 0
+
+        for row in rows[:max_rows]:
+            try:
+                if row.get("outcome"):
+                    continue
+                self._ensure_trade_id(row)
+                t = (row.get("ticker") or "").upper()
+                r_now = run_by_ticker.get(t)
+                px = _safe_float((r_now or {}).get("close"))
+                entry = _safe_float(row.get("entry_price"))
+                if px is None or entry is None or entry <= 0:
+                    continue
+                mtm_ret = round(100 * (px - entry) / entry, 2)
+                # Rolling: prev reference = last rolling_entry or signal-date entry (first time)
+                prev_rolling = _safe_float(row.get("rolling_entry_price")) or entry
+                rolling_ret = round(100 * (px - prev_rolling) / prev_rolling, 2) if prev_rolling and prev_rolling > 0 else None
+                rolling_pnl = round(px - prev_rolling, 2) if prev_rolling is not None else None
+                # Only write if new snapshot date (reduces file churn on repeated dashboard refresh)
+                if str(row.get("mtm_date") or "") == latest:
+                    continue
+                row["mtm_date"] = latest
+                row["mtm_price"] = round(px, 2)
+                row["mtm_return_pct"] = mtm_ret
+                row["rolling_entry_price"] = round(px, 2)
+                row["rolling_pnl"] = rolling_pnl
+                row["rolling_return_pct"] = rolling_ret
+                updated += 1
+            except Exception:
+                continue
+
+        if updated:
+            self._write_all(rows)
+        return {"updated": updated, "message": None, "as_of": latest}
+
+    def append_mtm_history(self, max_rows: int = 500) -> dict[str, Any]:
+        """
+        Append one MTM datapoint per open trade per EOD date (idempotent per day).
+        Data lives in paper_trades_mtm.jsonl for day-by-day P&L history.
+        """
+        rows = self._read_all()
+        if not rows:
+            return {"appended": 0, "message": "No paper trades logged yet."}
+
+        dates = self._list_eod_dates()
+        if not dates:
+            return {"appended": 0, "message": "No EOD snapshots found (data/eod is empty)."}
+        latest = dates[-1]
+
+        # Load index so repeated dashboard refreshes don't append duplicates for the same latest date
+        idx_path = _mtm_index_file(self.data_root)
+        idx = {"as_of": None, "keys": []}
+        try:
+            if idx_path.exists():
+                with open(idx_path, "r", encoding="utf-8") as f:
+                    idx = json.load(f) or idx
+        except Exception:
+            idx = {"as_of": None, "keys": []}
+        if idx.get("as_of") != latest:
+            idx = {"as_of": latest, "keys": []}
+        seen_keys = set(str(k) for k in (idx.get("keys") or []))
+
+        out_path = _mtm_history_file(self.data_root)
+        appended = 0
+        with open(out_path, "a", encoding="utf-8") as f:
+            for row in rows[:max_rows]:
+                try:
+                    if row.get("outcome"):
+                        continue
+                    tid = self._ensure_trade_id(row)
+                    mtm_date = str(row.get("mtm_date") or "")
+                    if mtm_date != latest:
+                        continue
+                    key = f"{tid}:{latest}"
+                    if key in seen_keys:
+                        continue
+                    payload = {
+                        "trade_id": tid,
+                        "trade_date": row.get("date"),
+                        "ticker": (row.get("ticker") or "").upper(),
+                        "signal": row.get("signal"),
+                        "mtm_date": latest,
+                        "mtm_price": _safe_float(row.get("mtm_price")),
+                        "mtm_return_pct": _safe_float(row.get("mtm_return_pct")),
+                    }
+                    f.write(json.dumps(payload) + "\n")
+                    appended += 1
+                    seen_keys.add(key)
+                except Exception:
+                    continue
+
+        # Persist index (bounded size)
+        try:
+            idx["as_of"] = latest
+            idx["keys"] = sorted(list(seen_keys))[:5000]
+            with open(idx_path, "w", encoding="utf-8") as f:
+                json.dump(idx, f)
+        except Exception:
+            pass
+        return {"appended": appended, "message": None, "as_of": latest}
+
+    def get_mtm_history_map(self, recent_rows: list[dict[str, Any]], limit_per_trade: int = 12) -> dict[str, list[dict[str, Any]]]:
+        """
+        Returns {trade_id: [{mtm_date, mtm_return_pct, mtm_price}...]} capped per trade.
+        """
+        want: set[str] = set()
+        for r in recent_rows or []:
+            try:
+                tid = str(r.get("trade_id") or "").strip()
+                if not tid:
+                    tid = _trade_id(str(r.get("date") or ""), str(r.get("ticker") or ""), str(r.get("signal") or ""))
+                    r["trade_id"] = tid
+                want.add(tid)
+            except Exception:
+                continue
+        if not want:
+            return {}
+
+        p = _mtm_history_file(self.data_root)
+        if not p.exists():
+            return {}
+
+        out: dict[str, list[dict[str, Any]]] = {tid: [] for tid in want}
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                        tid = str(obj.get("trade_id") or "")
+                        if tid not in want:
+                            continue
+                        out[tid].append(
+                            {
+                                "mtm_date": obj.get("mtm_date"),
+                                "mtm_return_pct": _safe_float(obj.get("mtm_return_pct")),
+                                "mtm_price": _safe_float(obj.get("mtm_price")),
+                            }
+                        )
+                    except Exception:
+                        continue
+            for tid in list(out.keys()):
+                out[tid] = out[tid][-limit_per_trade:]
+            return out
+        except Exception:
+            return {}
+
     def get_performance_summary(self, min_completed: int = 60) -> dict[str, Any]:
         rows = self._read_all()
         completed = [r for r in rows if r.get("outcome") in ("HIT", "MISS") and _safe_float(r.get("return_pct")) is not None]
@@ -338,6 +612,8 @@ class PaperTradeLogger:
 
     def get_recent(self, limit: int = 50) -> list[dict[str, Any]]:
         rows = self._read_all()
+        for row in rows:
+            self._ensure_trade_id(row)
         # newest last in file; return newest first
         out = list(reversed(rows))[:limit]
         return out

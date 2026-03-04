@@ -3,6 +3,7 @@
  * Dashboard load can take 1-2 minutes (longer under load); default proxy timeouts cause ECONNRESET.
  * Ticker detail does many external fetches (OHLCV, FMP, peers) – can exceed 5 min for slow APIs.
  * Timeout: 10 minutes for /api/dashboard and /api/ticker/*; 5 minutes for other endpoints.
+ * Node fetch (undici) has a default headers timeout (~5 min); we use undici Agent to raise it.
  */
 import { NextRequest, NextResponse } from "next/server";
 
@@ -20,6 +21,16 @@ function isDashboardPath(apiPath: string): boolean {
   return apiPath === "dashboard" || apiPath.startsWith("dashboard/");
 }
 
+/** Create undici Agent with high headers/body timeout to avoid HeadersTimeoutError on slow backend. */
+function createAgent(timeoutMs: number) {
+  const { Agent } = require("undici");
+  return new Agent({
+    headersTimeout: timeoutMs,
+    bodyTimeout: timeoutMs,
+    connectTimeout: 30000,
+  });
+}
+
 async function fetchWithTimeout(
   url: string,
   timeoutMs: number,
@@ -27,12 +38,15 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const dispatcher = createAgent(timeoutMs);
   try {
     const res = await fetch(url, {
       ...init,
       signal: controller.signal,
       headers: { Accept: "application/json", ...(init?.headers as Record<string, string>) },
       cache: "no-store",
+      // @ts-expect-error Node fetch accepts dispatcher from undici
+      dispatcher,
     });
     clearTimeout(timeoutId);
     return res;

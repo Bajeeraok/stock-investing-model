@@ -419,13 +419,17 @@ async def get_dashboard():
         logger.debug("Forward tracking failed: %s", e)
         forward_tracking["message"] = str(e)
 
-    # Paper trading: backfill outcomes + summary (log happens earlier right after run_signals)
+    # Paper trading: sync target/stop from latest run, then backfill outcomes + summary (log happens earlier right after run_signals)
     try:
         from signals.paper_trade_logger import PaperTradeLogger
         pt = PaperTradeLogger(data_root=ROOT / "data")
+        paper_trading["sync_targets"] = pt.sync_targets_stops_from_results(results)
+        paper_trading["mtm"] = pt.mark_to_market()
+        paper_trading["mtm_history_log"] = pt.append_mtm_history()
         paper_trading["fill"] = pt.fill_outcomes()
         paper_trading["summary"] = pt.get_performance_summary(min_completed=60)
         paper_trading["recent"] = pt.get_recent(limit=40)
+        paper_trading["mtm_history"] = pt.get_mtm_history_map(paper_trading.get("recent") or [], limit_per_trade=12)
     except Exception as e:
         logger.debug("Paper trading summary failed: %s", e)
         paper_trading = paper_trading if isinstance(paper_trading, dict) else {"summary": None, "recent": [], "log": None, "fill": None}

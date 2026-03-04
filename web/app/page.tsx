@@ -6,7 +6,9 @@ import { Dashboard } from "@/components/Dashboard";
 // Use relative /api/* so Next.js rewrites proxy to backend (BACKEND_API_URL). No NEXT_PUBLIC needed for Railway.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTO_REFRESH_MARKET_MIN = 30;
-const AUTO_REFRESH_OFF_HOURS_MIN = 30;
+// Off-hours auto-refresh is disabled to reduce API usage (FMP calls) and noise.
+// You can still manually refresh anytime.
+const AUTO_REFRESH_OFF_HOURS_MIN = 0;
 const DASHBOARD_FETCH_DEBOUNCE_MS = 2000;
 /** Min ms between dashboard fetches (avoids loop + duplicate from Strict Mode). */
 const DASHBOARD_MIN_INTERVAL_MS = 30_000;
@@ -78,10 +80,12 @@ export default function Home() {
     refresh();
   }, [refresh]);
 
-  // Auto-refresh: every 5 min during market hours, every 30 min outside
+  // Auto-refresh: only during US market hours on weekdays (ET).
   useEffect(() => {
     if (error || !data) return;
-    const intervalMs = (isUSMarketHours() ? AUTO_REFRESH_MARKET_MIN : AUTO_REFRESH_OFF_HOURS_MIN) * 60 * 1000;
+    const minutes = isUSMarketHours() ? AUTO_REFRESH_MARKET_MIN : AUTO_REFRESH_OFF_HOURS_MIN;
+    if (!minutes || minutes <= 0) return;
+    const intervalMs = minutes * 60 * 1000;
     const id = setInterval(() => refresh(), intervalMs);
     return () => clearInterval(id);
   }, [data, error, refresh]);
@@ -245,9 +249,13 @@ export interface DashboardData {
   };
   paper_trading?: {
     log?: { date: string; seen: number; appended: number } | null;
+    mtm?: { updated: number; message?: string | null; as_of?: string } | null;
+    mtm_history_log?: { appended: number; message?: string | null; as_of?: string } | null;
     fill?: { updated: number; message?: string | null } | null;
     summary?: { status: string; completed?: number; win_rate_pct?: number | null; avg_return_pct?: number | null; avg_win_pct?: number | null; avg_loss_pct?: number | null; message?: string } | null;
+    mtm_history?: Record<string, Array<{ mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null }>> | null;
     recent?: Array<{
+      trade_id?: string | null;
       date: string;
       ticker: string;
       signal: string;
@@ -262,6 +270,12 @@ export interface DashboardData {
       next_date?: string | null;
       actual_price?: number | null;
       return_pct?: number | null;
+      mtm_date?: string | null;
+      mtm_price?: number | null;
+      mtm_return_pct?: number | null;
+      rolling_entry_price?: number | null;
+      rolling_pnl?: number | null;
+      rolling_return_pct?: number | null;
       hit_target?: number | null;
       outcome?: string | null;
     }>;

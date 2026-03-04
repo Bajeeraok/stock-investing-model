@@ -47,16 +47,56 @@ def _redis_url() -> tuple[str | None, str | None]:
     return None, None
 
 
+def _redis_scheme(url: str | None) -> str | None:
+    if not url:
+        return None
+    if "://" in url:
+        return url.split("://", 1)[0].lower()
+    return None
+
+
+def _redis_attempt_urls(url: str) -> list[str]:
+    """
+    Return a list of URLs to attempt, including safe scheme fallback.
+    Some managed Redis providers require TLS (`rediss://`) even when a `redis://`
+    URL is provided (or vice versa).
+    """
+    out = [url]
+    if url.startswith("redis://"):
+        out.append("rediss://" + url[len("redis://"):])
+    elif url.startswith("rediss://"):
+        out.append("redis://" + url[len("rediss://"):])
+    return out
+
+
+def _try_connect(url: str):
+    import redis
+    r = redis.from_url(
+        url,
+        decode_responses=True,
+        socket_connect_timeout=3,
+        socket_timeout=3,
+        retry_on_timeout=False,
+    )
+    r.ping()
+    return r
+
+
 def _redis_client():
     """Lazy Redis connection. Returns None if Redis unavailable or disabled."""
     try:
         url, _src = _redis_url()
         if not url:
             return None
-        import redis
-        r = redis.from_url(url, decode_responses=True, socket_connect_timeout=3)
-        r.ping()
-        return r
+        last_err = None
+        for u in _redis_attempt_urls(url):
+            try:
+                return _try_connect(u)
+            except Exception as e:
+                last_err = e
+                continue
+        logger.debug("Redis not available: %s", last_err)
+        return None
     except Exception as e:
         logger.debug("Redis not available: %s", e)
         return None
@@ -67,24 +107,31 @@ def redis_status() -> dict:
     try:
         url, src = _redis_url()
         configured = bool(url)
-        # Provide non-sensitive diagnostics (never return the URL itself)
-        scheme = None
-        if url and "://" in url:
-            scheme = url.split("://", 1)[0].lower()
-        err = None
+        scheme = _redis_scheme(url)
         connected = False
-        try:
-            r = _redis_client()
-            connected = r is not None
-        except Exception as e:
-            err = str(e)[:160]
-            connected = False
+        error = None
+        used_scheme = scheme
+
+        if configured and url:
+            last_exc: Exception | None = None
+            for u in _redis_attempt_urls(url):
+                try:
+                    _ = _try_connect(u)
+                    connected = True
+                    used_scheme = _redis_scheme(u)
+                    last_exc = None
+                    break
+                except Exception as e:
+                    last_exc = e
+            if not connected and last_exc is not None:
+                error = f"{type(last_exc).__name__}: {str(last_exc)[:180]}"
+
         return {
             "configured": configured,
             "connected": connected,
             "source": src,
-            "scheme": scheme,
-            "error": err if (configured and not connected) else None,
+            "scheme": used_scheme,
+            "error": error if (configured and not connected) else None,
         }
     except Exception as e:
         logger.debug("redis_status: %s", e)

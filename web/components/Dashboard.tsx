@@ -42,6 +42,7 @@ import {
   EodAndSystemPanel,
   InsiderFlowTracker,
   TaxAwareExitPanel,
+  AlertsPanel,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 
@@ -301,6 +302,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {data.fmp_plan_status && <FMPPlanStatus status={data.fmp_plan_status} />}
+              <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen>
+                <AlertsPanel onTickerClick={setSelectedTicker} />
+              </ToggleSection>
               {(data.macro_regime || data.macro_analog) && (
                 <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                   {data.macro_regime && (

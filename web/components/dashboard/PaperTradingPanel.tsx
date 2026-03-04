@@ -9,6 +9,18 @@ function fmtPct(p: number | null | undefined) {
   return `${sign}${p.toFixed(2)}%`;
 }
 
+type MtmPoint = { mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null };
+
+function formatPnlHistory(history: MtmPoint[] | undefined, maxPoints = 6): { short: string; tooltip: string } {
+  if (!history?.length) return { short: "—", tooltip: "" };
+  const lines = history.map((h) => `${h.mtm_date}: ${h.mtm_return_pct != null ? fmtPct(h.mtm_return_pct) : "—"}`);
+  const short = history
+    .slice(-maxPoints)
+    .map((h) => (h.mtm_return_pct != null ? fmtPct(h.mtm_return_pct) : "—"))
+    .join(" → ");
+  return { short, tooltip: lines.join("\n") };
+}
+
 export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const pt = data.paper_trading;
   if (!pt) return null;
@@ -23,6 +35,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           <p className="text-sm font-medium text-slate-300">Paper trading (signals → outcomes)</p>
           <p className="text-xs text-slate-500 mt-0.5">
             Logs signals daily; backfills outcomes using EOD snapshots (~20 trading days ≈ 30 calendar days).
+            P&L history shows day-by-day return % (hover for dates).
           </p>
         </div>
         {pt.log?.date && (
@@ -74,6 +87,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
       )}
 
       {pt.fill?.message && <p className="text-xs text-slate-500">{pt.fill.message}</p>}
+      {pt.mtm?.as_of && (
+        <p className="text-xs text-slate-500">
+          Mark-to-market updated as of {pt.mtm.as_of} (open trades only).
+        </p>
+      )}
 
       {recent.length > 0 ? (
         <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
@@ -88,6 +106,10 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium">Stop</th>
                 <th className="py-1.5 pr-2 font-medium">Outcome</th>
                 <th className="py-1.5 pr-2 font-medium">Return</th>
+                <th className="py-1.5 pr-2 font-medium">Rolling entry</th>
+                <th className="py-1.5 pr-2 font-medium">Rolling P&L</th>
+                <th className="py-1.5 pr-2 font-medium">Rolling return</th>
+                <th className="py-1.5 pr-2 font-medium">P&L history</th>
               </tr>
             </thead>
             <tbody>
@@ -112,8 +134,39 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                       <span className="text-slate-600">pending</span>
                     )}
                   </td>
-                  <td className={clsx("py-1.5 pr-2", (Number(r.return_pct) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
-                    {r.return_pct != null ? fmtPct(Number(r.return_pct)) : "—"}
+                  {(() => {
+                    const isFinal = !!r.outcome && r.return_pct != null;
+                    const val = isFinal ? Number(r.return_pct) : (r.mtm_return_pct != null ? Number(r.mtm_return_pct) : null);
+                    return (
+                      <td className={clsx("py-1.5 pr-2", (val || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                        {val != null ? fmtPct(val) : "—"}
+                      </td>
+                    );
+                  })()}
+                  <td className="py-1.5 pr-2 text-slate-300" title={r.entry_price != null && r.rolling_entry_price != null ? `Signal entry $${Number(r.entry_price).toFixed(2)} → rolling (latest) $${Number(r.rolling_entry_price).toFixed(2)} (Δ ${r.entry_price ? fmtPct(100 * (Number(r.rolling_entry_price) - r.entry_price) / r.entry_price) : "—"})` : undefined}>
+                    {r.rolling_entry_price != null ? `$${Number(r.rolling_entry_price).toFixed(2)}` : "—"}
+                  </td>
+                  <td className={clsx("py-1.5 pr-2", (Number(r.rolling_pnl) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    {r.rolling_pnl != null ? `$${Number(r.rolling_pnl).toFixed(2)}` : "—"}
+                  </td>
+                  <td className={clsx("py-1.5 pr-2", (Number(r.rolling_return_pct) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    {r.rolling_return_pct != null ? fmtPct(Number(r.rolling_return_pct)) : "—"}
+                  </td>
+                  <td className="py-1.5 pr-2 text-slate-400 max-w-[200px]">
+                    {(() => {
+                      const tid = r.trade_id || "";
+                      const history = tid ? pt.mtm_history?.[tid] : undefined;
+                      const { short, tooltip } = formatPnlHistory(history);
+                      if (!short || short === "—") return "—";
+                      return (
+                        <span
+                          className="cursor-help border-b border-dotted border-slate-500"
+                          title={tooltip || undefined}
+                        >
+                          {short}
+                        </span>
+                      );
+                    })()}
                   </td>
                 </tr>
               ))}

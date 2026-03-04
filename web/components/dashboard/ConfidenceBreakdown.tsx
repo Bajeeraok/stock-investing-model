@@ -137,6 +137,16 @@ export interface ConfidenceData {
   ticker:          string;
   confidence:      number | null;   // null for INCOMPATIBLE instruments
   action:          string;
+  // Optional raw HMM payload (from backend) for regime-aware one-liners
+  hmm?: {
+    dominant_state?: string | null;
+    dominant_state_validated?: string | null;
+    bull_probability?: number | null;
+    transition_probability?: number | null;
+    bear_probability?: number | null;
+    ma_conflict?: Record<string, unknown> | null;
+    earnings_context?: Record<string, unknown> | null;
+  } | null;
   breakdown: {
     regime_hmm:        BreakdownLayer;
     pattern_technical: BreakdownLayer;
@@ -168,6 +178,80 @@ const LAYER_META: Record<string, { name: string; icon: React.ElementType }> = {
   fundamental_score: { name: "Fundamentals",      icon: Info         },
   nlp_sentiment:     { name: "News Sentiment",    icon: Activity     },
 };
+
+function toPct(v: number | null | undefined): number | null {
+  if (v == null || Number.isNaN(v)) return null;
+  // ML horizons are 0–1; some upstreams can already be 0–100.
+  return v <= 1.0 ? Math.round(v * 100) : Math.round(v);
+}
+
+function topDriverFromBreakdown(breakdown: ConfidenceData["breakdown"] | undefined | null) {
+  if (!breakdown) return null;
+  let best: { key: string; contrib: number } | null = null;
+  for (const [key, layer] of Object.entries(breakdown)) {
+    const l = layer as BreakdownLayer;
+    if (!l || !l.available || l.score == null || l.weight == null) continue;
+    const contrib = Math.max(0, Math.min(1, l.score)) * Math.max(0, l.weight);
+    if (!best || contrib > best.contrib) best = { key, contrib };
+  }
+  if (!best) return null;
+  const meta = LAYER_META[best.key] ?? { name: best.key, icon: Activity };
+  return { name: meta.name, key: best.key, contrib: best.contrib };
+}
+
+function generateActionSummary(data: ConfidenceData): string | null {
+  const actionRaw = data.action || "WATCH";
+  const action = actionRaw.toUpperCase();
+
+  const hmmRegime = (
+    data.hmm?.dominant_state_validated ||
+    data.hmm?.dominant_state ||
+    data.market_regime ||
+    "UNKNOWN"
+  ).toString().replace(/_/g, " ");
+
+  const top = topDriverFromBreakdown(data.breakdown);
+
+  const mlShortProb =
+    data.ml_horizons?.short?.prob ??
+    (data.breakdown?.lgbm_probability?.score ?? null);
+  const mlPct = toPct(mlShortProb);
+
+  const daysToConfirm =
+    data.pre_flight?.transition_bonus?.days_to_confirm != null
+      ? `${data.pre_flight.transition_bonus.days_to_confirm}d`
+      : (data.pre_flight?.regime_transition?.days_estimate ?? null);
+
+  const ma50 = data.watch_levels?.key_support_ma50 ?? null;
+  const invalidation = data.watch_levels?.invalidation_below ?? null;
+
+  if (action.includes("WATCH") || action.includes("HOLD")) {
+    if (hmmRegime.includes("TRANSITION")) {
+      const t = daysToConfirm ? `Watch for regime flip in ~${daysToConfirm} — ` : "Watch for regime flip — ";
+      const ml = mlPct != null ? `ML at ${mlPct}% is strong ` : "ML is strong ";
+      const level = ma50 != null ? `; enter on dips toward MA50 ($${ma50.toFixed(2)}).` : ".";
+      return `${t}${ml}but transition isn’t confirmed yet${level}`;
+    }
+    const driver = top?.name ? `${top.name} driving the read` : "insufficient confluence";
+    const level = ma50 != null ? ` Watch MA50 ($${ma50.toFixed(2)}) for an add level.` : "";
+    return `HOLD/WATCH — ${driver}.${level}`.trim();
+  }
+
+  if (action.includes("BUY")) {
+    const driver = top?.name ? `${top.name} leading` : "layers aligned";
+    const ml = mlPct != null ? `${mlPct}% ML` : "ML";
+    const stop = invalidation != null ? ` Stop < $${invalidation.toFixed(2)}.` : "";
+    return `BUY — ${driver} (${ml}, ${hmmRegime} regime).${stop}`.trim();
+  }
+
+  if (action.includes("REDUCE") || action.includes("AVOID") || action.includes("SELL") || action.includes("TRIM")) {
+    const driver = top?.name ? `${top.name} weakening` : "signal confluence weakening";
+    const level = invalidation != null ? ` Reassess above $${invalidation.toFixed(2)}.` : "";
+    return `${actionRaw} — ${driver}.${level}`.trim();
+  }
+
+  return null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Sub-components
@@ -815,6 +899,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
   const regimeTrans      = pf?.regime_transition ?? null;
   const playbook         = pf?.playbook ?? [];
   const pfFlags          = pf?.flags ?? [];
+  const actionSummary    = generateActionSummary(data);
   // Only show non-INCOHERENT coherence message since INCOHERENT is in disqualifiers
   const incoherent       = coherence?.level === "INCOHERENT";
 
@@ -837,6 +922,11 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             {coherence && <CoherenceBadge coherence={coherence} />}
           </div>
           <ActionBadge action={data.action ?? "WATCH"} confidence={confidence} />
+          {actionSummary && (
+            <p className="text-sm text-slate-300 leading-snug max-w-[64ch]">
+              {actionSummary}
+            </p>
+          )}
           <p className="text-[11px] text-slate-500">
             {data.n_layers_active ?? 0}/7 layers active
             {pf?.weight_label && <span className="ml-1.5 opacity-60">· {pf.weight_label}</span>}

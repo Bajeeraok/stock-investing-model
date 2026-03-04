@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
+import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -94,6 +95,7 @@ export interface TickerDetail {
     interpretation: string;
     note: string;
   };
+  investor_summary?: InvestorDecisionSummary | null;
 }
 
 export function TickerDetailModal({
@@ -110,6 +112,7 @@ export function TickerDetailModal({
   const [loading, setLoading]              = useState(true);
   const [error, setError]                  = useState<string | null>(null);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
+  const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -276,6 +279,19 @@ export function TickerDetailModal({
                     )}
                   </div>
                 </section>
+              )}
+
+              {/* ── Investor Decision Summary (horizon entry + tiers) ───── */}
+              {detail.investor_summary && (
+                <InvestorDecisionSummarySection
+                  summary={detail.investor_summary}
+                  currentPrice={detail.current_price ?? 0}
+                  ma200={detail.ma200}
+                  sector={detail.sector}
+                  companyName={detail.company_name}
+                  ltEntryTiersOpen={ltEntryTiersOpen}
+                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                />
               )}
 
               {/* ── 7-Layer Confidence Engine ──────────────────────────── */}

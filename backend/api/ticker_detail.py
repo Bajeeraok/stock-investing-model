@@ -232,6 +232,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 "suggested_buy_price": buy_p,
                 "suggested_sell_price": sell_p,
                 "support_level": supp,
+                "rsi": sig.get("rsi"),
                 "buy_target_confidence_pct": buy_conf,
                 "sell_target_confidence_pct": sell_conf,
                 "ma20": sig.get("ma20"),
@@ -294,7 +295,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         bear, base, bull = lt.get("bear"), lt.get("base"), lt.get("bull")
         if bear is not None and base is not None and bull is not None and not (bear < base < bull):
             sanity_errors.append("bb_band_order")
-    return {
+
+    # Build response dict first so we can pass it to investor summary
+    response = {
         "ticker": ticker,
         "thesis": thesis_data.get("thesis", ""),
         "exit_condition": thesis_data.get("exit_condition", ""),
@@ -325,6 +328,149 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **extra,
         **signal_data,
         **fmp_data,
+    }
+    response["investor_summary"] = _build_investor_summary(ticker, config, response)
+    return response
+
+
+def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict | None:
+    """
+    Build Investor Decision Summary (horizon entry tiers + verdicts) for the ticker detail modal.
+    Uses horizon_entry_calculator with data from response + run_confidence for ML probs.
+    Returns None if required inputs are missing.
+    """
+    try:
+        from signals.confidence_engine import run_confidence
+        from signals.horizon_entry_calculator import (
+            build_all_horizons_payload,
+            estimate_fair_value,
+        )
+    except Exception:
+        return None
+
+    current_price = response.get("current_price")
+    if current_price is None or current_price <= 0:
+        return None
+    ma50 = _safe_float(response.get("ma50"))
+    ma200 = _safe_float(response.get("ma200"))
+    low_52w = _safe_float(response.get("low_52w"))
+    high_52w = _safe_float(response.get("high_52w"))
+    if ma50 is None or ma200 is None or low_52w is None:
+        return None
+
+    # ML probs and regime from confidence engine
+    st_ml_prob = mt_ml_prob = lt_ml_prob = 25.0
+    regime_bull_pct = 50.0
+    try:
+        conf = run_confidence(ticker, config=config)
+        if conf:
+            mh = conf.get("ml_horizons") or {}
+            st_ml_prob = float(mh.get("short", {}).get("prob") or 0.25) * 100.0
+            mt_ml_prob = float(mh.get("medium", {}).get("prob") or 0.25) * 100.0
+            lt_ml_prob = float(mh.get("long", {}).get("prob") or 0.25) * 100.0
+            hmm = conf.get("hmm") or {}
+            regime_bull_pct = float(hmm.get("bull_probability") or 0.5) * 100.0
+    except Exception:
+        pass
+
+    rsi = _safe_float(response.get("rsi")) or 50.0
+    atr = _safe_float(response.get("atr14"))
+    if atr is None or atr <= 0:
+        atr = current_price * 0.02
+    support_level = _safe_float(response.get("support_level")) or (low_52w or current_price * 0.95)
+    resistance_level = high_52w or current_price * 1.05
+    vwap = current_price
+    volume_ratio = _safe_float(response.get("volume_ratio")) or 1.0
+    pattern_score = 50.0
+    if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
+        pattern_score = float(response["score_breakdown"]["composite"])
+
+    # Fair value: try estimate_fair_value from fundamentals, else use LT band high
+    fair_value = _safe_float(response.get("lt_band", {}).get("high")) if isinstance(response.get("lt_band"), dict) else None
+    sector_specific = response.get("sector_specific") or {}
+    if fair_value is None or fair_value <= 0:
+        try:
+            import yfinance as yf
+            t = yf.Ticker(ticker)
+            info = getattr(t, "info", None) or {}
+            pe = _safe_float(info.get("trailingPE") or info.get("forwardPE"))
+            growth = _safe_float(info.get("revenueGrowth"))
+            if growth is not None and growth < 1 and growth > 0:
+                growth = growth * 100
+            margin = _safe_float(info.get("profitMargins"))
+            if margin is not None and margin < 1:
+                margin = margin * 100
+            de = _safe_float(info.get("debtToEquity"))
+            sector_pe = 28.0
+            if pe and pe > 0 and margin is not None:
+                fair_value = estimate_fair_value(
+                    current_price=current_price,
+                    pe_ratio=pe,
+                    sector_pe=sector_pe,
+                    revenue_growth_pct=growth or 10.0,
+                    net_margin_pct=margin or 15.0,
+                    de_ratio=de or 0.5,
+                )
+        except Exception:
+            pass
+    if fair_value is None or fair_value <= 0:
+        fair_value = current_price * 1.15
+
+    days_to_earnings = None
+    if response.get("earnings") and isinstance(response["earnings"], dict):
+        days_to_earnings = response["earnings"].get("days_until")
+
+    options_sentiment_score = 50.0
+    insider_activity_score = 50.0
+    fundamentals_score = 50.0
+    if response.get("breakdown"):
+        b = response["breakdown"]
+        for layer, key in [("options_sentiment", "options_sentiment"), ("insider_signal", "insider_signal"), ("fundamental_score", "fundamental_score")]:
+            s = (b.get(layer) or b.get(key)) or {}
+            sc = s.get("score") if isinstance(s, dict) else None
+            if sc is not None:
+                v = float(sc) * 100 if float(sc) <= 1 else float(sc)
+                if layer == "options_sentiment":
+                    options_sentiment_score = v
+                elif layer == "insider_signal":
+                    insider_activity_score = v
+                else:
+                    fundamentals_score = v
+    # Prefer confidence breakdown if we have it from a prior run (we don't pass it in response; keep defaults)
+
+    try:
+        payload = build_all_horizons_payload(
+            current_price=current_price,
+            rsi=rsi,
+            atr=atr,
+            vwap=vwap,
+            support_level=support_level,
+            resistance_level=resistance_level,
+            ma50=ma50,
+            ma200=ma200,
+            week52_low=low_52w,
+            volume_ratio=volume_ratio,
+            st_ml_prob=st_ml_prob,
+            mt_ml_prob=mt_ml_prob,
+            lt_ml_prob=lt_ml_prob,
+            regime_bull_pct=regime_bull_pct,
+            pattern_score=pattern_score,
+            fair_value=fair_value,
+            options_sentiment_score=options_sentiment_score,
+            insider_activity_score=insider_activity_score,
+            fundamentals_score=fundamentals_score,
+            days_to_earnings=days_to_earnings,
+        )
+    except Exception:
+        return None
+
+    verdicts = [payload["short"].get("verdict"), payload["medium"].get("verdict"), payload["long"].get("verdict")]
+    overall = "STRONG BUY" if "STRONG BUY" in verdicts else "BUY" if "BUY" in verdicts else "WATCH" if "WATCH" in verdicts else "WAIT"
+
+    return {
+        "fair_value": round(fair_value, 2),
+        "overall_verdict": overall,
+        "horizons": payload,
     }
 
 
@@ -598,6 +744,7 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
             out["st_band"] = row.get("st_band")
             out["mt_band"] = row.get("mt_band")
             out["lt_band"] = row.get("lt_band")
+            out["atr14"] = row.get("atr14")
             out["lt_band_low_confidence"] = row.get("lt_band_low_confidence")
             out["st_checkpoints"] = row.get("st_checkpoints")
             out["mt_checkpoints"] = row.get("mt_checkpoints")

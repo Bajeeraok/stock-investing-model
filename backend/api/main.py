@@ -43,7 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger.info("Backend: importing dashboard router...")
-from api.routers import dashboard, chat
+from api.routers import dashboard, chat, alerts, scanner
 
 logger.info("Backend: imports complete.")
 
@@ -78,11 +78,25 @@ app.add_middleware(
 
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(alerts.router, prefix="/api", tags=["alerts"])
+app.include_router(scanner.router, prefix="/api", tags=["scanner"])
 
 
 @app.on_event("startup")
 def startup():
     logger.info("FastAPI server startup complete. Listening for requests on /api/*")
+    try:
+        scanner.startup_scanner()
+    except Exception as e:
+        logger.warning("Scanner startup failed: %s", e)
+
+
+@app.on_event("shutdown")
+def shutdown():
+    try:
+        scanner.shutdown_scanner()
+    except Exception:
+        pass
 
 
 @app.get("/api/health")
