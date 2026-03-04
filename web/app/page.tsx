@@ -61,13 +61,26 @@ export default function Home() {
     setError(null);
     try {
       const res = await fetch(API_BASE ? `${API_BASE}/api/dashboard` : "/api/dashboard");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const errBody = await res.json();
+          if (errBody && typeof errBody.error === "string") errMsg = errBody.error;
+        } catch {
+          // ignore JSON parse for error body
+        }
+        throw new Error(errMsg);
+      }
       const json = await res.json();
       setData(json);
       setLastRefreshedAt(new Date());
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to load";
-      console.error("[Dashboard] Fetch error:", msg, e);
+      const raw = e instanceof Error ? e.message : "Failed to load";
+      const msg =
+        raw === "Failed to fetch" || raw.includes("Load failed") || raw.includes("NetworkError")
+          ? "Request timed out or connection failed. The backend may still be loading (1–2 min). Click Retry or wait and try again."
+          : raw;
+      console.error("[Dashboard] Fetch error:", raw, e);
       setError(msg);
       lastDashboardFetchStart = 0; // allow immediate retry from error screen
     } finally {
@@ -93,25 +106,32 @@ export default function Home() {
   if (loading && !data) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-sm">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-emerald-500 border-t-transparent mx-auto mb-4" />
-          <p className="text-slate-400">Running analysis... This may take 1-2 minutes.</p>
+          <p className="text-slate-400">Running analysis... This may take 1–2 minutes.</p>
           <p className="text-slate-500 text-sm mt-1">Fetching signals, portfolio, opportunities...</p>
+          <p className="text-slate-600 text-xs mt-2">If it takes longer, the backend is still working — don’t refresh.</p>
         </div>
       </div>
     );
   }
 
   if (error) {
+    const isTimeout =
+      error.includes("timed out") ||
+      error.includes("Timeout") ||
+      error.includes("502") ||
+      error.includes("still be loading");
+    const hint = isTimeout
+      ? "Backend is likely still fetching data (check backend logs). Wait a minute and click Retry."
+      : typeof window !== "undefined" && !/^localhost|127\.0\.0\.1$/.test(window.location.hostname)
+        ? "Backend may be starting or unreachable. Check Railway logs and BACKEND_API_URL on the web service."
+        : "Local: ensure FastAPI is running — cd backend && python -m uvicorn api.main:app --reload --port 8002";
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center p-8 bg-slate-900 rounded-xl border border-red-500/30">
+        <div className="text-center p-8 bg-slate-900 rounded-xl border border-red-500/30 max-w-md">
           <p className="text-red-400 font-medium">Error: {error}</p>
-          <p className="text-slate-400 text-sm mt-2">
-            {typeof window !== "undefined" && !/^localhost|127\.0\.0\.1$/.test(window.location.hostname)
-              ? "Backend may be starting or unreachable. Check Railway logs and BACKEND_API_URL on the web service."
-              : "Local: ensure FastAPI is running — cd backend && python -m uvicorn api.main:app --reload --port 8002"}
-          </p>
+          <p className="text-slate-400 text-sm mt-2">{hint}</p>
           <button
             onClick={refresh}
             className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium"
