@@ -181,7 +181,7 @@ export default function Home() {
           <p className="text-red-400 font-medium">Error: {error}</p>
           <p className="text-slate-400 text-sm mt-2">{hint}</p>
           <button
-            onClick={refresh}
+            onClick={() => refresh()}
             className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium"
           >
             Retry
