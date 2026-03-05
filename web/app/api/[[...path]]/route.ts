@@ -1,19 +1,20 @@
 /**
  * Proxy API requests to the backend with extended timeout.
- * Dashboard load can take 1-2 minutes (longer under load); default proxy timeouts cause ECONNRESET.
- * Ticker detail does many external fetches (OHLCV, FMP, peers) – can exceed 5 min for slow APIs.
- * Timeout: 10 minutes for /api/dashboard and /api/ticker/*; 5 minutes for other endpoints.
- * Node fetch (undici) has a default headers timeout (~5 min); we use undici Agent to raise it.
+ * Dashboard load can take 1–3 minutes (cold start, many FMP/yfinance calls); shared/public use must not 502.
+ * Ticker detail does many external fetches – can exceed 5 min for slow APIs.
+ * Timeout: 15 min for /api/dashboard; 12 min for /api/ticker/*; 5 min for other endpoints.
+ * Retries: 2 retries with backoff for long-running endpoints on 5xx or connection failure.
  */
 import { NextRequest, NextResponse } from "next/server";
 
 const BACKEND = process.env.BACKEND_API_URL || "http://localhost:8002";
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes default
-const LONG_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes for heavy endpoints
+const DASHBOARD_TIMEOUT_MS = 15 * 60 * 1000; // 15 min – cold start + full run; shared use
+const TICKER_TIMEOUT_MS = 12 * 60 * 1000;   // 12 min – ticker detail (many fetches)
 
 function getTimeoutMs(apiPath: string): number {
-  if (apiPath === "dashboard" || apiPath.startsWith("dashboard/")) return LONG_TIMEOUT_MS;
-  if (apiPath.startsWith("ticker/")) return LONG_TIMEOUT_MS; // ticker detail: many fetches
+  if (apiPath === "dashboard" || apiPath.startsWith("dashboard/")) return DASHBOARD_TIMEOUT_MS;
+  if (apiPath.startsWith("ticker/")) return TICKER_TIMEOUT_MS;
   return TIMEOUT_MS;
 }
 
@@ -74,12 +75,15 @@ export async function GET(
     return fetchWithTimeout(url, timeoutMs);
   };
 
+  const backoffMs = [3000, 8000]; // first retry 3s, second 8s
+  let lastErr: unknown = null;
+
   try {
     let res = await doFetch();
-    // One retry for long-running endpoints if first attempt fails (e.g. ECONNRESET)
-    if (!res.ok && longRunning && res.status >= 500) {
-      console.warn("[proxy] Dashboard returned", res.status, ", retrying in 3s...");
-      await new Promise((r) => setTimeout(r, 3000));
+    // Up to 2 retries for long-running endpoints on 5xx (backend starting / overloaded)
+    for (let i = 0; i < backoffMs.length && !res.ok && longRunning && res.status >= 500; i++) {
+      console.warn("[proxy]", apiPath, "returned", res.status, ", retry", i + 1, "in", backoffMs[i] / 1000, "s");
+      await new Promise((r) => setTimeout(r, backoffMs[i]));
       res = await doFetch();
     }
     const body = await res.text();
@@ -88,31 +92,39 @@ export async function GET(
       headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
     });
   } catch (e) {
+    lastErr = e;
     const isAbort = e instanceof Error && (e as Error & { name?: string }).name === "AbortError";
     const cause = e instanceof Error && "cause" in e ? (e as Error & { cause?: unknown }).cause : null;
     const msg = isAbort
-      ? `Request timed out after ${timeoutMs / 60000} minutes. Dashboard can take 1–2 min; check backend is running and not overloaded.`
+      ? `Request timed out after ${timeoutMs / 60000} minutes. Dashboard can take 2–3 min on first load; try again or check backend.`
       : e instanceof Error ? e.message : "Proxy failed";
     console.error("[proxy] Failed to proxy", url, msg, cause ? `(cause: ${String(cause)})` : "");
 
-    if (longRunning && !isAbort) {
-      try {
-        console.warn("[proxy] Retrying dashboard in 3s...");
-        await new Promise((r) => setTimeout(r, 3000));
-        const res = await doFetch();
-        const body = await res.text();
-        return new NextResponse(body, {
-          status: res.status,
-          headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
-        });
-      } catch (retryErr) {
-        const retryCause = retryErr instanceof Error && "cause" in retryErr ? (retryErr as Error & { cause?: unknown }).cause : null;
-        console.error("[proxy] Retry failed", url, retryCause ? String(retryCause) : retryErr);
+    // Up to 2 retries on connection/network failure for long-running endpoints
+    if (longRunning) {
+      for (let i = 0; i < backoffMs.length; i++) {
+        try {
+          console.warn("[proxy] Retry", i + 1, "in", backoffMs[i] / 1000, "s...");
+          await new Promise((r) => setTimeout(r, backoffMs[i]));
+          const res = await doFetch();
+          const body = await res.text();
+          return new NextResponse(body, {
+            status: res.status,
+            headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
+          });
+        } catch (retryErr) {
+          lastErr = retryErr;
+          const retryCause = retryErr instanceof Error && "cause" in retryErr ? (retryErr as Error & { cause?: unknown }).cause : null;
+          console.error("[proxy] Retry", i + 1, "failed", url, retryCause ? String(retryCause) : retryErr);
+        }
       }
     }
 
+    const finalMsg = lastErr instanceof Error && (lastErr as Error & { name?: string }).name === "AbortError"
+      ? `Request timed out after ${timeoutMs / 60000} minutes.`
+      : msg;
     return NextResponse.json(
-      { error: msg, url },
+      { error: finalMsg, url },
       { status: 502 }
     );
   }
@@ -128,33 +140,27 @@ export async function POST(
   const backendUrl = `${BACKEND.replace(/\/$/, "")}/api/${apiPath}${search}`;
 
   const timeoutMs = getTimeoutMs(apiPath);
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const contentType = request.headers.get("Content-Type");
+  const body = contentType?.includes("multipart/form-data")
+    ? await request.formData()
+    : await request.text();
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (contentType && !contentType.includes("multipart/form-data")) {
+    headers["Content-Type"] = contentType;
+  }
 
   try {
-    const contentType = request.headers.get("Content-Type");
-    const body = contentType?.includes("multipart/form-data")
-      ? await request.formData()
-      : await request.text();
-    const headers: Record<string, string> = { Accept: "application/json" };
-    if (contentType && !contentType.includes("multipart/form-data")) {
-      headers["Content-Type"] = contentType;
-    }
-    const res = await fetch(backendUrl, {
+    const res = await fetchWithTimeout(backendUrl, timeoutMs, {
       method: "POST",
-      signal: controller.signal,
       headers,
       body: body as BodyInit,
-      cache: "no-store",
     });
     const resBody = await res.text();
-    clearTimeout(timeoutId);
     return new NextResponse(resBody, {
       status: res.status,
       headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
     });
   } catch (e) {
-    clearTimeout(timeoutId);
     const isAbort = e instanceof Error && (e as Error & { name?: string }).name === "AbortError";
     const msg = isAbort
       ? `Request timed out after ${timeoutMs / 60000} minutes.`

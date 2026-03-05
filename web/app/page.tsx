@@ -12,6 +12,8 @@ const AUTO_REFRESH_OFF_HOURS_MIN = 0;
 const DASHBOARD_FETCH_DEBOUNCE_MS = 2000;
 /** Min ms between dashboard fetches (avoids loop + duplicate from Strict Mode). */
 const DASHBOARD_MIN_INTERVAL_MS = 30_000;
+/** Auto-retry once after this delay when 502/503/timeout (shared-use robustness). */
+const AUTO_RETRY_DELAY_MS = 8000;
 
 // Module-level guards so they survive Strict Mode unmount/remount and prevent duplicate requests
 let dashboardFetchInProgress = false;
@@ -43,10 +45,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+  const [retrying, setRetrying] = useState(false);
 
   const lastFetchRef = useRef<number>(0);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isAutoRetry = false) => {
     const now = Date.now();
     // Per-call debounce (same as before)
     if (now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
@@ -60,14 +63,14 @@ export default function Home() {
     dashboardFetchInProgress = true;
     lastDashboardFetchStart = now;
     setLoading(true);
-    setError(null);
+    if (!isAutoRetry) setError(null);
     try {
       const res = await fetch(API_BASE ? `${API_BASE}/api/dashboard` : "/api/dashboard");
       if (!res.ok) {
         let errMsg = res.status === 503
           ? "Service temporarily unavailable (503)"
           : res.status === 502
-            ? "Bad gateway (502) — proxy could not get a response from the backend"
+            ? "Backend didn't respond in time (502). The app will retry automatically."
             : `HTTP ${res.status}`;
         try {
           const errBody = await res.json();
@@ -80,11 +83,12 @@ export default function Home() {
       const json = await res.json();
       setData(json);
       setLastRefreshedAt(new Date());
+      retryCountRef.current = 0; // allow auto-retry again on future 502
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Failed to load";
       const msg =
         raw === "Failed to fetch" || raw.includes("Load failed") || raw.includes("NetworkError")
-          ? "Request timed out or connection failed. The backend may still be loading (1–2 min). Click Retry or wait and try again."
+          ? "Connection failed or timed out. Retrying automatically…"
           : raw;
       console.error("[Dashboard] Fetch error:", raw, e);
       setError(msg);
@@ -94,6 +98,27 @@ export default function Home() {
       dashboardFetchInProgress = false;
     }
   }, []);
+
+  // Auto-retry once after 502/503/timeout (robustness for shared links / cold start)
+  const retryCountRef = useRef(0);
+  useEffect(() => {
+    if (!error || retryCountRef.current >= 1) return;
+    const isRetryable =
+      error.includes("502") ||
+      error.includes("503") ||
+      error.includes("timed out") ||
+      error.includes("Timeout") ||
+      error.includes("Retrying") ||
+      error.includes("Connection failed");
+    if (!isRetryable) return;
+    retryCountRef.current += 1;
+    setRetrying(true);
+    const t = setTimeout(() => {
+      setRetrying(false);
+      refresh(true);
+    }, AUTO_RETRY_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [error, refresh]);
 
   useEffect(() => {
     const now = Date.now();
@@ -112,14 +137,26 @@ export default function Home() {
     return () => clearInterval(id);
   }, [data, error, refresh]);
 
-  if (loading && !data) {
+  if (loading && !data && !retrying) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center max-w-sm">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-emerald-500 border-t-transparent mx-auto mb-4" />
-          <p className="text-slate-400">Running analysis... This may take 1–2 minutes.</p>
+          <p className="text-slate-400">Running analysis… First load can take 2–3 minutes.</p>
           <p className="text-slate-500 text-sm mt-1">Fetching signals, portfolio, opportunities...</p>
-          <p className="text-slate-600 text-xs mt-2">If it takes longer, the backend is still working — don’t refresh.</p>
+          <p className="text-slate-600 text-xs mt-2">If you shared this link, the app will keep trying — no need to refresh.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (retrying) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center max-w-sm">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-amber-500 border-t-transparent mx-auto mb-4" />
+          <p className="text-slate-400">First load didn’t respond in time. Retrying in a few seconds…</p>
+          <p className="text-slate-500 text-sm mt-1">This often works on the second try (e.g. backend cold start).</p>
         </div>
       </div>
     );
@@ -131,9 +168,10 @@ export default function Home() {
       error.includes("Timeout") ||
       error.includes("502") ||
       error.includes("503") ||
-      error.includes("still be loading");
+      error.includes("Retrying") ||
+      error.includes("Connection failed");
     const hint = isBackendBusy
-      ? "Backend may be starting, overloaded, or still building the dashboard. Wait a minute and click Retry. Check Railway backend logs if it persists."
+      ? "First load can take 2–3 minutes; the app retries automatically. If it still fails, click Retry. When sharing with others, they’ll see the same retry — no action needed."
       : typeof window !== "undefined" && !/^localhost|127\.0\.0\.1$/.test(window.location.hostname)
         ? "Backend may be starting or unreachable. Check Railway logs and BACKEND_API_URL on the web service."
         : "Local: ensure FastAPI is running — cd backend && python -m uvicorn api.main:app --reload --port 8002";
