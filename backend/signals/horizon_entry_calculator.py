@@ -17,6 +17,13 @@ Run standalone test:
     python horizon_entry_calculator.py
 """
 
+import sys
+from pathlib import Path
+
+_BACKEND = Path(__file__).resolve().parent.parent
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
+
 from dataclasses import dataclass, asdict
 from typing import Optional
 
@@ -526,10 +533,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FAIR VALUE ESTIMATOR
-# ──────────────────────────────────────────────────────────────────────────────
-# Composite: PE-relative × PEG growth adjustment × quality premium
-# Replace with your DCF model if available for higher precision.
+# FAIR VALUE — delegated to multi-method estimator
 # ══════════════════════════════════════════════════════════════════════════════
 
 def estimate_fair_value(
@@ -539,30 +543,23 @@ def estimate_fair_value(
     revenue_growth_pct: float,
     net_margin_pct: float,
     de_ratio: float,
+    **kwargs: object,
 ) -> float:
     """
-    Three-factor fair value estimate:
-      1. PE-relative base:  sector_pe / stock_pe  (fair if at sector multiple)
-      2. PEG growth bonus:  PEG < 1.5 → up to +7.5% premium
-      3. Quality premium:   high margins + low debt → up to +8% premium
-
-    Replace with DCF for precision when financial projections are available.
+    Backward-compatible wrapper: delegates to fair_value_estimator.estimate_fair_value_simple.
+    Pass forward_pe, sector_forward_pe, earnings_growth_pct, fcf_per_share, analyst_target
+    for better accuracy on growth/high-growth stocks.
     """
-    # Factor 1: PE vs sector
-    pe_adj = sector_pe / pe_ratio if pe_ratio > 0 else 1.0
-
-    # Factor 2: PEG adjustment (PEG = PE / growth rate)
-    peg        = pe_ratio / revenue_growth_pct if revenue_growth_pct > 0 else 2.0
-    growth_adj = 1.0 + max(0.0, (1.5 - peg) * 0.05)
-
-    # Factor 3: Quality premium
-    quality = 0.0
-    if net_margin_pct > 20: quality += 0.03
-    if net_margin_pct > 30: quality += 0.02   # stacks for high-margin businesses
-    if de_ratio < 0.5:      quality += 0.03
-    elif de_ratio < 1.0:    quality += 0.015
-
-    return round(current_price * pe_adj * growth_adj * (1 + quality), 2)
+    from signals.fair_value_estimator import estimate_fair_value_simple
+    return estimate_fair_value_simple(
+        current_price=current_price,
+        ttm_pe=pe_ratio,
+        sector_pe=sector_pe,
+        revenue_growth_pct=revenue_growth_pct,
+        net_margin_pct=net_margin_pct,
+        de_ratio=de_ratio,
+        **{k: v for k, v in kwargs.items() if k in ("forward_pe", "sector_forward_pe", "fcf_per_share", "analyst_target", "earnings_growth_pct")},
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

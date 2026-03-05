@@ -341,10 +341,8 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     """
     try:
         from signals.confidence_engine import run_confidence
-        from signals.horizon_entry_calculator import (
-            build_all_horizons_payload,
-            estimate_fair_value,
-        )
+        from signals.horizon_entry_calculator import build_all_horizons_payload
+        from signals.fair_value_estimator import estimate_fair_value as estimate_fair_value_full
     except Exception:
         return None
 
@@ -385,35 +383,74 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
         pattern_score = float(response["score_breakdown"]["composite"])
 
-    # Fair value: try estimate_fair_value from fundamentals, else use LT band high
+    # Fair value: multi-method estimator (value/growth/high-growth) or LT band high
     fair_value = _safe_float(response.get("lt_band", {}).get("high")) if isinstance(response.get("lt_band"), dict) else None
     sector_specific = response.get("sector_specific") or {}
+    ttm_pe_used: float | None = None
+    forward_pe_used: float | None = None
     if fair_value is None or fair_value <= 0:
         try:
             import yfinance as yf
+            from signals.fmp_client import fetch_key_metrics_ttm
+
             t = yf.Ticker(ticker)
             info = getattr(t, "info", None) or {}
-            pe = _safe_float(info.get("trailingPE") or info.get("forwardPE"))
-            growth = _safe_float(info.get("revenueGrowth"))
-            if growth is not None and growth < 1 and growth > 0:
-                growth = growth * 100
+            # Resolve TTM PE with priority: FMP > computed (price/trailingEps) > yfinance trailingPE
+            # yfinance trailingPE is often stale/wrong (e.g. GOOGL showed 22.4 vs actual ~28x).
+            ttm_pe = None
+            forward_pe = None
+            fmp_km, _ = fetch_key_metrics_ttm(config, ticker)
+            if fmp_km and isinstance(fmp_km, dict):
+                ttm_pe = _safe_float(
+                    fmp_km.get("peRatioTTM") or fmp_km.get("peRatio") or fmp_km.get("trailingPE") or fmp_km.get("priceEarningsRatio")
+                )
+                forward_pe = _safe_float(fmp_km.get("forwardPE"))
+
+            if ttm_pe is None and current_price:
+                eps = _safe_float(info.get("trailingEps"))
+                if eps and eps > 0:
+                    ttm_pe = round(current_price / eps, 2)
+            if ttm_pe is None:
+                ttm_pe = _safe_float(info.get("trailingPE"))
+            if forward_pe is None:
+                forward_pe = _safe_float(info.get("forwardPE"))
+
+            revenue_growth = _safe_float(info.get("revenueGrowth"))
+            if revenue_growth is not None and revenue_growth < 1 and revenue_growth > 0:
+                revenue_growth = revenue_growth * 100
+            earnings_growth = _safe_float(info.get("earningsGrowth"))
+            if earnings_growth is not None and earnings_growth < 1 and earnings_growth > 0:
+                earnings_growth = earnings_growth * 100
             margin = _safe_float(info.get("profitMargins"))
             if margin is not None and margin < 1:
                 margin = margin * 100
             de = _safe_float(info.get("debtToEquity"))
             sector_pe = 28.0
+            sector_forward_pe = 25.0
+            analyst_target = _safe_float(info.get("targetMeanPrice"))
+            fcf = _safe_float(info.get("freeCashflow"))
+            shares = _safe_float(info.get("sharesOutstanding"))
+            fcf_per_share = (fcf / shares) if (fcf and shares and shares > 0) else None
+            pe = ttm_pe or forward_pe
+            if ttm_pe is not None and ttm_pe > 0:
+                ttm_pe_used = ttm_pe
+            if forward_pe is not None and forward_pe > 0:
+                forward_pe_used = forward_pe
             if pe and pe > 0 and margin is not None:
-                fair_value = estimate_fair_value(
+                fv_result = estimate_fair_value_full(
                     current_price=current_price,
-                    pe_ratio=pe,
+                    ttm_pe=ttm_pe if (ttm_pe is not None and ttm_pe > 0) else (forward_pe or pe),
                     sector_pe=sector_pe,
-                    revenue_growth_pct=growth or 10.0,
+                    revenue_growth_pct=revenue_growth or 10.0,
+                    earnings_growth_pct=earnings_growth if earnings_growth is not None else (revenue_growth or 10.0),
                     net_margin_pct=margin or 15.0,
                     de_ratio=de or 0.5,
+                    forward_pe=forward_pe,
+                    sector_forward_pe=sector_forward_pe,
+                    fcf_per_share=fcf_per_share,
+                    analyst_target=analyst_target,
                 )
-                # Cap heuristic fair value so we don't show extreme undervaluation (e.g. 49%)
-                if fair_value is not None and fair_value > current_price * 1.35:
-                    fair_value = round(current_price * 1.35, 2)
+                fair_value = fv_result.fair_value
         except Exception:
             pass
     if fair_value is None or fair_value <= 0:
@@ -470,11 +507,16 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     verdicts = [payload["short"].get("verdict"), payload["medium"].get("verdict"), payload["long"].get("verdict")]
     overall = "STRONG BUY" if "STRONG BUY" in verdicts else "BUY" if "BUY" in verdicts else "WATCH" if "WATCH" in verdicts else "WAIT"
 
-    return {
+    out: dict = {
         "fair_value": round(fair_value, 2),
         "overall_verdict": overall,
         "horizons": payload,
     }
+    if ttm_pe_used is not None:
+        out["ttm_pe_used"] = round(ttm_pe_used, 2)
+    if forward_pe_used is not None:
+        out["forward_pe_used"] = round(forward_pe_used, 2)
+    return out
 
 
 def _seasonal_note(ticker: str) -> str | None:
