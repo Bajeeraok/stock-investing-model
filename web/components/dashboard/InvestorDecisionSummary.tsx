@@ -7,6 +7,10 @@ import { CheckCircle, XCircle, AlertCircle, Target, ChevronDown, ChevronRight } 
 export interface InvestorDecisionSummary {
   fair_value: number;
   overall_verdict: "WAIT" | "WATCH" | "BUY" | "STRONG BUY";
+  /** TTM PE used for fair value (FMP > price/trailingEps > yfinance). Shown so card reflects correct PE, not stale feed. */
+  ttm_pe_used?: number;
+  /** Forward PE used for fair value when available. */
+  forward_pe_used?: number;
   horizons: {
     short: HorizonSignalPayload;
     medium: HorizonSignalPayload;
@@ -129,7 +133,7 @@ export function InvestorDecisionSummarySection({
   ltEntryTiersOpen: boolean;
   onToggleLtTiers: () => void;
 }) {
-  const { fair_value, overall_verdict, horizons } = summary;
+  const { fair_value, overall_verdict, horizons, ttm_pe_used, forward_pe_used } = summary;
   const assessmentPct = currentPrice > 0 ? ((fair_value - currentPrice) / currentPrice) * 100 : 0;
   const short = horizons.short;
   const medium = horizons.medium;
@@ -161,6 +165,12 @@ export function InvestorDecisionSummarySection({
           { className: assessmentPct >= 0 ? "text-emerald-400" : "text-red-400" },
           `${assessmentPct.toFixed(1)}% ${assessmentPct >= 0 ? "undervalued" : "overvalued"}`
         ),
+        (ttm_pe_used != null || forward_pe_used != null) &&
+          React.createElement(
+            "span",
+            { className: "text-slate-500 text-xs" },
+            [ttm_pe_used != null ? `TTM PE ${ttm_pe_used.toFixed(1)}×` : null, forward_pe_used != null ? `Fwd PE ${forward_pe_used.toFixed(1)}×` : null].filter(Boolean).join(" · ")
+          ),
         React.createElement(
           "span",
           { className: "flex items-center gap-1" },
