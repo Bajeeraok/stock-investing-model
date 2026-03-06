@@ -25,22 +25,37 @@ _API_KEY_ENV_MAP = {
 }
 
 ROOT = Path(__file__).resolve().parent
-OVERRIDES_PATH = ROOT / "data" / "user_overrides.json"
+
+
+def get_data_root() -> Path:
+    """
+    Data directory for EOD snapshots, last_run.json, etc.
+    Set DATA_ROOT to a persistent path (e.g. mounted volume) so data survives restarts (Railway, Docker).
+    """
+    raw = os.environ.get("DATA_ROOT", "").strip()
+    if raw:
+        return Path(raw).resolve()
+    return (ROOT / "data").resolve()
+
+
+def _overrides_path() -> Path:
+    return get_data_root() / "user_overrides.json"
 
 
 def _load_overrides() -> dict:
-    if not OVERRIDES_PATH.exists():
+    if not _overrides_path().exists():
         return {"additional_tickers": [], "uploaded_portfolios": {}}
     try:
-        with open(OVERRIDES_PATH) as f:
+        with open(_overrides_path()) as f:
             return json.load(f)
     except Exception:
         return {"additional_tickers": [], "uploaded_portfolios": {}}
 
 
 def _save_overrides(data: dict) -> None:
-    OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(OVERRIDES_PATH, "w") as f:
+    p = _overrides_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
         json.dump(data, f, indent=2)
 
 

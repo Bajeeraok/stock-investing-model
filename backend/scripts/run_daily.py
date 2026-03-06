@@ -30,7 +30,7 @@ def _today_est() -> str:
     return datetime.now(EST).strftime("%Y-%m-%d")
 
 import yaml
-from config_loader import load_config
+from config_loader import get_data_root, load_config
 from alerts.notifier import send_alert_digest
 from behavior.thesis import load_theses, get_nudge
 from behavior.what_changed import what_changed
@@ -55,7 +55,7 @@ from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing
 def load_last_run(path: Path | None = None) -> dict[str, dict] | None:
     """Load previous run: ticker -> {composite_buy, regime}."""
     if path is None:
-        path = ROOT / "data" / "last_run.json"
+        path = get_data_root() / "last_run.json"
     if not path.exists():
         return None
     try:
@@ -404,7 +404,7 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
 
 def save_last_run(results: list[dict], path: Path | None = None) -> None:
     if path is None:
-        path = ROOT / "data" / "last_run.json"
+        path = get_data_root() / "last_run.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = _eod_payload(results)
     with open(path, "w") as f:
@@ -422,7 +422,7 @@ def save_eod_snapshot(
     Optional next_day_outlook and typical_move (SPY/QQQ) enable model validation vs actual next-day close.
     """
     date_str = date_str or _today_est()
-    eod_dir = ROOT / "data" / "eod"
+    eod_dir = get_data_root() / "eod"
     eod_dir.mkdir(parents=True, exist_ok=True)
     path = eod_dir / f"{date_str}.json"
     payload = _eod_payload(results)
@@ -433,12 +433,25 @@ def save_eod_snapshot(
         payload["typical_move"] = typical_move
     with open(path, "w") as f:
         json.dump(payload, f, indent=2)
+    try:
+        from signals.cache import set_eod_snapshot_redis
+        set_eod_snapshot_redis(date_str, payload)
+    except Exception:
+        pass
     return path
 
 
 def load_eod_snapshot(date_str: str) -> dict[str, dict] | None:
-    """Load EOD snapshot for a date. Returns ticker -> {...} or None."""
-    path = ROOT / "data" / "eod" / f"{date_str}.json"
+    """Load EOD snapshot for a date. Returns ticker -> {...} or None. Tries Redis first, then file."""
+    try:
+        from signals.cache import get_eod_snapshot_redis
+        data = get_eod_snapshot_redis(date_str)
+        if data and isinstance(data, dict):
+            run_results = data.get("run_results", [])
+            return {r["ticker"]: r for r in run_results}
+    except Exception:
+        pass
+    path = get_data_root() / "eod" / f"{date_str}.json"
     if not path.exists():
         return None
     try:
@@ -453,18 +466,32 @@ def prune_old_eod_snapshots(retention_days: int) -> int:
     """Delete EOD snapshots older than retention_days. Returns count deleted. Uses EST for cutoff."""
     if retention_days <= 0:
         return 0
-    eod_dir = ROOT / "data" / "eod"
+    eod_dir = get_data_root() / "eod"
     if not eod_dir.exists():
         return 0
     today_est = datetime.now(EST).date()
     cutoff = today_est - timedelta(days=retention_days)
     deleted = 0
+    try:
+        from signals.cache import delete_eod_snapshot_redis, list_eod_dates_redis
+    except Exception:
+        delete_eod_snapshot_redis = None
+        list_eod_dates_redis = lambda: []
     for p in eod_dir.glob("*.json"):
         try:
-            # Parse YYYY-MM-DD from filename
             d = datetime.strptime(p.stem, "%Y-%m-%d").date()
             if d < cutoff:
                 p.unlink()
+                if delete_eod_snapshot_redis:
+                    delete_eod_snapshot_redis(p.stem)
+                deleted += 1
+        except ValueError:
+            pass
+    for date_str in list_eod_dates_redis():
+        try:
+            d = datetime.strptime(date_str, "%Y-%m-%d").date()
+            if d < cutoff and delete_eod_snapshot_redis:
+                delete_eod_snapshot_redis(date_str)
                 deleted += 1
         except ValueError:
             pass

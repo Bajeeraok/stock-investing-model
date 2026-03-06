@@ -22,7 +22,7 @@ from behavior.what_changed import what_changed
 from opportunity.scanner import run_opportunity_scan
 from portfolio.doctor import portfolio_report, allocation_recommendations
 from portfolio.performance import compute_performance_vs_benchmark
-from config_loader import add_ticker as _add_ticker, add_uploaded_portfolio, load_config, remove_ticker as _remove_ticker
+from config_loader import add_ticker as _add_ticker, add_uploaded_portfolio, get_data_root, load_config, remove_ticker as _remove_ticker
 from scripts.run_daily import (
     load_last_run,
     run_eod_snapshot_only,
@@ -150,7 +150,7 @@ async def get_dashboard():
     hit_rate_context = None
     try:
         ft = get_forward_tracking(
-            data_root=ROOT / "data",
+            data_root=get_data_root(),
             tickers=["SPY", "QQQ"],
             horizons=[20],
         )
@@ -172,7 +172,7 @@ async def get_dashboard():
     # Paper trading log: capture today's signals (idempotent by date+ticker+signal)
     try:
         from signals.paper_trade_logger import PaperTradeLogger
-        pt = PaperTradeLogger(data_root=ROOT / "data")
+        pt = PaperTradeLogger(data_root=get_data_root())
         paper_log = pt.log_signals_from_results(results, only_actionable=False)
         logger.info("[dashboard] paper trades logged: %s", paper_log)
         paper_trading["log"] = paper_log
@@ -408,7 +408,7 @@ async def get_dashboard():
     model_validation = {"records": [], "summary": {}}
     try:
         model_validation_records, model_validation_summary = get_validation_records(
-            data_root=ROOT / "data",
+            data_root=get_data_root(),
             max_records=60,
             tickers=["SPY", "QQQ"],
         )
@@ -420,7 +420,7 @@ async def get_dashboard():
     forward_tracking: dict = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None}
     try:
         forward_tracking = get_forward_tracking(
-            data_root=ROOT / "data",
+            data_root=get_data_root(),
             tickers=["SPY", "QQQ"],
             horizons=[5, 20, 60],
         )
@@ -431,7 +431,7 @@ async def get_dashboard():
     # Paper trading: sync target/stop from latest run, then backfill outcomes + summary (log happens earlier right after run_signals)
     try:
         from signals.paper_trade_logger import PaperTradeLogger
-        pt = PaperTradeLogger(data_root=ROOT / "data")
+        pt = PaperTradeLogger(data_root=get_data_root())
         paper_trading["sync_targets"] = pt.sync_targets_stops_from_results(results)
         paper_trading["mtm"] = pt.mark_to_market()
         paper_trading["mtm_history_log"] = pt.append_mtm_history()
@@ -454,22 +454,40 @@ async def get_dashboard():
     # Pre-market full (6 classes, 15 sources) — from scheduler-written file if present
     pre_market_full = None
     try:
-        pre_market_file = ROOT / "data" / "pre_market_latest.json"
+        pre_market_file = get_data_root() / "pre_market_latest.json"
         if pre_market_file.exists():
             with open(pre_market_file) as _f:
                 pre_market_full = json.load(_f)
     except Exception:
         pre_market_full = None
 
-    # EOD snapshot list (data/eod/*.json) — same path locally and on Railway (app data dir)
+    # EOD snapshot list: Redis + filesystem (Redis survives restarts when no volume)
     eod_snapshots: list[dict] = []
     try:
-        eod_dir = ROOT / "data" / "eod"
+        from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+        seen: set[str] = set()
+        # Dates from Redis
+        for date_str in list_eod_dates_redis():
+            if date_str in seen:
+                continue
+            seen.add(date_str)
+            try:
+                data = get_eod_snapshot_redis(date_str)
+                size_bytes = len(json.dumps(data, default=str)) if data else 0
+                run_date = data.get("run_date") or data.get("snapshot_date") if isinstance(data, dict) else None
+                eod_snapshots.append({"date": date_str, "size_bytes": size_bytes, "run_date": run_date})
+            except Exception:
+                pass
+        # Dates from filesystem
+        eod_dir = get_data_root() / "eod"
         if eod_dir.exists():
             for p in sorted(eod_dir.glob("*.json"), reverse=True):
                 try:
                     stem = p.stem
+                    if stem in seen:
+                        continue
                     if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
+                        seen.add(stem)
                         size_bytes = p.stat().st_size
                         run_date = None
                         try:
@@ -485,6 +503,7 @@ async def get_dashboard():
                         })
                 except Exception:
                     pass
+        eod_snapshots.sort(key=lambda x: x["date"], reverse=True)
     except Exception as e:
         logger.debug("EOD snapshot list failed: %s", e)
 
@@ -1002,7 +1021,7 @@ async def get_pre_market():
          UI can show a "last updated yesterday" warning instead of hiding the data
       4. Nothing + outside pre-market → 503
     """
-    pre_market_file = ROOT / "data" / "pre_market_latest.json"
+    pre_market_file = get_data_root() / "pre_market_latest.json"
     cached: dict | None = None
 
     try:
@@ -1246,7 +1265,7 @@ async def get_last_run():
     data = load_last_run()
     if data is None:
         return {"run_results": []}
-    path = ROOT / "data" / "last_run.json"
+    path = get_data_root() / "last_run.json"
     if not path.exists():
         return {"run_results": []}
     with open(path) as f:
@@ -1268,8 +1287,8 @@ def eod_save_from_last_run(snapshot_date: str | None = None):
         from backports.zoneinfo import ZoneInfo  # type: ignore
     today_est = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
     date_str = snapshot_date.strip() if isinstance(snapshot_date, str) and snapshot_date.strip() else today_est
-    last_run_path = ROOT / "data" / "last_run.json"
-    eod_path = ROOT / "data" / "eod" / f"{date_str}.json"
+    last_run_path = get_data_root() / "last_run.json"
+    eod_path = get_data_root() / "eod" / f"{date_str}.json"
     if eod_path.exists():
         logger.info("[eod/save-from-last-run] Snapshot already exists for %s, skipping", date_str)
         return {
@@ -1296,6 +1315,11 @@ def eod_save_from_last_run(snapshot_date: str | None = None):
     payload["snapshot_date"] = date_str
     with open(eod_path, "w") as f:
         json.dump(payload, f, indent=2)
+    try:
+        from signals.cache import set_eod_snapshot_redis
+        set_eod_snapshot_redis(date_str, payload)
+    except Exception:
+        pass
     logger.info("[eod/save-from-last-run] Saved %s from last_run (%d tickers)", date_str, len(run_results))
     return {
         "ok": True,
@@ -1321,7 +1345,7 @@ def run_eod_now(snapshot_date: str | None = None):
         from backports.zoneinfo import ZoneInfo  # type: ignore
     today_est = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
     date_str = snapshot_date.strip() if isinstance(snapshot_date, str) and snapshot_date.strip() else today_est
-    eod_path = ROOT / "data" / "eod" / f"{date_str}.json"
+    eod_path = get_data_root() / "eod" / f"{date_str}.json"
     if eod_path.exists():
         logger.info("[eod/run] Snapshot already exists for %s, skipping", date_str)
         return {
@@ -1394,11 +1418,16 @@ async def eod_upload(
         except ImportError:
             from backports.zoneinfo import ZoneInfo  # type: ignore
         date_str = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-    eod_dir = ROOT / "data" / "eod"
+    eod_dir = get_data_root() / "eod"
     eod_dir.mkdir(parents=True, exist_ok=True)
     eod_path = eod_dir / f"{date_str}.json"
     with open(eod_path, "w") as f:
         json.dump(data, f, indent=2)
+    try:
+        from signals.cache import set_eod_snapshot_redis
+        set_eod_snapshot_redis(date_str, data)
+    except Exception:
+        pass
     logger.info("[eod/upload] Saved %s (%d bytes, %d tickers)", date_str, len(content), len(data.get("run_results") or []))
     return {
         "ok": True,

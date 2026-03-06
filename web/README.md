@@ -42,3 +42,4 @@ npm install
 ## Environment
 
 - `NEXT_PUBLIC_API_URL` - FastAPI base URL (empty = proxy to localhost:8002)
+- **Backend:** `DATA_ROOT` - Persistent data directory for EOD snapshots, last_run, paper trades. Set to a mounted volume path so data survives restarts. Alternatively, EOD snapshots are also stored in **Redis** when `REDIS_URL` is set, so they persist across restarts without a volume.

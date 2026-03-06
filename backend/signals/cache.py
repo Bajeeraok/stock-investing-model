@@ -191,6 +191,19 @@ def set_cached(key: str, value: Any, ttl_seconds: int) -> bool:
         return False
 
 
+def _set_persistent(key: str, value: Any) -> bool:
+    """Set in Redis with no TTL (persistent). Returns True on success."""
+    r = _redis_client()
+    if r is None:
+        return False
+    try:
+        r.set(key, _serialize(value))
+        return True
+    except Exception as e:
+        logger.warning("Redis set persistent failed for %s: %s", key[:50], e)
+        return False
+
+
 def cache_key(prefix: str, *parts: str) -> str:
     """Build cache key: prefix:part1:part2..."""
     return ":".join([prefix] + [str(p).upper() for p in parts if p])
@@ -360,3 +373,59 @@ def set_cached_dashboard(payload: dict) -> bool:
     """Store full dashboard payload in Redis. TTL 3 min."""
     key = cache_key("dashboard", "default")
     return set_cached(key, payload, TTL_DASHBOARD)
+
+
+# ─── EOD snapshots (persistent; no TTL) ─────────────────────────────────────
+# Store in Redis so EOD survives restarts when no persistent volume (Railway/Docker).
+# Read path: Redis first, then file. Write path: both Redis and file when possible.
+
+EOD_KEY_PREFIX = "eod:snapshot:"
+EOD_DATES_SET = "eod:dates"
+
+
+def set_eod_snapshot_redis(date_str: str, payload: dict) -> bool:
+    """Store EOD snapshot in Redis (no TTL). Returns True on success."""
+    r = _redis_client()
+    if r is None:
+        return False
+    try:
+        key = EOD_KEY_PREFIX + date_str
+        r.set(key, _serialize(payload))
+        r.sadd(EOD_DATES_SET, date_str)
+        return True
+    except Exception as e:
+        logger.warning("Redis EOD set failed for %s: %s", date_str, e)
+        return False
+
+
+def get_eod_snapshot_redis(date_str: str) -> dict | None:
+    """Load EOD snapshot from Redis. Returns None on miss or error."""
+    key = EOD_KEY_PREFIX + date_str
+    return get_cached(key)
+
+
+def list_eod_dates_redis() -> list[str]:
+    """List EOD snapshot dates stored in Redis, sorted descending."""
+    r = _redis_client()
+    if r is None:
+        return []
+    try:
+        members = r.smembers(EOD_DATES_SET)
+        return sorted((m for m in members if isinstance(m, str)), reverse=True)
+    except Exception as e:
+        logger.debug("Redis EOD list failed: %s", e)
+        return []
+
+
+def delete_eod_snapshot_redis(date_str: str) -> bool:
+    """Remove one EOD snapshot from Redis (e.g. when pruning old snapshots). Returns True on success."""
+    r = _redis_client()
+    if r is None:
+        return False
+    try:
+        r.delete(EOD_KEY_PREFIX + date_str)
+        r.srem(EOD_DATES_SET, date_str)
+        return True
+    except Exception as e:
+        logger.debug("Redis EOD delete failed for %s: %s", date_str, e)
+        return False
