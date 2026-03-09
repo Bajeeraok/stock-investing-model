@@ -111,7 +111,8 @@ class IVRankCache:
 class EarningsCache:
     """
     Cache days-to-earnings, refreshed every 6 hours.
-    Uses existing Thrive Alpha provider where possible.
+    Uses yfinance only (no FMP) so the scanner never adds FMP request load.
+    Dashboard/ticker detail can still use FMP for earnings via get_next_earnings(config=...).
     """
 
     def __init__(self):
@@ -126,7 +127,8 @@ class EarningsCache:
         days = None
         try:
             from signals.providers import get_next_earnings
-            r = get_next_earnings(symbol, config or {})
+            # Scanner: always use yfinance (pass no api_key) to avoid N FMP calls per scan
+            r = get_next_earnings(symbol, {})
             if r and r.get("days_until") is not None:
                 days = int(r["days_until"])
         except Exception:
