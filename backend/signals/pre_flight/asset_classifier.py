@@ -19,6 +19,8 @@ ASSET_REGISTRY: Dict[str, AssetMeta] = {
                        sector="Technology", beta=1.1),
     "NVDA":  AssetMeta(ticker="NVDA", name="NVIDIA Corp", asset_type=AssetType.EQUITY_US,
                        sector="Technology", beta=1.8),
+    "AVGO":  AssetMeta(ticker="AVGO", name="Broadcom Inc", asset_type=AssetType.EQUITY_US,
+                       sector="Technology", beta=1.2),
     "AAPL":  AssetMeta(ticker="AAPL", name="Apple Inc.", asset_type=AssetType.EQUITY_US,
                        sector="Technology", beta=1.2),
     "MSFT":  AssetMeta(ticker="MSFT", name="Microsoft Corp", asset_type=AssetType.EQUITY_US,

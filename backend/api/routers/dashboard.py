@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -94,11 +95,13 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("[dashboard] cache check skipped: %s", e)
 
+    dashboard_start = time.perf_counter()
     logger.info("[dashboard] START loading dashboard")
+    t0 = time.perf_counter()
     logger.info("[dashboard] section: config + last_run...")
     config = _load_config()
     last_run_prev = load_last_run()  # Load BEFORE save so what_changed compares old vs new
-    logger.info("[dashboard] section: config + last_run DONE")
+    logger.info("[dashboard] section: config + last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 
     # Build holdings list first (needed for portfolio tickers and for report)
     holdings = []
@@ -172,13 +175,14 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("Forward tracking for hit-rate gate: %s", e)
 
+    t0 = time.perf_counter()
     logger.info("[dashboard] section: run_signals (watchlist + indicators)...")
     results = run_signals(
         config,
         prices_by_ticker=prices_by_ticker,
         hit_rate_context=hit_rate_context,
     )
-    logger.info("[dashboard] section: run_signals DONE (%d tickers)", len(results) if results else 0)
+    logger.info("[dashboard] section: run_signals DONE (%d tickers, %.0f ms)", len(results) if results else 0, (time.perf_counter() - t0) * 1000)
 
     # Paper trading log: capture today's signals (idempotent by date+ticker+signal)
     try:
@@ -198,6 +202,7 @@ async def get_dashboard():
     except Exception as e:
         logger.warning("[dashboard] accuracy report save skipped: %s", e)
 
+    t0 = time.perf_counter()
     logger.info("[dashboard] section: portfolio_report (holdings + doctor)...")
     portfolios_cfg = config.get("portfolios") or {}
     portfolio_names = ["All"] + ([k for k in portfolios_cfg.keys() if isinstance(portfolios_cfg.get(k), list)] if isinstance(portfolios_cfg, dict) else [])
@@ -221,13 +226,14 @@ async def get_dashboard():
                 logger.debug("Confidence for %s: %s", ticker, e)
                 return (ticker, None)
         try:
+            t0_conf = time.perf_counter()
             with ThreadPoolExecutor(max_workers=8) as ex:
                 futures = [ex.submit(_confidence_one, t) for t in holdings_tickers]
                 for fut in as_completed(futures):
                     ticker, conf = fut.result()
                     if conf is not None:
                         confidence_by_ticker[ticker] = conf
-            logger.info("[dashboard] confidence for %d holdings tickers (parallel)", len(confidence_by_ticker))
+            logger.info("[dashboard] confidence for %d holdings tickers (parallel, %.0f ms)", len(confidence_by_ticker), (time.perf_counter() - t0_conf) * 1000)
         except Exception as e:
             logger.debug("Confidence fetch failed: %s", e)
 
@@ -267,7 +273,7 @@ async def get_dashboard():
                         h["pct"] = round(100 * h["value"] / total_value, 1)
         portfolios_out[name] = rep
     report = portfolios_out.get("All") or (portfolios_out[portfolio_names[1]] if len(portfolio_names) > 1 else {})
-    logger.info("[dashboard] section: portfolio_report DONE")
+    logger.info("[dashboard] section: portfolio_report DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 
     # Load independent sections in parallel to reduce total time and timeout risk
     crypto_tickers = config.get("crypto_watchlist") or ["BTC-USD", "ETH-USD"]
@@ -443,31 +449,42 @@ async def get_dashboard():
             logger.debug("Paper trading summary failed: %s", e)
             return ("paper_trading_async", None)
 
-    parallel_tasks = [
-        _task_crypto,
-        _task_cross_asset,
-        _task_economic_calendar,
-        _task_real_yield,
-        _task_cot,
-        _task_eod_redis,
-        _task_insider,
-        _task_fmp_plan,
-        _task_best_2026,
-        _task_model_validation,
-        _task_forward_tracking,
-        _task_paper_trading_async,
+    def _timed_parallel_task(name: str, fn):
+        t0 = time.perf_counter()
+        try:
+            key, value = fn()
+            logger.info("[dashboard] section: %s took %.0f ms", name, (time.perf_counter() - t0) * 1000)
+            return key, value
+        except Exception as e:
+            logger.info("[dashboard] section: %s failed after %.0f ms: %s", name, (time.perf_counter() - t0) * 1000, e)
+            raise
+
+    parallel_task_specs = [
+        ("crypto_signals", _task_crypto),
+        ("cross_asset", _task_cross_asset),
+        ("economic_calendar", _task_economic_calendar),
+        ("real_yield", _task_real_yield),
+        ("cot_extremes", _task_cot),
+        ("eod_redis", _task_eod_redis),
+        ("insider_flow", _task_insider),
+        ("fmp_plan_status", _task_fmp_plan),
+        ("best_2026", _task_best_2026),
+        ("model_validation", _task_model_validation),
+        ("forward_tracking", _task_forward_tracking),
+        ("paper_trading_async", _task_paper_trading_async),
     ]
     parallel_results: dict = {}
-    logger.info("[dashboard] section: parallel load (%d tasks)...", len(parallel_tasks))
-    with ThreadPoolExecutor(max_workers=min(14, len(parallel_tasks))) as ex:
-        futures = [ex.submit(t) for t in parallel_tasks]
+    t_parallel = time.perf_counter()
+    logger.info("[dashboard] section: parallel load (%d tasks)...", len(parallel_task_specs))
+    with ThreadPoolExecutor(max_workers=min(14, len(parallel_task_specs))) as ex:
+        futures = [ex.submit(_timed_parallel_task, name, fn) for name, fn in parallel_task_specs]
         for fut in as_completed(futures):
             try:
                 key, value = fut.result()
                 parallel_results[key] = value
             except Exception as e:
                 logger.debug("Parallel task failed: %s", e)
-    logger.info("[dashboard] section: parallel load DONE")
+    logger.info("[dashboard] section: parallel load DONE (wall %.0f ms)", (time.perf_counter() - t_parallel) * 1000)
 
     crypto_signals = parallel_results.get("crypto_signals", [])
     cross_asset = parallel_results.get("cross_asset", [])
@@ -599,6 +616,7 @@ async def get_dashboard():
 
     # best_2026 loaded in parallel above
 
+    t0 = time.perf_counter()
     logger.info("[dashboard] section: opportunities...")
     opp_cfg = config.get("opportunity_criteria", {}) or {}
     universe = config.get("opportunity_universe") or []
@@ -620,7 +638,7 @@ async def get_dashboard():
         exclude_earnings_days=opp_cfg.get("exclude_earnings_days"),
         config=config,
     )
-    logger.info("[dashboard] section: opportunities DONE (%d)", len(opportunities))
+    logger.info("[dashboard] section: opportunities DONE (%d, %.0f ms)", len(opportunities), (time.perf_counter() - t0) * 1000)
 
     # Confidence for add candidates (opportunities + best_2026)
     portfolio_tickers_set = {h.get("ticker") if isinstance(h, dict) else h for h in holdings}
@@ -628,6 +646,7 @@ async def get_dashboard():
         [o.get("ticker") for o in opportunities if o.get("ticker") and o.get("ticker") not in portfolio_tickers_set]
         + [b.get("ticker") for b in best_2026 if b.get("ticker") and b.get("ticker") not in portfolio_tickers_set]
     ))
+    t0_conf_add = time.perf_counter()
     for ticker in add_candidate_tickers:
         if ticker in confidence_by_ticker:
             continue
@@ -638,9 +657,10 @@ async def get_dashboard():
         except Exception as e:
             logger.debug("Confidence for add candidate %s: %s", ticker, e)
     if add_candidate_tickers:
-        logger.info("[dashboard] confidence for %d add candidates", sum(1 for t in add_candidate_tickers if t in confidence_by_ticker))
+        logger.info("[dashboard] confidence for %d add candidates (%.0f ms)", sum(1 for t in add_candidate_tickers if t in confidence_by_ticker), (time.perf_counter() - t0_conf_add) * 1000)
 
     # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
+    t0 = time.perf_counter()
     portfolio_doctor_recommendations = {}
     doctor_cfg = config.get("portfolio_doctor") or {}
     for pname, rep in portfolios_out.items():
@@ -656,10 +676,11 @@ async def get_dashboard():
             portfolio_doctor_recommendations[pname] = rec
         except Exception as e:
             logger.debug("Portfolio Doctor for %s: %s", pname, e)
-    logger.info("[dashboard] section: portfolio_doctor DONE")
+    logger.info("[dashboard] section: portfolio_doctor DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 
     # Performance vs benchmark (portfolio vs SPY/QQQ over 1m, 3m, 6m, 1y)
     performance_vs_benchmark = {"periods": [], "as_of": None, "message": None}
+    t0_perf = time.perf_counter()
     if holdings and (portfolios or config.get("portfolio")):
         try:
             merged_prices = dict(prices_by_ticker) if prices_by_ticker else {}
@@ -676,15 +697,18 @@ async def get_dashboard():
                 fetcher=fetch_ohlcv_safe,
             )
             if performance_vs_benchmark.get("periods"):
-                logger.info("[dashboard] section: performance_vs_benchmark DONE (%d periods)", len(performance_vs_benchmark["periods"]))
+                logger.info("[dashboard] section: performance_vs_benchmark DONE (%d periods, %.0f ms)", len(performance_vs_benchmark["periods"]), (time.perf_counter() - t0_perf) * 1000)
             else:
                 performance_vs_benchmark["message"] = performance_vs_benchmark.get("message") or "Insufficient history"
+                logger.info("[dashboard] section: performance_vs_benchmark DONE (no periods, %.0f ms)", (time.perf_counter() - t0_perf) * 1000)
         except Exception as e:
             logger.debug("Performance vs benchmark failed: %s", e)
             performance_vs_benchmark["message"] = str(e)
+            logger.info("[dashboard] section: performance_vs_benchmark failed (%.0f ms)", (time.perf_counter() - t0_perf) * 1000)
     else:
         performance_vs_benchmark["message"] = "Add portfolios in config to see performance vs benchmark"
 
+    t0 = time.perf_counter()
     logger.info("[dashboard] section: thesis_check + what_changed...")
     theses = load_theses()
     story_changes = [r for r in results if r.get("story_change")]
@@ -731,7 +755,7 @@ async def get_dashboard():
         diffs, summary = what_changed(prev, r)
         if diffs or summary:
             what_changed_list.append({"ticker": r["ticker"], "changes": diffs, "summary": summary})
-    logger.info("[dashboard] section: thesis_check + what_changed DONE (%d changed)", len(what_changed_list))
+    logger.info("[dashboard] section: thesis_check + what_changed DONE (%d changed, %.0f ms)", len(what_changed_list), (time.perf_counter() - t0) * 1000)
 
     # Earnings risk count (holdings with earnings in next 7 days)
     earnings_warn_days = config.get("earnings", {}).get("days_warning", 14)
@@ -750,6 +774,7 @@ async def get_dashboard():
             earnings_risk_count += 1
 
     # Risk sizing for signals
+    t0 = time.perf_counter()
     logger.info("[dashboard] section: risk_sizing + save_last_run...")
     risk_cfg = config.get("risk_sizing", {}) or {}
     risk_pct = risk_cfg.get("risk_pct", 1)
@@ -771,7 +796,7 @@ async def get_dashboard():
             r["risk_sizing"] = None
 
     save_last_run(results)  # Save AFTER building what_changed
-    logger.info("[dashboard] section: risk_sizing + save_last_run DONE")
+    logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 
     # Tier 1 risk features (position sizing, drawdown, exits, earnings, concentration)
     tier1_payload = {}
@@ -893,7 +918,7 @@ async def get_dashboard():
         set_cached_dashboard(out)
     except Exception as e:
         logger.debug("[dashboard] cache set skipped: %s", e)
-    logger.info("[dashboard] END loading dashboard - returning response")
+    logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
     return out
 
 

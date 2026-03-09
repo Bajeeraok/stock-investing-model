@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { CheckCircle, XCircle, AlertCircle, Target, ChevronDown, ChevronRight } from "lucide-react";
+import { CheckCircle, XCircle, AlertCircle, Target, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 
 // Use bracket types to avoid ambiguous generics in .tsx (Array<T> can be parsed as JSX)
 export interface InvestorDecisionSummary {
@@ -85,6 +85,11 @@ function HorizonCard({
       : horizon.verdict === "WATCH"
         ? "text-amber-400"
         : "text-red-400";
+  const hasRationale = horizon.rationale && horizon.rationale.trim().length > 0;
+  const hasTrigger = horizon.trigger_buy && horizon.trigger_buy.trim().length > 0;
+  const warnings = Array.isArray(horizon.warnings) ? horizon.warnings.filter((w) => w && String(w).trim()) : [];
+  const hasStop = horizon.stop_loss != null && horizon.stop_loss > 0;
+
   return React.createElement(
     "div",
     { className: "bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm" },
@@ -102,6 +107,38 @@ function HorizonCard({
     React.createElement("p", { className: "text-slate-500 text-xs" }, `${horizon.signal} strength · ${horizon.conviction} conviction`),
     React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `Entry: $${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
     React.createElement("p", { className: "text-slate-500 text-xs" }, `Target: +${horizon.target_pct.toFixed(0)}% · ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`),
+    hasStop &&
+      React.createElement(
+        "p",
+        { className: "text-slate-500 text-xs mt-0.5" },
+        `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
+      ),
+    hasRationale &&
+      React.createElement(
+        "p",
+        { className: "text-slate-300 text-xs mt-2 leading-snug border-t border-slate-700/50 pt-2" },
+        horizon.rationale
+      ),
+    hasTrigger &&
+      React.createElement(
+        "p",
+        { className: "text-slate-400 text-[11px] mt-1.5 leading-snug" },
+        React.createElement("span", { className: "text-slate-500 font-medium" }, "When to act: "),
+        horizon.trigger_buy
+      ),
+    warnings.length > 0 &&
+      React.createElement(
+        "div",
+        { className: "mt-2 space-y-1 border-t border-slate-700/50 pt-2" },
+        warnings.map((w, i) =>
+          React.createElement(
+            "div",
+            { key: i, className: "flex items-start gap-1.5 text-[11px] text-amber-300/90" },
+            React.createElement(AlertTriangle, { className: "h-3 w-3 shrink-0 mt-0.5" }),
+            React.createElement("span", null, w)
+          )
+        )
+      ),
     entryTiers &&
       onToggleTiers &&
       React.createElement(

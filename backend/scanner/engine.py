@@ -6,7 +6,8 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 try:
     from zoneinfo import ZoneInfo
@@ -46,6 +47,8 @@ class MarketSnapshot:
     scan_tier: ScanTier
     sector: str
     as_of: str = field(default_factory=lambda: datetime.now().isoformat())
+    # Optional: short-term ML prob (0-100) for ML_PROB_CROSSED alert
+    ml_prob_short: Optional[float] = None
 
 
 @dataclass
@@ -82,6 +85,11 @@ ALERT_COLORS = {
     AlertType.KELLY_REDUCTION: "#EF4444",
     AlertType.OPTIONS_FLOW_SPIKE: "#06B6D4",
     AlertType.REGIME_CHANGE: "#F59E0B",
+    AlertType.EARNINGS_SOON: "#F59E0B",
+    AlertType.ENTRY_ZONE_ENTERED: "#10B981",
+    AlertType.STOP_HIT: "#EF4444",
+    AlertType.TARGET_HIT: "#10B981",
+    AlertType.ML_PROB_CROSSED: "#3B82F6",
 }
 
 ALERT_EMOJIS = {
@@ -96,6 +104,11 @@ ALERT_EMOJIS = {
     AlertType.KELLY_REDUCTION: "🔴",
     AlertType.OPTIONS_FLOW_SPIKE: "⚡",
     AlertType.REGIME_CHANGE: "🔄",
+    AlertType.EARNINGS_SOON: "📅",
+    AlertType.ENTRY_ZONE_ENTERED: "✅",
+    AlertType.STOP_HIT: "🛑",
+    AlertType.TARGET_HIT: "🎯",
+    AlertType.ML_PROB_CROSSED: "📈",
 }
 
 
@@ -237,6 +250,143 @@ class SignalEvaluator:
         )
 
 
+def _build_retail_alert(
+    ticker: str,
+    alert_type: AlertType,
+    headline: str,
+    body: str,
+    scan_tier: ScanTier,
+    signals: dict[str, Any],
+) -> ScanAlert:
+    """Build a retail quick-decision alert with one-line plain English."""
+    pr = ScanPriority.HIGH if alert_type in (
+        AlertType.ENTRY_ZONE_ENTERED,
+        AlertType.STOP_HIT,
+        AlertType.ML_PROB_CROSSED,
+    ) else ScanPriority.MEDIUM
+    return ScanAlert(
+        id=_alert_id(ticker, alert_type),
+        type=alert_type,
+        ticker=ticker,
+        priority=pr,
+        headline=headline,
+        body=body,
+        risk_level="MODERATE",
+        color=ALERT_COLORS.get(alert_type, "#94A3B8"),
+        emoji=ALERT_EMOJIS.get(alert_type, "🔔"),
+        timestamp=datetime.now().isoformat(),
+        signals=signals,
+        scan_tier=scan_tier,
+        surface_to_all=True,
+    )
+
+
+def evaluate_retail_alerts(
+    snaps: list[MarketSnapshot],
+    horizon_levels: dict[str, dict[str, Any]],
+    state: dict[str, dict[str, Any]],
+    ml_probs: dict[str, float],
+    watchlist: set[str],
+) -> tuple[list[ScanAlert], dict[str, dict[str, Any]]]:
+    """
+    Evaluate retail quick-decision alerts: EARNINGS_SOON, ENTRY_ZONE_ENTERED, STOP_HIT, TARGET_HIT, ML_PROB_CROSSED.
+    Returns (list of alerts, updated state for next run).
+    """
+    from scanner.horizon_levels import (
+        EARNINGS_SOON_DAYS,
+        ML_PROB_CROSS_THRESHOLD,
+    )
+    alerts: list[ScanAlert] = []
+    new_state: dict[str, dict[str, Any]] = dict(state)
+    for snap in snaps:
+        ticker = snap.symbol
+        price = snap.price
+        in_wl = ticker in watchlist
+        st = new_state.get(ticker) or {}
+        was_in_zone = st.get("was_in_entry_zone", False)
+        last_price = st.get("last_price")
+        prev_ml = st.get("previous_ml_prob")
+
+        # EARNINGS_SOON — only for watchlist
+        if in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS:
+            alerts.append(_build_retail_alert(
+                ticker,
+                AlertType.EARNINGS_SOON,
+                f"{ticker} earnings in {snap.er_days_away} day(s)",
+                f"Reduce size or wait for post-earnings reaction. Earnings in {snap.er_days_away} days.",
+                snap.scan_tier,
+                {"erDaysAway": snap.er_days_away, "price": price},
+            ))
+
+        # ENTRY_ZONE_ENTERED / STOP_HIT / TARGET_HIT — need horizon levels
+        levels = horizon_levels.get(ticker)
+        if levels:
+            el = float(levels.get("entry_low") or 0)
+            eh = float(levels.get("entry_high") or 0)
+            stop = float(levels.get("stop_loss") or 0)
+            target = float(levels.get("target") or 0)
+            label = str(levels.get("horizon_label") or "Entry zone")
+            in_zone = el <= price <= eh if (el and eh) else False
+
+            if el and eh and in_zone and not was_in_zone:
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.ENTRY_ZONE_ENTERED,
+                    f"{ticker} in {label} ${el:.2f}–${eh:.2f}",
+                    f"Price in buy zone. Consider adding per your plan.",
+                    snap.scan_tier,
+                    {"entryLow": el, "entryHigh": eh, "price": price},
+                ))
+            if stop and price < stop:
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.STOP_HIT,
+                    f"{ticker} below stop ${stop:.2f}",
+                    f"Price below stop — consider exit or trim.",
+                    snap.scan_tier,
+                    {"stopLoss": stop, "price": price},
+                ))
+            if target and price >= target:
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.TARGET_HIT,
+                    f"{ticker} reached target ${target:.2f}",
+                    f"Target hit — consider taking profit.",
+                    snap.scan_tier,
+                    {"target": target, "price": price},
+                ))
+
+            new_state[ticker] = {
+                **st,
+                "was_in_entry_zone": in_zone,
+                "last_price": price,
+            }
+
+        # ML_PROB_CROSSED — need current and previous ML prob
+        ml_current = ml_probs.get(ticker) if ml_probs else (snap.ml_prob_short if getattr(snap, "ml_prob_short", None) is not None else None)
+        if in_wl and ml_current is not None:
+            prev = prev_ml if prev_ml is not None else st.get("previous_ml_prob")
+            if prev is not None and float(prev) < ML_PROB_CROSS_THRESHOLD <= float(ml_current):
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.ML_PROB_CROSSED,
+                    f"{ticker} ML prob now {ml_current:.0f}% (crossed {ML_PROB_CROSS_THRESHOLD:.0f}%)",
+                    f"Model now supports add. Consider adding on pullbacks.",
+                    snap.scan_tier,
+                    {"mlProb": ml_current, "previousMlProb": prev, "threshold": ML_PROB_CROSS_THRESHOLD},
+                ))
+            new_state[ticker] = {
+                **new_state.get(ticker, {}),
+                "previous_ml_prob": ml_current,
+            }
+
+        # Keep last_price for tickers that didn't have levels
+        if ticker not in new_state and (last_price is not None or price):
+            new_state[ticker] = {**st, "last_price": price}
+
+    return alerts, new_state
+
+
 class AlertDeduplicator:
     def __init__(self):
         self._last: dict[tuple[str, AlertType], datetime] = {}
@@ -252,6 +402,11 @@ class AlertDeduplicator:
             AlertType.MACRO_RISK_OFF: 60,
             AlertType.MACRO_RISK_ON: 60,
             AlertType.KELLY_REDUCTION: 120,
+            AlertType.EARNINGS_SOON: 360,  # 6h per ticker
+            AlertType.ENTRY_ZONE_ENTERED: 120,
+            AlertType.STOP_HIT: 60,
+            AlertType.TARGET_HIT: 120,
+            AlertType.ML_PROB_CROSSED: 180,
         }
 
     def is_dup(self, ticker: str, t: AlertType) -> bool:
@@ -292,7 +447,7 @@ class MarketHours:
         if 480 <= m < 570:
             return 60 * 15
         if 570 <= m <= 960:
-            return 60 * 5
+            return 60 * 30
         return 60 * 30
 
 
@@ -309,7 +464,15 @@ class ScanEngine:
         }
         self._count = 0
 
-    def run(self, *, snaps: list[MarketSnapshot], macro_flag: str, watchlist: set[str], on_alert: Callable[[ScanAlert], None]) -> dict:
+    def run(
+        self,
+        *,
+        snaps: list[MarketSnapshot],
+        macro_flag: str,
+        watchlist: set[str],
+        on_alert: Callable[[ScanAlert], None],
+        data_root: Optional[Path] = None,
+    ) -> dict:
         started = datetime.now()
         generated = 0
         surfaced = 0
@@ -326,6 +489,34 @@ class ScanEngine:
                     surfaced += 1
             except Exception as e:
                 errs.append(f"{s.symbol}: {e}")
+
+        # Retail quick-decision alerts (EARNINGS_SOON, ENTRY_ZONE_ENTERED, STOP_HIT, TARGET_HIT, ML_PROB_CROSSED)
+        if data_root:
+            try:
+                from scanner.horizon_levels import (
+                    read_horizon_levels,
+                    read_retail_alert_state,
+                    read_ml_probs,
+                    write_retail_alert_state,
+                )
+                levels = read_horizon_levels(data_root)
+                state = read_retail_alert_state(data_root)
+                ml_probs = read_ml_probs(data_root)
+                retail_alerts, new_state = evaluate_retail_alerts(
+                    snaps, levels, state, ml_probs, watchlist,
+                )
+                write_retail_alert_state(data_root, new_state)
+                generated += len(retail_alerts)
+                for a in retail_alerts:
+                    if self.dedupe.is_dup(a.ticker or "?", a.type):
+                        continue
+                    self.dedupe.record(a.ticker or "?", a.type)
+                    on_alert(a)
+                    surfaced += 1
+            except Exception as e:
+                logger.debug("retail alerts failed: %s", e)
+                errs.append(f"retail_alerts: {e}")
+
         self._count += 1
         if self._count % 20 == 0:
             self.dedupe.prune()
@@ -358,11 +549,13 @@ class ScanScheduler:
         watchlist_provider: Callable[[], set[str]],
         macro_provider: Callable[[], dict],
         on_alert: Callable[[ScanAlert], None],
+        data_root: Optional[Path] = None,
     ):
         self.data_provider = data_provider
         self.watchlist_provider = watchlist_provider
         self.macro_provider = macro_provider
         self.on_alert = on_alert
+        self.data_root = data_root
         self.engine = ScanEngine()
         self._running = False
         self._t: Optional[threading.Thread] = None
@@ -394,7 +587,13 @@ class ScanScheduler:
         wl = self._expand_watchlist(self.watchlist_provider())
         macro = self.macro_provider() or {}
         macro_flag = str(macro.get("macro_flag") or "NEUTRAL")
-        run = self.engine.run(snaps=snaps, macro_flag=macro_flag, watchlist=wl, on_alert=self.on_alert)
+        run = self.engine.run(
+            snaps=snaps,
+            macro_flag=macro_flag,
+            watchlist=wl,
+            on_alert=self.on_alert,
+            data_root=self.data_root,
+        )
         logger.info("[scanner] scan: %s", run)
 
     def _expand_watchlist(self, wl: set[str]) -> set[str]:
@@ -431,11 +630,13 @@ class ScannerAdapter:
             except Exception:
                 pass
 
+        data_root = self.store.dir.parent
         self._scheduler = ScanScheduler(
             data_provider=data_provider,
             watchlist_provider=watchlist_provider,
             macro_provider=macro_provider,
             on_alert=on_alert,
+            data_root=data_root,
         )
         self._scheduler.start()
 

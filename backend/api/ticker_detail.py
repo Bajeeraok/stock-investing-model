@@ -520,6 +520,32 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
         out["ttm_pe_used"] = round(ttm_pe_used, 2)
     if forward_pe_used is not None:
         out["forward_pe_used"] = round(forward_pe_used, 2)
+
+    # Cache short-horizon entry/stop/target and ML prob for scanner retail alerts
+    try:
+        from config_loader import get_data_root
+        from scanner.horizon_levels import merge_horizon_levels_for_ticker, merge_ml_prob_for_ticker
+        data_root = get_data_root()
+        short = payload.get("short") or {}
+        ez = short.get("entry_zone") or {}
+        el = _safe_float(ez.get("low"))
+        eh = _safe_float(ez.get("high"))
+        stop = _safe_float(short.get("stop_loss"))
+        tgt = _safe_float(short.get("target"))
+        if el is not None and eh is not None and stop is not None and tgt is not None:
+            merge_horizon_levels_for_ticker(
+                data_root,
+                ticker,
+                entry_low=el,
+                entry_high=eh,
+                stop_loss=stop,
+                target=tgt,
+                horizon_label="Short-term",
+            )
+        merge_ml_prob_for_ticker(data_root, ticker, st_ml_prob)
+    except Exception:
+        pass
+
     return out
 
 

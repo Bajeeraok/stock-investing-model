@@ -22,6 +22,12 @@ class AlertType(str, Enum):
     KELLY_REDUCTION = "KELLY_REDUCTION"
     OPTIONS_FLOW_SPIKE = "OPTIONS_FLOW_SPIKE"
     REGIME_CHANGE = "REGIME_CHANGE"
+    # Retail quick-decision alerts (plain English, action + price + timeline)
+    EARNINGS_SOON = "EARNINGS_SOON"
+    ENTRY_ZONE_ENTERED = "ENTRY_ZONE_ENTERED"
+    STOP_HIT = "STOP_HIT"
+    TARGET_HIT = "TARGET_HIT"
+    ML_PROB_CROSSED = "ML_PROB_CROSSED"
 
 
 class ScanTier(str, Enum):
