@@ -88,6 +88,7 @@ ALERT_COLORS = {
     AlertType.EARNINGS_SOON: "#F59E0B",
     AlertType.ENTRY_ZONE_ENTERED: "#10B981",
     AlertType.STOP_HIT: "#EF4444",
+    AlertType.STOP_APPROACHING: "#F59E0B",
     AlertType.TARGET_HIT: "#10B981",
     AlertType.ML_PROB_CROSSED: "#3B82F6",
 }
@@ -107,6 +108,7 @@ ALERT_EMOJIS = {
     AlertType.EARNINGS_SOON: "📅",
     AlertType.ENTRY_ZONE_ENTERED: "✅",
     AlertType.STOP_HIT: "🛑",
+    AlertType.STOP_APPROACHING: "⚠️",
     AlertType.TARGET_HIT: "🎯",
     AlertType.ML_PROB_CROSSED: "📈",
 }
@@ -346,6 +348,15 @@ def evaluate_retail_alerts(
                     snap.scan_tier,
                     {"stopLoss": stop, "price": price},
                 ))
+            elif stop and price > stop and price <= stop * 1.02:
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.STOP_APPROACHING,
+                    f"{ticker} within 2% of stop ${stop:.2f}",
+                    f"Price near stop. Decide: hold or trim before stop hit.",
+                    snap.scan_tier,
+                    {"stopLoss": stop, "price": price},
+                ))
             if target and price >= target:
                 alerts.append(_build_retail_alert(
                     ticker,
@@ -405,6 +416,7 @@ class AlertDeduplicator:
             AlertType.EARNINGS_SOON: 360,  # 6h per ticker
             AlertType.ENTRY_ZONE_ENTERED: 120,
             AlertType.STOP_HIT: 60,
+            AlertType.STOP_APPROACHING: 60,
             AlertType.TARGET_HIT: 120,
             AlertType.ML_PROB_CROSSED: 180,
         }

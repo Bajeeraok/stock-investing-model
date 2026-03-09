@@ -5,6 +5,13 @@ import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
 
 // ── Signal badge — all 6 tiers ────────────────────────────────────────────────
+const RETAIL_ACTION_STYLE: Record<string, { bg: string; text: string }> = {
+  BUY: { bg: "bg-emerald-500/25", text: "text-emerald-200" },
+  WAIT: { bg: "bg-blue-500/20", text: "text-blue-300" },
+  TRIM: { bg: "bg-amber-500/20", text: "text-amber-300" },
+  HOLD: { bg: "bg-slate-500/20", text: "text-slate-300" },
+};
+
 // Replaces the old BUY/HOLD/SELL with a multi-layer signal that requires both
 // technical (confluence) AND ML to agree before emitting BUY.
 const SIGNAL_STYLES: Record<string, { bg: string; text: string; border: string; title: string }> = {
@@ -154,12 +161,14 @@ export function SignalsTable({
   onTickerClick,
   riskSizing,
   cotByTicker,
+  tickerActions,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
   onTickerClick?: (ticker: string) => void;
   riskSizing?: { risk_pct: number; stop_pct: number };
   cotByTicker?: Record<string, string>;
+  tickerActions?: Record<string, { action: string; one_liner: string }>;
 }) {
   const h = horizons || DEFAULT_HORIZONS;
   const [sortBy, setSortBy] = useState<"ticker" | "score" | "regime" | "rsi">("score");
@@ -209,7 +218,17 @@ export function SignalsTable({
           >
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <span className="font-mono font-semibold text-emerald-400 text-base">{r.ticker}</span>
-              <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
+              <div className="flex items-center gap-2">
+                {tickerActions?.[r.ticker] && (
+                  <span
+                    className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300")}
+                    title={tickerActions[r.ticker].one_liner}
+                  >
+                    {tickerActions[r.ticker].action}
+                  </span>
+                )}
+                <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
+              </div>
             </div>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <span className={clsx(
@@ -301,16 +320,30 @@ export function SignalsTable({
                     r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onTickerClick?.(r.ticker)}
-                    className={clsx(
-                      "font-mono font-medium hover:underline cursor-pointer",
-                      onTickerClick && "text-emerald-400 hover:text-emerald-300"
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => onTickerClick?.(r.ticker)}
+                      className={clsx(
+                        "font-mono font-medium hover:underline cursor-pointer",
+                        onTickerClick && "text-emerald-400 hover:text-emerald-300"
+                      )}
+                    >
+                      {r.ticker}
+                    </button>
+                    {tickerActions?.[r.ticker] && (
+                      <span
+                        className={clsx(
+                          "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                          RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600",
+                          RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300"
+                        )}
+                        title={tickerActions[r.ticker].one_liner}
+                      >
+                        {tickerActions[r.ticker].action}
+                      </span>
                     )}
-                  >
-                    {r.ticker}
-                  </button>
+                  </div>
                 </td>
                 <td
                   className={clsx(

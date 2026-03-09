@@ -43,6 +43,7 @@ import {
   InsiderFlowTracker,
   TaxAwareExitPanel,
   AlertsPanel,
+  RetailBriefingPanel,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 
@@ -301,6 +302,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Overview tab */}
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {data.retail_briefing && <RetailBriefingPanel data={data} onTickerClick={setSelectedTicker} />}
               {data.fmp_plan_status && <FMPPlanStatus status={data.fmp_plan_status} />}
               <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen={false}>
                 <AlertsPanel onTickerClick={setSelectedTicker} />
@@ -528,7 +530,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           </p>
             </div>
           </ToggleSection>
-          <SignalsTable signals={data.signals} horizons={data.config?.horizons} onTickerClick={setSelectedTicker} riskSizing={data.config?.risk_sizing} cotByTicker={data.cot_by_ticker} />
+          <SignalsTable signals={data.signals} horizons={data.config?.horizons} onTickerClick={setSelectedTicker} riskSizing={data.config?.risk_sizing} cotByTicker={data.cot_by_ticker} tickerActions={data.retail_briefing?.ticker_actions} />
             </div>
           )}
 

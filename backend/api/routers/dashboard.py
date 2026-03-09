@@ -787,9 +787,13 @@ async def get_dashboard():
         try:
             size_dollars = total_value * (risk_pct / 100) / (stop_pct / 100)
             shares = max(0, int(size_dollars / float(r["close"])))
+            # Max shares for 1% portfolio risk (retail preset)
+            size_1pct = total_value * 0.01 / (stop_pct / 100.0)
+            shares_1pct = max(0, int(size_1pct / float(r["close"])))
             r["risk_sizing"] = {
                 "size_dollars": round(size_dollars, 0),
                 "shares": shares,
+                "shares_1pct_risk": shares_1pct,
                 "stop_pct": stop_pct,
             }
         except (TypeError, ZeroDivisionError):
@@ -853,9 +857,31 @@ async def get_dashboard():
     from datetime import datetime as _dt
     as_of_date = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Retail value-add: daily briefing, portfolio heat, one-line actions, badges, nudges
+    retail_briefing = {}
+    try:
+        from retail_briefing import build_retail_briefing
+        retail_briefing = build_retail_briefing(
+            results=results,
+            report=report,
+            data_root=data_root,
+            opportunities=opportunities,
+            tax_aware_exits=tax_aware_exits_out,
+            earnings_risk_count=earnings_risk_count,
+            macro_regime=macro_regime,
+            risk_pct=risk_pct,
+            stop_pct=stop_pct,
+            paper_trading=paper_trading,
+            thesis_check=thesis_check,
+            config=config,
+        )
+    except Exception as e:
+        logger.debug("Retail briefing failed: %s", e)
+
     out = {
         "as_of_date": as_of_date,
         "signals": results,
+        "retail_briefing": retail_briefing,
         "crypto": crypto_signals,
         "cross_asset": cross_asset,
         "economic_calendar": economic_calendar,

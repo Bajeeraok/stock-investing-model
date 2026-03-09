@@ -442,6 +442,29 @@ export interface DashboardData {
     items: { ticker: string; days_held: number; days_to_ltcg: number; gain: number; tax_savings_if_hold: number; recommendation: string; account?: string; score?: number; regime?: string }[];
     message?: string | null;
   };
+  /** Retail value-add: daily briefing, heat, one-liners, badges */
+  retail_briefing?: {
+    daily_briefing?: {
+      summary_sentence?: string;
+      regime_plain_english?: string;
+      in_entry_zone?: { ticker: string; price: number; entry_low: number; entry_high: number }[];
+      earnings_soon?: { ticker: string; days: number }[];
+      stops_near?: { ticker: string; price: number; stop_loss: number }[];
+      targets_hit?: { ticker: string; price: number; target: number }[];
+      suggested_actions?: { ticker: string; action: string; reason: string }[];
+      earnings_risk_count?: number;
+      tax_approaching_ltcg?: { ticker: string; days_to_ltcg: number }[];
+    };
+    portfolio_heat_pct?: number;
+    concentration?: { top_positions: { ticker: string; pct: number }[]; message?: string | null; concentration_pct?: number };
+    regime_plain_english?: string;
+    ticker_actions?: Record<string, { action: string; one_liner: string }>;
+    tax_approaching_ltcg?: { ticker: string; days_to_ltcg: number }[];
+    win_loss_recap?: { total_trades?: number; wins?: number; losses?: number; win_rate_pct?: number; net_pnl_pct?: number };
+    overtrading_nudge?: string | null;
+    sector_gap?: string | null;
+    drawdown_guard?: string | null;
+  };
 }
 
 export interface MarketScenarioItem {
