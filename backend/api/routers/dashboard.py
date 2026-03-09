@@ -1,10 +1,21 @@
 """
 Dashboard API - exposes all model features as JSON.
+Uses ThreadPoolExecutor to load independent sections in parallel and reduce timeout risk.
+
+Lazy-loaded on frontend (not needed in initial payload; fetched when user opens tab/panel):
+  - Pre-market: PreMarketPanel fetches /api/pre-market on mount (Markets tab).
+  - Accuracy: AccuracyPriceTargets fetches /api/accuracy on mount (Analysis tab).
+  - Backtest: BacktestStatus fetches /api/backtest on mount (Analysis tab).
+  - Alerts: AlertsPanel fetches /api/scanner/alerts on mount (Overview > Alerts).
+  - Ticker detail: TickerDetailModal fetches /api/ticker, /api/confidence, etc. when user opens a ticker.
+  - Chat: /api/chat on user message. Test suite: /api/test-suite on run.
+Pre-market is skipped in the parallel block below so the initial dashboard is faster; the UI loads it when Markets tab is shown.
 """
 from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -198,19 +209,25 @@ async def get_dashboard():
     if not holdings_by_account and holdings:
         holdings_by_account["All"] = list(holdings)
 
-    # 7-layer confidence for holdings (used by Portfolio Doctor)
+    # 7-layer confidence for holdings (used by Portfolio Doctor) — run in parallel
     confidence_by_ticker: dict = {}
     holdings_tickers = list(dict.fromkeys(h.get("ticker") if isinstance(h, dict) else h for h in holdings))
     if holdings_tickers:
+        def _confidence_one(ticker: str):
+            try:
+                conf = run_confidence(ticker, config=config)
+                return (ticker, conf) if conf.get("confidence") is not None else (ticker, None)
+            except Exception as e:
+                logger.debug("Confidence for %s: %s", ticker, e)
+                return (ticker, None)
         try:
-            for ticker in holdings_tickers:
-                try:
-                    conf = run_confidence(ticker, config=config)
-                    if conf.get("confidence") is not None:
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                futures = [ex.submit(_confidence_one, t) for t in holdings_tickers]
+                for fut in as_completed(futures):
+                    ticker, conf = fut.result()
+                    if conf is not None:
                         confidence_by_ticker[ticker] = conf
-                except Exception as e:
-                    logger.debug("Confidence for %s: %s", ticker, e)
-            logger.info("[dashboard] confidence for %d holdings tickers", len(confidence_by_ticker))
+            logger.info("[dashboard] confidence for %d holdings tickers (parallel)", len(confidence_by_ticker))
         except Exception as e:
             logger.debug("Confidence fetch failed: %s", e)
 
@@ -252,66 +269,240 @@ async def get_dashboard():
     report = portfolios_out.get("All") or (portfolios_out[portfolio_names[1]] if len(portfolio_names) > 1 else {})
     logger.info("[dashboard] section: portfolio_report DONE")
 
-    # Crypto (BTC, ETH)
-    logger.info("[dashboard] section: crypto_signals...")
+    # Load independent sections in parallel to reduce total time and timeout risk
     crypto_tickers = config.get("crypto_watchlist") or ["BTC-USD", "ETH-USD"]
-    crypto_signals = run_crypto_signals(crypto_tickers, config)
-    logger.info("[dashboard] section: crypto_signals DONE")
-
-    # Cross-asset (DXY, gold, oil) daily % change
-    logger.info("[dashboard] section: cross_asset...")
     cross_asset_tickers = config.get("cross_asset_tickers") or ["DX-Y.NYB", "GLD", "USO"]
-    cross_asset = run_cross_asset_daily(cross_asset_tickers)
+    watchlist_tickers_for_insider = list(dict.fromkeys([r.get("ticker") for r in results if r.get("ticker")]))[:15]
+    data_root = get_data_root()
+    period_long = config.get("data", {}).get("period_long", "13y")
 
-    # Treasury 10Y from FMP - add to cross-asset if available
-    try:
-        rates, _ = fetch_treasury_rates(config)
-        rate_10y = get_10y_rate(rates)
-        if rate_10y is not None:
-            cross_asset = list(cross_asset) + [{"ticker": "10Y", "label": "10Y Treasury", "close": rate_10y, "pct_change": None}]
-    except Exception:
-        pass
-    logger.info("[dashboard] section: cross_asset DONE")
-
-    # Economic calendar (next 7 days) - FMP, cached
-    economic_calendar = []
-    try:
-        from signals.cache import cached_economic_calendar
-        def _fetch_cal():
-            ev, _ = fetch_economic_calendar(config, 7)
-            return [e for e in (ev or [])[:30] if isinstance(e, dict)] if ev else []
-        economic_calendar = cached_economic_calendar(7, _fetch_cal) or []
-    except Exception:
+    def _task_crypto():
         try:
-            events, _ = fetch_economic_calendar(config, 7)
-            if events and isinstance(events, list):
-                economic_calendar = [e for e in events[:30] if isinstance(e, dict)]
+            return ("crypto_signals", run_crypto_signals(crypto_tickers, config))
+        except Exception as e:
+            logger.debug("crypto_signals failed: %s", e)
+            return ("crypto_signals", [])
+
+    def _task_cross_asset():
+        try:
+            cross = run_cross_asset_daily(cross_asset_tickers)
+            rate_10y = None
+            try:
+                rates, _ = fetch_treasury_rates(config)
+                rate_10y = get_10y_rate(rates)
+            except Exception:
+                pass
+            if rate_10y is not None:
+                cross = list(cross) + [{"ticker": "10Y", "label": "10Y Treasury", "close": rate_10y, "pct_change": None}]
+            return ("cross_asset", cross)
+        except Exception as e:
+            logger.debug("cross_asset failed: %s", e)
+            return ("cross_asset", [])
+
+    def _task_economic_calendar():
+        try:
+            from signals.cache import cached_economic_calendar
+            def _fetch_cal():
+                ev, _ = fetch_economic_calendar(config, 7)
+                return [e for e in (ev or [])[:30] if isinstance(e, dict)] if ev else []
+            cal = cached_economic_calendar(7, _fetch_cal) or []
+            return ("economic_calendar", cal)
+        except Exception:
+            try:
+                events, _ = fetch_economic_calendar(config, 7)
+                cal = [e for e in events[:30] if isinstance(e, dict)] if events and isinstance(events, list) else []
+                return ("economic_calendar", cal)
+            except Exception as e:
+                logger.debug("economic_calendar failed: %s", e)
+                return ("economic_calendar", [])
+
+    def _task_real_yield():
+        try:
+            return ("real_yield", get_real_yield_proxy(config))
+        except Exception:
+            return ("real_yield", None)
+
+    def _task_cot():
+        try:
+            return ("cot_extremes", get_cot_extremes_for_guidelines())
+        except Exception:
+            return ("cot_extremes", [])
+
+    # Pre-market is lazy-loaded: PreMarketPanel fetches /api/pre-market when Markets tab is shown; skip here to speed initial load.
+    # def _task_pre_market(): ...
+
+    def _task_eod_redis():
+        eod_snapshots_out: list = []
+        try:
+            from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+            seen: set = set()
+            for date_str in list_eod_dates_redis():
+                if date_str in seen:
+                    continue
+                seen.add(date_str)
+                try:
+                    data = get_eod_snapshot_redis(date_str)
+                    size_bytes = len(json.dumps(data, default=str)) if data else 0
+                    run_date = data.get("run_date") or data.get("snapshot_date") if isinstance(data, dict) else None
+                    eod_snapshots_out.append({"date": date_str, "size_bytes": size_bytes, "run_date": run_date})
+                except Exception:
+                    pass
+            eod_dir = data_root / "eod"
+            if eod_dir.exists():
+                for p in sorted(eod_dir.glob("*.json"), reverse=True):
+                    try:
+                        stem = p.stem
+                        if stem in seen:
+                            continue
+                        if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
+                            seen.add(stem)
+                            size_bytes = p.stat().st_size
+                            run_date = None
+                            try:
+                                with open(p) as _f:
+                                    data = json.load(_f)
+                                run_date = data.get("run_date") or data.get("snapshot_date")
+                            except Exception:
+                                pass
+                            eod_snapshots_out.append({"date": stem, "size_bytes": size_bytes, "run_date": run_date})
+                    except Exception:
+                        pass
+            eod_snapshots_out.sort(key=lambda x: x["date"], reverse=True)
+        except Exception as e:
+            logger.debug("EOD snapshot list failed: %s", e)
+        redis_status_out = {"configured": False, "connected": False}
+        try:
+            from signals.cache import redis_status as _redis_status
+            redis_status_out = _redis_status()
         except Exception:
             pass
+        return ("eod_redis", (eod_snapshots_out, redis_status_out))
+
+    def _task_insider():
+        try:
+            from signals.edgar_insider import run_insider_flow
+            from signals.cache import cached_edgar_insider_flow
+            if watchlist_tickers_for_insider:
+                out = cached_edgar_insider_flow(
+                    watchlist_tickers_for_insider,
+                    lambda: run_insider_flow(watchlist_tickers_for_insider, max_form4_per_ticker=2, days_lookback=90),
+                )
+                return ("insider_flow", out if isinstance(out, dict) else {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": "No data"})
+            return ("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
+        except Exception as e:
+            logger.debug("Insider flow failed: %s", e)
+            return ("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": str(e)})
+
+    def _task_fmp_plan():
+        try:
+            return ("fmp_plan_status", run_fmp_plan_check(config))
+        except Exception:
+            return ("fmp_plan_status", {"has_key": False, "available": [], "unavailable": []})
+
+    def _task_best_2026():
+        if not get_best_picks_2026:
+            return ("best_2026", [])
+        try:
+            return ("best_2026", get_best_picks_2026(config, max_results=20))
+        except Exception:
+            return ("best_2026", [])
+
+    def _task_model_validation():
+        try:
+            recs, summary = get_validation_records(data_root=data_root, max_records=60, tickers=["SPY", "QQQ"])
+            return ("model_validation", {"records": recs, "summary": summary})
+        except Exception as e:
+            logger.debug("Model validation failed: %s", e)
+            return ("model_validation", {"records": [], "summary": {}})
+
+    def _task_forward_tracking():
+        try:
+            return ("forward_tracking", get_forward_tracking(data_root=data_root, tickers=["SPY", "QQQ"], horizons=[5, 20, 60]))
+        except Exception as e:
+            ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)}
+            return ("forward_tracking", ft)
+
+    # Pre-market full: lazy-loaded with pre_market above (PreMarketPanel fetches /api/pre-market).
+
+    def _task_paper_trading_async():
+        try:
+            from signals.paper_trade_logger import PaperTradeLogger
+            pt = PaperTradeLogger(data_root=data_root)
+            sync = pt.sync_targets_stops_from_results(results)
+            mtm = pt.mark_to_market()
+            mtm_history_log = pt.append_mtm_history()
+            fill = pt.fill_outcomes()
+            summary = pt.get_performance_summary(min_completed=60)
+            recent = pt.get_recent(limit=40)
+            mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=12)
+            return ("paper_trading_async", {
+                "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
+                "fill": fill, "summary": summary, "recent": recent, "mtm_history": mtm_history,
+            })
+        except Exception as e:
+            logger.debug("Paper trading summary failed: %s", e)
+            return ("paper_trading_async", None)
+
+    parallel_tasks = [
+        _task_crypto,
+        _task_cross_asset,
+        _task_economic_calendar,
+        _task_real_yield,
+        _task_cot,
+        _task_eod_redis,
+        _task_insider,
+        _task_fmp_plan,
+        _task_best_2026,
+        _task_model_validation,
+        _task_forward_tracking,
+        _task_paper_trading_async,
+    ]
+    parallel_results: dict = {}
+    logger.info("[dashboard] section: parallel load (%d tasks)...", len(parallel_tasks))
+    with ThreadPoolExecutor(max_workers=min(14, len(parallel_tasks))) as ex:
+        futures = [ex.submit(t) for t in parallel_tasks]
+        for fut in as_completed(futures):
+            try:
+                key, value = fut.result()
+                parallel_results[key] = value
+            except Exception as e:
+                logger.debug("Parallel task failed: %s", e)
+    logger.info("[dashboard] section: parallel load DONE")
+
+    crypto_signals = parallel_results.get("crypto_signals", [])
+    cross_asset = parallel_results.get("cross_asset", [])
+    economic_calendar = parallel_results.get("economic_calendar", [])
+    real_yield = parallel_results.get("real_yield")
+    cot_extremes = parallel_results.get("cot_extremes", [])
+    # Pre-market: lazy-loaded by PreMarketPanel when user opens Markets tab
+    pre_market = {}
+    pre_market_full = None
+    eod_redis = parallel_results.get("eod_redis", ([], {"configured": False, "connected": False}))
+    eod_snapshots = eod_redis[0] if isinstance(eod_redis, tuple) else []
+    redis_status_out = eod_redis[1] if isinstance(eod_redis, tuple) and len(eod_redis) > 1 else {"configured": False, "connected": False}
+    insider_flow = parallel_results.get("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
+    fmp_plan_status = parallel_results.get("fmp_plan_status", {})
+    best_2026 = parallel_results.get("best_2026", [])
+    model_validation = parallel_results.get("model_validation", {"records": [], "summary": {}})
+    forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
+    paper_async = parallel_results.get("paper_trading_async")
+    if paper_async:
+        paper_trading["sync_targets"] = paper_async.get("sync_targets")
+        paper_trading["mtm"] = paper_async.get("mtm")
+        paper_trading["mtm_history_log"] = paper_async.get("mtm_history_log")
+        paper_trading["fill"] = paper_async.get("fill")
+        paper_trading["summary"] = paper_async.get("summary")
+        paper_trading["recent"] = paper_async.get("recent")
+        paper_trading["mtm_history"] = paper_async.get("mtm_history") or paper_async.get("mtm_history_map")
 
     # Market scenarios (what-if): upcoming events + historical reaction stats (13y)
     market_scenarios = []
-    period_long = config.get("data", {}).get("period_long", "13y")
     try:
         market_scenarios = get_upcoming_event_scenarios(economic_calendar, period_long=period_long, symbol="SPY")
     except Exception as e:
         logger.debug("Market scenarios failed: %s", e)
 
-    # Real yield (FRED): 10Y - inflation expectations; headwind for gold/growth when high
-    real_yield = None
-    try:
-        real_yield = get_real_yield_proxy(config)
-    except Exception:
-        pass
-
-    # CFTC COT: speculative positioning extreme (gold, silver, crude) = reversal risk
-    cot_extremes = []
-    try:
-        cot_extremes = get_cot_extremes_for_guidelines()
-    except Exception:
-        pass
-
-    # Cross-asset guidelines (macro + calendar + real yield + COT)
+    # Cross-asset guidelines (macro + calendar + real yield + COT) — uses parallel-loaded data
     guidelines = compute_cross_asset_guidelines(
         cross_asset, economic_calendar,
         real_yield=real_yield,
@@ -404,150 +595,9 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("Indicator comparison failed: %s", e)
 
-    # Model validation: predicted vs actual close (SPY/QQQ) from EOD snapshots
-    model_validation = {"records": [], "summary": {}}
-    try:
-        model_validation_records, model_validation_summary = get_validation_records(
-            data_root=get_data_root(),
-            max_records=60,
-            tickers=["SPY", "QQQ"],
-        )
-        model_validation = {"records": model_validation_records, "summary": model_validation_summary}
-    except Exception as e:
-        logger.debug("Model validation failed: %s", e)
+    # (model_validation, forward_tracking, paper_trading sync, pre_market, pre_market_full, eod_snapshots, redis_status, insider_flow, fmp_plan_status, best_2026 loaded in parallel above)
 
-    # Forward tracking: multi-horizon (5d, 20d, 60d) returns, signal accuracy
-    forward_tracking: dict = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None}
-    try:
-        forward_tracking = get_forward_tracking(
-            data_root=get_data_root(),
-            tickers=["SPY", "QQQ"],
-            horizons=[5, 20, 60],
-        )
-    except Exception as e:
-        logger.debug("Forward tracking failed: %s", e)
-        forward_tracking["message"] = str(e)
-
-    # Paper trading: sync target/stop from latest run, then backfill outcomes + summary (log happens earlier right after run_signals)
-    try:
-        from signals.paper_trade_logger import PaperTradeLogger
-        pt = PaperTradeLogger(data_root=get_data_root())
-        paper_trading["sync_targets"] = pt.sync_targets_stops_from_results(results)
-        paper_trading["mtm"] = pt.mark_to_market()
-        paper_trading["mtm_history_log"] = pt.append_mtm_history()
-        paper_trading["fill"] = pt.fill_outcomes()
-        paper_trading["summary"] = pt.get_performance_summary(min_completed=60)
-        paper_trading["recent"] = pt.get_recent(limit=40)
-        paper_trading["mtm_history"] = pt.get_mtm_history_map(paper_trading.get("recent") or [], limit_per_trade=12)
-    except Exception as e:
-        logger.debug("Paper trading summary failed: %s", e)
-        paper_trading = paper_trading if isinstance(paper_trading, dict) else {"summary": None, "recent": [], "log": None, "fill": None}
-        paper_trading["summary"] = {"status": "error", "message": str(e)}
-
-    # Pre-market snapshot (futures + basket; can be slow)
-    pre_market = None
-    try:
-        pre_market = run_premarket_snapshot()
-    except Exception:
-        pre_market = {}
-
-    # Pre-market full (6 classes, 15 sources) — from scheduler-written file if present
-    pre_market_full = None
-    try:
-        pre_market_file = get_data_root() / "pre_market_latest.json"
-        if pre_market_file.exists():
-            with open(pre_market_file) as _f:
-                pre_market_full = json.load(_f)
-    except Exception:
-        pre_market_full = None
-
-    # EOD snapshot list: Redis + filesystem (Redis survives restarts when no volume)
-    eod_snapshots: list[dict] = []
-    try:
-        from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
-        seen: set[str] = set()
-        # Dates from Redis
-        for date_str in list_eod_dates_redis():
-            if date_str in seen:
-                continue
-            seen.add(date_str)
-            try:
-                data = get_eod_snapshot_redis(date_str)
-                size_bytes = len(json.dumps(data, default=str)) if data else 0
-                run_date = data.get("run_date") or data.get("snapshot_date") if isinstance(data, dict) else None
-                eod_snapshots.append({"date": date_str, "size_bytes": size_bytes, "run_date": run_date})
-            except Exception:
-                pass
-        # Dates from filesystem
-        eod_dir = get_data_root() / "eod"
-        if eod_dir.exists():
-            for p in sorted(eod_dir.glob("*.json"), reverse=True):
-                try:
-                    stem = p.stem
-                    if stem in seen:
-                        continue
-                    if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
-                        seen.add(stem)
-                        size_bytes = p.stat().st_size
-                        run_date = None
-                        try:
-                            with open(p) as _f:
-                                data = json.load(_f)
-                            run_date = data.get("run_date") or data.get("snapshot_date")
-                        except Exception:
-                            pass
-                        eod_snapshots.append({
-                            "date": stem,
-                            "size_bytes": size_bytes,
-                            "run_date": run_date,
-                        })
-                except Exception:
-                    pass
-        eod_snapshots.sort(key=lambda x: x["date"], reverse=True)
-    except Exception as e:
-        logger.debug("EOD snapshot list failed: %s", e)
-
-    # Redis connection status for dashboard indicator
-    redis_status_out: dict = {"configured": False, "connected": False}
-    try:
-        from signals.cache import redis_status as _redis_status
-        redis_status_out = _redis_status()
-    except Exception as e:
-        logger.debug("Redis status failed: %s", e)
-
-    # Insider & institutional flow (SEC EDGAR Form 4 — free, no API key). Cached 12h.
-    insider_flow: dict = {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None}
-    try:
-        from signals.edgar_insider import run_insider_flow
-        from signals.cache import cached_edgar_insider_flow
-        watchlist_tickers = list(dict.fromkeys([r.get("ticker") for r in results if r.get("ticker")]))[:15]
-        if watchlist_tickers:
-            insider_flow = cached_edgar_insider_flow(
-                watchlist_tickers,
-                lambda: run_insider_flow(watchlist_tickers, max_form4_per_ticker=2, days_lookback=90),
-            )
-            if not isinstance(insider_flow, dict):
-                insider_flow = {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": "No data"}
-    except Exception as e:
-        logger.debug("Insider flow failed: %s", e)
-        insider_flow["message"] = str(e)
-
-    # FMP plan status (which features work, which need upgrade)
-    fmp_plan_status = {}
-    try:
-        fmp_plan_status = run_fmp_plan_check(config)
-    except Exception:
-        fmp_plan_status = {"has_key": False, "available": [], "unavailable": []}
-
-    # 2026 best tickers (long-term picks with confidence)
-    logger.info("[dashboard] section: best_2026...")
-    best_2026 = []
-    if get_best_picks_2026:
-        try:
-            best_2026 = get_best_picks_2026(config, max_results=20)
-        except Exception:
-            best_2026 = []
-    logger.info("[dashboard] section: best_2026 DONE (%d picks)", len(best_2026))
+    # best_2026 loaded in parallel above
 
     logger.info("[dashboard] section: opportunities...")
     opp_cfg = config.get("opportunity_criteria", {}) or {}
