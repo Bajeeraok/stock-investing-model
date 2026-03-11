@@ -267,6 +267,8 @@ export interface BacktestResult {
 
 export interface DashboardData {
   signals: Signal[];
+  /** Top-level watchlist from API (config.watchlist). */
+  watchlist?: string[];
   crypto?: CryptoSignal[];
   cross_asset?: CrossAssetItem[];
   best_2026?: Best2026Pick[];
