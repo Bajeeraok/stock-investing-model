@@ -86,6 +86,10 @@ def run_signals(
 
     buy_min = score_cfg.get("buy_min", 70)
     sell_max = score_cfg.get("sell_max", 30)
+    ml_strong_buy_confluence = float(score_cfg.get("ml_strong_buy_confluence", 72))
+    ml_strong_buy_prob = float(score_cfg.get("ml_strong_buy_prob", 0.55))
+    ml_buy_prob = float(score_cfg.get("ml_buy_prob", 0.40))
+    ml_avoid_max_prob = float(score_cfg.get("ml_avoid_max_prob", 0.20))
     up_min = regime_cfg.get("up_min", 60)
     down_max = regime_cfg.get("down_max", 40)
 
@@ -197,6 +201,10 @@ def run_signals(
             ml_short_prob=ml_short_prob,
             buy_min=buy_min,
             sell_max=sell_max,
+            ml_strong_buy_confluence=ml_strong_buy_confluence,
+            ml_strong_buy_prob=ml_strong_buy_prob,
+            ml_buy_prob=ml_buy_prob,
+            ml_avoid_max_prob=ml_avoid_max_prob,
         )
 
         # Inverted BUY in BEAR/STRONG_BEAR: never emit BUY or STRONG BUY; cap to HOLD/WATCH
@@ -238,6 +246,10 @@ def run_signals(
                 signal = get_ml_aware_signal(
                     earnings_confluence, ml_short_prob=ml_short_prob,
                     buy_min=buy_min, sell_max=sell_max,
+                    ml_strong_buy_confluence=ml_strong_buy_confluence,
+                    ml_strong_buy_prob=ml_strong_buy_prob,
+                    ml_buy_prob=ml_buy_prob,
+                    ml_avoid_max_prob=ml_avoid_max_prob,
                 )
 
         # Volume vs 20d average (unusual activity)

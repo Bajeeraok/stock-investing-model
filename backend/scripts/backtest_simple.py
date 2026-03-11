@@ -505,6 +505,7 @@ def main() -> None:
     tickers = config.get("backtest_tickers", ["SPY", "QQQ"])
     period = config.get("data", {}).get("period", "10y") or "10y"
     txn_cost = config.get("backtest_transaction_cost", DEFAULT_TRANSACTION_COST)
+    calibration_ok_min = float((config.get("backtest") or {}).get("calibration_ok_min", config.get("score", {}).get("buy_min", 70)))
 
     print("BACKTEST: Sector-aware composite score vs forward returns (net of transaction costs)")
     print(f"  Transaction cost: {txn_cost*100:.2f}% round-trip  |  Benchmark: SPY")
@@ -533,7 +534,7 @@ def main() -> None:
         # Calibration
         cal = out.get("calibration", {})
         if cal.get("calibration_score") is not None:
-            flag = "OK" if cal["calibration_score"] >= 70 and cal.get("monotonic") else "WARN"
+            flag = "OK" if cal["calibration_score"] >= calibration_ok_min and cal.get("monotonic") else "WARN"
             print(
                 f"  Calibration: {cal['calibration_score']:.0f}/100  "
                 f"spread {cal.get('spread_pp', 0):.1f}pp  monotonic={cal.get('monotonic')}  [{flag}]"

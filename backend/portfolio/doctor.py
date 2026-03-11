@@ -15,8 +15,13 @@ def _suggestion(score: float | None, buy_min: float = 65, sell_max: float = 35) 
     return "HOLD"
 
 
-def _suggestion_from_confidence(confidence: float | None, action: str | None) -> str:
-    """Map 7-layer confidence action to portfolio suggestion."""
+def _suggestion_from_confidence(
+    confidence: float | None,
+    action: str | None,
+    add_min_confidence_pct: float = 70.0,
+    trim_max_confidence_pct: float = 30.0,
+) -> str:
+    """Map 7-layer confidence action to portfolio suggestion. Thresholds align with config model_rules (add_min_confidence, trim_max_confidence)."""
     if confidence is None and not action:
         return "N/A"
     if action:
@@ -25,9 +30,11 @@ def _suggestion_from_confidence(confidence: float | None, action: str | None) ->
         if action in ("REDUCE", "AVOID"):
             return "CONSIDER TRIM"
     if confidence is not None:
-        if confidence >= 0.65:
+        add_thresh = add_min_confidence_pct / 100.0
+        trim_thresh = trim_max_confidence_pct / 100.0
+        if confidence >= add_thresh:
             return "HOLD/ADD"
-        if confidence < 0.45:
+        if confidence < trim_thresh:
             return "CONSIDER TRIM"
     return "HOLD"
 
@@ -40,6 +47,7 @@ def portfolio_report(
     concentration_threshold_pct: float = 20.0,
     cash_deploy_min_score: float = 70.0,
     confidence_by_ticker: dict | None = None,
+    model_rules: dict | None = None,
 ) -> dict:
     """
     Build full portfolio report.
@@ -64,6 +72,9 @@ def portfolio_report(
     score_cfg = score_cfg or {}
     buy_min = score_cfg.get("buy_min", 65)
     sell_max = score_cfg.get("sell_max", 35)
+    model_rules = model_rules or {}
+    add_min_conf_pct = float(model_rules.get("add_min_confidence", 70))
+    trim_max_conf_pct = float(model_rules.get("trim_max_confidence", 30))
 
     results_by_ticker = {r["ticker"]: r for r in results if not r.get("error")}
 
@@ -90,7 +101,7 @@ def portfolio_report(
         regime = r.get("regime", "")
         conf_data = (confidence_by_ticker or {}).get(ticker)
         if conf_data is not None and conf_data.get("confidence") is not None:
-            suggestion = _suggestion_from_confidence(conf_data.get("confidence"), conf_data.get("action"))
+            suggestion = _suggestion_from_confidence(conf_data.get("confidence"), conf_data.get("action"), add_min_conf_pct, trim_max_conf_pct)
             entry = {"ticker": ticker, "quantity": qty, "price": price, "value": value, "pct": None, "score": score, "regime": regime, "suggestion": suggestion, "confidence": round(conf_data["confidence"] * 100, 1), "action": conf_data.get("action")}
         else:
             suggestion = _suggestion(score, buy_min, sell_max)

@@ -312,9 +312,16 @@ export interface DashboardData {
   forward_tracking?: {
     records: { as_of_date: string; next_date: string; ticker: string; horizon_days: number; our_signal: string; actual_return_pct: number }[];
     summary_by_horizon?: Record<number, { avg_return_pct: number; n_observations: number }>;
-    summary_by_signal?: Record<string, { avg_return_20d_pct: number; n_observations: number }>;
+    summary_by_signal?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
     message?: string | null;
   };
+  /** Morning brief (Markets tab): market pulse, key levels, today's focus, action items */
+  morning_newsletter?: {
+    headline: string;
+    date: string;
+    sections: Array<{ title: string; items: string[] }>;
+    action_items: string[];
+  } | null;
   paper_trading?: {
     log?: { date: string; seen: number; appended: number } | null;
     mtm?: { updated: number; message?: string | null; as_of?: string } | null;
@@ -405,6 +412,7 @@ export interface DashboardData {
     score: object;
     regime: object;
     risk_sizing?: { risk_pct: number; stop_pct: number };
+    model_rules?: { add_min_confidence?: number; trim_max_confidence?: number; add_min_regime?: string };
     horizons?: { short_term: string; medium_term: string; long_term: string };
   };
   as_of_date?: string;

@@ -26,6 +26,8 @@ export { PaperTradingPanel } from "./PaperTradingPanel";
 export { MarketScenarios } from "./MarketScenarios";
 export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";
 export { ForwardTracking } from "./ForwardTracking";
+export { ModelHealthStrip } from "./ModelHealthStrip";
+export { MorningNewsletter, type MorningNewsletterData } from "./MorningNewsletter";
 export { PreMarketPanel, PreMarketStrip, type PreMarketData, type PreMarketSignal } from "./PreMarketPanel";
 export {
   RiskDashboard,

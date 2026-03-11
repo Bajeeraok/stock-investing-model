@@ -24,7 +24,9 @@ regime_plain_english:
   UP: "Trend and momentum support the position; model favors holding or adding on pullbacks."
   NEUTRAL: "Mixed signals; hold existing position, avoid large new adds until clarity."
   DOWN: "Weak trend or momentum; consider trimming or avoiding new buys; protect capital."
-signal: "BUY (score>=70), HOLD, SELL (score<=30)"
+signal: "BUY (score>=70), HOLD, SELL (score<=30). With ML model: see ml_signal."
+# When ML short-term probability is available, signals use confluence + ML tiers (regime.get_ml_aware_signal)
+ml_signal: "STRONG BUY = confluence ≥72 and ML ≥55%. BUY = confluence ≥65 and ML ≥40%. WATCH = good confluence but ML <40% (wait for confirmation). REDUCE/AVOID when confluence ≤35 or ML <20%. Add only when both technical and ML agree."
 earnings_note: "Reduce confidence or avoid trading near earnings"
 thesis: "Why you own it; review when regime/score changes"
 exit_condition: "When to trim or sell; model nudges when conditions match"

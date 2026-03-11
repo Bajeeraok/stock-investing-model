@@ -182,38 +182,35 @@ def get_ml_aware_signal(
     ml_short_prob: float | None = None,
     buy_min: float = 65,
     sell_max: float = 35,
+    ml_strong_buy_confluence: float = 72.0,
+    ml_strong_buy_prob: float = 0.55,
+    ml_buy_prob: float = 0.40,
+    ml_avoid_max_prob: float = 0.20,
 ) -> str:
     """
     Multi-layer signal that requires BOTH technical (confluence) AND ML to agree
     before emitting BUY. Falls back to confluence-only when ML not yet trained.
 
-    Tiers (when ML available):
-      STRONG BUY — confluence ≥ 72 AND ML ≥ 55%  (both strongly aligned)
-      BUY        — confluence ≥ buy_min AND ML ≥ 40%  (both confirm)
-      WATCH      — confluence ≥ buy_min but ML < 40%  (technical looks good, ML cautious)
-                   → do NOT buy; wait for ML to confirm or check full 7-layer
+    Tiers (when ML available, thresholds from config or defaults):
+      STRONG BUY — confluence ≥ ml_strong_buy_confluence AND ML ≥ ml_strong_buy_prob
+      BUY        — confluence ≥ buy_min AND ML ≥ ml_buy_prob
+      WATCH      — confluence ≥ buy_min but ML < ml_buy_prob (technical good, ML cautious)
       HOLD       — neither extreme
-      REDUCE     — confluence ≤ sell_max OR ML < 20%  (at least one is bearish)
-      AVOID      — confluence ≤ sell_max AND ML < 20%  (both bearish)
+      REDUCE     — confluence ≤ sell_max OR ML < ml_avoid_max_prob
+      AVOID      — confluence ≤ sell_max AND ML < ml_avoid_max_prob
 
-    Without ML (inference_only returned None):
-      Falls back to BUY/HOLD/SELL purely from confluence so existing behaviour
-      is preserved until models are trained.
-
-    Why 40% ML threshold for BUY?
-      Short-term models are calibrated for ~18% base rate (P(5%+ in 20d) for SPY).
-      40% = ~2.2× the base rate — a meaningful signal, not noise.
+    Without ML: falls back to BUY/HOLD/SELL from confluence only.
     """
     if ml_short_prob is not None:
-        if confluence >= 72 and ml_short_prob >= 0.55:
+        if confluence >= ml_strong_buy_confluence and ml_short_prob >= ml_strong_buy_prob:
             return "STRONG BUY"
-        if confluence >= buy_min and ml_short_prob >= 0.40:
+        if confluence >= buy_min and ml_short_prob >= ml_buy_prob:
             return "BUY"
-        if confluence >= buy_min and ml_short_prob < 0.40:
-            return "WATCH"   # technical strong but ML not confirming
-        if confluence <= sell_max and ml_short_prob < 0.20:
+        if confluence >= buy_min and ml_short_prob < ml_buy_prob:
+            return "WATCH"
+        if confluence <= sell_max and ml_short_prob < ml_avoid_max_prob:
             return "AVOID"
-        if confluence <= sell_max or ml_short_prob < 0.20:
+        if confluence <= sell_max or ml_short_prob < ml_avoid_max_prob:
             return "REDUCE"
         return "HOLD"
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Calendar, Database, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical } from "lucide-react";
+import { AlertTriangle, BarChart3, Calendar, Database, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
@@ -34,6 +34,8 @@ import {
   MarketScenarios,
   PerformanceVsBenchmark,
   ForwardTracking,
+  ModelHealthStrip,
+  MorningNewsletter,
   PaperTradingPanel,
   PreMarketPanel,
   PreMarketStrip,
@@ -383,8 +385,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <strong>Do nothing guidance:</strong> When macro is Risk-Off or rotation risk is High, consider reducing new buys, stepping down tech adds, and protecting gains. Do not chase; wait for clarity.
             </div>
           )}
-          <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400" title="Model discipline – follow these to align with the system">
-            <strong className="text-slate-300">Model rules:</strong> Add only when confidence ≥ 70 and regime UP. Trim when confidence ≤ 30 or regime DOWN. When rotation risk High, tech suggestions step down. Rebalance review: quarterly.
+          <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400" title="Confidence = 7-layer score (regime, pattern, ML, options, insider, fundamental, NLP). Open a ticker for breakdown. Model discipline – follow these to align with the system.">
+            <strong className="text-slate-300">Model rules:</strong>{" "}
+            Add only when confidence ≥ {data.config?.model_rules?.add_min_confidence ?? 70} and regime {data.config?.model_rules?.add_min_regime ?? "UP"}. Trim when confidence ≤ {data.config?.model_rules?.trim_max_confidence ?? 30} or regime DOWN. When rotation risk High, tech suggestions step down. Rebalance review: quarterly.{" "}
+            <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Confidence = 7-layer score; open a ticker for details.</span>
           </div>
           {(data.macro_regime || data.global_market_regime) && (
             <p
@@ -416,7 +420,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {data.market_regime && (data.market_regime.market_breadth || data.market_regime.tech_leadership || data.market_regime.rotation_risk) && (
             <p
               className="text-sm text-slate-300 mb-3 px-3 py-2 rounded-lg border border-slate-600 bg-slate-800/50"
-              title="Breadth: participation (e.g. RSP vs SPY). Tech leadership: XLK/QQQ vs SPY trend. Rotation risk High = tighten tech buy zones, favor holds."
+              title="Breadth: participation (e.g. RSP vs SPY). Tech leadership: XLK/QQQ vs SPY trend. Rotation risk = VIX + real yields + relative strength (tech vs SPY). High = step down tech adds, favor holds."
             >
               <span className="inline-flex items-center gap-1">
                 <span className="text-slate-400">Market breadth:</span> {data.market_regime.market_breadth ?? "—"}
@@ -657,6 +661,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Markets tab */}
           {activeTab === "markets" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              <ToggleSection id="markets-newsletter" title="Morning newsletter" icon={<Mail className="h-5 w-5" />} defaultOpen>
+                <MorningNewsletter data={data.morning_newsletter ?? undefined} />
+              </ToggleSection>
+              {data.forward_tracking && (data.forward_tracking.summary_by_signal || data.forward_tracking.message) && (
+                <ModelHealthStrip
+                  summary_by_signal={data.forward_tracking.summary_by_signal}
+                  summary_by_horizon={data.forward_tracking.summary_by_horizon}
+                  message={data.forward_tracking.message}
+                />
+              )}
               <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen={false}>
                 <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
               </ToggleSection>

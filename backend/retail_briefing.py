@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 REGIME_PLAIN_ENGLISH = {
-    "Risk-On": "Market favors risk-on. Consider small adds on pullbacks; avoid chasing.",
-    "Neutral": "Mixed signals. Hold core positions; avoid large new buys until clarity.",
-    "Risk-Off": "Risk-off conditions. Reduce size, tighten stops, avoid new YOLOs.",
+    "Risk-On": "Favor small adds on pullbacks. Don't chase; use your levels.",
+    "Neutral": "Hold core; skip big new buys until the trend is clearer.",
+    "Risk-Off": "Tighten stops, trim size, no new YOLOs. Preserve capital.",
 }
 
 # Approx % of portfolio at risk if all stops hit (simplified: risk_per_position = value * stop_pct/100)

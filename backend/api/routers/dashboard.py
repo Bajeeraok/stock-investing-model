@@ -253,6 +253,7 @@ async def get_dashboard():
             concentration_threshold_pct=config.get("concentration_alert_pct", 20),
             cash_deploy_min_score=config.get("cash_deploy_min_score", 70),
             confidence_by_ticker=confidence_by_ticker,
+            model_rules=config.get("model_rules"),
         )
         if prices_by_ticker:
             total_value = rep.get("total_value") or 0.0
@@ -883,6 +884,22 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("Retail briefing failed: %s", e)
 
+    morning_newsletter = None
+    try:
+        from signals.morning_newsletter import build_morning_newsletter
+        morning_newsletter = build_morning_newsletter(
+            as_of_date=as_of_date,
+            macro_regime=macro_regime,
+            macro_analog=macro_analog,
+            market_regime=market_regime_data,
+            retail_briefing=retail_briefing,
+            earnings_risk_count=earnings_risk_count or 0,
+            forward_tracking=forward_tracking,
+            results=results,
+        )
+    except Exception as e:
+        logger.debug("Morning newsletter failed: %s", e)
+
     out = {
         "as_of_date": as_of_date,
         "signals": results,
@@ -926,11 +943,13 @@ async def get_dashboard():
         "thesis_check": thesis_check,
         "what_changed": what_changed_list,
         "earnings_risk_count": earnings_risk_count,
+        "morning_newsletter": morning_newsletter,
         "config": {
             "watchlist": config.get("watchlist", []),
             "score": config.get("score", {}),
             "regime": config.get("regime", {}),
             "risk_sizing": {"risk_pct": risk_pct, "stop_pct": stop_pct},
+            "model_rules": config.get("model_rules") or {"add_min_confidence": 70, "trim_max_confidence": 30, "add_min_regime": "UP"},
             "horizons": {
                 "short_term": "~1 month (2–4 weeks)",
                 "medium_term": "~3–6 months",
