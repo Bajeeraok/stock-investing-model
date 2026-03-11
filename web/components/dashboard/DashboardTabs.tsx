@@ -1,11 +1,12 @@
 "use client";
 
-import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, FlaskConical } from "lucide-react";
+import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, FlaskConical, LayoutGrid } from "lucide-react";
 import { clsx } from "clsx";
 
 const TABS = [
   { id: "overview",    label: "Overview",    shortcut: "1", icon: LayoutDashboard },
   { id: "signals",     label: "Signals",     shortcut: "2", icon: LineChart       },
+  { id: "roadmaps",    label: "Roadmaps",    shortcut: "8", icon: LayoutGrid      },
   { id: "portfolio",   label: "Portfolio",   shortcut: "3", icon: Wallet          },
   { id: "opportunities", label: "Opportunities", shortcut: "4", icon: Sparkles    },
   { id: "markets",     label: "Markets",     shortcut: "5", icon: TrendingUp      },
@@ -25,7 +26,7 @@ export function DashboardTabs({ active, onChange, badges }: Props) {
   return (
     <div
       role="tablist"
-      aria-label="Dashboard sections (1-6 to switch)"
+      aria-label="Dashboard sections (1-8 to switch)"
       className="flex gap-0.5 p-1 rounded-xl bg-slate-900/80 border border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto [-webkit-overflow-scrolling:touch] min-h-[44px] touch-manipulation"
     >
       {TABS.map(({ id, label, shortcut, icon: Icon }) => {

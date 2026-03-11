@@ -89,7 +89,7 @@ def classify_stock_type(
     if ttm_pe >= 50:
         notes.append("High TTM PE ({:.0f}x) — market pricing in strong forward growth".format(ttm_pe))
         if revenue_growth_pct >= 15 or earnings_growth_pct >= 20:
-            notes.append("Growth supports premium: rev +{:.0f}%, earnings +{:.0f}%".format(
+            notes.append("Growth supports premium: rev +{:.1f}%, earnings +{:.1f}%".format(
                 revenue_growth_pct, earnings_growth_pct))
             return StockClassification(
                 stock_type=StockType.HIGH_GROWTH,
@@ -375,12 +375,12 @@ def estimate_fair_value(
         divergence = abs(fv - analyst_target) / analyst_target * 100
         if divergence > 40:
             notes.append(
-                "Model FV (${:.2f}) diverges {:.0f}% from analyst consensus (${:.2f}) — "
+                "Model FV (${:.2f}) diverges {:.1f}% from analyst consensus (${:.2f}) — "
                 "treat with caution".format(fv, divergence, analyst_target))
         elif divergence > 20:
             notes.append(
                 "Model FV (${:.2f}) vs analyst consensus (${:.2f}) — "
-                "{:.0f}% gap, review inputs".format(fv, analyst_target, divergence))
+                "{:.1f}% gap, review inputs".format(fv, analyst_target, divergence))
 
     discount_pct = round((fv - current_price) / current_price * 100, 1)
 

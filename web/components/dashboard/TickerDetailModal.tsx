@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity } from "lucide-react";
+import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity, LayoutGrid, Target, Layers } from "lucide-react";
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
+import { TradeRoadmapCard } from "./TradeRoadmapCard";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -113,6 +114,7 @@ export function TickerDetailModal({
   const [error, setError]                  = useState<string | null>(null);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<"overview" | "roadmaps" | "details">("overview");
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -184,6 +186,34 @@ export function TickerDetailModal({
           </button>
         </div>
 
+        {/* Tab bar: Overview | Roadmaps | Details — keeps modal from feeling crowded */}
+        {detail && !loading && (
+          <div className="flex border-b border-slate-700 bg-slate-900/90 sticky top-0 z-10">
+            {(
+              [
+                { id: "overview" as const, label: "Overview", icon: Target },
+                { id: "roadmaps" as const, label: "Roadmaps", icon: LayoutGrid },
+                { id: "details" as const, label: "Details", icon: Layers },
+              ] as const
+            ).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setModalTab(id)}
+                className={clsx(
+                  "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+                  modalTab === id
+                    ? "text-emerald-400 border-b-2 border-emerald-500 bg-slate-800/50"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="p-6 space-y-6">
           {loading && (
             <div className="flex justify-center py-12">
@@ -195,6 +225,9 @@ export function TickerDetailModal({
           )}
           {detail && !loading && (
             <>
+              {/* ── Overview tab: One Answer + horizons + CTA to Roadmaps ───── */}
+              {modalTab === "overview" && (
+                <>
               {/* Quick reference – collapsible so modal has less vertical scroll */}
               <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden mb-4">
                 <button
@@ -294,6 +327,43 @@ export function TickerDetailModal({
                 />
               )}
 
+              {/* CTA: jump to Roadmaps tab for full buy/sell tables */}
+              {detail.investor_summary?.trade_roadmap && (
+                <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                  <p className="text-sm text-slate-300 mb-2">Full buy/sell roadmap with timeline, trader type, and price zones.</p>
+                  <button
+                    type="button"
+                    onClick={() => setModalTab("roadmaps")}
+                    className="text-sm font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
+                  >
+                    See full Roadmaps <ChevronRight className="h-4 w-4" />
+                  </button>
+                </section>
+              )}
+                </>
+              )}
+
+              {/* ── Roadmaps tab: only Trade Roadmap card ──────────────────── */}
+              {modalTab === "roadmaps" && (
+                detail.investor_summary?.trade_roadmap ? (
+                  <TradeRoadmapCard data={detail.investor_summary.trade_roadmap} ticker={detail.ticker} />
+                ) : (
+                  <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center text-slate-400">
+                    <p className="text-sm">Roadmap not available for this ticker.</p>
+                    <button
+                      type="button"
+                      onClick={() => setModalTab("overview")}
+                      className="mt-2 text-sm text-emerald-400 hover:text-emerald-300"
+                    >
+                      Back to Overview
+                    </button>
+                  </div>
+                )
+              )}
+
+              {/* ── Details tab: Confidence, signals, targets, thesis, etc. ── */}
+              {modalTab === "details" && (
+                <>
               {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
               {confidence ? (
                 <ConfidenceBreakdownSafe data={confidence} />
@@ -463,7 +533,11 @@ export function TickerDetailModal({
                                 )}
                               </p>
                             )}
-                            <p className="text-sm text-slate-500 mt-0.5">Fair value (EPS × P/E) blended with analyst consensus. Bear level uses 10+yr stress drawdown when available.</p>
+                            <p className="text-sm text-slate-500 mt-0.5">
+                              {["GLD", "SLV", "IAU", "USO", "GDX", "GDXJ"].includes(detail.ticker) || detail.sector === "Commodities"
+                                ? "Price band from analyst consensus and volatility (no P/E — commodity ETF). Bear level uses 10+yr stress when available."
+                                : "Fair value (EPS × P/E) blended with analyst consensus. Bear level uses 10+yr stress drawdown when available."}
+                            </p>
                           </>
                         ) : (
                           <p className="text-slate-500 text-base">Not available — requires analyst consensus or forward EPS (FMP)</p>
@@ -827,7 +901,7 @@ export function TickerDetailModal({
                     {(detail.high_52w != null || detail.low_52w != null) && (
                       <div>
                         <p className="font-medium text-slate-200">
-                          52w range: {detail.low_52w != null && `$${detail.low_52w}`} – {detail.high_52w != null && `$${detail.high_52w}`}
+                          52w range: {detail.low_52w != null && `$${Number(detail.low_52w).toFixed(2)}`} – {detail.high_52w != null && `$${Number(detail.high_52w).toFixed(2)}`}
                         </p>
                         <p className="text-slate-300 mt-2 text-sm leading-relaxed">
                           Where price sits in the yearly range. Near high = extended; near low = potential value or weakness.
@@ -874,6 +948,8 @@ export function TickerDetailModal({
 
               {detail.current_price != null && (
                 <p className="text-sm text-slate-500">Current price: ${detail.current_price.toFixed(2)}</p>
+              )}
+                </>
               )}
             </>
           )}

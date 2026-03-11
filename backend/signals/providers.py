@@ -109,16 +109,35 @@ def get_next_earnings(ticker: str, config: dict | None = None) -> dict | None:
     return _get_earnings_yfinance(ticker)
 
 
-def get_most_recent_earnings(ticker: str) -> dict | None:
-    """
-    Get most recent earnings date (past). Returns {date, days_since} or None.
-
-    Notes:
-      - Uses yfinance only.
-      - Intended for event-aware regime validation (e.g., post-earnings overrides).
-    """
+def _get_most_recent_earnings_impl(ticker: str, config: dict) -> dict | None:
+    """Inner: FMP first when api_key in config, else yfinance. No cache."""
     if ticker.upper() in _ETFS:
         return None
+    api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
+    if api_key and urllib is not None:
+        try:
+            url = f"https://financialmodelingprep.com/api/v3/earning_calendar?symbol={ticker}&apikey={api_key}"
+            with urllib.request.urlopen(urllib.request.Request(url), timeout=10) as resp:
+                data = _json.loads(resp.read().decode())
+            if isinstance(data, list) and data:
+                today = datetime.now().date()
+                past = []
+                for item in data:
+                    d_str = item.get("date")
+                    if not d_str:
+                        continue
+                    try:
+                        d = datetime.strptime(d_str[:10], "%Y-%m-%d").date()
+                        if d < today:
+                            past.append((d_str[:10], (today - d).days))
+                    except Exception:
+                        continue
+                if past:
+                    past.sort(key=lambda x: x[1])
+                    date_str, days_since = past[0]
+                    return {"date": date_str, "days_since": days_since}
+        except Exception:
+            pass
     if yf is None:
         return None
     try:
@@ -141,8 +160,22 @@ def get_most_recent_earnings(ticker: str) -> dict | None:
         return None
 
 
-# Cache (per-process) to avoid repeated yfinance calls during dashboard runs
-get_most_recent_earnings = lru_cache(maxsize=512)(get_most_recent_earnings)
+@lru_cache(maxsize=512)
+def _get_most_recent_earnings_yf_cached(ticker: str) -> dict | None:
+    """Cached yfinance path only (keyed by ticker)."""
+    return _get_most_recent_earnings_impl(ticker, {})
+
+
+def get_most_recent_earnings(ticker: str, config: dict | None = None) -> dict | None:
+    """
+    Get most recent earnings date (past). Returns {date, days_since} or None.
+    Prefers FMP earning_calendar when config has fmp_api_key, else yfinance (cached).
+    """
+    config = config or {}
+    api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
+    if api_key:
+        return _get_most_recent_earnings_impl(ticker, config)
+    return _get_most_recent_earnings_yf_cached(ticker)
 
 
 def _get_earnings_yfinance(ticker: str) -> dict | None:
@@ -196,14 +229,11 @@ _SECTOR_ETF = {
 }
 
 
-def get_sector_and_industry(ticker: str) -> dict:
+def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
     """
-    Get sector and industry for a ticker via yfinance.
+    Get sector and industry for a ticker. Prefers FMP profile when config has fmp_api_key, else yfinance.
     Returns {sector, industry, sector_etf, sector_etf_name}.
-    Uses a fallback map for common ETFs and known yfinance misfires to avoid "Unknown".
     """
-    if yf is None:
-        return {}
     sym = (ticker or "").upper().split("-")[0]
     _FALLBACK = {
         "SPY": ("Market", "S&P 500 Index ETF", "SPY", "SPY (Market)"),
@@ -218,15 +248,35 @@ def get_sector_and_industry(ticker: str) -> dict:
         sector, industry, sector_etf, sector_etf_name = _FALLBACK[sym]
         return {"sector": sector, "industry": industry, "sector_etf": sector_etf, "sector_etf_name": sector_etf_name}
     if sym in _ETFS:
-        # Sector ETFs: label as their own sector rather than null
         return {"sector": "Market", "industry": "ETF", "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
+
+    config = config or {}
+    api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
+    if api_key:
+        try:
+            from signals.fmp_client import fetch_profile
+            profile, err = fetch_profile(config, ticker)
+            if not err and profile and isinstance(profile, dict):
+                sector = (profile.get("sector") or "").strip().lower()
+                industry = (profile.get("industry") or "").strip() or None
+                sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
+                return {
+                    "sector": sector.replace("-", " ").title() if sector else "Unknown",
+                    "industry": industry,
+                    "sector_etf": sector_etf,
+                    "sector_etf_name": f"{sector_etf} ({sector.replace('-', ' ').title()})" if sector else "SPY (Market)",
+                }
+        except Exception:
+            pass
+
+    if yf is None:
+        return {"sector": "Unknown", "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
     try:
         t = yf.Ticker(ticker)
         info = t.info or {}
         sector = (info.get("sector") or "").strip().lower()
         industry = (info.get("industry") or "").strip()
         if not sector:
-            # Try pre-flight registry for special instruments / common misfires
             try:
                 from signals.pre_flight.asset_classifier import ASSET_REGISTRY  # type: ignore
                 meta = ASSET_REGISTRY.get(sym)

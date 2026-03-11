@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 from .constants import (
-    Thresholds, SignalMode, CoherenceLevel, RSISignal,
+    AssetType, Thresholds, SignalMode, CoherenceLevel, RSISignal,
     WEIGHT_PROFILES
 )
 from .models import (
@@ -548,6 +548,10 @@ def run_conditional_playbook(
             },
         ),
     ]
+
+    # Exclude equity-only scenarios for commodity/volatility ETFs (no earnings)
+    if classification.asset_type in (AssetType.ETF_COMMODITY, AssetType.ETF_VOLATILITY):
+        scenarios = [sc for sc in scenarios if sc.name != "Earnings Catalyst"]
 
     return mode, action, pos_size, scenarios
 

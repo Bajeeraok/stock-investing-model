@@ -1217,6 +1217,35 @@ async def get_ticker_detail(ticker: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/roadmaps")
+async def get_roadmaps(tickers: str = ""):
+    """
+    Lightweight roadmaps for multiple tickers (dashboard Roadmaps tab).
+    Query: ?tickers=NVDA,GLD,SPY (comma-separated, max 12).
+    Returns: { roadmaps: [ { ticker, one_answer, trade_roadmap } ] }.
+    Each ticker uses full get_ticker_detail; we strip to one_answer + trade_roadmap only.
+    """
+    from api.ticker_detail import get_ticker_detail as _get
+    config = _load_config()
+    raw = [t.strip().upper() for t in tickers.split(",") if t.strip()][:12]
+    if not raw:
+        return {"roadmaps": [], "message": "Provide ?tickers=NVDA,GLD,SPY"}
+    out = []
+    for t in raw:
+        try:
+            detail = _get(t, config)
+            inv = detail.get("investor_summary") or {}
+            out.append({
+                "ticker": t,
+                "one_answer": inv.get("one_answer"),
+                "trade_roadmap": inv.get("trade_roadmap"),
+            })
+        except Exception as e:
+            logger.warning("Roadmap skip %s: %s", t, e)
+            out.append({"ticker": t, "one_answer": None, "trade_roadmap": None})
+    return {"roadmaps": out}
+
+
 @router.get("/confidence/{ticker}")
 async def get_confidence(ticker: str):
     """
@@ -1250,11 +1279,20 @@ async def get_unified_signal(ticker: str):
     ticker = ticker.upper().strip()
     try:
         from signals.unified_signal_engine import run_unified_signal
-        from signals.fetcher import fetch_ohlcv_dataframe
-        df = fetch_ohlcv_dataframe(ticker, period="2y")
-        if df is None or df.empty:
-            raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
-        result = run_unified_signal(df, ticker)
+        from signals.fetcher import fetch_ohlcv_safe
+        from signals.regime import get_global_market_regime
+        # Resolve global market regime so we never return UNKNOWN
+        market_regime = "NEUTRAL"
+        vix = None
+        try:
+            close_spy = fetch_ohlcv_safe("SPY", "2y")
+            if close_spy is not None and len(close_spy) >= 60:
+                market_regime = get_global_market_regime(close_spy, min_days_confirm=3)
+        except Exception:
+            pass
+        result = run_unified_signal(ticker, period="2y", composite_score=None, market_regime=market_regime, vix=vix)
+        if result.get("error"):
+            raise HTTPException(status_code=404, detail=result["error"])
         if result.get("pattern_score", 0) == 0 and result.get("composite_score") is not None:
             result["pattern_score"] = result["composite_score"]
             result["pattern_score_source"] = "confluence_fallback"

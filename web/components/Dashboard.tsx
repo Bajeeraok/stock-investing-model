@@ -46,6 +46,7 @@ import {
   TaxAwareExitPanel,
   AlertsPanel,
   RetailBriefingPanel,
+  RoadmapsPanel,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 
@@ -79,7 +80,7 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
-const TAB_IDS: TabId[] = ["overview", "signals", "portfolio", "opportunities", "markets", "analysis", "testsuite"];
+const TAB_IDS: TabId[] = ["overview", "signals", "roadmaps", "portfolio", "opportunities", "markets", "analysis", "testsuite"];
 
 function isValidTab(t: string): t is TabId {
   return TAB_IDS.includes(t as TabId);
@@ -146,10 +147,13 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).closest("input, textarea, select")) return;
-      const n = e.key === "1" ? 1 : e.key === "2" ? 2 : e.key === "3" ? 3 : e.key === "4" ? 4 : e.key === "5" ? 5 : e.key === "6" ? 6 : 0;
-      if (n >= 1 && n <= 6) {
+      const keyToTab: Partial<Record<string, TabId>> = {
+        "1": "overview", "2": "signals", "3": "portfolio", "4": "opportunities",
+        "5": "markets", "6": "analysis", "7": "testsuite", "8": "roadmaps",
+      };
+      const id = e.key in keyToTab ? keyToTab[e.key] : null;
+      if (id) {
         e.preventDefault();
-        const id = TAB_IDS[n - 1];
         setActiveTab(id);
       }
     };
@@ -542,6 +546,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
             </div>
           </ToggleSection>
           <SignalsTable signals={data.signals} horizons={data.config?.horizons} onTickerClick={setSelectedTicker} riskSizing={data.config?.risk_sizing} cotByTicker={data.cot_by_ticker} tickerActions={data.retail_briefing?.ticker_actions} />
+            </div>
+          )}
+
+          {/* Roadmaps tab */}
+          {activeTab === "roadmaps" && (
+            <div className="p-4 sm:p-6 space-y-4">
+              <RoadmapsPanel
+                tickers={data.watchlist ?? data.signals?.map((s) => s.ticker) ?? []}
+                onTickerClick={setSelectedTicker}
+              />
             </div>
           )}
 

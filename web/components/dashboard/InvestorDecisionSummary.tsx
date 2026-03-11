@@ -1,7 +1,8 @@
 "use client";
 
-import React from "react";
-import { CheckCircle, XCircle, AlertCircle, Target, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import React, { useState } from "react";
+import { CheckCircle, XCircle, AlertCircle, Target, ChevronDown, ChevronRight, AlertTriangle, Info, Zap, TrendingUp, Calendar } from "lucide-react";
+import type { TradeRoadmapData } from "./TradeRoadmapCard";
 
 // Use bracket types to avoid ambiguous generics in .tsx (Array<T> can be parsed as JSX)
 export interface FairValueMetadata {
@@ -9,6 +10,44 @@ export interface FairValueMetadata {
   method_used?: string | null;
   methodology_summary?: string | null;
   notes?: string[] | null;
+}
+
+/** One sentence answer: "Should I buy/sell today, and if not, at what price and when?" */
+export interface OneAnswer {
+  headline: string;
+  subline?: string | null;
+  verdict: string;
+  action_today: string;
+}
+
+/** Trader roadmap: short/medium entry, stop, target, when to act. */
+export interface TraderRoadmap {
+  verdict: string;
+  action_today: string;
+  short: {
+    entry_zone: { low: number; high: number } | null;
+    stop: number | null;
+    target: number | null;
+    target_pct: number | null;
+    timeframe: string;
+    trigger: string;
+  };
+  medium: {
+    entry_zone: { low: number; high: number } | null;
+    stop: number | null;
+    target: number | null;
+    timeframe: string;
+    trigger: string;
+  };
+}
+
+/** Investor roadmap: tiered add levels, trim near FV, hold thesis. */
+export interface InvestorRoadmap {
+  verdict: string;
+  action_today: string;
+  add_tiers: { id?: string; label?: string; low?: number; high?: number; allocation_pct?: number }[];
+  trim_near: number;
+  hold_thesis: string;
 }
 
 export interface InvestorDecisionSummary {
@@ -20,6 +59,14 @@ export interface InvestorDecisionSummary {
   forward_pe_used?: number;
   /** Bear case, method, and notes so users can interrogate FV vs lt_band. */
   fair_value_metadata?: FairValueMetadata | null;
+  /** Short-term pattern score (0-100); when low, show signal-deterioration banner. */
+  pattern_score?: number | null;
+  /** One Answer + Trader / Investor roadmaps (retail design). */
+  one_answer?: OneAnswer | null;
+  trader_roadmap?: TraderRoadmap | null;
+  investor_roadmap?: InvestorRoadmap | null;
+  /** Complete Trade Roadmap: buy/sell stages + trader summary (tabbed card). */
+  trade_roadmap?: TradeRoadmapData | null;
   horizons: {
     short: HorizonSignalPayload;
     medium: HorizonSignalPayload;
@@ -115,7 +162,11 @@ function HorizonCard({
     ),
     React.createElement("p", { className: "text-slate-500 text-xs" }, `${horizon.signal} strength · ${horizon.conviction} conviction`),
     React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `Entry: $${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
-    React.createElement("p", { className: "text-slate-500 text-xs" }, `Target: +${horizon.target_pct.toFixed(0)}% · ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`),
+    React.createElement(
+      "p",
+      { className: "text-slate-500 text-xs", title: "ML probabilities can vary day-to-day as new price and volume data are included; large moves may reflect updated features rather than a change in thesis." },
+      `Target: +${horizon.target_pct.toFixed(0)}% · ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`
+    ),
     hasStop &&
       React.createElement(
         "p",
@@ -179,11 +230,25 @@ export function InvestorDecisionSummarySection({
   ltEntryTiersOpen: boolean;
   onToggleLtTiers: () => void;
 }) {
-  const { fair_value, overall_verdict, horizons, ttm_pe_used, forward_pe_used, fair_value_metadata } = summary;
+  const { fair_value, overall_verdict, horizons, ttm_pe_used, forward_pe_used, fair_value_metadata, pattern_score, one_answer, trader_roadmap, investor_roadmap } = summary;
   const assessmentPct = currentPrice > 0 ? ((fair_value - currentPrice) / currentPrice) * 100 : 0;
   const short = horizons.short;
   const medium = horizons.medium;
   const long = horizons.long;
+
+  const [methodologyOpen, setMethodologyOpen] = useState(false);
+  const [traderOpen, setTraderOpen] = useState(true);
+  const [investorOpen, setInvestorOpen] = useState(false);
+  const verdicts = [short?.verdict, medium?.verdict, long?.verdict].filter(Boolean);
+  const hasDivergence = verdicts.length >= 2 && new Set(verdicts).size > 1;
+  const divergenceMessage =
+    short?.verdict === "WATCH" && medium?.verdict === "BUY" && long?.verdict === "WATCH"
+      ? "Short and long are cautious; medium-term setup is stronger — consider entry on pullbacks."
+      : hasDivergence
+        ? "Horizons disagree — short/medium/long use different inputs (RSI, volume, ML). Prefer the horizon that matches your holding period."
+        : null;
+  // When pattern_score is 0, the card already shows "Confluence" fallback — avoid duplicate "Pattern score low (0/100)" block
+  const patternLow = pattern_score != null && pattern_score > 0 && pattern_score < 50;
 
   return React.createElement(
     "div",
@@ -192,6 +257,89 @@ export function InvestorDecisionSummarySection({
       "aria-label": "Investor Decision Summary",
       className: "bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden",
     },
+    /* One Answer card (top) */
+    one_answer && React.createElement(
+      "div",
+      { className: "p-4 border-b border-slate-700 bg-emerald-500/5" },
+      React.createElement("h3", { className: "flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2" },
+        React.createElement(Zap, { className: "h-3.5 w-3.5 text-emerald-500" }),
+        " One answer"
+      ),
+      React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
+      one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline)
+    ),
+    /* Trader roadmap (collapsible) */
+    trader_roadmap && React.createElement(
+      "div",
+      { className: "border-b border-slate-700" },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setTraderOpen((o) => !o),
+          className: "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-700/30 transition-colors",
+        },
+        React.createElement("span", { className: "flex items-center gap-2 text-sm font-semibold text-slate-200" },
+          React.createElement(TrendingUp, { className: "h-4 w-4 text-amber-500" }),
+          " Trader roadmap (short / medium)"
+        ),
+        traderOpen ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-400" }) : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-400" })
+      ),
+      traderOpen && React.createElement(
+        "div",
+        { className: "px-4 pb-4 pt-0 space-y-3 text-sm" },
+        React.createElement("p", { className: "text-slate-300" },
+          "Today: ", React.createElement("span", { className: "font-medium text-slate-200" }, trader_roadmap.action_today.replace(/_/g, " ")), "."
+        ),
+        trader_roadmap.short.entry_zone && React.createElement("p", { className: "text-slate-400" },
+          "Short (~1 mo): Entry $", trader_roadmap.short.entry_zone.low?.toFixed(2), "–$", trader_roadmap.short.entry_zone.high?.toFixed(2),
+          trader_roadmap.short.target != null ? ` → target $${trader_roadmap.short.target.toFixed(2)}` : "",
+          trader_roadmap.short.stop != null ? ` · stop $${trader_roadmap.short.stop.toFixed(2)}` : "",
+          ". ", trader_roadmap.short.trigger
+        ),
+        trader_roadmap.medium.entry_zone && React.createElement("p", { className: "text-slate-400" },
+          "Medium (3–6 mo): Entry $", trader_roadmap.medium.entry_zone.low?.toFixed(2), "–$", trader_roadmap.medium.entry_zone.high?.toFixed(2),
+          trader_roadmap.medium.target != null ? ` → target $${trader_roadmap.medium.target.toFixed(2)}` : "",
+          trader_roadmap.medium.stop != null ? ` · stop $${trader_roadmap.medium.stop.toFixed(2)}` : "",
+          ". ", trader_roadmap.medium.trigger
+        )
+      )
+    ),
+    /* Investor roadmap (collapsible) */
+    investor_roadmap && React.createElement(
+      "div",
+      { className: "border-b border-slate-700" },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setInvestorOpen((o) => !o),
+          className: "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-700/30 transition-colors",
+        },
+        React.createElement("span", { className: "flex items-center gap-2 text-sm font-semibold text-slate-200" },
+          React.createElement(Calendar, { className: "h-4 w-4 text-emerald-500" }),
+          " Investor roadmap (medium / long)"
+        ),
+        investorOpen ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-400" }) : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-400" })
+      ),
+      investorOpen && React.createElement(
+        "div",
+        { className: "px-4 pb-4 pt-0 space-y-3 text-sm" },
+        React.createElement("p", { className: "text-slate-300" },
+          "Today: ", React.createElement("span", { className: "font-medium text-slate-200" }, investor_roadmap.action_today), "."
+        ),
+        investor_roadmap.add_tiers.length > 0 && React.createElement("p", { className: "text-slate-400" },
+          "Add: ",
+          investor_roadmap.add_tiers
+            .filter((t) => t.low != null && t.high != null)
+            .map((t) => `${t.label ?? t.id}: $${(t.low as number).toFixed(2)}–$${(t.high as number).toFixed(2)} (${t.allocation_pct ?? 0}%)`)
+            .join(" · ")
+        ),
+        React.createElement("p", { className: "text-slate-400" },
+          "Trim near $", investor_roadmap.trim_near.toFixed(2), ". ", investor_roadmap.hold_thesis
+        )
+      )
+    ),
     React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700" },
@@ -224,16 +372,50 @@ export function InvestorDecisionSummarySection({
           React.createElement("span", { className: "font-medium text-slate-200" }, overall_verdict)
         )
       ),
-      fair_value_metadata && (fair_value_metadata.bear_case != null || fair_value_metadata.methodology_summary) &&
+      patternLow &&
         React.createElement(
           "div",
-          { className: "mt-2 pt-2 border-t border-slate-700/50 text-xs text-slate-400 space-y-1" },
-          fair_value_metadata.bear_case != null &&
-            React.createElement("p", null, "Bear case: $", fair_value_metadata.bear_case.toFixed(2), " (FV×0.6). Gap vs fair value reflects method assumptions."),
-          fair_value_metadata.method_used &&
-            React.createElement("p", null, "Method: ", fair_value_metadata.method_used),
-          fair_value_metadata.methodology_summary &&
-            React.createElement("p", { className: "text-slate-500" }, fair_value_metadata.methodology_summary)
+          { className: "mt-2 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200" },
+          React.createElement(AlertTriangle, { className: "h-4 w-4 shrink-0 mt-0.5" }),
+          React.createElement("span", null, `Pattern score low (${Math.round(Number(pattern_score))}/100) — short-term signal weakened; wait for confirmation or check medium/long term.`)
+        ),
+      fair_value_metadata && (fair_value_metadata.bear_case != null || fair_value_metadata.methodology_summary || fair_value_metadata.method_used) &&
+        React.createElement(
+          "div",
+          { className: "mt-2 pt-2 border-t border-slate-700/50 text-xs" },
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => setMethodologyOpen((o) => !o),
+              className: "flex items-center gap-1.5 text-slate-400 hover:text-slate-300",
+            },
+            methodologyOpen ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5" }),
+            React.createElement(Info, { className: "h-3.5 w-3.5" }),
+            " Methodology & bear case"
+          ),
+          methodologyOpen &&
+            React.createElement(
+              "div",
+              { className: "mt-1.5 space-y-1 text-slate-400" },
+              fair_value_metadata.bear_case != null &&
+                React.createElement("p", null, "Bear case: $", fair_value_metadata.bear_case.toFixed(2), " (FV×0.6). Gap vs fair value reflects method assumptions."),
+              fair_value_metadata.method_used &&
+                React.createElement("p", null, "Method: ", fair_value_metadata.method_used),
+              fair_value_metadata.methodology_summary &&
+                React.createElement("p", { className: "text-slate-500" }, fair_value_metadata.methodology_summary),
+              Array.isArray(fair_value_metadata.notes) &&
+                fair_value_metadata.notes.map((note: string, i: number) =>
+                  React.createElement("p", { key: i, className: "text-slate-500" }, note)
+                )
+            )
+        ),
+      hasDivergence && divergenceMessage &&
+        React.createElement(
+          "div",
+          { className: "mt-2 flex items-start gap-2 rounded-lg border border-slate-600 bg-slate-800/50 px-3 py-2 text-xs text-slate-300" },
+          React.createElement(Info, { className: "h-4 w-4 shrink-0 mt-0.5 text-slate-500" }),
+          React.createElement("span", null, divergenceMessage)
         )
     ),
     React.createElement(

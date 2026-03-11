@@ -15,6 +15,7 @@ const TICKER_TIMEOUT_MS = 12 * 60 * 1000;   // 12 min – ticker detail (many fe
 function getTimeoutMs(apiPath: string): number {
   if (apiPath === "dashboard" || apiPath.startsWith("dashboard/")) return DASHBOARD_TIMEOUT_MS;
   if (apiPath.startsWith("ticker/")) return TICKER_TIMEOUT_MS;
+  if (apiPath === "roadmaps") return 8 * 60 * 1000; // 8 min – N ticker details
   return TIMEOUT_MS;
 }
 

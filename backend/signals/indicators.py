@@ -195,10 +195,18 @@ def _momentum_zscore(close: pd.Series, rsi_val: float) -> tuple[float, float | N
     return round(mom, 1), mom_raw
 
 
+# Tickers that typically trade at high P/E (30+). If FMP/yfinance returns very low PE
+# (e.g. 17 for NVDA after split-adjustment error), we cross-check with price/EPS.
+_HIGH_PE_GROWTH_TICKERS = frozenset(
+    {"NVDA", "AVGO", "META", "AMD", "TSLA", "CRM", "NOW", "SNOW", "PLTR", "NET", "DDOG", "MDB", "CRWD", "PANW"}
+)
+
+
 def _valuation_score(ticker: str, config: dict | None) -> tuple[float | None, float | None]:
     """
     VAL: forward PE vs SPY (market proxy). Cheaper = higher score.
     Returns (VAL 0-100, raw val for debugging) or (None, None) if unavailable.
+    For high-PE growth names, sanity-check FMP PE: if suspiciously low (<22), use yfinance price/EPS.
     """
     if not config or not ticker:
         return None, None
@@ -206,6 +214,24 @@ def _valuation_score(ticker: str, config: dict | None) -> tuple[float | None, fl
     spy_km = _fetch_key_metrics_cached("SPY", config)
     fwd_pe = _get_forward_pe(km)
     spy_pe = _get_forward_pe(spy_km)
+    # Sanity: NVDA etc. should not show 17x — often split or stale data; cross-check with yfinance
+    if (
+        fwd_pe is not None
+        and 0 < fwd_pe < 22
+        and ticker.upper().split(".")[0] in _HIGH_PE_GROWTH_TICKERS
+    ):
+        try:
+            import yfinance as yf
+            t = yf.Ticker(ticker)
+            info = getattr(t, "info", None) or {}
+            price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+            eps = info.get("trailingEps") or info.get("forwardEps")
+            if price is not None and eps is not None and float(eps) > 0:
+                pe_yf = float(price) / float(eps)
+                if 25 <= pe_yf <= 80:
+                    fwd_pe = round(pe_yf, 2)
+        except Exception:
+            pass
     if fwd_pe is None or spy_pe is None or fwd_pe <= 0 or spy_pe <= 0:
         return None, None
     # val_raw: (sector_PE - fwd_PE) / sector_PE; cheaper => positive

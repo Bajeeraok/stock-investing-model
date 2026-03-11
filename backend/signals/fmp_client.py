@@ -28,6 +28,7 @@ FMP_PLAN_MAP = {
     "institutional_13f": "Ultimate",
     "earnings_transcripts": "Ultimate",
     "etf_holdings": "Ultimate",
+    "stock_news": "Starter",
 }
 
 
@@ -281,6 +282,50 @@ def fetch_insider_stats(config: dict, ticker: str) -> tuple[dict | None, str | N
     return None, "No data"
 
 
+def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict | None, str | None]:
+    """
+    Fetch recent stock news for a ticker (FMP v3 stock_news).
+    Returns (summary, error). summary matches shape expected by NLP sentiment layer:
+    { sentiment_score_avg, sentiment_label, headline_count, headlines }.
+    FMP does not provide sentiment scores; we use neutral (0.0 → layer score 0.5) and
+    return headline count and titles for display.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    url = f"{BASE_V3}/stock_news?tickers={sym}&limit={min(limit, 50)}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if not isinstance(data, list):
+        return None, "Unexpected stock_news response"
+    headlines = []
+    for item in data[:limit]:
+        if not isinstance(item, dict):
+            continue
+        title = (item.get("title") or "")[:120]
+        headlines.append({"title": title, "score": None, "label": "Neutral"})
+    if not headlines:
+        return {
+            "ticker": ticker,
+            "sentiment_score_avg": 0.0,
+            "sentiment_label": "Neutral",
+            "headline_count": 0,
+            "headlines": [],
+        }, None
+    # No sentiment from FMP; use neutral so layer score = 0.5
+    return {
+        "ticker": ticker,
+        "sentiment_score_avg": 0.0,
+        "sentiment_label": "Neutral",
+        "headline_count": len(headlines),
+        "headlines": headlines[:5],
+    }, None
+
+
 def fetch_profile(config: dict, ticker: str) -> tuple[dict | None, str | None]:
     """
     Company profile: sector, industry, beta, mktCap, country.
@@ -345,6 +390,7 @@ def run_fmp_plan_check(config: dict) -> dict:
         ("treasury_rates", lambda: fetch_treasury_rates(config)),
         ("price_target", lambda: fetch_price_target(config, "AAPL")),
         ("insider_stats", lambda: fetch_insider_stats(config, "AAPL")),
+        ("stock_news", lambda: fetch_stock_news(config, "AAPL", 5)),
     ]
     for name, fn in checks:
         plan = FMP_PLAN_MAP.get(name, "?")

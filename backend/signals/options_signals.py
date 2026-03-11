@@ -59,7 +59,7 @@ def fetch_options_signals(ticker: str) -> dict:
         t = yf.Ticker(ticker)
         expiries = t.options
         if not expiries:
-            return {"error": "no options data (ticker may not have listed options)", "options_score": 0.5}
+            return {"error": "no options data (ticker may not have listed options)", "options_score": 0.5, "options_label": "No options data (estimated)"}
 
         # Use nearest expiry for real-time signals
         chain = t.option_chain(expiries[0])
@@ -68,8 +68,8 @@ def fetch_options_signals(ticker: str) -> dict:
     except Exception as exc:
         err_str = str(exc)
         if "401" in err_str or "Unauthorized" in err_str:
-            return {"error": "options data unavailable (Yahoo Finance 401 — no subscription)", "options_score": 0.5}
-        return {"error": err_str, "options_score": 0.5}
+            return {"error": "options data unavailable (Yahoo Finance 401 — no subscription)", "options_score": 0.5, "options_label": "Options unavailable (estimated)"}
+        return {"error": err_str, "options_score": 0.5, "options_label": "Options data error (estimated)"}
     finally:
         _yf_logger.setLevel(_prev_level)
 

@@ -146,7 +146,7 @@ class ConfidenceEngine:
             most_recent_earnings_date = None
             try:
                 from signals.providers import get_most_recent_earnings
-                e = get_most_recent_earnings(ticker)
+                e = get_most_recent_earnings(ticker, config)
                 if e and e.get("days_since") is not None and e.get("date"):
                     most_recent_earnings_date = str(e["date"])
                     days_since_earnings = int(e["days_since"])
@@ -273,21 +273,28 @@ class ConfidenceEngine:
                 logger.warning("LightGBM predict failed for %s: %s — skipping layer", ticker, e)
 
         # ── Layer 4: Options sentiment ────────────────────────────────────
-        _ETFS = {"SPY", "QQQ", "GLD", "SLV", "IWM", "DIA", "VOO", "VTI",
-                 "XLE", "XLF", "XLI", "XLB", "XLU", "XLP"}
-        if ticker.upper() not in _ETFS:
+        # Equity index/ sector ETFs: use VIX proxy (no single-stock options). GLD/SLV have active
+        # options — fetch from Tradier so commodity ETF positioning is visible.
+        _ETFS_VIX_PROXY = {"SPY", "QQQ", "IWM", "DIA", "VOO", "VTI",
+                          "XLE", "XLF", "XLI", "XLB", "XLU", "XLP"}
+        if ticker.upper() not in _ETFS_VIX_PROXY:
             from signals.options_signals import fetch_options_signals
             opts = fetch_options_signals(ticker)
             if "options_score" in opts and not opts.get("error"):
                 scores["options_sentiment"] = opts["options_score"]
                 labels["options_sentiment"] = opts.get("options_label", "options data")
                 details["options"] = opts
+            elif "options_score" in opts and opts.get("error"):
+                # Neutral fallback when options data unavailable — label as estimated until real data exists
+                scores["options_sentiment"] = opts["options_score"]
+                labels["options_sentiment"] = (opts.get("options_label") or "Options data unavailable") + " (estimated)"
+                details["options"] = opts
         else:
-            # ETFs: use VIX as fear proxy if available
+            # ETFs: use VIX as fear proxy if available — honest "estimated" until single-stock options exist
             if vix is not None:
                 vix_score = max(0.3, min(0.8, 1.0 - (vix - 15) / 40))
                 scores["options_sentiment"] = round(vix_score, 3)
-                labels["options_sentiment"] = f"VIX {vix:.1f} proxy (ETF — no single-stock options)"
+                labels["options_sentiment"] = f"VIX {vix:.1f} proxy (ETF — no single-stock options) (estimated)"
 
         # ── Layer 5: Insider signal ───────────────────────────────────────
         insider_result = _score_insider(ticker)
@@ -355,16 +362,19 @@ class ConfidenceEngine:
         if si_data is not None:
             details["short_interest"] = si_data
 
-        # ── Layer 7: NLP sentiment — Alpha Vantage news feed ──────────────
-        # Uses the alpha_vantage_api_key from config.yaml (free tier: 500/day, 5/min).
-        # Gracefully skipped when key is absent or rate limit hit.
+        # ── Layer 7: NLP sentiment — FMP stock news (preferred), else Alpha Vantage ─
+        # FMP: data.fmp_api_key (Starter). Alpha Vantage: data.alpha_vantage_api_key (free tier).
+        # Gracefully skipped when no key or rate limit hit.
         nlp_result = _score_nlp_sentiment(ticker, config)
         if nlp_result is not None:
             scores["nlp_sentiment"] = nlp_result["score"]
             labels["nlp_sentiment"] = nlp_result["label"]
             details["nlp"] = nlp_result
         else:
-            labels["nlp_sentiment"] = "NLP sentiment (Alpha Vantage — key not configured or rate limited)"
+            labels["nlp_sentiment"] = (
+                "News sentiment N/A (FMP or Alpha Vantage key not configured or rate limited). "
+                "10% weight redistributed to other layers."
+            )
 
         # ── Weighted confidence (renormalize over available layers) ────────
         # Respect asset-type zero-weights (e.g. insider=0 for ETFs/ADRs)
@@ -431,7 +441,7 @@ class ConfidenceEngine:
                 k: {
                     "score":     round(scores.get(k, 0.0), 3) if scores.get(k) is not None else None,
                     "weight":    effective_weights.get(k, self.weights.get(k, 0)),
-                    "label":     labels.get(k, ""),
+                    "label":     labels.get(k, "") or ("" if k in available else "N/A — weight redistributed to other layers."),
                     "available": k in available,
                 }
                 for k in effective_weights
@@ -652,6 +662,13 @@ def _fetch_short_interest_data(ticker: str) -> dict | None:
         return None
 
 
+# High-PE growth names: if yfinance returns suspiciously low P/E (e.g. 17 for NVDA),
+# recompute from price/trailingEps to avoid split/stale errors driving fundamentals score.
+_HIGH_PE_GROWTH_FUND = frozenset(
+    {"NVDA", "AVGO", "META", "AMD", "TSLA", "CRM", "NOW", "SNOW", "PLTR", "NET", "DDOG", "MDB", "CRWD", "PANW"}
+)
+
+
 def _score_yfinance_fundamentals(ticker: str) -> dict | None:
     """
     Pull basic fundamentals from yfinance Ticker.info (free, no key required).
@@ -672,11 +689,25 @@ def _score_yfinance_fundamentals(ticker: str) -> dict | None:
         components: list[float] = []
         parts: list[str] = []
 
-        # Forward P/E
-        fpe = info.get("forwardPE") or info.get("trailingPE")
+        # P/E: prefer TTM for display; sanity-check for high-PE growth (e.g. NVDA 35–40x, not 17.3)
+        fpe = info.get("trailingPE") or info.get("forwardPE")
+        pe_label = "TTM P/E"
         if fpe is not None:
             try:
                 fpe = float(fpe)
+                ticker_upper = ticker.upper().split(".")[0]
+                if (
+                    fpe > 0
+                    and fpe < 22
+                    and ticker_upper in _HIGH_PE_GROWTH_FUND
+                ):
+                    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+                    trailing_eps = info.get("trailingEps")
+                    if price is not None and trailing_eps is not None and float(trailing_eps) > 0:
+                        ttm_recomputed = float(price) / float(trailing_eps)
+                        if 25 <= ttm_recomputed <= 100:
+                            fpe = ttm_recomputed
+                            pe_label = "TTM P/E"
                 if fpe <= 0:
                     pe_s = 0.3    # negative earnings = stressed
                 elif fpe < 12:
@@ -690,7 +721,7 @@ def _score_yfinance_fundamentals(ticker: str) -> dict | None:
                 else:
                     pe_s = 0.20   # very expensive
                 components.append(pe_s)
-                parts.append(f"P/E {fpe:.1f}")
+                parts.append(f"{pe_label} {fpe:.1f}")
             except (TypeError, ValueError):
                 pass
 
@@ -752,27 +783,46 @@ def _score_yfinance_fundamentals(ticker: str) -> dict | None:
 
 def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
     """
-    Score news sentiment using the Alpha Vantage NEWS_SENTIMENT endpoint.
-    Key from config.data.alpha_vantage_api_key (free tier: 500/day, 5 req/min).
-    Gracefully returns None if no key, rate limit hit, or any error.
-
-    Alpha Vantage sentiment_score: -1.0 to +1.0
-    Mapped to 0-1 layer score: (raw + 1) / 2
+    Score news sentiment: prefer FMP stock news (data.fmp_api_key), fallback Alpha Vantage.
+    FMP does not provide sentiment; we use neutral (0.5). Alpha Vantage: -1..+1 mapped to 0..1.
+    Returns None if no key, rate limit, or error.
     """
     if not config:
         return None
     try:
+        from signals.fmp_client import fetch_stock_news, get_api_key as get_fmp_key
         from signals.alpha_vantage_client import fetch_news_sentiment
+
+        # Prefer FMP when key is present
+        if get_fmp_key(config):
+            summary, err = fetch_stock_news(config, ticker, limit=10)
+            if not err and summary is not None:
+                raw_score = summary.get("sentiment_score_avg", 0.0)
+                headline_count = summary.get("headline_count", 0)
+                sentiment_label = summary.get("sentiment_label", "Neutral")
+                score = round(float(np.clip((float(raw_score) + 1.0) / 2.0, 0.0, 1.0)), 3)
+                label = (
+                    f"News {sentiment_label} "
+                    f"({headline_count} headlines · FMP)"
+                )
+                return {
+                    "score": score,
+                    "label": label,
+                    "raw_score": raw_score,
+                    "headline_count": headline_count,
+                    "sentiment_label": sentiment_label,
+                    "headlines": summary.get("headlines", [])[:3],
+                }
+        # Fallback: Alpha Vantage
         summary, err = fetch_news_sentiment(config, ticker, limit=10)
         if err or summary is None:
-            logger.debug("Alpha Vantage sentiment skipped for %s: %s", ticker, err)
+            logger.debug("News sentiment skipped for %s: %s", ticker, err)
             return None
 
         raw_score = summary.get("sentiment_score_avg")
         if raw_score is None:
             return None
 
-        # Map -1..+1 → 0..1
         score = round(float(np.clip((raw_score + 1.0) / 2.0, 0.0, 1.0)), 3)
         headline_count = summary.get("headline_count", 0)
         sentiment_label = summary.get("sentiment_label", "Neutral")
@@ -786,7 +836,7 @@ def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
             "raw_score": raw_score,
             "headline_count": headline_count,
             "sentiment_label": sentiment_label,
-            "headlines": summary.get("headlines", [])[:3],   # top 3 for UI
+            "headlines": summary.get("headlines", [])[:3],
         }
     except Exception as exc:
         logger.debug("NLP sentiment failed for %s: %s", ticker, exc)

@@ -77,7 +77,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     close_spy = None
 
     def _sector():
-        return get_sector_and_industry(ticker) or {}
+        return get_sector_and_industry(ticker, config) or {}
 
     def _peers():
         return get_peers(ticker, config) or []
@@ -194,8 +194,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     range_low = range_high = high_52w = low_52w = drawdown_52w = None
     if close_ticker is not None and len(close_ticker) >= 252 and current_price:
         last_252 = close_ticker.iloc[-252:]
-        range_high = float(last_252.max())
-        range_low = float(last_252.min())
+        range_high = round(float(last_252.max()), 2)
+        range_low = round(float(last_252.min()), 2)
         if range_high and range_high > 0:
             drawdown_52w = round(100 * (current_price - range_high) / range_high, 1)
 
@@ -271,9 +271,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         except Exception:
             pass
 
-    extra = _get_extra_info(ticker)
-    high_52w = extra.get("high_52w") if extra.get("high_52w") is not None else range_high
-    low_52w = extra.get("low_52w") if extra.get("low_52w") is not None else range_low
+    extra = _get_extra_info(ticker, config)
+    high_52w = extra.get("high_52w") if extra.get("high_52w") is not None else (round(range_high, 2) if range_high is not None else None)
+    low_52w = extra.get("low_52w") if extra.get("low_52w") is not None else (round(range_low, 2) if range_low is not None else None)
     if extra.get("dividend_yield_error"):
         sanity_errors.append("yield")
     dividend_explanation = (
@@ -320,8 +320,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "volume_ratio": volume_ratio,
         "volume_unusual": volume_unusual,
         "drawdown_52w": drawdown_52w,
-        "high_52w": high_52w,
-        "low_52w": low_52w,
+        "high_52w": round(high_52w, 2) if high_52w is not None else None,
+        "low_52w": round(low_52w, 2) if low_52w is not None else None,
         "dividend_yield_explanation": dividend_explanation,
         "sanity_errors": sanity_errors,
         "long_horizon_risk": lhr or fmp_data.get("long_horizon_risk"),
@@ -330,6 +330,11 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **fmp_data,
     }
     response["investor_summary"] = _build_investor_summary(ticker, config, response)
+    # Ensure 52w range is always 2 decimals (yfinance/merge can leave raw floats)
+    if response.get("high_52w") is not None:
+        response["high_52w"] = round(float(response["high_52w"]), 2)
+    if response.get("low_52w") is not None:
+        response["low_52w"] = round(float(response["low_52w"]), 2)
     return response
 
 
@@ -396,6 +401,7 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     sector_specific = response.get("sector_specific") or {}
     ttm_pe_used: float | None = None
     forward_pe_used: float | None = None
+    forward_pe_discarded = False  # set True when fwd << ttm and we exclude from FV
     try:
         import yfinance as yf
         from signals.fmp_client import fetch_key_metrics_ttm
@@ -420,6 +426,45 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
             ttm_pe = _safe_float(info.get("trailingPE"))
         if forward_pe is None:
             forward_pe = _safe_float(info.get("forwardPE"))
+
+        # Sanity: known high-PE growth names (e.g. NVDA 35–40x TTM) — if source returns
+        # suspiciously low TTM PE (e.g. 17.3 from split/adjustment error), recompute from
+        # current price / trailingEps so fair value and fundamentals are not built on bad inputs.
+        _HIGH_PE_GROWTH = frozenset({"NVDA", "AVGO", "META", "AMD", "TSLA", "CRM", "NOW", "SNOW", "PLTR", "NET", "DDOG", "MDB", "CRWD", "PANW"})
+        if (
+            ticker.upper() in _HIGH_PE_GROWTH
+            and current_price
+            and ttm_pe is not None
+            and 0 < ttm_pe < 25
+        ):
+            trailing_eps = _safe_float(info.get("trailingEps"))
+            if trailing_eps and trailing_eps > 0:
+                ttm_pe_recomputed = round(current_price / trailing_eps, 2)
+                if 25 <= ttm_pe_recomputed <= 100:
+                    ttm_pe = ttm_pe_recomputed
+
+        # Sanity: forward PE much lower than TTM (e.g. NVDA 17x fwd vs 38x TTM) often indicates
+        # split-adjustment or GAAP/non-GAAP mismatch. Cross-check with yfinance forwardEps.
+        if (
+            ttm_pe is not None
+            and ttm_pe > 0
+            and forward_pe is not None
+            and forward_pe > 0
+            and forward_pe < ttm_pe * 0.65
+            and current_price
+        ):
+            forward_eps_yf = _safe_float(info.get("forwardEps"))
+            if forward_eps_yf and forward_eps_yf > 0:
+                forward_pe_yf = round(current_price / forward_eps_yf, 2)
+                # If yfinance forward PE is in a more plausible range (e.g. 20–50), prefer it
+                if 18 <= forward_pe_yf <= 60:
+                    forward_pe = forward_pe_yf
+                else:
+                    forward_pe = None  # exclude from fair value; use TTM only
+                    forward_pe_discarded = True
+            else:
+                forward_pe = None  # exclude suspicious FMP forward PE from fair value
+                forward_pe_discarded = True
 
         revenue_growth = _safe_float(info.get("revenueGrowth"))
         if revenue_growth is not None and revenue_growth < 1 and revenue_growth > 0:
@@ -517,22 +562,67 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     verdicts = [payload["short"].get("verdict"), payload["medium"].get("verdict"), payload["long"].get("verdict")]
     overall = "STRONG BUY" if "STRONG BUY" in verdicts else "BUY" if "BUY" in verdicts else "WATCH" if "WATCH" in verdicts else "WAIT"
 
+    # When regime/ML say REDUCE or AVOID but long-term MOS says "entry justified", avoid contradiction
+    display_verdict = (response.get("short_suggestion") or response.get("medium_suggestion") or response.get("long_suggestion")) or ""
+    if display_verdict.upper() in ("REDUCE", "AVOID"):
+        long_h = payload.get("long") or {}
+        et = long_h.get("entry_tiers") or {}
+        ca = et.get("current_assessment") or {}
+        label = ca.get("label") or ""
+        if "entry justified" in label.lower():
+            payload["long"] = dict(long_h)
+            payload["long"]["entry_tiers"] = dict(et)
+            payload["long"]["entry_tiers"]["current_assessment"] = dict(ca)
+            payload["long"]["entry_tiers"]["current_assessment"]["label"] = (
+                f"Valuation supports entry — but regime/ML say {display_verdict.upper()}."
+            )
+
     out: dict = {
         "fair_value": round(fair_value, 2),
         "overall_verdict": overall,
         "horizons": payload,
+        "pattern_score": round(pattern_score, 1) if pattern_score is not None else None,
+        "regime_bull_pct": round(regime_bull_pct, 1),
     }
     if ttm_pe_used is not None:
         out["ttm_pe_used"] = round(ttm_pe_used, 2)
     if forward_pe_used is not None:
         out["forward_pe_used"] = round(forward_pe_used, 2)
     if fv_result is not None:
-        out["fair_value_metadata"] = {
+        fv_meta: dict = {
             "bear_case": getattr(fv_result, "bear_case", None),
             "method_used": fv_result.method_used,
             "methodology_summary": getattr(fv_result, "methodology_summary", None),
-            "notes": getattr(fv_result, "notes", []),
+            "notes": list(getattr(fv_result, "notes", []) or []),
         }
+        fv_meta["notes"] = list(fv_meta.get("notes") or [])
+        if forward_pe_used is not None and forward_pe_used < 22.0:
+            fv_meta["notes"].append(
+                "Forward PE below typical sector range — verify earnings estimate source (FMP/yfinance)."
+            )
+        if forward_pe_discarded:
+            fv_meta["notes"].append(
+                "Forward PE discarded (implied earnings vs TTM looked inconsistent); fair value uses TTM only."
+            )
+        out["fair_value_metadata"] = fv_meta
+
+    # Commodity ETFs: no P/E; fair value from band/consensus — add clarity so users compare to spot
+    _COMMODITY_ETFS = _GOLD_ETFS | frozenset({"SLV", "USO", "GDX", "GDXJ", "SIL", "PSLV"})
+    if ticker.upper() in _COMMODITY_ETFS:
+        fv_meta = out.get("fair_value_metadata") or {"notes": []}
+        fv_meta["notes"] = list(fv_meta.get("notes") or [])
+        fv_meta["notes"].append(
+            "Commodity ETF — no P/E. Fair value from band/consensus; compare to spot (e.g. gold ~$2,900/oz, GLD ≈ 1/10)."
+        )
+        out["fair_value_metadata"] = fv_meta
+
+    # One Answer + Trader / Investor roadmaps (retail: one sentence + trader vs investor paths)
+    out["one_answer"], out["trader_roadmap"], out["investor_roadmap"] = _build_one_answer_roadmaps(
+        ticker, out, response, current_price
+    )
+
+    # Complete Trade Roadmap (buy/sell stages + trader type one-liners)
+    out["trade_roadmap"] = _build_trade_roadmap(ticker, out, response, current_price)
 
     # Cache short-horizon entry/stop/target and ML prob for scanner retail alerts
     try:
@@ -560,6 +650,385 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
         pass
 
     return out
+
+
+def _build_trade_roadmap(
+    ticker: str,
+    investor_out: dict,
+    response: dict,
+    current_price: float,
+) -> dict:
+    """
+    Build complete Trade Roadmap: buy stages (Today → 6–12 mo) and sell stages (stop → full target),
+    plus regime label and trader-type one-liners. See GLD sample in RETAIL_ONE_ANSWER_DESIGN / user spec.
+    """
+    horizons = investor_out.get("horizons") or {}
+    short = horizons.get("short") or {}
+    medium = horizons.get("medium") or {}
+    long_h = horizons.get("long") or {}
+    fair_value = investor_out.get("fair_value") or current_price * 1.1
+    regime_bull_pct = investor_out.get("regime_bull_pct") or 50.0
+    pattern_score = investor_out.get("pattern_score") or 50.0
+
+    display_verdict = (
+        (response.get("short_suggestion") or response.get("medium_suggestion") or response.get("long_suggestion"))
+        or ""
+    ).strip().upper()
+    overall = investor_out.get("overall_verdict") or "WATCH"
+    if display_verdict not in ("REDUCE", "AVOID"):
+        display_verdict = overall
+
+    high_52w = _safe_float(response.get("high_52w"))
+    low_52w = _safe_float(response.get("low_52w"))
+    ma50 = _safe_float(response.get("ma50"))
+    ma200 = _safe_float(response.get("ma200"))
+
+    def _ez(d: dict) -> tuple[float | None, float | None]:
+        ez = d.get("entry_zone") or {}
+        return _safe_float(ez.get("low")), _safe_float(ez.get("high"))
+
+    s_lo, s_hi = _ez(short)
+    m_lo, m_hi = _ez(medium)
+    st_ml = (short.get("ml_prob") or 0) * 100 if isinstance(short.get("ml_prob"), (int, float)) else (short.get("ml_prob") or 25)
+    mt_ml = (medium.get("ml_prob") or 0) * 100 if isinstance(medium.get("ml_prob"), (int, float)) else (medium.get("ml_prob") or 25)
+    lt_ml = (long_h.get("ml_prob") or 0) * 100 if isinstance(long_h.get("ml_prob"), (int, float)) else (long_h.get("ml_prob") or 25)
+
+    tiers = (long_h.get("entry_tiers") or {}).get("tiers") or []
+    t1_lo = t1_hi = t2_lo = t2_hi = t3_lo = t3_hi = None
+    if len(tiers) >= 1:
+        t1_lo, t1_hi = _safe_float(tiers[0].get("low")), _safe_float(tiers[0].get("high"))
+    if len(tiers) >= 2:
+        t2_lo, t2_hi = _safe_float(tiers[1].get("low")), _safe_float(tiers[1].get("high"))
+    if len(tiers) >= 3:
+        t3_lo, t3_hi = _safe_float(tiers[2].get("low")), _safe_float(tiers[2].get("high"))
+
+    stop_52w = round((low_52w or current_price * 0.8) * 0.97, 2)
+    regime_label = f"Bull {regime_bull_pct:.0f}%" if regime_bull_pct >= 50 else f"Bear {100 - regime_bull_pct:.0f}%"
+
+    # ── Buy roadmap stages ───────────────────────────────────────────────────
+    buy_stages = []
+    # Today
+    if display_verdict in ("REDUCE", "AVOID"):
+        when = "Do not buy"
+        cond = f"Regime {regime_label} — {display_verdict} today"
+        conv = "None"
+        pos = 0
+    else:
+        when = "Start small" if s_lo and current_price <= (s_hi or current_price) else "Watch only"
+        cond = "In entry zone" if (s_lo and s_hi and s_lo <= current_price <= s_hi) else "Wait for pullback"
+        conv = "Low-Medium" if when == "Start small" else "None"
+        pos = 25 if when == "Start small" else 0
+    buy_stages.append({
+        "timeline_key": "today",
+        "label": "Today",
+        "when_to_act": when,
+        "price_zone_low": round(current_price, 2),
+        "price_zone_high": round(current_price, 2),
+        "condition": cond,
+        "conviction": conv,
+        "position_pct": pos,
+        "cumulative_pct": pos,
+    })
+
+    # Days 1–10
+    p_lo = round((current_price * 0.98), 2) if current_price else None
+    p_hi = round((current_price * 1.02), 2) if current_price else None
+    buy_stages.append({
+        "timeline_key": "days_1_10",
+        "label": "Days 1–10",
+        "when_to_act": "Watch only",
+        "price_zone_low": p_lo,
+        "price_zone_high": p_hi,
+        "condition": "Wait for regime shift signal",
+        "conviction": "None",
+        "position_pct": 0,
+        "cumulative_pct": pos,
+    })
+
+    # Week 2–4 (short entry)
+    buy_stages.append({
+        "timeline_key": "week_2_4",
+        "label": "Week 2–4",
+        "when_to_act": "Start small",
+        "price_zone_low": round(s_lo, 2) if s_lo else None,
+        "price_zone_high": round(s_hi, 2) if s_hi else None,
+        "condition": f"Price touches MA50 + ML crosses 25%",
+        "conviction": "Low-Medium",
+        "position_pct": 25,
+        "cumulative_pct": 25,
+    })
+
+    # 1–3 months (medium zone)
+    buy_stages.append({
+        "timeline_key": "1_3_months",
+        "label": "1–3 months",
+        "when_to_act": "Add position",
+        "price_zone_low": round(m_lo, 2) if m_lo else None,
+        "price_zone_high": round(m_hi, 2) if m_hi else None,
+        "condition": f"MA50 holds + HMM transitions + Pattern >50%",
+        "conviction": "Medium",
+        "position_pct": 35,
+        "cumulative_pct": 60,
+    })
+
+    # 3–6 months (T1 MA200)
+    buy_stages.append({
+        "timeline_key": "3_6_months",
+        "label": "3–6 months",
+        "when_to_act": "Core position",
+        "price_zone_low": round(t1_lo, 2) if t1_lo else (round(ma200 * 0.95, 2) if ma200 else None),
+        "price_zone_high": round(t1_hi, 2) if t1_hi else (round(ma200 * 1.05, 2) if ma200 else None),
+        "condition": "Full regime confirmation + ML >60%",
+        "conviction": "High",
+        "position_pct": 25,
+        "cumulative_pct": 85,
+    })
+
+    # 6–12 months (T3 52w low)
+    buy_stages.append({
+        "timeline_key": "6_12_months",
+        "label": "6–12 months",
+        "when_to_act": "Back up truck",
+        "price_zone_low": round(t3_lo, 2) if t3_lo else (round((low_52w or current_price * 0.75) * 1.05, 2) if low_52w else None),
+        "price_zone_high": round(t3_hi, 2) if t3_hi else (round((low_52w or current_price * 0.75) * 1.15, 2) if low_52w else None),
+        "condition": "52w low zone, rare opportunity",
+        "conviction": "Highest",
+        "position_pct": 15,
+        "cumulative_pct": 100,
+    })
+
+    # ── Sell roadmap stages ───────────────────────────────────────────────────
+    sell_stages = []
+    sell_stages.append({
+        "timeline_key": "immediate",
+        "label": "Immediate",
+        "when_to_sell": "Hard stop",
+        "price_zone_low": None,
+        "price_zone_high": round(stop_52w, 2),
+        "condition": "Breaks 52w low — thesis dead",
+        "action": "Exit 100%",
+        "reason": "Invalidation",
+    })
+    near_high = round((high_52w or current_price * 1.1) * 0.98, 2) if high_52w else None
+    high_val = round(high_52w, 2) if high_52w else None
+    sell_stages.append({
+        "timeline_key": "short_term",
+        "label": "Short-term",
+        "when_to_sell": "Trim",
+        "price_zone_low": near_high,
+        "price_zone_high": high_val,
+        "condition": "Near 52w high, RSI elevated, low volume",
+        "action": "Trim 25%",
+        "reason": "Extended, poor R/R",
+    })
+    fv_82 = round(fair_value * 0.82, 2)
+    fv_88 = round(fair_value * 0.88, 2)
+    sell_stages.append({
+        "timeline_key": "1_3_months",
+        "label": "1–3 months",
+        "when_to_sell": "Partial exit",
+        "price_zone_low": fv_82,
+        "price_zone_high": round(fair_value * 0.85, 2),
+        "condition": "Fed / scenario target hit, take profit",
+        "action": "Trim 35%",
+        "reason": "Scenario target reached",
+    })
+    sell_stages.append({
+        "timeline_key": "3_6_months",
+        "label": "3–6 months",
+        "when_to_sell": "Major trim",
+        "price_zone_low": round(fair_value * 0.87, 2),
+        "price_zone_high": round(fair_value * 0.92, 2),
+        "condition": "Inflation / scenario target hit",
+        "action": "Sell 50%",
+        "reason": "Near fair value",
+    })
+    sell_stages.append({
+        "timeline_key": "6_12_months",
+        "label": "6–12 months",
+        "when_to_sell": "Full target",
+        "price_zone_low": round(fair_value * 0.93, 2),
+        "price_zone_high": round(fair_value, 2),
+        "condition": f"Price approaches fair value ${fair_value:.2f}",
+        "action": "Sell 75–100%",
+        "reason": "Fair value achieved",
+    })
+    sell_stages.append({
+        "timeline_key": "anytime",
+        "label": "Anytime",
+        "when_to_sell": "Regime flip",
+        "price_zone_low": None,
+        "price_zone_high": None,
+        "condition": "HMM flips Bear >80% after being Bull",
+        "action": "Exit 50% immediately",
+        "reason": "Regime invalidates thesis",
+    })
+
+    # Trader-type one-liners (from GLD sample)
+    short_stop = _safe_float(short.get("stop_loss"))
+    short_tgt = _safe_float(short.get("target"))
+    short_zone = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else f"${current_price:.2f}"
+    medium_zone = f"${m_lo:.2f}–${m_hi:.2f}" if (m_lo and m_hi) else "entry zone"
+    ma50_str = f"${ma50:.2f}" if ma50 else "MA50"
+    ma200_str = f"${ma200:.2f}" if ma200 else "MA200"
+    trader_summary_short = (
+        f"Don't touch {ticker} today. "
+        + (f"If it pulls to {short_zone}, buy small with stop at ${short_stop:.2f}. Target ${short_tgt:.2f}. " if (short_stop and short_tgt) else "")
+        + (f"Exit before 52w high ${high_52w:.2f}. " if high_52w else "")
+    ).strip()
+    trader_summary_medium = (
+        f"Wait for MA50 test + regime stabilization. Build 60% position between {medium_zone}. "
+        + (f"Target ${_safe_float(medium.get('target')):.2f} (scenario). " if medium.get("target") else "")
+        + (f"Stop: ${_safe_float(medium.get('stop_loss')):.2f}." if medium.get("stop_loss") else "Stop: below MA50.")
+    ).strip()
+    full_by = (t1_hi or ma200 or current_price)
+    trader_summary_long = (
+        f"Accumulate in stages toward MA200 ({ma200_str}). Full position by ${full_by:.2f}. "
+        + f"Target ${fair_value:.2f} fair value over 12 months. "
+        + (f"Only exit if 52w low ${low_52w:.2f} breaks." if low_52w else "Only exit on thesis break.")
+    ).strip()
+
+    return {
+        "current_price": round(current_price, 2),
+        "fair_value": round(fair_value, 2),
+        "high_52w": round(high_52w, 2) if high_52w is not None else None,
+        "low_52w": round(low_52w, 2) if low_52w is not None else None,
+        "regime_label": regime_label,
+        "display_verdict": display_verdict,
+        "buy_roadmap": buy_stages,
+        "sell_roadmap": sell_stages,
+        "trader_summary": {
+            "short_term": trader_summary_short,
+            "medium_term": trader_summary_medium,
+            "long_term": trader_summary_long,
+        },
+    }
+
+
+def _build_one_answer_roadmaps(
+    ticker: str,
+    investor_out: dict,
+    response: dict,
+    current_price: float,
+) -> tuple[dict, dict, dict]:
+    """
+    Build One Answer headline + Trader roadmap + Investor roadmap for retail.
+    See RETAIL_ONE_ANSWER_DESIGN.md. All derived from existing investor_summary + response.
+    """
+    horizons = investor_out.get("horizons") or {}
+    short = horizons.get("short") or {}
+    medium = horizons.get("medium") or {}
+    long_h = horizons.get("long") or {}
+    fair_value = investor_out.get("fair_value") or current_price * 1.1
+    overall = investor_out.get("overall_verdict") or "WATCH"
+
+    display_verdict = (
+        (response.get("short_suggestion") or response.get("medium_suggestion") or response.get("long_suggestion"))
+        or ""
+    ).strip().upper()
+    if display_verdict not in ("REDUCE", "AVOID"):
+        display_verdict = overall
+
+    def _ez(d: dict) -> tuple[float | None, float | None]:
+        ez = d.get("entry_zone") or {}
+        return _safe_float(ez.get("low")), _safe_float(ez.get("high"))
+
+    def _action_today(verdict: str, in_zone: bool) -> str:
+        if verdict in ("REDUCE", "AVOID"):
+            return "trim" if verdict == "REDUCE" else "no_new_position"
+        if verdict in ("STRONG BUY", "BUY") and in_zone:
+            return "enter_now"
+        if verdict in ("STRONG BUY", "BUY"):
+            return "wait_for_pullback"
+        return "hold"
+
+    # Short/medium entry zones and in-zone check (trader)
+    s_lo, s_hi = _ez(short)
+    m_lo, m_hi = _ez(medium)
+    in_short = s_lo is not None and s_hi is not None and s_lo <= current_price <= s_hi
+    in_medium = m_lo is not None and m_hi is not None and m_lo <= current_price <= m_hi
+    in_zone = in_short or in_medium
+    action_today = _action_today(display_verdict, in_zone)
+
+    # Headline: one sentence
+    verdict_label = display_verdict or overall
+    stop_s = _safe_float(short.get("stop_loss"))
+    tgt_s = _safe_float(short.get("target"))
+    headline_parts = []
+    if display_verdict in ("REDUCE", "AVOID"):
+        headline_parts.append(f"{verdict_label}: Valuation may support entry but regime/ML say {verdict_label}.")
+        if long_h:
+            lt_tiers = (long_h.get("entry_tiers") or {}).get("tiers") or []
+            if lt_tiers:
+                t1 = lt_tiers[0]
+                lo, hi = _safe_float(t1.get("low")), _safe_float(t1.get("high"))
+                if lo is not None and hi is not None:
+                    headline_parts.append(f" Trim into strength; add only below ${hi:.2f}.")
+        subline = "Consider trimming; add only on pullback to long-term entry tiers."
+    else:
+        if action_today == "enter_now":
+            z = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else "current zone"
+            headline_parts.append(f"{verdict_label}: Enter in the zone {z}.")
+        elif action_today == "wait_for_pullback":
+            z = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else (f"${m_lo:.2f}–${m_hi:.2f}" if (m_lo and m_hi) else "entry zone")
+            headline_parts.append(f"{verdict_label}: Wait for pullback. Buy at {z}.")
+        else:
+            headline_parts.append(f"{verdict_label}: Hold. No new position here.")
+        if stop_s and tgt_s:
+            headline_parts.append(f" Stop ${stop_s:.2f}, target ${tgt_s:.2f} (~1 mo).")
+        subline = None
+    headline = "".join(headline_parts).strip() or f"{verdict_label}: See trader/investor roadmaps below."
+
+    one_answer = {
+        "headline": headline,
+        "subline": subline if display_verdict in ("REDUCE", "AVOID") else None,
+        "verdict": verdict_label,
+        "action_today": action_today,
+    }
+
+    # Trader roadmap (short + medium)
+    short_entry = {"low": round(s_lo, 2), "high": round(s_hi, 2)} if (s_lo is not None and s_hi is not None) else None
+    medium_entry = {"low": round(m_lo, 2), "high": round(m_hi, 2)} if (m_lo is not None and m_hi is not None) else None
+    trader_roadmap = {
+        "verdict": verdict_label,
+        "action_today": action_today,
+        "short": {
+            "entry_zone": short_entry,
+            "stop": round(stop_s, 2) if stop_s is not None else None,
+            "target": round(tgt_s, 2) if tgt_s is not None else None,
+            "target_pct": round(short.get("target_pct"), 1) if short.get("target_pct") is not None else None,
+            "timeframe": "~1 month",
+            "trigger": (short.get("trigger_buy") or "").strip() or "On pullback; ML confirmation.",
+        },
+        "medium": {
+            "entry_zone": medium_entry,
+            "stop": round(_safe_float(medium.get("stop_loss")), 2) if medium.get("stop_loss") is not None else None,
+            "target": round(_safe_float(medium.get("target")), 2) if medium.get("target") is not None else None,
+            "timeframe": "3–6 months",
+            "trigger": (medium.get("trigger_buy") or "").strip() or "Add on dip to MA50.",
+        },
+    }
+
+    # Investor roadmap (long tiers + fair value)
+    add_tiers = []
+    for t in (long_h.get("entry_tiers") or {}).get("tiers") or []:
+        add_tiers.append({
+            "id": t.get("id"),
+            "label": t.get("label"),
+            "low": _safe_float(t.get("low")),
+            "high": _safe_float(t.get("high")),
+            "allocation_pct": t.get("allocation_pct"),
+        })
+    investor_roadmap = {
+        "verdict": overall,
+        "action_today": "hold" if action_today in ("hold", "no_new_position", "trim") else ("add" if overall in ("STRONG BUY", "BUY") else "hold"),
+        "add_tiers": add_tiers,
+        "trim_near": round(fair_value, 2),
+        "hold_thesis": (long_h.get("rationale") or long_h.get("trigger_buy") or "").strip()
+        or f"Hold 6–18 mo toward fair value ${fair_value:.2f}; add on dips to entry tiers.",
+    }
+
+    return one_answer, trader_roadmap, investor_roadmap
 
 
 def _seasonal_note(ticker: str) -> str | None:
@@ -875,47 +1344,80 @@ _ETFS_SKIP_YAHOO_INFO = frozenset({"SPY", "QQQ", "GLD", "SLV", "DIA", "IWM", "XL
 _GOLD_ETFS = frozenset({"GLD", "IAU", "SGOL", "GLDM", "BAR", "OUNZ"})
 
 
-def _get_extra_info(ticker: str) -> dict:
-    """Dividend yield, 52w high/low, beta, company name from yfinance. Skips ETFs to avoid Yahoo 404."""
+def _get_extra_info(ticker: str, config: dict | None = None) -> dict:
+    """Company name, beta, dividend yield, 52w high/low. Prefers FMP profile when config has fmp_api_key; 52w from yfinance. Skips ETFs to avoid Yahoo 404."""
     sym = (ticker or "").upper().split("-")[0]
     if sym in _ETFS_SKIP_YAHOO_INFO:
         return {}
+    out = {}
+    config = config or {}
+    api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
+    if api_key:
+        try:
+            from signals.fmp_client import fetch_profile
+            profile, err = fetch_profile(config, ticker)
+            if not err and profile and isinstance(profile, dict):
+                name = (profile.get("companyName") or profile.get("symbol") or "").strip()
+                if name:
+                    out["company_name"] = name
+                beta = profile.get("beta")
+                if beta is not None:
+                    try:
+                        out["beta"] = round(float(beta), 2)
+                    except (TypeError, ValueError):
+                        pass
+                dy = profile.get("dividendYield")
+                if dy is not None:
+                    try:
+                        dy_f = float(dy)
+                        if dy_f > 0:
+                            yield_pct = dy_f * 100 if dy_f <= 1 else dy_f
+                            if 0 <= yield_pct <= 15:
+                                out["dividend_yield"] = round(yield_pct, 2)
+                            else:
+                                out["dividend_yield_error"] = "yield_out_of_range"
+                                out["dividend_yield"] = None
+                    except (TypeError, ValueError):
+                        pass
+        except Exception:
+            pass
     try:
         import yfinance as yf
         t = yf.Ticker(ticker)
         info = t.info or {}
-        out = {}
-        # Company name for modal header (longName preferred, e.g. "Amazon.com, Inc.")
-        name = (info.get("longName") or info.get("shortName") or "").strip()
-        if name:
-            out["company_name"] = name
-        dy = info.get("dividendYield") or info.get("yield")
-        if dy is not None:
-            try:
-                dy_f = float(dy)
-                if dy_f > 0:
-                    # yfinance: decimal (0.005 = 0.5%) or sometimes percent (5 = 5%)
-                    yield_pct = dy_f * 100 if dy_f <= 1 else dy_f
-                    if yield_pct < 0 or yield_pct > 15:
-                        out["dividend_yield_error"] = "yield_out_of_range"
-                        out["dividend_yield"] = None
-                    else:
-                        out["dividend_yield"] = round(yield_pct, 2)
-            except (TypeError, ValueError):
-                pass
-        for k, v in [("fiftyTwoWeekHigh", "high_52w"), ("fiftyTwoWeekLow", "low_52w")]:
-            val = info.get(k)
-            if val is not None:
+        if not out.get("company_name"):
+            name = (info.get("longName") or info.get("shortName") or "").strip()
+            if name:
+                out["company_name"] = name
+        if "beta" not in out:
+            beta = info.get("beta")
+            if beta is not None:
                 try:
-                    out[v] = round(float(val), 2)
+                    out["beta"] = round(float(beta), 2)
                 except (TypeError, ValueError):
                     pass
-        beta = info.get("beta")
-        if beta is not None:
-            try:
-                out["beta"] = round(float(beta), 2)
-            except (TypeError, ValueError):
-                pass
+        if "dividend_yield" not in out and "dividend_yield_error" not in out:
+            dy = info.get("dividendYield") or info.get("yield")
+            if dy is not None:
+                try:
+                    dy_f = float(dy)
+                    if dy_f > 0:
+                        yield_pct = dy_f * 100 if dy_f <= 1 else dy_f
+                        if yield_pct < 0 or yield_pct > 15:
+                            out["dividend_yield_error"] = "yield_out_of_range"
+                            out["dividend_yield"] = None
+                        else:
+                            out["dividend_yield"] = round(yield_pct, 2)
+                except (TypeError, ValueError):
+                    pass
+        for k, v in [("fiftyTwoWeekHigh", "high_52w"), ("fiftyTwoWeekLow", "low_52w")]:
+            if v not in out:
+                val = info.get(k)
+                if val is not None:
+                    try:
+                        out[v] = round(float(val), 2)
+                    except (TypeError, ValueError):
+                        pass
         return out
     except Exception:
-        return {}
+        return out if out else {}

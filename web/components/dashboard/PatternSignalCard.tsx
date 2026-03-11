@@ -179,6 +179,18 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
   const confluence      = data.confluence       ?? 0;
   const patternScore    = data.pattern_score    ?? 0;
   const kellyMult       = data.confluence_kelly_mult ?? 1;
+  const regime         = (data.regime ?? "").toUpperCase();
+
+  // When backend returns placeholder (UNKNOWN + 0/0), show compact message instead of full card
+  const isPlaceholder = regime === "UNKNOWN" && patternScore === 0 && confluence === 0;
+  if (isPlaceholder) {
+    return (
+      <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 px-4 py-3 flex items-center gap-3 text-slate-500 text-sm">
+        <Activity className="h-4 w-4 shrink-0" />
+        <span>Pattern / confluence data unavailable for {data.ticker}. Check back after market data refreshes.</span>
+      </div>
+    );
+  }
 
   const isHighConviction = confluence >= 0.70 && patternScore >= 70;
   const hasWarning       = !!data.warning;
@@ -195,7 +207,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-bold text-white text-base">{data.ticker}</span>
-          <RegimeBadge regime={data.regime ?? "UNKNOWN"} />
+          <RegimeBadge regime={regime || "NEUTRAL"} />
           <ActionBadge action={data.action ?? "WATCH"} />
         </div>
         <BottomScoreMeter score={patternScore} />
