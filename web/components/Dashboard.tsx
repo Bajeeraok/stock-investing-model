@@ -315,9 +315,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                     </span>
                   )}
                   {data.macro_analog?.one_liner && (
-                    <span className="text-sm text-slate-300" title={`State: ${data.macro_analog.state}, n=${data.macro_analog.n_observations}`}>
-                      {data.macro_analog.one_liner}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm text-slate-300" title={data.macro_analog.plain_language ?? `State: ${data.macro_analog.state}, n=${data.macro_analog.n_observations}`}>
+                        {data.macro_analog.one_liner}
+                      </span>
+                      {data.macro_analog.plain_language && (
+                        <p className="text-xs text-slate-500 max-w-2xl">
+                          {data.macro_analog.plain_language}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

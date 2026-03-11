@@ -32,6 +32,8 @@ export interface ScanAlert {
   priority: number; // 1..4
   headline: string;
   body: string;
+  /** Plain-language entry / exit / duration (when present, show instead of body for actionable guidance) */
+  actionable?: string | null;
   risk_level: string;
   color?: string;
   emoji?: string;
@@ -172,7 +174,14 @@ export function AlertsPanel({ onTickerClick }: { onTickerClick?: (ticker: string
                   </span>
                   <span className="text-[10px] text-slate-500">{a.risk_level}</span>
                 </div>
-                <p className="text-xs text-slate-400 mt-1 leading-snug">{a.body}</p>
+                <p className="text-xs text-slate-400 mt-1 leading-snug">
+                  {a.actionable ?? a.body}
+                </p>
+                {a.actionable && a.body && (
+                  <p className="text-[11px] text-slate-500 mt-1 leading-snug" title="Context">
+                    {a.body}
+                  </p>
+                )}
               </div>
               <button
                 type="button"

@@ -92,6 +92,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           Mark-to-market updated as of {pt.mtm.as_of} (open trades only).
         </p>
       )}
+      {pt.persistence_note && (
+        <p className="text-xs text-slate-500" title={pt.data_root ?? undefined}>
+          {pt.persistence_note}
+        </p>
+      )}
 
       {recent.length > 0 ? (
         <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">

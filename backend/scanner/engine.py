@@ -68,6 +68,8 @@ class ScanAlert:
     surface_to_all: bool
     ttl_minutes: int = 60
     dismissed: bool = False
+    # Plain-language entry/exit/duration so alerts are actionable
+    actionable: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -117,6 +119,57 @@ ALERT_EMOJIS = {
 def _alert_id(ticker: Optional[str], alert_type: AlertType) -> str:
     raw = f"{ticker or 'MACRO'}:{alert_type}:{datetime.now().strftime('%Y%m%d%H%M')}"
     return hashlib.md5(raw.encode()).hexdigest()[:12]
+
+
+def _actionable_for_alert(snap: MarketSnapshot, alert_type: AlertType) -> str:
+    """Plain-language entry, exit, and duration so the alert is actionable."""
+    price = snap.price
+    support = snap.support_level
+    er_days = snap.er_days_away
+    today = datetime.now(tz=ET).strftime("%b %d")
+    support_str = f"${support:.2f}" if support and support > 0 else "recent support"
+    if alert_type == AlertType.SUPPORT_BOUNCE:
+        exit_hint = f"Exit if price breaks below {support_str}" if support else "Exit on break of support"
+        return (
+            f"Entry: consider buying near current price ${price:.2f} (today) or on a pullback to {support_str}. "
+            f"Exit: take profit at 3–5% upside, or {exit_hint}. "
+            f"Duration: 1–4 weeks."
+        )
+    if alert_type == AlertType.OPTIONS_FLOW_SPIKE:
+        stop_hint = f"Set a mental stop below {support_str}." if support else "Set a stop based on your risk."
+        return (
+            f"Entry: if trading options, use current stock price ${price:.2f} as reference (as of today). "
+            f"{stop_hint} "
+            f"Duration: review in 1–2 weeks; close or roll before earnings if within 2 weeks."
+        )
+    if alert_type == AlertType.COVERED_CALL:
+        return (
+            f"Entry: sell a call at or above current price ${price:.2f} (today). "
+            f"Collect premium; typical duration 30–45 days to expiry. "
+            f"Exit: buy back if stock drops sharply, or let expire / get assigned."
+        )
+    if alert_type == AlertType.CREDIT_SPREAD:
+        return (
+            f"Entry: consider selling a put or call spread with current price ${price:.2f} as reference. "
+            f"Duration: 30–45 DTE. Exit: close at 50% profit or before earnings."
+        )
+    if alert_type == AlertType.MOMENTUM_BREAKOUT:
+        return (
+            f"Entry: only if you chase momentum; current price ${price:.2f}. "
+            f"Use a tight stop (e.g. below {support_str}). Duration: days to 2 weeks."
+        )
+    if alert_type == AlertType.ER_LOTTO and er_days is not None:
+        return (
+            f"High risk. Entry: only if you accept lottery risk; current price ${price:.2f}. "
+            f"Exit before or at earnings (in {er_days} days). Duration: until earnings."
+        )
+    if alert_type == AlertType.ER_IV_CRUSH:
+        return (
+            f"Entry: sell premium (e.g. credit spread or iron condor) with earnings in view. "
+            f"Exit before earnings to avoid event risk. Duration: until earnings."
+        )
+    # Default: at least give price and date
+    return f"Reference price ${price:.2f} as of {today}. Check chart for entry and set your own stop and target."
 
 
 def _risk_level(snap: MarketSnapshot, alert_type: AlertType) -> str:
@@ -225,6 +278,7 @@ class SignalEvaluator:
             headline = f"{snap.symbol} Momentum Breakout +{snap.price_change_pct:.1f}%"
 
         body = f"IV Rank {snap.iv_rank:.0f}, flow {snap.call_put_flow_ratio:.1f}x, regime {snap.regime} ({snap.regime_confidence:.0f}%)."
+        actionable = _actionable_for_alert(snap, alert_type)
 
         return ScanAlert(
             id=_alert_id(snap.symbol, alert_type),
@@ -246,9 +300,12 @@ class SignalEvaluator:
                 "vix": snap.vix,
                 "priceChangePct": snap.price_change_pct,
                 "macroFlag": macro_flag,
+                "price": snap.price,
+                "supportLevel": snap.support_level,
             },
             scan_tier=snap.scan_tier,
             surface_to_all=SURFACING_THRESHOLDS[alert_type].surface_to_all,
+            actionable=actionable,
         )
 
 
@@ -259,8 +316,9 @@ def _build_retail_alert(
     body: str,
     scan_tier: ScanTier,
     signals: dict[str, Any],
+    actionable: Optional[str] = None,
 ) -> ScanAlert:
-    """Build a retail quick-decision alert with one-line plain English."""
+    """Build a retail quick-decision alert with one-line plain English and optional actionable text."""
     pr = ScanPriority.HIGH if alert_type in (
         AlertType.ENTRY_ZONE_ENTERED,
         AlertType.STOP_HIT,
@@ -280,6 +338,7 @@ def _build_retail_alert(
         signals=signals,
         scan_tier=scan_tier,
         surface_to_all=True,
+        actionable=actionable,
     )
 
 
@@ -311,13 +370,19 @@ def evaluate_retail_alerts(
 
         # EARNINGS_SOON — only for watchlist
         if in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS:
+            ed = snap.er_days_away
             alerts.append(_build_retail_alert(
                 ticker,
                 AlertType.EARNINGS_SOON,
-                f"{ticker} earnings in {snap.er_days_away} day(s)",
-                f"Reduce size or wait for post-earnings reaction. Earnings in {snap.er_days_away} days.",
+                f"{ticker} earnings in {ed} day(s)",
+                f"Reduce size or wait for post-earnings reaction. Earnings in {ed} days.",
                 snap.scan_tier,
-                {"erDaysAway": snap.er_days_away, "price": price},
+                {"erDaysAway": ed, "price": price},
+                actionable=(
+                    f"Do not open new positions until after earnings (in {ed} days). "
+                    f"If you already hold, reduce size or hedge by then. "
+                    f"Exit any speculative position before the report. Current price ${price:.2f}."
+                ),
             ))
 
         # ENTRY_ZONE_ENTERED / STOP_HIT / TARGET_HIT — need horizon levels
@@ -331,13 +396,21 @@ def evaluate_retail_alerts(
             in_zone = el <= price <= eh if (el and eh) else False
 
             if el and eh and in_zone and not was_in_zone:
+                act = (
+                    f"Entry: buy in range ${el:.2f}–${eh:.2f} (current ${price:.2f}). "
+                    f"Exit: use stop ${stop:.2f} and target ${target:.2f}. "
+                    f"Duration: hold until target or stop hit."
+                ) if (stop and target) else (
+                    f"Entry: buy in range ${el:.2f}–${eh:.2f} (current ${price:.2f}). Set your own stop and target."
+                )
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.ENTRY_ZONE_ENTERED,
                     f"{ticker} in {label} ${el:.2f}–${eh:.2f}",
                     f"Price in buy zone. Consider adding per your plan.",
                     snap.scan_tier,
-                    {"entryLow": el, "entryHigh": eh, "price": price},
+                    {"entryLow": el, "entryHigh": eh, "price": price, "stopLoss": stop, "target": target},
+                    actionable=act,
                 ))
             if stop and price < stop:
                 alerts.append(_build_retail_alert(
@@ -347,6 +420,10 @@ def evaluate_retail_alerts(
                     f"Price below stop — consider exit or trim.",
                     snap.scan_tier,
                     {"stopLoss": stop, "price": price},
+                    actionable=(
+                        f"Exit: price ${price:.2f} is below stop ${stop:.2f}. "
+                        f"Trim or close now to limit loss. No new entry until price holds above stop."
+                    ),
                 ))
             elif stop and price > stop and price <= stop * 1.02:
                 alerts.append(_build_retail_alert(
@@ -356,6 +433,10 @@ def evaluate_retail_alerts(
                     f"Price near stop. Decide: hold or trim before stop hit.",
                     snap.scan_tier,
                     {"stopLoss": stop, "price": price},
+                    actionable=(
+                        f"Price ${price:.2f} is near stop ${stop:.2f}. "
+                        f"Decide within 1–2 days: hold or trim before stop is hit."
+                    ),
                 ))
             if target and price >= target:
                 alerts.append(_build_retail_alert(
@@ -365,6 +446,10 @@ def evaluate_retail_alerts(
                     f"Target hit — consider taking profit.",
                     snap.scan_tier,
                     {"target": target, "price": price},
+                    actionable=(
+                        f"Exit: target ${target:.2f} reached (price ${price:.2f}). "
+                        f"Consider taking profit or scaling out today."
+                    ),
                 ))
 
             new_state[ticker] = {
@@ -384,7 +469,11 @@ def evaluate_retail_alerts(
                     f"{ticker} ML prob now {ml_current:.0f}% (crossed {ML_PROB_CROSS_THRESHOLD:.0f}%)",
                     f"Model now supports add. Consider adding on pullbacks.",
                     snap.scan_tier,
-                    {"mlProb": ml_current, "previousMlProb": prev, "threshold": ML_PROB_CROSS_THRESHOLD},
+                    {"mlProb": ml_current, "previousMlProb": prev, "threshold": ML_PROB_CROSS_THRESHOLD, "price": price},
+                    actionable=(
+                        f"Entry: model supports adding at current price ${price:.2f}; consider on pullbacks. "
+                        f"Set your own stop and target. Duration: medium term (weeks)."
+                    ),
                 ))
             new_state[ticker] = {
                 **new_state.get(ticker, {}),

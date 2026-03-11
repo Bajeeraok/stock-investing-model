@@ -6,6 +6,12 @@ Lightweight "start today" logging of model signals and outcomes.
 Design goal: integrate with existing EOD snapshot infrastructure so we can backfill
 outcomes without additional API calls (aligns with forward_tracking).
 
+Storage: paper_trades.csv and MTM files live under data_root (get_data_root()).
+Set env DATA_ROOT to a persistent path (e.g. mounted volume) so paper trades and
+EOD files survive backend restarts and redeploys. EOD is also read from Redis when
+available, so mark-to-market and outcomes can work when Redis has snapshots even if
+the local data/eod directory is ephemeral.
+
 Key methods:
   - log_signal(...)              : append (idempotent per date+ticker+signal)
   - fill_outcomes(...)           : backfill ~30d outcome (default 20 trading days via EOD snapshots)
@@ -332,20 +338,40 @@ class PaperTradeLogger:
         return {"updated": updated, "message": None}
 
     # ----- Outcomes (backfill) -----
+    # EOD dates/snapshots: use Redis first (persists across deploys), then files under DATA_ROOT.
+    # So paper PnL works when EOD is in Redis even if backend/data/eod is ephemeral.
 
     def _list_eod_dates(self) -> list[str]:
-        d = _eod_dir(self.data_root)
+        seen: set[str] = set()
         dates: list[str] = []
-        for p in d.glob("*.json"):
-            try:
-                stem = p.stem
-                if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
-                    dates.append(stem)
-            except Exception:
-                pass
-        return sorted(dates)
+        try:
+            from signals.cache import list_eod_dates_redis
+            for d in list_eod_dates_redis():
+                if d not in seen and len(d) == 10 and d[4] == "-" and d[7] == "-":
+                    seen.add(d)
+                    dates.append(d)
+        except Exception:
+            pass
+        d = _eod_dir(self.data_root)
+        if d.exists():
+            for p in d.glob("*.json"):
+                try:
+                    stem = p.stem
+                    if stem not in seen and len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
+                        seen.add(stem)
+                        dates.append(stem)
+                except Exception:
+                    pass
+        return sorted(set(dates))
 
     def _load_snapshot(self, date_str: str) -> dict | None:
+        try:
+            from signals.cache import get_eod_snapshot_redis
+            data = get_eod_snapshot_redis(date_str)
+            if data and isinstance(data, dict) and data.get("run_results") is not None:
+                return data
+        except Exception:
+            pass
         p = _eod_dir(self.data_root) / f"{date_str}.json"
         if not p.exists():
             return None
@@ -366,7 +392,7 @@ class PaperTradeLogger:
 
         dates = self._list_eod_dates()
         if len(dates) < 2:
-            return {"updated": 0, "message": "Need EOD snapshots in backend/data/eod to fill outcomes."}
+            return {"updated": 0, "message": "Need at least 2 EOD snapshots (Redis or data/eod) to fill outcomes."}
 
         idx_by_date = {d: i for i, d in enumerate(dates)}
 
@@ -427,7 +453,7 @@ class PaperTradeLogger:
 
         dates = self._list_eod_dates()
         if not dates:
-            return {"updated": 0, "message": "No EOD snapshots found (data/eod is empty)."}
+            return {"updated": 0, "message": "No EOD snapshots in Redis or data/eod. Run EOD or upload snapshots."}
 
         latest = dates[-1]
         snap = self._load_snapshot(latest)
@@ -481,7 +507,7 @@ class PaperTradeLogger:
 
         dates = self._list_eod_dates()
         if not dates:
-            return {"appended": 0, "message": "No EOD snapshots found (data/eod is empty)."}
+            return {"appended": 0, "message": "No EOD snapshots in Redis or data/eod."}
         latest = dates[-1]
 
         # Load index so repeated dashboard refreshes don't append duplicates for the same latest date

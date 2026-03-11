@@ -322,6 +322,8 @@ export interface DashboardData {
     fill?: { updated: number; message?: string | null } | null;
     summary?: { status: string; completed?: number; win_rate_pct?: number | null; avg_return_pct?: number | null; avg_win_pct?: number | null; avg_loss_pct?: number | null; message?: string } | null;
     mtm_history?: Record<string, Array<{ mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null }>> | null;
+    data_root?: string | null;
+    persistence_note?: string | null;
     recent?: Array<{
       trade_id?: string | null;
       date: string;
@@ -413,6 +415,8 @@ export interface DashboardData {
     avg_return_3m: number;
     pct_positive: number;
     one_liner: string;
+    /** Plain-language interpretation of the historical analog stat */
+    plain_language?: string;
   } | null;
   /** Tier 1 risk engine: position sizing, drawdown sim, exit levels, earnings impacts, concentration */
   position_sizing?: import("@/components/dashboard/index").PositionSizingData[];

@@ -92,7 +92,7 @@ def get_macro_analog(
 ) -> dict | None:
     """
     Match current VIX + real yield to historical states; return one-liner stats.
-    Returns { state, n_observations, avg_return_3m, pct_positive, one_liner } or None.
+    Returns { state, n_observations, avg_return_3m, pct_positive, one_liner, plain_language } or None.
     """
     config = config or {}
     vix = _load_vix_history(period)
@@ -196,16 +196,29 @@ def get_macro_analog(
             "avg_return_3m": float(row["avg_return_3m"]),
             "pct_positive": float(row["pct_positive"]),
             "one_liner": f"Limited historical analog (n={n}); mixed outcomes.",
+            "plain_language": f"Only {n} past days matched current conditions; sample is too small to lean on. Mixed outcomes.",
         }
 
     avg = float(row["avg_return_3m"])
     pct = float(row["pct_positive"])
     sign = "+" if avg >= 0 else ""
     one_liner = f"Historically when macro matched current: SPY avg {sign}{avg}% over 3m ({pct:.0f}% green, n={n})."
+    # Plain-language interpretation for the UI
+    if avg >= 0:
+        direction = f"went up by about {avg:.1f}% on average"
+    else:
+        direction = f"went down by about {abs(avg):.1f}% on average"
+    plain_language = (
+        f"In the past, when VIX and real yields looked like today ({n} similar days over ~13 years), "
+        f"the S&P 500 (SPY) {direction} over the next 3 months, "
+        f"and {pct:.0f}% of those 3‑month windows were positive. "
+        "This is context only—past outcomes do not guarantee future results."
+    )
     return {
         "state": state_match,
         "n_observations": n,
         "avg_return_3m": avg,
         "pct_positive": pct,
         "one_liner": one_liner,
+        "plain_language": plain_language,
     }

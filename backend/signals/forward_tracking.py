@@ -15,26 +15,49 @@ logger = logging.getLogger(__name__)
 _EOD_DIR_NAME = "eod"
 
 
-def _list_eod_dates(eod_dir: Path) -> list[str]:
-    if not eod_dir.exists():
+def _list_eod_dates_redis() -> list[str]:
+    """EOD dates from Redis (same source as paper trading / dashboard list)."""
+    try:
+        from signals.cache import list_eod_dates_redis
+        out = list_eod_dates_redis()
+        return sorted(out) if out else []
+    except Exception:
         return []
-    dates = []
-    for p in eod_dir.glob("*.json"):
-        try:
-            d = p.stem
-            if len(d) == 10 and d[4] == "-" and d[7] == "-":
-                dates.append(d)
-        except Exception:
-            pass
-    return sorted(dates)
+
+
+def _list_eod_dates(eod_dir: Path) -> list[str]:
+    """Merge EOD dates from Redis and from files under eod_dir."""
+    seen: set[str] = set()
+    dates: list[str] = []
+    for d in _list_eod_dates_redis():
+        if d not in seen and len(d) == 10 and d[4] == "-" and d[7] == "-":
+            seen.add(d)
+            dates.append(d)
+    if eod_dir and eod_dir.exists():
+        for p in eod_dir.glob("*.json"):
+            try:
+                d = p.stem
+                if d not in seen and len(d) == 10 and d[4] == "-" and d[7] == "-":
+                    seen.add(d)
+                    dates.append(d)
+            except Exception:
+                pass
+    return sorted(set(dates))
 
 
 def _load_snapshot(eod_dir: Path, date_str: str) -> dict | None:
-    p = eod_dir / f"{date_str}.json"
-    if not p.exists():
+    """Load EOD snapshot: Redis first, then file (same as paper_trade_logger)."""
+    try:
+        from signals.cache import get_eod_snapshot_redis
+        data = get_eod_snapshot_redis(date_str)
+        if data and isinstance(data, dict) and data.get("run_results") is not None:
+            return data
+    except Exception:
+        pass
+    if not eod_dir or not (eod_dir / f"{date_str}.json").exists():
         return None
     try:
-        with open(p) as f:
+        with open(eod_dir / f"{date_str}.json") as f:
             return json.load(f)
     except Exception as e:
         logger.debug("Load EOD %s: %s", date_str, e)

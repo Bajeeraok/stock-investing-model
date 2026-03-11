@@ -511,6 +511,11 @@ async def get_dashboard():
         paper_trading["summary"] = paper_async.get("summary")
         paper_trading["recent"] = paper_async.get("recent")
         paper_trading["mtm_history"] = paper_async.get("mtm_history") or paper_async.get("mtm_history_map")
+    try:
+        paper_trading["data_root"] = str(get_data_root())
+        paper_trading["persistence_note"] = "Set env DATA_ROOT to a persistent path (e.g. volume) so paper trades and EOD survive restarts."
+    except Exception:
+        pass
 
     # Market scenarios (what-if): upcoming events + historical reaction stats (13y)
     market_scenarios = []
