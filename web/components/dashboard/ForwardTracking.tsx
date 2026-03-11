@@ -16,7 +16,7 @@ interface SummaryByHorizon {
 }
 
 interface SummaryBySignal {
-  [signal: string]: { avg_return_20d_pct: number; n_observations: number };
+  [signal: string]: { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number };
 }
 
 interface Props {
@@ -89,10 +89,10 @@ export function ForwardTracking({
             {Object.entries(summary_by_signal).map(([sig, s]) => (
               <span key={sig}>
                 <span className="text-slate-400">{sig}:</span>{" "}
-                <span className={s.avg_return_20d_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
-                  {fmt(s.avg_return_20d_pct)}
+                <span className={(s.avg_return_20d_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                  {fmt(s.avg_return_20d_pct ?? 0)}
                 </span>
-                <span className="text-slate-500 text-xs"> (n={s.n_observations})</span>
+                <span className="text-slate-500 text-xs"> (n={s.n_observations ?? 0})</span>
               </span>
             ))}
           </div>
