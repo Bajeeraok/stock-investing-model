@@ -268,6 +268,9 @@ class FairValueResult:
     discount_pct: float        # positive = undervalued, negative = overvalued
     analyst_target: Optional[float]
     notes: list[str]
+    # Transparency: bear case and one-line methodology so users can interrogate FV vs lt_band
+    bear_case: Optional[float] = None   # e.g. FV * 0.60; conservative downside
+    methodology_summary: Optional[str] = None
 
 
 def estimate_fair_value(
@@ -323,6 +326,8 @@ def estimate_fair_value(
             discount_pct=0.0,
             analyst_target=analyst_target,
             notes=notes + ["Cannot estimate FV without positive earnings"],
+            bear_case=None,
+            methodology_summary=None,
         )
 
     # ── Select method based on stock type ──────────────────────────────────
@@ -379,6 +384,13 @@ def estimate_fair_value(
 
     discount_pct = round((fv - current_price) / current_price * 100, 1)
 
+    # Bear case: conservative downside (FV * 0.60) so users see gap vs fair value
+    bear_case = round(fv * 0.60, 2) if fv > 0 else None
+    methodology_summary = (
+        f"{classification.stock_type.value}: {method}. "
+        f"Bear case ${bear_case:.2f} (FV×0.6) vs fair ${fv:.2f} — gap reflects method assumptions."
+    ) if bear_case is not None else None
+
     return FairValueResult(
         fair_value=fv,
         stock_type=classification.stock_type.value,
@@ -387,6 +399,8 @@ def estimate_fair_value(
         discount_pct=discount_pct,
         analyst_target=analyst_target,
         notes=notes,
+        bear_case=bear_case,
+        methodology_summary=methodology_summary,
     )
 
 

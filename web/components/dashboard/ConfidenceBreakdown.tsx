@@ -127,6 +127,8 @@ export interface PreFlightData {
   rsi_direction:     RSIDirectionData | null;
   divergence:        DivergenceData | null;
   regime_transition: RegimeTransitionData | null;
+  /** When bull % is high but shift probability is also high — explain tension */
+  regime_tension_note?: string | null;
   playbook:          PlaybookScenario[];
   current_mode:      string | null;
   current_action:    string | null;
@@ -946,6 +948,14 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             <p className="text-xs font-semibold text-red-300">Incoherent signals — do not trade on this</p>
             <p className="text-[11px] text-red-400/70 mt-0.5">{coherence?.message}</p>
           </div>
+        </div>
+      )}
+
+      {/* Regime tension: bull high but shift prob also high */}
+      {pf?.regime_tension_note && (
+        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2.5">
+          <AlertTriangle size={13} className="text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-xs text-amber-200">{pf.regime_tension_note}</p>
         </div>
       )}
 

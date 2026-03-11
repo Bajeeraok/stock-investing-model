@@ -359,6 +359,9 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     # ML probs and regime from confidence engine
     st_ml_prob = mt_ml_prob = lt_ml_prob = 25.0
     regime_bull_pct = 50.0
+    pattern_score = 50.0
+    if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
+        pattern_score = float(response["score_breakdown"]["composite"])
     try:
         conf = run_confidence(ticker, config=config)
         if conf:
@@ -368,6 +371,11 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
             lt_ml_prob = float(mh.get("long", {}).get("prob") or 0.25) * 100.0
             hmm = conf.get("hmm") or {}
             regime_bull_pct = float(hmm.get("bull_probability") or 0.5) * 100.0
+            # Use 7-layer pattern_technical when available so horizon and confidence show same number
+            b = conf.get("breakdown") or {}
+            pl = b.get("pattern") or b.get("pattern_technical")
+            if isinstance(pl, dict) and pl.get("score") is not None:
+                pattern_score = float(pl["score"]) * 100.0
     except Exception:
         pass
 
@@ -379,14 +387,12 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     resistance_level = high_52w or current_price * 1.05
     vwap = current_price
     volume_ratio = _safe_float(response.get("volume_ratio")) or 1.0
-    pattern_score = 50.0
-    if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
-        pattern_score = float(response["score_breakdown"]["composite"])
 
     # Fair value: prefer multi-method estimator (value/growth/high-growth) so "X% undervalued"
     # reflects fundamental valuation, not analyst consensus high. Fall back to LT band high if
     # estimator cannot run (e.g. missing PE/margin data).
     fair_value: float | None = None
+    fv_result = None
     sector_specific = response.get("sector_specific") or {}
     ttm_pe_used: float | None = None
     forward_pe_used: float | None = None
@@ -450,7 +456,7 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
                 fcf_per_share=fcf_per_share,
                 analyst_target=analyst_target,
             )
-            if fv_result.fair_value and fv_result.fair_value > 0:
+            if fv_result and fv_result.fair_value and fv_result.fair_value > 0:
                 fair_value = fv_result.fair_value
     except Exception:
         pass
@@ -520,6 +526,13 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
         out["ttm_pe_used"] = round(ttm_pe_used, 2)
     if forward_pe_used is not None:
         out["forward_pe_used"] = round(forward_pe_used, 2)
+    if fv_result is not None:
+        out["fair_value_metadata"] = {
+            "bear_case": getattr(fv_result, "bear_case", None),
+            "method_used": fv_result.method_used,
+            "methodology_summary": getattr(fv_result, "methodology_summary", None),
+            "notes": getattr(fv_result, "notes", []),
+        }
 
     # Cache short-horizon entry/stop/target and ML prob for scanner retail alerts
     try:

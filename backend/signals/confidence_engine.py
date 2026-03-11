@@ -536,7 +536,7 @@ def _score_insider(ticker: str) -> dict | None:
     """
     try:
         from signals.edgar_insider import run_insider_flow
-        result = run_insider_flow([ticker], days_lookback=90)
+        result = run_insider_flow([ticker], days_lookback=180)
         activities = result.get("ticker_activities", [])
         ticker_act = next((a for a in activities if a["ticker"] == ticker), None)
         if ticker_act is None:
@@ -546,7 +546,7 @@ def _score_insider(ticker: str) -> dict | None:
         sells = int(ticker_act.get("sells_shares", 0) or 0)
         total = buys + sells
         if total == 0:
-            return {"score": 0.5, "label": "No insider activity (90d)", "sell_ratio": 0.0}
+            return {"score": 0.5, "label": "No insider activity (180d)", "sell_ratio": 0.0}
 
         buy_ratio  = buys / total
         sell_ratio = sells / total
@@ -972,6 +972,17 @@ def _run_pre_flight(
             "current_action":    rd.get("current_action"),
             "position_size":     rd.get("summary", {}).get("position_size"),
         })
+        # Surface tension when bull is high but shift probability is also high
+        rt = base.get("regime_transition")
+        bull_p = hmm_data.get("bull_probability") or 0
+        if rt and bull_p >= 0.8:
+            shift_p = rt.get("shift_probability") if isinstance(rt, dict) else getattr(rt, "shift_probability", None)
+            if shift_p is not None and float(shift_p) >= 40:
+                days = (rt.get("days_estimate") if isinstance(rt, dict) else getattr(rt, "days_estimate", None)) or "5–10 days"
+                base["regime_tension_note"] = (
+                    f"Regime is bull ({bull_p*100:.0f}%) but {shift_p}% chance of shift in {days}. "
+                    "Not necessarily wrong — regimes can flip quickly; consider position size."
+                )
     except Exception as exc:
         logger.debug("Pre-flight engine failed for %s: %s", ticker, exc)
 

@@ -243,5 +243,11 @@ def _composite_options_score(
             parts.append(f"IV rank {iv_rank:.0f} (elevated fear — potential exhaustion)")
 
     score = round(float(np.clip(score, 0.0, 1.0)), 3)
-    label = "; ".join(parts) if parts else f"P/C {pc_ratio:.2f}"
+    if not parts:
+        # Clarify mapping: P/C <1 = more calls (conventionally bullish); we use contrarian (high P/C = fear = bullish)
+        if 0.8 <= pc_ratio <= 1.2:
+            parts.append(f"P/C {pc_ratio:.2f} (neutral: <1 = more calls; we score contrarian)")
+        else:
+            parts.append(f"P/C {pc_ratio:.2f}")
+    label = "; ".join(parts)
     return score, label

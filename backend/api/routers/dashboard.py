@@ -1220,6 +1220,8 @@ async def get_unified_signal(ticker: str):
     Unified Signal Engine: 3-layer confluence (regime + pattern + momentum) with regime gating.
     Returns: regime, pattern_score, momentum_score, confluence, action, Kelly multiplier, narrative.
     Runs in ~1-2s (fetches 2y OHLCV, no ML training required).
+    When pattern_score is 0 (no OHLCV pattern), we use composite_score as fallback and set
+    pattern_score_source so the UI can label "Confluence (pattern n/a)" to avoid 48 vs 0 confusion.
     """
     ticker = ticker.upper().strip()
     try:
@@ -1229,6 +1231,9 @@ async def get_unified_signal(ticker: str):
         if df is None or df.empty:
             raise HTTPException(status_code=404, detail=f"No price data for {ticker}")
         result = run_unified_signal(df, ticker)
+        if result.get("pattern_score", 0) == 0 and result.get("composite_score") is not None:
+            result["pattern_score"] = result["composite_score"]
+            result["pattern_score_source"] = "confluence_fallback"
         return result
     except HTTPException:
         raise

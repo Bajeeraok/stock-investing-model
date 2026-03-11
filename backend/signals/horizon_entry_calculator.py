@@ -490,6 +490,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     parts = []
     if assess_verdict == "WAIT":
         parts.append("Only {:.1f}% MOS — need {:.0f}%.".format(mos_pct, LT_REQUIRED_MOS_PCT))
+        if inp.ml_prob >= 60:
+            parts.append("ML {:.0f}% supports entry; MOS requirement ({:.0f}%) overrides for long-term.".format(inp.ml_prob, LT_REQUIRED_MOS_PCT))
     if pct_above_ma200 > LT_MAX_ABOVE_MA200_PCT:
         parts.append("Price {:.1f}% above MA200 (${:.2f}).".format(pct_above_ma200, inp.ma200))
     if inp.ml_prob < 25:

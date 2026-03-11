@@ -46,6 +46,8 @@ export interface UnifiedSignalData {
   pattern_score:         number;     // 0-100
   pattern_signals:       string[];
   pattern_details?:      PatternDetails;
+  /** When pattern_score was 0, API may set composite_score as fallback and this label */
+  pattern_score_source?: "confluence_fallback" | null;
   momentum_score:        number;     // 0-1
   momentum_signals:      string[];
   composite_score:       number;     // 0-100 from existing model
@@ -227,7 +229,9 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
           <div className="text-sm font-bold text-white">{(data.composite_score ?? 0).toFixed(0)}</div>
         </div>
         <div className="bg-slate-800 rounded-lg p-2">
-          <div className="text-[10px] text-slate-400 mb-0.5">Pattern</div>
+          <div className="text-[10px] text-slate-400 mb-0.5" title={data.pattern_score_source === "confluence_fallback" ? "Confluence used when pattern unavailable" : undefined}>
+            {data.pattern_score_source === "confluence_fallback" ? "Confluence" : "Pattern"}
+          </div>
           <div className={clsx("text-sm font-bold",
             patternScore >= 70 ? "text-emerald-400" :
             patternScore >= 45 ? "text-amber-400"   : "text-slate-400"

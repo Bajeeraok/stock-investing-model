@@ -4,6 +4,13 @@ import React from "react";
 import { CheckCircle, XCircle, AlertCircle, Target, ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 
 // Use bracket types to avoid ambiguous generics in .tsx (Array<T> can be parsed as JSX)
+export interface FairValueMetadata {
+  bear_case?: number | null;
+  method_used?: string | null;
+  methodology_summary?: string | null;
+  notes?: string[] | null;
+}
+
 export interface InvestorDecisionSummary {
   fair_value: number;
   overall_verdict: "WAIT" | "WATCH" | "BUY" | "STRONG BUY";
@@ -11,6 +18,8 @@ export interface InvestorDecisionSummary {
   ttm_pe_used?: number;
   /** Forward PE used for fair value when available. */
   forward_pe_used?: number;
+  /** Bear case, method, and notes so users can interrogate FV vs lt_band. */
+  fair_value_metadata?: FairValueMetadata | null;
   horizons: {
     short: HorizonSignalPayload;
     medium: HorizonSignalPayload;
@@ -170,7 +179,7 @@ export function InvestorDecisionSummarySection({
   ltEntryTiersOpen: boolean;
   onToggleLtTiers: () => void;
 }) {
-  const { fair_value, overall_verdict, horizons, ttm_pe_used, forward_pe_used } = summary;
+  const { fair_value, overall_verdict, horizons, ttm_pe_used, forward_pe_used, fair_value_metadata } = summary;
   const assessmentPct = currentPrice > 0 ? ((fair_value - currentPrice) / currentPrice) * 100 : 0;
   const short = horizons.short;
   const medium = horizons.medium;
@@ -214,7 +223,18 @@ export function InvestorDecisionSummarySection({
           verdictIcon(overall_verdict),
           React.createElement("span", { className: "font-medium text-slate-200" }, overall_verdict)
         )
-      )
+      ),
+      fair_value_metadata && (fair_value_metadata.bear_case != null || fair_value_metadata.methodology_summary) &&
+        React.createElement(
+          "div",
+          { className: "mt-2 pt-2 border-t border-slate-700/50 text-xs text-slate-400 space-y-1" },
+          fair_value_metadata.bear_case != null &&
+            React.createElement("p", null, "Bear case: $", fair_value_metadata.bear_case.toFixed(2), " (FV×0.6). Gap vs fair value reflects method assumptions."),
+          fair_value_metadata.method_used &&
+            React.createElement("p", null, "Method: ", fair_value_metadata.method_used),
+          fair_value_metadata.methodology_summary &&
+            React.createElement("p", { className: "text-slate-500" }, fair_value_metadata.methodology_summary)
+        )
     ),
     React.createElement(
       "div",
