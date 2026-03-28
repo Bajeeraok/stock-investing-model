@@ -428,6 +428,13 @@ export interface DashboardData {
     /** Plain-language interpretation of the historical analog stat */
     plain_language?: string;
   } | null;
+  /** Rules-based near-term bias + bullets (FRED + FMP calendar + cross-asset) */
+  market_forecast?: {
+    headline: string;
+    bias: "cautious" | "neutral" | "constructive";
+    bullets: string[];
+    disclaimer: string;
+  } | null;
   /** Tier 1 risk engine: position sizing, drawdown sim, exit levels, earnings impacts, concentration */
   position_sizing?: import("@/components/dashboard/index").PositionSizingData[];
   drawdown_sim?: import("@/components/dashboard/index").DrawdownSimData[];

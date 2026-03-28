@@ -65,6 +65,7 @@ from signals.fetcher import fetch_yfinance_latest_prices, fetch_ohlcv_safe
 from signals.confidence_engine import run_confidence
 from signals.event_scenarios import get_upcoming_event_scenarios
 from signals.macro_analog import get_macro_analog
+from signals.market_forecast_brief import build_market_forecast_brief
 
 try:
     from signals.tier1_api_bridge import generate_tier1_payload
@@ -186,9 +187,20 @@ async def get_dashboard():
 
     # Paper trading log: capture today's signals (idempotent by date+ticker+signal)
     try:
+        from datetime import datetime as _dt
+
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # type: ignore
+
+        paper_trade_date = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
         from signals.paper_trade_logger import PaperTradeLogger
+
         pt = PaperTradeLogger(data_root=get_data_root())
-        paper_log = pt.log_signals_from_results(results, only_actionable=False)
+        paper_log = pt.log_signals_from_results(
+            results, only_actionable=False, date_str=paper_trade_date
+        )
         logger.info("[dashboard] paper trades logged: %s", paper_log)
         paper_trading["log"] = paper_log
     except Exception as e:
@@ -278,7 +290,7 @@ async def get_dashboard():
 
     # Load independent sections in parallel to reduce total time and timeout risk
     crypto_tickers = config.get("crypto_watchlist") or ["BTC-USD", "ETH-USD"]
-    cross_asset_tickers = config.get("cross_asset_tickers") or ["DX-Y.NYB", "GLD", "USO"]
+    cross_asset_tickers = config.get("cross_asset_tickers") or ["^VIX", "DX-Y.NYB", "GLD", "USO", "UNG"]
     watchlist_tickers_for_insider = list(dict.fromkeys([r.get("ticker") for r in results if r.get("ticker")]))[:15]
     data_root = get_data_root()
     period_long = config.get("data", {}).get("period_long", "13y")
@@ -565,6 +577,19 @@ async def get_dashboard():
         macro_analog = get_macro_analog(vix_val, real_yield, config, period=config.get("data", {}).get("period_long", "13y"))
     except Exception as e:
         logger.debug("Macro analog failed: %s", e)
+
+    market_forecast = None
+    try:
+        market_forecast = build_market_forecast_brief(
+            config,
+            macro_regime=macro_regime,
+            real_yield=real_yield,
+            vix=vix_val,
+            cross_asset=cross_asset,
+            economic_calendar=economic_calendar,
+        )
+    except Exception as e:
+        logger.debug("Market forecast brief failed: %s", e)
 
     # Market/sector regime (breadth proxy, tech leadership, rotation risk) and rotation step-down for tech
     try:
@@ -909,6 +934,7 @@ async def get_dashboard():
         "economic_calendar": economic_calendar,
         "market_scenarios": market_scenarios,
         "macro_analog": macro_analog,
+        "market_forecast": market_forecast,
         "guidelines": guidelines,
         "macro_regime": macro_regime,
         "market_regime": market_regime_data,

@@ -247,7 +247,7 @@ model_rules:
 # Portfolio Doctor: allocation recommendations (trim/add with $ and prices)
 # Uses risk_appetite + goal + target $ over time to tune aggressiveness; suggests trim/add with amounts and prices
 portfolio_doctor:
-  risk_appetite: moderate   # conservative | moderate | aggressive
+  risk_appetite: aggressive   # conservative | moderate | aggressive
   goal: medium              # short | medium | long
   target_portfolio_value: null   # optional: target $ at future date (e.g. 2000000)
   time_period_years: 10     # 5 | 10 | 15 | 20 when target_portfolio_value is set
@@ -289,6 +289,15 @@ accuracy:
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
 alerts:
+  # Scanner (Level-2): IV rank / flow / premium-selling surfacing — off by default; use band alerts below.
+  enable_options_alerts: false
+  # Separate process: alerts/worker.py Tradier IV snapshots + IV_EXTREME events (optional)
+  enable_options_iv_worker: false
+  # Retail: ST/MT/LT buy zone, stop, target hit, "near target — consider trim" (from ticker-detail band cache)
+  enable_band_alerts: true
+  enable_earnings_alerts: true
+  enable_ml_prob_alerts: true
+  trim_approach_fraction: 0.95   # trim hint when price >= this fraction of each horizon target (below full target)
   email:
     smtp_host: smtp.gmail.com
     smtp_port: 587

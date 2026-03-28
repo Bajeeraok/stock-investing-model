@@ -13,6 +13,16 @@ from alerts.market_hours import is_us_market_hours, seconds_until_next_scan
 logger = logging.getLogger("alerts.worker")
 
 
+def _options_iv_worker_enabled() -> bool:
+    """Tradier IV snapshots + IV_EXTREME feed; off by default (use band alerts in scanner instead)."""
+    try:
+        from config_loader import load_config
+
+        return bool((load_config().get("alerts") or {}).get("enable_options_iv_worker", False))
+    except Exception:
+        return False
+
+
 def _load_symbols() -> list[str]:
     """
     Default symbol universe: config watchlist + portfolio tickers (deduped).
@@ -86,6 +96,11 @@ def run_worker(data_root: Path) -> None:
 
     while True:
         try:
+            if not _options_iv_worker_enabled():
+                logger.info("[alerts] options IV worker disabled (alerts.enable_options_iv_worker=false); sleeping 1h")
+                time.sleep(3600)
+                continue
+
             # Sleep until next scan window when outside market hours
             sleep_for = seconds_until_next_scan(
                 scan_interval_seconds=scan_interval_sec,

@@ -20,6 +20,9 @@ EARNINGS_SOON_DAYS = (1, 3, 5, 7)
 # ML prob threshold for "model supports add" alert
 ML_PROB_CROSS_THRESHOLD = 25.0
 
+# ST / MT / LT keys in horizon_levels.json (per-ticker nested bands)
+BAND_KEYS = frozenset({"short", "medium", "long"})
+
 
 def _scanner_dir(data_root: Path) -> Path:
     d = data_root / "scanner"
@@ -28,7 +31,7 @@ def _scanner_dir(data_root: Path) -> Path:
 
 
 def read_horizon_levels(data_root: Path) -> dict[str, dict[str, Any]]:
-    """Read ticker -> {entry_low, entry_high, stop_loss, target, horizon_label}. Empty if missing."""
+    """Read ticker -> band map or legacy flat {entry_low, ...}. Empty if missing."""
     path = _scanner_dir(data_root) / LEVELS_FILENAME
     if not path.exists():
         return {}
@@ -49,6 +52,54 @@ def write_horizon_levels(data_root: Path, levels: dict[str, dict[str, Any]]) -> 
         logger.warning("write_horizon_levels failed: %s", e)
 
 
+def normalize_ticker_levels(raw: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """
+    Normalize legacy flat {entry_low, ...} to { short: {...} }.
+    New format: { short: {...}, medium: {...}, long: {...} }.
+    """
+    if not raw or not isinstance(raw, dict):
+        return {}
+    if any(k in raw for k in BAND_KEYS):
+        return {k: v for k, v in raw.items() if k in BAND_KEYS and isinstance(v, dict)}
+    if "entry_low" in raw:
+        return {"short": raw}
+    return {}
+
+
+def merge_horizon_band_for_ticker(
+    data_root: Path,
+    ticker: str,
+    band_key: str,
+    *,
+    entry_low: float,
+    entry_high: float,
+    stop_loss: float,
+    target: float,
+    horizon_label: str,
+) -> None:
+    """Merge one ST/MT/LT band for a ticker (nested under short/medium/long)."""
+    ticker = ticker.upper()
+    bk = band_key if band_key in BAND_KEYS else "short"
+    levels = read_horizon_levels(data_root)
+    cur = levels.get(ticker)
+    if isinstance(cur, dict) and "entry_low" in cur and not any(k in cur for k in BAND_KEYS):
+        levels[ticker] = {"short": cur}
+    elif not isinstance(levels.get(ticker), dict):
+        levels[ticker] = {}
+    entry = levels.setdefault(ticker, {})
+    if not isinstance(entry, dict):
+        entry = {}
+        levels[ticker] = entry
+    entry[bk] = {
+        "entry_low": round(entry_low, 2),
+        "entry_high": round(entry_high, 2),
+        "stop_loss": round(stop_loss, 2),
+        "target": round(target, 2),
+        "horizon_label": horizon_label,
+    }
+    write_horizon_levels(data_root, levels)
+
+
 def merge_horizon_levels_for_ticker(
     data_root: Path,
     ticker: str,
@@ -59,17 +110,17 @@ def merge_horizon_levels_for_ticker(
     target: float,
     horizon_label: str = "Short-term",
 ) -> None:
-    """Merge one ticker's horizon levels into the cache (e.g. when ticker detail is built)."""
-    ticker = ticker.upper()
-    levels = read_horizon_levels(data_root)
-    levels[ticker] = {
-        "entry_low": round(entry_low, 2),
-        "entry_high": round(entry_high, 2),
-        "stop_loss": round(stop_loss, 2),
-        "target": round(target, 2),
-        "horizon_label": horizon_label,
-    }
-    write_horizon_levels(data_root, levels)
+    """Merge short-term band (backward-compatible name)."""
+    merge_horizon_band_for_ticker(
+        data_root,
+        ticker,
+        "short",
+        entry_low=entry_low,
+        entry_high=entry_high,
+        stop_loss=stop_loss,
+        target=target,
+        horizon_label=horizon_label,
+    )
 
 
 def read_retail_alert_state(data_root: Path) -> dict[str, dict[str, Any]]:

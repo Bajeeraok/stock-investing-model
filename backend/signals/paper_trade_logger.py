@@ -102,8 +102,27 @@ def _safe_float(x: Any) -> float | None:
         return None
 
 
+def _run_results_by_ticker_upper(run_results: list) -> dict[str, Any]:
+    """Index EOD run_results by uppercase ticker so lookups match paper_trades rows."""
+    out: dict[str, Any] = {}
+    for r in run_results or []:
+        if not isinstance(r, dict):
+            continue
+        sym = r.get("ticker")
+        if not sym:
+            continue
+        out[str(sym).upper()] = r
+    return out
+
+
 def _today_str() -> str:
-    return datetime.now().strftime("%Y-%m-%d")
+    """US market session date — matches EOD snapshot filenames (run_daily uses America/New_York)."""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
 
 
 def _trade_id(date: str, ticker: str, signal: str) -> str:
@@ -414,7 +433,7 @@ class PaperTradeLogger:
                 snap = self._load_snapshot(next_date)
                 if not snap:
                     continue
-                run_by_ticker = {r.get("ticker"): r for r in (snap.get("run_results") or []) if isinstance(r, dict)}
+                run_by_ticker = _run_results_by_ticker_upper(snap.get("run_results") or [])
                 t = (row.get("ticker") or "").upper()
                 r_next = run_by_ticker.get(t)
                 actual = _safe_float((r_next or {}).get("close"))
@@ -460,7 +479,7 @@ class PaperTradeLogger:
         if not snap:
             return {"updated": 0, "message": f"Latest EOD snapshot unreadable: {latest}"}
 
-        run_by_ticker = {r.get("ticker"): r for r in (snap.get("run_results") or []) if isinstance(r, dict)}
+        run_by_ticker = _run_results_by_ticker_upper(snap.get("run_results") or [])
         updated = 0
 
         for row in rows[:max_rows]:

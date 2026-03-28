@@ -64,10 +64,17 @@ def _fetch_ohlcv_yfinance(ticker: str, period: str) -> pd.Series | None:
     return close if len(close) >= 50 else None
 
 
-def _fetch_ohlcv_fmp(ticker: str, period: str, api_key: str) -> pd.Series | None:
+def _fmp_period_years(period: str) -> float:
+    return {"1mo": 0.1, "3mo": 0.25, "6mo": 0.5, "1y": 1, "2y": 2, "5y": 5, "10y": 10}.get(period, 5)
+
+
+def _load_fmp_historical_df(ticker: str, period: str, api_key: str) -> pd.DataFrame | None:
+    """
+    One GET historical-price-full; returns sorted DataFrame indexed by date with adjClose (+ volume if present).
+    """
     if urllib is None:
         return None
-    years = {"1mo": 0.1, "3mo": 0.25, "6mo": 0.5, "1y": 1, "2y": 2, "5y": 5, "10y": 10}.get(period, 5)
+    years = _fmp_period_years(period)
     to_dt = datetime.now().date()
     from_dt = (to_dt - timedelta(days=int(years * 365))).isoformat()
     url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?from={from_dt}&to={to_dt}&apikey={api_key}"
@@ -82,10 +89,44 @@ def _fetch_ohlcv_fmp(ticker: str, period: str, api_key: str) -> pd.Series | None
     df = pd.DataFrame(hist)
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date").set_index("date")
-    # Lock to adjusted close only: never mix raw close with adjusted (pro-site parity).
     if "adjClose" not in df.columns:
         return None
-    return df["adjClose"].dropna()
+    return df
+
+
+def _fetch_ohlcv_fmp(ticker: str, period: str, api_key: str) -> pd.Series | None:
+    df = _load_fmp_historical_df(ticker, period, api_key)
+    if df is None:
+        return None
+    close = df["adjClose"].dropna()
+    return close if len(close) >= 50 else None
+
+
+def fetch_ohlcv_close_and_volume(
+    ticker: str, period: str = "5y", config: dict | None = None
+) -> tuple[pd.Series | None, pd.Series | None]:
+    """
+    FMP adjClose plus aligned volume from the same historical response when api_key is set.
+    Returns (None, None) if no key or FMP fails — caller should fall back to yfinance.
+    """
+    config = config or {}
+    api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
+    if not api_key:
+        return None, None
+    df = _load_fmp_historical_df(ticker, period, api_key)
+    if df is None:
+        return None, None
+    if "volume" in df.columns:
+        merged = df[["adjClose", "volume"]].dropna()
+        if len(merged) < 50:
+            return None, None
+        close = merged["adjClose"].rename("close")
+        vol = merged["volume"].rename("volume")
+        return close, vol
+    close = df["adjClose"].dropna()
+    if len(close) < 50:
+        return None, None
+    return close.rename("close"), None
 
 
 # ETFs have no earnings; skip to avoid yfinance 404 noise

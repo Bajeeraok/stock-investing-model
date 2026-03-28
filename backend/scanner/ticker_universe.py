@@ -28,6 +28,8 @@ class AlertType(str, Enum):
     STOP_HIT = "STOP_HIT"
     STOP_APPROACHING = "STOP_APPROACHING"
     TARGET_HIT = "TARGET_HIT"
+    # Price within ~trim band below target (partial profit / scale out)
+    TARGET_APPROACHING = "TARGET_APPROACHING"
     ML_PROB_CROSSED = "ML_PROB_CROSSED"
 
 

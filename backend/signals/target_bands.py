@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .band_context import lt_dispersion_multiplier, symmetric_widen
+
 
 def _checkpoints(low: float, high: float, n: int = 5) -> list[float]:
     """Generate n evenly spaced price levels between low and high."""
@@ -32,7 +34,9 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     Expects: price, ma20, atr14, regime, vol_6m, short_suggestion,
              swing_high_20d, swing_low_20d (optional),
              eps_fwd, fair_pe_low, fair_pe_high (optional),
-             cons_low, cons_high (optional).
+             cons_low, cons_high (optional),
+             consensus_median, eps_dispersion (optional, FMP — widen LT when dispersed),
+             band_event_multiplier (optional, 1.0 — widen ST/MT near CPI/FOMC week).
     """
     P = row.get("price") or row.get("close")
     if P is None:
@@ -148,8 +152,16 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     if range_low is not None and range_high is not None and range_low <= range_high:
         st_low = max(st_low, float(range_low))
         st_high = min(st_high, float(range_high))
+
+    ev_m = float(row.get("band_event_multiplier") or 1.0)
+    if ev_m > 1.001 and st_high > st_low:
+        st_low, st_high = symmetric_widen(st_low, st_high, ev_m)
+        if range_low is not None and range_high is not None and range_low <= range_high:
+            st_low = max(st_low, float(range_low))
+            st_high = min(st_high, float(range_high))
+
     row["st_band"] = {"low": round(st_low, 2), "high": round(st_high, 2)}
-    row["st_checkpoints"] = _checkpoints(float(st_stop), float(st_target), 5)
+    row["st_checkpoints"] = _checkpoints(float(st_low), float(st_high), 5)
 
     # ---------- Medium-term band (months) ----------
     if regime == "UP":
@@ -167,6 +179,15 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     if range_low is not None and range_high is not None and range_low <= range_high:
         mt_low = max(mt_low, float(range_low))
         mt_high = min(mt_high, float(range_high))
+
+    if ev_m > 1.001 and mt_high > mt_low:
+        mt_low, mt_high = symmetric_widen(float(mt_low), float(mt_high), ev_m)
+        if range_low is not None and range_high is not None and range_low <= range_high:
+            mt_low = max(mt_low, float(range_low))
+            mt_high = min(mt_high, float(range_high))
+        mt_low = round(mt_low, 2)
+        mt_high = round(mt_high, 2)
+
     row["mt_band"] = {"low": mt_low, "high": mt_high}
 
     # ---------- Long-term band (1–3+ yrs) ----------
@@ -215,6 +236,11 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         if stress_bear_pct is not None and P > 0 and stress_bear_pct > 0:
             stress_bear_price = P * (1 - stress_bear_pct / 100)
             lt_low = min(lt_low, stress_bear_price)
+        lt_m, lt_note = lt_dispersion_multiplier(row)
+        if lt_m > 1.001:
+            lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
+            if lt_note:
+                row["lt_band_dispersion_note"] = lt_note
         row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
         row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
         # LT bear/base/bull: bear = low, base = midpoint, bull = high
@@ -237,6 +263,11 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             if stress_bear_pct is not None and P > 0 and stress_bear_pct > 0:
                 stress_bear_price = P * (1 - stress_bear_pct / 100)
                 lt_low = min(lt_low, stress_bear_price)
+            lt_m, lt_note = lt_dispersion_multiplier(row)
+            if lt_m > 1.001:
+                lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
+                if lt_note:
+                    row["lt_band_dispersion_note"] = lt_note
             row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
             row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
             row["lt_scenarios"] = {

@@ -65,7 +65,10 @@ def _load_snapshot(eod_dir: Path, date_str: str) -> dict | None:
 
 
 def _signal_from_row(row: dict | None, buy_min: float = 70, sell_max: float = 30) -> str:
-    """Map composite_buy/regime to signal bucket for accuracy stats."""
+    """
+    Map composite_buy to signal bucket for accuracy stats.
+    Not the same as run_signals' ML-aware `signal` (BUY/STRONG BUY/HOLD): this uses score thresholds only.
+    """
     if not row:
         return "N/A"
     score = row.get("composite_buy")
@@ -88,9 +91,12 @@ def get_forward_tracking(
     """
     Multi-horizon forward returns and signal accuracy.
 
-    For each (date D, date D+N) where N = horizon trading days:
-    - Compute actual_return_pct for SPY/QQQ
-    - Record our signal (HOLD/ADD, HOLD, CONSIDER TRIM) from composite_buy
+    Horizons are measured in **EOD snapshot steps** (sorted snapshot dates). If you save one snapshot
+    per trading day, horizon=20 ≈ 20 trading days; missing days shift the pairing.
+
+    For each (date D, date D+N) where N = horizon steps in the snapshot list:
+    - Compute actual_return_pct for SPY/QQQ from EOD `close` (same series as run_signals).
+    - Bucket `our_signal` from **composite_buy** only via _signal_from_row (not ML `signal`).
 
     Returns:
       - records: [{as_of_date, next_date, ticker, horizon_days, our_signal, actual_return_pct}]
@@ -132,12 +138,21 @@ def get_forward_tracking(
             snap_next = _load_snapshot(eod_dir, next_date)
             if not snap or not snap_next:
                 continue
-            run_by_ticker = {r["ticker"]: r for r in snap.get("run_results", [])}
-            run_next_by_ticker = {r["ticker"]: r for r in snap_next.get("run_results", [])}
+            run_by_ticker = {
+                str(r["ticker"]).upper(): r
+                for r in snap.get("run_results", [])
+                if isinstance(r, dict) and r.get("ticker")
+            }
+            run_next_by_ticker = {
+                str(r["ticker"]).upper(): r
+                for r in snap_next.get("run_results", [])
+                if isinstance(r, dict) and r.get("ticker")
+            }
 
             for ticker in syms:
-                row = run_by_ticker.get(ticker)
-                row_next = run_next_by_ticker.get(ticker)
+                tk = str(ticker).upper()
+                row = run_by_ticker.get(tk)
+                row_next = run_next_by_ticker.get(tk)
                 if not row or not row_next:
                     continue
                 prior = row.get("close")

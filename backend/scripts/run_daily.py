@@ -36,7 +36,11 @@ from behavior.thesis import load_theses, get_nudge
 from behavior.what_changed import what_changed
 from opportunity.scanner import run_opportunity_scan
 from portfolio.doctor import portfolio_report
-from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_config, fetch_ohlcv_with_volume
+from signals.fetcher import (
+    fetch_ohlcv_safe,
+    fetch_ohlcv_with_volume,
+    fetch_ohlcv_close_and_volume,
+)
 from signals.indicators import multi_horizon_scores
 from signals.providers import get_next_earnings
 from signals.regime import (
@@ -73,8 +77,10 @@ def run_signals(
     hit_rate_context: dict | None = None,
 ) -> list[dict]:
     """
-    Run signals for watchlist. When prices_by_ticker is provided (e.g. from FMP batch quote),
-    use yfinance for historical OHLCV and overlay latest close from batch quote to save API calls.
+    Run signals for watchlist. When fmp_api_key is set, historical OHLCV uses FMP adjClose
+    (and volume from the same response) for every ticker — including when the caller also
+    passes prices_by_ticker from FMP batch quote (batch is for portfolio marks only; no last-bar
+    splice into OHLCV). Without a key, uses yfinance. Falls back to yfinance if FMP fails.
     vix: optional VIX level for score multiplier; if None, fetches ^VIX.
     hit_rate_context: optional {add_hit_rate_pct: float} from forward_tracking for hit-rate gate.
     """
@@ -122,25 +128,36 @@ def run_signals(
             pass
 
     use_fmp = bool(config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key"))
-    use_batch_quote = bool(prices_by_ticker)  # when True, we use yfinance for OHLCV and overlay close
+
+    band_event_mult = 1.0
+    band_event_note = None
+    if use_fmp:
+        try:
+            from signals.band_context import macro_event_band_context
+            from signals.cache import cached_economic_calendar
+            from signals.fmp_client import fetch_economic_calendar
+
+            def _cal_fetch():
+                ev, _ = fetch_economic_calendar(config, 14)
+                return ev or []
+
+            cal = cached_economic_calendar(14, _cal_fetch)
+            ctx = macro_event_band_context(cal)
+            band_event_mult = float(ctx.get("multiplier") or 1.0)
+            band_event_note = ctx.get("note")
+        except Exception:
+            pass
+
     for ticker in watchlist:
         close = None
         volume = None
-        if use_batch_quote:
-            # Single FMP batch quote already used; get history from yfinance to stay under API limit
-            close, volume = fetch_ohlcv_with_volume(ticker, period)
+        if use_fmp:
+            close, volume = fetch_ohlcv_close_and_volume(ticker, period, config)
+            if close is None:
+                close, volume = fetch_ohlcv_with_volume(ticker, period)
             if close is None:
                 close = fetch_ohlcv_safe(ticker, period)
-            if close is not None and prices_by_ticker and ticker in prices_by_ticker:
-                # Overlay latest close from FMP batch quote
-                batch_price = prices_by_ticker.get(ticker)
-                if batch_price is not None:
-                    close = close.copy()
-                    close.iloc[-1] = batch_price
-        elif use_fmp:
-            close = fetch_ohlcv_with_config(ticker, period, config)
-            if close is None:
-                close = fetch_ohlcv_safe(ticker, period)
+                volume = None
         else:
             close, volume = fetch_ohlcv_with_volume(ticker, period)
             if close is None:
@@ -291,6 +308,8 @@ def run_signals(
 
         # FMP analyst data for LT band (cached) – optional
         eps_fwd = None
+        eps_dispersion = None
+        consensus_median = None
         cons_low = None
         cons_high = None
         fair_pe_low = 18
@@ -303,10 +322,17 @@ def run_signals(
                     est = cached_financial_estimates(ticker, lambda: fetch_analyst_estimates(config, ticker))
                     if est and isinstance(est, dict):
                         eps_fwd = est.get("eps_fwd")
+                        eps_dispersion = est.get("eps_dispersion")
                     cons = cached_price_target_consensus(ticker, lambda: fetch_price_target_consensus(config, ticker))
                     if cons and isinstance(cons, dict):
                         cons_low = cons.get("low") or cons.get("priceWhenPosted") or cons.get("adjLow")
                         cons_high = cons.get("high") or cons.get("adjHigh")
+                        consensus_median = (
+                            cons.get("median")
+                            or cons.get("consensus")
+                            or cons.get("targetConsensus")
+                            or cons.get("medianPriceTarget")
+                        )
             except Exception:
                 pass
 
@@ -372,10 +398,14 @@ def run_signals(
             "swing_high_20d": swing_high_20d,
             "swing_low_20d": swing_low_20d,
             "eps_fwd": eps_fwd,
+            "eps_dispersion": eps_dispersion,
+            "consensus_median": consensus_median,
             "cons_low": cons_low,
             "cons_high": cons_high,
             "fair_pe_low": fair_pe_low,
             "fair_pe_high": fair_pe_high,
+            "band_event_multiplier": band_event_mult,
+            "band_event_note": band_event_note,
         }
         add_target_bands(row)
         results.append(row)

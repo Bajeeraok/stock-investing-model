@@ -55,7 +55,14 @@ def run_crypto_signals(tickers: list[str], config: dict) -> list[dict]:
 
 def run_cross_asset_daily(tickers: list[str]) -> list[dict]:
     """Fetch DXY, GLD, USO, VIX and return daily % change vs prior close."""
-    labels = {"DX-Y.NYB": "DXY", "GLD": "Gold", "USO": "Oil", "^VIX": "VIX", "10Y": "10Y Treasury"}
+    labels = {
+        "DX-Y.NYB": "DXY",
+        "GLD": "Gold",
+        "USO": "Oil",
+        "UNG": "Nat gas",
+        "^VIX": "VIX",
+        "10Y": "10Y Treasury",
+    }
     results = []
     for ticker in tickers:
         close = fetch_ohlcv_safe(ticker, "1mo")

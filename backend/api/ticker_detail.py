@@ -624,27 +624,33 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     # Complete Trade Roadmap (buy/sell stages + trader type one-liners)
     out["trade_roadmap"] = _build_trade_roadmap(ticker, out, response, current_price)
 
-    # Cache short-horizon entry/stop/target and ML prob for scanner retail alerts
+    # Cache ST/MT/LT entry/stop/target and ML prob for scanner retail alerts
     try:
         from config_loader import get_data_root
-        from scanner.horizon_levels import merge_horizon_levels_for_ticker, merge_ml_prob_for_ticker
+        from scanner.horizon_levels import merge_horizon_band_for_ticker, merge_ml_prob_for_ticker
         data_root = get_data_root()
-        short = payload.get("short") or {}
-        ez = short.get("entry_zone") or {}
-        el = _safe_float(ez.get("low"))
-        eh = _safe_float(ez.get("high"))
-        stop = _safe_float(short.get("stop_loss"))
-        tgt = _safe_float(short.get("target"))
-        if el is not None and eh is not None and stop is not None and tgt is not None:
-            merge_horizon_levels_for_ticker(
-                data_root,
-                ticker,
-                entry_low=el,
-                entry_high=eh,
-                stop_loss=stop,
-                target=tgt,
-                horizon_label="Short-term",
-            )
+        for band_key, label in (
+            ("short", "Short-term"),
+            ("medium", "Medium-term"),
+            ("long", "Long-term"),
+        ):
+            h = payload.get(band_key) or {}
+            ez = h.get("entry_zone") or {}
+            el = _safe_float(ez.get("low"))
+            eh = _safe_float(ez.get("high"))
+            stop = _safe_float(h.get("stop_loss"))
+            tgt = _safe_float(h.get("target"))
+            if el is not None and eh is not None and stop is not None and tgt is not None:
+                merge_horizon_band_for_ticker(
+                    data_root,
+                    ticker,
+                    band_key,
+                    entry_low=el,
+                    entry_high=eh,
+                    stop_loss=stop,
+                    target=tgt,
+                    horizon_label=label,
+                )
         merge_ml_prob_for_ticker(data_root, ticker, st_ml_prob)
     except Exception:
         pass
@@ -1256,14 +1262,25 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
         eps_data = cached_financial_estimates(ticker, lambda: fetch_analyst_estimates(config, ticker))
         insider = cached_insider_stats(ticker, lambda: fetch_insider_stats(config, ticker))
 
+        consensus_median = None
         if cons and isinstance(cons, dict):
             out["cons_low"] = cons.get("low") or cons.get("priceWhenPosted") or cons.get("adjLow")
             out["cons_high"] = cons.get("high") or cons.get("adjHigh") or cons.get("consensus") or cons.get("median")
+            consensus_median = (
+                cons.get("median")
+                or cons.get("consensus")
+                or cons.get("targetConsensus")
+                or cons.get("medianPriceTarget")
+            )
 
         eps_fwd = None
+        eps_dispersion = None
         if eps_data and isinstance(eps_data, dict):
             eps_fwd = eps_data.get("eps_fwd") or eps_data.get("eps") or eps_data.get("epsEstimate")
+            eps_dispersion = eps_data.get("eps_dispersion")
         out["eps_fwd"] = eps_fwd
+        if eps_dispersion is not None:
+            out["eps_dispersion"] = eps_dispersion
 
         if insider and isinstance(insider, dict):
             out["insider_stats"] = insider
@@ -1277,7 +1294,25 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 regime = "UP" if comp >= 60 else ("DOWN" if comp <= 40 else "NEUTRAL")
             if long_horizon_risk:
                 out["long_horizon_risk"] = long_horizon_risk
+            band_ev_m = 1.0
+            band_ev_note = None
+            try:
+                from signals.band_context import macro_event_band_context
+                from signals.cache import cached_economic_calendar
+                from signals.fmp_client import fetch_economic_calendar
+
+                def _cal():
+                    ev, _ = fetch_economic_calendar(config, 14)
+                    return ev or []
+
+                ctx = macro_event_band_context(cached_economic_calendar(14, _cal))
+                band_ev_m = float(ctx.get("multiplier") or 1.0)
+                band_ev_note = ctx.get("note")
+            except Exception:
+                pass
+
             row = {
+                "ticker": ticker,
                 "price": current_price,
                 "close": current_price,
                 "ma20": signal_data.get("ma20"),
@@ -1288,6 +1323,8 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 "swing_high_20d": swing_high,
                 "swing_low_20d": swing_low,
                 "eps_fwd": eps_fwd,
+                "eps_dispersion": eps_dispersion,
+                "consensus_median": consensus_median,
                 "fair_pe_low": 18,
                 "fair_pe_high": 25,
                 "cons_low": out.get("cons_low"),
@@ -1295,6 +1332,8 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 "range_52w_low": range_low,
                 "range_52w_high": range_high,
                 "stress_bear_pct": (long_horizon_risk or {}).get("stress_bear_pct"),
+                "band_event_multiplier": band_ev_m,
+                "band_event_note": band_ev_note,
             }
             # Proper daily ATR(14) (True Range) for target bands
             try:
@@ -1324,6 +1363,8 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
             out["st_level_hit"] = row.get("st_level_hit")
             out["st_target_confidence_pct"] = row.get("st_target_confidence_pct")
             out["mt_target_confidence_pct"] = row.get("mt_target_confidence_pct")
+            out["band_event_note"] = row.get("band_event_note")
+            out["lt_band_dispersion_note"] = row.get("lt_band_dispersion_note")
 
         # Street vs model: compare LT band to analyst consensus
         sl = out.get("cons_low")

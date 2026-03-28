@@ -114,6 +114,7 @@ export function TickerDetailModal({
   const [error, setError]                  = useState<string | null>(null);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(false);
+  const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
   const [modalTab, setModalTab] = useState<"overview" | "roadmaps" | "details">("overview");
 
   useEffect(() => {
@@ -188,7 +189,8 @@ export function TickerDetailModal({
 
         {/* Tab bar: Overview | Roadmaps | Details — keeps modal from feeling crowded */}
         {detail && !loading && (
-          <div className="flex border-b border-slate-700 bg-slate-900/90 sticky top-0 z-10">
+          <div className="border-b border-slate-700 bg-slate-900/90 sticky top-0 z-10">
+            <div className="flex">
             {(
               [
                 { id: "overview" as const, label: "Overview", icon: Target },
@@ -211,6 +213,10 @@ export function TickerDetailModal({
                 {label}
               </button>
             ))}
+            </div>
+            <p className="text-center text-[11px] text-slate-500 px-2 py-1.5 border-t border-slate-800">
+              Overview = decision &amp; bands · Roadmaps = timeline · Details = ML, scenarios &amp; fundamentals
+            </p>
           </div>
         )}
 
@@ -265,55 +271,6 @@ export function TickerDetailModal({
                 )}
               </section>
 
-              {/* Rule-based signal components (0-100 strength scores, not probabilities) */}
-              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
-                    <BarChart3 className="h-4 w-4 text-emerald-500" />
-                    Technical signal strength
-                  </h3>
-                  <p className="text-slate-500 text-xs mb-3">
-                    Rule-based z-score indicators (0–100 = signal strength, not probability).
-                    Composite = 50% trend + 30% RSI + 20% MACD.
-                    See 7-layer ML breakdown below for calibrated probability.
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    {detail.score_breakdown.trend != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Trend</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.rsi != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">RSI</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.macd != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">MACD</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.composite != null && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Composite</p>
-                        <p className="font-mono font-semibold text-emerald-400">
-                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
-
               {/* ── Investor Decision Summary (horizon entry + tiers) ───── */}
               {detail.investor_summary && (
                 <InvestorDecisionSummarySection
@@ -364,6 +321,54 @@ export function TickerDetailModal({
               {/* ── Details tab: Confidence, signals, targets, thesis, etc. ── */}
               {modalTab === "details" && (
                 <>
+              {/* Rule-based technical scores (Details only — Overview focuses on investor summary) */}
+              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
+                    <BarChart3 className="h-4 w-4 text-emerald-500" />
+                    Technical signal strength
+                  </h3>
+                  <p className="text-slate-500 text-xs mb-3">
+                    Rule-based (0–100 strength, not probability). Composite = 50% trend + 30% RSI + 20% MACD.
+                    For calibrated probability use 7-layer confidence below.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    {detail.score_breakdown.trend != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Trend</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.rsi != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">RSI</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.macd != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">MACD</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.composite != null && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Composite</p>
+                        <p className="font-mono font-semibold text-emerald-400">
+                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
               {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
               {confidence ? (
                 <ConfidenceBreakdownSafe data={confidence} />
@@ -396,47 +401,35 @@ export function TickerDetailModal({
                 </div>
               )}
 
-              {/* Moving averages – compare against reasoning */}
-              {(detail.ma20 != null || detail.ma50 != null || detail.ma200 != null) && (
+              {/* Price vs MAs — one line (grid was redundant with Overview bands) */}
+              {(detail.current_price != null || detail.ma20 != null || detail.ma50 != null || detail.ma200 != null) && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">
                     <BarChart3 className="h-4 w-4 text-emerald-500" />
-                    Moving averages
+                    Price vs moving averages
                   </h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <p className="text-sm text-slate-200 font-mono flex flex-wrap gap-x-3 gap-y-1">
                     {detail.current_price != null && (
-                      <div className="bg-slate-800 rounded-lg p-2">
-                        <p className="text-slate-500 text-xs font-medium">Price</p>
-                        <p className="text-slate-100 font-mono font-semibold">${detail.current_price.toFixed(2)}</p>
-                      </div>
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">Spot</span>${detail.current_price.toFixed(2)}</span>
                     )}
                     {detail.ma20 != null && (
-                      <div className="bg-slate-800 rounded-lg p-2">
-                        <p className="text-slate-500 text-xs font-medium">MA20</p>
-                        <p className="text-slate-200 font-mono font-semibold">${detail.ma20.toFixed(2)}</p>
-                      </div>
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">MA20</span>${detail.ma20.toFixed(2)}</span>
                     )}
                     {detail.ma50 != null && (
-                      <div className="bg-slate-800 rounded-lg p-2">
-                        <p className="text-slate-500 text-xs font-medium">MA50</p>
-                        <p className="text-slate-200 font-mono font-semibold">${detail.ma50.toFixed(2)}</p>
-                      </div>
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">MA50</span>${detail.ma50.toFixed(2)}</span>
                     )}
                     {detail.ma200 != null && (
-                      <div className="bg-slate-800 rounded-lg p-2">
-                        <p className="text-slate-500 text-xs font-medium">MA200</p>
-                        <p className="text-slate-200 font-mono font-semibold">${detail.ma200.toFixed(2)}</p>
-                      </div>
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">MA200</span>${detail.ma200.toFixed(2)}</span>
                     )}
-                  </div>
-                  <p className="text-sm text-slate-500 mt-2">
-                    Compare against reasons: price {'>'} MA50 {'>'} MA200 = uptrend; price {'<'} MA50 {'<'} MA200 = downtrend.
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Price above MA50 &amp; MA200 → stronger uptrend; below → weaker. Same context as Overview entry zones.
                   </p>
                 </section>
               )}
 
-              {/* Target bands – ST/MT/LT price ranges */}
-              {(detail.st_band || detail.mt_band || detail.lt_band) && (
+              {/* Target bands — only when no investor summary (otherwise ST/MT/LT are in Overview + scenarios below) */}
+              {!detail.investor_summary && (detail.st_band || detail.mt_band || detail.lt_band) && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
                     <TrendingUp className="h-4 w-4 text-emerald-500" />
@@ -551,41 +544,37 @@ export function TickerDetailModal({
                 </section>
               )}
 
-              {/* Buy / Sell / Support – reasoning (helps learn and understand) */}
-              {detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support) && (
-                <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-400 mb-3">
-                    <TrendingUp className="h-4 w-4" />
-                    Buy / Sell / Support – What it means
+              {/* Price-level hints + horizon suggestions (single section — was two) */}
+              {((detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support)) ||
+                detail.short_suggestion || detail.medium_suggestion || detail.long_suggestion) && (
+                <section className="bg-slate-800/40 border border-slate-700/80 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                    <TrendingUp className="h-4 w-4 text-emerald-500" />
+                    Actions &amp; reasoning
                   </h3>
-                  <div className="space-y-2 text-sm">
-                    {detail.price_reasoning.buy && (
-                      <p className="text-slate-300">
-                        <span className="text-emerald-400 font-medium">Buy:</span> {detail.price_reasoning.buy}
-                      </p>
-                    )}
-                    {detail.price_reasoning.sell && (
-                      <p className="text-slate-300">
-                        <span className="text-red-400 font-medium">Sell:</span> {detail.price_reasoning.sell}
-                      </p>
-                    )}
-                    {detail.price_reasoning.support && (
-                      <p className="text-slate-300">
-                        <span className="text-amber-400 font-medium">Support:</span> {detail.price_reasoning.support}
-                      </p>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {/* Signal & reasoning */}
-              {(detail.short_suggestion || detail.medium_suggestion || detail.long_suggestion) && (
-                <section>
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-3">
-                    <TrendingUp className="h-4 w-4" />
-                    Hold / Buy / Sell – Reasoning
-                  </h3>
-                  <div className="space-y-3">
+                  {detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support) && (
+                    <div className="space-y-2 text-sm border-b border-slate-700/50 pb-3 mb-3">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Buy / sell / support labels</p>
+                      {detail.price_reasoning.buy && (
+                        <p className="text-slate-300">
+                          <span className="text-emerald-400 font-medium">Buy:</span> {detail.price_reasoning.buy}
+                        </p>
+                      )}
+                      {detail.price_reasoning.sell && (
+                        <p className="text-slate-300">
+                          <span className="text-red-400 font-medium">Sell:</span> {detail.price_reasoning.sell}
+                        </p>
+                      )}
+                      {detail.price_reasoning.support && (
+                        <p className="text-slate-300">
+                          <span className="text-amber-400 font-medium">Support:</span> {detail.price_reasoning.support}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {(detail.short_suggestion || detail.medium_suggestion || detail.long_suggestion) && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Horizon signals</p>
                     {detail.short_suggestion && (
                       <div className="bg-slate-800/50 rounded-lg p-3">
                         <span className={clsx(
@@ -631,7 +620,8 @@ export function TickerDetailModal({
                         )}
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </section>
               )}
 
@@ -656,31 +646,27 @@ export function TickerDetailModal({
                 </section>
               )}
 
-              {/* Earnings */}
-              {detail.earnings && (
-                <section>
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-2">
-                    <Calendar className="h-4 w-4" />
+              {/* Earnings: next report + history in one place */}
+              {(detail.earnings || (detail.earnings_history?.history?.length ?? 0) > 0) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                    <Calendar className="h-4 w-4 text-emerald-500" />
                     Earnings
                   </h3>
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 text-sm text-amber-200">
-                    {detail.earnings.date}
-                    {detail.earnings.days_until != null && (
-                      <span className="text-amber-400/80 ml-2">
-                        ({detail.earnings.days_until > 0 ? `in ${detail.earnings.days_until} days` : "recent"})
-                      </span>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {/* Earnings history (Fix 5): last 4Q actual vs estimate, beat/miss */}
-              {detail.earnings_history && (detail.earnings_history.history?.length ?? 0) > 0 && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">
-                    <Calendar className="h-4 w-4 text-emerald-500" />
-                    Earnings history
-                  </h3>
+                  {detail.earnings && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 text-sm text-amber-200 mb-3">
+                      <span className="text-slate-400 text-xs uppercase tracking-wide mr-2">Next</span>
+                      {detail.earnings.date}
+                      {detail.earnings.days_until != null && (
+                        <span className="text-amber-400/80 ml-2">
+                          ({detail.earnings.days_until > 0 ? `in ${detail.earnings.days_until} days` : "recent"})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {detail.earnings_history && (detail.earnings_history.history?.length ?? 0) > 0 && (
+                    <>
+                  <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Recent quarters</p>
                   <p className="text-slate-400 text-xs mb-2">{detail.earnings_history.summary}</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -710,15 +696,18 @@ export function TickerDetailModal({
                       </tbody>
                     </table>
                   </div>
+                    </>
+                  )}
                 </section>
               )}
 
               {/* Benchmark comparison */}
               <section>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-3">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-1">
                   <BarChart3 className="h-4 w-4" />
                   Performance vs Benchmarks
                 </h3>
+                <p className="text-xs text-slate-500 mb-3">SPY = market; sector column = {detail.sector_etf}. Peers table follows.</p>
                 <div className="rounded-lg border border-slate-700 overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
@@ -864,14 +853,26 @@ export function TickerDetailModal({
                 </section>
               )}
 
-              {/* Volume, drawdown, long-horizon risk */}
+              {/* Volume, drawdown, long-horizon risk — collapsed by default to reduce scroll */}
               {(detail.volume_ratio != null || detail.drawdown_52w != null || detail.long_horizon_risk) && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-base font-semibold text-slate-200 mb-3">
-                    <HelpCircle className="h-4 w-4" />
-                    Understanding today&apos;s metrics
-                  </h3>
-                  <div className="space-y-4 text-sm">
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setMetricsGuideOpen((o) => !o)}
+                    className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/50 transition-colors"
+                  >
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                      <HelpCircle className="h-4 w-4 shrink-0" />
+                      Volume, drawdown &amp; risk (explainers)
+                    </h3>
+                    {metricsGuideOpen ? (
+                      <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
+                    )}
+                  </button>
+                  {metricsGuideOpen && (
+                  <div className="px-4 pb-4 pt-0 border-t border-slate-700/80 space-y-4 text-sm">
                     {detail.volume_ratio != null && (
                       <div className={detail.volume_unusual ? "bg-amber-500/10 border border-amber-500/30 rounded-lg p-4" : ""}>
                         <p className="font-medium text-slate-200">
@@ -943,12 +944,10 @@ export function TickerDetailModal({
                       </div>
                     )}
                   </div>
+                  )}
                 </section>
               )}
 
-              {detail.current_price != null && (
-                <p className="text-sm text-slate-500">Current price: ${detail.current_price.toFixed(2)}</p>
-              )}
                 </>
               )}
             </>

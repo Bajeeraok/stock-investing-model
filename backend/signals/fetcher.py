@@ -297,3 +297,17 @@ def fetch_ohlcv_with_config(ticker: str, period: str, config: dict | None) -> pd
         return fetch_provider(ticker, period, config)
     except Exception:
         return fetch_ohlcv_safe(ticker, period)
+
+
+def fetch_ohlcv_close_and_volume(
+    ticker: str, period: str = "5y", config: dict | None = None
+) -> tuple[pd.Series | None, pd.Series | None]:
+    """
+    FMP adjClose + volume (same response) when api_key in config; else (None, None).
+    Caller should fall back to fetch_ohlcv_with_volume / fetch_ohlcv_safe.
+    """
+    try:
+        from .providers import fetch_ohlcv_close_and_volume as _f
+        return _f(ticker, period, config)
+    except Exception:
+        return None, None

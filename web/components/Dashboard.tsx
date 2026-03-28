@@ -334,6 +334,27 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   )}
                 </div>
               )}
+              {data.market_forecast && (
+                <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-4 py-3 space-y-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">Market analysis — near-term backdrop</h3>
+                  <p
+                    className={clsx(
+                      "text-sm font-medium",
+                      data.market_forecast.bias === "cautious" && "text-amber-200",
+                      data.market_forecast.bias === "constructive" && "text-emerald-200",
+                      data.market_forecast.bias === "neutral" && "text-slate-200",
+                    )}
+                  >
+                    {data.market_forecast.headline}
+                  </p>
+                  <ul className="list-disc list-inside text-xs text-slate-400 space-y-1 max-w-3xl">
+                    {data.market_forecast.bullets.map((b, i) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-slate-600 leading-snug">{data.market_forecast.disclaimer}</p>
+                </div>
+              )}
               {portfolioNames.length > 1 && (
                 <div className="flex items-center gap-2">
                   <label htmlFor="portfolio-select" className="text-sm text-slate-400">Portfolio:</label>

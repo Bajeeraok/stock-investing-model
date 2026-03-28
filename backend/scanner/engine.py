@@ -70,6 +70,8 @@ class ScanAlert:
     dismissed: bool = False
     # Plain-language entry/exit/duration so alerts are actionable
     actionable: Optional[str] = None
+    # Disambiguate ST vs MT vs LT for dedupe/cooldown (same AlertType, different horizon band)
+    dedupe_extra: Optional[str] = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -92,6 +94,7 @@ ALERT_COLORS = {
     AlertType.STOP_HIT: "#EF4444",
     AlertType.STOP_APPROACHING: "#F59E0B",
     AlertType.TARGET_HIT: "#10B981",
+    AlertType.TARGET_APPROACHING: "#FBBF24",
     AlertType.ML_PROB_CROSSED: "#3B82F6",
 }
 
@@ -112,12 +115,13 @@ ALERT_EMOJIS = {
     AlertType.STOP_HIT: "🛑",
     AlertType.STOP_APPROACHING: "⚠️",
     AlertType.TARGET_HIT: "🎯",
+    AlertType.TARGET_APPROACHING: "✂️",
     AlertType.ML_PROB_CROSSED: "📈",
 }
 
 
-def _alert_id(ticker: Optional[str], alert_type: AlertType) -> str:
-    raw = f"{ticker or 'MACRO'}:{alert_type}:{datetime.now().strftime('%Y%m%d%H%M')}"
+def _alert_id(ticker: Optional[str], alert_type: AlertType, suffix: str = "") -> str:
+    raw = f"{ticker or 'MACRO'}:{alert_type}:{suffix}:{datetime.now().strftime('%Y%m%d%H%M')}"
     return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
@@ -306,6 +310,7 @@ class SignalEvaluator:
             scan_tier=snap.scan_tier,
             surface_to_all=SURFACING_THRESHOLDS[alert_type].surface_to_all,
             actionable=actionable,
+            dedupe_extra=None,
         )
 
 
@@ -317,6 +322,7 @@ def _build_retail_alert(
     scan_tier: ScanTier,
     signals: dict[str, Any],
     actionable: Optional[str] = None,
+    dedupe_extra: Optional[str] = None,
 ) -> ScanAlert:
     """Build a retail quick-decision alert with one-line plain English and optional actionable text."""
     pr = ScanPriority.HIGH if alert_type in (
@@ -325,7 +331,7 @@ def _build_retail_alert(
         AlertType.ML_PROB_CROSSED,
     ) else ScanPriority.MEDIUM
     return ScanAlert(
-        id=_alert_id(ticker, alert_type),
+        id=_alert_id(ticker, alert_type, dedupe_extra or ""),
         type=alert_type,
         ticker=ticker,
         priority=pr,
@@ -339,6 +345,7 @@ def _build_retail_alert(
         scan_tier=scan_tier,
         surface_to_all=True,
         actionable=actionable,
+        dedupe_extra=dedupe_extra,
     )
 
 
@@ -348,28 +355,36 @@ def evaluate_retail_alerts(
     state: dict[str, dict[str, Any]],
     ml_probs: dict[str, float],
     watchlist: set[str],
+    *,
+    enable_band: bool = True,
+    enable_earnings: bool = True,
+    enable_ml_prob: bool = True,
+    trim_approach_fraction: float = 0.95,
 ) -> tuple[list[ScanAlert], dict[str, dict[str, Any]]]:
     """
-    Evaluate retail quick-decision alerts: EARNINGS_SOON, ENTRY_ZONE_ENTERED, STOP_HIT, TARGET_HIT, ML_PROB_CROSSED.
-    Returns (list of alerts, updated state for next run).
+    Retail alerts: EARNINGS_SOON; per ST/MT/LT band — ENTRY_ZONE_ENTERED, STOP_*, TARGET_APPROACHING (trim),
+    TARGET_HIT; ML_PROB_CROSSED.
     """
     from scanner.horizon_levels import (
         EARNINGS_SOON_DAYS,
         ML_PROB_CROSS_THRESHOLD,
+        normalize_ticker_levels,
     )
+
     alerts: list[ScanAlert] = []
     new_state: dict[str, dict[str, Any]] = dict(state)
+    tf = max(0.5, min(0.999, float(trim_approach_fraction)))
+
     for snap in snaps:
         ticker = snap.symbol
         price = snap.price
         in_wl = ticker in watchlist
         st = new_state.get(ticker) or {}
-        was_in_zone = st.get("was_in_entry_zone", False)
         last_price = st.get("last_price")
         prev_ml = st.get("previous_ml_prob")
 
         # EARNINGS_SOON — only for watchlist
-        if in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS:
+        if enable_earnings and in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS:
             ed = snap.er_days_away
             alerts.append(_build_retail_alert(
                 ticker,
@@ -383,17 +398,22 @@ def evaluate_retail_alerts(
                     f"If you already hold, reduce size or hedge by then. "
                     f"Exit any speculative position before the report. Current price ${price:.2f}."
                 ),
+                dedupe_extra="earnings",
             ))
 
-        # ENTRY_ZONE_ENTERED / STOP_HIT / TARGET_HIT — need horizon levels
-        levels = horizon_levels.get(ticker)
-        if levels:
+        raw_levels = horizon_levels.get(ticker)
+        bands = normalize_ticker_levels(raw_levels) if enable_band else {}
+
+        for band_key, levels in bands.items():
             el = float(levels.get("entry_low") or 0)
             eh = float(levels.get("entry_high") or 0)
             stop = float(levels.get("stop_loss") or 0)
             target = float(levels.get("target") or 0)
-            label = str(levels.get("horizon_label") or "Entry zone")
+            label = str(levels.get("horizon_label") or band_key.upper())
+            zone_flag = f"was_in_entry_zone_{band_key}"
+            was_in_zone = bool(st.get(zone_flag, False))
             in_zone = el <= price <= eh if (el and eh) else False
+            dex = band_key
 
             if el and eh and in_zone and not was_in_zone:
                 act = (
@@ -406,61 +426,85 @@ def evaluate_retail_alerts(
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.ENTRY_ZONE_ENTERED,
-                    f"{ticker} in {label} ${el:.2f}–${eh:.2f}",
-                    f"Price in buy zone. Consider adding per your plan.",
+                    f"{ticker} in {label} buy zone ${el:.2f}–${eh:.2f}",
+                    f"Price in buy zone ({band_key}). Consider adding per your plan.",
                     snap.scan_tier,
-                    {"entryLow": el, "entryHigh": eh, "price": price, "stopLoss": stop, "target": target},
+                    {
+                        "band": band_key,
+                        "entryLow": el,
+                        "entryHigh": eh,
+                        "price": price,
+                        "stopLoss": stop,
+                        "target": target,
+                    },
                     actionable=act,
+                    dedupe_extra=dex,
                 ))
             if stop and price < stop:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.STOP_HIT,
-                    f"{ticker} below stop ${stop:.2f}",
-                    f"Price below stop — consider exit or trim.",
+                    f"{ticker} ({label}) below stop ${stop:.2f}",
+                    f"Price below {band_key} stop — consider exit or trim.",
                     snap.scan_tier,
-                    {"stopLoss": stop, "price": price},
+                    {"band": band_key, "stopLoss": stop, "price": price},
                     actionable=(
-                        f"Exit: price ${price:.2f} is below stop ${stop:.2f}. "
-                        f"Trim or close now to limit loss. No new entry until price holds above stop."
+                        f"Exit: price ${price:.2f} is below {band_key} stop ${stop:.2f}. "
+                        f"Trim or close now to limit loss."
                     ),
+                    dedupe_extra=dex,
                 ))
             elif stop and price > stop and price <= stop * 1.02:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.STOP_APPROACHING,
-                    f"{ticker} within 2% of stop ${stop:.2f}",
-                    f"Price near stop. Decide: hold or trim before stop hit.",
+                    f"{ticker} ({label}) within 2% of stop ${stop:.2f}",
+                    f"Price near {band_key} stop. Decide: hold or trim.",
                     snap.scan_tier,
-                    {"stopLoss": stop, "price": price},
+                    {"band": band_key, "stopLoss": stop, "price": price},
                     actionable=(
-                        f"Price ${price:.2f} is near stop ${stop:.2f}. "
+                        f"Price ${price:.2f} is near {band_key} stop ${stop:.2f}. "
                         f"Decide within 1–2 days: hold or trim before stop is hit."
                     ),
+                    dedupe_extra=dex,
                 ))
             if target and price >= target:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.TARGET_HIT,
-                    f"{ticker} reached target ${target:.2f}",
-                    f"Target hit — consider taking profit.",
+                    f"{ticker} ({label}) reached target ${target:.2f}",
+                    f"Target hit — consider taking profit or trimming.",
                     snap.scan_tier,
-                    {"target": target, "price": price},
+                    {"band": band_key, "target": target, "price": price},
                     actionable=(
-                        f"Exit: target ${target:.2f} reached (price ${price:.2f}). "
-                        f"Consider taking profit or scaling out today."
+                        f"Exit: {band_key} target ${target:.2f} reached (price ${price:.2f}). "
+                        f"Consider taking profit or scaling out."
                     ),
+                    dedupe_extra=dex,
+                ))
+            elif target and tf < 1 and price >= tf * target:
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.TARGET_APPROACHING,
+                    f"{ticker} ({label}) near target ${target:.2f} — consider trim",
+                    f"Within {(1 - tf) * 100:.0f}% of {band_key} target; good zone to scale out partially.",
+                    snap.scan_tier,
+                    {"band": band_key, "target": target, "price": price, "trimFraction": tf},
+                    actionable=(
+                        f"Price ${price:.2f} is near {band_key} target ${target:.2f}. "
+                        f"Consider trimming a portion or tightening stops."
+                    ),
+                    dedupe_extra=dex,
                 ))
 
-            new_state[ticker] = {
-                **st,
-                "was_in_entry_zone": in_zone,
-                "last_price": price,
-            }
+            st = {**st, zone_flag: in_zone}
+
+        st = {**st, "last_price": price}
+        new_state[ticker] = st
 
         # ML_PROB_CROSSED — need current and previous ML prob
         ml_current = ml_probs.get(ticker) if ml_probs else (snap.ml_prob_short if getattr(snap, "ml_prob_short", None) is not None else None)
-        if in_wl and ml_current is not None:
+        if enable_ml_prob and in_wl and ml_current is not None:
             prev = prev_ml if prev_ml is not None else st.get("previous_ml_prob")
             if prev is not None and float(prev) < ML_PROB_CROSS_THRESHOLD <= float(ml_current):
                 alerts.append(_build_retail_alert(
@@ -474,11 +518,10 @@ def evaluate_retail_alerts(
                         f"Entry: model supports adding at current price ${price:.2f}; consider on pullbacks. "
                         f"Set your own stop and target. Duration: medium term (weeks)."
                     ),
+                    dedupe_extra="ml",
                 ))
-            new_state[ticker] = {
-                **new_state.get(ticker, {}),
-                "previous_ml_prob": ml_current,
-            }
+            st = {**new_state.get(ticker, st), "previous_ml_prob": ml_current}
+            new_state[ticker] = st
 
         # Keep last_price for tickers that didn't have levels
         if ticker not in new_state and (last_price is not None or price):
@@ -489,7 +532,7 @@ def evaluate_retail_alerts(
 
 class AlertDeduplicator:
     def __init__(self):
-        self._last: dict[tuple[str, AlertType], datetime] = {}
+        self._last: dict[tuple[str, AlertType, str], datetime] = {}
         self.cooldowns_min: dict[AlertType, int] = {
             AlertType.ER_LOTTO: 120,
             AlertType.ER_IV_CRUSH: 240,
@@ -507,23 +550,24 @@ class AlertDeduplicator:
             AlertType.STOP_HIT: 60,
             AlertType.STOP_APPROACHING: 60,
             AlertType.TARGET_HIT: 120,
+            AlertType.TARGET_APPROACHING: 90,
             AlertType.ML_PROB_CROSSED: 180,
         }
 
-    def is_dup(self, ticker: str, t: AlertType) -> bool:
-        key = (ticker, t)
+    def is_dup(self, ticker: str, t: AlertType, extra: str = "") -> bool:
+        key = (ticker, t, extra or "")
         last = self._last.get(key)
         if not last:
             return False
         cd = self.cooldowns_min.get(t, 60)
         return (datetime.now() - last).total_seconds() < cd * 60
 
-    def record(self, ticker: str, t: AlertType) -> None:
-        self._last[(ticker, t)] = datetime.now()
+    def record(self, ticker: str, t: AlertType, extra: str = "") -> None:
+        self._last[(ticker, t, extra or "")] = datetime.now()
 
     def prune(self) -> None:
         cutoff = datetime.now() - timedelta(hours=12)
-        self._last = {k: v for k, v in self._last.items() if v >= cutoff}
+        self._last = {k: v for k, v in self._last.items() if v >= cutoff}  # type: ignore[assignment]
 
 
 class MarketHours:
@@ -552,6 +596,29 @@ class MarketHours:
         return 60 * 30
 
 
+def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
+    """Defaults: options-style IV/flow surfacing off; band + earnings + ML on."""
+    try:
+        from config_loader import load_config
+
+        a = load_config().get("alerts") or {}
+        enable_options = bool(a.get("enable_options_alerts", False))
+        retail = {
+            "enable_band_alerts": a.get("enable_band_alerts", True),
+            "enable_earnings_alerts": a.get("enable_earnings_alerts", True),
+            "enable_ml_prob_alerts": a.get("enable_ml_prob_alerts", True),
+            "trim_approach_fraction": float(a.get("trim_approach_fraction", 0.95)),
+        }
+        return enable_options, retail
+    except Exception:
+        return False, {
+            "enable_band_alerts": True,
+            "enable_earnings_alerts": True,
+            "enable_ml_prob_alerts": True,
+            "trim_approach_fraction": 0.95,
+        }
+
+
 class ScanEngine:
     def __init__(self):
         self.eval = SignalEvaluator()
@@ -573,19 +640,31 @@ class ScanEngine:
         watchlist: set[str],
         on_alert: Callable[[ScanAlert], None],
         data_root: Optional[Path] = None,
+        enable_options_alerts: Optional[bool] = None,
+        retail_config: Optional[dict[str, Any]] = None,
     ) -> dict:
         started = datetime.now()
         generated = 0
         surfaced = 0
         errs: list[str] = []
+        opt_def, rc_def = _load_scanner_alert_settings()
+        if enable_options_alerts is None:
+            enable_options_alerts = opt_def
+        rc = retail_config if retail_config is not None else rc_def
+        enable_band = rc.get("enable_band_alerts", True)
+        enable_earnings = rc.get("enable_earnings_alerts", True)
+        enable_ml = rc.get("enable_ml_prob_alerts", True)
+        trim_frac = float(rc.get("trim_approach_fraction", 0.95))  # alert "consider trim" when price >= frac * target
+
         for s in snaps:
             try:
-                alerts = self.eval.evaluate(s, macro_flag, watchlist)
+                alerts = self.eval.evaluate(s, macro_flag, watchlist) if enable_options_alerts else []
                 generated += len(alerts)
                 for a in alerts:
-                    if self.dedupe.is_dup(a.ticker or "?", a.type):
+                    ex = a.dedupe_extra or ""
+                    if self.dedupe.is_dup(a.ticker or "?", a.type, ex):
                         continue
-                    self.dedupe.record(a.ticker or "?", a.type)
+                    self.dedupe.record(a.ticker or "?", a.type, ex)
                     on_alert(a)
                     surfaced += 1
             except Exception as e:
@@ -604,14 +683,23 @@ class ScanEngine:
                 state = read_retail_alert_state(data_root)
                 ml_probs = read_ml_probs(data_root)
                 retail_alerts, new_state = evaluate_retail_alerts(
-                    snaps, levels, state, ml_probs, watchlist,
+                    snaps,
+                    levels,
+                    state,
+                    ml_probs,
+                    watchlist,
+                    enable_band=enable_band,
+                    enable_earnings=enable_earnings,
+                    enable_ml_prob=enable_ml,
+                    trim_approach_fraction=trim_frac,
                 )
                 write_retail_alert_state(data_root, new_state)
                 generated += len(retail_alerts)
                 for a in retail_alerts:
-                    if self.dedupe.is_dup(a.ticker or "?", a.type):
+                    ex = a.dedupe_extra or ""
+                    if self.dedupe.is_dup(a.ticker or "?", a.type, ex):
                         continue
-                    self.dedupe.record(a.ticker or "?", a.type)
+                    self.dedupe.record(a.ticker or "?", a.type, ex)
                     on_alert(a)
                     surfaced += 1
             except Exception as e:
