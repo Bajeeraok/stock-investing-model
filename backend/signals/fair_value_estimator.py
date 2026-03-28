@@ -138,6 +138,51 @@ def classify_stock_type(
 # VALUATION METHODS
 # ══════════════════════════════════════════════════════════════════════════════
 
+# YoY growth from feeds can be 100%+ (e.g. NVDA EPS). Uncapped PEG math then implies
+# fair P/E > 150 and multiplies fair value far above analyst consensus.
+MAX_GROWTH_PCT_FOR_VALUATION = 42.0
+
+
+def _growth_for_valuation(revenue_growth_pct: float, earnings_growth_pct: float) -> float:
+    g = max(revenue_growth_pct, earnings_growth_pct)
+    return min(g, MAX_GROWTH_PCT_FOR_VALUATION)
+
+
+def _apply_fair_value_guardrails(
+    fv: float,
+    current_price: float,
+    analyst_target: Optional[float],
+) -> tuple[float, list[str]]:
+    """
+    Cap systematic inflation: extreme PEG + quality premium can push FV far above
+    consensus. Analyst 12m mean is a retail-friendly ceiling; spot cap catches bad/missing consensus.
+    """
+    notes: list[str] = []
+    if fv <= 0 or current_price <= 0:
+        return fv, notes
+
+    out = fv
+    # 1) Consensus ceiling (Yahoo targetMeanPrice): allow at most +10% vs mean
+    if analyst_target and analyst_target > 0:
+        soft = analyst_target * 1.10
+        if out > soft:
+            out = round(soft, 2)
+            notes.append(
+                "Fair value capped at +10% vs analyst 12m mean — model was above consensus."
+            )
+
+    # 2) Hard cap on implied upside vs spot (NVDA-class when consensus is stale/missing)
+    max_upside = 0.52
+    spot_ceiling = round(current_price * (1 + max_upside), 2)
+    if out > spot_ceiling:
+        out = spot_ceiling
+        notes.append(
+            "Fair value capped vs current price (max +{:.0f}% implied upside).".format(max_upside * 100)
+        )
+
+    return out, notes
+
+
 def _method_pe_relative(
     current_price: float,
     ttm_pe: float,
@@ -165,22 +210,43 @@ def _method_peg_blend(
     earnings_growth_pct: float,
     net_margin_pct: float,
     de_ratio: float,
+    forward_pe: Optional[float] = None,
+    sector_forward_pe: Optional[float] = None,
 ) -> float:
     """
     For GROWTH stocks (PE 25-50).
-    Blends PE-relative with PEG normalization.
-    PEG ~ 1.0 considered fair for growth stocks.
+    Blends PE-relative (TTM vs sector) with PEG normalization.
+    When forward_pe + sector_forward_pe are set, the PEG leg uses **forward** P/E as the
+    denominator (aligned with how megacaps trade) and tethers to a forward-PE-relative anchor.
 
     Examples: MSFT, AAPL, AMD
     """
     # Weight: 40% PE-relative, 60% PEG-normalized
     pe_fv = _method_pe_relative(current_price, ttm_pe, sector_pe, net_margin_pct, de_ratio)
 
-    # PEG-normalized: fair value where PEG = 1.0
-    growth = max(revenue_growth_pct, earnings_growth_pct)  # use stronger growth signal
-    fair_peg_pe = growth * 1.0   # PEG=1 → fair PE = growth rate
-    peg_adj     = fair_peg_pe / ttm_pe if ttm_pe > 0 else 1.0
-    peg_fv      = round(current_price * peg_adj, 2)
+    growth = _growth_for_valuation(revenue_growth_pct, earnings_growth_pct)
+    fair_peg_pe = growth * 1.0   # PEG=1 → fair PE ≈ growth rate
+    quality = _quality_premium(net_margin_pct, de_ratio)
+
+    use_fwd = (
+        forward_pe is not None and forward_pe > 0
+        and sector_forward_pe is not None and sector_forward_pe > 0
+    )
+
+    if use_fwd:
+        peg_adj = fair_peg_pe / forward_pe
+        peg_fv = round(current_price * peg_adj, 2)
+        fwd_anchor_fv = round(
+            current_price * (sector_forward_pe / forward_pe) * (1 + quality * 0.5),
+            2,
+        )
+        peg_lo, peg_hi = fwd_anchor_fv * 0.88, fwd_anchor_fv * 1.38
+        peg_fv = min(max(peg_fv, peg_lo), peg_hi)
+    else:
+        peg_adj = fair_peg_pe / ttm_pe if ttm_pe > 0 else 1.0
+        peg_fv = round(current_price * peg_adj, 2)
+        peg_lo, peg_hi = pe_fv * 0.88, pe_fv * 1.38
+        peg_fv = min(max(peg_fv, peg_lo), peg_hi)
 
     blended = round(pe_fv * 0.4 + peg_fv * 0.6, 2)
     return blended
@@ -219,12 +285,14 @@ def _method_forward_pe_blend(
     fwd_pe_fv  = round(current_price * fwd_pe_adj * (1 + quality), 2)
 
     # Signal 2: PEG using forward earnings growth
-    # Fair PEG for high-quality semis/tech is ~1.5 (higher than 1.0 for value stocks)
-    growth      = max(revenue_growth_pct, earnings_growth_pct)
-    fair_peg    = 1.5   # premium PEG for high-quality secular growth
+    # Fair PEG for high-quality semis/tech ~1.25 — 1.5 overstates vs consensus when growth is capped high
+    growth      = _growth_for_valuation(revenue_growth_pct, earnings_growth_pct)
+    fair_peg    = 1.25
     fair_fwd_pe = growth * fair_peg
     peg_adj     = fair_fwd_pe / forward_pe if forward_pe > 0 else 1.0
     peg_fv      = round(current_price * peg_adj * (1 + quality * 0.5), 2)
+    peg_lo, peg_hi = fwd_pe_fv * 0.80, fwd_pe_fv * 1.35
+    peg_fv = min(max(peg_fv, peg_lo), peg_hi)
 
     # Signal 3: FCF yield anchor (optional)
     # Fair FCF yield for high-quality tech: ~2.5-3.5%
@@ -299,8 +367,8 @@ def estimate_fair_value(
         earnings_growth_pct:  YoY earnings/EPS growth %
         net_margin_pct:       Net profit margin %
         de_ratio:             Debt/Equity ratio
-        forward_pe:           Forward P/E (next 12m estimates) — needed for HIGH_GROWTH
-        sector_forward_pe:    Sector forward P/E — needed for HIGH_GROWTH
+        forward_pe:           Forward P/E (next 12m estimates) — used for HIGH_GROWTH; for GROWTH, PEG leg when set
+        sector_forward_pe:    Sector forward P/E — pairs with forward_pe for growth names
         fcf_per_share:        Free cash flow per share — improves HIGH_GROWTH accuracy
         current_eps:          TTM EPS — used for sanity checks
         analyst_target:       Consensus analyst 12m price target — used as guardrail
@@ -341,8 +409,14 @@ def estimate_fair_value(
         fv = _method_peg_blend(
             current_price, ttm_pe, sector_pe,
             revenue_growth_pct, earnings_growth_pct,
-            net_margin_pct, de_ratio)
-        method = "peg_blend (40% PE-relative + 60% PEG-normalized)"
+            net_margin_pct, de_ratio,
+            forward_pe=forward_pe,
+            sector_forward_pe=sector_forward_pe,
+        )
+        if forward_pe is not None and forward_pe > 0 and sector_forward_pe is not None and sector_forward_pe > 0:
+            method = "peg_blend (40% TTM PE-relative + 60% PEG on forward P/E)"
+        else:
+            method = "peg_blend (40% PE-relative + 60% PEG on TTM P/E)"
 
     else:  # HIGH_GROWTH
         if forward_pe is None or sector_forward_pe is None:
@@ -353,7 +427,10 @@ def estimate_fair_value(
             fv = _method_peg_blend(
                 current_price, ttm_pe, sector_pe,
                 revenue_growth_pct, earnings_growth_pct,
-                net_margin_pct, de_ratio)
+                net_margin_pct, de_ratio,
+                forward_pe=None,
+                sector_forward_pe=None,
+            )
             method = "peg_blend_fallback (forward_pe missing)"
             classification = StockClassification(
                 stock_type=classification.stock_type,
@@ -369,8 +446,10 @@ def estimate_fair_value(
             method = "forward_pe_blend (40% fwd PE + 40% PEG + 20% FCF)" if fcf_per_share else \
                      "forward_pe_blend (50% fwd PE + 50% PEG)"
 
-    # ── Analyst target guardrail ───────────────────────────────────────────
-    # If our model FV diverges more than 40% from analyst consensus, flag it
+    fv, guard_notes = _apply_fair_value_guardrails(fv, current_price, analyst_target)
+    notes.extend(guard_notes)
+
+    # After caps: optional flag if still far from consensus (stale target or edge case)
     if analyst_target:
         divergence = abs(fv - analyst_target) / analyst_target * 100
         if divergence > 40:

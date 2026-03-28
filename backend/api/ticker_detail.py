@@ -882,11 +882,25 @@ def _build_trade_roadmap(
         + (f"Stop: ${_safe_float(medium.get('stop_loss')):.2f}." if medium.get("stop_loss") else "Stop: below MA50.")
     ).strip()
     full_by = (t1_hi or ma200 or current_price)
-    trader_summary_long = (
-        f"Accumulate in stages toward MA200 ({ma200_str}). Full position by ${full_by:.2f}. "
-        + f"Target ${fair_value:.2f} fair value over 12 months. "
-        + (f"Only exit if 52w low ${low_52w:.2f} breaks." if low_52w else "Only exit on thesis break.")
-    ).strip()
+    # MA200 is support when price is above it; when below, it is overhead — do not frame as "accumulate toward" a higher level
+    if ma200 and current_price < ma200 * 0.985:
+        tier_txt = (
+            f"Long-term core zone ${t1_lo:.2f}–${t1_hi:.2f} (MA200 tier). "
+            if (t1_lo and t1_hi)
+            else ""
+        )
+        trader_summary_long = (
+            f"Price is below MA200 ({ma200_str}) — MA200 is overhead until reclaimed, not a dip to buy toward. "
+            f"Stage adds near {ma50_str} and long-term tiers on weakness; {tier_txt}"
+            f"Fair value ~${fair_value:.2f} over 12–18m. "
+            + (f"Only exit if 52w low ${low_52w:.2f} breaks." if low_52w else "Only exit on thesis break.")
+        ).strip()
+    else:
+        trader_summary_long = (
+            f"Accumulate on pullbacks toward MA200 support ({ma200_str}). Full core by ~${full_by:.2f} when tier fills. "
+            + f"Fair value ~${fair_value:.2f} over 12–18m. "
+            + (f"Only exit if 52w low ${low_52w:.2f} breaks." if low_52w else "Only exit on thesis break.")
+        ).strip()
 
     return {
         "current_price": round(current_price, 2),

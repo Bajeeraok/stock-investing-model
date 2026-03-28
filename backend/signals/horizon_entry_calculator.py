@@ -39,6 +39,8 @@ ST_MIN_ML_PROB         = 25.0   # minimum ML prob for short-term signal
 ST_ATR_STOP_MULT       = 1.5    # stop = entry_low - (ATR * mult)
 ST_ATR_TARGET_MULT     = 3.0    # target = entry_high + (ATR * mult)
 ST_MIN_RR              = 1.5    # minimum acceptable risk/reward
+# Ignore support levels far below spot (e.g. 52w low) for 1-month entry — those belong in long-term tiers
+ST_SUPPORT_MAX_DEPTH_PCT = 22.0
 
 # Medium-term
 MT_MA50_BAND_PCT       = 4.0    # acceptable range above MA50 for entry
@@ -125,6 +127,14 @@ def _ml_to_signal(prob: float) -> str:
     return "Strong"
 
 
+def _short_term_effective_support(support_level: float, current_price: float) -> float:
+    """Raise deep historical lows so the 1m zone stays in plausible pullback range, not 52w crash levels."""
+    if current_price <= 0:
+        return support_level
+    floor = current_price * (1 - ST_SUPPORT_MAX_DEPTH_PCT / 100.0)
+    return max(float(support_level), floor)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SHORT-TERM CALCULATOR  (1 month)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -155,12 +165,13 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
     warnings = []
 
     # ── Entry zone ───────────────────────────────────────────────────────
+    sup_eff = _short_term_effective_support(inp.support_level, inp.current_price)
     if inp.rsi < ST_RSI_OVERSOLD:
-        anchor = min(inp.support_level, inp.vwap)
+        anchor = min(sup_eff, inp.vwap)
         el, eh = _r(anchor * 0.99), _r(anchor * 1.01)
         quality, q_color = "Ideal", "#00e5a0"
         zone_anchor = "RSI oversold ({:.0f}) — entry near support ${:.2f}".format(
-            inp.rsi, inp.support_level)
+            inp.rsi, sup_eff)
 
     elif inp.rsi < 50:
         el, eh = _r(inp.vwap * 0.985), _r(inp.vwap * 1.005)
