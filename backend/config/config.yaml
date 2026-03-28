@@ -218,6 +218,11 @@ overbought_penalty:
 # ML-aware signal tiers (when ML short-term prob available): STRONG BUY / BUY / WATCH / REDUCE / AVOID
 score:
   buy_min: 70
+  # Per-ticker BUY threshold overrides (backtest calibration; global buy_min applies if omitted)
+  buy_min_by_ticker:
+    NVDA: 40
+    QQQ: 50
+    SPY: 50
   sell_max: 30
   ml_strong_buy_confluence: 72   # confluence >= this AND ml prob >= ml_strong_buy_prob -> STRONG BUY
   ml_strong_buy_prob: 0.55       # ML prob (0-1) for STRONG BUY
@@ -232,7 +237,8 @@ score:
     acf_trend_min: 0.04           # above → TRENDING; between → TRENDING (neutral)
     min_bars: 130
     force_trending: []            # e.g. [SPY] to never invert thresholds for an index
-    force_mean_reverting: []      # optional manual MR tickers
+    force_mean_reverting:
+      - MSFT   # backtest: contrarian tape — buy weakness, avoid strength
 
 # Regime bands: UP >= up_min, DOWN <= down_max, else NEUTRAL
 regime:
