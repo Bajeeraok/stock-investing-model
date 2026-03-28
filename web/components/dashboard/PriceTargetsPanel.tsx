@@ -424,12 +424,19 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
                 <span className="text-[10px] font-semibold text-red-300 uppercase tracking-widest">Risk</span>
               </div>
               <div className="space-y-1">
-                <DataRow label="Stop loss"    value={fmt(h.stop_loss)}  color="text-red-400"   mono />
+                <DataRow
+                  label={h.horizon_key === "long" ? "Invalidation (52w)" : "Stop loss"}
+                  value={fmt(h.stop_loss)}
+                  color="text-red-400"
+                  mono
+                />
                 <DataRow label="Risk/Reward"  value={h.risk_reward != null ? `${h.risk_reward}×` : "—"} color={rrColor(h.risk_reward)} mono />
                 <DataRow label="ML Prob"      value={fmtProb(h.ml_prob_pct)} color={probColor(h.ml_prob_pct)} mono />
               </div>
               <p className="text-[10px] text-slate-500 leading-snug">
-                Stop below {h.horizon_key === "short" ? "MA50" : h.horizon_key === "medium" ? "MA200" : "52w-low"} (×0.97)
+                {h.horizon_key === "long"
+                  ? "~5% below 52-week low — structural invalidation / tail-stress floor, not a tight trailing stop"
+                  : `Stop below ${h.horizon_key === "short" ? "MA50" : "MA200"} (×0.97)`}
               </p>
             </div>
           </div>

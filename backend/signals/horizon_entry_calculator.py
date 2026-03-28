@@ -7,7 +7,7 @@ in Thrive Alpha signal cards.
 Each horizon uses a different anchor — not the naive "current price = entry":
   SHORT  (1m)     RSI state -> VWAP -> recent support + ATR stops
   MEDIUM (3m)     MA50 zone + earnings catalyst + fundamentals quality
-  LONG   (6-18m)  MA200 + 25% MOS tiers + 52w low deep value
+  LONG   (6-18m)  MA200 + quality-based Tier 2 MOS + 52w tail-risk band
 
 FastAPI integration:
     from horizon_entry_calculator import build_all_horizons_payload, estimate_fair_value
@@ -25,7 +25,7 @@ if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
 from dataclasses import dataclass, asdict
-from typing import Optional
+from typing import Any, Dict, Optional
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -57,8 +57,104 @@ MT_MIN_RR              = 2.0    # minimum R/R enforced for medium-term
 LT_REQUIRED_MOS_PCT    = 25.0   # minimum margin of safety for full buy
 LT_PARTIAL_MOS_PCT     = 15.0   # partial position threshold
 LT_MA200_BAND_PCT      = 5.0    # Tier 1: MA200 +- 5%
-LT_TIER2_MOS_PCT       = 25.0   # Tier 2: fair_value * 0.75
+LT_TIER2_MOS_PCT       = 25.0   # Default Tier 2 MOS when quality class is unknown (see resolve_tier2_mos_pct)
 LT_TIER2_BAND_PCT      = 3.0    # Tier 2: +- 3% around target
+# Per-quality Tier 2 MOS (% discount from fair value). Override via config horizons.tier2_mos_pct.
+DEFAULT_TIER2_MOS_PCT_BY_CLASS: dict[str, float] = {
+    "high_quality_defensive": 10.0,
+    "large_cap_growth": 15.0,
+    "high_volatility": 25.0,
+    "speculative": 30.0,
+}
+# Known tickers → class (everything else: classify from fundamentals_score)
+_HIGH_QUALITY_DEFENSIVE = frozenset({
+    "BLK", "JPM", "WFC", "BAC", "C", "GS", "MS", "USB", "PNC", "TFC", "SCHW", "BK", "STT", "NTRS",
+    "TROW", "BEN", "IVZ", "AMG", "JNJ", "PG", "KO", "PEP", "WMT", "COST", "MCD", "PM", "MO", "MRK",
+    "ABBV", "PFE", "UNH", "CI", "HUM", "CVX", "XOM",
+})
+_LARGE_CAP_GROWTH = frozenset({
+    "MSFT", "GOOGL", "GOOG", "AAPL", "AMZN", "NFLX", "ADBE", "CRM", "ORCL", "NOW", "INTU", "CSCO",
+})
+_HIGH_VOLATILITY = frozenset({
+    "NVDA", "AMD", "TSLA", "META", "COIN", "MSTR", "SMCI", "AVGO", "PLTR", "CRWD", "PANW", "SHOP",
+    "SQ", "HOOD", "RIVN",
+})
+
+
+def _norm_ticker_sym(ticker: str) -> str:
+    if not ticker:
+        return ""
+    u = str(ticker).strip().upper().replace(".", "-")
+    return u.split("-")[0]
+
+
+def classify_mos_class(ticker: str, fundamentals_score: float) -> str:
+    """
+    Map symbol + fundamentals to a Tier 2 MOS profile.
+    Known lists first; then weak fundamentals → speculative; strong → large-cap growth; else high-vol band.
+    """
+    t = _norm_ticker_sym(ticker)
+    if t in _HIGH_QUALITY_DEFENSIVE:
+        return "high_quality_defensive"
+    if t in _LARGE_CAP_GROWTH:
+        return "large_cap_growth"
+    if t in _HIGH_VOLATILITY:
+        return "high_volatility"
+    if fundamentals_score < 45:
+        return "speculative"
+    if fundamentals_score >= 65:
+        return "large_cap_growth"
+    return "high_volatility"
+
+
+def resolve_tier2_mos_pct(
+    ticker: str,
+    fundamentals_score: float,
+    explicit_pct: Optional[float] = None,
+    tier2_mos_by_class: Optional[dict[str, Any]] = None,
+    ticker_overrides: Optional[dict[str, Any]] = None,
+) -> tuple[float, str]:
+    """
+    Returns (mos_pct, class_key) for long-term Tier 2 band center = fair_value * (1 - mos_pct/100).
+    explicit_pct wins; then per-ticker override; then merged class table + classify_mos_class.
+    """
+    if explicit_pct is not None and float(explicit_pct) > 0:
+        return float(explicit_pct), "explicit"
+
+    t = _norm_ticker_sym(ticker)
+    ov = ticker_overrides or {}
+    if t and t in ov and ov[t] is not None:
+        try:
+            v = float(ov[t])
+            if v > 0:
+                return v, "ticker_override"
+        except (TypeError, ValueError):
+            pass
+
+    merged = dict(DEFAULT_TIER2_MOS_PCT_BY_CLASS)
+    if tier2_mos_by_class:
+        for k, v in tier2_mos_by_class.items():
+            if v is None:
+                continue
+            try:
+                merged[str(k)] = float(v)
+            except (TypeError, ValueError):
+                continue
+
+    cls = classify_mos_class(ticker, fundamentals_score)
+    pct = merged.get(cls, LT_TIER2_MOS_PCT)
+    return float(pct), cls
+
+
+def tier2_human_class_label(class_key: str) -> str:
+    return {
+        "high_quality_defensive": "high-quality defensive",
+        "large_cap_growth": "large-cap growth",
+        "high_volatility": "high volatility",
+        "speculative": "speculative / weak fundamentals",
+        "explicit": "custom MOS",
+        "ticker_override": "per-ticker override",
+    }.get(class_key, class_key)
 LT_TIER3_LOW_MULT      = 1.05   # Tier 3: 52w_low * 1.05
 LT_TIER3_HIGH_MULT     = 1.15   # Tier 3: 52w_low * 1.15
 LT_MAX_ABOVE_MA200_PCT = 15.0   # flag if price > MA200 by more than this
@@ -113,6 +209,9 @@ class HorizonSignal:
     warnings: list
     entry_tiers: Optional[dict] = None   # long-term only
     fair_value: Optional[float] = None   # long-term only
+    # Long-term: structural invalidation near 52w — not a tight trailing stop
+    stop_loss_kind: str = "trailing"
+    stop_loss_framing: Optional[str] = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -528,6 +627,11 @@ class LongTermInputs:
     ml_prob: float          # 6-month ML probability
     regime_bull_pct: float
     fundamentals_score: float
+    # Symbol for Tier 2 MOS profile (quality-based band); optional explicit override
+    ticker: str = ""
+    tier2_mos_pct: Optional[float] = None
+    tier2_mos_by_class: Optional[Dict[str, Any]] = None
+    tier2_mos_pct_by_ticker: Optional[Dict[str, Any]] = None
     # When set (e.g. from build_all_horizons_payload), primary entry must not start above short-term buy zone
     short_entry_low: Optional[float] = None
     short_entry_high: Optional[float] = None
@@ -574,6 +678,17 @@ def _harmonize_long_entry_zone_with_short(
 def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     p, fv = inp.current_price, inp.fair_value
     warnings = []
+
+    mos_t2, mos_class = resolve_tier2_mos_pct(
+        inp.ticker,
+        inp.fundamentals_score,
+        explicit_pct=inp.tier2_mos_pct,
+        tier2_mos_by_class=inp.tier2_mos_by_class,
+        ticker_overrides=inp.tier2_mos_pct_by_ticker,
+    )
+    mos_t2 = _r(mos_t2, 2)
+    t2_label_suffix = "{:.0f}%".format(mos_t2)
+    t2_profile_note = tier2_human_class_label(mos_class)
 
     # ── Current price MOS assessment ─────────────────────────────────────
     mos_pct          = _r((fv - p) / p * 100, 1)
@@ -640,10 +755,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         t1_hi,
         "~2.5x", "Medium", "#f5a623")
 
-    t2_center = fv * (1 - LT_TIER2_MOS_PCT / 100)
+    t2_center = fv * (1 - mos_t2 / 100)
     tier2 = make_tier(
-        "T2", "Tier 2 — 25% Margin of Safety",
-        "Fair value × 0.75 — strong conviction core position",
+        "T2", "Tier 2 — {} Margin of Safety".format(t2_label_suffix),
+        (
+            "Fair value minus {:.0f}% MOS ({}) — core accumulation zone"
+        ).format(mos_t2, t2_profile_note),
         _r(t2_center * (1 - LT_TIER2_BAND_PCT / 100)),
         _r(t2_center * (1 + LT_TIER2_BAND_PCT / 100)),
         "~3.5x", "High", "#00e5a0")
@@ -664,8 +781,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     )
     entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
 
-    # ── Stop / target using T1 as entry reference ────────────────────────
-    stop_loss     = _r(inp.week52_low * 0.95)   # 5% below 52w low
+    # ── Structural invalidation (not a day-to-day stop): 5% below 52w low ──
+    stop_loss     = _r(inp.week52_low * 0.95)
     stop_loss_pct = _r((stop_loss - tier1.high) / tier1.high * 100, 1)
     target        = fv
     target_pct    = _r((fv - tier1.high) / tier1.high * 100, 1)
@@ -709,6 +826,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         stop_loss=stop_loss, stop_loss_pct=stop_loss_pct,
         risk_reward=rr, rationale=rationale, trigger_buy=trigger, warnings=warnings,
         fair_value=fv,
+        stop_loss_kind="structural_invalidation",
+        stop_loss_framing=(
+            "Long-term floor ≈5% under the 52-week low — structural invalidation only, "
+            "not a tight stop. Use nearer-term levels when you enter; treat this as a "
+            "tail-stress / thesis-broken reference if price ever gets there."
+        ),
         entry_tiers={
             "current_assessment": {
                 "verdict":              assess_verdict,
@@ -718,10 +841,28 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                 "pct_above_ma200":     pct_above_ma200,
                 "min_price_to_buy":    min_price_to_buy,
             },
+            "tier2_profile": {
+                "class": mos_class,
+                "mos_pct": mos_t2,
+                "label": t2_profile_note,
+            },
+            "structural_invalidation": {
+                "price": stop_loss,
+                "kind": "52w_stress_floor",
+                "note": (
+                    "≈5% below the 52-week low — thesis / tail-risk invalidation, "
+                    "not a normal trailing stop. Manage risk at Tier 1 entries; "
+                    "this level is a last-resort ‘broken story’ reference."
+                ),
+            },
             "tiers": [asdict(tier1), asdict(tier2), asdict(tier3)],
             "position_sizing": [
                 {"tier": "T1 (MA200)",      "allocation_pct": 25, "note": "starter position"},
-                {"tier": "T2 (25% MOS)",    "allocation_pct": 50, "note": "core position"},
+                {
+                    "tier": "T2 ({:.0f}% MOS)".format(mos_t2),
+                    "allocation_pct": 50,
+                    "note": "core position — profile: {}".format(t2_profile_note),
+                },
                 {"tier": "T3 (Tail risk)",  "allocation_pct": 25, "note": "only if 52w / regime stress"},
             ],
         },
@@ -794,6 +935,10 @@ def build_all_horizons_payload(
     fundamentals_score: float,
     # Optional
     days_to_earnings: Optional[int] = None,
+    ticker: str = "",
+    tier2_mos_pct: Optional[float] = None,
+    tier2_mos_by_class: Optional[Dict[str, Any]] = None,
+    tier2_mos_pct_by_ticker: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
     Builds all three horizon signals and returns a dict ready to attach
@@ -833,6 +978,10 @@ def build_all_horizons_payload(
         ml_prob=lt_ml_prob,
         regime_bull_pct=regime_bull_pct,
         fundamentals_score=fundamentals_score,
+        ticker=ticker,
+        tier2_mos_pct=tier2_mos_pct,
+        tier2_mos_by_class=tier2_mos_by_class,
+        tier2_mos_pct_by_ticker=tier2_mos_pct_by_ticker,
         short_entry_low=short.entry_zone.low,
         short_entry_high=short.entry_zone.high,
         medium_entry_high=medium.entry_zone.high,
@@ -884,6 +1033,7 @@ if __name__ == "__main__":
         insider_activity_score  = 50.0,
         fundamentals_score      = 78.0,
         days_to_earnings        = 51,
+        ticker                  = "GOOGL",
     )
 
     divider = "=" * 52

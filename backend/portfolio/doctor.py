@@ -5,12 +5,20 @@ sector allocation, YTD/1Y return, pairwise correlation.
 from __future__ import annotations
 
 
-def _suggestion(score: float | None, buy_min: float = 65, sell_max: float = 35) -> str:
+def _suggestion(
+    score: float | None,
+    buy_min: float = 65,
+    sell_max: float = 35,
+    interpretation_style: str = "TRENDING",
+) -> str:
     if score is None:
         return "N/A"
-    if score >= buy_min:
+    s = float(score)
+    if interpretation_style == "MEAN_REVERTING":
+        s = 100.0 - s
+    if s >= buy_min:
         return "HOLD/ADD"
-    if score <= sell_max:
+    if s <= sell_max:
         return "CONSIDER TRIM"
     return "HOLD"
 
@@ -147,10 +155,12 @@ def portfolio_report(
                 "suggestion": suggestion,
                 "confidence": conf_pct,
                 "action": conf_data.get("action"),
+                "score_interpretation_style": r.get("score_interpretation_style") or "TRENDING",
                 "action_today": _action_today_line(score, conf_pct, regime, suggestion, earn_note),
             }
         else:
-            suggestion = _suggestion(score, buy_min, sell_max)
+            interp = r.get("score_interpretation_style") or "TRENDING"
+            suggestion = _suggestion(score, buy_min, sell_max, interpretation_style=interp)
             entry = {
                 "ticker": ticker,
                 "quantity": qty,
@@ -160,6 +170,7 @@ def portfolio_report(
                 "score": score,
                 "regime": regime,
                 "suggestion": suggestion,
+                "score_interpretation_style": interp,
                 "action_today": _action_today_line(score, None, regime, suggestion, earn_note),
             }
         if earn_note:
@@ -235,8 +246,16 @@ def portfolio_report(
             conf_val = conf_data["confidence"]
             if conf_val >= (add_min_conf_pct / 100.0):
                 cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", ""), "confidence": round(conf_val * 100, 1), "action": conf_data.get("action")})
-        elif score is not None and score >= cash_deploy_min_score:
-            cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", "")})
+        elif score is not None:
+            interp = r.get("score_interpretation_style") or "TRENDING"
+            eff = 100.0 - float(score) if interp == "MEAN_REVERTING" else float(score)
+            if eff >= cash_deploy_min_score:
+                cash_deployment.append({
+                    "ticker": t,
+                    "score": score,
+                    "regime": r.get("regime", ""),
+                    "score_interpretation_style": interp,
+                })
     cash_deployment.sort(key=lambda x: -(x.get("confidence") if x.get("confidence") is not None else (x.get("score") or 0)))
 
     # Theme concentration: mega-cap (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA) combined %

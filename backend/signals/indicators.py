@@ -446,9 +446,13 @@ def multi_horizon_scores(
     config: dict | None = None,
     market_regime: str | None = None,
     vix: float | None = None,
+    interpretation_style: str = "TRENDING",
 ) -> dict:
     """
     Short (weeks), Medium (months), Long (1–2 yrs) scores for long-term investor.
+
+    interpretation_style MEAN_REVERTING: invert scores only inside _sugg() so HOLD/ADD vs
+    CONSIDER TRIM aligns with dip-buy / rally-trim on choppy tape (raw *_term unchanged).
     - Short: MA20 vs MA50, RSI, 5-day momentum
     - Medium: composite (MA50/200, RSI, MACD or spec TS+MOM+VAL+QLT) – main signal
     - Long: price vs MA200, MA50 vs MA200 alignment
@@ -522,9 +526,12 @@ def multi_horizon_scores(
     long_term = round(max(0, min(100, long_term)), 1)
 
     def _sugg(score: float, buy: float = 65, sell: float = 35) -> str:
-        if score >= buy:
+        s = float(score)
+        if interpretation_style == "MEAN_REVERTING":
+            s = 100.0 - s
+        if s >= buy:
             return "HOLD/ADD"
-        if score <= sell:
+        if s <= sell:
             return "CONSIDER TRIM"
         return "HOLD"
 

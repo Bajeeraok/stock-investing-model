@@ -215,7 +215,10 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     price_reasoning: dict[str, str] = {}
     if close_ticker is not None and not close_ticker.empty and pd is not None:
         try:
-            sig = multi_horizon_scores(close_ticker)
+            from signals.score_interpretation import detect_interpretation_style
+
+            _sty, _meta = detect_interpretation_style(close_ticker, volume, config, ticker=ticker)
+            sig = multi_horizon_scores(close_ticker, interpretation_style=_sty)
             buy_p = sig.get("suggested_buy_price")
             sell_p = sig.get("suggested_sell_price")
             supp = sig.get("support_level")
@@ -224,6 +227,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
             buy_conf = sig.get("buy_target_confidence_pct")
             sell_conf = sig.get("sell_target_confidence_pct")
             signal_data = {
+                "score_interpretation_style": _sty,
+                "score_interpretation_meta": _meta,
                 "short_suggestion": sig.get("short_suggestion"),
                 "medium_suggestion": sig.get("medium_suggestion"),
                 "long_suggestion": sig.get("long_suggestion"),
@@ -538,6 +543,10 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
                     fundamentals_score = v
     # Prefer confidence breakdown if we have it from a prior run (we don't pass it in response; keep defaults)
 
+    h_cfg = config.get("horizons") or {}
+    tier2_mos_by_class = h_cfg.get("tier2_mos_pct")
+    tier2_mos_pct_by_ticker = h_cfg.get("tier2_mos_pct_by_ticker")
+
     try:
         payload = build_all_horizons_payload(
             current_price=current_price,
@@ -560,6 +569,9 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
             insider_activity_score=insider_activity_score,
             fundamentals_score=fundamentals_score,
             days_to_earnings=days_to_earnings,
+            ticker=ticker,
+            tier2_mos_by_class=tier2_mos_by_class,
+            tier2_mos_pct_by_ticker=tier2_mos_pct_by_ticker,
         )
     except Exception:
         return None

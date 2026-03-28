@@ -186,6 +186,7 @@ def get_ml_aware_signal(
     ml_strong_buy_prob: float = 0.55,
     ml_buy_prob: float = 0.40,
     ml_avoid_max_prob: float = 0.20,
+    interpretation_style: str = "TRENDING",
 ) -> str:
     """
     Multi-layer signal that requires BOTH technical (confluence) AND ML to agree
@@ -200,25 +201,32 @@ def get_ml_aware_signal(
       AVOID      — confluence ≤ sell_max AND ML < ml_avoid_max_prob
 
     Without ML: falls back to BUY/HOLD/SELL from confluence only.
+
+    interpretation_style MEAN_REVERTING: use (100 - confluence) for threshold routing only —
+    raw score in API unchanged; low momentum score maps to "buy the fear" path.
     """
+    c = float(confluence)
+    if interpretation_style == "MEAN_REVERTING":
+        c = 100.0 - c
+
     if ml_short_prob is not None:
-        if confluence >= ml_strong_buy_confluence and ml_short_prob >= ml_strong_buy_prob:
+        if c >= ml_strong_buy_confluence and ml_short_prob >= ml_strong_buy_prob:
             return "STRONG BUY"
-        if confluence >= buy_min and ml_short_prob >= ml_buy_prob:
+        if c >= buy_min and ml_short_prob >= ml_buy_prob:
             return "BUY"
-        if confluence >= buy_min and ml_short_prob < ml_buy_prob:
+        if c >= buy_min and ml_short_prob < ml_buy_prob:
             return "WATCH"
-        if confluence <= sell_max and ml_short_prob < ml_avoid_max_prob:
+        if c <= sell_max and ml_short_prob < ml_avoid_max_prob:
             return "AVOID"
-        if confluence <= sell_max or ml_short_prob < ml_avoid_max_prob:
+        if c <= sell_max or ml_short_prob < ml_avoid_max_prob:
             return "REDUCE"
         return "HOLD"
 
     # ── Fallback: confluence-only (no ML model yet) ───────────────────────
-    if confluence >= 70:
+    if c >= 70:
         return "BUY"
-    if confluence >= buy_min:
+    if c >= buy_min:
         return "BUY"
-    if confluence <= sell_max:
+    if c <= sell_max:
         return "SELL"
     return "HOLD"

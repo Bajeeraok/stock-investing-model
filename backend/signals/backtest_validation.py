@@ -70,7 +70,9 @@ def validate_backtest_result(backtest: dict) -> dict:
                 f"Year {year_str}: Score inversion — 0-30 bucket ({low:+.2f}%) > 70-100 ({high:+.2f}%) at 3m."
             )
             fixes.append(
-                f"Year {year_str}: Tag as BEAR regime; add visual indicator (e.g. Bear Year) in table."
+                f"Year {year_str}: Often mean-reversion (score high after rallies). "
+                "Enable score.interpretation in config to flip buy/sell thresholds on MR tape; "
+                "or add a dedicated mean_reversion_score layer — raw score buckets stay comparable."
             )
 
     score = max(0, 100 - len(issues) * 10)

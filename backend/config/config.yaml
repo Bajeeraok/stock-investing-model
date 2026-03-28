@@ -223,6 +223,16 @@ score:
   ml_strong_buy_prob: 0.55       # ML prob (0-1) for STRONG BUY
   ml_buy_prob: 0.40              # ML prob for BUY; below this but confluence ok -> WATCH
   ml_avoid_max_prob: 0.20        # ML prob below this -> REDUCE or AVOID
+  # Mean-reverting tape: momentum scores can invert vs forward returns. When enabled, we only
+  # flip threshold mapping (100 - confluence for signals); raw composite_buy is unchanged.
+  interpretation:
+    enabled: true
+    acf_window: 126              # trading days for lag-1 autocorr of daily returns
+    acf_mean_reversion_max: -0.028  # at or below → classify MEAN_REVERTING
+    acf_trend_min: 0.04           # above → TRENDING; between → TRENDING (neutral)
+    min_bars: 130
+    force_trending: []            # e.g. [SPY] to never invert thresholds for an index
+    force_mean_reverting: []      # optional manual MR tickers
 
 # Regime bands: UP >= up_min, DOWN <= down_max, else NEUTRAL
 regime:
@@ -348,6 +358,18 @@ opportunity_criteria:
   max_results: 25         # Cap output list
   # min_volume_ratio: 0.5  # Exclude when volume < 50% of 20d avg (default 0.5)
   # exclude_earnings_days: 5  # Exclude when earnings in next N days (needs FMP)
+
+# Long-term horizon entry: Tier 2 band uses MOS % from fair value by asset quality (see horizon_entry_calculator).
+# Classify known tickers into buckets; unknowns use fundamentals_score (e.g. <45 → speculative).
+# Override any class % here; optional tier2_mos_pct_by_ticker for per-symbol MOS without code changes.
+horizons:
+  tier2_mos_pct:
+    high_quality_defensive: 10
+    large_cap_growth: 15
+    high_volatility: 25
+    speculative: 30
+  # Optional per-ticker Tier 2 MOS % (overrides class), e.g. BLK: 12
+  tier2_mos_pct_by_ticker: {}
 
 # Phase 4: Data & earnings
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping

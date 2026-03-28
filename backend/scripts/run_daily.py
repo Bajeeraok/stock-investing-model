@@ -42,6 +42,7 @@ from signals.fetcher import (
     fetch_ohlcv_close_and_volume,
 )
 from signals.indicators import multi_horizon_scores
+from signals.score_interpretation import detect_interpretation_style
 from signals.providers import get_next_earnings
 from signals.regime import (
     get_regime,
@@ -181,10 +182,14 @@ def run_signals(
             continue
 
         use_spec = config.get("use_spec_regime_score", False)
+        score_interpretation_style, score_interpretation_meta = detect_interpretation_style(
+            close, volume, config, ticker=ticker,
+        )
         sig = multi_horizon_scores(
             close, use_spec=use_spec, ticker=ticker, config=config,
             market_regime=global_market_regime,
             vix=vix if mr_cfg_vix else None,
+            interpretation_style=score_interpretation_style,
         )
         composite_buy = sig["composite_buy"]
 
@@ -222,6 +227,7 @@ def run_signals(
             ml_strong_buy_prob=ml_strong_buy_prob,
             ml_buy_prob=ml_buy_prob,
             ml_avoid_max_prob=ml_avoid_max_prob,
+            interpretation_style=score_interpretation_style,
         )
 
         # Inverted BUY in BEAR/STRONG_BEAR: never emit BUY or STRONG BUY; cap to HOLD/WATCH
@@ -267,6 +273,7 @@ def run_signals(
                     ml_strong_buy_prob=ml_strong_buy_prob,
                     ml_buy_prob=ml_buy_prob,
                     ml_avoid_max_prob=ml_avoid_max_prob,
+                    interpretation_style=score_interpretation_style,
                 )
 
         # Volume vs 20d average (unusual activity)
@@ -371,6 +378,8 @@ def run_signals(
             "ma50": sig.get("ma50"),
             "macd_hist": sig.get("macd_hist"),
             "composite_buy": composite_buy,
+            "score_interpretation_style": score_interpretation_style,
+            "score_interpretation_meta": score_interpretation_meta,
             # Confluence score — explicit 4-signal agreement (Trend+RSI+MACD+Regime)
             "confluence_score": sig.get("confluence_score"),
             "trend_signal":     sig.get("trend_signal"),
@@ -429,6 +438,8 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
         row = {
             "ticker": r["ticker"],
             "composite_buy": r.get("composite_buy"),
+            "signal": r.get("signal"),
+            "score_interpretation_style": r.get("score_interpretation_style"),
             "regime": r.get("regime"),
             "rsi": r.get("rsi"),
             "trend_score": r.get("trend_score"),

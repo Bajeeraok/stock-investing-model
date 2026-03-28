@@ -182,6 +182,71 @@ def validate_regime(
     }
 
 
+def _adjust_hmm_probs_for_display(
+    bull_prob: float,
+    transition_prob: float,
+    bear_prob: float,
+    dominant: str,
+    dominant_validated: str,
+    conflict: dict | None,
+    gap_ma200_pct: float | None,
+    recent_63d_return_pct: float | None,
+) -> tuple[float, float, float, str | None]:
+    """
+    Raw HMM bull % is from the latest bar only, while the model is trained on years of data —
+    it can stay near-certain "bull" in a name that has already broken down vs MA200.
+
+    When MA validation disagrees (or tape is clearly weak), cap bull and redistribute mass
+    so the displayed probabilities match what users see on the chart.
+    """
+    b, t, r = bull_prob, transition_prob, bear_prob
+    note: str | None = None
+    cap = 1.0
+
+    if dominant == "BULL":
+        if dominant_validated == "BEAR":
+            cap = min(cap, 0.38)
+            note = "Bull % aligned down vs MA200 (HMM slow vs current stage)"
+        elif dominant_validated == "TRANSITION":
+            cap = min(cap, 0.55)
+            if conflict:
+                note = "Bull % tempered to match transition / repair phase"
+        if conflict and conflict.get("reason") == "HMM_BULL_BUT_BELOW_MA200":
+            cap = min(cap, 0.34)
+
+    if gap_ma200_pct is not None:
+        if gap_ma200_pct <= -8.0:
+            cap = min(cap, 0.40)
+        elif gap_ma200_pct <= -5.0:
+            cap = min(cap, 0.48)
+
+    if recent_63d_return_pct is not None:
+        if recent_63d_return_pct <= -18.0:
+            cap = min(cap, 0.40)
+        elif recent_63d_return_pct <= -10.0:
+            cap = min(cap, 0.50)
+
+    if b <= cap + 1e-9:
+        return b, t, r, note
+
+    freed = b - cap
+    b = cap
+    if dominant_validated == "BEAR":
+        r += freed * 0.55
+        t += freed * 0.45
+    elif dominant_validated == "TRANSITION":
+        t += freed * 0.62
+        r += freed * 0.38
+    else:
+        t += freed * 0.50
+        r += freed * 0.50
+
+    s = b + t + r
+    if s > 1e-12:
+        b, t, r = b / s, t / s, r / s
+    return round(b, 3), round(t, 3), round(r, 3), note
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -259,6 +324,7 @@ def get_hmm_regime(
     # Uses % gap thresholds to avoid flip-flopping on marginal dips (e.g., -0.4% below MA50).
     dominant_validated = dominant
     conflict = None
+    gap_ma200_pct: float | None = None
     try:
         if close is not None and len(close) >= 200:
             close_s = close.dropna()
@@ -288,6 +354,7 @@ def get_hmm_regime(
                 )
 
                 dominant_validated = v["resolved_regime"]
+                gap_ma200_pct = float(v["gap_ma200_pct"])
                 if v["conflict"]:
                     conflict = {
                         "reason": v["reason"],
@@ -317,10 +384,48 @@ def get_hmm_regime(
     except Exception:
         pass
 
+    recent_63d_return_pct: float | None = None
+    try:
+        if close is not None:
+            cs = close.dropna()
+            if len(cs) >= 65:
+                last = float(cs.iloc[-1])
+                prev = float(cs.iloc[-64])
+                if prev > 0:
+                    recent_63d_return_pct = (last / prev - 1.0) * 100.0
+    except Exception:
+        pass
+
+    if gap_ma200_pct is None and close is not None:
+        try:
+            cs = close.dropna()
+            if len(cs) >= 200:
+                last_close = float(cs.iloc[-1])
+                ma200 = float(cs.rolling(200, min_periods=200).mean().iloc[-1])
+                if ma200 > 0:
+                    gap_ma200_pct = (last_close - ma200) / ma200 * 100.0
+        except Exception:
+            pass
+
+    bull_adj, tr_adj, br_adj, display_note = _adjust_hmm_probs_for_display(
+        bull_prob,
+        transition_prob,
+        bear_prob,
+        dominant,
+        dominant_validated,
+        conflict,
+        gap_ma200_pct,
+        recent_63d_return_pct,
+    )
+
     return {
-        "bull_probability":       round(bull_prob, 3),
-        "transition_probability": round(transition_prob, 3),
-        "bear_probability":       round(bear_prob, 3),
+        "bull_probability":       bull_adj,
+        "transition_probability": tr_adj,
+        "bear_probability":       br_adj,
+        "bull_probability_raw":    round(bull_prob, 3),
+        "display_adjustment_note": display_note,
+        "recent_63d_return_pct": round(recent_63d_return_pct, 2) if recent_63d_return_pct is not None else None,
+        "gap_ma200_pct":          round(gap_ma200_pct, 2) if gap_ma200_pct is not None else None,
         "dominant_state":         dominant,
         "dominant_state_validated": dominant_validated,
         "ma_conflict":           conflict,

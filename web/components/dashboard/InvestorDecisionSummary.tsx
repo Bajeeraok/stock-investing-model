@@ -98,6 +98,10 @@ export interface HorizonSignalPayload {
   rationale: string;
   trigger_buy: string;
   warnings: string[];
+  /** "trailing" for short/medium; long-term uses structural_invalidation for 52w-floor level */
+  stop_loss_kind?: string | null;
+  /** Explains wide long-term level vs a normal stop */
+  stop_loss_framing?: string | null;
   entry_tiers?: {
     current_assessment: { verdict: string; label: string; color?: string };
     tiers: {
@@ -115,6 +119,11 @@ export interface HorizonSignalPayload {
       drop_needed_pct: number | null;
     }[];
     position_sizing?: { tier: string; allocation_pct: number; note: string }[];
+    structural_invalidation?: {
+      price: number;
+      kind: string;
+      note: string;
+    };
   };
   fair_value?: number;
 }
@@ -153,6 +162,7 @@ function HorizonCard({
   const hasTrigger = horizon.trigger_buy && horizon.trigger_buy.trim().length > 0;
   const warnings = Array.isArray(horizon.warnings) ? horizon.warnings.filter((w) => w && String(w).trim()) : [];
   const hasStop = horizon.stop_loss != null && horizon.stop_loss > 0;
+  const structuralStop = horizon.stop_loss_kind === "structural_invalidation";
 
   return React.createElement(
     "div",
@@ -178,8 +188,15 @@ function HorizonCard({
     hasStop &&
       React.createElement(
         "p",
-        { className: "text-slate-500 text-xs mt-0.5" },
-        `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
+        {
+          className: "text-slate-500 text-xs mt-0.5",
+          title: structuralStop
+            ? horizon.stop_loss_framing || "52-week stress floor — not a day-to-day trailing stop"
+            : undefined,
+        },
+        structuralStop
+          ? `Structural invalidation (52w stress floor): ~$${Number(horizon.stop_loss).toFixed(2)} — not a normal trailing stop`
+          : `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
       ),
     hasRationale &&
       React.createElement(
