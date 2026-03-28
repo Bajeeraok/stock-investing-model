@@ -178,7 +178,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
             close_spy = fetch_ohlcv_safe("SPY", period)
             ret_spy = _returns_over_periods(close_spy, periods) if close_spy is not None else ret_spy
 
-    # Current price (close_ticker can be None from fetch failure)
+    # Current price = last bar of the same close series used for bands (index ETFs: Ticker.history path in fetcher)
     current_price = float(close_ticker.iloc[-1]) if close_ticker is not None and not close_ticker.empty else None
 
     # Volume vs 20d avg, drawdown 52w
@@ -795,15 +795,15 @@ def _build_trade_roadmap(
         "cumulative_pct": 85,
     })
 
-    # 6–12 months (T3 52w low)
+    # 6–12 months (T3 52w stress) — tail risk, not a planned “core” entry
     buy_stages.append({
         "timeline_key": "6_12_months",
-        "label": "6–12 months",
-        "when_to_act": "Back up truck",
+        "label": "6–12 months (tail risk)",
+        "when_to_act": "Tail risk / black swan zone only",
         "price_zone_low": round(t3_lo, 2) if t3_lo else (round((low_52w or current_price * 0.75) * 1.05, 2) if low_52w else None),
         "price_zone_high": round(t3_hi, 2) if t3_hi else (round((low_52w or current_price * 0.75) * 1.15, 2) if low_52w else None),
-        "condition": "52w low zone, rare opportunity",
-        "conviction": "Highest",
+        "condition": "Only if 52w low breaks or liquidity crash — not a base-case entry",
+        "conviction": "Stress / rare",
         "position_pct": 15,
         "cumulative_pct": 100,
     })

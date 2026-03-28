@@ -299,6 +299,8 @@ class MediumTermInputs:
     # When set (e.g. from build_all_horizons_payload), MT entry low never sits above short-term buy zone
     short_entry_low: Optional[float] = None
     short_entry_high: Optional[float] = None
+    # Caps swing target so minimum R/R math cannot inflate 3m target far above FV (NVDA-style outlier)
+    fair_value: Optional[float] = None
 
 
 def _harmonize_medium_entry_with_short(
@@ -366,13 +368,38 @@ def _medium_term_signal_from_zone(
     risk       = eh - stop_loss
     rr         = _r((target - eh) / risk, 2) if risk > 0 else 0.0
 
-    # Enforce minimum 2:1 R/R
+    # Enforce minimum 2:1 R/R — but do not mechanical-bump above fair value (else 3m target looks like 40%+ upside)
     if rr < MT_MIN_RR:
-        target     = _r(eh + risk * MT_MIN_RR)
+        target_rr = _r(eh + risk * MT_MIN_RR)
+        if inp.fair_value and inp.fair_value > 0:
+            fv_cap = _r(max(inp.fair_value * 1.12, eh * 1.05))
+            if target_rr > fv_cap:
+                target = _r(min(target_rr, fv_cap))
+                target_pct = _r((target - eh) / eh * 100, 1)
+                rr = _r((target - eh) / risk, 2) if risk > 0 else 0.0
+                warnings.append(
+                    "Swing target capped vs fair value (${:.2f}) — R/R {:.1f}x below {:.1f}x without implying a huge 3m upside"
+                    .format(inp.fair_value, rr, MT_MIN_RR)
+                )
+            else:
+                target = target_rr
+                target_pct = _r((target - eh) / eh * 100, 1)
+                rr = MT_MIN_RR
+                warnings.append(
+                    "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
+        else:
+            target = target_rr
+            target_pct = _r((target - eh) / eh * 100, 1)
+            rr = MT_MIN_RR
+            warnings.append(
+                "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
+
+    # Final guard: medium horizon target should not sit far above FV when FV is known
+    if inp.fair_value and inp.fair_value > 0 and target > inp.fair_value * 1.15 + 1e-6:
+        target = _r(min(target, inp.fair_value * 1.12))
         target_pct = _r((target - eh) / eh * 100, 1)
-        rr         = MT_MIN_RR
-        warnings.append(
-            "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
+        rr = _r((target - eh) / risk, 2) if risk > 0 else 0.0
+        warnings.append("3m target aligned to fair value band (~+12% vs FV max for swing)")
 
     # ── Earnings flag ────────────────────────────────────────────────────
     earnings_flag = bool(inp.days_to_earnings and inp.days_to_earnings <= MT_EARNINGS_WINDOW)
@@ -504,6 +531,8 @@ class LongTermInputs:
     # When set (e.g. from build_all_horizons_payload), primary entry must not start above short-term buy zone
     short_entry_low: Optional[float] = None
     short_entry_high: Optional[float] = None
+    # Swing (medium) entry zone high — Tier 1 MA200 ceiling never above this (investor core ≤ swing top)
+    medium_entry_high: Optional[float] = None
 
 
 def _harmonize_long_entry_zone_with_short(
@@ -587,11 +616,28 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             drop_needed_pct=_r((p - high) / p * 100, 1) if p > high else None,
         )
 
+    t1_lo = _r(inp.ma200 * (1 - LT_MA200_BAND_PCT / 100))
+    t1_hi = _r(inp.ma200 * (1 + LT_MA200_BAND_PCT / 100))
+    mh = inp.medium_entry_high
+    if mh is not None and mh > 0 and t1_hi > mh + 1e-6:
+        if mh >= t1_lo - 1e-6:
+            t1_hi = _r(min(t1_hi, mh))
+            warnings.append(
+                "Tier 1 MA200 ceiling capped to swing zone high (${:.2f}) — investor core entry never above swing top."
+                .format(mh)
+            )
+        else:
+            warnings.append(
+                "Swing zone is entirely below MA200 Tier 1 — MA200 tiers still apply; swing is a nearer-term add band."
+            )
+    if t1_hi < t1_lo + 1e-6:
+        t1_hi = _r(max(t1_lo * 1.02, inp.ma200 * 0.99))
+
     tier1 = make_tier(
         "T1", "Tier 1 — MA200 Zone",
         "Near 200-day moving average — medium conviction starter",
-        _r(inp.ma200 * (1 - LT_MA200_BAND_PCT / 100)),
-        _r(inp.ma200 * (1 + LT_MA200_BAND_PCT / 100)),
+        t1_lo,
+        t1_hi,
         "~2.5x", "Medium", "#f5a623")
 
     t2_center = fv * (1 - LT_TIER2_MOS_PCT / 100)
@@ -603,11 +649,11 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         "~3.5x", "High", "#00e5a0")
 
     tier3 = make_tier(
-        "T3", "Tier 3 — Deep Value",
-        "Near 52-week low — maximum conviction, rare opportunity",
+        "T3", "Tier 3 — Tail risk / 52w stress",
+        "Stress scenario near 52w low — not a base-case entry; only if macro/liquidity breaks",
         _r(inp.week52_low * LT_TIER3_LOW_MULT),
         _r(inp.week52_low * LT_TIER3_HIGH_MULT),
-        "~5x+", "Highest", "#7ec8e3")
+        "~5x+", "Stress", "#64748b")
 
     # ── Entry zone for HorizonSignal (T1 as primary display) ─────────────
     entry_zone = EntryZone(
@@ -676,7 +722,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             "position_sizing": [
                 {"tier": "T1 (MA200)",      "allocation_pct": 25, "note": "starter position"},
                 {"tier": "T2 (25% MOS)",    "allocation_pct": 50, "note": "core position"},
-                {"tier": "T3 (Deep value)", "allocation_pct": 25, "note": "if triggered"},
+                {"tier": "T3 (Tail risk)",  "allocation_pct": 25, "note": "only if 52w / regime stress"},
             ],
         },
     )
@@ -776,6 +822,7 @@ def build_all_horizons_payload(
         fundamentals_score=fundamentals_score,
         short_entry_low=short.entry_zone.low,
         short_entry_high=short.entry_zone.high,
+        fair_value=fair_value,
     ))
 
     long_term = compute_long_term_entry(LongTermInputs(
@@ -788,6 +835,7 @@ def build_all_horizons_payload(
         fundamentals_score=fundamentals_score,
         short_entry_low=short.entry_zone.low,
         short_entry_high=short.entry_zone.high,
+        medium_entry_high=medium.entry_zone.high,
     ))
 
     return {

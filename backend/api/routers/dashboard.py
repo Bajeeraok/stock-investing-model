@@ -162,8 +162,9 @@ async def get_dashboard():
         if prices_by_ticker:
             logger.info("[dashboard] yfinance latest: %d prices (delayed quote)", len(prices_by_ticker))
 
-    # Spot for SPY/QQQ/DIA/IWM must match Yahoo (same vendor as OHLCV in providers); FMP batch can disagree slightly.
-    if prices_from_fmp_batch and prices_by_ticker:
+    # Optional: replace FMP batch marks for index ETFs with Yahoo (same vendor as OHLCV). Off via config if undesired.
+    use_yahoo_overlay = config.get("data", {}).get("yahoo_overlay_index_etf_quotes", True)
+    if use_yahoo_overlay and prices_from_fmp_batch and prices_by_ticker:
         idx = [t for t in all_quote_tickers if t and str(t).strip().upper() in MAJOR_INDEX_ETFS]
         if idx:
             yf_idx = fetch_yfinance_latest_prices(idx)

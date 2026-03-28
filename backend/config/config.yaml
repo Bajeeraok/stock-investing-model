@@ -352,6 +352,9 @@ opportunity_criteria:
 # Phase 4: Data & earnings
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
+  # When FMP batch quotes are on, overwrite SPY/QQQ/DIA/IWM with Yahoo last close so dashboard marks match OHLCV vendor.
+  # Set false to skip extra Yahoo calls and use FMP-only marks for index ETFs.
+  yahoo_overlay_index_etf_quotes: true
   period: 5y         # Live signals, indicators, ATR, vol, MA (short-term); keep 5y for responsiveness
   period_long: 20y   # What-if only: event scenarios (FOMC/CPI reaction stats); NOT used for live signals
   period_long_risk: 20y   # Long-horizon risk: max drawdown, stress bear, worst 3y (monthly data; 2007-present = 2008 crisis included)

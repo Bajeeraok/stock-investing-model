@@ -21,9 +21,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# Major US index ETFs: always use Ticker.history(), not yf.download(), so the Close series
-# matches Yahoo ETF spot. download() MultiIndex + iloc[:,0] fallbacks have mis-bound series
-# (wrong last price vs live SPY/QQQ quote — looks like "futures" or stale mix-up).
+# Major US index ETFs: use Ticker.history() (single ticker), not yf.download(), to avoid
+# MultiIndex column binding bugs. Daily adjusted Close, regular hours only.
 _INDEX_ETF_YF = frozenset({"SPY", "QQQ", "DIA", "IWM"})
 
 # yfinance only accepts these period strings natively
@@ -102,26 +101,43 @@ def _history_kwargs_from_period(period: str) -> dict:
     return {"period": "5y"}
 
 
-def _fetch_index_etf_via_ticker_history(
-    ticker: str, period: str
-) -> tuple[pd.Series | None, pd.Series | None]:
+def _fetch_index_etf_history_frame(sym: str, period: str) -> pd.DataFrame | None:
     """
-    Single-ticker yfinance path for SPY/QQQ/DIA/IWM: Ticker.history(auto_adjust=True).
-    Returns (close, volume) or (None, None).
+    Daily OHLCV for index ETFs via Ticker.history (adjusted Close), regular hours only.
     """
     if yf is None:
-        return None, None
+        return None
+    try:
+        hkw = _history_kwargs_from_period(period)
+        hist = yf.Ticker(sym).history(
+            auto_adjust=True,
+            prepost=False,
+            repair=True,
+            interval="1d",
+            **hkw,
+        )
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return None
+        return hist.dropna(subset=["Close"])
+    except Exception as e:
+        logger.debug("[yfinance] index ETF history frame failed %s: %s", sym, e)
+        return None
+
+
+def _fetch_index_etf_via_ticker_history(ticker: str, period: str) -> tuple[pd.Series | None, pd.Series | None]:
+    """
+    Single-ticker yfinance path for SPY/QQQ/DIA/IWM: Ticker.history (adjusted Close), prepost=False.
+    Returns (close, volume) or (None, None).
+    """
     sym = (ticker or "").strip().upper()
     if sym not in _INDEX_ETF_YF:
         return None, None
+    if yf is None:
+        return None, None
     min_bars = _min_bars_for_period(period)
     try:
-        hkw = _history_kwargs_from_period(period)
-        hist = yf.Ticker(sym).history(auto_adjust=True, repair=True, **hkw)
-        if hist is None or hist.empty or "Close" not in hist.columns:
-            return None, None
-        hist = hist.dropna(subset=["Close"])
-        if len(hist) < min_bars:
+        hist = _fetch_index_etf_history_frame(sym, period)
+        if hist is None or len(hist) < min_bars:
             return None, None
         close = pd.Series(hist["Close"], name="close")
         vol = None
@@ -134,19 +150,13 @@ def _fetch_index_etf_via_ticker_history(
 
 
 def _fetch_index_etf_ohlcv_dataframe(ticker: str, period: str, min_bars: int = 60) -> pd.DataFrame | None:
-    """OHLCV DataFrame for SPY/QQQ/DIA/IWM via Ticker.history (avoids download() column binding)."""
-    if yf is None:
-        return None
+    """OHLCV DataFrame for SPY/QQQ/DIA/IWM via Ticker.history (same Close series as fetch_ohlcv)."""
     sym = (ticker or "").strip().upper()
     if sym not in _INDEX_ETF_YF:
         return None
     try:
-        hkw = _history_kwargs_from_period(period)
-        hist = yf.Ticker(sym).history(auto_adjust=True, repair=True, **hkw)
-        if hist is None or hist.empty or "Close" not in hist.columns:
-            return None
-        hist = hist.dropna(subset=["Close"])
-        if len(hist) < min_bars:
+        hist = _fetch_index_etf_history_frame(sym, period)
+        if hist is None or len(hist) < min_bars:
             return None
         out = pd.DataFrame({"close": hist["Close"]})
         if "High" in hist.columns:
@@ -295,9 +305,7 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
         try:
             sym_u = sym.strip().upper()
             if sym_u in _INDEX_ETF_YF:
-                hist = yf.Ticker(sym_u).history(
-                    period="5d", auto_adjust=True, repair=True
-                )
+                hist = _fetch_index_etf_history_frame(sym_u, "5d")
                 if hist is None or hist.empty or "Close" not in hist.columns:
                     logger.warning(
                         "[yfinance] Skipping %s: no data returned (latest price unavailable)",

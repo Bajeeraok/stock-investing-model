@@ -93,6 +93,7 @@ function buyStageCue(when: string): { emoji: string; rowBg: string } {
   if (w.includes("start small")) return { emoji: "🟡", rowBg: "bg-amber-500/5" };
   if (w.includes("add position")) return { emoji: "🟢", rowBg: "bg-emerald-500/5" };
   if (w.includes("core position")) return { emoji: "🔵", rowBg: "bg-blue-500/5" };
+  if (w.includes("tail risk") || w.includes("black swan")) return { emoji: "⚡", rowBg: "bg-slate-600/15" };
   if (w.includes("back up truck")) return { emoji: "💎", rowBg: "bg-emerald-500/10" };
   if (w.includes("watch")) return { emoji: "👀", rowBg: "bg-slate-500/5" };
   return { emoji: "•", rowBg: "" };
