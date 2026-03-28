@@ -41,6 +41,10 @@ ST_ATR_TARGET_MULT     = 3.0    # target = entry_high + (ATR * mult)
 ST_MIN_RR              = 1.5    # minimum acceptable risk/reward
 # Ignore support levels far below spot (e.g. 52w low) for 1-month entry — those belong in long-term tiers
 ST_SUPPORT_MAX_DEPTH_PCT = 22.0
+# If the oversold anchor is deeper than this vs spot, 1m "buy zone" is a crash scenario — use VWAP band instead
+ST_MAX_NEAR_TERM_ZONE_DEPTH_PCT = 10.0
+# On low-ATR% days, avoid stops that are unrealistically tight vs spot (semis / high-beta)
+ST_MIN_STOP_DISTANCE_PCT_OF_SPOT = 4.0
 
 # Medium-term
 MT_MA50_BAND_PCT       = 4.0    # acceptable range above MA50 for entry
@@ -168,10 +172,29 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
     sup_eff = _short_term_effective_support(inp.support_level, inp.current_price)
     if inp.rsi < ST_RSI_OVERSOLD:
         anchor = min(sup_eff, inp.vwap)
-        el, eh = _r(anchor * 0.99), _r(anchor * 1.01)
-        quality, q_color = "Ideal", "#00e5a0"
-        zone_anchor = "RSI oversold ({:.0f}) — entry near support ${:.2f}".format(
-            inp.rsi, sup_eff)
+        depth_pct = (
+            (inp.current_price - anchor) / inp.current_price * 100.0
+            if inp.current_price > 0
+            else 0.0
+        )
+        # Deep support (e.g. 52w floor after clamp) is not a 1-month entry band — align with VWAP pullback
+        if depth_pct > ST_MAX_NEAR_TERM_ZONE_DEPTH_PCT:
+            el, eh = _r(inp.vwap * 0.985), _r(inp.vwap * 1.005)
+            quality, q_color = "Acceptable", "#f5a623"
+            zone_anchor = (
+                "RSI oversold ({:.0f}) — near-term add zone at VWAP "
+                "(deeper support ~${:.2f} is long-term / stress, not core 1m zone)"
+            ).format(inp.rsi, sup_eff)
+            warnings.append(
+                "Support ~{:.0f}% below spot — 1m zone uses VWAP; use long-term tiers for larger adds.".format(
+                    depth_pct
+                )
+            )
+        else:
+            el, eh = _r(anchor * 0.99), _r(anchor * 1.01)
+            quality, q_color = "Ideal", "#00e5a0"
+            zone_anchor = "RSI oversold ({:.0f}) — entry near support ${:.2f}".format(
+                inp.rsi, sup_eff)
 
     elif inp.rsi < 50:
         el, eh = _r(inp.vwap * 0.985), _r(inp.vwap * 1.005)
@@ -187,7 +210,11 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
                 inp.rsi, inp.vwap))
 
     # ── Stop & target ────────────────────────────────────────────────────
-    stop_loss     = _r(el - inp.atr * ST_ATR_STOP_MULT)
+    stop_dist = max(
+        inp.atr * ST_ATR_STOP_MULT,
+        inp.current_price * (ST_MIN_STOP_DISTANCE_PCT_OF_SPOT / 100.0),
+    )
+    stop_loss     = _r(el - stop_dist)
     stop_loss_pct = _r((stop_loss - eh) / eh * 100, 1)
     target        = _r(min(inp.resistance_level * 0.98, eh + inp.atr * ST_ATR_TARGET_MULT))
     target_pct    = _r((target - eh) / eh * 100, 1)
