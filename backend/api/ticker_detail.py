@@ -663,6 +663,54 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
     return out
 
 
+def _roadmap_core_zone_3_to_6(
+    current_price: float,
+    ma200: float | None,
+    t1_lo: float | None,
+    t1_hi: float | None,
+    t2_lo: float | None,
+    t2_hi: float | None,
+    low_52w: float | None,
+) -> tuple[float | None, float | None, str, str]:
+    """
+    When spot is below the MA200 (Tier 1) band, do not show a 'core' zone entirely above spot
+    (implies buying higher toward MA200). Prefer MOS tier or a dip band at/under spot.
+    """
+    core_lo = round(t1_lo, 2) if t1_lo else (round(ma200 * 0.95, 2) if ma200 else None)
+    core_hi = round(t1_hi, 2) if t1_hi else (round(ma200 * 1.05, 2) if ma200 else None)
+    when = "Core position"
+    cond = "Full regime confirmation + ML >60%"
+    if not ma200 or core_lo is None or current_price >= core_lo:
+        return core_lo, core_hi, when, cond
+
+    when = "Wait for MA200 reclaim or add on weakness"
+    if t2_lo is not None and t2_hi is not None:
+        if t2_hi <= current_price * 1.02:
+            return (
+                round(t2_lo, 2),
+                round(t2_hi, 2),
+                "Core (MOS tier) on weakness",
+                "25% MOS band — MA200 is overhead until reclaimed",
+            )
+        if t2_lo < current_price:
+            return (
+                round(t2_lo, 2),
+                round(min(t2_hi, current_price * 1.01), 2),
+                "Core (MOS) below spot",
+                "Partial MOS; add only below spot or after reclaim of MA200 zone",
+            )
+    lo = max(low_52w * 1.02, current_price * 0.88) if low_52w else current_price * 0.90
+    hi = min(current_price * 0.995, ma200 * 0.92) if ma200 else current_price * 0.995
+    if hi <= lo:
+        hi = round(lo * 1.02, 2)
+    return (
+        round(lo, 2),
+        round(hi, 2),
+        when,
+        f"MA200 ~${ma200:.0f} overhead — no core adds above spot until reclaim; dip adds only",
+    )
+
+
 def _build_trade_roadmap(
     ticker: str,
     investor_out: dict,
@@ -782,14 +830,17 @@ def _build_trade_roadmap(
         "cumulative_pct": 60,
     })
 
-    # 3–6 months (T1 MA200)
+    # 3–6 months (long-term core): avoid MA200 tier as "buy higher" when spot is below that band
+    c6_lo, c6_hi, c6_when, c6_cond = _roadmap_core_zone_3_to_6(
+        current_price, ma200, t1_lo, t1_hi, t2_lo, t2_hi, low_52w
+    )
     buy_stages.append({
         "timeline_key": "3_6_months",
         "label": "3–6 months",
-        "when_to_act": "Core position",
-        "price_zone_low": round(t1_lo, 2) if t1_lo else (round(ma200 * 0.95, 2) if ma200 else None),
-        "price_zone_high": round(t1_hi, 2) if t1_hi else (round(ma200 * 1.05, 2) if ma200 else None),
-        "condition": "Full regime confirmation + ML >60%",
+        "when_to_act": c6_when,
+        "price_zone_low": c6_lo,
+        "price_zone_high": c6_hi,
+        "condition": c6_cond,
         "conviction": "High",
         "position_pct": 25,
         "cumulative_pct": 85,
@@ -909,7 +960,7 @@ def _build_trade_roadmap(
     # MA200 is support when price is above it; when below, it is overhead — do not frame as "accumulate toward" a higher level
     if ma200 and current_price < ma200 * 0.985:
         tier_txt = (
-            f"Long-term core zone ${t1_lo:.2f}–${t1_hi:.2f} (MA200 tier). "
+            f"MA200 tier ${t1_lo:.2f}–${t1_hi:.2f} is overhead until reclaim — not a zone to average up into from here. "
             if (t1_lo and t1_hi)
             else ""
         )

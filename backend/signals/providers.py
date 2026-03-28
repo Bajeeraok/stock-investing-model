@@ -297,6 +297,8 @@ def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
         "GLD": ("Commodities", "Gold ETF", "GLD", "GLD (Commodities)"),
         "SLV": ("Commodities", "Silver ETF", "SLV", "SLV (Commodities)"),
         "AVGO": ("Technology", "Semiconductors", "XLK", "XLK (Technology)"),
+        # FMP/yfinance sometimes omit sector; explicit routing for large caps used in watchlists
+        "BLK": ("Financials", "Asset Management", "XLF", "XLF (Financials)"),
     }
     if sym in _FALLBACK:
         sector, industry, sector_etf, sector_etf_name = _FALLBACK[sym]
@@ -314,8 +316,19 @@ def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
                 sector = (profile.get("sector") or "").strip().lower()
                 industry = (profile.get("industry") or "").strip() or None
                 sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
+                sec_title = sector.replace("-", " ").title() if sector else ""
+                if not sector or sec_title.lower() in ("unknown", ""):
+                    fb = _FALLBACK.get(sym)
+                    if fb:
+                        sector, industry, sector_etf, sector_etf_name = fb
+                        return {
+                            "sector": sector,
+                            "industry": industry,
+                            "sector_etf": sector_etf,
+                            "sector_etf_name": sector_etf_name,
+                        }
                 return {
-                    "sector": sector.replace("-", " ").title() if sector else "Unknown",
+                    "sector": sec_title or "Unknown",
                     "industry": industry,
                     "sector_etf": sector_etf,
                     "sector_etf_name": f"{sector_etf} ({sector.replace('-', ' ').title()})" if sector else "SPY (Market)",
@@ -343,6 +356,10 @@ def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
                     }
             except Exception:
                 pass
+            fb = _FALLBACK.get(sym)
+            if fb:
+                s, ind, se, sen = fb
+                return {"sector": s, "industry": ind, "sector_etf": se, "sector_etf_name": sen}
         sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
         return {
             "sector": sector.replace("-", " ").title() if sector else "Unknown",

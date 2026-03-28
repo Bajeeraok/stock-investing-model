@@ -1,0 +1,48 @@
+{
+  "SPY": {
+    "short": {
+      "entry_low": 624.58,
+      "entry_high": 637.26,
+      "stop_loss": 599.22,
+      "target": 666.66,
+      "horizon_label": "Short-term"
+    },
+    "medium": {
+      "entry_low": 624.58,
+      "entry_high": 684.67,
+      "stop_loss": 637.22,
+      "target": 779.57,
+      "horizon_label": "Medium-term"
+    },
+    "long": {
+      "entry_low": 624.58,
+      "entry_high": 684.67,
+      "stop_loss": 466.31,
+      "target": 833.04,
+      "horizon_label": "Long-term"
+    }
+  },
+  "NVDA": {
+    "short": {
+      "entry_low": 165.01,
+      "entry_high": 168.36,
+      "stop_loss": 156.62,
+      "target": 185.13,
+      "horizon_label": "Short-term"
+    },
+    "medium": {
+      "entry_low": 165.01,
+      "entry_high": 185.31,
+      "stop_loss": 155.11,
+      "target": 199.47,
+      "horizon_label": "Medium-term"
+    },
+    "long": {
+      "entry_low": 165.01,
+      "entry_high": 185.31,
+      "stop_loss": 82.29,
+      "target": 178.1,
+      "horizon_label": "Long-term"
+    }
+  }
+}
