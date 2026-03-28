@@ -132,12 +132,14 @@ export function BacktestStatus() {
   const [yearsUsed, setYearsUsed] = useState(2);
   const [periodLabel, setPeriodLabel] = useState<string>("");
   const [view, setView] = useState<"overall" | "yearly" | "quarterly">("overall");
+  const [lastBypassedCache, setLastBypassedCache] = useState(false);
 
-  const fetchBacktest = useCallback(async (tickerList: string[], yearsVal: number) => {
+  const fetchBacktest = useCallback(async (tickerList: string[], yearsVal: number, bypassCache = false) => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({ tickers: tickerList.join(","), years: String(yearsVal) });
+      if (bypassCache) params.set("refresh", "true");
       const url = API_BASE ? `${API_BASE}/api/backtest?${params}` : `/api/backtest?${params}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -145,19 +147,22 @@ export function BacktestStatus() {
       setResults(json.backtest ?? []);
       setYearsUsed(json.backtest_years ?? yearsVal);
       setPeriodLabel(json.backtest_period ?? `${yearsVal}y`);
+      setLastBypassedCache(Boolean(json.bypass_cache));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load backtest");
       setResults([]);
+      setLastBypassedCache(false);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchBacktest(tickers, years);
+    fetchBacktest(tickers, years, false);
   }, []);
 
-  const handleRun = () => fetchBacktest(tickers, years);
+  const handleRun = () => fetchBacktest(tickers, years, false);
+  const handleRunFresh = () => fetchBacktest(tickers, years, true);
 
   const toggleTicker = (t: string) => {
     setTickers((prev) =>
@@ -252,18 +257,34 @@ export function BacktestStatus() {
             </button>
           </div>
         </div>
-        <div className="flex items-end">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
           <button
             type="button"
             onClick={handleRun}
             disabled={loading || tickers.length === 0}
-            className="flex items-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Uses Redis cache when available (24h TTL) — fast repeat runs."
           >
             <Play className={loading ? "animate-spin h-4 w-4" : "h-4 w-4"} />
             {loading ? "Running..." : "Run backtest"}
           </button>
+          <button
+            type="button"
+            onClick={handleRunFresh}
+            disabled={loading || tickers.length === 0}
+            className="flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg bg-slate-600 hover:bg-slate-500 text-slate-100 font-medium text-sm border border-slate-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Skip Redis and recompute — use after deploying code changes so results match new logic."
+          >
+            Re-run fresh
+          </button>
         </div>
       </div>
+
+      {lastBypassedCache && !loading && (
+        <p className="text-xs text-amber-300/90 mb-2" title="Cache was skipped; results reflect current server code.">
+          Last run: cache bypassed — full backtest recomputed.
+        </p>
+      )}
 
       {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
       <p className="text-sm text-slate-300 mb-2">

@@ -210,12 +210,17 @@ def cache_key(prefix: str, *parts: str) -> str:
     return ":".join([prefix] + [str(p).upper() for p in parts if p])
 
 
-def cached_backtest(ticker: str, period: str, fetch_fn):
-    """Cache backtest results. TTL 24h."""
+def cached_backtest(ticker: str, period: str, fetch_fn, force_refresh: bool = False):
+    """Cache backtest results. TTL 24h.
+
+    force_refresh: skip Redis read and re-run fetch_fn (use after code changes or to bust stale cache).
+    Still writes the new result to Redis on success.
+    """
     key = cache_key("backtest", ticker, period)
-    hit = get_cached(key)
-    if hit is not None:
-        return hit
+    if not force_refresh:
+        hit = get_cached(key)
+        if hit is not None:
+            return hit
     out = fetch_fn()
     if out and not out.get("error"):
         set_cached(key, out, TTL_BACKTEST)

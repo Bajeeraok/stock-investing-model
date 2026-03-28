@@ -1045,13 +1045,17 @@ async def get_signals():
 
 
 @router.get("/backtest")
-async def get_backtest(tickers: str = "SPY", years: int = 2):
+async def get_backtest(
+    tickers: str = "SPY",
+    years: int = 2,
+    refresh: bool = False,
+):
     """
     Backtest results - may take ~1 min per ticker.
     tickers: comma-separated (e.g. SPY,QQQ,GLD), default SPY
     years: 2, 5, or 10, default 2
+    refresh: if true, bypass Redis and re-run (use after code/deploy changes; otherwise cached 24h).
     """
-    config = _load_config()
     ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
         ticker_list = ["SPY"]
@@ -1062,11 +1066,21 @@ async def get_backtest(tickers: str = "SPY", years: int = 2):
     out = []
     from signals.cache import cached_backtest
     for t in ticker_list[:6]:
-        result = cached_backtest(t, period, lambda ticker=t, per=period: _run_backtest(ticker, per))
+        result = cached_backtest(
+            t,
+            period,
+            lambda ticker=t, per=period: _run_backtest(ticker, per),
+            force_refresh=refresh,
+        )
         if result and "error" not in result:
             result["validation"] = validate_backtest_result(result)
         out.append(result)
-    return {"backtest": out, "backtest_years": years, "backtest_period": period}
+    return {
+        "backtest": out,
+        "backtest_years": years,
+        "backtest_period": period,
+        "bypass_cache": refresh,
+    }
 
 
 @router.get("/theses")
