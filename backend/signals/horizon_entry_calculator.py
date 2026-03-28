@@ -272,9 +272,11 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
 # MEDIUM-TERM CALCULATOR  (3 months)
 # ──────────────────────────────────────────────────────────────────────────────
 # Entry logic — anchored to MA50 (trend support):
-#   Price at/below MA50          → Ideal zone  (MA50 × 0.97–1.01)
+#   Price at/below MA50          → Bridge zone from current area up to MA50 (not only MA50×0.97–1.01,
+#                                  which sat entirely above spot and implied "chase" vs short-term)
 #   Price within 4% above MA50   → Acceptable  (MA50 × 0.99–1.04)
 #   Price > 4% above MA50        → Stretched, flag and wait
+# Cross-horizon: medium entry low never above short-term entry low (optional short_entry_* on inputs).
 #
 # Stop:   MA50 × (1 − 6%)   — MA50 break invalidates medium-term thesis
 # Target: ML-prob scaled 0–25%, amplified by quality multiplier
@@ -294,36 +296,63 @@ class MediumTermInputs:
     options_sentiment_score: float   # 0-100, your existing options layer
     insider_activity_score: float    # 0-100, your existing insider layer
     fundamentals_score: float        # 0-100, your existing fundamentals layer
+    # When set (e.g. from build_all_horizons_payload), MT entry low never sits above short-term buy zone
+    short_entry_low: Optional[float] = None
+    short_entry_high: Optional[float] = None
 
 
-def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
+def _harmonize_medium_entry_with_short(
+    inp: MediumTermInputs,
+    el: float,
+    eh: float,
+    quality: str,
+    q_color: str,
+    zone_anchor: str,
+) -> tuple[float, float, str, str, str]:
+    """
+    Enforce: medium-term entry is not a *higher* minimum price than short-term (no chase).
+    When violated, widen toward [short .. MA50] per retail rule.
+    """
     p = inp.current_price
-    warnings = []
+    st_lo = inp.short_entry_low
+    if st_lo is None or el <= st_lo + 1e-6:
+        return el, eh, quality, q_color, zone_anchor
+
+    el2 = _r(min(st_lo, p * 0.99, inp.ma50 * 0.97))
+    st_hi = inp.short_entry_high if inp.short_entry_high is not None else eh
+    eh2 = _r(max(st_hi, inp.ma50))
+    if el2 >= eh2 - 1e-6:
+        eh2 = _r(max(el2 * 1.02, inp.ma50 * 0.99, st_hi))
+    qa, qc = quality, q_color
+    if quality == "Ideal":
+        qa, qc = "Acceptable", "#f5a623"
+    anchor2 = (
+        "Medium-term entry aligned with short (≤${:.2f}) through MA50 (${:.2f}) — "
+        "longer horizon is not a higher entry price than short-term"
+    ).format(st_lo, inp.ma50)
+    return el2, eh2, qa, qc, anchor2
+
+
+def _medium_term_signal_from_zone(
+    inp: MediumTermInputs,
+    el: float,
+    eh: float,
+    quality: str,
+    q_color: str,
+    zone_anchor: str,
+    warnings: list,
+) -> HorizonSignal:
+    """Stop/target/R:R, verdict, and payload from a finalized (el, eh) medium-term band."""
+    p = inp.current_price
     pct_above_ma50 = (p - inp.ma50) / inp.ma50 * 100
 
-    # ── Entry zone anchored to MA50 ──────────────────────────────────────
-    if pct_above_ma50 <= 0:
-        el, eh = _r(inp.ma50 * 0.97), _r(inp.ma50 * 1.01)
-        quality, q_color = "Ideal", "#00e5a0"
-        zone_anchor = "At/below MA50 (${:.2f}) — trend dip-buy zone".format(inp.ma50)
-
-    elif pct_above_ma50 <= MT_MA50_BAND_PCT:
-        el, eh = _r(inp.ma50 * 0.99), _r(inp.ma50 * (1 + MT_MA50_BAND_PCT / 100))
-        quality, q_color = "Acceptable", "#f5a623"
-        zone_anchor = "Within {:.0f}% above MA50 (${:.2f})".format(MT_MA50_BAND_PCT, inp.ma50)
-
+    # ── Stop: below MA50 invalidates — but if price is below MA50, structural MA50 stop can sit *above* spot
+    structural_stop = _r(inp.ma50 * (1 - MT_STOP_BELOW_MA50_PCT / 100))
+    if p < inp.ma50 and structural_stop > p * 1.02:
+        entry_floor = min(el, p) if el > 0 else p
+        stop_loss = _r(entry_floor * (1 - MT_STOP_BELOW_MA50_PCT / 100))
     else:
-        el, eh = _r(inp.ma50 * 0.99), _r(inp.ma50 * 1.04)
-        quality, q_color = "Stretched", "#ff6b6b"
-        zone_anchor = "Price {:.1f}% above MA50 — wait for pullback to ${:.2f}".format(
-            pct_above_ma50, inp.ma50)
-        warnings.append(
-            "Price is {:.1f}% above MA50 (${:.2f}). "
-            "Ideal medium-term entry: ${:.2f}–${:.2f}".format(
-                pct_above_ma50, inp.ma50, el, eh))
-
-    # ── Stop: below MA50 — break invalidates thesis ──────────────────────
-    stop_loss     = _r(inp.ma50 * (1 - MT_STOP_BELOW_MA50_PCT / 100))
+        stop_loss = structural_stop
     stop_loss_pct = _r((stop_loss - eh) / eh * 100, 1)
 
     # ── Target: ML-scaled with quality multiplier ────────────────────────
@@ -409,6 +438,47 @@ def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
     )
 
 
+def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
+    p = inp.current_price
+    warnings = []
+    pct_above_ma50 = (p - inp.ma50) / inp.ma50 * 100
+
+    # ── Entry zone anchored to MA50 ──────────────────────────────────────
+    if pct_above_ma50 <= 0:
+        # Bridge from current area toward MA50 — not a band that starts only at MA50×0.97 (above spot)
+        cap_lo = min(p * 0.99, inp.ma50 * 0.97)
+        if inp.short_entry_low is not None:
+            cap_lo = min(cap_lo, inp.short_entry_low)
+        el = _r(cap_lo)
+        eh = _r(inp.ma50 * 1.01)
+        if el >= eh - 1e-6:
+            eh = _r(max(el * 1.02, inp.ma50 * 0.99))
+        quality, q_color = "Ideal", "#00e5a0"
+        zone_anchor = (
+            "From current area toward MA50 (${:.2f}) — add toward trend; zone runs up to MA50+1%"
+        ).format(inp.ma50)
+
+    elif pct_above_ma50 <= MT_MA50_BAND_PCT:
+        el, eh = _r(inp.ma50 * 0.99), _r(inp.ma50 * (1 + MT_MA50_BAND_PCT / 100))
+        quality, q_color = "Acceptable", "#f5a623"
+        zone_anchor = "Within {:.0f}% above MA50 (${:.2f})".format(MT_MA50_BAND_PCT, inp.ma50)
+
+    else:
+        el, eh = _r(inp.ma50 * 0.99), _r(inp.ma50 * 1.04)
+        quality, q_color = "Stretched", "#ff6b6b"
+        zone_anchor = "Price {:.1f}% above MA50 — wait for pullback to ${:.2f}".format(
+            pct_above_ma50, inp.ma50)
+        warnings.append(
+            "Price is {:.1f}% above MA50 (${:.2f}). "
+            "Ideal medium-term entry: ${:.2f}–${:.2f}".format(
+                pct_above_ma50, inp.ma50, el, eh))
+
+    el, eh, quality, q_color, zone_anchor = _harmonize_medium_entry_with_short(
+        inp, el, eh, quality, q_color, zone_anchor)
+
+    return _medium_term_signal_from_zone(inp, el, eh, quality, q_color, zone_anchor, warnings)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # LONG-TERM CALCULATOR  (6–18 months)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -431,6 +501,45 @@ class LongTermInputs:
     ml_prob: float          # 6-month ML probability
     regime_bull_pct: float
     fundamentals_score: float
+    # When set (e.g. from build_all_horizons_payload), primary entry must not start above short-term buy zone
+    short_entry_low: Optional[float] = None
+    short_entry_high: Optional[float] = None
+
+
+def _harmonize_long_entry_zone_with_short(
+    inp: LongTermInputs,
+    tier1: EntryTier,
+    entry_zone: EntryZone,
+    warnings: list,
+) -> EntryZone:
+    """
+    Tier 1 is MA200 ± 5%. If price is below MA200, tier1.low can sit entirely above the short-term
+    band — implying a *higher* minimum entry for long-term than short-term. Widen the card entry
+    range so the low is at most short_entry_low (tiers table unchanged).
+    """
+    st_lo = inp.short_entry_low
+    if st_lo is None or entry_zone.low <= st_lo + 1e-6:
+        return entry_zone
+
+    el = _r(min(entry_zone.low, st_lo))
+    st_hi = inp.short_entry_high if inp.short_entry_high is not None else entry_zone.high
+    eh = _r(max(entry_zone.high, st_hi))
+    if el >= eh - 1e-6:
+        eh = _r(max(el * 1.02, tier1.high))
+
+    warnings.append(
+        "Tier 1 MA200 band started above the short-term buy zone — "
+        "horizon entry range widened so long-term is not a higher minimum price than short-term."
+    )
+    return EntryZone(
+        el,
+        eh,
+        anchor="MA200 Tier 1 (${:.2f}) — includes area down to short-term zone through MA200".format(
+            inp.ma200
+        ),
+        quality=entry_zone.quality,
+        quality_color=entry_zone.quality_color,
+    )
 
 
 def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
@@ -507,6 +616,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         quality="In Zone" if not tier1.reachable else "Waiting",
         quality_color="#f5a623",
     )
+    entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
 
     # ── Stop / target using T1 as entry reference ────────────────────────
     stop_loss     = _r(inp.week52_low * 0.95)   # 5% below 52w low
@@ -664,6 +774,8 @@ def build_all_horizons_payload(
         options_sentiment_score=options_sentiment_score,
         insider_activity_score=insider_activity_score,
         fundamentals_score=fundamentals_score,
+        short_entry_low=short.entry_zone.low,
+        short_entry_high=short.entry_zone.high,
     ))
 
     long_term = compute_long_term_entry(LongTermInputs(
@@ -674,6 +786,8 @@ def build_all_horizons_payload(
         ml_prob=lt_ml_prob,
         regime_bull_pct=regime_bull_pct,
         fundamentals_score=fundamentals_score,
+        short_entry_low=short.entry_zone.low,
+        short_entry_high=short.entry_zone.high,
     ))
 
     return {

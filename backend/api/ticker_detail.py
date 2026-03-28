@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from behavior.thesis import load_theses
 from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_volume
+from signals.providers import MAJOR_INDEX_ETFS
 from signals.indicators import multi_horizon_scores
 from signals.providers import get_next_earnings, get_sector_and_industry, get_peers
 
@@ -390,6 +391,10 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
         atr = current_price * 0.02
     support_level = _safe_float(response.get("support_level")) or (low_52w or current_price * 0.95)
     resistance_level = high_52w or current_price * 1.05
+    # Do not anchor short-horizon targets to 52w high alone for index ETFs — can sit far above spot
+    # and distorts entry/target copy when Yahoo spot and FMP profile 52w disagree.
+    if ticker.upper() in MAJOR_INDEX_ETFS:
+        resistance_level = min(float(resistance_level), current_price * 1.12)
     vwap = current_price
     volume_ratio = _safe_float(response.get("volume_ratio")) or 1.0
 
@@ -870,6 +875,19 @@ def _build_trade_roadmap(
         "reason": "Regime invalidates thesis",
     })
 
+    _apply_sell_roadmap_band_alignment(
+        sell_stages,
+        current_price=current_price,
+        fair_value=fair_value,
+        high_52w=high_52w,
+        short_h=short,
+        medium_h=medium,
+        long_h=long_h,
+        st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
+        mt_band=response.get("mt_band") if isinstance(response.get("mt_band"), dict) else None,
+        lt_band=response.get("lt_band") if isinstance(response.get("lt_band"), dict) else None,
+    )
+
     # Trader-type one-liners (from GLD sample)
     short_stop = _safe_float(short.get("stop_loss"))
     short_tgt = _safe_float(short.get("target"))
@@ -922,6 +940,63 @@ def _build_trade_roadmap(
             "medium_term": trader_summary_medium,
             "long_term": trader_summary_long,
         },
+    }
+
+
+def _hold_vs_trade_guidance(
+    *,
+    display_verdict: str,
+    overall: str,
+    regime_bull_pct: float | None,
+) -> dict[str, str]:
+    """
+    Retail education: reconcile "take profits vs buy the dip" with "hold 5–10 years."
+    Not personalized advice — dashboard copy only.
+    """
+    rb = float(regime_bull_pct) if regime_bull_pct is not None else 50.0
+
+    long_term = (
+        "For a 5–10 year plan, the usual approach is to stay invested through normal pullbacks "
+        "when the business (or index) thesis is intact, and to add on planned dips — not to sell "
+        "everything trying to time a lower re-entry. Taxes, whipsaw, and missing recovery days "
+        "often hurt retail returns more than a simple hold-and-rebalance discipline."
+    )
+    short_term = (
+        "For trading or 1–6 month horizons, taking profit near short and medium targets "
+        "(and the sell roadmap stages) is appropriate — then redeploy in buy zones on the "
+        "next pullback or rotate to a stronger name. The same holding can be split: a core long-term "
+        "slice and a tactical trim slice with different rules."
+    )
+
+    if display_verdict in ("REDUCE", "AVOID"):
+        bridge = (
+            f"Today’s model read leans {display_verdict} (regime/ML vs valuation). "
+            "That often means trim size or pause new buys, not necessarily abandoning a multi-year "
+            "thesis — many investors reduce tactical exposure while keeping a smaller core."
+        )
+    elif overall in ("STRONG BUY", "BUY") and rb >= 50:
+        bridge = (
+            f"Today’s model is constructive ({overall}, bull regime ~{rb:.0f}%). "
+            "Routine volatility alone is usually not a reason to exit a 5–10 year position; "
+            "prefer rebalancing and adds on drawdowns toward your plan."
+        )
+    elif overall in ("WAIT", "WATCH"):
+        bridge = (
+            "Signals are mixed. Match action to time horizon: use trader and sell roadmap "
+            "for trims, and long-term tiers plus fair value for adds — they answer different questions."
+        )
+    else:
+        bridge = (
+            "Use horizon cards as intended: short and medium for tactical entries and exits; "
+            "long-term tiers for strategic allocation. This dashboard separates those on purpose."
+        )
+
+    return {
+        "title": "Hold for years vs take profits — how to use this app",
+        "long_term": long_term,
+        "short_term": short_term,
+        "signal_bridge": bridge,
+        "disclaimer": "Educational only — not personalized financial advice.",
     }
 
 
@@ -999,11 +1074,17 @@ def _build_one_answer_roadmaps(
         subline = None
     headline = "".join(headline_parts).strip() or f"{verdict_label}: See trader/investor roadmaps below."
 
+    regime_bull_pct = investor_out.get("regime_bull_pct")
     one_answer = {
         "headline": headline,
         "subline": subline if display_verdict in ("REDUCE", "AVOID") else None,
         "verdict": verdict_label,
         "action_today": action_today,
+        "hold_vs_trade": _hold_vs_trade_guidance(
+            display_verdict=verdict_label,
+            overall=overall,
+            regime_bull_pct=regime_bull_pct if isinstance(regime_bull_pct, (int, float)) else None,
+        ),
     }
 
     # Trader roadmap (short + medium)
@@ -1140,6 +1221,171 @@ def _safe_float(v) -> float | None:
         return None if math.isnan(f) else f
     except (TypeError, ValueError):
         return None
+
+
+def _band_edges(b: dict | None) -> tuple[float | None, float | None]:
+    if not isinstance(b, dict):
+        return None, None
+    return _safe_float(b.get("low")), _safe_float(b.get("high"))
+
+
+def _sell_roadmap_config() -> dict[str, float]:
+    """Defaults merged with config retail.sell_roadmap (see config.yaml)."""
+    defaults: dict[str, float] = {
+        "pad_min_pct_of_spot": 0.01,
+        "pad_floor": 0.05,
+        "short_no_52w_cap_mult": 1.15,
+        "short_target_hi_mult": 1.04,
+        "short_st_hi_mult": 0.995,
+        "short_target_lo_mult": 0.97,
+        "st_fallback_band_lo_mult": 0.96,
+        "st_fallback_52w_mult": 0.97,
+        "medium_lo_mult": 0.91,
+        "medium_hi_mult": 0.995,
+        "medium_mt_hi_mult": 0.92,
+        "medium_mt_cap_mult": 1.06,
+        "major_medium_lo_mult": 0.98,
+        "major_fv_low_mult": 0.82,
+        "major_fv_hi_mult": 0.92,
+        "full_long_lo_mult": 0.93,
+        "full_fv_lo_mult": 0.93,
+    }
+    try:
+        from config_loader import load_config
+        raw = (load_config().get("retail") or {}).get("sell_roadmap")
+        if not isinstance(raw, dict):
+            return defaults
+        for k, v in raw.items():
+            if k in defaults and v is not None:
+                try:
+                    defaults[k] = float(v)
+                except (TypeError, ValueError):
+                    pass
+    except Exception:
+        pass
+    return defaults
+
+
+def _apply_sell_roadmap_band_alignment(
+    sell_stages: list[dict],
+    *,
+    current_price: float,
+    fair_value: float,
+    high_52w: float | None,
+    short_h: dict,
+    medium_h: dict,
+    long_h: dict,
+    st_band: dict | None,
+    mt_band: dict | None,
+    lt_band: dict | None,
+) -> None:
+    """
+    Align sell roadmap price zones with horizon targets/stops and ST/MT/LT model bands.
+    Buy roadmap already uses horizon entry zones; sell side previously used only 52w + FV multiples.
+    Mutates sell_stages in place (indices: 0 hard stop, 1 short trim, 2 partial, 3 major, 4 full).
+    """
+    if len(sell_stages) < 5 or current_price <= 0:
+        return
+
+    short_stop = _safe_float(short_h.get("stop_loss"))
+    short_tgt = _safe_float(short_h.get("target"))
+    medium_tgt = _safe_float(medium_h.get("target"))
+    long_tgt = _safe_float(long_h.get("target")) or (fair_value if fair_value > 0 else None)
+
+    _st_lo, st_hi = _band_edges(st_band)
+    _mt_lo, mt_hi = _band_edges(mt_band)
+    _lt_lo, lt_hi = _band_edges(lt_band)
+
+    if not short_stop and not short_tgt and not medium_tgt and not st_hi and not mt_hi and not lt_hi:
+        return
+
+    cfg = _sell_roadmap_config()
+    pad = max(cfg["pad_min_pct_of_spot"] * current_price, cfg["pad_floor"])
+
+    # 0 — Hard stop: stricter (higher) invalidation when short horizon stop is tighter than 52w-based
+    if sell_stages[0].get("price_zone_high") is not None and short_stop:
+        try:
+            ph = float(sell_stages[0]["price_zone_high"])
+            sell_stages[0]["price_zone_high"] = round(max(ph, short_stop), 2)
+            c = sell_stages[0].get("condition") or ""
+            if "horizon" not in c.lower():
+                sell_stages[0]["condition"] = c + " — max(52w-based, short-term horizon stop)"
+        except (TypeError, ValueError):
+            pass
+
+    # 1 — Short-term trim: horizon target + optional ST band / 52w cap
+    if short_tgt:
+        cap = high_52w if high_52w else short_tgt * cfg["short_no_52w_cap_mult"]
+        hi = min(cap, short_tgt * cfg["short_target_hi_mult"])
+        if st_hi:
+            hi = min(cap, max(hi, st_hi * cfg["short_st_hi_mult"]))
+        lo = short_tgt * cfg["short_target_lo_mult"]
+        if lo >= hi - 1e-6:
+            lo = hi - pad * 2
+        sell_stages[1]["price_zone_low"] = round(max(lo, current_price * 0.5), 2)
+        sell_stages[1]["price_zone_high"] = round(max(hi, float(sell_stages[1]["price_zone_low"]) + pad), 2)
+        c = sell_stages[1].get("condition") or ""
+        if "horizon" not in c.lower():
+            sell_stages[1]["condition"] = c + " — short-term target + ST band"
+    elif st_hi and high_52w:
+        sell_stages[1]["price_zone_low"] = round(
+            min(st_hi * cfg["st_fallback_band_lo_mult"], high_52w * cfg["st_fallback_52w_mult"]), 2
+        )
+        sell_stages[1]["price_zone_high"] = round(high_52w, 2)
+        sell_stages[1]["condition"] = (sell_stages[1].get("condition") or "") + " — ST band / 52w"
+
+    # 2 — 1–3 months partial: medium horizon target + MT band
+    if medium_tgt:
+        lo = medium_tgt * cfg["medium_lo_mult"]
+        hi = medium_tgt * cfg["medium_hi_mult"]
+        if mt_hi:
+            hi = min(max(hi, mt_hi * cfg["medium_mt_hi_mult"]), medium_tgt * cfg["medium_mt_cap_mult"])
+        if hi <= lo:
+            hi = lo + pad * 2
+        sell_stages[2]["price_zone_low"] = round(lo, 2)
+        sell_stages[2]["price_zone_high"] = round(hi, 2)
+        c = sell_stages[2].get("condition") or ""
+        if "horizon" not in c.lower():
+            sell_stages[2]["condition"] = c + " — medium-term target + MT band"
+
+    # 3 — 3–6 months: between medium scenario and fair value
+    if medium_tgt and fair_value > 0:
+        lo = max(medium_tgt * cfg["major_medium_lo_mult"], fair_value * cfg["major_fv_low_mult"])
+        hi = fair_value * cfg["major_fv_hi_mult"]
+        if hi <= lo:
+            hi = lo + pad * 3
+        sell_stages[3]["price_zone_low"] = round(lo, 2)
+        sell_stages[3]["price_zone_high"] = round(hi, 2)
+        sell_stages[3]["condition"] = (sell_stages[3].get("condition") or "") + " — medium→FV ladder"
+
+    # 4 — Full target: long horizon / LT band high
+    if fair_value > 0 and long_tgt:
+        fv_cap = min(fair_value, lt_hi) if lt_hi else fair_value
+        lo = max(long_tgt * cfg["full_long_lo_mult"], fair_value * cfg["full_fv_lo_mult"])
+        sell_stages[4]["price_zone_low"] = round(lo, 2)
+        sell_stages[4]["price_zone_high"] = round(max(fv_cap, lo + pad), 2)
+        c = sell_stages[4].get("condition") or ""
+        if "horizon" not in c.lower():
+            sell_stages[4]["condition"] = c + " — fair value / LT band"
+
+    # Profit-taking ladder: each stage floor should not sit below the prior stage ceiling
+    prev_hi: float | None = None
+    for i in (1, 2, 3, 4):
+        lo = sell_stages[i].get("price_zone_low")
+        hi = sell_stages[i].get("price_zone_high")
+        if lo is None or hi is None:
+            continue
+        try:
+            lo_f, hi_f = float(lo), float(hi)
+        except (TypeError, ValueError):
+            continue
+        if prev_hi is not None and lo_f < prev_hi:
+            lo_f = prev_hi + pad
+            sell_stages[i]["price_zone_low"] = round(lo_f, 2)
+        if lo_f >= hi_f:
+            hi_f = lo_f + pad * 2
+            sell_stages[i]["price_zone_high"] = round(hi_f, 2)
+        prev_hi = float(sell_stages[i]["price_zone_high"])
 
 
 # Fix 5: Sector-specific metrics (AUM for financials, etc.)
@@ -1311,10 +1557,20 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
             except Exception:
                 pass
 
+            daily_move_pct = None
+            if close is not None and len(close) >= 2:
+                try:
+                    c0, c1 = float(close.iloc[-2]), float(close.iloc[-1])
+                    if c0 > 0:
+                        daily_move_pct = round(100.0 * (c1 - c0) / c0, 4)
+                except Exception:
+                    pass
+
             row = {
                 "ticker": ticker,
                 "price": current_price,
                 "close": current_price,
+                "daily_move_pct": daily_move_pct,
                 "ma20": signal_data.get("ma20"),
                 "regime": regime,
                 "vol_6m": vol_6m or 0.3,

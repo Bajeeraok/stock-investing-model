@@ -39,6 +39,28 @@ def _suggestion_from_confidence(
     return "HOLD"
 
 
+def _action_today_line(
+    score: float | None,
+    confidence_pct: float | None,
+    regime: str | None,
+    suggestion: str,
+    earnings_note: str | None,
+) -> str:
+    """Single-line retail cue: confidence or score, regime, suggestion, earnings if soon."""
+    parts: list[str] = []
+    if confidence_pct is not None:
+        parts.append(f"{confidence_pct:.0f}% conf")
+    elif score is not None:
+        parts.append(f"score {score:.0f}")
+    if regime:
+        parts.append(str(regime))
+    if suggestion and suggestion != "N/A":
+        parts.append(suggestion.replace("/", " ").strip())
+    if earnings_note and "Earnings" in earnings_note:
+        parts.append(earnings_note.strip())
+    return " · ".join(parts) if parts else "Review levels"
+
+
 def portfolio_report(
     holdings: list[dict],
     results: list[dict],
@@ -89,7 +111,17 @@ def portfolio_report(
         purchase_date = (h.get("purchase_date") or h.get("acquisition_date")) if isinstance(h, dict) else None
         r = results_by_ticker.get(ticker)
         if not r or r.get("close") is None:
-            entry = {"ticker": ticker, "quantity": qty, "price": None, "value": None, "pct": None, "score": None, "regime": None, "suggestion": "N/A"}
+            entry = {
+                "ticker": ticker,
+                "quantity": qty,
+                "price": None,
+                "value": None,
+                "pct": None,
+                "score": None,
+                "regime": None,
+                "suggestion": "N/A",
+                "action_today": "No snapshot — refresh signals",
+            }
             if account:
                 entry["account"] = account
             per_holding.append(entry)
@@ -100,12 +132,38 @@ def portfolio_report(
         score = r.get("composite_buy")
         regime = r.get("regime", "")
         conf_data = (confidence_by_ticker or {}).get(ticker)
+        earn_note = r.get("earnings_note")
         if conf_data is not None and conf_data.get("confidence") is not None:
             suggestion = _suggestion_from_confidence(conf_data.get("confidence"), conf_data.get("action"), add_min_conf_pct, trim_max_conf_pct)
-            entry = {"ticker": ticker, "quantity": qty, "price": price, "value": value, "pct": None, "score": score, "regime": regime, "suggestion": suggestion, "confidence": round(conf_data["confidence"] * 100, 1), "action": conf_data.get("action")}
+            conf_pct = round(conf_data["confidence"] * 100, 1)
+            entry = {
+                "ticker": ticker,
+                "quantity": qty,
+                "price": price,
+                "value": value,
+                "pct": None,
+                "score": score,
+                "regime": regime,
+                "suggestion": suggestion,
+                "confidence": conf_pct,
+                "action": conf_data.get("action"),
+                "action_today": _action_today_line(score, conf_pct, regime, suggestion, earn_note),
+            }
         else:
             suggestion = _suggestion(score, buy_min, sell_max)
-            entry = {"ticker": ticker, "quantity": qty, "price": price, "value": value, "pct": None, "score": score, "regime": regime, "suggestion": suggestion}
+            entry = {
+                "ticker": ticker,
+                "quantity": qty,
+                "price": price,
+                "value": value,
+                "pct": None,
+                "score": score,
+                "regime": regime,
+                "suggestion": suggestion,
+                "action_today": _action_today_line(score, None, regime, suggestion, earn_note),
+            }
+        if earn_note:
+            entry["earnings_note"] = earn_note
         if account:
             entry["account"] = account
         if cost_basis is not None:
@@ -175,7 +233,7 @@ def portfolio_report(
         use_confidence = conf_data is not None and conf_data.get("confidence") is not None
         if use_confidence:
             conf_val = conf_data["confidence"]
-            if conf_val >= 0.65:  # BUY or better
+            if conf_val >= (add_min_conf_pct / 100.0):
                 cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", ""), "confidence": round(conf_val * 100, 1), "action": conf_data.get("action")})
         elif score is not None and score >= cash_deploy_min_score:
             cash_deployment.append({"ticker": t, "score": score, "regime": r.get("regime", "")})
@@ -260,6 +318,7 @@ def allocation_recommendations(
     confidence for trim/add thresholds and ranking instead of technical score.
     """
     doctor_cfg = doctor_cfg or {}
+    model_rules = doctor_cfg.get("model_rules") or {}
     risk_appetite = (doctor_cfg.get("risk_appetite") or "moderate").lower()
     goal = (doctor_cfg.get("goal") or "medium").lower()
     target_value = doctor_cfg.get("target_portfolio_value")
@@ -296,13 +355,27 @@ def allocation_recommendations(
     max_position_pct = {"conservative": 15, "moderate": 20, "aggressive": 25}.get(risk_appetite, 20)
     add_min_score = {"conservative": 72, "moderate": 70, "aggressive": 65}.get(risk_appetite, 70)
     add_min_conf = {"conservative": 0.72, "moderate": 0.65, "aggressive": 0.58}.get(risk_appetite, 0.65)
+    use_model_rules = bool(model_rules.get("add_min_confidence") is not None or model_rules.get("trim_max_confidence") is not None)
+    cash_deploy_min = float(doctor_cfg.get("cash_deploy_min_score") or 70)
+    if use_model_rules:
+        if model_rules.get("add_min_confidence") is not None:
+            add_min_conf = float(model_rules["add_min_confidence"]) / 100.0
+        if model_rules.get("trim_max_confidence") is not None:
+            trim_conf_threshold = float(model_rules["trim_max_confidence"]) / 100.0
+        add_min_score = int(cash_deploy_min)
     # If implied CAGR is high, nudge toward more aggressive (trim weak positions to redeploy)
-    if implied_cagr_pct is not None and implied_cagr_pct > 10:
-        trim_score_threshold = min(trim_score_threshold + 5, 50)
-        trim_conf_threshold = min(trim_conf_threshold + 0.05, 0.50)
-    elif implied_cagr_pct is not None and implied_cagr_pct < 4:
-        trim_score_threshold = max(trim_score_threshold - 3, 35)
-        trim_conf_threshold = max(trim_conf_threshold - 0.05, 0.35)
+    if not use_model_rules:
+        if implied_cagr_pct is not None and implied_cagr_pct > 10:
+            trim_score_threshold = min(trim_score_threshold + 5, 50)
+            trim_conf_threshold = min(trim_conf_threshold + 0.05, 0.50)
+        elif implied_cagr_pct is not None and implied_cagr_pct < 4:
+            trim_score_threshold = max(trim_score_threshold - 3, 35)
+            trim_conf_threshold = max(trim_conf_threshold - 0.05, 0.35)
+    else:
+        if implied_cagr_pct is not None and implied_cagr_pct > 10:
+            trim_score_threshold = min(trim_score_threshold + 5, 50)
+        elif implied_cagr_pct is not None and implied_cagr_pct < 4:
+            trim_score_threshold = max(trim_score_threshold - 3, 35)
 
     # ---- TRIM ----
     conf_map = confidence_by_ticker or {}
@@ -468,6 +541,9 @@ def allocation_recommendations(
             "goal": goal,
             "target_portfolio_value": target_value,
             "time_period_years": time_years,
+            "model_rules_unified": use_model_rules,
+            "add_min_confidence_pct": round(add_min_conf * 100, 1),
+            "trim_max_confidence_pct": round(trim_conf_threshold * 100, 1),
         },
         "implied_cagr_pct": implied_cagr_pct,
         "profile": risk_appetite,

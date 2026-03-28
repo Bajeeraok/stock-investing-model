@@ -7,7 +7,8 @@ Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
   - economic_calendar (6h)
   - price_target, price_target_consensus (6h)
   - insider_stats, financial_estimates, key_metrics (12h)
-  - long_horizon_risk (24h), target_bands (7d)
+  - long_horizon_risk (24h)
+  - target_bands (4–24h, move-dependent) – prior ST/MT/LT for optional trailing re-anchor
   - ticker_detail (5 min), edgar_insider_flow (12h)
 
 Not cached (by design): live price, MAs, RSI, MACD, cross-asset (signal-critical).
@@ -27,7 +28,7 @@ TTL_ECONOMIC_CALENDAR = 6 * 3600
 TTL_FUNDAMENTALS = 12 * 3600
 TTL_PRICE_TARGET = 6 * 3600
 TTL_INSIDER_STATS = 12 * 3600
-TTL_TARGET_BANDS = 7 * 24 * 3600  # 7 days – previous bands for trailing re-anchor
+TTL_TARGET_BANDS = 24 * 3600  # Default max TTL (quiet days); add_target_bands uses shorter TTL on big move days
 TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
@@ -311,15 +312,16 @@ def cached_long_horizon_risk(ticker: str, period: str, fetch_fn) -> dict | None:
 
 
 def get_cached_bands(ticker: str) -> dict | None:
-    """Get last computed target bands for ticker (for trailing re-anchor)."""
+    """Last computed target bands for optional ST trailing re-anchor."""
     key = cache_key("target_bands", ticker)
     return get_cached(key)
 
 
-def set_cached_bands(ticker: str, bands: dict) -> bool:
-    """Store target bands for ticker. Used when price hits levels to re-anchor."""
+def set_cached_bands(ticker: str, bands: dict, ttl_seconds: int | None = None) -> bool:
+    """ttl_seconds defaults to TTL_TARGET_BANDS (24h). Callers may pass a shorter TTL after large daily moves."""
     key = cache_key("target_bands", ticker)
-    return set_cached(key, bands, TTL_TARGET_BANDS)
+    ttl = int(ttl_seconds) if ttl_seconds is not None else TTL_TARGET_BANDS
+    return set_cached(key, bands, ttl)
 
 
 def cached_ticker_detail(ticker: str, config_hash: str, fetch_fn):

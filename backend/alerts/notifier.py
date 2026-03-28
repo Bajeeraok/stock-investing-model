@@ -13,6 +13,63 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 
+def send_retail_digest(
+    config: dict,
+    *,
+    story_changes: list[dict] | None = None,
+    trim_tickers: list[str] | None = None,
+    earnings_risk_count: int = 0,
+    earnings_tickers: list[str] | None = None,
+    full_report: str | None = None,
+) -> bool:
+    """
+    Email/Telegram digest: story changes, trim-relevant tickers, earnings-week names.
+    Skips send when nothing to say. Controlled by alerts.digest_mode:
+      - story_only: only when story_changes non-empty (legacy)
+      - retail (default): send when any of story, trim, or earnings is non-empty
+    """
+    alerts_cfg = config.get("alerts", {}) or {}
+    if not alerts_cfg:
+        return False
+    mode = (alerts_cfg.get("digest_mode") or "retail").lower()
+    sc = story_changes or []
+    trim_t = trim_tickers or []
+    earn_n = int(earnings_risk_count or 0)
+    earn_tickers = earnings_tickers or []
+
+    if mode == "story_only":
+        if not sc:
+            return False
+    else:
+        if not sc and not trim_t and earn_n <= 0:
+            return False
+
+    lines: list[str] = ["DAILY DIGEST", "=" * 40]
+    if sc:
+        lines.append("STORY CHANGES")
+        for r in sc:
+            lines.append(f"  {r.get('ticker', '?'):6}  {r.get('story_change', '')}")
+        lines.append("")
+    if trim_t:
+        lines.append("TRIM / WEAK SCORE")
+        lines.append("  " + ", ".join(trim_t[:20]))
+        lines.append("")
+    if earn_n > 0 or earn_tickers:
+        lines.append(f"EARNINGS WINDOW ({earn_n} in next week)" if earn_n else "EARNINGS WINDOW")
+        if earn_tickers:
+            lines.append("  " + ", ".join(earn_tickers[:20]))
+        lines.append("")
+    if full_report:
+        lines.append(full_report)
+    body = "\n".join(lines).strip()
+    if len(body) < 20:
+        return False
+    telegram_ok = _send_telegram(alerts_cfg, body)
+    if telegram_ok:
+        return True
+    return _send_email(alerts_cfg, body, subject="Stock Model: Daily Digest")
+
+
 def send_alert_digest(story_changes: list[dict], config: dict, full_report: str | None = None) -> bool:
     """
     Send digest when story changes occur. Returns True if sent, False otherwise.
@@ -62,7 +119,7 @@ def _send_telegram(cfg: dict, body: str) -> bool:
         return False
 
 
-def _send_email(cfg: dict, body: str) -> bool:
+def _send_email(cfg: dict, body: str, subject: str | None = None) -> bool:
     """Send via SMTP. Needs smtp_host, from_addr, to_addrs, and optionally user/password."""
     email_cfg = cfg.get("email", {}) or {}
     host = email_cfg.get("smtp_host") or cfg.get("smtp_host")
@@ -77,7 +134,7 @@ def _send_email(cfg: dict, body: str) -> bool:
         return False
     try:
         msg = MIMEMultipart()
-        msg["Subject"] = "Stock Model: Story Change Alerts"
+        msg["Subject"] = subject or "Stock Model: Story Change Alerts"
         msg["From"] = from_addr
         msg["To"] = ", ".join(to_addrs)
         msg.attach(MIMEText(body, "plain"))

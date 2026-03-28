@@ -317,12 +317,17 @@ export interface DashboardData {
     summary_by_signal?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
     message?: string | null;
   };
+  /** EOD freshness, accuracy report, forward ADD hit rate, optional weekly backtest (data/model_health.json) */
+  model_health?: import("@/components/dashboard/index").ModelHealthData;
   /** Morning brief (Markets tab): market pulse, key levels, today's focus, action items */
   morning_newsletter?: {
     headline: string;
     date: string;
+    three_line_brief?: string[];
     sections: Array<{ title: string; items: string[] }>;
     action_items: string[];
+    hold_vs_trade_teaser?: string;
+    hold_vs_trade_more?: string;
   } | null;
   paper_trading?: {
     log?: { date: string; seen: number; appended: number } | null;
@@ -570,6 +575,9 @@ export interface PortfolioHolding {
   action?: string | null;
   regime: string | null;
   suggestion: string;
+  /** One-line “do this today” from portfolio doctor */
+  action_today?: string | null;
+  earnings_note?: string | null;
   account?: string;
   cost_basis?: number;
   gain_loss?: number;

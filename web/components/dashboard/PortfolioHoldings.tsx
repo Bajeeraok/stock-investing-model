@@ -3,14 +3,28 @@
 import type { PortfolioHolding } from "@/app/page";
 import { clsx } from "clsx";
 
-export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }: { holdings: PortfolioHolding[]; onTickerClick?: (ticker: string) => void; hideAccountColumn?: boolean }) {
+export function PortfolioHoldings({
+  holdings,
+  onTickerClick,
+  hideAccountColumn,
+  addMinConfidence = 70,
+  trimMaxConfidence = 30,
+}: {
+  holdings: PortfolioHolding[];
+  onTickerClick?: (ticker: string) => void;
+  hideAccountColumn?: boolean;
+  /** From config model_rules.add_min_confidence — confidence column coloring */
+  addMinConfidence?: number;
+  trimMaxConfidence?: number;
+}) {
   const sorted = [...holdings].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
   const hasAccounts = !hideAccountColumn && holdings.some((h) => h.account);
   const hasGainLoss = holdings.some((h) => h.gain_loss != null);
+  const hasActionToday = holdings.some((h) => h.action_today);
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[640px] border-collapse text-sm">
+        <table className={clsx("w-full border-collapse text-sm", hasActionToday ? "min-w-[880px]" : "min-w-[640px]")}>
           <thead>
             <tr className="text-left text-slate-400">
               {hasAccounts && (
@@ -32,6 +46,14 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 calibrated confidence (7-layer engine). Falls back to composite score when confidence is unavailable.">Confidence</th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Regime</th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Suggestion</th>
+              {hasActionToday && (
+                <th
+                  className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 max-w-[14rem]"
+                  title="Single-line cue: confidence/score, regime, suggestion, earnings if soon"
+                >
+                  Today
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -80,9 +102,9 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
                     return (
                   <span
                     className={clsx(
-                      (val ?? 0) >= 65 && "text-emerald-400",
-                      (val ?? 0) < 65 && (val ?? 0) > 35 && "text-slate-300",
-                      (val ?? 0) <= 35 && "text-red-400"
+                      (val ?? 0) >= addMinConfidence && "text-emerald-400",
+                      (val ?? 0) < addMinConfidence && (val ?? 0) > trimMaxConfidence && "text-slate-300",
+                      (val ?? 0) <= trimMaxConfidence && "text-red-400"
                     )}
                   >
                     {val != null ? val.toFixed(1) : "-"}
@@ -119,9 +141,14 @@ export function PortfolioHoldings({ holdings, onTickerClick, hideAccountColumn }
                     </span>
                   )}
                   {h.gain_loss_pct != null && h.gain_loss_pct >= 20 && (
-                    <span className="block text-xs text-amber-400/90 mt-0.5" title="Consider holding 12+ months for long-term capital gains treatment (taxable accounts).">LTCG note</span>
+                    <span className="block text-xs text-amber-400/90 mt-0.5" title="Consider holding 12+ months for long-term capital gains treatment (taxable accounts).">LTCG note                    </span>
                   )}
                 </td>
+                {hasActionToday && (
+                  <td className="px-3 py-2.5 text-xs text-slate-400 max-w-[14rem] align-top">
+                    {h.action_today ? <span className="text-slate-300 leading-snug">{h.action_today}</span> : "—"}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -51,6 +51,7 @@ from signals.indicator_validation import validate_indicators_vs_external
 from signals.indicator_comparison import run_indicator_comparison
 from signals.validation import get_validation_records
 from signals.forward_tracking import get_forward_tracking
+from signals.model_health import build_model_health
 from signals.fmp_client import (
     fetch_batch_quote,
     fetch_economic_calendar,
@@ -693,7 +694,9 @@ async def get_dashboard():
     # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
     t0 = time.perf_counter()
     portfolio_doctor_recommendations = {}
-    doctor_cfg = config.get("portfolio_doctor") or {}
+    doctor_cfg = dict(config.get("portfolio_doctor") or {})
+    doctor_cfg["model_rules"] = config.get("model_rules") or {}
+    doctor_cfg["cash_deploy_min_score"] = config.get("cash_deploy_min_score", 70)
     for pname, rep in portfolios_out.items():
         try:
             rec = allocation_recommendations(
@@ -921,9 +924,23 @@ async def get_dashboard():
             earnings_risk_count=earnings_risk_count or 0,
             forward_tracking=forward_tracking,
             results=results,
+            model_rules=config.get("model_rules"),
+            trim_candidates=trim_candidates,
         )
     except Exception as e:
         logger.debug("Morning newsletter failed: %s", e)
+
+    model_health: dict = {}
+    try:
+        model_health = build_model_health(
+            data_root,
+            config,
+            forward_tracking,
+            eod_snapshots,
+            model_validation=model_validation,
+        )
+    except Exception as e:
+        logger.debug("model_health failed: %s", e)
 
     out = {
         "as_of_date": as_of_date,
@@ -970,6 +987,7 @@ async def get_dashboard():
         "what_changed": what_changed_list,
         "earnings_risk_count": earnings_risk_count,
         "morning_newsletter": morning_newsletter,
+        "model_health": model_health,
         "config": {
             "watchlist": config.get("watchlist", []),
             "score": config.get("score", {}),

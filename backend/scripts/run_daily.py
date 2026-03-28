@@ -31,7 +31,7 @@ def _today_est() -> str:
 
 import yaml
 from config_loader import get_data_root, load_config
-from alerts.notifier import send_alert_digest
+from alerts.notifier import send_retail_digest
 from behavior.thesis import load_theses, get_nudge
 from behavior.what_changed import what_changed
 from opportunity.scanner import run_opportunity_scan
@@ -349,10 +349,20 @@ def run_signals(
                 if delta >= alert_delta:
                     story_change = f"SCORE DROP: {prev_score:.0f} -> {composite_buy:.0f} (-{delta:.0f})"
 
+        daily_move_pct = None
+        if close is not None and len(close) >= 2:
+            try:
+                c0, c1 = float(close.iloc[-2]), float(close.iloc[-1])
+                if c0 > 0:
+                    daily_move_pct = round(100.0 * (c1 - c0) / c0, 4)
+            except Exception:
+                pass
+
         row = {
             "ticker": ticker,
             "close": sig["close"],
             "price": sig["close"],
+            "daily_move_pct": daily_move_pct,
             "trend_score": sig["trend_score"],
             "rsi": sig["rsi"],
             "rsi_contrib": sig.get("rsi_contrib"),
@@ -648,6 +658,7 @@ def main() -> None:
         score_cfg=config.get("score", {}),
         concentration_threshold_pct=config.get("concentration_alert_pct", 20),
         cash_deploy_min_score=config.get("cash_deploy_min_score", 70),
+        model_rules=config.get("model_rules"),
     )
 
     print()
@@ -775,17 +786,38 @@ def main() -> None:
                     print(f"  {k}: {v}")
             print()
 
-    # Phase 2: Send alerts (email/Telegram) when story changes
-    if story_changes and config.get("alerts"):
+    # Phase 2: Digest alerts (email/Telegram): story changes, trim list, earnings week
+    if config.get("alerts"):
         try:
+            import re as _re_earn
+            earnings_warn_days = config.get("earnings", {}).get("days_warning", 14)
+            earnings_caution_days = min(7, earnings_warn_days)
+            results_map = {r["ticker"]: r for r in results if not r.get("error")}
+            earnings_tickers_list: list[str] = []
+            for h in holdings:
+                t = h.get("ticker") if isinstance(h, dict) else h
+                row = results_map.get(t)
+                if not row or not row.get("earnings_note"):
+                    continue
+                m = _re_earn.search(r"Earnings in (\d+) days", row.get("earnings_note", "") or "")
+                if m and 0 <= int(m.group(1)) <= earnings_caution_days:
+                    earnings_tickers_list.append(t)
+            trim_ts = [h["ticker"] for h in trim_candidates if h.get("ticker")]
             full_report_lines = [
                 f"Portfolio avg: {report['avg_score']:.1f}",
-                f"Consider trim: {[h['ticker'] for h in trim_candidates]}",
+                f"Consider trim: {trim_ts}",
             ]
             full_report = "\n".join(full_report_lines)
-            sent = send_alert_digest(story_changes, config, full_report)
+            sent = send_retail_digest(
+                config,
+                story_changes=story_changes,
+                trim_tickers=trim_ts,
+                earnings_risk_count=len(earnings_tickers_list),
+                earnings_tickers=earnings_tickers_list,
+                full_report=full_report,
+            )
             if sent:
-                print("\nAlerts sent (email/Telegram).")
+                print("\nDigest sent (email/Telegram).")
         except Exception as e:
             print(f"\nAlert send failed: {e}")
 

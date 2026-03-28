@@ -22,15 +22,21 @@ try:
 except ImportError:
     urllib = None
 
+# Major US index ETFs: always use Yahoo adjusted closes. FMP historical adjClose for these
+# can disagree with live quotes (different corporate-action handling / symbology), which
+# inflates MA/ATR/swing and produces absurd ST bands (e.g. buy zones far above spot).
+MAJOR_INDEX_ETFS = frozenset({"SPY", "QQQ", "DIA", "IWM"})
+
 
 def fetch_ohlcv(ticker: str, period: str = "5y", config: dict | None = None) -> pd.Series | None:
     """
     Fetch OHLCV close. Uses FMP if api_key in config, else yfinance.
+    SPY/QQQ/DIA/IWM always use yfinance so levels stay aligned with Yahoo spot.
     """
     config = config or {}
     api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
 
-    if api_key:
+    if api_key and ticker.upper() not in MAJOR_INDEX_ETFS:
         close = _fetch_ohlcv_fmp(ticker, period, api_key)
         if close is not None:
             return close
@@ -108,10 +114,11 @@ def fetch_ohlcv_close_and_volume(
     """
     FMP adjClose plus aligned volume from the same historical response when api_key is set.
     Returns (None, None) if no key or FMP fails — caller should fall back to yfinance.
+    Index ETFs (SPY/QQQ/DIA/IWM) skip FMP — use yfinance for consistency with spot.
     """
     config = config or {}
     api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
-    if not api_key:
+    if not api_key or ticker.upper() in MAJOR_INDEX_ETFS:
         return None, None
     df = _load_fmp_historical_df(ticker, period, api_key)
     if df is None:

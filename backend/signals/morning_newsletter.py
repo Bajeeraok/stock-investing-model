@@ -18,10 +18,12 @@ def build_morning_newsletter(
     earnings_risk_count: int = 0,
     forward_tracking: dict | None = None,
     results: list[dict] | None = None,
+    model_rules: dict | None = None,
+    trim_candidates: list[dict] | None = None,
 ) -> dict[str, Any]:
     """
     Build a morning brief for the newsletter section.
-    Returns { headline, date, sections: [{ title, items: [] }], action_items: [] }.
+    Returns { headline, date, three_line_brief, sections, action_items }.
     """
     REGIME_PLAIN: dict[str, str] = {
         "Risk-On": "Favor small adds on pullbacks. Don't chase; use your levels.",
@@ -32,6 +34,47 @@ def build_morning_newsletter(
     date_str = as_of_date or datetime.now().strftime("%Y-%m-%d")
     sections: list[dict[str, Any]] = []
     action_items: list[str] = []
+    mr = model_rules or {}
+    add_pct = int(float(mr.get("add_min_confidence", 70)))
+    trim_pct = int(float(mr.get("trim_max_confidence", 30)))
+
+    # —— Compressed 3-line decision UX (regime → actions → risk) ——
+    three_line: list[str] = []
+    if macro_regime:
+        three_line.append(f"Regime — {macro_regime}: {REGIME_PLAIN.get(macro_regime, '')}")
+    elif macro_analog and macro_analog.get("plain_language"):
+        three_line.append(f"Context — {macro_analog['plain_language'][:140]}")
+    else:
+        three_line.append("Regime — check macro and breadth before sizing up.")
+    line2_parts: list[str] = []
+    tc = trim_candidates or []
+    if tc:
+        tickers = [h.get("ticker") for h in tc[:4] if h.get("ticker")]
+        if tickers:
+            line2_parts.append(f"Trim watch (weak score): {', '.join(tickers)}")
+    if earnings_risk_count and earnings_risk_count > 0:
+        line2_parts.append(f"{earnings_risk_count} holding(s) report this week — avoid new adds there")
+    db0 = (retail_briefing or {}).get("daily_briefing") or {}
+    if db0.get("summary_sentence") and not line2_parts:
+        line2_parts.append(db0["summary_sentence"][:160])
+    if not line2_parts:
+        line2_parts.append(f"Follow model rules: add ≥{add_pct}% confidence & UP regime; trim ≤{trim_pct}% or REDUCE/AVOID.")
+    three_line.append("Today — " + (" · ".join(line2_parts[:2]) if len(line2_parts) > 1 else line2_parts[0]))
+    risk_bits: list[str] = []
+    if market_regime and market_regime.get("rotation_risk") == "High":
+        risk_bits.append("Rotation risk elevated — favor holds over new tech adds")
+    if macro_regime == "Risk-Off":
+        risk_bits.append("Risk-off backdrop — tighten risk; no YOLOs")
+    ft0 = forward_tracking or {}
+    sb0 = ft0.get("summary_by_signal") or {}
+    ha0 = sb0.get("HOLD/ADD")
+    if isinstance(ha0, dict) and ha0.get("hit_rate_pct") is not None and ha0.get("n_observations"):
+        risk_bits.append(
+            f"Forward 20d ADD hit rate {ha0['hit_rate_pct']:.0f}% (n={ha0['n_observations']})"
+        )
+    if not risk_bits:
+        risk_bits.append("Risk — use stops and position caps from Portfolio Doctor.")
+    three_line.append(risk_bits[0])
 
     # —— Market pulse ——
     pulse_items: list[str] = []
@@ -119,11 +162,26 @@ def build_morning_newsletter(
         if conc.get("message"):
             action_items.append(conc["message"])
     if not action_items:
-        action_items.append("Add only when confidence ≥ 70 and regime UP. Trim when confidence ≤ 30 or regime DOWN.")
+        action_items.append(
+            f"Add only when confidence ≥ {add_pct} and regime UP. "
+            f"Trim when confidence ≤ {trim_pct} or regime DOWN."
+        )
+
+    # Retail: same theme as ticker One answer — teaser in newsletter UI + full panel in ticker detail
+    hold_teaser = (
+        "Unsure trim-and-rebuy vs hold 5–10 years? Tactics (targets, sell roadmap) differ from "
+        "long-term strategy (tiers, fair value) — open any ticker for the full framework."
+    )
+    hold_more = (
+        "Signals → pick a ticker → One answer → expand “Hold for years vs take profits”."
+    )
 
     return {
         "headline": f"Morning brief · {date_str}",
         "date": date_str,
+        "three_line_brief": three_line[:3],
         "sections": sections,
         "action_items": action_items[:6],
+        "hold_vs_trade_teaser": hold_teaser,
+        "hold_vs_trade_more": hold_more,
     }

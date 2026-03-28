@@ -286,9 +286,32 @@ accuracy:
     - "Support/MA20 is a watch level, not a precise target; high support err often means strong trend, not model bug."
     - "Amber/Tweak tickers: model auto-widens bands for high-volatility names. Manual override optional (st_target_atr_mult_overrides)."
 
+# Retail UI: trade roadmap sell-side alignment (horizon targets + ST/MT/LT bands). All optional — omit to use code defaults.
+retail:
+  sell_roadmap:
+    pad_min_pct_of_spot: 0.01   # min gap between profit-taking ladder steps (fraction of spot)
+    pad_floor: 0.05
+    short_no_52w_cap_mult: 1.15   # cap vs target when 52w high missing
+    short_target_hi_mult: 1.04
+    short_st_hi_mult: 0.995       # nudge vs ST band high
+    short_target_lo_mult: 0.97
+    st_fallback_band_lo_mult: 0.96
+    st_fallback_52w_mult: 0.97
+    medium_lo_mult: 0.91
+    medium_hi_mult: 0.995
+    medium_mt_hi_mult: 0.92
+    medium_mt_cap_mult: 1.06
+    major_medium_lo_mult: 0.98
+    major_fv_low_mult: 0.82
+    major_fv_hi_mult: 0.92
+    full_long_lo_mult: 0.93
+    full_fv_lo_mult: 0.93
+
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
 alerts:
+  # Daily digest: retail = story changes OR trim candidates OR earnings-week holdings; story_only = stories only
+  digest_mode: retail
   # Scanner (Level-2): IV rank / flow / premium-selling surfacing — off by default; use band alerts below.
   enable_options_alerts: false
   # Separate process: alerts/worker.py Tradier IV snapshots + IV_EXTREME events (optional)

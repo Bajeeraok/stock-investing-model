@@ -18,6 +18,14 @@ export interface OneAnswer {
   subline?: string | null;
   verdict: string;
   action_today: string;
+  /** Retail: hold 5–10y vs take profits — education + tie-in to today’s signals */
+  hold_vs_trade?: {
+    title: string;
+    long_term: string;
+    short_term: string;
+    signal_bridge: string;
+    disclaimer: string;
+  } | null;
 }
 
 /** Trader roadmap: short/medium entry, stop, target, when to act. */
@@ -239,6 +247,7 @@ export function InvestorDecisionSummarySection({
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [traderOpen, setTraderOpen] = useState(true);
   const [investorOpen, setInvestorOpen] = useState(false);
+  const [holdVsTradeOpen, setHoldVsTradeOpen] = useState(false);
   const verdicts = [short?.verdict, medium?.verdict, long?.verdict].filter(Boolean);
   const hasDivergence = verdicts.length >= 2 && new Set(verdicts).size > 1;
   const divergenceMessage =
@@ -266,7 +275,38 @@ export function InvestorDecisionSummarySection({
         " One answer"
       ),
       React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
-      one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline)
+      one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline),
+      one_answer.hold_vs_trade &&
+        React.createElement(
+          "div",
+          { className: "mt-3 rounded-lg border border-slate-600/80 bg-slate-900/40 overflow-hidden" },
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              onClick: () => setHoldVsTradeOpen((o) => !o),
+              className: "w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-700/30 transition-colors",
+            },
+            React.createElement(
+              "span",
+              { className: "flex items-center gap-2 text-xs font-semibold text-slate-300" },
+              React.createElement(Info, { className: "h-3.5 w-3.5 text-sky-400 shrink-0" }),
+              one_answer.hold_vs_trade.title
+            ),
+            holdVsTradeOpen
+              ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-500 shrink-0" })
+              : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500 shrink-0" })
+          ),
+          holdVsTradeOpen &&
+            React.createElement(
+              "div",
+              { className: "px-3 pb-3 pt-0 space-y-2 text-xs text-slate-400 leading-relaxed border-t border-slate-700/50" },
+              React.createElement("p", { className: "text-slate-300 mt-2" }, React.createElement("span", { className: "font-medium text-slate-200" }, "Long-term (5–10+ yr): "), one_answer.hold_vs_trade.long_term),
+              React.createElement("p", { className: "text-slate-300" }, React.createElement("span", { className: "font-medium text-slate-200" }, "Shorter-term / trading: "), one_answer.hold_vs_trade.short_term),
+              React.createElement("p", { className: "text-sky-200/90 border-l-2 border-sky-500/50 pl-2" }, one_answer.hold_vs_trade.signal_bridge),
+              React.createElement("p", { className: "text-slate-500 italic" }, one_answer.hold_vs_trade.disclaimer)
+            )
+        )
     ),
     /* Trader roadmap (collapsible) */
     trader_roadmap && React.createElement(

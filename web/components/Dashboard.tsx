@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Calendar, Database, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
+import { AlertTriangle, BarChart3, Calendar, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type { DashboardData } from "@/app/page";
 import { clsx } from "clsx";
 import {
@@ -309,6 +309,26 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {data.retail_briefing && <RetailBriefingPanel data={data} onTickerClick={setSelectedTicker} />}
+              <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-4 py-3 space-y-1">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-sky-400/90">
+                  <Info className="h-4 w-4 shrink-0" aria-hidden />
+                  Hold vs take profits
+                </h3>
+                <p className="text-sm text-slate-300 leading-snug">
+                  {data.morning_newsletter?.hold_vs_trade_teaser ??
+                    "Unsure trim-and-rebuy vs hold 5–10 years? Tactics (targets, sell roadmap) differ from long-term strategy (tiers, fair value) — open any ticker for the full framework."}
+                </p>
+                <p className="text-xs text-slate-500 leading-snug">
+                  {data.morning_newsletter?.hold_vs_trade_more ??
+                    "Signals → pick a ticker → One answer → expand “Hold for years vs take profits”."}
+                </p>
+              </div>
+              <ModelHealthStrip
+                model_health={data.model_health}
+                summary_by_signal={data.forward_tracking?.summary_by_signal}
+                summary_by_horizon={data.forward_tracking?.summary_by_horizon}
+                message={data.forward_tracking?.message}
+              />
               {data.fmp_plan_status && <FMPPlanStatus status={data.fmp_plan_status} />}
               <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen={false}>
                 <AlertsPanel onTickerClick={setSelectedTicker} />
@@ -608,7 +628,13 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </ToggleSection>
               <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={selectedReport?.per_holding?.length ?? 0} defaultOpen>
                 {(selectedReport?.per_holding?.length ?? 0) > 0 ? (
-                  <PortfolioHoldings holdings={selectedReport?.per_holding ?? []} onTickerClick={setSelectedTicker} hideAccountColumn={selectedPortfolio !== "All"} />
+                  <PortfolioHoldings
+                    holdings={selectedReport?.per_holding ?? []}
+                    onTickerClick={setSelectedTicker}
+                    hideAccountColumn={selectedPortfolio !== "All"}
+                    addMinConfidence={data.config?.model_rules?.add_min_confidence ?? 70}
+                    trimMaxConfidence={data.config?.model_rules?.trim_max_confidence ?? 30}
+                  />
                 ) : (
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
                     <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
@@ -699,13 +725,12 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <ToggleSection id="markets-newsletter" title="Morning newsletter" icon={<Mail className="h-5 w-5" />} defaultOpen>
                 <MorningNewsletter data={data.morning_newsletter ?? undefined} />
               </ToggleSection>
-              {data.forward_tracking && (data.forward_tracking.summary_by_signal || data.forward_tracking.message) && (
-                <ModelHealthStrip
-                  summary_by_signal={data.forward_tracking.summary_by_signal}
-                  summary_by_horizon={data.forward_tracking.summary_by_horizon}
-                  message={data.forward_tracking.message}
-                />
-              )}
+              <ModelHealthStrip
+                model_health={data.model_health}
+                summary_by_signal={data.forward_tracking?.summary_by_signal}
+                summary_by_horizon={data.forward_tracking?.summary_by_horizon}
+                message={data.forward_tracking?.message}
+              />
               <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen={false}>
                 <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
               </ToggleSection>

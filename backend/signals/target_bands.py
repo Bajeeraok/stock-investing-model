@@ -7,6 +7,12 @@ from __future__ import annotations
 from typing import Any
 
 from .band_context import lt_dispersion_multiplier, symmetric_widen
+from .cache import TTL_TARGET_BANDS, get_cached_bands, set_cached_bands
+from .providers import MAJOR_INDEX_ETFS
+
+# Max relative drift of cached ST band center vs spot to trust trailing (index ETFs = tighter bands)
+_MAX_CENTER_DRIFT_INDEX_ETF = 0.09
+_MAX_CENTER_DRIFT_DEFAULT = 0.18
 
 
 def _checkpoints(low: float, high: float, n: int = 5) -> list[float]:
@@ -14,6 +20,62 @@ def _checkpoints(low: float, high: float, n: int = 5) -> list[float]:
     if n < 2:
         return [round(low, 2), round(high, 2)]
     return [round(low + (high - low) * i / (n - 1), 2) for i in range(n)]
+
+
+def _prev_st_band_near_spot(P: float, prev_bands: dict | None, ticker: str | None) -> bool:
+    """
+    Use cached band only if its center is near today's spot (avoids stale trailing).
+    Index ETFs (SPY/QQQ/DIA/IWM) use a tighter threshold — e.g. 14% drift must reject (was passing 18%).
+    """
+    if not prev_bands or not isinstance(prev_bands.get("st_band"), dict):
+        return False
+    pl = prev_bands["st_band"].get("low")
+    ph = prev_bands["st_band"].get("high")
+    if pl is None or ph is None or P <= 0:
+        return False
+    try:
+        lo, hi = float(pl), float(ph)
+    except (TypeError, ValueError):
+        return False
+    if lo >= hi:
+        return False
+    mid = 0.5 * (lo + hi)
+    tkey = str(ticker).upper() if ticker else ""
+    max_drift = _MAX_CENTER_DRIFT_INDEX_ETF if tkey in MAJOR_INDEX_ETFS else _MAX_CENTER_DRIFT_DEFAULT
+    return abs(mid - P) / P <= max_drift
+
+
+def _band_cache_ttl_seconds(daily_move_pct: float | None) -> int:
+    """
+    Shorter Redis TTL on large daily moves so pre-crash bands (e.g. SLV) expire faster.
+    |move| > 5% -> 4h; > 2% -> 12h; else 24h max.
+    """
+    if daily_move_pct is None:
+        return TTL_TARGET_BANDS
+    try:
+        a = abs(float(daily_move_pct))
+    except (TypeError, ValueError):
+        return TTL_TARGET_BANDS
+    if a > 5.0:
+        return 4 * 3600
+    if a > 2.0:
+        return 12 * 3600
+    return TTL_TARGET_BANDS
+
+
+def _st_band_brackets_spot(P: float, st_low: float, st_high: float) -> bool:
+    """ST band should straddle spot (stop below, target above) for retail display."""
+    if st_low >= st_high or P <= 0:
+        return False
+    pad = P * 0.015
+    return (st_low - pad) <= P <= (st_high + pad)
+
+
+def _reset_st_band_around_spot(P: float, atr: float, vol6: float) -> tuple[float, float]:
+    """Symmetric band when prior math left spot outside [st_low, st_high]."""
+    mult = 1.0 + min(0.5, max(0.0, vol6 - 0.35) * 2) if vol6 > 0.35 else 1.0
+    w = max(atr * mult, 0.012 * P) if atr > 0 else 0.015 * P
+    return P - w, P + w
 
 
 def _st_signal_from_suggestion(sugg: str | None) -> str:
@@ -37,6 +99,7 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
              cons_low, cons_high (optional),
              consensus_median, eps_dispersion (optional, FMP — widen LT when dispersed),
              band_event_multiplier (optional, 1.0 — widen ST/MT near CPI/FOMC week).
+             daily_move_pct (optional) — prior close to last close % move; shortens band-cache TTL when large.
     """
     P = row.get("price") or row.get("close")
     if P is None:
@@ -76,15 +139,16 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         swing_low = float(swing_low)
 
     # ---------- Short-term band (days–weeks) ----------
-    # Trailing re-anchor: when price hits previous target or stop, adjust bands
+    # Optional trailing from Redis (TTL 4–24h by daily move): target/stop hit → re-anchor.
     ticker = row.get("ticker")
     prev_bands = None
     if ticker:
         try:
-            from signals.cache import get_cached_bands
             prev_bands = get_cached_bands(str(ticker))
         except Exception:
             pass
+    if prev_bands and not _prev_st_band_near_spot(P, prev_bands, ticker):
+        prev_bands = None
 
     st_stop = st_target = None
     if prev_bands and isinstance(prev_bands.get("st_band"), dict):
@@ -92,14 +156,12 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         prev_low = prev_st.get("low")
         prev_high = prev_st.get("high")
         if prev_low is not None and prev_high is not None:
-            # Target hit: price closed at/above previous target → trail stop up
-            if P >= prev_high:
-                st_stop = round(prev_high, 2)  # lock in gains
+            if P >= float(prev_high):
+                st_stop = round(float(prev_high), 2)
                 st_target = round(P + (atr if atr > 0 else 0.02 * P), 2)
                 row["st_level_hit"] = "target"
-            # Stop hit: price closed at/below previous stop → full recompute
-            elif P <= prev_low:
-                st_stop = None  # will compute below
+            elif P <= float(prev_low):
+                st_stop = None
                 row["st_level_hit"] = "stop"
 
     # Auto-adjust band width by volatility: high-vol tickers get wider bands (better accuracy without manual config)
@@ -159,6 +221,10 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         if range_low is not None and range_high is not None and range_low <= range_high:
             st_low = max(st_low, float(range_low))
             st_high = min(st_high, float(range_high))
+
+    if not _st_band_brackets_spot(P, st_low, st_high):
+        st_low, st_high = _reset_st_band_around_spot(P, atr, vol6)
+        row["st_band_sanity_reset"] = True
 
     row["st_band"] = {"low": round(st_low, 2), "high": round(st_high, 2)}
     row["st_checkpoints"] = _checkpoints(float(st_low), float(st_high), 5)
@@ -298,17 +364,17 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
 
-    # Cache bands for trailing re-anchor on next run
+    # Cache for next run — TTL shorter on high-vol days (see _band_cache_ttl_seconds)
     if ticker:
         try:
-            from signals.cache import set_cached_bands
             bands_to_cache = {
                 "st_band": row.get("st_band"),
                 "mt_band": row.get("mt_band"),
                 "lt_band": row.get("lt_band"),
             }
             if bands_to_cache["st_band"] and bands_to_cache["mt_band"]:
-                set_cached_bands(str(ticker), bands_to_cache)
+                ttl = _band_cache_ttl_seconds(row.get("daily_move_pct"))
+                set_cached_bands(str(ticker), bands_to_cache, ttl_seconds=ttl)
         except Exception:
             pass
 
