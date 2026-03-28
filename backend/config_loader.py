@@ -65,7 +65,7 @@ def load_config(merge_overrides: bool = True) -> dict:
     if not config_path.exists():
         config = {
             "watchlist": ["SPY", "QQQ", "GLD", "SLV", "AAPL", "MSFT"],
-            "score": {"buy_min": 70, "sell_max": 30},
+            "score": {"buy_min": 70, "sell_max": 30, "buy_min_by_ticker": {}},
             "regime": {"up_min": 60, "down_max": 40},
             "data": {"period": "5y"},
         }

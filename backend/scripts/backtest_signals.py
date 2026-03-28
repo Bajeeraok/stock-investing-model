@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from config_loader import load_config
 from scripts.run_daily import load_eod_snapshot
+from signals.score_interpretation import effective_buy_min
 
 
 def _list_eod_dates() -> list[str]:
@@ -69,8 +70,9 @@ def main() -> None:
         return
 
     config = load_config()
-    buy_min = config.get("score", {}).get("buy_min", 70)
-    sell_max = config.get("score", {}).get("sell_max", 30)
+    score_cfg = config.get("score", {})
+    sell_max = score_cfg.get("sell_max", 30)
+    global_buy_min = score_cfg.get("buy_min", 70)
 
     # Forward horizons: 1m=21, 3m=63, 6m=126 trading days
     horizons = [(21, "1m"), (63, "3m"), (126, "6m")]
@@ -111,7 +113,10 @@ def main() -> None:
     print("=" * 60)
     print("SIGNAL BACKTEST (predictions vs actual forward returns)")
     print("=" * 60)
-    print(f"Thresholds: BUY >= {buy_min}, SELL <= {sell_max}")
+    ovr = score_cfg.get("buy_min_by_ticker") or {}
+    print(f"Thresholds: global BUY >= {global_buy_min}, SELL <= {sell_max}")
+    if ovr:
+        print(f"  Per-ticker buy_min overrides: {ovr}")
     print(f"Data: {len(pred_vs_actual)} (date, ticker) pairs from EOD snapshots")
     print()
 

@@ -42,7 +42,7 @@ from signals.fetcher import (
     fetch_ohlcv_close_and_volume,
 )
 from signals.indicators import multi_horizon_scores
-from signals.score_interpretation import detect_interpretation_style
+from signals.score_interpretation import detect_interpretation_style, effective_buy_min
 from signals.providers import get_next_earnings
 from signals.regime import (
     get_regime,
@@ -91,7 +91,6 @@ def run_signals(
     regime_cfg = config.get("regime", {})
     alert_delta = config.get("alert_score_delta", 15)
 
-    buy_min = score_cfg.get("buy_min", 70)
     sell_max = score_cfg.get("sell_max", 30)
     ml_strong_buy_confluence = float(score_cfg.get("ml_strong_buy_confluence", 72))
     ml_strong_buy_prob = float(score_cfg.get("ml_strong_buy_prob", 0.55))
@@ -180,6 +179,8 @@ def run_signals(
                 "story_change": None,
             })
             continue
+
+        buy_min = effective_buy_min(ticker, score_cfg)
 
         use_spec = config.get("use_spec_regime_score", False)
         score_interpretation_style, score_interpretation_meta = detect_interpretation_style(
@@ -378,6 +379,7 @@ def run_signals(
             "ma50": sig.get("ma50"),
             "macd_hist": sig.get("macd_hist"),
             "composite_buy": composite_buy,
+            "buy_min": buy_min,
             "score_interpretation_style": score_interpretation_style,
             "score_interpretation_meta": score_interpretation_meta,
             # Confluence score — explicit 4-signal agreement (Trend+RSI+MACD+Regime)
@@ -439,6 +441,7 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             "ticker": r["ticker"],
             "composite_buy": r.get("composite_buy"),
             "signal": r.get("signal"),
+            "buy_min": r.get("buy_min"),
             "score_interpretation_style": r.get("score_interpretation_style"),
             "regime": r.get("regime"),
             "rsi": r.get("rsi"),

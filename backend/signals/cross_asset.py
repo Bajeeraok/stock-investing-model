@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 from signals.fetcher import fetch_ohlcv_safe
 from signals.indicators import composite_score
 from signals.regime import get_regime, get_signal
+from signals.score_interpretation import effective_buy_min
 
 
 def run_crypto_signals(tickers: list[str], config: dict) -> list[dict]:
@@ -20,7 +21,6 @@ def run_crypto_signals(tickers: list[str], config: dict) -> list[dict]:
     period = config.get("data", {}).get("period", "2y") or "2y"
     score_cfg = config.get("score", {})
     regime_cfg = config.get("regime", {})
-    buy_min = score_cfg.get("buy_min", 70)
     sell_max = score_cfg.get("sell_max", 30)
     up_min = regime_cfg.get("up_min", 60)
     down_max = regime_cfg.get("down_max", 40)
@@ -41,6 +41,7 @@ def run_crypto_signals(tickers: list[str], config: dict) -> list[dict]:
             continue
         sig = composite_score(close)
         regime = get_regime(sig["composite_buy"], up_min, down_max)
+        buy_min = effective_buy_min(ticker, score_cfg)
         signal = get_signal(sig["composite_buy"], buy_min, sell_max)
         results.append({
             "ticker": ticker,

@@ -4,6 +4,8 @@ sector allocation, YTD/1Y return, pairwise correlation.
 """
 from __future__ import annotations
 
+from signals.score_interpretation import effective_buy_min
+
 
 def _suggestion(
     score: float | None,
@@ -85,7 +87,7 @@ def portfolio_report(
     holdings: [{ticker, quantity, cost_basis?}, ...]
     results: from run_signals, [{ticker, close, composite_buy, regime, ...}, ...]
     watchlist: all tickers we have signals for
-    score_cfg: {buy_min, sell_max} for suggestions
+    score_cfg: {buy_min, sell_max, optional buy_min_by_ticker} for suggestions
     concentration_threshold_pct: alert if any position > this % of portfolio
     cash_deploy_min_score: min score for "deploy cash" suggestions
     confidence_by_ticker: optional {ticker: {confidence, action, breakdown, ...}} from run_confidence (7-layer)
@@ -100,7 +102,6 @@ def portfolio_report(
       - cash_deployment: top watchlist names NOT in portfolio with score >= cash_deploy_min_score
     """
     score_cfg = score_cfg or {}
-    buy_min = score_cfg.get("buy_min", 65)
     sell_max = score_cfg.get("sell_max", 35)
     model_rules = model_rules or {}
     add_min_conf_pct = float(model_rules.get("add_min_confidence", 70))
@@ -160,7 +161,8 @@ def portfolio_report(
             }
         else:
             interp = r.get("score_interpretation_style") or "TRENDING"
-            suggestion = _suggestion(score, buy_min, sell_max, interpretation_style=interp)
+            buy_min_row = effective_buy_min(ticker, score_cfg)
+            suggestion = _suggestion(score, buy_min_row, sell_max, interpretation_style=interp)
             entry = {
                 "ticker": ticker,
                 "quantity": qty,
@@ -170,6 +172,7 @@ def portfolio_report(
                 "score": score,
                 "regime": regime,
                 "suggestion": suggestion,
+                "buy_min": buy_min_row,
                 "score_interpretation_style": interp,
                 "action_today": _action_today_line(score, None, regime, suggestion, earn_note),
             }
@@ -249,12 +252,14 @@ def portfolio_report(
         elif score is not None:
             interp = r.get("score_interpretation_style") or "TRENDING"
             eff = 100.0 - float(score) if interp == "MEAN_REVERTING" else float(score)
-            if eff >= cash_deploy_min_score:
+            deploy_bar = effective_buy_min(t, score_cfg)
+            if eff >= deploy_bar:
                 cash_deployment.append({
                     "ticker": t,
                     "score": score,
                     "regime": r.get("regime", ""),
                     "score_interpretation_style": interp,
+                    "buy_min": deploy_bar,
                 })
     cash_deployment.sort(key=lambda x: -(x.get("confidence") if x.get("confidence") is not None else (x.get("score") or 0)))
 

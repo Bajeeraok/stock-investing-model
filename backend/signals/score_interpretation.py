@@ -79,3 +79,30 @@ def detect_interpretation_style(
 
     meta["reason"] = "neutral_autocorr"
     return "TRENDING", meta
+
+
+def _norm_ticker_sym(ticker: str | None) -> str:
+    if not ticker:
+        return ""
+    return str(ticker).strip().upper().replace(".", "-").split("-")[0]
+
+
+def effective_buy_min(ticker: str, score_cfg: dict | None = None) -> float:
+    """
+    BUY threshold for ML-aware signals and portfolio suggestions.
+    `score_cfg` is the `score` section from config (e.g. config.get("score") or {}).
+
+    Optional `buy_min_by_ticker` map overrides global `buy_min` per symbol (backtest calibration).
+    """
+    sc = score_cfg or {}
+    base = float(sc.get("buy_min", 70))
+    ovr = sc.get("buy_min_by_ticker") or {}
+    t = _norm_ticker_sym(ticker)
+    if t and t in ovr and ovr[t] is not None:
+        try:
+            v = float(ovr[t])
+            if 0 < v <= 100:
+                return v
+        except (TypeError, ValueError):
+            pass
+    return base
