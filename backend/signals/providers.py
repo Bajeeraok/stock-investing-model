@@ -46,6 +46,12 @@ def fetch_ohlcv(ticker: str, period: str = "5y", config: dict | None = None) -> 
 def _fetch_ohlcv_yfinance(ticker: str, period: str) -> pd.Series | None:
     if yf is None:
         return None
+    # Index ETFs: use fetcher.Ticker.history path — yf.download() can bind wrong series vs ETF spot.
+    sym = (ticker or "").strip().upper()
+    if sym in MAJOR_INDEX_ETFS:
+        from .fetcher import fetch_ohlcv as _fetcher_ohlcv
+
+        return _fetcher_ohlcv(ticker, period)
     try:
         data = yf.download(ticker, period=period, progress=False, threads=False, auto_adjust=True)
     except Exception:

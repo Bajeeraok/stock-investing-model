@@ -63,6 +63,7 @@ from signals.fmp_client import (
 from signals.fred_client import get_real_yield_proxy
 from signals.cot_client import get_cot_extremes_for_guidelines
 from signals.fetcher import fetch_yfinance_latest_prices, fetch_ohlcv_safe
+from signals.providers import MAJOR_INDEX_ETFS
 from signals.confidence_engine import run_confidence
 from signals.event_scenarios import get_upcoming_event_scenarios
 from signals.macro_analog import get_macro_analog
@@ -128,6 +129,7 @@ async def get_dashboard():
     opportunity_universe = config.get("opportunity_universe") or []
     all_quote_tickers = list(dict.fromkeys([t for t in watchlist + portfolio_tickers + opportunity_universe if t]))
     prices_by_ticker = None
+    prices_from_fmp_batch = False
     has_fmp_key = bool(get_fmp_api_key(config))
     use_fmp_batch_quote = config.get("data", {}).get("use_fmp_batch_quote", True) and has_fmp_key
     logger.info("[dashboard] Batch quote check: use_fmp_batch_quote=%s, all_quote_tickers=%d", use_fmp_batch_quote, len(all_quote_tickers))
@@ -149,6 +151,7 @@ async def get_dashboard():
                         pass
             if prices_by_ticker:
                 logger.info("[dashboard] FMP batch quote: received %d prices (1 API call)", len(prices_by_ticker))
+                prices_from_fmp_batch = True
             else:
                 logger.warning("[dashboard] FMP batch quote: no valid prices returned")
         else:
@@ -158,6 +161,21 @@ async def get_dashboard():
         prices_by_ticker = fetch_yfinance_latest_prices(all_quote_tickers)
         if prices_by_ticker:
             logger.info("[dashboard] yfinance latest: %d prices (delayed quote)", len(prices_by_ticker))
+
+    # Spot for SPY/QQQ/DIA/IWM must match Yahoo (same vendor as OHLCV in providers); FMP batch can disagree slightly.
+    if prices_from_fmp_batch and prices_by_ticker:
+        idx = [t for t in all_quote_tickers if t and str(t).strip().upper() in MAJOR_INDEX_ETFS]
+        if idx:
+            yf_idx = fetch_yfinance_latest_prices(idx)
+            if yf_idx:
+                prices_by_ticker = dict(prices_by_ticker)
+                for t in idx:
+                    if t in yf_idx:
+                        prices_by_ticker[t] = yf_idx[t]
+                logger.info(
+                    "[dashboard] Yahoo spot overlay for index ETFs (aligned with band OHLCV): %s",
+                    [t for t in idx if t in yf_idx],
+                )
 
     # Paper trading container (populated after run_signals)
     paper_trading: dict = {"summary": None, "recent": [], "log": None, "fill": None}

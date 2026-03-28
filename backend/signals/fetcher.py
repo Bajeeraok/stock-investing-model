@@ -21,6 +21,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Major US index ETFs: always use Ticker.history(), not yf.download(), so the Close series
+# matches Yahoo ETF spot. download() MultiIndex + iloc[:,0] fallbacks have mis-bound series
+# (wrong last price vs live SPY/QQQ quote — looks like "futures" or stale mix-up).
+_INDEX_ETF_YF = frozenset({"SPY", "QQQ", "DIA", "IWM"})
+
 # yfinance only accepts these period strings natively
 _YF_NATIVE_PERIODS = {"1d","5d","1mo","3mo","6mo","1y","2y","5y","10y","ytd","max"}
 
@@ -87,6 +92,75 @@ def _min_bars_for_period(period: str) -> int:
     return 50
 
 
+def _history_kwargs_from_period(period: str) -> dict:
+    """Map our period string to yfinance Ticker.history(period=...) or history(start=...)."""
+    kwargs = _resolve_download_kwargs(period)
+    if "period" in kwargs:
+        return {"period": kwargs["period"]}
+    if "start" in kwargs:
+        return {"start": kwargs["start"]}
+    return {"period": "5y"}
+
+
+def _fetch_index_etf_via_ticker_history(
+    ticker: str, period: str
+) -> tuple[pd.Series | None, pd.Series | None]:
+    """
+    Single-ticker yfinance path for SPY/QQQ/DIA/IWM: Ticker.history(auto_adjust=True).
+    Returns (close, volume) or (None, None).
+    """
+    if yf is None:
+        return None, None
+    sym = (ticker or "").strip().upper()
+    if sym not in _INDEX_ETF_YF:
+        return None, None
+    min_bars = _min_bars_for_period(period)
+    try:
+        hkw = _history_kwargs_from_period(period)
+        hist = yf.Ticker(sym).history(auto_adjust=True, repair=True, **hkw)
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return None, None
+        hist = hist.dropna(subset=["Close"])
+        if len(hist) < min_bars:
+            return None, None
+        close = pd.Series(hist["Close"], name="close")
+        vol = None
+        if "Volume" in hist.columns:
+            vol = pd.Series(hist["Volume"], name="volume")
+        return close, vol
+    except Exception as e:
+        logger.debug("[yfinance] index ETF history failed %s: %s", sym, e)
+        return None, None
+
+
+def _fetch_index_etf_ohlcv_dataframe(ticker: str, period: str, min_bars: int = 60) -> pd.DataFrame | None:
+    """OHLCV DataFrame for SPY/QQQ/DIA/IWM via Ticker.history (avoids download() column binding)."""
+    if yf is None:
+        return None
+    sym = (ticker or "").strip().upper()
+    if sym not in _INDEX_ETF_YF:
+        return None
+    try:
+        hkw = _history_kwargs_from_period(period)
+        hist = yf.Ticker(sym).history(auto_adjust=True, repair=True, **hkw)
+        if hist is None or hist.empty or "Close" not in hist.columns:
+            return None
+        hist = hist.dropna(subset=["Close"])
+        if len(hist) < min_bars:
+            return None
+        out = pd.DataFrame({"close": hist["Close"]})
+        if "High" in hist.columns:
+            out["high"] = hist["High"]
+        if "Low" in hist.columns:
+            out["low"] = hist["Low"]
+        if "Volume" in hist.columns:
+            out["volume"] = hist["Volume"]
+        return out
+    except Exception as e:
+        logger.debug("[yfinance] index ETF OHLCV dataframe failed %s: %s", sym, e)
+        return None
+
+
 def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
     """
     Download adjusted close for ticker. Returns None if insufficient data or error.
@@ -96,6 +170,10 @@ def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
         raise ImportError("Install yfinance: pip install yfinance")
 
     min_bars = _min_bars_for_period(period)
+    c_hist, _ = _fetch_index_etf_via_ticker_history(ticker, period)
+    if c_hist is not None and len(c_hist) >= min_bars:
+        return c_hist
+
     kwargs = _resolve_download_kwargs(period)
     data = _download_with_crumb_retry(ticker, **kwargs)
 
@@ -166,6 +244,11 @@ def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series 
     """Fetch close and volume. Returns (close, volume) or (close, None) if volume unavailable."""
     if yf is None:
         return None, None
+
+    c_hist, v_hist = _fetch_index_etf_via_ticker_history(ticker, period)
+    if c_hist is not None and len(c_hist) >= _min_bars_for_period(period):
+        return c_hist, v_hist
+
     kwargs = _resolve_download_kwargs(period)
     data = _download_with_crumb_retry(ticker, **kwargs)
     if data is None or data.empty or len(data) < 20:
@@ -210,6 +293,34 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
     out: dict[str, float] = {}
     for sym in symbols:
         try:
+            sym_u = sym.strip().upper()
+            if sym_u in _INDEX_ETF_YF:
+                hist = yf.Ticker(sym_u).history(
+                    period="5d", auto_adjust=True, repair=True
+                )
+                if hist is None or hist.empty or "Close" not in hist.columns:
+                    logger.warning(
+                        "[yfinance] Skipping %s: no data returned (latest price unavailable)",
+                        sym,
+                    )
+                    continue
+                last = hist["Close"].dropna()
+                if len(last) == 0:
+                    logger.warning(
+                        "[yfinance] Skipping %s: no valid close (latest price unavailable)",
+                        sym,
+                    )
+                    continue
+                val = float(last.iloc[-1])
+                if not (pd.isna(val) or val <= 0):
+                    out[sym] = val
+                else:
+                    logger.warning(
+                        "[yfinance] Skipping %s: no valid close (latest price unavailable)",
+                        sym,
+                    )
+                continue
+
             data = yf.download(
                 sym,
                 period="5d",
@@ -260,6 +371,9 @@ def fetch_ohlcv_dataframe(ticker: str, period: str = "2y") -> pd.DataFrame | Non
     """
     if yf is None:
         return None
+    idx_df = _fetch_index_etf_ohlcv_dataframe(ticker, period, min_bars=60)
+    if idx_df is not None:
+        return idx_df
     kwargs = _resolve_download_kwargs(period)
     data = _download_with_crumb_retry(ticker, **kwargs)
     if data is None or data.empty or len(data) < 60:
