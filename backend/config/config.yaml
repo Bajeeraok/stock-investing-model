@@ -417,6 +417,10 @@ earnings:
   days_warning: 14  # Flag when earnings within N days
   score_reduction: 20  # Reduce score by this when within days_warning
 
+# Thrive Alpha Phase 2 (signals/thrive_phase2): intraday setup, FMP fundamentals gate, ATR targets, 1m hit gate
+thrive_phase2:
+  min_hit_rate_1m: 0.65   # ShortTermBacktester trusted if hit rate ≥ this and N≥20
+
 # Phase 4: Backtest (run from backend: python scripts/backtest_simple.py)
 # Dashboard "Backtesting status" section uses GLD, QQQ, SPY with backtest_period
 backtest_tickers: [SPY, QQQ, GLD, XLE, XLF, IWM]
