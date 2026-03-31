@@ -21,17 +21,26 @@ def detect_interpretation_style(
     volume: pd.Series | None = None,
     config: dict | None = None,
     ticker: str | None = None,
+    *,
+    for_backtest_buckets: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """
     Returns ("TRENDING" | "MEAN_REVERTING", metadata dict).
 
     When disabled in config or insufficient history, returns TRENDING.
+
+    for_backtest_buckets: when True, ignores interpretation.enabled and runs ACF / force lists
+    if score.interpretation.apply_to_backtest_buckets is True — so historical bucket tests can
+    align with MR logic without changing live signal gating.
     """
     del volume  # reserved for future (e.g. volume climax features)
 
     ic = ((config or {}).get("score") or {}).get("interpretation") or {}
-    if not ic.get("enabled", False):
+    apply_bt = bool(ic.get("apply_to_backtest_buckets", True))
+    if not for_backtest_buckets and not ic.get("enabled", False):
         return "TRENDING", {"reason": "disabled"}
+    if for_backtest_buckets and not apply_bt:
+        return "TRENDING", {"reason": "backtest_buckets_disabled"}
 
     tnorm = (ticker or "").upper().replace(".", "-").split("-")[0]
     force_tr = [str(x).upper().replace(".", "-").split("-")[0] for x in (ic.get("force_trending") or [])]
@@ -44,7 +53,12 @@ def detect_interpretation_style(
 
     min_bars = int(ic.get("min_bars", 130))
     acf_window = int(ic.get("acf_window", 126))
+    # Live signals: strict MR cutoff. Backtest buckets: relaxed by default so more bars
+    # get (100−score) bucket mapping — the strict live threshold left most history as
+    # TRENDING, so refresh looked unchanged.
     mr_thr = float(ic.get("acf_mean_reversion_max", -0.028))
+    if for_backtest_buckets:
+        mr_thr = float(ic.get("acf_mean_reversion_max_backtest", 0.0))
     tr_min = float(ic.get("acf_trend_min", 0.04))
 
     if close is None or len(close.dropna()) < min_bars:
@@ -68,6 +82,7 @@ def detect_interpretation_style(
         "acf_window": acf_window,
         "mr_threshold": mr_thr,
         "trend_threshold": tr_min,
+        "for_backtest_buckets": for_backtest_buckets,
     }
 
     if acf1 <= mr_thr:
@@ -76,6 +91,12 @@ def detect_interpretation_style(
     if acf1 >= tr_min:
         meta["reason"] = "positive_autocorr"
         return "TRENDING", meta
+
+    # Neutral autocorr band: live = TRENDING. For backtest buckets, treat chop as MR
+    # so bucket assignment matches dip/rally semantics (optional).
+    if for_backtest_buckets and ic.get("backtest_neutral_chop_as_mr", True):
+        meta["reason"] = "neutral_chop_as_mr"
+        return "MEAN_REVERTING", meta
 
     meta["reason"] = "neutral_autocorr"
     return "TRENDING", meta

@@ -18,6 +18,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
@@ -1044,11 +1045,21 @@ async def get_signals():
     return {"signals": results}
 
 
+def _parse_refresh(raw: Any) -> bool:
+    """Accept true / 1 / yes from query string (some clients stringify booleans)."""
+    if raw is True:
+        return True
+    if raw is False or raw is None:
+        return False
+    s = str(raw).strip().lower()
+    return s in ("true", "1", "yes", "on")
+
+
 @router.get("/backtest")
 async def get_backtest(
     tickers: str = "SPY",
     years: int = 2,
-    refresh: bool = False,
+    refresh: Any = False,
 ):
     """
     Backtest results - may take ~1 min per ticker.
@@ -1061,6 +1072,7 @@ async def get_backtest(
         ticker_list = ["SPY"]
     years = max(2, min(10, years))
     period = f"{years}y"
+    force_refresh = _parse_refresh(refresh)
     from scripts.backtest_simple import run_backtest as _run_backtest
     from signals.backtest_validation import validate_backtest_result
     out = []
@@ -1070,7 +1082,7 @@ async def get_backtest(
             t,
             period,
             lambda ticker=t, per=period: _run_backtest(ticker, per),
-            force_refresh=refresh,
+            force_refresh=force_refresh,
         )
         if result and "error" not in result:
             result["validation"] = validate_backtest_result(result)
@@ -1079,7 +1091,7 @@ async def get_backtest(
         "backtest": out,
         "backtest_years": years,
         "backtest_period": period,
-        "bypass_cache": refresh,
+        "bypass_cache": force_refresh,
     }
 
 

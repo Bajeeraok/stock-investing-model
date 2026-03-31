@@ -335,7 +335,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **signal_data,
         **fmp_data,
     }
-    response["investor_summary"] = _build_investor_summary(ticker, config, response)
+    response["investor_summary"] = _build_investor_summary(
+        ticker, config, response, close_ticker=close_ticker, signal_data=signal_data
+    )
     # Ensure 52w range is always 2 decimals (yfinance/merge can leave raw floats)
     if response.get("high_52w") is not None:
         response["high_52w"] = round(float(response["high_52w"]), 2)
@@ -344,12 +346,22 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     return response
 
 
-def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict | None:
+def _build_investor_summary(
+    ticker: str,
+    config: dict,
+    response: dict,
+    *,
+    close_ticker=None,
+    signal_data: dict | None = None,
+) -> dict | None:
     """
     Build Investor Decision Summary (horizon entry tiers + verdicts) for the ticker detail modal.
     Uses horizon_entry_calculator with data from response + run_confidence for ML probs.
+    Trade roadmap produces the canonical scenario_target; medium horizon target is overwritten to match
+    so UI and copy stay consistent (one source of truth).
     Returns None if required inputs are missing.
     """
+    signal_data = signal_data or {}
     try:
         from signals.confidence_engine import run_confidence
         from signals.horizon_entry_calculator import build_all_horizons_payload
@@ -633,13 +645,34 @@ def _build_investor_summary(ticker: str, config: dict, response: dict) -> dict |
         )
         out["fair_value_metadata"] = fv_meta
 
-    # One Answer + Trader / Investor roadmaps (retail: one sentence + trader vs investor paths)
+    # Trade roadmap first: canonical scenario_target (post RC-1 alignment) is single source of truth.
+    retail_cfg = (config.get("retail") or {})
+    roadmap_cfg = {
+        "apply_auto_fixes": True,
+        "enable_signal_regime_on_detail": True,
+        **(retail_cfg.get("roadmap") or {}),
+    }
+    regime_signal_note = (retail_cfg.get("regime_signals") or {}).get(
+        "precedence_note",
+        "Score bucket thresholds use score.interpretation (ACF) when enabled in config; "
+        "Hurst on trade_roadmap is supplementary context.",
+    )
+    out["trade_roadmap"] = _build_trade_roadmap(
+        ticker,
+        out,
+        response,
+        current_price,
+        close_series=close_ticker,
+        interpretation_style=signal_data.get("score_interpretation_style"),
+        roadmap_cfg=roadmap_cfg,
+        regime_signal_precedence_note=regime_signal_note,
+    )
+    out["scenario_target"] = (out.get("trade_roadmap") or {}).get("scenario_target")
+
+    # One Answer + Trader / Investor roadmaps (horizons.medium.target already synced in _build_trade_roadmap)
     out["one_answer"], out["trader_roadmap"], out["investor_roadmap"] = _build_one_answer_roadmaps(
         ticker, out, response, current_price
     )
-
-    # Complete Trade Roadmap (buy/sell stages + trader type one-liners)
-    out["trade_roadmap"] = _build_trade_roadmap(ticker, out, response, current_price)
 
     # Cache ST/MT/LT entry/stop/target and ML prob for scanner retail alerts
     try:
@@ -728,11 +761,20 @@ def _build_trade_roadmap(
     investor_out: dict,
     response: dict,
     current_price: float,
+    close_series=None,
+    interpretation_style: str | None = None,
+    roadmap_cfg: dict | None = None,
+    regime_signal_precedence_note: str | None = None,
 ) -> dict:
     """
     Build complete Trade Roadmap: buy stages (Today → 6–12 mo) and sell stages (stop → full target),
     plus regime label and trader-type one-liners. See GLD sample in RETAIL_ONE_ANSWER_DESIGN / user spec.
     """
+    roadmap_cfg = {
+        "apply_auto_fixes": True,
+        "enable_signal_regime_on_detail": True,
+        **(roadmap_cfg or {}),
+    }
     horizons = investor_out.get("horizons") or {}
     short = horizons.get("short") or {}
     medium = horizons.get("medium") or {}
@@ -951,6 +993,106 @@ def _build_trade_roadmap(
         lt_band=response.get("lt_band") if isinstance(response.get("lt_band"), dict) else None,
     )
 
+    from signals.scenario_target import compute_initial_scenario_target, sync_medium_horizon_target
+
+    scenario_target = compute_initial_scenario_target(medium, long_h, float(fair_value))
+    atr_rm = _safe_float(response.get("atr14"))
+    if atr_rm is None or atr_rm <= 0:
+        atr_rm = current_price * 0.02
+    w52_lo = float(low_52w) if low_52w is not None else current_price * 0.85
+    w52_hi = float(high_52w) if high_52w is not None else current_price * 1.15
+    ma50_f = float(ma50) if ma50 is not None else current_price
+    ma200_f = float(ma200) if ma200 is not None else current_price
+
+    try:
+        from signals.roadmap_validator import apply_roadmap_consistency
+
+        roadmap_validation = apply_roadmap_consistency(
+            ticker,
+            buy_stages,
+            sell_stages,
+            current_price=float(current_price),
+            fair_value=float(fair_value),
+            regime_bull_pct=float(regime_bull_pct),
+            ma50=ma50_f,
+            ma200=ma200_f,
+            week52_low=w52_lo,
+            week52_high=w52_hi,
+            atr=float(atr_rm),
+            scenario_target=float(scenario_target),
+            apply_fixes=bool(roadmap_cfg.get("apply_auto_fixes", True)),
+        )
+        scenario_target = roadmap_validation["scenario_target"]
+    except Exception:
+        roadmap_validation = {
+            "issues": [],
+            "issues_before_fix": [],
+            "fixes_applied": False,
+            "roadmap_auto_adjusted": False,
+            "scenario_target": round(scenario_target, 2),
+            "scenario_target_aligned": True,
+        }
+
+    # Single source of truth: medium horizon target matches canonical scenario_target before any trader copy.
+    try:
+        st = float(scenario_target)
+        if st > 0:
+            sync_medium_horizon_target(horizons, st)
+            medium = horizons.get("medium") or {}
+    except Exception:
+        pass
+
+    signal_regime = None
+    if roadmap_cfg.get("enable_signal_regime_on_detail", True) and close_series is not None and pd is not None:
+        try:
+            s = close_series.dropna()
+            if len(s) >= 120:
+                from signals.signal_inversion import (
+                    classify_regime,
+                    compute_hurst_exponent,
+                    get_regime_weights,
+                )
+
+                h = compute_hurst_exponent(s)
+                reg = classify_regime(h)
+                w = get_regime_weights(reg)
+                signal_regime = {
+                    "hurst_exponent": round(h, 4),
+                    "asset_regime": reg.value,
+                    "regime_weights": w.as_dict(),
+                    "acf_interpretation_style": interpretation_style or "TRENDING",
+                    "precedence_note": regime_signal_precedence_note
+                    or (
+                        "Score bucket thresholds use score.interpretation (ACF) when enabled; "
+                        "Hurst here is supplementary."
+                    ),
+                    "note": (
+                        "Bucket inversion detection needs labeled backtest stats; "
+                        "use POST /api/signal-diagnostics/{ticker} with bucket_stats, or "
+                        "run run_inversion_diagnostic() in scripts."
+                    ),
+                }
+        except Exception:
+            signal_regime = None
+
+    consistency_notes: list[str] = []
+    for issue in roadmap_validation.get("issues") or []:
+        if isinstance(issue, dict) and issue.get("severity") == "HIGH":
+            consistency_notes.append(
+                "Roadmap still reports HIGH-severity consistency checks after auto-fix; "
+                "confirm price zones before trading."
+            )
+            break
+    if (
+        signal_regime
+        and (interpretation_style or "").upper() == "TRENDING"
+        and signal_regime.get("asset_regime") == "mean_reverting"
+    ):
+        consistency_notes.append(
+            "ACF score interpretation is trending-style but Hurst classifies mean-reverting tape; "
+            "threshold flips follow config score.interpretation, not Hurst alone."
+        )
+
     # Trader-type one-liners (from GLD sample)
     short_stop = _safe_float(short.get("stop_loss"))
     short_tgt = _safe_float(short.get("target"))
@@ -992,12 +1134,16 @@ def _build_trade_roadmap(
     return {
         "current_price": round(current_price, 2),
         "fair_value": round(fair_value, 2),
+        "scenario_target": round(scenario_target, 2),
         "high_52w": round(high_52w, 2) if high_52w is not None else None,
         "low_52w": round(low_52w, 2) if low_52w is not None else None,
         "regime_label": regime_label,
         "display_verdict": display_verdict,
         "buy_roadmap": buy_stages,
         "sell_roadmap": sell_stages,
+        "roadmap_validation": roadmap_validation,
+        "signal_regime": signal_regime,
+        "consistency_notes": consistency_notes,
         "trader_summary": {
             "short_term": trader_summary_short,
             "medium_term": trader_summary_medium,

@@ -215,8 +215,10 @@ def cached_backtest(ticker: str, period: str, fetch_fn, force_refresh: bool = Fa
 
     force_refresh: skip Redis read and re-run fetch_fn (use after code changes or to bust stale cache).
     Still writes the new result to Redis on success.
+
+    Key includes v2 — schema_version 2 bucket logic (MR-aware); old backtest:* keys are ignored.
     """
-    key = cache_key("backtest", ticker, period)
+    key = cache_key("backtest", "v2", ticker, period)
     if not force_refresh:
         hit = get_cached(key)
         if hit is not None:

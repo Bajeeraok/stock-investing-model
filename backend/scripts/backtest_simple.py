@@ -41,21 +41,65 @@ def _composite_for_row(
     close: pd.Series,
     idx: int,
     ticker: str = "",
+    config: dict | None = None,
 ) -> float | None:
     """
-    Compute sector-aware composite score for bar idx using only data up to that bar.
-    Applies sector weight profile and score bias for the ticker.
+    Composite score for bar idx (causal: data only up to idx).
+
+    When score.interpretation.apply_to_backtest_buckets is True and the rolling window is
+    classified MEAN_REVERTING (ACF), assigns buckets using (100 - score) so high buckets
+    align with dip-buy / avoid-chase — same economic mapping as live suggestions on MR tape.
+    Raw momentum composites otherwise invert vs forward returns on chop (screenshot issue).
     """
     subset = close.iloc[: idx + 1]
     if len(subset) < 50:
         return None
+    if config is None:
+        try:
+            from config_loader import load_config
+
+            config = load_config()
+        except Exception:
+            config = {}
+
+    use_spec = bool(config.get("use_spec_regime_score", False))
     weights = get_sector_weights(ticker) if ticker else None
-    sig = composite_score(subset, weights=weights)
+    sig = composite_score(
+        subset,
+        weights=weights,
+        use_spec=use_spec,
+        ticker=ticker or None,
+        config=config,
+    )
     raw = sig.get("composite_buy")
     if raw is None:
         return None
     bias = get_sector_score_bias(ticker) if ticker else 0.0
-    return float(np.clip(raw + bias, 0.0, 100.0))
+    score = float(np.clip(raw + bias, 0.0, 100.0))
+
+    ic = ((config.get("score") or {}).get("interpretation") or {})
+    if not ic.get("apply_to_backtest_buckets", True):
+        return score
+
+    # Nuclear option: always invert for bucket assignment (validates UI path; use relaxed ACF by default instead).
+    if ic.get("backtest_force_invert_buckets", False):
+        return float(np.clip(100.0 - score, 0.0, 100.0))
+
+    try:
+        from signals.score_interpretation import detect_interpretation_style
+
+        style, _meta = detect_interpretation_style(
+            subset,
+            None,
+            config,
+            ticker=ticker,
+            for_backtest_buckets=True,
+        )
+        if style == "MEAN_REVERTING":
+            score = float(np.clip(100.0 - score, 0.0, 100.0))
+    except Exception:
+        pass
+    return score
 
 
 def _stats(vals: list[float]) -> dict:
@@ -270,6 +314,13 @@ def run_backtest(
         return {"error": f"Insufficient data for {ticker}"}
     close = close.sort_index()
 
+    try:
+        from config_loader import load_config
+
+        _cfg = load_config()
+    except Exception:
+        _cfg = {}
+
     # Fetch benchmark (SPY) for alpha/beta; skip gracefully if ticker IS the benchmark
     bm_close: pd.Series | None = None
     if benchmark_ticker and benchmark_ticker.upper() != ticker.upper():
@@ -286,7 +337,7 @@ def run_backtest(
     by_quarter_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
 
     for i in range(200, len(close) - max(forward_months) * trading_days_per_month):
-        score = _composite_for_row(close, i, ticker)
+        score = _composite_for_row(close, i, ticker, _cfg)
         if score is None:
             continue
         price_today = float(close.iloc[i])
@@ -353,10 +404,19 @@ def run_backtest(
     )
 
     sector = classify_ticker(ticker)
+    ic = ((_cfg.get("score") or {}).get("interpretation") or {})
+    bucket_note = (
+        "Buckets use ACF mean-reversion detection: on MR tape, assignment uses (100 − raw score) "
+        "so high buckets match dip-buy edge (aligned with score.interpretation)."
+        if ic.get("apply_to_backtest_buckets", True)
+        else "Buckets use raw composite score only."
+    )
 
     return {
         "ticker": ticker,
         "period": period,
+        "schema_version": 2,
+        "bucket_assignment_note": bucket_note,
         "sector": sector,
         "sector_description": describe_sector(ticker),
         "transaction_cost_pct": round(transaction_cost * 100, 3),
@@ -402,6 +462,13 @@ def walk_forward_backtest(
         return {"error": f"Insufficient data for {ticker}"}
     close = close.sort_index()
 
+    try:
+        from config_loader import load_config
+
+        _wf_cfg = load_config()
+    except Exception:
+        _wf_cfg = {}
+
     trading_days_per_month = 21
     train_bars = train_years * 252
     test_bars = test_months * trading_days_per_month
@@ -419,7 +486,7 @@ def walk_forward_backtest(
         window_returns: dict[int, list[float]] = {m: [] for m in forward_months}
 
         for i in range(test_start, test_end):
-            score = _composite_for_row(close, i, ticker)
+            score = _composite_for_row(close, i, ticker, _wf_cfg)
             if score is None or score < buy_threshold:
                 continue
             price_today = float(close.iloc[i])

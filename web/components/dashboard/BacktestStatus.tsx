@@ -13,7 +13,7 @@ const BUCKET_ORDER = ["70-100", "50-70", "30-50", "0-30"];
 const FORWARD_MONTHS = [1, 3, 6] as const;
 
 const INTERPRETATION_BULLETS = [
-  { label: "Model (score bucket)", text: "0–30 = weak, 30–50 = neutral, 50–70 = good, 70–100 = strong. Higher score = model favors the stock." },
+  { label: "Model (score bucket)", text: "0–30 = weak through 70–100 = strong. On mean-reverting tape (ACF), buckets use the same 100−score mapping as live signals so “strong” aligns with dip-buy edge, not chase-after-rally." },
   { label: "Sample size (N)", text: "Number of signals in that bucket for that horizon. Small N = less reliable; prefer buckets with N ≥ 30." },
   { label: "Actual 1m / 3m / 6m", text: "Average % return over the next ~21 / 63 / 126 trading days when the model was in that bucket. What really happened historically." },
   { label: "Avg return %", text: "Mean forward return. Positive = gains on average; negative = losses on average. Interpret with MoE and hit rate." },
@@ -322,6 +322,11 @@ export function BacktestStatus() {
                 <div className="px-4 py-2 bg-slate-800/80 font-mono font-medium text-slate-200 border-b border-slate-700">
                   {r.ticker}
                 </div>
+                {r.bucket_assignment_note && (
+                  <p className="px-4 py-1.5 text-xs text-slate-400 bg-slate-900/40 border-b border-slate-700/50 leading-snug">
+                    {r.bucket_assignment_note}
+                  </p>
+                )}
                 {r.buckets && (() => {
                   const high = r.buckets["70-100"]?.[3]?.avg_return_pct;
                   const low = r.buckets["0-30"]?.[3]?.avg_return_pct;

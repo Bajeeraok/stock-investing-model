@@ -256,6 +256,10 @@ export interface BacktestValidation {
 export interface BacktestResult {
   ticker: string;
   period: string;
+  /** 2 = MR-aware bucket mapping + relaxed ACF for backtest (see config score.interpretation). */
+  schema_version?: number;
+  /** How score → bucket assignment works (MR tape uses 100−score for buckets when enabled). */
+  bucket_assignment_note?: string;
   error?: string;
   buckets?: Record<string, Record<number, BacktestBucketMonth>>;
   by_year?: Record<string, Record<string, Record<number, BacktestBucketMonth>>>;

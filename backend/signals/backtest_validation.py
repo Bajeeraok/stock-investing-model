@@ -1,6 +1,10 @@
 """
 Backtest data validation: error band asymmetry, missing 0-30 bucket, score inversion.
 Fix 4 from Thrive Alpha Bug Fix Suite.
+
+For programmatic inversion detection on generic bucket rows, prefer
+`signals.inversion_common.detect_inversion_from_bucket_rows` (wraps
+`signal_inversion.detect_inversion` with shared BucketStats parsing).
 """
 from __future__ import annotations
 

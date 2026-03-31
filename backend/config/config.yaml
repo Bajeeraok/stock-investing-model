@@ -232,9 +232,17 @@ score:
   # flip threshold mapping (100 - confluence for signals); raw composite_buy is unchanged.
   interpretation:
     enabled: true
+    # Backtest bucket table: align with MR tape (use 100−score for bucket when ACF says mean-reverting)
+    apply_to_backtest_buckets: true
+    # Backtest-only: lag-1 ACF ≤ this → MR bucket mapping (0 = any negative autocorr). Live uses acf_mean_reversion_max.
+    acf_mean_reversion_max_backtest: 0.0
+    # Backtest-only: neutral ACF band (between MR and trend) treated as chop → MR buckets (recommended)
+    backtest_neutral_chop_as_mr: true
+    # Set true to force 100−score for every bar (debug); prefer settings above
+    backtest_force_invert_buckets: false
     acf_window: 126              # trading days for lag-1 autocorr of daily returns
-    acf_mean_reversion_max: -0.028  # at or below → classify MEAN_REVERTING
-    acf_trend_min: 0.04           # above → TRENDING; between → TRENDING (neutral)
+    acf_mean_reversion_max: -0.028  # at or below → classify MEAN_REVERTING (live)
+    acf_trend_min: 0.04           # above → TRENDING; between → TRENDING (neutral) for live
     min_bars: 130
     force_trending: []            # e.g. [SPY] to never invert thresholds for an index
     force_mean_reverting:
@@ -322,6 +330,15 @@ retail:
     major_fv_hi_mult: 0.92
     full_long_lo_mult: 0.93
     full_fv_lo_mult: 0.93
+
+  # Trade roadmap: auto-fix RC issues; Hurst on ticker detail. Canonical scenario_target overwrites horizons.medium.target (one source of truth).
+  roadmap:
+    apply_auto_fixes: true
+    enable_signal_regime_on_detail: true
+  regime_signals:
+    precedence_note: "Score bucket thresholds use score.interpretation (ACF) when enabled; Hurst on trade_roadmap is supplementary context."
+  signal_diagnostics:
+    enabled: true
 
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
