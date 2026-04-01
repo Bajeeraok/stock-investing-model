@@ -1,10 +1,11 @@
-"""~21 trading-day hit-rate gate on a simple daily proxy signal (replace with model score in prod)."""
+"""~21 trading-day hit-rate gate using the same causal composite as the main backtest."""
 from __future__ import annotations
 
 import logging
 
-import numpy as np
 import pandas as pd
+
+from signals.composite_bar_score import composite_bar_score_for_backtest
 
 from .intraday import YF_AVAILABLE
 
@@ -17,8 +18,9 @@ except ImportError:
 
 
 class ShortTermBacktester:
-    def __init__(self, min_hit_rate_1m: float = 0.65):
+    def __init__(self, min_hit_rate_1m: float = 0.65, config: dict | None = None):
         self._min_hit = min_hit_rate_1m
+        self._config = config
 
     def _fetch_daily(self, ticker: str, years: int = 2) -> pd.DataFrame:
         if not YF_AVAILABLE or yf is None:
@@ -31,19 +33,6 @@ class ShortTermBacktester:
         except Exception as e:
             logger.warning("Backtest data fetch error: %s", e)
             return pd.DataFrame()
-
-    def _compute_signals(self, df: pd.DataFrame) -> pd.Series:
-        close = df["Close"]
-        ma20 = close.rolling(20).mean()
-        ma50 = close.rolling(50).mean()
-        delta = close.diff()
-        gain = delta.clip(lower=0).rolling(14).mean()
-        loss = (-delta.clip(upper=0)).rolling(14).mean()
-        rs = gain / loss.replace(0, np.nan)
-        rsi = 100 - (100 / (1 + rs))
-        ma_score = ((close - ma50) / ma50 * 100).clip(0, 40)
-        rsi_score = rsi * 0.60
-        return (ma_score + rsi_score).clip(0, 100)
 
     def _compute_atr_series(self, df: pd.DataFrame, period: int = 14) -> pd.Series:
         high = df["High"]
@@ -68,16 +57,23 @@ class ShortTermBacktester:
                 "hit_rate": None,
                 "mean_return": None,
                 "n_signals": 0,
+                "signal_source": "composite_model",
             }
 
-        signals = self._compute_signals(df)
+        try:
+            from config_loader import load_config
+
+            cfg = self._config if self._config is not None else load_config()
+        except Exception:
+            cfg = self._config or {}
+
         atr = self._compute_atr_series(df)
         close = df["Close"]
 
         results = []
         for i in range(len(df) - horizon_days - 1):
-            score = signals.iloc[i]
-            if score < score_thresh:
+            score = composite_bar_score_for_backtest(close, i, ticker, cfg)
+            if score is None or score < score_thresh:
                 continue
             entry = close.iloc[i]
             future = close.iloc[i + horizon_days]
@@ -113,6 +109,7 @@ class ShortTermBacktester:
                 "hit_rate": None,
                 "mean_return": None,
                 "n_signals": 0,
+                "signal_source": "composite_model",
             }
 
         res_df = pd.DataFrame(results)
@@ -136,6 +133,7 @@ class ShortTermBacktester:
             "n_signals": n,
             "min_required_hit_rate": self._min_hit,
             "yearly_breakdown": yearly.to_dict(orient="index"),
+            "signal_source": "composite_model",
             "reason": (
                 f"Hit rate {hit_rate:.1%} {'≥' if trusted else '<'} "
                 f"threshold {self._min_hit:.0%} — "

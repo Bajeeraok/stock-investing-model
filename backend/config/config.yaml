@@ -394,6 +394,12 @@ horizons:
   # Optional per-ticker Tier 2 MOS % (overrides class), e.g. BLK: 12
   tier2_mos_pct_by_ticker: {}
 
+# Fair value — SPY uses earnings-yield (rf+ERP) on ETF EPS; single names use fair_value_estimator multi-method
+fair_value:
+  use_earnings_yield_for_spy: true
+  risk_free_rate: 0.043        # 10Y Treasury (decimal); optional: wire live from FRED
+  equity_risk_premium: 0.045   # large-cap ERP; ~3.5–5% common — affects implied P/E = 1/(rf+ERP)
+
 # Phase 4: Data & earnings
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
@@ -404,14 +410,15 @@ data:
   period_long: 20y   # What-if only: event scenarios (FOMC/CPI reaction stats); NOT used for live signals
   period_long_risk: 20y   # Long-horizon risk: max drawdown, stress bear, worst 3y (monthly data; 2007-present = 2008 crisis included)
   use_fmp_batch_quote: false  # Set true when FMP plan includes batch-quote (saves API calls); current plan = per-ticker data
-  fmp_api_key: "6aRwanR4sXBzOicYLIHXIeIutlaTpmZz"                    # FMP – prices, treasury, calendar, analysts, profile, key-metrics
-  fred_api_key: "35b8f3e904ea9e4fdb6f2b7a67622cc6"                   # FRED – 10Y, inflation exp (T10YIE), real yield (free: fred.stlouisfed.org/docs/api/api_key.html)
+  # Set via environment (FMP_API_KEY, FRED_API_KEY, …) in production — see config_loader.py. Do not commit real keys.
+  fmp_api_key: ""
+  fred_api_key: ""
   tradingeconomics_api_key: ""       # TradingEconomics – economic calendar (placeholder)
-  alpha_vantage_api_key: "VH0UTQUCKJWIXI3U"          # Alpha Vantage – news sentiment (free tier: 5/min, 500/day)
+  alpha_vantage_api_key: ""
   benzinga_api_key: ""               # Benzinga – news, options flow (placeholder)
   etf_flows_api_key: ""
-  polygon_api_key: "2XVRQvFBQ48Ozvglzc6uqjP7XHuxpKtv"
-  finnhub_apikey: "d61pbp1r01qgcobqd3dgd61pbp1r01qgcobqd3e0"
+  polygon_api_key: ""
+  finnhub_apikey: ""
              # ETF flows (SPY, QQQ, GLD) – placeholder; systematic feeds usually paid
 earnings:
   days_warning: 14  # Flag when earnings within N days
@@ -420,6 +427,9 @@ earnings:
 # Thrive Alpha Phase 2 (signals/thrive_phase2): intraday setup, FMP fundamentals gate, ATR targets, 1m hit gate
 thrive_phase2:
   min_hit_rate_1m: 0.65   # ShortTermBacktester trusted if hit rate ≥ this and N≥20
+  bull_baseline_error: 0.0061       # bear_dampening: MoE baseline (bull calibration)
+  observed_bear_error_band: 0.0538   # raise above baseline when bear-year MoE is wider (enables dampening)
+  # atr_config:  # optional per-setup multipliers after live validation
 
 # Phase 4: Backtest (run from backend: python scripts/backtest_simple.py)
 # Dashboard "Backtesting status" section uses GLD, QQQ, SPY with backtest_period

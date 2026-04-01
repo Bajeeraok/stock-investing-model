@@ -6,6 +6,8 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Any
 
+from signals.bear_dampening import apply_bear_dampening
+
 from ._constants import merge_phase2_config
 from .classifier import SetupClassifier
 from .freshness import SignalFreshnessChecker
@@ -41,7 +43,10 @@ class ThriveAlphaPhase2:
         self.classifier = SetupClassifier()
         self.targets = PriceTargetGenerator(self._p2["atr_config"])
         self.freshness = SignalFreshnessChecker()
-        self.backtester = ShortTermBacktester(min_hit_rate_1m=float(self._p2["min_hit_rate_1m"]))
+        self.backtester = ShortTermBacktester(
+            min_hit_rate_1m=float(self._p2["min_hit_rate_1m"]),
+            config=self._config,
+        )
 
     def analyze(
         self,
@@ -113,10 +118,21 @@ class ThriveAlphaPhase2:
 
         _log(verbose, "\n[3/5] Classifying setup...")
         setup_type, confidence, rationale = self.classifier.classify(data, hmm_bear_pct)
+        raw_conf = float(confidence)
+        conf_pct = apply_bear_dampening(
+            raw_conf * 100.0,
+            hmm_bear_pct,
+            float(self._p2.get("observed_bear_error_band", 0.0061)),
+            profile,
+            bull_baseline_error=float(self._p2.get("bull_baseline_error", 0.0061)),
+        )
+        confidence = round(conf_pct / 100.0, 4)
+        damped = profile != "long_term" and abs(conf_pct - raw_conf * 100.0) > 1e-6
         result["setup"] = {
             "type": setup_type.value,
             "confidence": confidence,
             "rationale": rationale,
+            "bear_dampening_applied": damped,
         }
         _log(verbose, "    Setup: %s | Confidence: %.0f%%", setup_type.value, confidence * 100)
 

@@ -20,13 +20,11 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import pandas as pd
 
+from signals.composite_bar_score import composite_bar_score_for_backtest
 from signals.fetcher import fetch_ohlcv_safe
-from signals.indicators import composite_score
 from signals.sector_classifier import (
     classify_ticker,
     describe_sector,
-    get_sector_score_bias,
-    get_sector_weights,
 )
 
 # Default round-trip transaction cost: 0.10% commission + 0.05% slippage each way
@@ -43,63 +41,8 @@ def _composite_for_row(
     ticker: str = "",
     config: dict | None = None,
 ) -> float | None:
-    """
-    Composite score for bar idx (causal: data only up to idx).
-
-    When score.interpretation.apply_to_backtest_buckets is True and the rolling window is
-    classified MEAN_REVERTING (ACF), assigns buckets using (100 - score) so high buckets
-    align with dip-buy / avoid-chase — same economic mapping as live suggestions on MR tape.
-    Raw momentum composites otherwise invert vs forward returns on chop (screenshot issue).
-    """
-    subset = close.iloc[: idx + 1]
-    if len(subset) < 50:
-        return None
-    if config is None:
-        try:
-            from config_loader import load_config
-
-            config = load_config()
-        except Exception:
-            config = {}
-
-    use_spec = bool(config.get("use_spec_regime_score", False))
-    weights = get_sector_weights(ticker) if ticker else None
-    sig = composite_score(
-        subset,
-        weights=weights,
-        use_spec=use_spec,
-        ticker=ticker or None,
-        config=config,
-    )
-    raw = sig.get("composite_buy")
-    if raw is None:
-        return None
-    bias = get_sector_score_bias(ticker) if ticker else 0.0
-    score = float(np.clip(raw + bias, 0.0, 100.0))
-
-    ic = ((config.get("score") or {}).get("interpretation") or {})
-    if not ic.get("apply_to_backtest_buckets", True):
-        return score
-
-    # Nuclear option: always invert for bucket assignment (validates UI path; use relaxed ACF by default instead).
-    if ic.get("backtest_force_invert_buckets", False):
-        return float(np.clip(100.0 - score, 0.0, 100.0))
-
-    try:
-        from signals.score_interpretation import detect_interpretation_style
-
-        style, _meta = detect_interpretation_style(
-            subset,
-            None,
-            config,
-            ticker=ticker,
-            for_backtest_buckets=True,
-        )
-        if style == "MEAN_REVERTING":
-            score = float(np.clip(100.0 - score, 0.0, 100.0))
-    except Exception:
-        pass
-    return score
+    """Delegate to shared composite (MR-aware bucket semantics when enabled)."""
+    return composite_bar_score_for_backtest(close, idx, ticker, config)
 
 
 def _stats(vals: list[float]) -> dict:

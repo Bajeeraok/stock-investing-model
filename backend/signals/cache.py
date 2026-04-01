@@ -10,6 +10,7 @@ Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
   - long_horizon_risk (24h)
   - target_bands (4–24h, move-dependent) – prior ST/MT/LT for optional trailing re-anchor
   - ticker_detail (5 min), edgar_insider_flow (12h)
+  - thrive_phase2 (15 min) – GET /api/thrive-phase2
 
 Not cached (by design): live price, MAs, RSI, MACD, cross-asset (signal-critical).
 """
@@ -34,6 +35,7 @@ TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly 
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
 TTL_DASHBOARD = 3 * 60  # 3 min – full dashboard JSON (avoids re-running on retry/refresh)
+TTL_THRIVE_PHASE2 = 15 * 60  # 15 min – intraday + FMP + composite gate (UI-friendly)
 
 
 def _redis_url() -> tuple[str | None, str | None]:
@@ -208,6 +210,19 @@ def _set_persistent(key: str, value: Any) -> bool:
 def cache_key(prefix: str, *parts: str) -> str:
     """Build cache key: prefix:part1:part2..."""
     return ":".join([prefix] + [str(p).upper() for p in parts if p])
+
+
+def cached_thrive_phase2(cache_parts: tuple[str, ...], fetch_fn, force_refresh: bool = False):
+    """Cache GET /api/thrive-phase2 JSON. TTL 15m. Key thrive_phase2:v1:..."""
+    key = cache_key("thrive_phase2", "v1", *cache_parts)
+    if not force_refresh:
+        hit = get_cached(key)
+        if hit is not None:
+            return hit
+    out = fetch_fn()
+    if out and not out.get("error"):
+        set_cached(key, out, TTL_THRIVE_PHASE2)
+    return out
 
 
 def cached_backtest(ticker: str, period: str, fetch_fn, force_refresh: bool = False):

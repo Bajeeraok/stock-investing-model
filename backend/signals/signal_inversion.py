@@ -5,6 +5,9 @@ and inversion detection (high-score buckets underperforming low-score buckets).
 Use either Hurst weights **or** empirical threshold calibration from the same
 backtest window — not both fit on identical data — to reduce double-fitting.
 
+Swing/day_short bear dampening (error band vs bull baseline): see ``signals.bear_dampening.apply_bear_dampening``
+(used in ``thrive_phase2`` setup confidence).
+
 Logging: callers configure logging; no basicConfig on import.
 """
 

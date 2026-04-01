@@ -290,6 +290,12 @@ export function BacktestStatus() {
       <p className="text-sm text-slate-300 mb-2">
         <span className="font-medium text-slate-200">Model vs Actual:</span> Our model assigns a score bucket (0–30, 30–50, 50–70, 70–100). The table shows the <span className="text-emerald-400">actual</span> forward return (1m/3m/6m) that occurred in history when the model was in that bucket. Strong model = higher score buckets have better actual returns.
       </p>
+      {results.some((r) => r.schema_version != null) && (
+        <p className="text-xs text-slate-500 mb-2 leading-snug">
+          <span className="text-slate-400 font-medium">Backtest schema:</span> each ticker below shows a version badge when the API returns it. Newer schemas fix bucket logic (e.g. mean-reversion–aware assignment). After a deploy, if results look unchanged, use{" "}
+          <span className="text-slate-300">Re-run fresh</span> — the server cache key is versioned so old Redis entries do not mask new logic.
+        </p>
+      )}
       <div className="flex gap-2 mb-4">
         {(["overall", "yearly", "quarterly"] as const).map((v) => (
           <button
@@ -319,8 +325,16 @@ export function BacktestStatus() {
               <div className="px-4 py-3 text-sm text-amber-400 bg-amber-500/5">{r.ticker}: {r.error}</div>
             ) : (
               <>
-                <div className="px-4 py-2 bg-slate-800/80 font-mono font-medium text-slate-200 border-b border-slate-700">
-                  {r.ticker}
+                <div className="px-4 py-2 bg-slate-800/80 border-b border-slate-700 flex flex-wrap items-center gap-2">
+                  <span className="font-mono font-medium text-slate-200">{r.ticker}</span>
+                  {r.schema_version != null && (
+                    <span
+                      className="text-[10px] uppercase tracking-wide font-sans font-normal text-emerald-400/90 px-2 py-0.5 rounded border border-emerald-700/50 bg-emerald-950/40"
+                      title="API bucket-assignment schema — compare across deploys"
+                    >
+                      Schema v{r.schema_version}
+                    </span>
+                  )}
                 </div>
                 {r.bucket_assignment_note && (
                   <p className="px-4 py-1.5 text-xs text-slate-400 bg-slate-900/40 border-b border-slate-700/50 leading-snug">

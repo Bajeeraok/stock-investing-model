@@ -57,6 +57,42 @@ class StockType(str, Enum):
     UNKNOWN     = "unknown"
 
 
+def compute_index_fair_value(
+    forward_eps: float,
+    risk_free_rate: float,
+    equity_risk_premium: float = 0.045,
+    *,
+    index_level_eps: bool = False,
+) -> float:
+    """
+    Broad market (e.g. SPY) fair value from an earnings-yield / required-return model.
+
+    More appropriate than single-name PE-relative methods for an index ETF. Uses
+    fair P/E ≈ 1 / (risk_free_rate + equity_risk_premium).
+
+    Args:
+        forward_eps: Forward EPS **per instrument share**. For SPY, use yfinance
+            forwardEps or trailingEps for the ETF (already scaled vs the S&P 500 index).
+        risk_free_rate: Nominal 10Y Treasury yield as decimal (e.g. 0.043).
+        equity_risk_premium: ERP over risk-free (often ~3.5–5% for large caps).
+        index_level_eps: If True, ``forward_eps`` is **aggregate S&P 500** forward EPS
+            (~270); returns **SPY** fair price (implied index fair value / 10).
+
+    Returns:
+        Fair value price per share (rounded).
+    """
+    if forward_eps <= 0 or risk_free_rate <= 0:
+        raise ValueError("forward_eps and risk_free_rate must be positive")
+    required_return = risk_free_rate + equity_risk_premium
+    if required_return <= 0:
+        raise ValueError("risk_free_rate + equity_risk_premium must be positive")
+    fair_pe = 1.0 / required_return
+    implied = forward_eps * fair_pe
+    if index_level_eps:
+        implied = implied / 10.0
+    return round(float(implied), 2)
+
+
 @dataclass
 class StockClassification:
     stock_type: StockType

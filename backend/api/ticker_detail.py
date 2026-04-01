@@ -365,7 +365,11 @@ def _build_investor_summary(
     try:
         from signals.confidence_engine import run_confidence
         from signals.horizon_entry_calculator import build_all_horizons_payload
-        from signals.fair_value_estimator import estimate_fair_value as estimate_fair_value_full
+        from signals.fair_value_estimator import (
+            FairValueResult,
+            compute_index_fair_value,
+            estimate_fair_value as estimate_fair_value_full,
+        )
     except Exception:
         return None
 
@@ -504,12 +508,46 @@ def _build_investor_summary(
         fcf = _safe_float(info.get("freeCashflow"))
         shares = _safe_float(info.get("sharesOutstanding"))
         fcf_per_share = (fcf / shares) if (fcf and shares and shares > 0) else None
+
+        # SPY: earnings-yield model (rf + ERP) on ETF EPS — avoids PE-relative growth logic on an index
+        use_spy_yield = (config.get("fair_value") or {}).get("use_earnings_yield_for_spy", True)
+        if ticker.upper() == "SPY" and use_spy_yield:
+            fv_cfg = config.get("fair_value") or {}
+            rf = float(fv_cfg.get("risk_free_rate", 0.043))
+            erp = float(fv_cfg.get("equity_risk_premium", 0.045))
+            forward_eps = _safe_float(info.get("forwardEps"))
+            if forward_eps is None or forward_eps <= 0:
+                if forward_pe and forward_pe > 0 and current_price:
+                    forward_eps = current_price / forward_pe
+                else:
+                    te = _safe_float(info.get("trailingEps"))
+                    if te and te > 0:
+                        forward_eps = te
+            if forward_eps and forward_eps > 0:
+                fv_sp = compute_index_fair_value(forward_eps, rf, erp, index_level_eps=False)
+                disc = round((fv_sp - current_price) / current_price * 100, 1) if current_price else 0.0
+                fv_result = FairValueResult(
+                    fair_value=fv_sp,
+                    stock_type="index_etf",
+                    method_used="earnings_yield_sp500_etf",
+                    confidence="Medium",
+                    discount_pct=disc,
+                    analyst_target=analyst_target,
+                    notes=[
+                        "SPY FV uses earnings-yield (1/(rf+ERP)×EPS per SPY share). "
+                        "Tune fair_value.risk_free_rate and equity_risk_premium; not comparable to single-name DCF."
+                    ],
+                    bear_case=round(fv_sp * 0.85, 2) if fv_sp > 0 else None,
+                    methodology_summary=f"SPY index ETF: EPS×(1/(rf+ERP)); rf={rf:.1%}, ERP={erp:.1%}",
+                )
+                fair_value = fv_sp
+
         pe = ttm_pe or forward_pe
         if ttm_pe is not None and ttm_pe > 0:
             ttm_pe_used = ttm_pe
         if forward_pe is not None and forward_pe > 0:
             forward_pe_used = forward_pe
-        if pe and pe > 0 and margin is not None:
+        if fv_result is None and pe and pe > 0 and margin is not None:
             fv_result = estimate_fair_value_full(
                 current_price=current_price,
                 ttm_pe=ttm_pe if (ttm_pe is not None and ttm_pe > 0) else (forward_pe or pe),
