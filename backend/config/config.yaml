@@ -275,6 +275,11 @@ portfolio_risk:
   enabled: true
   max_tickers: 20
 
+# Dashboard "Known limits" panel (optional; defaults in api/routers/dashboard.py)
+# known_limits:
+#   - Custom bullet one
+#   - Custom bullet two
+
 # Alert when score moves by this much (points)
 alert_score_delta: 15
 

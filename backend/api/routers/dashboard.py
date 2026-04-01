@@ -82,6 +82,15 @@ except ImportError:
 
 router = APIRouter()
 
+# Retail copy: data / methodology limits (override via config known_limits: list)
+DEFAULT_KNOWN_LIMITS = [
+    "Price targets and bands are model output, not guarantees.",
+    "Backtests can reflect survivorship bias unless universe membership is configured.",
+    "FMP fundamentals and analyst estimates often lag filings; not full point-in-time.",
+    "No live options flow or dark-pool data — options layers are approximations where shown.",
+    "Macro (FRED) and Yahoo prices are delayed vs premium real-time feeds.",
+]
+
 
 def _load_config():
     return load_config()
@@ -1069,10 +1078,17 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("model_health failed: %s", e)
 
+    raw_kl = config.get("known_limits")
+    if isinstance(raw_kl, list) and len(raw_kl) > 0:
+        known_limits_list = [str(x).strip() for x in raw_kl if str(x).strip()]
+    else:
+        known_limits_list = list(DEFAULT_KNOWN_LIMITS)
+
     out = {
         "as_of_date": as_of_date,
         "data_freshness": data_freshness,
         "portfolio_stress": portfolio_stress,
+        "known_limits": known_limits_list,
         "signals": results,
         "retail_briefing": retail_briefing,
         "crypto": crypto_signals,

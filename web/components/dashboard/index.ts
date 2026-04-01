@@ -9,6 +9,8 @@ export { ToggleSection } from "./ToggleSection";
 export { PortfolioSummary } from "./PortfolioSummary";
 export { PortfolioStressStrip, type PortfolioStressPayload } from "./PortfolioStressStrip";
 export { DataFreshnessBar, type DataFreshness } from "./DataFreshnessBar";
+export { KnownLimitsPanel } from "./KnownLimitsPanel";
+export { ModelDisclaimer } from "./ModelDisclaimer";
 export { SignalsTable } from "./SignalsTable";
 export { PortfolioHoldings } from "./PortfolioHoldings";
 export { TrimCandidates } from "./TrimCandidates";

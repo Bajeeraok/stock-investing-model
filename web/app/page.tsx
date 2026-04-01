@@ -473,6 +473,18 @@ export interface DashboardData {
     scenarios: { name: string; shock_pct: number; portfolio_value_after: number; loss_dollars: number }[];
     disclaimer?: string;
   };
+  /** Methodology bullets for the Known limits panel (config or API defaults) */
+  known_limits?: string[];
+  /** FRED+VIX macro + optional SPY HMM fusion; coaching_note when views diverge */
+  macro_regime_bundle?: {
+    macro_regime?: string;
+    macro_score?: number;
+    combined_regime?: string;
+    combined_score?: number;
+    coaching_note?: string | null;
+    hmm_bear_pct_used?: number | null;
+    factors?: Record<string, unknown>;
+  } | null;
   market_scenarios?: MarketScenarioItem[];
   macro_analog?: {
     state: string;
@@ -586,11 +598,15 @@ export interface Signal {
     risk_budget_dollars?: number;
     risk_pct?: number;
   } | null;
-  /** ST band width %, ATR-based range hint — not a confidence interval */
+  /** Band widths + narrative hints — not statistical confidence intervals */
   uncertainty?: {
     st_band_width_pct?: number | null;
     atr_pct_of_price?: number | null;
     typical_range_label?: string | null;
+    mt_band_width_pct?: number | null;
+    mt_narrative?: string | null;
+    lt_band_width_pct?: number | null;
+    lt_narrative?: string | null;
   } | null;
   volume_ratio?: number | null;
   volume_unusual?: boolean;

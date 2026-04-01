@@ -153,6 +153,28 @@ def combine_macro_hmm(
     }
 
 
+def macro_hmm_coaching_note(bundle: dict[str, Any]) -> str | None:
+    """
+    Short retail hint when price-based HMM and macro snapshot disagree materially.
+    """
+    macro_r = bundle.get("macro_regime")
+    hmm_bear = bundle.get("hmm_bear_pct_used")
+    if hmm_bear is None or macro_r not in ("BULL", "NEUTRAL", "BEAR"):
+        return None
+    bear = float(hmm_bear)
+    if bear >= 65 and macro_r in ("BULL", "NEUTRAL"):
+        return (
+            "Price model leans bearish; macro snapshot is more constructive — "
+            "consider smaller size or wait for alignment."
+        )
+    if bear <= 35 and macro_r == "BEAR":
+        return (
+            "Macro reads stressed while the price model is calmer — confirm levels "
+            "and risk before adding."
+        )
+    return None
+
+
 def build_macro_regime_bundle(
     config: dict,
     *,
@@ -173,9 +195,11 @@ def build_macro_regime_bundle(
         hmm_weight=hmm_weight,
         macro_weight=macro_weight,
     )
-    return {
+    out: dict[str, Any] = {
         **classified,
         **fusion,
         "hmm_bear_pct_used": hmm_bear_pct,
         "note": "Macro layer uses FRED + VIX; fusion weights configurable. Not investment advice.",
     }
+    out["coaching_note"] = macro_hmm_coaching_note(out)
+    return out

@@ -472,6 +472,12 @@ export function SignalsTable({
                         {r.uncertainty?.typical_range_label && (
                           <span className="block text-slate-600">{r.uncertainty.typical_range_label}</span>
                         )}
+                        {r.uncertainty?.mt_narrative && (
+                          <span className="block text-slate-600">{r.uncertainty.mt_narrative}</span>
+                        )}
+                        {r.uncertainty?.lt_narrative && (
+                          <span className="block text-slate-600">{r.uncertainty.lt_narrative}</span>
+                        )}
                       </div>
                     )}
                   </div>

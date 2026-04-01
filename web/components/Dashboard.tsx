@@ -17,6 +17,8 @@ import {
   PortfolioSummary,
   PortfolioStressStrip,
   DataFreshnessBar,
+  KnownLimitsPanel,
+  ModelDisclaimer,
   SignalsTable,
   PortfolioHoldings,
   TrimCandidates,
@@ -416,6 +418,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                     />
                   </div>
                 )}
+                <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
               </ToggleSection>
               <ToggleSection id="overview-score-regime" title="Confidence & Regime Charts" icon={<Activity />} defaultOpen>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -430,6 +433,15 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {activeTab === "signals" && (
             <div className="p-4 sm:p-6 space-y-4">
           {data.data_freshness && <DataFreshnessBar data={data.data_freshness} />}
+          {data.macro_regime_bundle?.coaching_note && (
+            <div
+              className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100"
+              role="status"
+            >
+              <strong className="text-amber-200">Macro vs price:</strong> {data.macro_regime_bundle.coaching_note}
+            </div>
+          )}
+          {data.known_limits && data.known_limits.length > 0 && <KnownLimitsPanel items={data.known_limits} />}
           {data.config?.risk_sizing && (
             <p className="text-xs text-slate-400 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2">
               <strong className="text-slate-300">Risk-based sizing:</strong> each row uses{" "}
@@ -437,6 +449,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <strong>{data.config.risk_sizing.stop_pct}%</strong> stop is hit. The <strong>Risk (size)</strong> column shows implied shares and notional.
             </p>
           )}
+          <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
           <ToggleSection id="signals-context" title="Context & rules" icon={<HelpCircle className="h-5 w-5" />} defaultOpen={false}>
             <div className="space-y-3">
           {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && (

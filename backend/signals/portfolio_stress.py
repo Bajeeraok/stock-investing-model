@@ -29,6 +29,35 @@ def enrich_signal_uncertainty(row: dict[str, Any]) -> None:
         except (TypeError, ValueError):
             pass
 
+    mt = row.get("mt_band")
+    if c and isinstance(mt, dict) and mt.get("low") is not None and mt.get("high") is not None:
+        try:
+            lo, hi = float(mt["low"]), float(mt["high"])
+            w = hi - lo
+            if c > 0:
+                out["mt_band_width_pct"] = round(100.0 * w / c, 1)
+                mid = (lo + hi) / 2.0
+                out["mt_narrative"] = (
+                    f"MT band ~±{out['mt_band_width_pct'] / 2:.1f}% around mid ${mid:.0f} vs spot"
+                )
+        except (TypeError, ValueError):
+            pass
+
+    lt = row.get("lt_band")
+    lt_low_conf = bool(row.get("lt_band_low_confidence"))
+    if c and isinstance(lt, dict) and lt.get("low") is not None and lt.get("high") is not None:
+        try:
+            lo, hi = float(lt["low"]), float(lt["high"])
+            w = hi - lo
+            if c > 0:
+                out["lt_band_width_pct"] = round(100.0 * w / c, 1)
+                out["lt_narrative"] = (
+                    "Wide fair-value / consensus range — use as context, not a precise target"
+                    + (" (low analyst confidence)" if lt_low_conf else "")
+                )
+        except (TypeError, ValueError):
+            pass
+
     if c and atr is not None:
         try:
             a = float(atr)
