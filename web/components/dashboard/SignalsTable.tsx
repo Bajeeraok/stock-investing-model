@@ -218,16 +218,28 @@ export function SignalsTable({
           >
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <span className="font-mono font-semibold text-emerald-400 text-base">{r.ticker}</span>
-              <div className="flex items-center gap-2">
-                {tickerActions?.[r.ticker] && (
-                  <span
-                    className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300")}
-                    title={tickerActions[r.ticker].one_liner}
-                  >
-                    {tickerActions[r.ticker].action}
+              <div className="flex flex-col items-end gap-0.5">
+                <div className="flex items-center gap-2">
+                  {tickerActions?.[r.ticker] && (
+                    <span
+                      className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300")}
+                      title={tickerActions[r.ticker].one_liner}
+                    >
+                      {tickerActions[r.ticker].action}
+                    </span>
+                  )}
+                  <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
+                </div>
+                {r.risk_sizing && (
+                  <span className="text-[10px] text-slate-500" title="Risk budget if stop hits">
+                    Risk ~$
+                    {(r.risk_sizing.risk_budget_dollars != null
+                      ? r.risk_sizing.risk_budget_dollars
+                      : Math.round((r.risk_sizing.size_dollars * r.risk_sizing.stop_pct) / 100)
+                    ).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+                    · {r.risk_sizing.shares} sh · {r.risk_sizing.stop_pct}% stop
                   </span>
                 )}
-                <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
               </div>
             </div>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -261,7 +273,7 @@ export function SignalsTable({
 
       {/* Desktop: table with sticky header + sticky first column */}
       <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[900px] text-sm border-collapse">
+        <table className="w-full min-w-[1020px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">
               <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800/95 backdrop-blur-sm px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
@@ -269,6 +281,12 @@ export function SignalsTable({
               </th>
               <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
                 Close
+              </th>
+              <th
+                className="sticky top-0 z-[20] min-w-[7.5rem] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 text-left cursor-help"
+                title={`Risk budget = ${riskSizing?.risk_pct ?? 1}% of portfolio if stop hits; notional position = budget ÷ (stop %).`}
+              >
+                Risk (size)
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help whitespace-nowrap"
@@ -350,13 +368,35 @@ export function SignalsTable({
                     "sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-2.5 border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]",
                     r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
                   )}
-                  title={r.risk_sizing ? `At ${riskSizing?.risk_pct ?? 1}% risk and ${r.risk_sizing.stop_pct}% stop: $${r.risk_sizing.size_dollars.toLocaleString()} (~${r.risk_sizing.shares} shares)` : undefined}
+                  title="Last close from daily data"
                 >
                   {r.close != null ? `$${r.close.toFixed(2)}` : "-"}
-                  {r.risk_sizing && (
-                    <span className="block text-xs text-slate-500 mt-0.5">
-                      ~{r.risk_sizing.shares} sh
-                    </span>
+                </td>
+                <td
+                  className="px-3 py-2.5 text-xs text-slate-300 align-top"
+                  title={
+                    r.risk_sizing
+                      ? `Risk $${(r.risk_sizing.risk_budget_dollars ?? "").toString()} if ${r.risk_sizing.stop_pct}% stop hits; notional ~$${r.risk_sizing.size_dollars.toLocaleString()}`
+                      : "Add portfolio value + configure risk_sizing in config for per-ticker size"
+                  }
+                >
+                  {r.risk_sizing ? (
+                    <div className="space-y-0.5">
+                      <div className="text-emerald-400/95 font-medium">
+                        $
+                        {(r.risk_sizing.risk_budget_dollars != null
+                          ? r.risk_sizing.risk_budget_dollars
+                          : Math.round((r.risk_sizing.size_dollars * r.risk_sizing.stop_pct) / 100)
+                        ).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+                        <span className="text-slate-500 font-normal">at risk</span>
+                      </div>
+                      <div className="text-slate-500">
+                        ~{r.risk_sizing.shares} sh · {r.risk_sizing.stop_pct}% stop
+                        {r.risk_sizing.risk_pct != null && ` · ${r.risk_sizing.risk_pct}% port`}
+                      </div>
+                    </div>
+                  ) : (
+                    "–"
                   )}
                 </td>
                 <td className="px-3 py-2.5">
@@ -423,6 +463,14 @@ export function SignalsTable({
                             LT: ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)}
                             {r.lt_band_low_confidence && " (low conf)"}
                           </span>
+                        )}
+                        {r.uncertainty?.st_band_width_pct != null && (
+                          <span className="block text-slate-600">
+                            ST band width {r.uncertainty.st_band_width_pct}% of spot
+                          </span>
+                        )}
+                        {r.uncertainty?.typical_range_label && (
+                          <span className="block text-slate-600">{r.uncertainty.typical_range_label}</span>
                         )}
                       </div>
                     )}

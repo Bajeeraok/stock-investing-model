@@ -15,6 +15,8 @@ import {
   type TabId,
   StoryAlerts,
   PortfolioSummary,
+  PortfolioStressStrip,
+  DataFreshnessBar,
   SignalsTable,
   PortfolioHoldings,
   TrimCandidates,
@@ -395,6 +397,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <PortfolioSummary report={selectedReport} />
                 </div>
+                {data.portfolio_stress?.scenarios?.length ? (
+                  <PortfolioStressStrip stress={data.portfolio_stress} />
+                ) : null}
                 {data.performance_vs_benchmark?.periods?.length ? (
                   <div className="mt-4">
                     <PerformanceVsBenchmark
@@ -424,6 +429,14 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Signals tab */}
           {activeTab === "signals" && (
             <div className="p-4 sm:p-6 space-y-4">
+          {data.data_freshness && <DataFreshnessBar data={data.data_freshness} />}
+          {data.config?.risk_sizing && (
+            <p className="text-xs text-slate-400 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2">
+              <strong className="text-slate-300">Risk-based sizing:</strong> each row uses{" "}
+              <strong>{data.config.risk_sizing.risk_pct}%</strong> of total portfolio as the dollar risk budget if your{" "}
+              <strong>{data.config.risk_sizing.stop_pct}%</strong> stop is hit. The <strong>Risk (size)</strong> column shows implied shares and notional.
+            </p>
+          )}
           <ToggleSection id="signals-context" title="Context & rules" icon={<HelpCircle className="h-5 w-5" />} defaultOpen={false}>
             <div className="space-y-3">
           {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && (
@@ -626,6 +639,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <PortfolioSummary report={selectedReport} />
                 </div>
+                {data.portfolio_stress?.scenarios?.length ? (
+                  <PortfolioStressStrip stress={data.portfolio_stress} />
+                ) : null}
               </ToggleSection>
               <ToggleSection id="portfolio-regime" title="Regime Chart" icon={<Activity />} defaultOpen>
                 <RegimeChart report={selectedReport} />

@@ -459,6 +459,20 @@ export interface DashboardData {
     horizons?: { short_term: string; medium_term: string; long_term: string };
   };
   as_of_date?: string;
+  /** As-of UTC + data limitation copy for retail trust */
+  data_freshness?: {
+    as_of_utc: string;
+    prices?: string;
+    fundamentals?: string;
+    macro?: string;
+    disclaimer?: string;
+  };
+  /** Parallel shock scenarios to total portfolio value (illustrative) */
+  portfolio_stress?: {
+    base_value: number;
+    scenarios: { name: string; shock_pct: number; portfolio_value_after: number; loss_dollars: number }[];
+    disclaimer?: string;
+  };
   market_scenarios?: MarketScenarioItem[];
   macro_analog?: {
     state: string;
@@ -564,7 +578,20 @@ export interface Signal {
   support_level?: number | null;
   buy_target_confidence_pct?: number | null;
   sell_target_confidence_pct?: number | null;
-  risk_sizing?: { size_dollars: number; shares: number; stop_pct: number } | null;
+  risk_sizing?: {
+    size_dollars: number;
+    shares: number;
+    shares_1pct_risk?: number;
+    stop_pct: number;
+    risk_budget_dollars?: number;
+    risk_pct?: number;
+  } | null;
+  /** ST band width %, ATR-based range hint — not a confidence interval */
+  uncertainty?: {
+    st_band_width_pct?: number | null;
+    atr_pct_of_price?: number | null;
+    typical_range_label?: string | null;
+  } | null;
   volume_ratio?: number | null;
   volume_unusual?: boolean;
   drawdown_52w?: number | null;

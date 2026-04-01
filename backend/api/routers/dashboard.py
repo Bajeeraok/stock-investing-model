@@ -918,6 +918,7 @@ async def get_dashboard():
             r["risk_sizing"] = None
             continue
         try:
+            risk_budget_dollars = total_value * (risk_pct / 100.0)
             size_dollars = total_value * (risk_pct / 100) / (stop_pct / 100)
             shares = max(0, int(size_dollars / float(r["close"])))
             # Max shares for 1% portfolio risk (retail preset)
@@ -928,9 +929,20 @@ async def get_dashboard():
                 "shares": shares,
                 "shares_1pct_risk": shares_1pct,
                 "stop_pct": stop_pct,
+                "risk_budget_dollars": round(risk_budget_dollars, 2),
+                "risk_pct": risk_pct,
             }
         except (TypeError, ZeroDivisionError):
             r["risk_sizing"] = None
+
+    try:
+        from signals.portfolio_stress import enrich_signal_uncertainty
+
+        for r in results:
+            if not r.get("error"):
+                enrich_signal_uncertainty(r)
+    except Exception as e:
+        logger.debug("enrich_signal_uncertainty: %s", e)
 
     save_last_run(results)  # Save AFTER building what_changed
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
@@ -990,6 +1002,22 @@ async def get_dashboard():
     from datetime import datetime as _dt
     as_of_date = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    data_freshness = {
+        "as_of_utc": as_of_date,
+        "prices": "Daily adjusted close from the data pipeline (typically prior session close vs. run time).",
+        "fundamentals": "FMP / estimates can lag filings; not point-in-time perfect for backtests.",
+        "macro": "FRED / cross-asset as of last observation before this run.",
+        "disclaimer": "Signals are model output, not investment advice.",
+    }
+
+    portfolio_stress: dict = {}
+    try:
+        from signals.portfolio_stress import build_portfolio_stress_scenarios
+
+        portfolio_stress = build_portfolio_stress_scenarios(report)
+    except Exception as e:
+        logger.debug("portfolio_stress: %s", e)
+
     # Retail value-add: daily briefing, portfolio heat, one-line actions, badges, nudges
     retail_briefing = {}
     try:
@@ -1043,6 +1071,8 @@ async def get_dashboard():
 
     out = {
         "as_of_date": as_of_date,
+        "data_freshness": data_freshness,
+        "portfolio_stress": portfolio_stress,
         "signals": results,
         "retail_briefing": retail_briefing,
         "crypto": crypto_signals,

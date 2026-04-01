@@ -7,6 +7,8 @@ export { CrossAssetSection } from "./CrossAssetSection";
 export { Best2026Section } from "./Best2026Section";
 export { ToggleSection } from "./ToggleSection";
 export { PortfolioSummary } from "./PortfolioSummary";
+export { PortfolioStressStrip, type PortfolioStressPayload } from "./PortfolioStressStrip";
+export { DataFreshnessBar, type DataFreshness } from "./DataFreshnessBar";
 export { SignalsTable } from "./SignalsTable";
 export { PortfolioHoldings } from "./PortfolioHoldings";
 export { TrimCandidates } from "./TrimCandidates";
