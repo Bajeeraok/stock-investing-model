@@ -15,6 +15,21 @@ MIN_SAMPLE_SIZE = 10
 BUCKETS_EXPECTED = {"70-100", "50-70", "30-50", "0-30"}
 
 
+def _pct_mr_from_backtest(backtest: dict) -> float:
+    """
+    Prefer pct_mean_reverting; if missing (older cached payloads), derive from counts.
+    """
+    bas = backtest.get("bucket_assignment_stats") or {}
+    p = bas.get("pct_mean_reverting")
+    if p is not None:
+        return float(p)
+    n = int(bas.get("n_bars_scored") or 0)
+    mr = int(bas.get("mean_reverting_bar_count") or 0)
+    if n > 0:
+        return 100.0 * mr / n
+    return 0.0
+
+
 def validate_backtest_result(backtest: dict) -> dict:
     """
     Validate a single backtest result (ticker buckets, by_year, etc.).
@@ -25,6 +40,8 @@ def validate_backtest_result(backtest: dict) -> dict:
 
     buckets = backtest.get("buckets") or {}
     by_year = backtest.get("by_year") or {}
+    bas = backtest.get("bucket_assignment_stats") or {}
+    pct_mr_global = _pct_mr_from_backtest(backtest)
 
     for year_str, year_data in by_year.items():
         buckets_present = set(year_data.keys())
@@ -65,11 +82,15 @@ def validate_backtest_result(backtest: dict) -> dict:
         except Exception:
             pass
 
-    # Score inversion: 0-30 bucket beat 70-100 in same year
+    # Score inversion: 0-30 vs 70-100 at 3m — only flag as "bad" when buckets use raw (trending) semantics.
+    # When MR-dominated, 0-30 ≈ momentum periods and 70-100 ≈ dip periods after flip — momentum can legitimately win.
     for year_str, year_data in by_year.items():
         high = year_data.get("70-100", {}).get(3, {}).get("avg_return_pct")
         low = year_data.get("0-30", {}).get(3, {}).get("avg_return_pct")
         if high is not None and low is not None and low > high:
+            if pct_mr_global >= 50:
+                # MR bucket mode: 70–100 ≈ dip periods, 0–30 ≈ momentum — momentum beating dips at 3m is not "inversion."
+                continue
             issues.append(
                 f"Year {year_str}: Score inversion — 0-30 bucket ({low:+.2f}%) > 70-100 ({high:+.2f}%) at 3m."
             )

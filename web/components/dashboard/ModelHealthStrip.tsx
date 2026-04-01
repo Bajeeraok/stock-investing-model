@@ -7,6 +7,12 @@ interface SummaryBySignal {
 }
 
 /** API `model_health` + optional forward-tracking fallbacks */
+export interface WalkForwardRegimeBreakdownEntry {
+  window_count?: number;
+  avg_hit_rate_pct?: number | null;
+  avg_net_return_pct?: number | null;
+}
+
 export interface ModelHealthData {
   accuracy_as_of?: string | null;
   eod_latest_date?: string | null;
@@ -16,6 +22,8 @@ export interface ModelHealthData {
   calibration_ok?: boolean | null;
   calibration_score?: number | null;
   walk_forward_ok?: boolean | null;
+  /** Walk-forward windows grouped by SPY vs SMA regime at test start (from update_model_health.py). */
+  walk_forward_regime_breakdown?: Record<string, WalkForwardRegimeBreakdownEntry> | null;
   backtest_last_run?: string | null;
   backtest_ticker?: string | null;
   message?: string | null;
@@ -45,6 +53,16 @@ export function ModelHealthStrip({ model_health, summary_by_signal, summary_by_h
   }
   if (mh.walk_forward_ok != null) {
     parts.push(`Walk-forward ${mh.walk_forward_ok ? "consistent" : "review"}`);
+  }
+  const wrb = mh.walk_forward_regime_breakdown;
+  if (wrb && typeof wrb === "object" && Object.keys(wrb).length > 0) {
+    const seg = Object.entries(wrb)
+      .filter(([, v]) => v && (v.window_count ?? 0) > 0)
+      .map(([k, v]) => `${k}:${v.window_count}w`)
+      .join(" · ");
+    if (seg) {
+      parts.push(`WF by regime ${seg}`);
+    }
   }
   if (mh.forward_hold_add_hit_rate_20d != null && mh.forward_observations_20d != null) {
     parts.push(

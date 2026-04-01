@@ -20,6 +20,14 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import pandas as pd
 
+from signals.backtest_earnings import load_earnings_exclusion_state, should_exclude_bar_for_earnings
+from signals.backtest_regime import (
+    aggregate_walk_forward_by_regime,
+    align_benchmark_to_index,
+    regime_label_at,
+    summarize_regime_distribution,
+)
+from signals.backtest_universe import apply_universe_config
 from signals.composite_bar_score import composite_bar_score_for_backtest
 from signals.fetcher import fetch_ohlcv_safe
 from signals.score_interpretation import backtest_bucket_style_at_bar
@@ -227,6 +235,77 @@ def calibration_score(bucket_hit_rates: dict[str, float]) -> dict:
     }
 
 
+def _bucket_return_ordering_notes(
+    results: dict[str, dict[int, dict]],
+    horizon_months: int,
+) -> list[str]:
+    """
+    Explain when adjacent *middle* bucket avg returns are out of ordinal order.
+
+    Under MR bucket mapping, labels are not a linear ladder of "expected quality":
+    30–50 and 50–70 mix different raw-score regimes after the flip, so 30–50 can
+    beat 50–70 at one horizon without contradicting the dip (70–100) vs momentum (0–30) story.
+    """
+    notes: list[str] = []
+    order = ["0-30", "30-50", "50-70", "70-100"]
+    avgs: list[tuple[str, float | None]] = []
+    for k in order:
+        avg = results.get(k, {}).get(horizon_months, {}).get("avg_return_pct")
+        avgs.append((k, avg))
+
+    a30 = avgs[1][1]
+    a50 = avgs[2][1]
+    fifty_seventy_unique_min = False
+    if all(avgs[i][1] is not None for i in range(4)):
+        a0, a1, a2, a3 = (avgs[i][1] for i in range(4))
+        assert a0 is not None and a1 is not None and a2 is not None and a3 is not None
+        m = min(a0, a1, a2, a3)
+        fifty_seventy_unique_min = a2 == m and sum(1 for x in (a0, a1, a2, a3) if x == m) == 1
+
+    # 30-50 > 50-70: common under MR mapping (middle bins are not an ordinal ladder).
+    if a30 is not None and a50 is not None and a30 > a50:
+        r30 = results.get("30-50", {}).get(horizon_months, {})
+        r50 = results.get("50-70", {}).get(horizon_months, {})
+        m30 = r30.get("margin_of_error_pct")
+        m50 = r50.get("margin_of_error_pct")
+        moe = ""
+        if m30 is not None and m50 is not None:
+            moe = f" (MoE +/-{m30:.1f}% vs +/-{m50:.1f}% — ranges may overlap)"
+        tail = ""
+        if fifty_seventy_unique_min:
+            tail = (
+                " 50-70 was also the weakest of the four buckets here — "
+                "often a thinner mixed slice after (100-score) assignment; check 6m and by-year."
+            )
+        notes.append(
+            f"{horizon_months}m: 30-50 avg ({a30:+.1f}%) > 50-70 ({a50:+.1f}%){moe}. "
+            "Middle bins blend different raw-score days under MR mapping; "
+            "dip-entry story stays 70-100 vs 0-30."
+            f"{tail}"
+        )
+    elif fifty_seventy_unique_min:
+        notes.append(
+            f"{horizon_months}m: 50-70 had the lowest avg return of the four buckets — "
+            "often a thinner / mixed slice after (100-score) assignment; compare 6m and by-year."
+        )
+
+    # 70-100 uniquely lowest (e.g. GOOGL 10y): dip-period rows vs momentum rows in a bull-heavy window.
+    if all(avgs[i][1] is not None for i in range(4)):
+        b0, b1, b2, b3 = (avgs[i][1] for i in range(4))
+        assert b0 is not None and b1 is not None and b2 is not None and b3 is not None
+        m4 = min(b0, b1, b2, b3)
+        if b3 == m4 and sum(1 for x in (b0, b1, b2, b3) if x == m4) == 1:
+            n70 = results.get("70-100", {}).get(horizon_months, {}).get("count")
+            n_txt = f" N={n70}." if n70 is not None else ""
+            notes.append(
+                f"{horizon_months}m: 70-100 had the lowest avg return of the four buckets{n_txt} "
+                "Under MR mapping, 70-100 labels dip-period rows; in long bull regimes momentum rows (0-30) "
+                "often lead at 3m. Check 6m and by-year; do not tune score.buy_min to match this bucket alone."
+            )
+
+    return notes
+
+
 # ---------------------------------------------------------------------------
 # Main backtest
 # ---------------------------------------------------------------------------
@@ -272,6 +351,19 @@ def run_backtest(
         if bm_close is not None:
             bm_close = bm_close.sort_index()
 
+    rc = (_cfg.get("backtest") or {}).get("regime") or {}
+    regime_sym = str(rc.get("benchmark") or "SPY").upper()
+    ma_days = int(rc.get("ma_days") or 200)
+    spy_regime_series = None
+    if regime_sym == (benchmark_ticker or "").upper() and bm_close is not None:
+        spy_regime_series = align_benchmark_to_index(bm_close, close.index)
+    elif regime_sym == ticker.upper():
+        spy_regime_series = align_benchmark_to_index(close, close.index)
+    else:
+        spy_reg = fetch_ohlcv_safe(regime_sym, period)
+        if spy_reg is not None:
+            spy_regime_series = align_benchmark_to_index(spy_reg.sort_index(), close.index)
+
     trading_days_per_month = 21
     bucket_keys = [f"{lo:.0f}-{hi:.0f}" for lo, hi in buckets]
 
@@ -283,7 +375,17 @@ def run_backtest(
     mr_bar_count = 0
     trending_bar_count = 0
 
+    sorted_earnings_ts, earnings_exclusion_meta = load_earnings_exclusion_state(_cfg, ticker, close.index)
+    ecfg = (_cfg.get("backtest") or {}).get("earnings_exclusion") or {}
+    earnings_days_before = int(ecfg.get("days_before") or 0)
+    bars_skipped_earnings = 0
+
     for i in range(200, len(close) - max(forward_months) * trading_days_per_month):
+        if sorted_earnings_ts is not None and should_exclude_bar_for_earnings(
+            close.index[i], sorted_earnings_ts, earnings_days_before
+        ):
+            bars_skipped_earnings += 1
+            continue
         score = _composite_for_row(close, i, ticker, _cfg)
         if score is None:
             continue
@@ -387,12 +489,41 @@ def run_backtest(
             "pct_trending": None,
         }
 
+    mr_dominated = bool(
+        (bucket_assignment_stats.get("pct_mean_reverting") or 0) >= 50
+    )
+
+    bucket_return_ordering_notes: list[str] = []
+    for hm in forward_months:
+        bucket_return_ordering_notes.extend(_bucket_return_ordering_notes(results, hm))
+
+    earnings_exclusion_out = dict(earnings_exclusion_meta)
+    earnings_exclusion_out["bars_skipped"] = bars_skipped_earnings
+
+    spy_regime_summary = None
+    if spy_regime_series is not None and len(spy_regime_series):
+        lo = 200
+        hi = len(close) - max(forward_months) * trading_days_per_month
+        summ = summarize_regime_distribution(spy_regime_series, lo, hi, ma_days)
+        spy_regime_summary = {
+            "benchmark": regime_sym,
+            "ma_days": ma_days,
+            **summ,
+            "note": (
+                f"{regime_sym} vs {ma_days}d SMA on scored bars — market regime context only; "
+                "composite scores unchanged."
+            ),
+        }
+
     return {
         "ticker": ticker,
         "period": period,
         "schema_version": 2,
         "bucket_assignment_note": bucket_note,
         "bucket_assignment_stats": bucket_assignment_stats,
+        "bucket_return_ordering_notes": bucket_return_ordering_notes,
+        "earnings_exclusion": earnings_exclusion_out,
+        "spy_regime_summary": spy_regime_summary,
         "sector": sector,
         "sector_description": describe_sector(ticker),
         "transaction_cost_pct": round(transaction_cost * 100, 3),
@@ -402,8 +533,8 @@ def run_backtest(
         "by_quarter": _aggregate(by_quarter_raw),
         "calibration": cal,
         "buy_bucket_metrics": full_metrics,
-        "suggested_buy_min": _suggest_band(results, "buy"),
-        "suggested_sell_max": _suggest_band(results, "sell"),
+        "suggested_buy_min": _suggest_band(results, "buy", mr_dominated=mr_dominated),
+        "suggested_sell_max": _suggest_band(results, "sell", mr_dominated=mr_dominated),
     }
 
 
@@ -445,6 +576,16 @@ def walk_forward_backtest(
     except Exception:
         _wf_cfg = {}
 
+    sorted_earnings_ts, _earn_meta = load_earnings_exclusion_state(_wf_cfg, ticker, close.index)
+    ecfg_wf = (_wf_cfg.get("backtest") or {}).get("earnings_exclusion") or {}
+    earnings_days_before_wf = int(ecfg_wf.get("days_before") or 0)
+
+    rc_wf = (_wf_cfg.get("backtest") or {}).get("regime") or {}
+    regime_sym_wf = str(rc_wf.get("benchmark") or "SPY").upper()
+    ma_days_wf = int(rc_wf.get("ma_days") or 200)
+    spy_wf = fetch_ohlcv_safe(regime_sym_wf, period)
+    spy_aligned_wf = align_benchmark_to_index(spy_wf.sort_index(), close.index) if spy_wf is not None else None
+
     trading_days_per_month = 21
     train_bars = train_years * 252
     test_bars = test_months * trading_days_per_month
@@ -462,6 +603,10 @@ def walk_forward_backtest(
         window_returns: dict[int, list[float]] = {m: [] for m in forward_months}
 
         for i in range(test_start, test_end):
+            if sorted_earnings_ts is not None and should_exclude_bar_for_earnings(
+                close.index[i], sorted_earnings_ts, earnings_days_before_wf
+            ):
+                continue
             score = _composite_for_row(close, i, ticker, _wf_cfg)
             if score is None or score < buy_threshold:
                 continue
@@ -471,11 +616,16 @@ def walk_forward_backtest(
                 gross_ret = (float(close.iloc[j]) - price_today) / price_today
                 window_returns[months].append(gross_ret - transaction_cost)
 
+        spy_reg = "unknown"
+        if spy_aligned_wf is not None:
+            spy_reg = regime_label_at(spy_aligned_wf, test_start, ma_days_wf)
+
         windows.append({
             "train_start": str(close.index[start])[:10],
             "train_end": str(close.index[test_start - 1])[:10],
             "test_start": str(close.index[test_start])[:10],
             "test_end": str(close.index[test_end - 1])[:10],
+            "spy_regime": spy_reg,
             "results": {m: _stats(window_returns[m]) for m in forward_months},
         })
         start += test_bars
@@ -495,6 +645,8 @@ def walk_forward_backtest(
                 "window_count": len(hit_rates),
             }
 
+    regime_breakdown = aggregate_walk_forward_by_regime(windows, 3) if windows else {}
+
     return {
         "ticker": ticker,
         "sector": classify_ticker(ticker),
@@ -504,6 +656,14 @@ def walk_forward_backtest(
         "transaction_cost_pct": round(transaction_cost * 100, 3),
         "windows": windows,
         "consistency": consistency,
+        "earnings_exclusion": _earn_meta,
+        "regime_benchmark": regime_sym_wf,
+        "regime_ma_days": ma_days_wf,
+        "regime_breakdown": regime_breakdown,
+        "regime_note": (
+            f"Each window labeled by {regime_sym_wf} vs {ma_days_wf}d SMA at test start — "
+            "split walk-forward stats by coarse market regime."
+        ),
     }
 
 
@@ -511,7 +671,7 @@ def walk_forward_backtest(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _suggest_band(results: dict, band_type: str) -> str:
+def _suggest_band(results: dict, band_type: str, *, mr_dominated: bool = False) -> str:
     try:
         if band_type == "buy":
             cands = [
@@ -521,6 +681,11 @@ def _suggest_band(results: dict, band_type: str) -> str:
             cands = [(k, hr, ar) for k, hr, ar in cands if hr is not None and hr > 55]
             if cands:
                 best = max(cands, key=lambda x: (x[1], x[2] or 0))
+                if mr_dominated:
+                    return (
+                        f"MR-mapped buckets: 3m hit-rate leader is {best[0]} ({best[1]:.1f}%) — "
+                        "not a raw buy_min threshold. Keep score.buy_min from config; read 70-100 vs 0-30 as dip vs momentum."
+                    )
                 return f"Consider buy_min >= {best[0].split('-')[0]} (3m hit rate {best[1]:.1f}%)"
         else:
             cands = [(k, v.get(3, {}).get("hit_rate")) for k, v in results.items()]
@@ -549,6 +714,17 @@ def main() -> None:
     period = config.get("data", {}).get("period", "10y") or "10y"
     txn_cost = config.get("backtest_transaction_cost", DEFAULT_TRANSACTION_COST)
     calibration_ok_min = float((config.get("backtest") or {}).get("calibration_ok_min", config.get("score", {}).get("buy_min", 70)))
+
+    tickers, uni_meta = apply_universe_config(
+        config,
+        tickers,
+        backend_root=ROOT,
+        fetch_close=fetch_ohlcv_safe,
+    )
+    if uni_meta.get("note"):
+        print(f"  Universe ({uni_meta.get('mode', '?')}): {uni_meta['note']}")
+    if uni_meta.get("dropped"):
+        print(f"  Dropped: {', '.join(uni_meta['dropped'][:12])}{' …' if len(uni_meta['dropped']) > 12 else ''}")
 
     print("BACKTEST: Sector-aware composite score vs forward returns (net of transaction costs)")
     print(f"  Transaction cost: {txn_cost*100:.2f}% round-trip  |  Benchmark: SPY")

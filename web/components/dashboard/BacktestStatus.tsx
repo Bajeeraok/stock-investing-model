@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { BarChart3, HelpCircle, Plus, X, Play } from "lucide-react";
 import type { BacktestResult, BacktestBucketMonth } from "@/app/page";
+import { INTERPRETATION_BULLETS, SCHEMA_V2_NOTE } from "@/lib/modelSemantics";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -11,16 +12,6 @@ const YEAR_OPTIONS = [2, 5, 10] as const;
 const YEAR_LABELS: Record<number, string> = { 2: "2 years", 5: "5 years", 10: "10 years" };
 const BUCKET_ORDER = ["70-100", "50-70", "30-50", "0-30"];
 const FORWARD_MONTHS = [1, 3, 6] as const;
-
-const INTERPRETATION_BULLETS = [
-  { label: "Model (score bucket)", text: "0–30 = weak through 70–100 = strong. On mean-reverting tape (ACF), buckets use the same 100−score mapping as live signals so “strong” aligns with dip-buy edge, not chase-after-rally." },
-  { label: "Sample size (N)", text: "Number of signals in that bucket for that horizon. Small N = less reliable; prefer buckets with N ≥ 30." },
-  { label: "Actual 1m / 3m / 6m", text: "Average % return over the next ~21 / 63 / 126 trading days when the model was in that bucket. What really happened historically." },
-  { label: "Avg return %", text: "Mean forward return. Positive = gains on average; negative = losses on average. Interpret with MoE and hit rate." },
-  { label: "Margin of error (±%)", text: "95% confidence interval around the avg return. Smaller MoE = more reliable estimate. MoE does NOT mean hit rate—you can have low MoE + negative return + low hit rate (confident the bucket underperforms)." },
-  { label: "Hit rate", text: "% of forward periods with positive return (gain > 0). 60% hit = 6 of 10 periods gained. Not a confidence %—it measures how often gains occurred, not how sure we are." },
-  { label: "How to read", text: "Strong model: higher buckets (70–100) show better avg returns and higher hit rates. Weak model: low buckets (0–30) show negative returns. Compare buckets to see if the model adds value." },
-];
 
 function BucketTable({ buckets }: { buckets: Record<string, Record<number, BacktestBucketMonth>> }) {
   return (
@@ -287,13 +278,22 @@ export function BacktestStatus() {
       )}
 
       {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+      <div className="mb-3 rounded-lg border border-sky-800/50 bg-sky-950/35 px-3 py-2.5 text-sm text-slate-300 leading-relaxed">
+        <span className="font-medium text-sky-300">Recommended (dip entries — default):</span> Use the{" "}
+        <span className="text-slate-200">live dashboard score</span> plus{" "}
+        <span className="text-slate-200">interpretation</span> (mean-reverting tape = frame adds as dip-buy, not chase). This backtest helps you{" "}
+        <span className="text-slate-200">sanity-check history</span>: when “Bucket rows” show mean-reverting %, high buckets ≈{" "}
+        <span className="text-slate-200">dip periods</span> after the flip — compare <span className="text-slate-200">6m</span> more than 3m to see if weakness led to better outcomes. You are{" "}
+        <span className="text-slate-200">not</span> trying to prove raw momentum wins; that is a different test.
+      </div>
       <p className="text-sm text-slate-300 mb-2">
-        <span className="font-medium text-slate-200">Model vs Actual:</span> Our model assigns a score bucket (0–30, 30–50, 50–70, 70–100). The table shows the <span className="text-emerald-400">actual</span> forward return (1m/3m/6m) that occurred in history when the model was in that bucket. Strong model = higher score buckets have better actual returns.
+        <span className="font-medium text-slate-200">Model vs Actual:</span> Each row is a score bucket. The columns show the{" "}
+        <span className="text-emerald-400">average actual</span> forward return (1m / 3m / 6m) when the model was in that bucket. How you read “high vs low” depends on whether buckets are raw momentum or MR-mapped — see the callout above and the spread line under each ticker.
       </p>
       {results.some((r) => r.schema_version != null) && (
-        <p className="text-xs text-slate-500 mb-2 leading-snug">
-          <span className="text-slate-400 font-medium">Backtest schema:</span> each ticker below shows a version badge when the API returns it. Newer schemas fix bucket logic (e.g. mean-reversion–aware assignment). After a deploy, if results look unchanged, use{" "}
-          <span className="text-slate-300">Re-run fresh</span> — the server cache key is versioned so old Redis entries do not mask new logic.
+        <p className="text-xs text-slate-500 mb-2 leading-snug" title={SCHEMA_V2_NOTE}>
+          <span className="text-slate-400 font-medium">Backtest schema:</span> {SCHEMA_V2_NOTE} After a deploy, use{" "}
+          <span className="text-slate-300">Re-run fresh</span> so Redis does not serve stale JSON.
         </p>
       )}
       <div className="flex gap-2 mb-4">
@@ -360,16 +360,76 @@ export function BacktestStatus() {
                   const high = r.buckets["70-100"]?.[3]?.avg_return_pct;
                   const low = r.buckets["0-30"]?.[3]?.avg_return_pct;
                   const edge = high != null && low != null ? (high - low) : null;
+                  const pctMr = r.bucket_assignment_stats?.pct_mean_reverting ?? 0;
+                  const mrDominated = pctMr >= 50;
                   return edge != null ? (
-                    <p className="px-4 py-2 text-sm text-slate-300 bg-slate-800/50 border-b border-slate-700/50">
-                      <span className="font-medium text-emerald-400">Model edge:</span> 70–100 bucket beats 0–30 by{" "}
-                      <span className={edge >= 0 ? "text-emerald-400" : "text-red-400"}>
-                        {edge >= 0 ? "+" : ""}{edge.toFixed(1)}%
-                      </span>{" "}
-                      per 3m (avg).
+                    <p className="px-4 py-2 text-sm text-slate-300 bg-slate-800/50 border-b border-slate-700/50 leading-snug">
+                      {mrDominated ? (
+                        <>
+                          <span className="font-medium text-sky-400">MR bucket spread (3m):</span> dip-period rows (70–100
+                          after flip) vs momentum-period rows (0–30) ={" "}
+                          <span className={edge >= 0 ? "text-emerald-400" : "text-amber-300"}>
+                            {edge >= 0 ? "+" : ""}{edge.toFixed(1)}%
+                          </span>{" "}
+                          (dip − momentum).{" "}
+                          {edge >= 0 ? (
+                            <span className="text-slate-400">Dips led 3m — MR-style edge.</span>
+                          ) : (
+                            <span className="text-slate-400">
+                              Momentum led 3m — common for mega-cap growth; not a failed flip.
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-medium text-emerald-400">Model edge:</span> 70–100 bucket beats 0–30 by{" "}
+                          <span className={edge >= 0 ? "text-emerald-400" : "text-red-400"}>
+                            {edge >= 0 ? "+" : ""}{edge.toFixed(1)}%
+                          </span>{" "}
+                          per 3m (avg).
+                        </>
+                      )}
                     </p>
                   ) : null;
                 })()}
+                {r.bucket_return_ordering_notes &&
+                  r.bucket_return_ordering_notes.length > 0 && (
+                    <ul className="px-4 py-2 text-xs text-slate-400 bg-amber-950/25 border-b border-amber-900/35 leading-snug space-y-1 list-disc list-inside marker:text-amber-600/80">
+                      {r.bucket_return_ordering_notes.map((note, i) => (
+                        <li key={i}>{note}</li>
+                      ))}
+                    </ul>
+                  )}
+                {r.earnings_exclusion && r.earnings_exclusion.enabled && (
+                  <p
+                    className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/35 border-b border-slate-700/40 leading-snug"
+                    title="Short-horizon noise reduction: bars skipped when next earnings within N calendar days (FMP). See docs/BACKTEST_DATA.md."
+                  >
+                    <span className="text-slate-400">Earnings exclusion:</span>{" "}
+                    {r.earnings_exclusion.days_before}d window ·{" "}
+                    {r.earnings_exclusion.bars_skipped ?? 0} bars skipped
+                    {r.earnings_exclusion.dates_loaded != null && r.earnings_exclusion.dates_loaded > 0
+                      ? ` · ${r.earnings_exclusion.dates_loaded} FMP dates`
+                      : ""}
+                    {r.earnings_exclusion.note ? ` — ${r.earnings_exclusion.note}` : ""}
+                  </p>
+                )}
+                {r.spy_regime_summary &&
+                  r.spy_regime_summary.pct_trading_days_bull != null &&
+                  r.spy_regime_summary.bars_counted != null &&
+                  r.spy_regime_summary.bars_counted > 0 && (
+                    <p
+                      className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/25 border-b border-slate-700/35 leading-snug"
+                      title={r.spy_regime_summary.note ?? ""}
+                    >
+                      <span className="text-slate-400">Market regime (window):</span>{" "}
+                      {r.spy_regime_summary.benchmark} vs {r.spy_regime_summary.ma_days}d SMA —{" "}
+                      {r.spy_regime_summary.pct_trading_days_bull}% bull ·{" "}
+                      {r.spy_regime_summary.pct_trading_days_bear ?? "—"}% bear ·{" "}
+                      {r.spy_regime_summary.pct_trading_days_neutral ?? "—"}% neutral ({r.spy_regime_summary.bars_counted}{" "}
+                      bars)
+                    </p>
+                  )}
                 <div className="overflow-x-auto">
                   {view === "overall" && r.buckets && Object.keys(r.buckets).length > 0 && (
                     <BucketTable buckets={r.buckets} />

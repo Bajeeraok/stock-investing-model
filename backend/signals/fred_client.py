@@ -21,6 +21,8 @@ SERIES_INFLATION_EXP = "T10YIE" # 10-Year Breakeven Inflation Rate (%)
 SERIES_FEDFUNDS = "FEDFUNDS"   # Federal Funds Effective Rate (monthly)
 SERIES_CPI = "CPIAUCSL"        # CPI All Urban (monthly, index)
 SERIES_UNRATE = "UNRATE"       # Unemployment Rate (monthly)
+# ICE BofA US High Yield Option-Adjusted Spread (daily, %); stress often >500 bp historically
+SERIES_HY_OAS = "BAMLH0A0HYM2"
 
 
 def get_api_key(config: dict) -> str | None:
@@ -83,6 +85,28 @@ def fetch_series(config: dict, series_id: str, limit: int = 1) -> tuple[list[dic
     if not isinstance(obs, list):
         return [], "Unexpected response"
     return obs, None
+
+
+def get_unrate_mom_pct_change(config: dict) -> float | None:
+    """
+    Month-over-month % change in unemployment rate (latest vs prior FRED print).
+    Positive = unemployment rising (typically risk-off).
+    """
+    obs, err = fetch_series(config, SERIES_UNRATE, limit=2)
+    if err or not obs or len(obs) < 2:
+        return None
+    vals: list[float] = []
+    for row in obs[:2]:
+        raw = row.get("value")
+        if raw is None or raw == ".":
+            continue
+        try:
+            vals.append(float(raw))
+        except (TypeError, ValueError):
+            return None
+    if len(vals) < 2 or vals[1] == 0:
+        return None
+    return (vals[0] - vals[1]) / abs(vals[1])
 
 
 def get_latest_value(config: dict, series_id: str) -> float | None:

@@ -73,6 +73,7 @@ def build_model_health(
                 "walk_forward_ok",
                 "backtest_last_run",
                 "walk_forward_note",
+                "walk_forward_regime_breakdown",
                 "backtest_ticker",
             ):
                 if k in persisted:

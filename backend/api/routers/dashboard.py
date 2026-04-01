@@ -206,6 +206,21 @@ async def get_dashboard():
     )
     logger.info("[dashboard] section: run_signals DONE (%d tickers, %.0f ms)", len(results) if results else 0, (time.perf_counter() - t0) * 1000)
 
+    # Paper trading entry price: prefer live quote (FMP batch or Yahoo) so entry matches portfolio marks;
+    # signal row close remains OHLCV last bar (used for indicators / accuracy).
+    if prices_by_ticker:
+        _paper_src = "fmp_batch" if prices_from_fmp_batch else "yfinance_latest"
+        for r in results or []:
+            if not isinstance(r, dict) or r.get("error"):
+                continue
+            sym = (r.get("ticker") or "").upper().strip()
+            if sym and sym in prices_by_ticker:
+                try:
+                    r["paper_entry_price"] = float(prices_by_ticker[sym])
+                    r["paper_entry_source"] = _paper_src
+                except (TypeError, ValueError):
+                    pass
+
     # Paper trading log: capture today's signals (idempotent by date+ticker+signal)
     try:
         from datetime import datetime as _dt
@@ -592,6 +607,70 @@ async def get_dashboard():
     else:
         macro_regime = "Neutral"
 
+    macro_regime_bundle: dict = {}
+    try:
+        mr_cfg = config.get("macro_regime") or {}
+        if mr_cfg.get("enabled", True):
+            from signals.macro_regime import build_macro_regime_bundle
+
+            hmm_bear_pct = None
+            if mr_cfg.get("combine_with_hmm", True):
+                try:
+                    from signals.hmm_regime import get_hmm_regime
+
+                    close_spy_hmm = fetch_ohlcv_safe("SPY", "2y")
+                    if close_spy_hmm is not None and len(close_spy_hmm) >= 252:
+                        hmm = get_hmm_regime("SPY", close_spy_hmm)
+                        if hmm and hmm.get("bear_probability") is not None:
+                            hmm_bear_pct = float(hmm["bear_probability"]) * 100.0
+                except Exception as e:
+                    logger.debug("macro+HMM: %s", e)
+            macro_regime_bundle = build_macro_regime_bundle(
+                config,
+                vix=vix_val,
+                hmm_bear_pct=hmm_bear_pct,
+                hmm_weight=float(mr_cfg.get("hmm_weight", 0.40)),
+                macro_weight=float(mr_cfg.get("macro_weight", 0.60)),
+            )
+    except Exception as e:
+        logger.debug("macro_regime_bundle: %s", e)
+
+    portfolio_risk_metrics: dict = {}
+    try:
+        pr_cfg = config.get("portfolio_risk") or {}
+        if pr_cfg.get("enabled", True) and holdings:
+            from signals.portfolio_risk_model import (
+                compute_correlation_matrix,
+                compute_var_cvar,
+                correlation_adjusted_sizing,
+            )
+
+            raw_tickers = []
+            for h in holdings:
+                t = h.get("ticker") if isinstance(h, dict) else h
+                if t:
+                    raw_tickers.append(str(t).upper().split("-")[0])
+            tickers_pr = list(dict.fromkeys(raw_tickers))[: int(pr_cfg.get("max_tickers", 20))]
+            if len(tickers_pr) >= 2:
+                n = len(tickers_pr)
+                eq_w = {t: 1.0 / n for t in tickers_pr}
+                corr_df, c_err = compute_correlation_matrix(tickers_pr)
+                if corr_df is not None:
+                    portfolio_risk_metrics["correlation_matrix"] = corr_df.round(3).to_dict()
+                portfolio_risk_metrics["correlation_error"] = c_err
+                portfolio_risk_metrics["var_cvar"] = compute_var_cvar(tickers_pr, eq_w)
+                base_kelly = {t: float(pr_cfg.get("base_kelly_fraction", 0.25)) for t in tickers_pr}
+                portfolio_risk_metrics["correlation_adjusted_sizes"] = correlation_adjusted_sizing(
+                    tickers_pr,
+                    base_kelly,
+                    max_portfolio=float(pr_cfg.get("max_portfolio", 0.65)),
+                )
+                portfolio_risk_metrics["note"] = (
+                    "Equal-weight illustrative VaR; use correlation_adjusted_sizes with your own base fractions."
+                )
+    except Exception as e:
+        logger.debug("portfolio_risk_metrics: %s", e)
+
     # Macro analog: historical one-liner when VIX + real yield match current state
     macro_analog = None
     try:
@@ -974,6 +1053,8 @@ async def get_dashboard():
         "market_forecast": market_forecast,
         "guidelines": guidelines,
         "macro_regime": macro_regime,
+        "macro_regime_bundle": macro_regime_bundle,
+        "portfolio_risk_metrics": portfolio_risk_metrics,
         "market_regime": market_regime_data,
         "global_market_regime": next(
             (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
@@ -1353,6 +1434,33 @@ async def get_confidence(ticker: str):
         raise HTTPException(status_code=503, detail=f"Confidence engine unavailable: {e}")
     except Exception as e:
         logger.exception("Confidence engine error for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/insights/{ticker}")
+async def get_insights(ticker: str):
+    """
+    FMP-backed institutional proxies (weighted insider list, short float, holder trend) and
+    earnings-quality heuristics (OCF vs NI, margins, estimate revision). Optional in config: insights.enabled.
+    """
+    ticker_u = (ticker or "").upper().strip()
+    if not ticker_u:
+        raise HTTPException(status_code=400, detail="Ticker required")
+    config = _load_config()
+    ins_cfg = config.get("insights") or {}
+    if not ins_cfg.get("enabled", True):
+        return {"disabled": True, "message": "insights.disabled in config"}
+    try:
+        from signals.earnings_quality import analyze_earnings_quality
+        from signals.institutional_signals import build_institutional_bundle
+
+        return {
+            "ticker": ticker_u,
+            "institutional": build_institutional_bundle(config, ticker_u),
+            "earnings_quality": analyze_earnings_quality(config, ticker_u),
+        }
+    except Exception as e:
+        logger.exception("insights error for %s: %s", ticker_u, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

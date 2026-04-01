@@ -34,8 +34,9 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <div>
           <p className="text-sm font-medium text-slate-300">Paper trading (signals → outcomes)</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Logs signals daily; backfills outcomes using EOD snapshots (~20 trading days ≈ 30 calendar days).
-            P&L history shows day-by-day return % (hover for dates).
+            Entry = live quote when batch/Yahoo prices are available; otherwise last OHLCV bar (same as indicators).
+            Outcomes use the first EOD snapshot on or after signal date + N <strong>business</strong> days.
+            <strong> Return</strong> = vs signal entry; <strong>Last mark / daily Δ</strong> = vs prior EOD mark once history exists.
           </p>
         </div>
         {pt.log?.date && (
@@ -106,14 +107,25 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium">Date</th>
                 <th className="py-1.5 pr-2 font-medium">Ticker</th>
                 <th className="py-1.5 pr-2 font-medium">Signal</th>
-                <th className="py-1.5 pr-2 font-medium">Entry</th>
+                <th
+                  className="py-1.5 pr-2 font-medium"
+                  title="Live batch/Yahoo when set by dashboard; else OHLCV last close"
+                >
+                  Entry
+                </th>
                 <th className="py-1.5 pr-2 font-medium">Target</th>
                 <th className="py-1.5 pr-2 font-medium">Stop</th>
                 <th className="py-1.5 pr-2 font-medium">Outcome</th>
                 <th className="py-1.5 pr-2 font-medium">Return</th>
-                <th className="py-1.5 pr-2 font-medium">Rolling entry</th>
-                <th className="py-1.5 pr-2 font-medium">Rolling P&L</th>
-                <th className="py-1.5 pr-2 font-medium">Rolling return</th>
+                <th className="py-1.5 pr-2 font-medium" title="Latest EOD close used as mark (stored in rolling_entry_price)">
+                  Last mark
+                </th>
+                <th className="py-1.5 pr-2 font-medium" title="Dollar change vs previous mark only (empty on first MTM)">
+                  Daily Δ$
+                </th>
+                <th className="py-1.5 pr-2 font-medium" title="Percent change vs previous mark only (empty on first MTM)">
+                  Daily Δ%
+                </th>
                 <th className="py-1.5 pr-2 font-medium">P&L history</th>
               </tr>
             </thead>
@@ -148,7 +160,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                       </td>
                     );
                   })()}
-                  <td className="py-1.5 pr-2 text-slate-300" title={r.entry_price != null && r.rolling_entry_price != null ? `Signal entry $${Number(r.entry_price).toFixed(2)} → rolling (latest) $${Number(r.rolling_entry_price).toFixed(2)} (Δ ${r.entry_price ? fmtPct(100 * (Number(r.rolling_entry_price) - r.entry_price) / r.entry_price) : "—"})` : undefined}>
+                  <td className="py-1.5 pr-2 text-slate-300" title={r.entry_price != null && r.rolling_entry_price != null ? `Signal entry $${Number(r.entry_price).toFixed(2)} → latest mark $${Number(r.rolling_entry_price).toFixed(2)} (total ${fmtPct(100 * (Number(r.rolling_entry_price) - r.entry_price) / r.entry_price)} vs entry)` : undefined}>
                     {r.rolling_entry_price != null ? `$${Number(r.rolling_entry_price).toFixed(2)}` : "—"}
                   </td>
                   <td className={clsx("py-1.5 pr-2", (Number(r.rolling_pnl) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>

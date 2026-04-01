@@ -97,6 +97,12 @@ export interface TickerDetail {
     note: string;
   };
   investor_summary?: InvestorDecisionSummary | null;
+  /** PE/EPS/FMP data are latest vendor snapshot — not point-in-time historical fundamentals. */
+  fundamentals_snapshot?: {
+    point_in_time: boolean;
+    short_label: string;
+    detail: string;
+  };
 }
 
 export function TickerDetailModal({
@@ -234,6 +240,15 @@ export function TickerDetailModal({
               {/* ── Overview tab: One Answer + horizons + CTA to Roadmaps ───── */}
               {modalTab === "overview" && (
                 <>
+              {detail.fundamentals_snapshot && !detail.fundamentals_snapshot.point_in_time && (
+                <p
+                  className="text-xs text-slate-500 border border-slate-600/80 bg-slate-800/40 rounded-lg px-3 py-2 mb-3 leading-snug"
+                  title={detail.fundamentals_snapshot.detail}
+                >
+                  <span className="text-amber-400/90 font-medium">{detail.fundamentals_snapshot.short_label}:</span>{" "}
+                  Valuation metrics use the latest data vendor snapshot at load — not restated point-in-time history. Fair value and PE help context; they are not a causal backtest of fundamentals.
+                </p>
+              )}
               {/* Quick reference – collapsible so modal has less vertical scroll */}
               <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden mb-4">
                 <button

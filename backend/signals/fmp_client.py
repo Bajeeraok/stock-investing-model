@@ -182,6 +182,25 @@ def fetch_price_target_consensus(config: dict, ticker: str) -> tuple[dict | None
     return None, "No data"
 
 
+def fetch_analyst_estimates_quarterly(
+    config: dict, ticker: str, limit: int = 4
+) -> tuple[list[dict] | None, str | None]:
+    """Quarterly analyst EPS consensus rows (newest first). For revision momentum."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    url = f"{BASE}/analyst-estimates?symbol={sym}&period=quarter&limit={min(max(2, limit), 20)}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)], None
+    return None, "No data"
+
+
 def fetch_analyst_estimates(config: dict, ticker: str) -> tuple[dict | None, str | None]:
     """
     Forward analyst EPS/Revenue consensus from FMP analyst-estimates endpoint.
@@ -282,6 +301,68 @@ def fetch_insider_stats(config: dict, ticker: str) -> tuple[dict | None, str | N
     return None, "No data"
 
 
+def fetch_insider_trading_list(
+    config: dict, ticker: str, limit: int = 20
+) -> tuple[list[dict] | None, str | None]:
+    """
+    Recent insider transactions (stable insider-trading feed).
+    Returns (rows, error). Used for role/size-weighted net signal.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    url = f"{BASE}/insider-trading?symbol={sym}&limit={min(max(1, limit), 100)}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)], None
+    return None, "Unexpected insider-trading response"
+
+
+def fetch_short_float_summary(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """
+    Short interest / short percent of float (v4). Shape varies by plan.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    url = f"{BASE_V4}/short_float?symbol={sym}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0], None
+    if isinstance(data, dict):
+        return data, None
+    return None, "No data"
+
+
+def fetch_institutional_holder_summary(config: dict, ticker: str) -> tuple[list[dict] | None, str | None]:
+    """
+    Institutional holders (v3). May require higher FMP tier — caller should handle errors.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    url = f"{BASE_V3}/institutional-holder/{sym}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)], None
+    return None, "No data"
+
+
 def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict | None, str | None]:
     """
     Fetch recent stock news for a ticker (FMP v3 stock_news).
@@ -362,6 +443,55 @@ def fetch_key_metrics_ttm(config: dict, ticker: str) -> tuple[dict | None, str |
     if isinstance(data, dict):
         return data, None
     return None, "No data"
+
+
+def fetch_historical_earning_dates(
+    config: dict,
+    ticker: str,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> tuple[list[str], str | None]:
+    """
+    Historical earnings-related dates for a US equity (FMP v3).
+
+    Returns (YYYY-MM-DD strings sorted ascending, error). Empty list is valid (ETF / no data).
+
+    Tries ``historical/earning_calendar`` first, then ``earnings_surprises`` for ``date`` fields
+    (fallback is noisier). Used by ``backtest_earnings`` exclusion.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
+    if not sym:
+        return [], "No ticker"
+    from_d = (start_date or "2000-01-01")[:10]
+    to_d = (end_date or "2035-12-31")[:10]
+    url = f"{BASE_V3}/historical/earning_calendar/{sym}?from={from_d}&to={to_d}"
+    data, err = _request(url, api_key)
+    out_dates: list[str] = []
+    if isinstance(data, list) and data:
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            ds = row.get("date") or row.get("earningDate")
+            if ds:
+                out_dates.append(str(ds)[:10])
+    if not out_dates:
+        url2 = f"{BASE_V3}/earnings-surprises/{sym}"
+        data2, err2 = _request(url2, api_key)
+        if isinstance(data2, list) and data2:
+            for row in data2:
+                if not isinstance(row, dict):
+                    continue
+                ds = row.get("date") or row.get("filingDate")
+                if ds:
+                    out_dates.append(str(ds)[:10])
+        if err2 and not out_dates:
+            err = err2
+    uniq = sorted(set(out_dates))
+    return uniq, err
 
 
 def run_fmp_plan_check(config: dict) -> dict:

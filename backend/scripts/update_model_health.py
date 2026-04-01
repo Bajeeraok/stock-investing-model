@@ -48,6 +48,8 @@ def main() -> None:
     if wf.get("error"):
         wf_ok = None
 
+    wf_rb = (wf or {}).get("regime_breakdown") or {}
+
     payload = {
         "backtest_last_run": datetime.now(timezone.utc).isoformat(),
         "backtest_ticker": ticker,
@@ -55,6 +57,7 @@ def main() -> None:
         "calibration_ok": cal_ok,
         "walk_forward_ok": wf_ok,
         "walk_forward_note": None,
+        "walk_forward_regime_breakdown": wf_rb,
     }
     if c3 and not c3.get("consistent"):
         payload["walk_forward_note"] = (

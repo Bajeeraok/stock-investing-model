@@ -14,8 +14,12 @@ the local data/eod directory is ephemeral.
 
 Key methods:
   - log_signal(...)              : append (idempotent per date+ticker+signal)
-  - fill_outcomes(...)           : backfill ~30d outcome (default 20 trading days via EOD snapshots)
+  - fill_outcomes(...)           : backfill outcome at first EOD on/after signal_date + N business days
   - get_performance_summary(...) : win-rate once enough completed trades exist
+
+Entry price (log_signals_from_results):
+  - Prefer ``paper_entry_price`` when the dashboard sets it from FMP batch or Yahoo last (aligned with marks).
+  - Else ``close`` / ``price`` from run_signals = last bar of the OHLCV series used for indicators.
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import pandas as pd
+from pandas.tseries.offsets import BDay
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +77,7 @@ _FIELDS = [
     "ml_confidence",
     "regime",
     "entry_price",
+    "entry_price_source",
     "target_1",
     "hard_stop",
     "atr_14",
@@ -138,6 +146,7 @@ class PaperTradeRecord:
     ml_confidence: float | None
     regime: str | None
     entry_price: float | None
+    entry_price_source: str | None
     target_1: float | None
     hard_stop: float | None
     atr_14: float | None
@@ -155,6 +164,7 @@ class PaperTradeRecord:
             "ml_confidence": self.ml_confidence,
             "regime": self.regime,
             "entry_price": self.entry_price,
+            "entry_price_source": self.entry_price_source,
             "target_1": self.target_1,
             "hard_stop": self.hard_stop,
             "atr_14": self.atr_14,
@@ -273,7 +283,15 @@ class PaperTradeLogger:
                 ml_conf = round(float(ml) * 100, 1) if _safe_float(ml) is not None else None
                 # Prefer global market regime if present (Tier1 regime scale)
                 reg = r.get("_global_market_regime") or r.get("regime")
-                entry = _safe_float(r.get("close") or r.get("price"))
+                # Entry: dashboard may set paper_entry_price from batch/Yahoo last — else OHLCV last bar (close)
+                entry = _safe_float(
+                    r.get("paper_entry_price") or r.get("close") or r.get("price")
+                )
+                entry_src = None
+                if _safe_float(r.get("paper_entry_price")) is not None:
+                    entry_src = str(r.get("paper_entry_source") or "live_quote")
+                elif entry is not None:
+                    entry_src = "ohlcv_last_bar"
                 atr_14 = _safe_float(r.get("atr_14"))
                 score = _safe_float(r.get("composite_buy"))
                 # kelly_pct is optional; if Tier1 sizing is available elsewhere we can backfill later
@@ -284,6 +302,7 @@ class PaperTradeLogger:
                     ml_confidence=ml_conf,
                     regime=str(reg) if reg is not None else None,
                     entry_price=round(entry, 2) if entry is not None else None,
+                    entry_price_source=entry_src,
                     target_1=round(target_1, 2) if target_1 is not None else None,
                     hard_stop=round(hard_stop, 2) if hard_stop is not None else None,
                     atr_14=round(atr_14, 2) if atr_14 is not None else None,
@@ -413,22 +432,28 @@ class PaperTradeLogger:
         if len(dates) < 2:
             return {"updated": 0, "message": "Need at least 2 EOD snapshots (Redis or data/eod) to fill outcomes."}
 
-        idx_by_date = {d: i for i, d in enumerate(dates)}
-
         updated = 0
         for row in rows[:max_rows]:
             try:
                 if row.get("outcome"):
                     continue
                 as_of = row.get("date")
-                if not as_of or as_of not in idx_by_date:
+                if not as_of:
                     continue
                 horizon = int(float(row.get("horizon_trading_days") or 20))
-                i = idx_by_date[as_of]
-                j = i + horizon
-                if j >= len(dates):
-                    continue  # not enough future snapshots yet
-                next_date = dates[j]
+                # First EOD snapshot on or after (as_of + N business days) — not "N rows" in the list
+                # (avoids mis-counting when some calendar days lack a snapshot).
+                try:
+                    target_ts = pd.Timestamp(as_of).normalize() + BDay(horizon)
+                except Exception:
+                    continue
+                next_date = None
+                for d in dates:
+                    if pd.Timestamp(d).normalize() >= target_ts:
+                        next_date = d
+                        break
+                if not next_date:
+                    continue
 
                 snap = self._load_snapshot(next_date)
                 if not snap:
@@ -494,10 +519,14 @@ class PaperTradeLogger:
                 if px is None or entry is None or entry <= 0:
                     continue
                 mtm_ret = round(100 * (px - entry) / entry, 2)
-                # Rolling: prev reference = last rolling_entry or signal-date entry (first time)
-                prev_rolling = _safe_float(row.get("rolling_entry_price")) or entry
-                rolling_ret = round(100 * (px - prev_rolling) / prev_rolling, 2) if prev_rolling and prev_rolling > 0 else None
-                rolling_pnl = round(px - prev_rolling, 2) if prev_rolling is not None else None
+                # Rolling columns: only after we have a prior mark — daily $/% vs last snapshot; first MTM has no prior day.
+                prev_mark = _safe_float(row.get("rolling_entry_price"))
+                if prev_mark is not None and prev_mark > 0:
+                    rolling_ret = round(100 * (px - prev_mark) / prev_mark, 2)
+                    rolling_pnl = round(px - prev_mark, 2)
+                else:
+                    rolling_ret = None
+                    rolling_pnl = None
                 # Only write if new snapshot date (reduces file churn on repeated dashboard refresh)
                 if str(row.get("mtm_date") or "") == latest:
                     continue

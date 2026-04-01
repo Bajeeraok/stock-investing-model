@@ -268,6 +268,28 @@ export interface BacktestResult {
     pct_mean_reverting: number | null;
     pct_trending: number | null;
   };
+  /** When middle-bin avg returns reorder (e.g. 30–50 > 50–70 at 3m under MR mapping). */
+  bucket_return_ordering_notes?: string[];
+  /** FMP-based earnings window exclusion when enabled in config (see backend/docs/BACKTEST_DATA.md). */
+  earnings_exclusion?: {
+    enabled: boolean;
+    days_before: number;
+    bars_skipped?: number;
+    dates_loaded?: number;
+    source?: string | null;
+    error?: string | null;
+    note?: string | null;
+  };
+  /** SPY (or configured benchmark) vs SMA: share of bull/bear/neutral days on scored bars — context only. */
+  spy_regime_summary?: {
+    benchmark: string;
+    ma_days: number;
+    pct_trading_days_bull?: number | null;
+    pct_trading_days_bear?: number | null;
+    pct_trading_days_neutral?: number | null;
+    bars_counted?: number;
+    note?: string;
+  } | null;
   error?: string;
   buckets?: Record<string, Record<number, BacktestBucketMonth>>;
   by_year?: Record<string, Record<string, Record<number, BacktestBucketMonth>>>;
@@ -358,6 +380,8 @@ export interface DashboardData {
       ml_confidence?: number | null;
       regime?: string | null;
       entry_price?: number | null;
+      /** ohlcv_last_bar | fmp_batch | yfinance_latest */
+      entry_price_source?: string | null;
       target_1?: number | null;
       hard_stop?: number | null;
       atr_14?: number | null;

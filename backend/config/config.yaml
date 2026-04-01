@@ -247,12 +247,33 @@ score:
     force_trending: []            # e.g. [SPY] to never invert thresholds for an index
     force_mean_reverting:
       - MSFT   # backtest: rolling ACF often trending — bucket table inverts like MSFT playbook
-      - GOOGL  # mega-cap growth: momentum buckets vs forward returns inverted without forced MR
-
+      # 5yr backtest: -32.3% model edge
+      # Fixed: +32.3% after force_MR
+      # Date added: 2026-03-31
+      - GOOGL  # mega-cap growth: raw-score buckets invert vs 3m fwd returns; forced MR aligns labels (dip vs momentum)
+      # 5y: -11.1% naive 70-100 vs 0-30 "edge" before MR · 10y can still show momentum rows beating dip rows at 3m in bull-heavy windows — read MR bucket spread + by-year, not a single headline %
+      # 2024/2025: 0-30 > 70-100 at 3m in places — expected when MR-mapped (momentum slice vs dip slice)
+      # Date added: 2026-03-31
 # Regime bands: UP >= up_min, DOWN <= down_max, else NEUTRAL
 regime:
   up_min: 60
   down_max: 40
+
+# Multi-factor macro (FRED: 2s10s, HY OAS, UNRATE; VIX from cross-asset or Yahoo) + optional SPY HMM fusion
+macro_regime:
+  enabled: true
+  combine_with_hmm: true
+  hmm_weight: 0.40
+  macro_weight: 0.60
+
+# Per-ticker institutional + earnings-quality API (/api/insights/{ticker})
+insights:
+  enabled: true
+
+# Portfolio-level VaR / correlation (dashboard payload; equal-weight illustrative)
+portfolio_risk:
+  enabled: true
+  max_tickers: 20
 
 # Alert when score moves by this much (points)
 alert_score_delta: 15
@@ -285,6 +306,26 @@ risk_sizing:
 # Backtest: calibration "OK" when score >= this (used in backtest_simple.py and model health)
 backtest:
   calibration_ok_min: 70   # Same as score.buy_min by default; calibration_score >= this = OK
+  # Short-horizon noise: skip bars with next earnings within N calendar days (FMP historical dates; needs fmp_api_key)
+  # See docs/BACKTEST_DATA.md for limits (not point-in-time perfect).
+  earnings_exclusion:
+    enabled: false
+    days_before: 5
+  # Market regime labels for reporting (SPY vs SMA) — does not change composite scores
+  regime:
+    benchmark: SPY
+    ma_days: 200
+  # DIY universe honesty (no vendor): signals/backtest_universe.py — used by scripts/backtest_simple.py main()
+  universe:
+    # none | full_history | membership_csv
+    mode: none
+    # full_history: drop tickers with fewer than N adjusted daily bars for data.period (survivorship-lite)
+    full_history_min_bars: 500
+    # membership_csv: CSV with columns ticker,start_date,end_date (end_date blank = still active)
+    # Path relative to backend/ or absolute. You maintain rows (e.g. from public index change lists).
+    membership_csv: null
+    # For membership_csv: only tickers active on this date are run (default: today if unset)
+    as_of_date: null
 
 # Price-target accuracy: when to interpret vs when to tweak the model
 # Report compares today's close to model levels (ST target, support, suggested buy, MT band).
@@ -433,6 +474,7 @@ thrive_phase2:
   # atr_config:  # optional per-setup multipliers after live validation
 
 # Phase 4: Backtest (run from backend: python scripts/backtest_simple.py)
+# Dashboard default story: validate dip entries (MR-aware buckets, emphasize 6m in UI) — not raw-momentum-only.
 # Dashboard "Backtesting status" section uses GLD, QQQ, SPY with backtest_period
 backtest_tickers: [SPY, QQQ, GLD, XLE, XLF, IWM]
 # SPY/QQQ/GLD: core ETFs | XLE: energy (rough 2014-16, 2020) | XLF: financials (rough 2008) | IWM: small caps (tougher regime than SPY)

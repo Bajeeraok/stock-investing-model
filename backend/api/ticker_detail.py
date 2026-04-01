@@ -304,6 +304,15 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
 
     # Build response dict first so we can pass it to investor summary
     response = {
+        "fundamentals_snapshot": {
+            "point_in_time": False,
+            "short_label": "Current snapshot (not PIT)",
+            "detail": (
+                "PE, EPS estimates, and key metrics from FMP/yfinance reflect the latest vendor snapshot "
+                "at load time — not restated point-in-time historical fundamentals. "
+                "Backtests that use price only avoid lookahead; valuation ratios on the card are descriptive, not causal history."
+            ),
+        },
         "ticker": ticker,
         "thesis": thesis_data.get("thesis", ""),
         "exit_condition": thesis_data.get("exit_condition", ""),

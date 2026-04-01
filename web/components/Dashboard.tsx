@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Calendar, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type { DashboardData } from "@/app/page";
+import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
 import { clsx } from "clsx";
 import {
   AddTickerBar,
@@ -430,7 +431,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <strong>Do nothing guidance:</strong> When macro is Risk-Off or rotation risk is High, consider reducing new buys, stepping down tech adds, and protecting gains. Do not chase; wait for clarity.
             </div>
           )}
-          <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400" title="Confidence = 7-layer score (regime, pattern, ML, options, insider, fundamental, NLP). Open a ticker for breakdown. Model discipline – follow these to align with the system.">
+          <div
+            className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400"
+            title={`Confidence = 7-layer score (regime, pattern, ML, options, insider, fundamental, NLP). ${LIVE_SCORE_LINE}`}
+          >
             <strong className="text-slate-300">Model rules:</strong>{" "}
             Add only when confidence ≥ {data.config?.model_rules?.add_min_confidence ?? 70} and regime {data.config?.model_rules?.add_min_regime ?? "UP"}. Trim when confidence ≤ {data.config?.model_rules?.trim_max_confidence ?? 30} or regime DOWN. When rotation risk High, tech suggestions step down. Rebalance review: quarterly.{" "}
             <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Confidence = 7-layer score; open a ticker for details.</span>
