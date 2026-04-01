@@ -246,7 +246,8 @@ score:
     min_bars: 130
     force_trending: []            # e.g. [SPY] to never invert thresholds for an index
     force_mean_reverting:
-      - MSFT   # backtest: contrarian tape — buy weakness, avoid strength
+      - MSFT   # backtest: rolling ACF often trending — bucket table inverts like MSFT playbook
+      - GOOGL  # mega-cap growth: momentum buckets vs forward returns inverted without forced MR
 
 # Regime bands: UP >= up_min, DOWN <= down_max, else NEUTRAL
 regime:

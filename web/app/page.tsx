@@ -260,6 +260,14 @@ export interface BacktestResult {
   schema_version?: number;
   /** How score → bucket assignment works (MR tape uses 100−score for buckets when enabled). */
   bucket_assignment_note?: string;
+  /** Share of backtest rows where bucket used MR (100−score) vs trending (raw score). */
+  bucket_assignment_stats?: {
+    n_bars_scored: number;
+    mean_reverting_bar_count: number;
+    trending_bar_count: number;
+    pct_mean_reverting: number | null;
+    pct_trending: number | null;
+  };
   error?: string;
   buckets?: Record<string, Record<number, BacktestBucketMonth>>;
   by_year?: Record<string, Record<string, Record<number, BacktestBucketMonth>>>;

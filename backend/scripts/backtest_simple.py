@@ -22,6 +22,7 @@ import pandas as pd
 
 from signals.composite_bar_score import composite_bar_score_for_backtest
 from signals.fetcher import fetch_ohlcv_safe
+from signals.score_interpretation import backtest_bucket_style_at_bar
 from signals.sector_classifier import (
     classify_ticker,
     describe_sector,
@@ -279,10 +280,21 @@ def run_backtest(
     by_year_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
     by_quarter_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
 
+    mr_bar_count = 0
+    trending_bar_count = 0
+
     for i in range(200, len(close) - max(forward_months) * trading_days_per_month):
         score = _composite_for_row(close, i, ticker, _cfg)
         if score is None:
             continue
+        try:
+            st = backtest_bucket_style_at_bar(close, i, ticker, _cfg)
+            if st == "MEAN_REVERTING":
+                mr_bar_count += 1
+            else:
+                trending_bar_count += 1
+        except Exception:
+            trending_bar_count += 1
         price_today = float(close.iloc[i])
         dt = close.index[i]
         ts = pd.Timestamp(dt)
@@ -355,11 +367,32 @@ def run_backtest(
         else "Buckets use raw composite score only."
     )
 
+    n_style = mr_bar_count + trending_bar_count
+    if n_style > 0:
+        pct_mr = round(100.0 * mr_bar_count / n_style, 1)
+        pct_tr = round(100.0 * trending_bar_count / n_style, 1)
+        bucket_assignment_stats = {
+            "n_bars_scored": n_style,
+            "mean_reverting_bar_count": mr_bar_count,
+            "trending_bar_count": trending_bar_count,
+            "pct_mean_reverting": pct_mr,
+            "pct_trending": pct_tr,
+        }
+    else:
+        bucket_assignment_stats = {
+            "n_bars_scored": 0,
+            "mean_reverting_bar_count": 0,
+            "trending_bar_count": 0,
+            "pct_mean_reverting": None,
+            "pct_trending": None,
+        }
+
     return {
         "ticker": ticker,
         "period": period,
         "schema_version": 2,
         "bucket_assignment_note": bucket_note,
+        "bucket_assignment_stats": bucket_assignment_stats,
         "sector": sector,
         "sector_description": describe_sector(ticker),
         "transaction_cost_pct": round(transaction_cost * 100, 3),

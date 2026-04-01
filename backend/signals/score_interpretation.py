@@ -102,6 +102,29 @@ def detect_interpretation_style(
     return "TRENDING", meta
 
 
+def backtest_bucket_style_at_bar(
+    close: pd.Series,
+    idx: int,
+    ticker: str,
+    config: dict | None = None,
+) -> str:
+    """
+    Interpretation style used for bucket assignment at bar idx (causal subset only up to idx).
+
+    Matches ``composite_bar_score_for_backtest`` / ``detect_interpretation_style(..., for_backtest_buckets=True)``.
+    Returns ``"MEAN_REVERTING"`` or ``"TRENDING"``.
+    """
+    subset = close.iloc[: idx + 1]
+    style, _ = detect_interpretation_style(
+        subset,
+        None,
+        config,
+        ticker=ticker,
+        for_backtest_buckets=True,
+    )
+    return style
+
+
 def _norm_ticker_sym(ticker: str | None) -> str:
     if not ticker:
         return ""

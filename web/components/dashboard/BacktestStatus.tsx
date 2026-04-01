@@ -341,6 +341,21 @@ export function BacktestStatus() {
                     {r.bucket_assignment_note}
                   </p>
                 )}
+                {r.bucket_assignment_stats &&
+                  r.bucket_assignment_stats.n_bars_scored > 0 &&
+                  r.bucket_assignment_stats.pct_mean_reverting != null &&
+                  r.bucket_assignment_stats.pct_trending != null && (
+                    <p
+                      className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/30 border-b border-slate-700/40 leading-snug font-mono"
+                      title="Per trading day in the backtest window: MR = bucket uses (100 − raw score); Trending = raw composite bucket. Add ticker to force_mean_reverting if MR% is low and buckets look inverted."
+                    >
+                      Bucket rows:{" "}
+                      <span className="text-slate-300">{r.bucket_assignment_stats.pct_mean_reverting}%</span>{" "}
+                      mean-reverting (100−score) ·{" "}
+                      <span className="text-slate-300">{r.bucket_assignment_stats.pct_trending}%</span> trending
+                      (raw) · N={r.bucket_assignment_stats.n_bars_scored}
+                    </p>
+                  )}
                 {r.buckets && (() => {
                   const high = r.buckets["70-100"]?.[3]?.avg_return_pct;
                   const low = r.buckets["0-30"]?.[3]?.avg_return_pct;
