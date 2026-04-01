@@ -470,6 +470,13 @@ data:
 earnings:
   days_warning: 14  # Flag when earnings within N days
   score_reduction: 20  # Reduce score by this when within days_warning
+  caution_days: 7  # Stronger UI flag + extra reduction below
+  caution_extra_reduction: 5  # Additional composite reduction when within caution_days (on top of score_reduction)
+
+# Dashboard-only: FMP earnings quality on top signal rows (grade + flags)
+dashboard_earnings_quality:
+  enabled: true
+  max_tickers: 12
 
 # Thrive Alpha Phase 2 (signals/thrive_phase2): intraday setup, FMP fundamentals gate, ATR targets, 1m hit gate
 thrive_phase2:

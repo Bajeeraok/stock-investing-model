@@ -104,6 +104,8 @@ def run_signals(
     earnings_cfg = config.get("earnings", {}) or {}
     days_warn = earnings_cfg.get("days_warning", 14)
     score_red = earnings_cfg.get("score_reduction", 20)
+    caution_days = int(earnings_cfg.get("caution_days", 7))
+    caution_extra = float(earnings_cfg.get("caution_extra_reduction", 5))
 
     results = []
     # Global market regime (5-level: STRONG_BULL, BULL, NEUTRAL, BEAR, STRONG_BEAR)
@@ -258,15 +260,24 @@ def run_signals(
 
         # Earnings: reduce score or flag when within N days
         earnings_note = None
+        earnings_days_until = None
+        earnings_caution = False
         earnings_info = get_next_earnings(ticker, config)
         if earnings_info and earnings_info.get("days_until") is not None:
             days_until = earnings_info["days_until"]
+            earnings_days_until = int(days_until)
             if 0 <= days_until <= days_warn:
-                earnings_note = f"Earnings in {days_until} days"
-                composite_buy = max(0, composite_buy - score_red)
+                total_earn_red = score_red
+                if 0 <= days_until <= caution_days:
+                    earnings_caution = True
+                    total_earn_red = score_red + caution_extra
+                    earnings_note = f"Earnings in {days_until} days — caution window (volatile)"
+                else:
+                    earnings_note = f"Earnings in {days_until} days"
+                composite_buy = max(0, composite_buy - total_earn_red)
                 regime = get_regime(composite_buy, up_min, down_max)
                 # Re-derive signal with earnings-reduced score and ML
-                earnings_confluence = max(0.0, (sig.get("confluence_score") or composite_buy) - score_red)
+                earnings_confluence = max(0.0, (sig.get("confluence_score") or composite_buy) - total_earn_red)
                 signal = get_ml_aware_signal(
                     earnings_confluence, ml_short_prob=ml_short_prob,
                     buy_min=buy_min, sell_max=sell_max,
@@ -393,6 +404,8 @@ def run_signals(
             "regime": regime,
             "signal": signal,
             "earnings_note": earnings_note,
+            "earnings_days_until": earnings_days_until,
+            "earnings_caution": earnings_caution,
             "short_term": sig.get("short_term"),
             "medium_term": sig.get("medium_term"),
             "long_term": sig.get("long_term"),

@@ -953,6 +953,13 @@ async def get_dashboard():
     except Exception as e:
         logger.debug("enrich_signal_uncertainty: %s", e)
 
+    try:
+        from signals.earnings_quality_batch import enrich_results_earnings_quality
+
+        enrich_results_earnings_quality(config, results)
+    except Exception as e:
+        logger.debug("enrich_results_earnings_quality: %s", e)
+
     save_last_run(results)  # Save AFTER building what_changed
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 

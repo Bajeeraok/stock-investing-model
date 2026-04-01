@@ -299,6 +299,22 @@ export interface BacktestResult {
   validation?: BacktestValidation;
 }
 
+/** Backend `portfolio_risk_metrics` — optional fields when data is insufficient */
+export interface PortfolioRiskMetrics {
+  correlation_matrix?: Record<string, Record<string, number>>;
+  correlation_error?: string | null;
+  var_cvar?: {
+    var_95_10day_pct?: number;
+    cvar_95_10day_pct?: number;
+    confidence?: number;
+    horizon_days?: number;
+    interpretation?: string;
+    error?: string;
+  } | null;
+  correlation_adjusted_sizes?: Record<string, number>;
+  note?: string;
+}
+
 export interface DashboardData {
   signals: Signal[];
   /** Top-level watchlist from API (config.watchlist). */
@@ -473,6 +489,8 @@ export interface DashboardData {
     scenarios: { name: string; shock_pct: number; portfolio_value_after: number; loss_dollars: number }[];
     disclaimer?: string;
   };
+  /** Holdings-based correlation, VaR/CVaR, correlation-adjusted sizing (dashboard API) */
+  portfolio_risk_metrics?: PortfolioRiskMetrics;
   /** Methodology bullets for the Known limits panel (config or API defaults) */
   known_limits?: string[];
   /** FRED+VIX macro + optional SPY HMM fusion; coaching_note when views diverge */
@@ -581,6 +599,17 @@ export interface Signal {
   signal: string | null;
   rsi: number | null;
   earnings_note?: string | null;
+  /** Days until next earnings when known from pipeline */
+  earnings_days_until?: number | null;
+  /** True when within `earnings.caution_days` — extra score reduction applied */
+  earnings_caution?: boolean;
+  /** Dashboard-only FMP quality hint */
+  earnings_quality?: {
+    grade?: string | null;
+    quality_score?: number | null;
+    flags?: string[];
+    error?: string | null;
+  } | null;
   story_change?: string | null;
   short_suggestion?: string | null;
   medium_suggestion?: string | null;

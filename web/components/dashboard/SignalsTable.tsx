@@ -106,6 +106,46 @@ function MLProbPill({ prob }: { prob: number | null | undefined }) {
   );
 }
 
+function EarningsCell({ signal: r }: { signal: Signal }) {
+  const q = r.earnings_quality;
+  const grade = q?.grade;
+  const flags = (q?.flags ?? []).filter(Boolean);
+  const flagStr = flags.slice(0, 2).join(" · ");
+  if (!r.earnings_caution && !grade && !flagStr && r.earnings_days_until == null) {
+    return <span className="text-slate-600">–</span>;
+  }
+  return (
+    <div className="space-y-1 max-w-[9rem]">
+      {r.earnings_caution && (
+        <span
+          className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40"
+          title="Within earnings caution window — extra score reduction applied"
+        >
+          Caution{r.earnings_days_until != null ? ` · ${r.earnings_days_until}d` : ""}
+        </span>
+      )}
+      {!r.earnings_caution && r.earnings_days_until != null && r.earnings_days_until <= 14 && (
+        <span className="text-[10px] text-slate-500" title="Days until next earnings (when known)">
+          {r.earnings_days_until}d
+        </span>
+      )}
+      {grade && (
+        <div className="text-slate-300 text-xs" title={flags.length ? flags.join("; ") : undefined}>
+          <span className="font-semibold">EQ {grade}</span>
+          {q?.quality_score != null && (
+            <span className="text-slate-500 ml-1 tabular-nums">({Math.round(q.quality_score)})</span>
+          )}
+        </div>
+      )}
+      {flagStr ? (
+        <span className="text-[10px] text-slate-500 block truncate" title={flags.join("; ")}>
+          {flagStr}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function ConfluenceCell({ signal: r }: { signal: Signal }) {
   const score    = r.confluence_score ?? r.composite_buy;
   const scorePct = score != null ? Math.floor(score) : null;
@@ -266,6 +306,9 @@ export function SignalsTable({
               {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
             </div>
             {r.earnings_note && <p className="text-amber-400 text-xs mt-1">{r.earnings_note}</p>}
+            <div className="mt-1">
+              <EarningsCell signal={r} />
+            </div>
             {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
           </button>
         ))}
@@ -273,7 +316,7 @@ export function SignalsTable({
 
       {/* Desktop: table with sticky header + sticky first column */}
       <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[1020px] text-sm border-collapse">
+        <table className="w-full min-w-[1120px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">
               <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800/95 backdrop-blur-sm px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
@@ -305,6 +348,12 @@ export function SignalsTable({
               </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Signal
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help text-left"
+                title="Earnings caution window, days to report, and FMP-based earnings quality (EQ) when available"
+              >
+                Earnings
               </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Positioning
@@ -420,6 +469,9 @@ export function SignalsTable({
                 </td>
                 <td className="px-3 py-2.5">
                   <SignalBadge signal={r.signal} />
+                </td>
+                <td className="px-3 py-2.5 align-top text-xs">
+                  <EarningsCell signal={r} />
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-400" title="COT positioning (GLD/SLV/USO)">
                   {cotByTicker?.[r.ticker] ?? "–"}

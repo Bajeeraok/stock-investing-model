@@ -36,6 +36,7 @@ import {
   ChatCopilot,
   AccuracyPriceTargetsWithBoundary,
   PortfolioDoctorRecommendations,
+  PortfolioRiskMetricsPanel,
   MarketScenarios,
   PerformanceVsBenchmark,
   ForwardTracking,
@@ -691,11 +692,17 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={setSelectedTicker} />
               </ToggleSection>
               <ToggleSection id="portfolio-doctor" title="Portfolio Doctor" icon={<Target />} badge={(data.portfolio_doctor_recommendations?.[selectedPortfolio]?.trim?.length ?? 0) + (data.portfolio_doctor_recommendations?.[selectedPortfolio]?.add?.length ?? 0) || undefined} defaultOpen={false}>
-                <PortfolioDoctorRecommendations
-                  recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
-                  selectedPortfolio={selectedPortfolio}
-                  onTickerClick={setSelectedTicker}
-                />
+                <div className="space-y-6">
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Portfolio risk (holdings)</p>
+                    <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
+                  </div>
+                  <PortfolioDoctorRecommendations
+                    recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
+                    selectedPortfolio={selectedPortfolio}
+                    onTickerClick={setSelectedTicker}
+                  />
+                </div>
               </ToggleSection>
               <ToggleSection id="portfolio-risk" title="Risk Management" icon={<Shield />} defaultOpen={false}>
                 <RiskDashboard
