@@ -336,6 +336,9 @@ def fetch_short_float_summary(config: dict, ticker: str) -> tuple[dict | None, s
     url = f"{BASE_V4}/short_float?symbol={sym}"
     data, err = _request(url, api_key)
     if err:
+        url2 = f"{BASE_V4}/short-interest?symbol={sym}"
+        data, err = _request(url2, api_key)
+    if err:
         return None, err
     if isinstance(data, list) and data and isinstance(data[0], dict):
         return data[0], None
