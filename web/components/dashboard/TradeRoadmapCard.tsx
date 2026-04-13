@@ -70,7 +70,10 @@ const TIMELINE_SLIDER_LABELS = [
 ];
 
 function formatZone(lo: number | null, hi: number | null): string {
-  if (lo != null && hi != null) return `$${lo.toFixed(2)}–$${hi.toFixed(2)}`;
+  if (lo != null && hi != null) {
+    if (Math.abs(lo - hi) < 0.005) return `$${hi.toFixed(2)}`;
+    return `$${lo.toFixed(2)}–$${hi.toFixed(2)}`;
+  }
   if (lo != null) return `Below $${lo.toFixed(2)}`;
   if (hi != null) return `Below $${hi.toFixed(2)}`;
   return "—";

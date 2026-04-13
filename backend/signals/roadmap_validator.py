@@ -129,8 +129,15 @@ def trade_roadmap_stages_to_input(
         zone: Optional[PriceZone]
         if lo is None and hi is None:
             zone = None
+        elif lo is None and hi is not None:
+            # Hard stop / single invalidation level — do not use 0 as fake low (shows as $0.00–$X).
+            h = float(hi)
+            zone = PriceZone(h, h)
+        elif hi is None and lo is not None:
+            l_ = float(lo)
+            zone = PriceZone(l_, l_)
         else:
-            zone = PriceZone(float(lo or 0.0), float(hi or lo or 0.0))
+            zone = PriceZone(float(lo or 0.0), float(hi or 0.0))
         sell_tiers.append(
             SellTier(
                 label=str(st.get("label") or ""),

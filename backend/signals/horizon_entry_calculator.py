@@ -5,7 +5,7 @@ Calculates proper, anchor-based entry prices for all 3 investment horizons
 in Thrive Alpha signal cards.
 
 Each horizon uses a different anchor — not the naive "current price = entry":
-  SHORT  (1m)     RSI state -> VWAP -> recent support + ATR stops
+  SHORT  (1m)     RSI state -> VWAP -> recent support + ATR stops; band capped vs fair value so we do not imply buying above intrinsic
   MEDIUM (3m)     MA50 zone + earnings catalyst + fundamentals quality
   LONG   (6-18m)  MA200 + quality-based Tier 2 MOS + 52w tail-risk band
 
@@ -238,6 +238,34 @@ def _short_term_effective_support(support_level: float, current_price: float) ->
     return max(float(support_level), floor)
 
 
+def _cap_short_entry_zone_vs_fair_value(
+    el: float,
+    eh: float,
+    *,
+    fair_value: Optional[float],
+    current_price: float,
+) -> tuple[float, float, bool, str]:
+    """
+    If the technical band sits above model fair value, do not label a 'buy' above intrinsic.
+    Pull the band so its ceiling is at most fair value (with tiny tolerance for rounding).
+    """
+    if fair_value is None or fair_value <= 0:
+        return el, eh, False, ""
+    tol = max(0.2, 0.001 * fair_value)
+    if eh <= fair_value + tol:
+        return el, eh, False, ""
+    new_eh = min(eh, fair_value)
+    new_el = min(el, new_eh * 0.985, fair_value * 0.97)
+    if new_el >= new_eh - 1e-6:
+        new_el = new_eh * 0.97
+    new_el = max(0.01, new_el)
+    note = (
+        "Aligned to model fair value (${:.2f}) — near-term zone was above intrinsic; "
+        "prefer adds here or lower, not chasing spot/VWAP."
+    ).format(fair_value)
+    return _r(new_el), _r(new_eh), True, note
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SHORT-TERM CALCULATOR  (1 month)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -262,6 +290,7 @@ class ShortTermInputs:
     regime_bull_pct: float   # HMM bull regime probability
     pattern_score: float     # technical pattern score 0-100
     volume_ratio: float      # today's volume / 20-day avg volume
+    fair_value: Optional[float] = None  # caps ST band so we do not imply buying above intrinsic
 
 
 def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
@@ -307,6 +336,17 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
         warnings.append(
             "RSI {:.0f} is elevated — wait for pullback to VWAP (${:.2f}) for better entry".format(
                 inp.rsi, inp.vwap))
+
+    el, eh, fv_capped, fv_note = _cap_short_entry_zone_vs_fair_value(
+        el, eh, fair_value=inp.fair_value, current_price=inp.current_price
+    )
+    if fv_capped and fv_note:
+        zone_anchor = zone_anchor + " | " + fv_note
+        warnings.append(
+            "Short-term entry band capped vs fair value — spot/VWAP implied paying above model intrinsic."
+        )
+        if quality == "Ideal":
+            quality, q_color = "Acceptable", "#f5a623"
 
     # ── Stop & target ────────────────────────────────────────────────────
     stop_dist = max(
@@ -895,7 +935,7 @@ def estimate_fair_value(
         revenue_growth_pct=revenue_growth_pct,
         net_margin_pct=net_margin_pct,
         de_ratio=de_ratio,
-        **{k: v for k, v in kwargs.items() if k in ("forward_pe", "sector_forward_pe", "fcf_per_share", "analyst_target", "earnings_growth_pct")},
+        **{k: v for k, v in kwargs.items() if k in ("forward_pe", "sector_forward_pe", "fcf_per_share", "analyst_target", "earnings_growth_pct", "guardrails")},
     )
 
 
@@ -953,6 +993,7 @@ def build_all_horizons_payload(
         regime_bull_pct=regime_bull_pct,
         pattern_score=pattern_score,
         volume_ratio=volume_ratio,
+        fair_value=fair_value,
     ))
 
     medium = compute_medium_term_entry(MediumTermInputs(

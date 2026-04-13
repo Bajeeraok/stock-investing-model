@@ -7,10 +7,43 @@ from signals.roadmap_validator import (
     RoadmapInput,
     RoadmapValidator,
     apply_roadmap_consistency,
+    trade_roadmap_stages_to_input,
     BuyTier,
     PriceZone,
     SellTier,
 )
+
+
+def test_sell_hard_stop_high_only_is_single_level_not_zero_spread():
+    """API uses price_zone_high only for hard stop; mapping must not invent low=0."""
+    sell = [
+        {
+            "timeline_key": "immediate",
+            "label": "Immediate",
+            "when_to_sell": "Hard stop",
+            "price_zone_low": None,
+            "price_zone_high": 415.27,
+            "condition": "Breaks 52w low",
+            "action": "Exit 100%",
+        }
+    ]
+    inp = trade_roadmap_stages_to_input(
+        "X",
+        current_price=440.0,
+        fair_value=600.0,
+        regime_bull_pct=50.0,
+        ma50=430.0,
+        ma200=400.0,
+        week52_low=380.0,
+        week52_high=450.0,
+        atr=5.0,
+        scenario_target=500.0,
+        buy_stages=[],
+        sell_stages=sell,
+    )
+    z = inp.sell_tiers[0].zone
+    assert z is not None
+    assert z.low == 415.27 and z.high == 415.27
 
 
 def test_rc1_aligns_scenario_to_full_target_midpoint():

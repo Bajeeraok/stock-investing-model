@@ -315,6 +315,24 @@ export interface PortfolioRiskMetrics {
   note?: string;
 }
 
+/** SPY/VIX stress + bounce-setup overlay; optional ML bounce probability */
+export interface MarketReversalOverlay {
+  enabled?: boolean;
+  error?: string;
+  stress_score?: number | null;
+  bounce_setup_score?: number | null;
+  bounce_rule_score?: number | null;
+  composite_buy_delta?: number | null;
+  label?: string;
+  headline?: string;
+  bullets?: string[];
+  ml_bounce_prob?: number | null;
+  ml_error?: string | null;
+  features?: Record<string, number> | null;
+  vix?: number | null;
+  real_yield?: number | null;
+}
+
 export interface DashboardData {
   signals: Signal[];
   /** Top-level watchlist from API (config.watchlist). */
@@ -339,6 +357,7 @@ export interface DashboardData {
   earnings_risk_count?: number;
   economic_calendar?: EconomicCalendarEvent[];
   guidelines?: { text: string; type: "caution" | "info" | "risk" }[];
+  market_reversal_overlay?: MarketReversalOverlay | null;
   macro_regime?: "Risk-On" | "Neutral" | "Risk-Off";
   global_market_regime?: "BULL" | "BEAR" | "NEUTRAL" | null;
   market_regime?: {
@@ -384,7 +403,27 @@ export interface DashboardData {
     mtm?: { updated: number; message?: string | null; as_of?: string } | null;
     mtm_history_log?: { appended: number; message?: string | null; as_of?: string } | null;
     fill?: { updated: number; message?: string | null } | null;
-    summary?: { status: string; completed?: number; win_rate_pct?: number | null; avg_return_pct?: number | null; avg_win_pct?: number | null; avg_loss_pct?: number | null; message?: string } | null;
+    summary?: {
+      status: string;
+      completed?: number;
+      min_required?: number;
+      horizon_note?: string | null;
+      benchmark_ticker?: string | null;
+      win_rate_pct?: number | null;
+      avg_return_pct?: number | null;
+      avg_win_pct?: number | null;
+      avg_loss_pct?: number | null;
+      avg_excess_vs_spy_pct?: number | null;
+      n_benchmarked?: number | null;
+      message?: string | null;
+      buy_signals_summary?: {
+        completed_n: number;
+        win_rate_pct?: number | null;
+        avg_return_pct?: number | null;
+        avg_excess_vs_spy_pct?: number | null;
+        label: string;
+      } | null;
+    } | null;
     mtm_history?: Record<string, Array<{ mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null }>> | null;
     data_root?: string | null;
     persistence_note?: string | null;
@@ -414,6 +453,9 @@ export interface DashboardData {
       rolling_return_pct?: number | null;
       hit_target?: number | null;
       outcome?: string | null;
+      benchmark_ticker?: string | null;
+      benchmark_return_pct?: number | null;
+      excess_return_pct?: number | null;
     }>;
   };
   model_validation?: {

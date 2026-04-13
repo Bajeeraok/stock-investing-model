@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -188,33 +188,49 @@ def _apply_fair_value_guardrails(
     fv: float,
     current_price: float,
     analyst_target: Optional[float],
+    guardrails: Optional[dict[str, Any]] = None,
 ) -> tuple[float, list[str]]:
     """
     Cap systematic inflation: extreme PEG + quality premium can push FV far above
     consensus. Analyst 12m mean is a retail-friendly ceiling; spot cap catches bad/missing consensus.
+
+    Optional ``guardrails`` (from config ``fair_value.guardrails``):
+      - analyst_mean_cap_enabled: bool (default True) — cap FV at analyst_mean * mult
+      - analyst_mean_cap_mult: float (default 1.10)
+      - max_implied_upside_vs_spot: float | None (default 0.52) — None disables the spot cap
+        (useful for forecast-accuracy research; production usually keeps caps on).
     """
     notes: list[str] = []
     if fv <= 0 or current_price <= 0:
         return fv, notes
 
+    g = guardrails or {}
+    cap_analyst = g.get("analyst_mean_cap_enabled", True)
+    analyst_mult = float(g.get("analyst_mean_cap_mult", 1.10))
+    max_upside = g.get("max_implied_upside_vs_spot", 0.52)
+    if max_upside is not None:
+        max_upside = float(max_upside)
+
     out = fv
-    # 1) Consensus ceiling (Yahoo targetMeanPrice): allow at most +10% vs mean
-    if analyst_target and analyst_target > 0:
-        soft = analyst_target * 1.10
+    # 1) Consensus ceiling (Yahoo targetMeanPrice)
+    if cap_analyst and analyst_target and analyst_target > 0:
+        soft = round(analyst_target * analyst_mult, 2)
         if out > soft:
-            out = round(soft, 2)
+            out = soft
             notes.append(
-                "Fair value capped at +10% vs analyst 12m mean — model was above consensus."
+                "Fair value capped at +{:.0f}% vs analyst 12m mean — model was above consensus.".format(
+                    (analyst_mult - 1.0) * 100
+                )
             )
 
-    # 2) Hard cap on implied upside vs spot (NVDA-class when consensus is stale/missing)
-    max_upside = 0.52
-    spot_ceiling = round(current_price * (1 + max_upside), 2)
-    if out > spot_ceiling:
-        out = spot_ceiling
-        notes.append(
-            "Fair value capped vs current price (max +{:.0f}% implied upside).".format(max_upside * 100)
-        )
+    # 2) Hard cap on implied upside vs spot
+    if max_upside is not None and max_upside >= 0:
+        spot_ceiling = round(current_price * (1 + max_upside), 2)
+        if out > spot_ceiling:
+            out = spot_ceiling
+            notes.append(
+                "Fair value capped vs current price (max +{:.0f}% implied upside).".format(max_upside * 100)
+            )
 
     return out, notes
 
@@ -391,6 +407,7 @@ def estimate_fair_value(
     fcf_per_share: Optional[float] = None,
     current_eps: Optional[float] = None,
     analyst_target: Optional[float] = None,
+    guardrails: Optional[dict[str, Any]] = None,
 ) -> FairValueResult:
     """
     Classify the stock and apply the appropriate valuation method.
@@ -408,6 +425,7 @@ def estimate_fair_value(
         fcf_per_share:        Free cash flow per share — improves HIGH_GROWTH accuracy
         current_eps:          TTM EPS — used for sanity checks
         analyst_target:       Consensus analyst 12m price target — used as guardrail
+        guardrails:           Optional overrides for caps; see ``_apply_fair_value_guardrails``
 
     Returns:
         FairValueResult with fair_value, method, confidence, and discount %
@@ -482,7 +500,7 @@ def estimate_fair_value(
             method = "forward_pe_blend (40% fwd PE + 40% PEG + 20% FCF)" if fcf_per_share else \
                      "forward_pe_blend (50% fwd PE + 50% PEG)"
 
-    fv, guard_notes = _apply_fair_value_guardrails(fv, current_price, analyst_target)
+    fv, guard_notes = _apply_fair_value_guardrails(fv, current_price, analyst_target, guardrails)
     notes.extend(guard_notes)
 
     # After caps: optional flag if still far from consensus (stale target or edge case)
@@ -536,6 +554,7 @@ def estimate_fair_value_simple(
     fcf_per_share: Optional[float] = None,
     analyst_target: Optional[float] = None,
     earnings_growth_pct: Optional[float] = None,
+    guardrails: Optional[dict[str, Any]] = None,
 ) -> float:
     """
     Drop-in replacement for the old estimate_fair_value().
@@ -553,6 +572,7 @@ def estimate_fair_value_simple(
         sector_forward_pe=sector_forward_pe,
         fcf_per_share=fcf_per_share,
         analyst_target=analyst_target,
+        guardrails=guardrails,
     )
     return result.fair_value
 

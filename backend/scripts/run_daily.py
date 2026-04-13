@@ -55,6 +55,7 @@ from signals.regime import (
     get_vix_min_hit_rate,
 )
 from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
+from signals.market_reversal_overlay import apply_overlay_to_composite, build_market_reversal_overlay
 
 
 def load_last_run(path: Path | None = None) -> dict[str, dict] | None:
@@ -110,6 +111,7 @@ def run_signals(
     results = []
     # Global market regime (5-level: STRONG_BULL, BULL, NEUTRAL, BEAR, STRONG_BEAR)
     global_market_regime = None
+    close_spy = None
     mr_cfg = config.get("market_regime") or {}
     if mr_cfg.get("enabled", True):
         index_ticker = mr_cfg.get("index_ticker", "SPY")
@@ -128,6 +130,38 @@ def run_signals(
                 vix = float(vix_close.iloc[-1])
         except Exception:
             pass
+
+    # Market-wide stress / bounce overlay (SPY + VIX; optional ML)
+    mro_cfg = config.get("market_reversal_overlay") or {}
+    mro_ctx = None
+    if mro_cfg.get("enabled", True):
+        try:
+            spy_for_mro = close_spy if close_spy is not None else fetch_ohlcv_safe(mr_cfg.get("index_ticker", "SPY"), period)
+            vix_for_mro = fetch_ohlcv_safe("^VIX", "2y")
+            ry_mro = None
+            try:
+                from signals.fred_client import get_real_yield_proxy
+
+                ry_mro = get_real_yield_proxy(config)
+            except Exception:
+                pass
+            mr_data_mro = {}
+            try:
+                from signals.breadth_rs import get_market_regime as _get_mr_overlay
+
+                mr_data_mro = _get_mr_overlay(period="6mo", vix=vix, real_yield=ry_mro)
+            except Exception:
+                pass
+            mro_ctx = build_market_reversal_overlay(
+                config,
+                vix=vix,
+                real_yield=ry_mro,
+                market_regime_data=mr_data_mro,
+                close_spy=spy_for_mro,
+                vix_series=vix_for_mro,
+            )
+        except Exception:
+            mro_ctx = {"enabled": True, "error": "build_failed"}
 
     use_fmp = bool(config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key"))
 
@@ -195,6 +229,14 @@ def run_signals(
             interpretation_style=score_interpretation_style,
         )
         composite_buy = sig["composite_buy"]
+        confluence_adj = sig.get("confluence_score") or composite_buy
+        if mro_ctx and mro_ctx.get("enabled") and mro_cfg.get("apply_score_adjustment", True):
+            composite_buy, confluence_adj = apply_overlay_to_composite(
+                composite_buy,
+                sig.get("confluence_score"),
+                mro_ctx,
+                apply_adjustment=True,
+            )
 
         # ── ML short-term probability (inference-only — never trains here) ─
         # Uses the cached LightGBM model for this ticker if it exists.
@@ -220,9 +262,8 @@ def run_signals(
         # Multi-layer signal: requires BOTH confluence AND ML to agree for BUY.
         # When ML is not yet trained, falls back to confluence-only (preserves
         # existing behaviour until models are available).
-        confluence_score = sig.get("confluence_score") or composite_buy
         signal = get_ml_aware_signal(
-            confluence_score,
+            confluence_adj,
             ml_short_prob=ml_short_prob,
             buy_min=buy_min,
             sell_max=sell_max,
@@ -277,7 +318,7 @@ def run_signals(
                 composite_buy = max(0, composite_buy - total_earn_red)
                 regime = get_regime(composite_buy, up_min, down_max)
                 # Re-derive signal with earnings-reduced score and ML
-                earnings_confluence = max(0.0, (sig.get("confluence_score") or composite_buy) - total_earn_red)
+                earnings_confluence = max(0.0, confluence_adj - total_earn_red)
                 signal = get_ml_aware_signal(
                     earnings_confluence, ml_short_prob=ml_short_prob,
                     buy_min=buy_min, sell_max=sell_max,
@@ -287,6 +328,7 @@ def run_signals(
                     ml_avoid_max_prob=ml_avoid_max_prob,
                     interpretation_style=score_interpretation_style,
                 )
+                confluence_adj = earnings_confluence
 
         # Volume vs 20d average (unusual activity)
         volume_ratio = None
@@ -393,11 +435,12 @@ def run_signals(
             "buy_min": buy_min,
             "score_interpretation_style": score_interpretation_style,
             "score_interpretation_meta": score_interpretation_meta,
-            # Confluence score — explicit 4-signal agreement (Trend+RSI+MACD+Regime)
-            "confluence_score": sig.get("confluence_score"),
+            # Confluence score — overlay + earnings adjusted (matches signal tiers)
+            "confluence_score": confluence_adj,
             "trend_signal":     sig.get("trend_signal"),
             "rsi_signal":       sig.get("rsi_signal"),
             "macd_signal":      sig.get("macd_signal"),
+            "market_overlay": mro_ctx,
             # ML short-term probability — LightGBM inference from cached model (0-1)
             # None when no model trained yet; never triggers training during dashboard load
             "ml_short_prob": ml_short_prob,

@@ -11,7 +11,7 @@ Seven signal layers (each 0-1, missing layers are skipped with weight renormaliz
   4. options_sentiment  — Put/call ratio, IV rank (contrarian)
   5. insider_signal     — Net insider buying from SEC Form 4
   6. fundamental_score  — Valuation + quality (from existing FMP data)
-  7. nlp_sentiment      — Stub (FinBERT pending; falls back gracefully)
+  7. nlp_sentiment      — FMP headlines + keyword lexicon, optional FMP per-article scores; else Alpha Vantage; else skipped
 
 Weights are now ASSET-TYPE-AWARE via the pre-flight classifier:
   - ETF_VOLATILITY (UVXY) → INCOMPATIBLE, returns early
@@ -23,7 +23,7 @@ Weights are now ASSET-TYPE-AWARE via the pre-flight classifier:
   - EQUITY_US             → standard 7-layer profile
 
 Hard disqualifiers (override final score):
-  - HMM bear probability > 0.80  → ×0.40 (deep bear regime)
+  - HMM bear probability > 0.80  → ×0.40 by default; softer ×0.72 when price > MA200 if confidence.regime_blend enabled
   - Net insider selling > 80%    → ×0.60 (institutional conviction against)
 
 Returns:
@@ -254,15 +254,19 @@ class ConfidenceEngine:
         if df is not None:
             try:
                 from signals.ml_models import predict_all_horizons
-                ml_horizons = predict_all_horizons(ticker, df)
+                from signals.probability_calibration import apply_calibration_to_ml_horizons
+
+                ml_horizons = predict_all_horizons(ticker, df, config=config)
+                ml_horizons = apply_calibration_to_ml_horizons(ml_horizons, config)
                 # Use short-term probability as the layer score
                 short = ml_horizons.get("short", {})
                 lgbm_prob = short.get("prob")
                 if lgbm_prob is not None:
                     scores["lgbm_probability"] = lgbm_prob
                     thr = short.get("threshold_pct", 5)
+                    cal_note = " (calibrated)" if short.get("prob_raw") is not None else ""
                     labels["lgbm_probability"] = (
-                        f"{lgbm_prob*100:.0f}% prob of {thr}%+ gain in 20d "
+                        f"{lgbm_prob*100:.0f}% prob of {thr}%+ gain in 20d{cal_note} "
                         f"({short.get('interpretation', '')})"
                     )
                 else:
@@ -280,15 +284,16 @@ class ConfidenceEngine:
         if ticker.upper() not in _ETFS_VIX_PROXY:
             from signals.options_signals import fetch_options_signals
             opts = fetch_options_signals(ticker)
-            if "options_score" in opts and not opts.get("error"):
+            details["options"] = opts
+            if not opts.get("error") and opts.get("options_score") is not None:
                 scores["options_sentiment"] = opts["options_score"]
                 labels["options_sentiment"] = opts.get("options_label", "options data")
-                details["options"] = opts
-            elif "options_score" in opts and opts.get("error"):
-                # Neutral fallback when options data unavailable — label as estimated until real data exists
-                scores["options_sentiment"] = opts["options_score"]
-                labels["options_sentiment"] = (opts.get("options_label") or "Options data unavailable") + " (estimated)"
-                details["options"] = opts
+            elif opts.get("error"):
+                # Omit layer so weight redistributes — do not inject neutral 0.5 as signal
+                labels["options_sentiment"] = (
+                    (opts.get("options_label") or "Options data unavailable")
+                    + " — layer skipped (weight redistributed)"
+                )
         else:
             # ETFs: use VIX as fear proxy if available — honest "estimated" until single-stock options exist
             if vix is not None:
@@ -393,11 +398,29 @@ class ConfidenceEngine:
 
         hmm_data = details.get("hmm", {})
         if hmm_data.get("bear_probability", 0) > 0.80:
-            confidence *= 0.40
-            disqualifiers.append(
-                f"HMM bear probability {hmm_data['bear_probability']*100:.0f}% — "
-                "deep bear regime detected, confidence suppressed 60%"
-            )
+            rb = (config or {}).get("confidence", {}).get("regime_blend", {}) or {}
+            soften = bool(rb.get("soften_bear_when_above_ma200", True))
+            mult_hard = float(rb.get("bear_penalty_mult", 0.40))
+            mult_soft = float(rb.get("bear_penalty_mult_above_ma200", 0.72))
+            above_ma = False
+            if close_s is not None and len(close_s.dropna()) >= 200:
+                c_arr = close_s.dropna()
+                last_c = float(c_arr.iloc[-1])
+                ma200 = float(c_arr.rolling(200).mean().iloc[-1])
+                above_ma = last_c > ma200 and not pd.isna(ma200)
+            if soften and above_ma:
+                confidence *= mult_soft
+                disqualifiers.append(
+                    f"HMM bear probability {hmm_data['bear_probability']*100:.0f}% — "
+                    f"confidence suppressed {round((1 - mult_soft) * 100):.0f}% "
+                    "(price still above MA200; trend/regime conflict — soft penalty)"
+                )
+            else:
+                confidence *= mult_hard
+                disqualifiers.append(
+                    f"HMM bear probability {hmm_data['bear_probability']*100:.0f}% — "
+                    f"deep bear regime detected, confidence suppressed {round((1 - mult_hard) * 100):.0f}%"
+                )
 
         insider_data = details.get("insider", {})
         if insider_data.get("sell_ratio", 0) > 0.80:
@@ -781,63 +804,76 @@ def _score_yfinance_fundamentals(ticker: str) -> dict | None:
         return None
 
 
+def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> dict | None:
+    """Map raw [-1,1] to layer score [0,1]. Returns None if no raw score."""
+    raw_score = summary.get("sentiment_score_avg")
+    if raw_score is None:
+        return None
+    raw_f = float(raw_score)
+    score = round(float(np.clip((raw_f + 1.0) / 2.0, 0.0, 1.0)), 3)
+    headline_count = int(summary.get("headline_count", 0))
+    sentiment_label = summary.get("sentiment_label", "Neutral")
+    method = summary.get("sentiment_method", "")
+    method_note = ""
+    if method == "keyword":
+        method_note = " · keyword lexicon"
+    elif method == "fmp_field":
+        method_note = " · FMP article scores"
+    label = f"News {sentiment_label} ({headline_count} headlines · {source}{method_note}{note})"
+    return {
+        "score": score,
+        "label": label,
+        "raw_score": raw_f,
+        "headline_count": headline_count,
+        "sentiment_label": sentiment_label,
+        "headlines": summary.get("headlines", [])[:3],
+        "source": source,
+        "method": method or None,
+    }
+
+
 def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
     """
-    Score news sentiment: prefer FMP stock news (data.fmp_api_key), fallback Alpha Vantage.
-    FMP does not provide sentiment; we use neutral (0.5). Alpha Vantage: -1..+1 mapped to 0..1.
-    Returns None if no key, rate limit, or error.
+    News sentiment: FMP (headlines + optional API fields + keyword lexicon), then Alpha Vantage.
+    Alpha Vantage runs when FMP returns no score (method \"none\") or FMP request fails.
+    Raw scores are -1..+1 from vendors/lexicon; mapped to 0..1 for the layer.
+    Returns None if no keys, both paths fail, or rate limits — weight redistributes.
     """
     if not config:
         return None
     try:
+        from signals.alpha_vantage_client import fetch_news_sentiment, get_api_key as get_av_key
         from signals.fmp_client import fetch_stock_news, get_api_key as get_fmp_key
-        from signals.alpha_vantage_client import fetch_news_sentiment
 
-        # Prefer FMP when key is present
+        # 1) FMP when configured
         if get_fmp_key(config):
             summary, err = fetch_stock_news(config, ticker, limit=10)
             if not err and summary is not None:
-                raw_score = summary.get("sentiment_score_avg", 0.0)
-                headline_count = summary.get("headline_count", 0)
-                sentiment_label = summary.get("sentiment_label", "Neutral")
-                score = round(float(np.clip((float(raw_score) + 1.0) / 2.0, 0.0, 1.0)), 3)
-                label = (
-                    f"News {sentiment_label} "
-                    f"({headline_count} headlines · FMP)"
-                )
-                return {
-                    "score": score,
-                    "label": label,
-                    "raw_score": raw_score,
-                    "headline_count": headline_count,
-                    "sentiment_label": sentiment_label,
-                    "headlines": summary.get("headlines", [])[:3],
-                }
-        # Fallback: Alpha Vantage
-        summary, err = fetch_news_sentiment(config, ticker, limit=10)
-        if err or summary is None:
-            logger.debug("News sentiment skipped for %s: %s", ticker, err)
+                packed = _nlp_pack_sentiment_summary(summary, "FMP")
+                if packed is not None:
+                    return packed
+            # No usable FMP sentiment, or request error — try AV before giving up
+            fmp_note = " (FMP request failed)" if err else " (FMP had no sentiment score)"
+            if get_av_key(config):
+                s2, e2 = fetch_news_sentiment(config, ticker, limit=10)
+                if not e2 and s2 is not None and s2.get("sentiment_score_avg") is not None:
+                    p2 = _nlp_pack_sentiment_summary(s2, "Alpha Vantage", note=fmp_note)
+                    if p2 is not None:
+                        return p2
+            logger.debug("News sentiment N/A for %s after FMP (+ optional AV)", ticker)
             return None
 
-        raw_score = summary.get("sentiment_score_avg")
-        if raw_score is None:
-            return None
+        # 2) Alpha Vantage only (no FMP key)
+        if get_av_key(config):
+            summary, err = fetch_news_sentiment(config, ticker, limit=10)
+            if err or summary is None:
+                logger.debug("News sentiment skipped for %s: %s", ticker, err)
+                return None
+            if summary.get("sentiment_score_avg") is None:
+                return None
+            return _nlp_pack_sentiment_summary(summary, "Alpha Vantage")
 
-        score = round(float(np.clip((raw_score + 1.0) / 2.0, 0.0, 1.0)), 3)
-        headline_count = summary.get("headline_count", 0)
-        sentiment_label = summary.get("sentiment_label", "Neutral")
-        label = (
-            f"News sentiment {sentiment_label} "
-            f"(score {raw_score:+.2f}, {headline_count} headlines · Alpha Vantage)"
-        )
-        return {
-            "score": score,
-            "label": label,
-            "raw_score": raw_score,
-            "headline_count": headline_count,
-            "sentiment_label": sentiment_label,
-            "headlines": summary.get("headlines", [])[:3],
-        }
+        return None
     except Exception as exc:
         logger.debug("NLP sentiment failed for %s: %s", ticker, exc)
         return None

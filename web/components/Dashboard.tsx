@@ -37,6 +37,7 @@ import {
   AccuracyPriceTargetsWithBoundary,
   PortfolioDoctorRecommendations,
   PortfolioRiskMetricsPanel,
+  MarketReversalBanner,
   MarketScenarios,
   PerformanceVsBenchmark,
   ForwardTracking,
@@ -301,6 +302,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
             </p>
           </div>
         )}
+        <MarketReversalBanner overlay={data.market_reversal_overlay} />
         {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
       </div>
 
@@ -613,7 +615,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           )}
           <p className="text-base text-slate-500 mb-0">
             <span className="text-slate-400">Buy:</span> add-on · <span className="text-slate-400">Sell:</span> trim when overbought/weak · <span className="text-slate-400">Support:</span> watch level ·
-            <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> 1–2 yr
+            <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> ~12–18 mo
           </p>
             </div>
           </ToggleSection>

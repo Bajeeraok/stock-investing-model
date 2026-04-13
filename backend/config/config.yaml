@@ -205,6 +205,17 @@ market_regime:
   use_vix_multiplier: true     # apply VIX overlay (calm 1.1x, elevated 0.8x, high 0.5x, extreme 0.2x)
   use_hit_rate_gate: true      # suppress BUY/ADD when ADD hit rate < VIX-based threshold (VIX >= 20)
 
+# Index-level stress + bounce-setup overlay (SPY + VIX; optional LightGBM). Adjusts composite_buy for all tickers when enabled.
+market_reversal_overlay:
+  enabled: true
+  apply_score_adjustment: true # add composite_buy_delta (stress penalty / bounce bonus capped)
+  stress_penalty: 10           # scales with stress_score
+  bounce_bonus: 6              # when bounce_setup_score high under stress
+  max_score_delta: 10          # clamp |delta|
+  ml_enabled: true             # use data/models/market_reversal_lgbm.pkl if present (train via scripts/train_market_reversal_ml.py)
+  ml_blend_weight: 0.35        # blend ML P(bounce) into displayed bounce_setup_score
+  # model_path: data/models/market_reversal_lgbm.pkl  # optional override
+
 # Overbought penalty: cuts 70-100 signals when RSI high + price extended above MA200
 overbought_penalty:
   enabled: true
@@ -441,11 +452,39 @@ horizons:
   # Optional per-ticker Tier 2 MOS % (overrides class), e.g. BLK: 12
   tier2_mos_pct_by_ticker: {}
 
+# Paper trading panel: summary thresholds + benchmark column (same-date window as each trade)
+paper_trading:
+  min_completed_for_summary: 60   # lower (e.g. 15) to unlock full stats sooner while building history
+  min_actionable_buy_summary: 8   # min completed STRONG BUY/BUY/HOLD/ADD rows for buy-only sub-summary
+  benchmark_ticker: SPY
+
+# 7-layer confidence: HMM bear penalty vs MA200 trend conflict; ML prob calibration (Platt / isotonic)
+confidence:
+  regime_blend:
+    soften_bear_when_above_ma200: true   # blend regime with trend: softer penalty when price > MA200
+    bear_penalty_mult: 0.40              # HMM bear > 80% (default hard)
+    bear_penalty_mult_above_ma200: 0.72   # same condition but uptrend vs MA200
+  calibration:
+    enabled: false                        # set true after running scripts/fit_probability_calibration.py
+    path: data/calibration/ml_horizons.json  # relative to backend/
+
+# Unified evaluation: scripts/run_evaluation_harness.py — rows per (ticker, date) + fwd returns + baselines
+evaluation:
+  horizons_trading_days: [21, 63, 126, 252]  # ~1m / ~3m / ~6m / ~12m; compare to ML horizons 20/60/120 in code
+  default_step: 5
+  spy_ticker: SPY
+
 # Fair value — SPY uses earnings-yield (rf+ERP) on ETF EPS; single names use fair_value_estimator multi-method
 fair_value:
   use_earnings_yield_for_spy: true
   risk_free_rate: 0.043        # 10Y Treasury (decimal); optional: wire live from FRED
   equity_risk_premium: 0.045   # large-cap ERP; ~3.5–5% common — affects implied P/E = 1/(rf+ERP)
+  # Caps keep displayed FV near Street + spot (retail-safe). For forecast-accuracy research / backtests,
+  # set analyst_mean_cap_enabled: false and max_implied_upside_vs_spot: null so FV reflects the raw multi-method estimate.
+  guardrails:
+    analyst_mean_cap_enabled: true
+    analyst_mean_cap_mult: 1.10          # max FV = Yahoo 12m mean × this (when cap enabled)
+    max_implied_upside_vs_spot: 0.52     # max implied upside vs spot; use null to disable
 
 # Phase 4: Data & earnings
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping

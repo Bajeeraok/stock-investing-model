@@ -437,6 +437,7 @@ def _build_investor_summary(
     ttm_pe_used: float | None = None
     forward_pe_used: float | None = None
     forward_pe_discarded = False  # set True when fwd << ttm and we exclude from FV
+    analyst_target_yahoo: float | None = None  # yfinance targetMeanPrice — exposed vs model FV for verification
     try:
         import yfinance as yf
         from signals.fmp_client import fetch_key_metrics_ttm
@@ -514,6 +515,7 @@ def _build_investor_summary(
         sector_pe = 28.0
         sector_forward_pe = 25.0
         analyst_target = _safe_float(info.get("targetMeanPrice"))
+        analyst_target_yahoo = analyst_target
         fcf = _safe_float(info.get("freeCashflow"))
         shares = _safe_float(info.get("sharesOutstanding"))
         fcf_per_share = (fcf / shares) if (fcf and shares and shares > 0) else None
@@ -557,6 +559,7 @@ def _build_investor_summary(
         if forward_pe is not None and forward_pe > 0:
             forward_pe_used = forward_pe
         if fv_result is None and pe and pe > 0 and margin is not None:
+            _fv_gr = (config.get("fair_value") or {}).get("guardrails")
             fv_result = estimate_fair_value_full(
                 current_price=current_price,
                 ttm_pe=ttm_pe if (ttm_pe is not None and ttm_pe > 0) else (forward_pe or pe),
@@ -569,6 +572,7 @@ def _build_investor_summary(
                 sector_forward_pe=sector_forward_pe,
                 fcf_per_share=fcf_per_share,
                 analyst_target=analyst_target,
+                guardrails=dict(_fv_gr) if isinstance(_fv_gr, dict) else None,
             )
             if fv_result and fv_result.fair_value and fv_result.fair_value > 0:
                 fair_value = fv_result.fair_value
@@ -660,6 +664,34 @@ def _build_investor_summary(
         "pattern_score": round(pattern_score, 1) if pattern_score is not None else None,
         "regime_bull_pct": round(regime_bull_pct, 1),
     }
+
+    def _fv_pct_vs_ref(model: float, ref: float | None) -> float | None:
+        if ref is None or ref <= 0:
+            return None
+        return round(100.0 * (model - ref) / ref, 1)
+
+    fmp_lo = _safe_float(response.get("cons_low"))
+    fmp_hi = _safe_float(response.get("cons_high"))
+    fmp_med = _safe_float(response.get("consensus_median"))
+    fmp_median_is_range_midpoint = False
+    if fmp_med is None and fmp_lo is not None and fmp_hi is not None and fmp_lo > 0 and fmp_hi > 0:
+        fmp_med = (fmp_lo + fmp_hi) / 2.0
+        fmp_median_is_range_midpoint = True
+    fv_ext: dict = {
+        "yahoo_12m_mean_usd": round(analyst_target_yahoo, 2) if analyst_target_yahoo else None,
+        "pct_model_vs_yahoo_mean": _fv_pct_vs_ref(fair_value, analyst_target_yahoo),
+        "fmp_consensus_low_usd": round(fmp_lo, 2) if fmp_lo is not None else None,
+        "fmp_consensus_high_usd": round(fmp_hi, 2) if fmp_hi is not None else None,
+        "fmp_consensus_median_usd": round(fmp_med, 2) if fmp_med is not None else None,
+        "fmp_median_is_range_midpoint": fmp_median_is_range_midpoint,
+        "pct_model_vs_fmp_median": _fv_pct_vs_ref(fair_value, fmp_med),
+        "note": (
+            "Model FV vs Yahoo mean (yfinance targetMeanPrice) and vs FMP analyst consensus when configured. "
+            "Yahoo mean is also used to cap FV at +10% in the estimator; large gaps often mean stale consensus or method mismatch."
+        ),
+    }
+    out["fair_value_vs_external"] = fv_ext
+
     if ttm_pe_used is not None:
         out["ttm_pe_used"] = round(ttm_pe_used, 2)
     if forward_pe_used is not None:
@@ -875,15 +907,31 @@ def _build_trade_roadmap(
         pos = 0
     else:
         when = "Start small" if s_lo and current_price <= (s_hi or current_price) else "Watch only"
-        cond = "In entry zone" if (s_lo and s_hi and s_lo <= current_price <= s_hi) else "Wait for pullback"
-        conv = "Low-Medium" if when == "Start small" else "None"
+        in_st_band = bool(s_lo and s_hi and s_lo <= current_price <= s_hi)
+        st_conv = (short.get("conviction") or "").strip()
+        st_conv_l = st_conv.lower()
+        # Reserve "In entry zone" for when the short horizon itself is at least medium conviction;
+        # otherwise price-in-band is geographic only (weak setup / starter size).
+        if not in_st_band:
+            cond = "Wait for pullback"
+        elif st_conv_l in ("medium", "high"):
+            cond = "In entry zone"
+        else:
+            cond = "Inside short-term band (low conviction — starter size only)"
+        if when == "Start small":
+            conv = st_conv if st_conv else "Low-Medium"
+        else:
+            conv = "None"
         pos = 25 if when == "Start small" else 0
+    # Show ST band for Today when available so zone matches the entry-zone / band wording
+    today_lo = round(s_lo, 2) if s_lo else round(current_price, 2)
+    today_hi = round(s_hi, 2) if s_hi else round(current_price, 2)
     buy_stages.append({
         "timeline_key": "today",
         "label": "Today",
         "when_to_act": when,
-        "price_zone_low": round(current_price, 2),
-        "price_zone_high": round(current_price, 2),
+        "price_zone_low": today_lo,
+        "price_zone_high": today_hi,
         "condition": cond,
         "conviction": conv,
         "position_pct": pos,
@@ -1080,6 +1128,8 @@ def _build_trade_roadmap(
             "scenario_target_aligned": True,
         }
 
+    _patch_immediate_sell_stage_copy(sell_stages, low_52w)
+
     # Single source of truth: medium horizon target matches canonical scenario_target before any trader copy.
     try:
         st = float(scenario_target)
@@ -1158,6 +1208,7 @@ def _build_trade_roadmap(
         + (f"Stop: ${_safe_float(medium.get('stop_loss')):.2f}." if medium.get("stop_loss") else "Stop: below MA50.")
     ).strip()
     full_by = (t1_hi or ma200 or current_price)
+    exit_line = _long_horizon_structural_exit_phrase(sell_stages, low_52w)
     # MA200 is support when price is above it; when below, it is overhead — do not frame as "accumulate toward" a higher level
     if ma200 and current_price < ma200 * 0.985:
         tier_txt = (
@@ -1169,13 +1220,13 @@ def _build_trade_roadmap(
             f"Price is below MA200 ({ma200_str}) — MA200 is overhead until reclaimed, not a dip to buy toward. "
             f"Stage adds near {ma50_str} and long-term tiers on weakness; {tier_txt}"
             f"Fair value ~${fair_value:.2f} over 12–18m. "
-            + (f"Only exit if 52w low ${low_52w:.2f} breaks." if low_52w else "Only exit on thesis break.")
+            + exit_line
         ).strip()
     else:
         trader_summary_long = (
             f"Accumulate on pullbacks toward MA200 support ({ma200_str}). Full core by ~${full_by:.2f} when tier fills. "
             + f"Fair value ~${fair_value:.2f} over 12–18m. "
-            + (f"Only exit if 52w low ${low_52w:.2f} breaks." if low_52w else "Only exit on thesis break.")
+            + exit_line
         ).strip()
 
     return {
@@ -1479,6 +1530,79 @@ def _safe_float(v) -> float | None:
         return None
 
 
+def _immediate_stop_floor_from_52w(low_52w: float | None) -> float | None:
+    """~3% cushion under raw 52w low — matches initial stop_52w before horizon max()."""
+    if low_52w is None:
+        return None
+    return round(float(low_52w) * 0.97, 2)
+
+
+def _patch_immediate_sell_stage_copy(sell_stages: list[dict], low_52w: float | None) -> None:
+    """
+    Immediate row may be raised to short-horizon stop (max vs 52w-based floor).
+    Condition text must match that price; do not say only '52w low' when horizon binds.
+    """
+    if not sell_stages or sell_stages[0].get("timeline_key") != "immediate":
+        return
+    s0 = sell_stages[0]
+    hi = _safe_float(s0.get("price_zone_high"))
+    lo = _safe_float(s0.get("price_zone_low"))
+    if hi is None:
+        return
+    floor_52 = _immediate_stop_floor_from_52w(low_52w)
+    tol = max(1.0, 0.005 * hi)
+    if floor_52 is not None and hi > floor_52 + tol and low_52w is not None:
+        s0["condition"] = (
+            f"Closes below ~${hi:.2f} — nearer-term invalidation (horizon stop; "
+            f"52w low ${float(low_52w):.2f} is farther down)"
+        )
+        return
+    if low_52w is not None:
+        if lo is not None and abs(lo - hi) > 0.02:
+            band = f"${lo:.2f}–${hi:.2f}"
+        else:
+            band = f"~${hi:.2f}"
+        s0["condition"] = (
+            f"Closes below {band} (~3% cushion under 52w low ${float(low_52w):.2f}) — thesis dead"
+        )
+
+
+def _long_horizon_structural_exit_phrase(sell_stages: list[dict], low_52w: float | None) -> str:
+    """One line for trader_summary long_term: matches Immediate sell row after alignment + validator."""
+    if not sell_stages or sell_stages[0].get("timeline_key") != "immediate":
+        return (
+            f"Only exit if 52w low ${float(low_52w):.2f} breaks."
+            if low_52w is not None
+            else "Only exit on thesis break."
+        )
+    s0 = sell_stages[0]
+    hi = _safe_float(s0.get("price_zone_high"))
+    lo = _safe_float(s0.get("price_zone_low"))
+    if hi is None:
+        return (
+            f"Only exit if 52w low ${float(low_52w):.2f} breaks."
+            if low_52w is not None
+            else "Only exit on thesis break."
+        )
+    floor_52 = _immediate_stop_floor_from_52w(low_52w)
+    tol = max(1.0, 0.005 * hi)
+    if lo is not None and abs(lo - hi) > 0.02:
+        zone = f"${lo:.2f}–${hi:.2f}"
+    else:
+        zone = f"~${hi:.2f}"
+    if floor_52 is not None and hi > floor_52 + tol and low_52w is not None:
+        return (
+            f"Only exit long-term thesis if spot closes below {zone} "
+            f"(nearer-term invalidation; 52w low ${float(low_52w):.2f} is farther support)."
+        )
+    if low_52w is not None:
+        return (
+            f"Only exit long-term thesis if spot closes below {zone} "
+            f"(~3% cushion under 52w low ${float(low_52w):.2f})."
+        )
+    return f"Only exit long-term thesis if spot closes below {zone}."
+
+
 def _band_edges(b: dict | None) -> tuple[float | None, float | None]:
     if not isinstance(b, dict):
         return None, None
@@ -1774,6 +1898,11 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 or cons.get("targetConsensus")
                 or cons.get("medianPriceTarget")
             )
+            if consensus_median is not None:
+                try:
+                    out["consensus_median"] = round(float(consensus_median), 2)
+                except (TypeError, ValueError):
+                    pass
 
         eps_fwd = None
         eps_dispersion = None

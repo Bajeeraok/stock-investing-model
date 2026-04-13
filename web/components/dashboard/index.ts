@@ -27,6 +27,7 @@ export { ChatCopilot } from "./ChatCopilot";
 export { AccuracyPriceTargets, AccuracyPriceTargetsWithBoundary } from "./AccuracyPriceTargets";
 export { PortfolioDoctorRecommendations } from "./PortfolioDoctorRecommendations";
 export { PortfolioRiskMetricsPanel } from "./PortfolioRiskMetricsPanel";
+export { MarketReversalBanner } from "./MarketReversalBanner";
 export { PaperTradingPanel } from "./PaperTradingPanel";
 export { MarketScenarios } from "./MarketScenarios";
 export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";

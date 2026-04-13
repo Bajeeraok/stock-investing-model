@@ -782,9 +782,9 @@ interface RiskDashboardProps {
 }
 
 const HORIZON_LABELS: Record<ExitHorizon, string> = {
-  short:  "Short-term (20d)",
-  medium: "Medium-term (60d)",
-  long:   "Long-term (180d)",
+  short:  "Short-term (~1 mo · 20 trading days)",
+  medium: "Medium-term (~3–6 mo · 60d)",
+  long:   "Long-term (~12–18 mo · 120d)",
 };
 
 export function RiskDashboard({

@@ -278,7 +278,7 @@ export function TickerDetailModal({
                       <li><span className="font-medium text-amber-400">Crowded Long/Short:</span> CFTC specs extreme; reversal risk.</li>
                       <li><span className="font-medium text-slate-200">Macro regime:</span> Risk-On vs Risk-Off; affects sizing.</li>
                       <li><span className="font-medium text-slate-200">Rotation risk:</span> High = tech stepped down (ADD→HOLD).</li>
-                      <li><span className="font-medium text-slate-200">Short/Med/Long:</span> ~1 mo / ~3–6 mo / 1–2 yr view.</li>
+                      <li><span className="font-medium text-slate-200">Short/Med/Long:</span> ~1 mo / ~3–6 mo / ~12–18 mo view.</li>
                       <li><span className="font-medium text-slate-200">Vol, Drawdown 52w, 52w range:</span> Volume vs avg; % off high; low–high.</li>
                       <li><span className="font-medium text-slate-200">Dividend, Beta, vs Market:</span> Yield; volatility vs SPY; outperformance.</li>
                     </ul>
@@ -628,7 +628,7 @@ export function TickerDetailModal({
                           detail.long_suggestion.includes("TRIM") && "text-red-400",
                           detail.long_suggestion === "HOLD" && "text-slate-300"
                         )}>
-                          Long (1–2 yr): {detail.long_suggestion}
+                          Long (~12–18 mo): {detail.long_suggestion}
                         </span>
                         {detail.long_reason && (
                           <p className="text-sm text-slate-400 mt-1">{detail.long_reason}</p>

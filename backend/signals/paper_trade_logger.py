@@ -138,6 +138,31 @@ def _trade_id(date: str, ticker: str, signal: str) -> str:
     return hashlib.md5(raw.encode("utf-8")).hexdigest()[:12]
 
 
+def _first_eod_on_or_after(dates: list[str], target: str) -> str | None:
+    """First snapshot date string >= target (YYYY-MM-DD)."""
+    try:
+        ts = pd.Timestamp(target).normalize()
+    except Exception:
+        return None
+    for d in dates:
+        try:
+            if pd.Timestamp(d).normalize() >= ts:
+                return d
+        except Exception:
+            continue
+    return None
+
+
+def _is_buy_side_signal(sig: str) -> bool:
+    """STRONG BUY / BUY / HOLD/ADD — for actionable performance slice (excludes TRIM/REDUCE/WATCH/HOLD)."""
+    s = (sig or "").upper()
+    if any(x in s for x in ("TRIM", "SELL", "REDUCE", "AVOID")):
+        return False
+    if s.strip() in ("HOLD", "WATCH"):
+        return False
+    return "STRONG BUY" in s or s.strip() == "BUY" or "HOLD/ADD" in s
+
+
 @dataclass
 class PaperTradeRecord:
     date: str
@@ -419,6 +444,79 @@ class PaperTradeLogger:
         except Exception:
             return None
 
+    def _ticker_close_on_snapshot(self, date_str: str, ticker: str) -> float | None:
+        snap = self._load_snapshot(date_str)
+        if not snap:
+            return None
+        want = ticker.upper()
+        for r in snap.get("run_results") or []:
+            if not isinstance(r, dict):
+                continue
+            if str(r.get("ticker") or "").upper() == want:
+                return _safe_float(r.get("close"))
+        return None
+
+    def _benchmark_return_pct_between(
+        self,
+        signal_date: str,
+        end_date: str,
+        benchmark: str = "SPY",
+    ) -> float | None:
+        """Return % of benchmark from first EOD on/after signal_date to close on end_date snapshot."""
+        dates = self._list_eod_dates()
+        if len(dates) < 2:
+            return None
+        start_d = _first_eod_on_or_after(dates, signal_date)
+        if not start_d:
+            return None
+        try:
+            if pd.Timestamp(end_date).normalize() < pd.Timestamp(start_d).normalize():
+                end_date = dates[-1]
+        except Exception:
+            pass
+        p0 = self._ticker_close_on_snapshot(start_d, benchmark)
+        p1 = self._ticker_close_on_snapshot(end_date, benchmark)
+        if p0 is None or p1 is None or p0 <= 0:
+            return None
+        return round(100.0 * (p1 - p0) / p0, 2)
+
+    def enrich_trades_with_benchmark(self, rows: list[dict[str, Any]], benchmark: str = "SPY") -> list[dict[str, Any]]:
+        """
+        Add benchmark_return_pct (same window as trade MTM or completed outcome) and excess_return_pct.
+        Modifies rows in place.
+        """
+        dates = self._list_eod_dates()
+        bench = benchmark.upper()
+        for r in rows:
+            r["benchmark_ticker"] = bench
+            if len(dates) < 2:
+                r["benchmark_return_pct"] = None
+                r["excess_return_pct"] = None
+                continue
+            start_d = _first_eod_on_or_after(dates, str(r.get("date") or ""))
+            if not start_d:
+                r["benchmark_return_pct"] = None
+                r["excess_return_pct"] = None
+                continue
+            if str(r.get("outcome") or "") in ("HIT", "MISS") and r.get("next_date"):
+                end_d = str(r.get("next_date"))
+            else:
+                end_d = str(r.get("mtm_date") or dates[-1])
+            try:
+                if pd.Timestamp(end_d).normalize() < pd.Timestamp(start_d).normalize():
+                    end_d = dates[-1]
+            except Exception:
+                pass
+            br = self._benchmark_return_pct_between(str(r.get("date") or ""), end_d, bench)
+            r["benchmark_return_pct"] = br
+            tr = None
+            if str(r.get("outcome") or "") in ("HIT", "MISS") and _safe_float(r.get("return_pct")) is not None:
+                tr = float(r["return_pct"])
+            elif _safe_float(r.get("mtm_return_pct")) is not None:
+                tr = float(r["mtm_return_pct"])
+            r["excess_return_pct"] = round(tr - br, 2) if (tr is not None and br is not None) else None
+        return rows
+
     def fill_outcomes(self, max_rows: int = 500) -> dict[str, Any]:
         """
         Backfill outcomes using EOD snapshots (no extra API calls).
@@ -655,34 +753,97 @@ class PaperTradeLogger:
         except Exception:
             return {}
 
-    def get_performance_summary(self, min_completed: int = 60) -> dict[str, Any]:
-        rows = self._read_all()
-        completed = [r for r in rows if r.get("outcome") in ("HIT", "MISS") and _safe_float(r.get("return_pct")) is not None]
-        if len(completed) < min_completed:
-            return {
-                "status": f"Need more data: {len(completed)}/{min_completed} completed trades",
-                "completed": len(completed),
-                "min_required": min_completed,
-            }
-
+    def _stats_for_completed(self, completed: list[dict[str, Any]], benchmark: str = "SPY") -> dict[str, Any]:
         returns = [float(r["return_pct"]) for r in completed if _safe_float(r.get("return_pct")) is not None]
         hits = [int(float(r["hit_target"])) for r in completed if str(r.get("hit_target") or "").strip() != ""]
         win_rate = round(100 * (sum(hits) / len(hits)), 1) if hits else None
         avg_return = round(sum(returns) / len(returns), 2) if returns else None
-
         wins = [float(r["return_pct"]) for r in completed if str(r.get("hit_target")) == "1" and _safe_float(r.get("return_pct")) is not None]
         losses = [float(r["return_pct"]) for r in completed if str(r.get("hit_target")) == "0" and _safe_float(r.get("return_pct")) is not None]
         avg_win = round(sum(wins) / len(wins), 2) if wins else None
         avg_loss = round(sum(losses) / len(losses), 2) if losses else None
-
+        excesses: list[float] = []
+        for r in completed:
+            br = self._benchmark_return_pct_between(
+                str(r.get("date") or ""),
+                str(r.get("next_date") or ""),
+                benchmark,
+            )
+            tr = _safe_float(r.get("return_pct"))
+            if br is not None and tr is not None:
+                excesses.append(tr - br)
+        avg_excess = round(sum(excesses) / len(excesses), 2) if excesses else None
         return {
-            "status": "ok",
-            "completed": len(completed),
+            "completed_n": len(completed),
             "win_rate_pct": win_rate,
             "avg_return_pct": avg_return,
             "avg_win_pct": avg_win,
             "avg_loss_pct": avg_loss,
+            "avg_excess_vs_spy_pct": avg_excess,
+            "n_with_benchmark": len(excesses),
         }
+
+    def get_performance_summary(
+        self,
+        min_completed: int = 60,
+        min_actionable: int = 8,
+        benchmark: str = "SPY",
+    ) -> dict[str, Any]:
+        """
+        Aggregate stats on completed (HIT/MISS) trades. Requires min_completed for full ``ok`` status;
+        shows preview when 5+ completed but below min. Adds buy-side-only slice (STRONG BUY / BUY / HOLD/ADD).
+        """
+        rows = self._read_all()
+        completed = [r for r in rows if r.get("outcome") in ("HIT", "MISS") and _safe_float(r.get("return_pct")) is not None]
+
+        horizon_note = (
+            "Completed trades: exit = first EOD on or after signal date + N business days "
+            "(per-row horizon_trading_days, default 20). Compare to SPY over the same dates."
+        )
+
+        out: dict[str, Any] = {
+            "horizon_note": horizon_note,
+            "benchmark_ticker": benchmark.upper(),
+            "min_required": min_completed,
+            "completed": len(completed),
+        }
+
+        if len(completed) < 5:
+            out["status"] = f"Need more data: {len(completed)}/{min_completed} completed trades"
+            out["message"] = None
+            return out
+
+        stats = self._stats_for_completed(completed, benchmark)
+        buy_only = [r for r in completed if _is_buy_side_signal(str(r.get("signal") or ""))]
+        buy_stats = None
+        if len(buy_only) >= min_actionable:
+            buy_stats = self._stats_for_completed(buy_only, benchmark)
+            buy_stats["label"] = "STRONG BUY / BUY / HOLD/ADD only"
+
+        preview = len(completed) < min_completed
+        out["status"] = "preview" if preview else "ok"
+        if preview:
+            out["message"] = f"Preview ({len(completed)}/{min_completed} completed — need more for full read)"
+        else:
+            out["message"] = None
+
+        out["win_rate_pct"] = stats["win_rate_pct"]
+        out["avg_return_pct"] = stats["avg_return_pct"]
+        out["avg_win_pct"] = stats["avg_win_pct"]
+        out["avg_loss_pct"] = stats["avg_loss_pct"]
+        out["avg_excess_vs_spy_pct"] = stats["avg_excess_vs_spy_pct"]
+        out["n_benchmarked"] = stats["n_with_benchmark"]
+
+        if buy_stats:
+            out["buy_signals_summary"] = {
+                "completed_n": buy_stats["completed_n"],
+                "win_rate_pct": buy_stats["win_rate_pct"],
+                "avg_return_pct": buy_stats["avg_return_pct"],
+                "avg_excess_vs_spy_pct": buy_stats["avg_excess_vs_spy_pct"],
+                "label": buy_stats["label"],
+            }
+
+        return out
 
     def get_recent(self, limit: int = 50) -> list[dict[str, Any]]:
         rows = self._read_all()

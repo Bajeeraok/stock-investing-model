@@ -215,6 +215,13 @@ async def get_dashboard():
     )
     logger.info("[dashboard] section: run_signals DONE (%d tickers, %.0f ms)", len(results) if results else 0, (time.perf_counter() - t0) * 1000)
 
+    market_reversal_overlay = None
+    for r in results or []:
+        if isinstance(r, dict) and r.get("market_overlay"):
+            if market_reversal_overlay is None:
+                market_reversal_overlay = r.get("market_overlay")
+            r.pop("market_overlay", None)
+
     # Paper trading entry price: prefer live quote (FMP batch or Yahoo) so entry matches portfolio marks;
     # signal row close remains OHLCV last bar (used for indicators / accuracy).
     if prices_by_ticker:
@@ -491,13 +498,22 @@ async def get_dashboard():
     def _task_paper_trading_async():
         try:
             from signals.paper_trade_logger import PaperTradeLogger
+            pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
+            min_done = int(pt_cfg.get("min_completed_for_summary", 60))
+            min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
+            bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
             pt = PaperTradeLogger(data_root=data_root)
             sync = pt.sync_targets_stops_from_results(results)
             mtm = pt.mark_to_market()
             mtm_history_log = pt.append_mtm_history()
             fill = pt.fill_outcomes()
-            summary = pt.get_performance_summary(min_completed=60)
+            summary = pt.get_performance_summary(
+                min_completed=min_done,
+                min_actionable=min_buy,
+                benchmark=bench_sym,
+            )
             recent = pt.get_recent(limit=40)
+            recent = pt.enrich_trades_with_benchmark(recent, benchmark=bench_sym)
             mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=12)
             return ("paper_trading_async", {
                 "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
@@ -1108,6 +1124,7 @@ async def get_dashboard():
         "macro_regime": macro_regime,
         "macro_regime_bundle": macro_regime_bundle,
         "portfolio_risk_metrics": portfolio_risk_metrics,
+        "market_reversal_overlay": market_reversal_overlay,
         "market_regime": market_regime_data,
         "global_market_regime": next(
             (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
@@ -1168,6 +1185,21 @@ async def get_dashboard():
         logger.debug("[dashboard] cache set skipped: %s", e)
     logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
     return out
+
+
+@router.get("/reports/monthly-signal-buckets")
+async def get_monthly_signal_buckets():
+    """
+    Monthly rollup: score buckets (HOLD/ADD, HOLD, CONSIDER TRIM) vs forward returns at EOD horizons 5 and 20.
+    Uses stored EOD snapshots under data/eod/. Horizons are snapshot-step counts (see forward_tracking).
+    """
+    try:
+        from signals.monthly_signal_report import build_monthly_signal_report
+
+        return build_monthly_signal_report(data_root=get_data_root())
+    except Exception as e:
+        logger.warning("monthly_signal_buckets: %s", e)
+        return {"months": [], "overall_by_bucket": {}, "message": str(e), "n_records_used": 0}
 
 
 @router.get("/signals")

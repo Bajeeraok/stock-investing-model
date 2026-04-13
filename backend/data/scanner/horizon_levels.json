@@ -44,5 +44,28 @@
       "target": 178.1,
       "horizon_label": "Long-term"
     }
+  },
+  "META": {
+    "short": {
+      "entry_low": 606.3,
+      "entry_high": 615.48,
+      "stop_loss": 581.8,
+      "target": 652.23,
+      "horizon_label": "Short-term"
+    },
+    "medium": {
+      "entry_low": 606.3,
+      "entry_high": 641.25,
+      "stop_loss": 596.81,
+      "target": 768.94,
+      "horizon_label": "Medium-term"
+    },
+    "long": {
+      "entry_low": 606.3,
+      "entry_high": 716.54,
+      "stop_loss": 455.81,
+      "target": 786.91,
+      "horizon_label": "Long-term"
+    }
   }
 }

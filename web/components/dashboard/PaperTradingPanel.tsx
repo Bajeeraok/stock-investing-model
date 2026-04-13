@@ -37,6 +37,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             Entry = live quote when batch/Yahoo prices are available; otherwise last OHLCV bar (same as indicators).
             Outcomes use the first EOD snapshot on or after signal date + N <strong>business</strong> days.
             <strong> Return</strong> = vs signal entry; <strong>Last mark / daily Δ</strong> = vs prior EOD mark once history exists.
+            <strong> Bench %</strong> = same-window return for the benchmark (default SPY); <strong>Excess</strong> = your return minus bench (open uses MTM vs entry).
           </p>
         </div>
         {pt.log?.date && (
@@ -47,43 +48,83 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
       </div>
 
       {summary && (
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300">
-          <span className="text-slate-500">Status:</span>{" "}
-          <span className={clsx(summary.status === "ok" ? "text-emerald-400" : "text-amber-300")}>
-            {summary.status}
-          </span>
-          {summary.completed != null && (
-            <span>
-              <span className="text-slate-500">Completed:</span> {summary.completed}
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300">
+            <span className="text-slate-500">Status:</span>{" "}
+            <span
+              className={clsx(
+                summary.status === "ok" ? "text-emerald-400" : summary.status === "preview" ? "text-sky-400" : "text-amber-300"
+              )}
+            >
+              {summary.status}
             </span>
-          )}
-          {summary.win_rate_pct != null && (
-            <span>
-              <span className="text-slate-500">Win rate:</span>{" "}
-              <span className={summary.win_rate_pct >= 55 ? "text-emerald-400" : "text-amber-300"}>
-                {summary.win_rate_pct.toFixed(1)}%
+            {summary.completed != null && (
+              <span title={summary.horizon_note ?? undefined}>
+                <span className="text-slate-500">Completed:</span> {summary.completed}
+                {summary.min_required != null ? ` / ${summary.min_required} for full` : ""}
               </span>
-            </span>
-          )}
-          {summary.avg_return_pct != null && (
-            <span>
-              <span className="text-slate-500">Avg:</span>{" "}
-              <span className={summary.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
-                {fmtPct(summary.avg_return_pct)}
+            )}
+            {summary.win_rate_pct != null && (
+              <span>
+                <span className="text-slate-500">Win rate:</span>{" "}
+                <span className={summary.win_rate_pct >= 55 ? "text-emerald-400" : "text-amber-300"}>
+                  {summary.win_rate_pct.toFixed(1)}%
+                </span>
               </span>
-            </span>
+            )}
+            {summary.avg_return_pct != null && (
+              <span>
+                <span className="text-slate-500">Avg:</span>{" "}
+                <span className={summary.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                  {fmtPct(summary.avg_return_pct)}
+                </span>
+              </span>
+            )}
+            {summary.avg_excess_vs_spy_pct != null && (
+              <span>
+                <span className="text-slate-500">Avg excess vs {summary.benchmark_ticker ?? "SPY"}:</span>{" "}
+                <span className={summary.avg_excess_vs_spy_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                  {fmtPct(summary.avg_excess_vs_spy_pct)}
+                </span>
+                {summary.n_benchmarked != null && (
+                  <span className="text-slate-500"> ({summary.n_benchmarked} with bench)</span>
+                )}
+              </span>
+            )}
+            {summary.avg_win_pct != null && (
+              <span>
+                <span className="text-slate-500">Avg win:</span> {fmtPct(summary.avg_win_pct)}
+              </span>
+            )}
+            {summary.avg_loss_pct != null && (
+              <span>
+                <span className="text-slate-500">Avg loss:</span> {fmtPct(summary.avg_loss_pct)}
+              </span>
+            )}
+            {summary.message && <span className="text-slate-500">{summary.message}</span>}
+          </div>
+          {summary.buy_signals_summary && (
+            <div className="rounded border border-slate-600/80 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
+              <span className="font-medium text-slate-300">{summary.buy_signals_summary.label}</span>
+              <span className="text-slate-500"> — n={summary.buy_signals_summary.completed_n}</span>
+              {summary.buy_signals_summary.win_rate_pct != null && (
+                <span className="ml-2">
+                  Win {summary.buy_signals_summary.win_rate_pct.toFixed(1)}%
+                </span>
+              )}
+              {summary.buy_signals_summary.avg_return_pct != null && (
+                <span className="ml-2">Avg {fmtPct(summary.buy_signals_summary.avg_return_pct)}</span>
+              )}
+              {summary.buy_signals_summary.avg_excess_vs_spy_pct != null && (
+                <span className="ml-2">
+                  Excess vs {summary.benchmark_ticker ?? "SPY"} {fmtPct(summary.buy_signals_summary.avg_excess_vs_spy_pct)}
+                </span>
+              )}
+            </div>
           )}
-          {summary.avg_win_pct != null && (
-            <span>
-              <span className="text-slate-500">Avg win:</span> {fmtPct(summary.avg_win_pct)}
-            </span>
+          {summary.horizon_note && (
+            <p className="text-xs text-slate-600 leading-snug">{summary.horizon_note}</p>
           )}
-          {summary.avg_loss_pct != null && (
-            <span>
-              <span className="text-slate-500">Avg loss:</span> {fmtPct(summary.avg_loss_pct)}
-            </span>
-          )}
-          {summary.message && <span className="text-slate-500">{summary.message}</span>}
         </div>
       )}
 
@@ -101,7 +142,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
 
       {recent.length > 0 ? (
         <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-          <table className="w-full text-sm text-left border-collapse min-w-[760px]">
+          <table className="w-full text-sm text-left border-collapse min-w-[960px]">
             <thead>
               <tr className="text-slate-500 border-b border-slate-600">
                 <th className="py-1.5 pr-2 font-medium">Date</th>
@@ -117,6 +158,15 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium">Stop</th>
                 <th className="py-1.5 pr-2 font-medium">Outcome</th>
                 <th className="py-1.5 pr-2 font-medium">Return</th>
+                <th
+                  className="py-1.5 pr-2 font-medium"
+                  title="Benchmark total return over the same dates as this row (MTM window or completed horizon)"
+                >
+                  Bench %
+                </th>
+                <th className="py-1.5 pr-2 font-medium" title="Trade return minus benchmark (same window)">
+                  Excess
+                </th>
                 <th className="py-1.5 pr-2 font-medium" title="Latest EOD close used as mark (stored in rolling_entry_price)">
                   Last mark
                 </th>
@@ -160,6 +210,17 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                       </td>
                     );
                   })()}
+                  <td className={clsx("py-1.5 pr-2", (Number(r.benchmark_return_pct) || 0) >= 0 ? "text-slate-400" : "text-slate-500")}>
+                    {r.benchmark_return_pct != null ? fmtPct(Number(r.benchmark_return_pct)) : "—"}
+                  </td>
+                  <td
+                    className={clsx(
+                      "py-1.5 pr-2",
+                      r.excess_return_pct == null ? "text-slate-600" : Number(r.excess_return_pct) >= 0 ? "text-emerald-400" : "text-red-400"
+                    )}
+                  >
+                    {r.excess_return_pct != null ? fmtPct(Number(r.excess_return_pct)) : "—"}
+                  </td>
                   <td className="py-1.5 pr-2 text-slate-300" title={r.entry_price != null && r.rolling_entry_price != null ? `Signal entry $${Number(r.entry_price).toFixed(2)} → latest mark $${Number(r.rolling_entry_price).toFixed(2)} (total ${fmtPct(100 * (Number(r.rolling_entry_price) - r.entry_price) / r.entry_price)} vs entry)` : undefined}>
                     {r.rolling_entry_price != null ? `$${Number(r.rolling_entry_price).toFixed(2)}` : "—"}
                   </td>

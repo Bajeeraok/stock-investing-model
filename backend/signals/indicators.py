@@ -449,7 +449,7 @@ def multi_horizon_scores(
     interpretation_style: str = "TRENDING",
 ) -> dict:
     """
-    Short (weeks), Medium (months), Long (1–2 yrs) scores for long-term investor.
+    Short (~1 mo / ~20d), Medium (~3–6 mo / ~60d), Long (~12–18 mo / ~120d) scores — align evaluation horizons (21/63/126/252d) in harness.
 
     interpretation_style MEAN_REVERTING: invert scores only inside _sugg() so HOLD/ADD vs
     CONSIDER TRIM aligns with dip-buy / rally-trim on choppy tape (raw *_term unchanged).

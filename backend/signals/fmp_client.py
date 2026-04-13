@@ -366,13 +366,47 @@ def fetch_institutional_holder_summary(config: dict, ticker: str) -> tuple[list[
     return None, "No data"
 
 
+def _clipf(x: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, x))
+
+
+def _fmp_item_sentiment_raw(item: dict) -> float | None:
+    """If FMP adds per-article scores, map to -1..1. Returns None if absent."""
+    for key in (
+        "sentimentScore",
+        "sentiment_score",
+        "sentiment",
+        "overallSentimentScore",
+        "overall_sentiment_score",
+    ):
+        v = item.get(key)
+        if v is None:
+            continue
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            continue
+        # Heuristic: FMP might use 0-1, -1..1, or 0-100
+        if -1.01 <= x <= 1.01:
+            return _clipf(x, -1.0, 1.0)
+        if 0.0 <= x <= 1.01:
+            return float(x * 2.0 - 1.0)
+        if 0.0 <= x <= 100.0:
+            return _clipf((x - 50.0) / 50.0, -1.0, 1.0)
+    return None
+
+
 def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict | None, str | None]:
     """
-    Fetch recent stock news for a ticker (FMP v3 stock_news).
-    Returns (summary, error). summary matches shape expected by NLP sentiment layer:
-    { sentiment_score_avg, sentiment_label, headline_count, headlines }.
-    FMP does not provide sentiment scores; we use neutral (0.0 → layer score 0.5) and
-    return headline count and titles for display.
+    Fetch recent stock news (FMP v3 stock_news).
+
+    Returns summary:
+      sentiment_score_avg — raw in [-1, 1] for ConfidenceEngine (mapped to 0..1 there)
+      sentiment_method — "fmp_field" | "keyword" | "none" (caller may try Alpha Vantage)
+      headline_count, headlines
+
+    v3 stock_news usually has no sentiment field; we aggregate keyword scores from
+    title + text. If API adds scores later, _fmp_item_sentiment_raw uses them first.
     """
     api_key = get_api_key(config)
     if not api_key:
@@ -386,27 +420,77 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
         return None, err
     if not isinstance(data, list):
         return None, "Unexpected stock_news response"
-    headlines = []
-    for item in data[:limit]:
-        if not isinstance(item, dict):
-            continue
-        title = (item.get("title") or "")[:120]
-        headlines.append({"title": title, "score": None, "label": "Neutral"})
-    if not headlines:
+
+    raw_items = [x for x in data[:limit] if isinstance(x, dict)]
+    if not raw_items:
         return {
             "ticker": ticker,
-            "sentiment_score_avg": 0.0,
+            "sentiment_score_avg": None,
             "sentiment_label": "Neutral",
+            "sentiment_method": "none",
             "headline_count": 0,
             "headlines": [],
         }, None
-    # No sentiment from FMP; use neutral so layer score = 0.5
+
+    # Per-article API sentiment when present
+    fmp_scores: list[float] = []
+    for it in raw_items:
+        r = _fmp_item_sentiment_raw(it)
+        if r is not None:
+            fmp_scores.append(r)
+
+    if fmp_scores:
+        import numpy as _np
+
+        avg = float(_np.mean(_np.clip(_np.array(fmp_scores, dtype=float), -1.0, 1.0)))
+        label = "Bullish" if avg > 0.15 else "Bearish" if avg < -0.15 else "Neutral"
+        headlines = []
+        for item in raw_items[:5]:
+            title = (item.get("title") or "")[:120]
+            headlines.append(
+                {
+                    "title": title,
+                    "score": _fmp_item_sentiment_raw(item),
+                    "label": "Neutral",
+                }
+            )
+        return {
+            "ticker": ticker,
+            "sentiment_score_avg": round(avg, 4),
+            "sentiment_label": label,
+            "sentiment_method": "fmp_field",
+            "headline_count": len(raw_items),
+            "headlines": headlines,
+        }, None
+
+    # Keyword lexicon on title + text
+    from signals.news_keyword_sentiment import aggregate_keyword_sentiment
+
+    kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items)
+    headlines = []
+    for item in raw_items[:5]:
+        title = (item.get("title") or "")[:120]
+        headlines.append({"title": title, "score": None, "label": "Neutral"})
+
+    if kw_hit and kw_avg is not None:
+        label = "Bullish" if kw_avg > 0.15 else "Bearish" if kw_avg < -0.15 else "Neutral"
+        return {
+            "ticker": ticker,
+            "sentiment_score_avg": round(kw_avg, 4),
+            "sentiment_label": label,
+            "sentiment_method": "keyword",
+            "headline_count": n_h,
+            "headlines": headlines,
+        }, None
+
+    # Headlines only — no usable signal for this path; caller should try Alpha Vantage
     return {
         "ticker": ticker,
-        "sentiment_score_avg": 0.0,
+        "sentiment_score_avg": None,
         "sentiment_label": "Neutral",
-        "headline_count": len(headlines),
-        "headlines": headlines[:5],
+        "sentiment_method": "none",
+        "headline_count": len(raw_items),
+        "headlines": headlines,
     }, None
 
 

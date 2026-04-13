@@ -187,7 +187,7 @@ function ConfluenceCell({ signal: r }: { signal: Signal }) {
 const DEFAULT_HORIZONS = {
   short_term: "~1 mo",
   medium_term: "~3–6 mo",
-  long_term: "1–2 yr",
+  long_term: "~12–18 mo",
 };
 
 const POSITIONING_TOOLTIPS: Record<string, string> = {

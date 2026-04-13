@@ -58,6 +58,19 @@ export interface InvestorRoadmap {
   hold_thesis: string;
 }
 
+/** Compare headline model fair value to vendor analyst targets (Yahoo + FMP when available). */
+export interface FairValueVsExternal {
+  yahoo_12m_mean_usd?: number | null;
+  pct_model_vs_yahoo_mean?: number | null;
+  fmp_consensus_low_usd?: number | null;
+  fmp_consensus_high_usd?: number | null;
+  fmp_consensus_median_usd?: number | null;
+  /** True when median was inferred as (low+high)/2 — label as range midpoint, not analyst median. */
+  fmp_median_is_range_midpoint?: boolean | null;
+  pct_model_vs_fmp_median?: number | null;
+  note?: string | null;
+}
+
 export interface InvestorDecisionSummary {
   fair_value: number;
   overall_verdict: "WAIT" | "WATCH" | "BUY" | "STRONG BUY";
@@ -67,6 +80,8 @@ export interface InvestorDecisionSummary {
   forward_pe_used?: number;
   /** Bear case, method, and notes so users can interrogate FV vs lt_band. */
   fair_value_metadata?: FairValueMetadata | null;
+  /** Model FV vs Yahoo mean and FMP consensus (when API key present). */
+  fair_value_vs_external?: FairValueVsExternal | null;
   /** Short-term pattern score (0-100); when low, show signal-deterioration banner. */
   pattern_score?: number | null;
   /** One Answer + Trader / Investor roadmaps (retail design). */
@@ -255,7 +270,19 @@ export function InvestorDecisionSummarySection({
   ltEntryTiersOpen: boolean;
   onToggleLtTiers: () => void;
 }) {
-  const { fair_value, overall_verdict, horizons, ttm_pe_used, forward_pe_used, fair_value_metadata, pattern_score, one_answer, trader_roadmap, investor_roadmap } = summary;
+  const {
+    fair_value,
+    fair_value_vs_external: fve,
+    overall_verdict,
+    horizons,
+    ttm_pe_used,
+    forward_pe_used,
+    fair_value_metadata,
+    pattern_score,
+    one_answer,
+    trader_roadmap,
+    investor_roadmap,
+  } = summary;
   const assessmentPct = currentPrice > 0 ? ((fair_value - currentPrice) / currentPrice) * 100 : 0;
   const short = horizons.short;
   const medium = horizons.medium;
@@ -429,6 +456,71 @@ export function InvestorDecisionSummarySection({
           React.createElement("span", { className: "font-medium text-slate-200" }, overall_verdict)
         )
       ),
+      fve &&
+        (fve.yahoo_12m_mean_usd != null ||
+          fve.fmp_consensus_median_usd != null ||
+          fve.fmp_consensus_low_usd != null) &&
+        React.createElement(
+          "div",
+          {
+            className:
+              "mt-2 rounded-lg border border-slate-600/50 bg-slate-900/40 px-3 py-2 text-[11px] leading-relaxed text-slate-400 space-y-1",
+          },
+          React.createElement("p", { className: "text-slate-500 font-medium" }, "Check vs external targets"),
+          fve.yahoo_12m_mean_usd != null &&
+            React.createElement(
+              "p",
+              null,
+              "Yahoo Finance 12m mean: $",
+              fve.yahoo_12m_mean_usd.toFixed(2),
+              fve.pct_model_vs_yahoo_mean != null &&
+                React.createElement(
+                  "span",
+                  { className: "text-slate-500" },
+                  " · model vs mean ",
+                  React.createElement(
+                    "span",
+                    {
+                      className:
+                        fve.pct_model_vs_yahoo_mean >= 0 ? "text-emerald-400/90" : "text-amber-300/90",
+                    },
+                    (fve.pct_model_vs_yahoo_mean >= 0 ? "+" : "") + fve.pct_model_vs_yahoo_mean.toFixed(1) + "%"
+                  )
+                )
+            ),
+          (fve.fmp_consensus_median_usd != null || fve.fmp_consensus_low_usd != null) &&
+            React.createElement(
+              "p",
+              null,
+              "FMP analyst consensus: ",
+              fve.fmp_consensus_low_usd != null && fve.fmp_consensus_high_usd != null
+                ? `$${fve.fmp_consensus_low_usd.toFixed(2)}–$${fve.fmp_consensus_high_usd.toFixed(2)}`
+                : "—",
+              fve.fmp_consensus_median_usd != null &&
+                React.createElement(
+                  "span",
+                  null,
+                  fve.fmp_median_is_range_midpoint ? " · range midpoint $" : " · median $",
+                  fve.fmp_consensus_median_usd.toFixed(2)
+                ),
+              fve.pct_model_vs_fmp_median != null &&
+                React.createElement(
+                  "span",
+                  { className: "text-slate-500" },
+                  fve.fmp_median_is_range_midpoint ? " · model vs range midpoint " : " · model vs median ",
+                  React.createElement(
+                    "span",
+                    {
+                      className:
+                        fve.pct_model_vs_fmp_median >= 0 ? "text-emerald-400/90" : "text-amber-300/90",
+                    },
+                    (fve.pct_model_vs_fmp_median >= 0 ? "+" : "") + fve.pct_model_vs_fmp_median.toFixed(1) + "%"
+                  )
+                )
+            ),
+          fve.note &&
+            React.createElement("p", { className: "text-slate-600 pt-0.5" }, fve.note)
+        ),
       patternLow &&
         React.createElement(
           "div",

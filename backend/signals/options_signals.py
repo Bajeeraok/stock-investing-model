@@ -40,13 +40,13 @@ def fetch_options_signals(ticker: str) -> dict:
         options_label (human-readable), error (if any)
 
     Yahoo Finance restricts options data for some tickers/regions and returns
-    HTTP 401 Unauthorized.  We catch this cleanly and return a neutral 0.5
-    score so the ConfidenceEngine layer degrades gracefully instead of crashing.
+    HTTP 401 Unauthorized. We return error without options_score so ConfidenceEngine
+    omits the layer and redistributes weight (no fake neutral signal).
     """
     try:
         import yfinance as yf
     except ImportError:
-        return {"error": "yfinance not installed", "options_score": 0.5}
+        return {"error": "yfinance not installed", "options_label": "yfinance not installed"}
 
     # Suppress yfinance's internal HTTP-error log lines (401, 404, etc.)
     # They appear as ERROR lines in our server logs even when we handle them.
@@ -59,7 +59,10 @@ def fetch_options_signals(ticker: str) -> dict:
         t = yf.Ticker(ticker)
         expiries = t.options
         if not expiries:
-            return {"error": "no options data (ticker may not have listed options)", "options_score": 0.5, "options_label": "No options data (estimated)"}
+            return {
+                "error": "no options data (ticker may not have listed options)",
+                "options_label": "No options data",
+            }
 
         # Use nearest expiry for real-time signals
         chain = t.option_chain(expiries[0])
@@ -68,8 +71,11 @@ def fetch_options_signals(ticker: str) -> dict:
     except Exception as exc:
         err_str = str(exc)
         if "401" in err_str or "Unauthorized" in err_str:
-            return {"error": "options data unavailable (Yahoo Finance 401 — no subscription)", "options_score": 0.5, "options_label": "Options unavailable (estimated)"}
-        return {"error": err_str, "options_score": 0.5, "options_label": "Options data error (estimated)"}
+            return {
+                "error": "options data unavailable (Yahoo Finance 401 — no subscription)",
+                "options_label": "Options unavailable (401)",
+            }
+        return {"error": err_str, "options_label": "Options data error"}
     finally:
         _yf_logger.setLevel(_prev_level)
 

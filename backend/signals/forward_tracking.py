@@ -64,7 +64,7 @@ def _load_snapshot(eod_dir: Path, date_str: str) -> dict | None:
         return None
 
 
-def _signal_from_row(row: dict | None, buy_min: float = 70, sell_max: float = 30) -> str:
+def signal_bucket_from_row(row: dict | None, buy_min: float = 70, sell_max: float = 30) -> str:
     """
     Map composite_buy to signal bucket for accuracy stats.
     Not the same as run_signals' ML-aware `signal` (BUY/STRONG BUY/HOLD): this uses score thresholds only.
@@ -74,11 +74,20 @@ def _signal_from_row(row: dict | None, buy_min: float = 70, sell_max: float = 30
     score = row.get("composite_buy")
     if score is None:
         return "N/A"
+    try:
+        score = float(score)
+    except (TypeError, ValueError):
+        return "N/A"
     if score >= buy_min:
         return "HOLD/ADD"
     if score <= sell_max:
         return "CONSIDER TRIM"
     return "HOLD"
+
+
+def _signal_from_row(row: dict | None, buy_min: float = 70, sell_max: float = 30) -> str:
+    """Backward-compatible alias."""
+    return signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max)
 
 
 def get_forward_tracking(
@@ -167,12 +176,12 @@ def get_forward_tracking(
                 if prior <= 0:
                     continue
                 ret_pct = round(100 * (actual - prior) / prior, 2)
-                our_signal = _signal_from_row(row)
+                our_signal = signal_bucket_from_row(row)
 
                 records.append({
                     "as_of_date": as_of_date,
                     "next_date": next_date,
-                    "ticker": ticker,
+                    "ticker": tk,
                     "horizon_days": horizon,
                     "our_signal": our_signal,
                     "actual_return_pct": ret_pct,
@@ -206,3 +215,104 @@ def get_forward_tracking(
         "summary_by_signal": summary_by_signal,
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
+
+
+def collect_forward_records(
+    data_root: Path | None = None,
+    tickers: list[str] | None = None,
+    horizons: list[int] | None = None,
+    buy_min: float | None = None,
+    sell_max: float | None = None,
+    max_pairs_per_horizon: int = 2000,
+    eod_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """
+    All (as_of, ticker, horizon) forward return observations from EOD snapshots — for reports / monthly buckets.
+    Horizons are **EOD snapshot steps** (same semantics as get_forward_tracking).
+    """
+    if buy_min is None or sell_max is None:
+        try:
+            from config_loader import load_config
+
+            cfg = load_config()
+            sc = cfg.get("score", {}) or {}
+            if buy_min is None:
+                buy_min = float(sc.get("buy_min", 70))
+            if sell_max is None:
+                sell_max = float(sc.get("sell_max", 30))
+        except Exception:
+            if buy_min is None:
+                buy_min = 70.0
+            if sell_max is None:
+                sell_max = 30.0
+
+    if tickers is None:
+        try:
+            from config_loader import load_config
+
+            wl = load_config().get("watchlist") or []
+            tickers = [str(t).upper() for t in wl if t]
+        except Exception:
+            tickers = ["SPY", "QQQ"]
+
+    horizon_list = list(horizons or [5, 20])
+    if eod_dir is None and data_root is not None:
+        eod_dir = data_root / _EOD_DIR_NAME
+    if eod_dir is None:
+        eod_dir = Path(__file__).resolve().parent.parent / "data" / _EOD_DIR_NAME
+
+    dates = _list_eod_dates(eod_dir)
+    if len(dates) < 2:
+        return []
+
+    records: list[dict[str, Any]] = []
+    syms = [str(t).upper() for t in tickers]
+
+    for horizon in horizon_list:
+        if horizon >= len(dates):
+            continue
+        pairs = list(zip(dates[:-horizon], dates[horizon:]))[-max_pairs_per_horizon:]
+        for as_of_date, next_date in pairs:
+            snap = _load_snapshot(eod_dir, as_of_date)
+            snap_next = _load_snapshot(eod_dir, next_date)
+            if not snap or not snap_next:
+                continue
+            run_by_ticker = {
+                str(r["ticker"]).upper(): r
+                for r in snap.get("run_results", [])
+                if isinstance(r, dict) and r.get("ticker")
+            }
+            run_next_by_ticker = {
+                str(r["ticker"]).upper(): r
+                for r in snap_next.get("run_results", [])
+                if isinstance(r, dict) and r.get("ticker")
+            }
+
+            for tk in syms:
+                row = run_by_ticker.get(tk)
+                row_next = run_next_by_ticker.get(tk)
+                if not row or not row_next:
+                    continue
+                prior = row.get("close")
+                actual = row_next.get("close")
+                if prior is None or actual is None:
+                    continue
+                try:
+                    prior = float(prior)
+                    actual = float(actual)
+                except (TypeError, ValueError):
+                    continue
+                if prior <= 0:
+                    continue
+                ret_pct = round(100 * (actual - prior) / prior, 2)
+                our_signal = signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max)
+                records.append({
+                    "as_of_date": as_of_date,
+                    "next_date": next_date,
+                    "ticker": tk,
+                    "horizon_days": horizon,
+                    "our_signal": our_signal,
+                    "actual_return_pct": ret_pct,
+                })
+
+    return records
