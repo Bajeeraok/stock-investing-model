@@ -829,6 +829,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     risk          = tier1.high - stop_loss
     rr            = _r((fv - tier1.high) / risk, 2) if risk > 0 else 0.0
 
+    if inp.regime_bull_pct < 40 and target_pct > 12:
+        warnings.append(
+            "Bear/transition-heavy HMM: +{:.1f}% upside to fair value from Tier 1 is a recovery scenario if conditions normalize — "
+            "not a near-term base case while regime stays risk-off.".format(target_pct)
+        )
+
     # ── Verdict ──────────────────────────────────────────────────────────
     if assess_verdict == "BUY" and inp.ml_prob >= 40 and inp.regime_bull_pct >= 50:
         verdict, conviction = "BUY", "High"

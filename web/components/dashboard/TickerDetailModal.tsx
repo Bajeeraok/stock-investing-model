@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity, LayoutGrid, Target, Layers } from "lucide-react";
+import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity, LayoutGrid, Target, Layers, Zap } from "lucide-react";
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
@@ -168,6 +168,10 @@ export function TickerDetailModal({
 
   const periods = ["1m", "3m", "6m", "1y"];
 
+  const playbookStage3 =
+    confidence?.pre_flight?.playbook?.find((s) => s.condition_met && s.scenario_id === 3) ?? null;
+  const regimeShift = confidence?.pre_flight?.regime_transition ?? null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
       <div
@@ -286,6 +290,23 @@ export function TickerDetailModal({
                 )}
               </section>
 
+              {confidence && playbookStage3 && (
+                <button
+                  type="button"
+                  onClick={() => setModalTab("details")}
+                  className="w-full text-left rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors"
+                >
+                  <Zap className="h-5 w-5 text-amber-300 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-amber-100">Stage 3 playbook active</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Regime-shift setup is live in the conditional playbook — see Details for model confidence and full scenarios.
+                    </p>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-amber-400/80 shrink-0" aria-hidden />
+                </button>
+              )}
+
               {/* ── Investor Decision Summary (horizon entry + tiers) ───── */}
               {detail.investor_summary && (
                 <InvestorDecisionSummarySection
@@ -380,6 +401,47 @@ export function TickerDetailModal({
                         </p>
                       </div>
                     )}
+                  </div>
+                </section>
+              )}
+
+              {confidence && playbookStage3 && (
+                <section
+                  className="rounded-xl border border-amber-500/45 bg-gradient-to-br from-amber-500/12 to-slate-900/40 p-4 space-y-2"
+                  aria-label="Conditional playbook stage 3 active"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 rounded-lg bg-amber-500/20 p-1.5 border border-amber-500/35">
+                      <Zap className="h-4 w-4 text-amber-300 shrink-0" />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold text-amber-100">
+                        Conditional playbook: Stage 3 active
+                      </p>
+                      <p className="text-xs text-amber-200/90 leading-snug">
+                        <span className="font-medium text-amber-100">{playbookStage3.name}</span>
+                        {" — "}
+                        {playbookStage3.action}
+                      </p>
+                      {regimeShift && (
+                        <p className="text-[11px] text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
+                          Regime shift outlook:{" "}
+                          <span className="font-mono font-semibold text-amber-300/95">
+                            {regimeShift.shift_probability.toFixed(0)}%
+                          </span>{" "}
+                          probability of a shift within {regimeShift.days_estimate}
+                          {regimeShift.label === "WATCH_CLOSELY" && (
+                            <span className="text-amber-400/90"> · watch closely</span>
+                          )}
+                          . This is the key near-term setup — read model confidence below as supporting context, not the only headline.
+                        </p>
+                      )}
+                      {!regimeShift && (
+                        <p className="text-[11px] text-slate-500 pt-1">
+                          Full scenario list is in the confidence card below (Conditional Playbook).
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </section>
               )}
@@ -569,15 +631,18 @@ export function TickerDetailModal({
                   </h3>
                   {detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support) && (
                     <div className="space-y-2 text-sm border-b border-slate-700/50 pb-3 mb-3">
-                      <p className="text-xs text-slate-500 uppercase tracking-wide">Buy / sell / support labels</p>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Price levels (rule-based; not model confidence)</p>
+                      <p className="text-[11px] text-slate-500 leading-snug">
+                        Technical add/trim zones use momentum/MA rules. Use <span className="text-slate-400">Model confidence</span> in the breakdown above as the primary action gauge — it can disagree with these levels by design.
+                      </p>
                       {detail.price_reasoning.buy && (
                         <p className="text-slate-300">
-                          <span className="text-emerald-400 font-medium">Buy:</span> {detail.price_reasoning.buy}
+                          <span className="text-emerald-400 font-medium">Technical add level:</span> {detail.price_reasoning.buy}
                         </p>
                       )}
                       {detail.price_reasoning.sell && (
                         <p className="text-slate-300">
-                          <span className="text-red-400 font-medium">Sell:</span> {detail.price_reasoning.sell}
+                          <span className="text-red-400 font-medium">Technical trim level:</span> {detail.price_reasoning.sell}
                         </p>
                       )}
                       {detail.price_reasoning.support && (

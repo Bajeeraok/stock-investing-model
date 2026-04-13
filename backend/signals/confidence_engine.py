@@ -11,7 +11,7 @@ Seven signal layers (each 0-1, missing layers are skipped with weight renormaliz
   4. options_sentiment  — Put/call ratio, IV rank (**contrarian**: high P/C nudges score up as “fear”)
   5. insider_signal     — Net insider buying from SEC Form 4
   6. fundamental_score  — Valuation + quality (from existing FMP data)
-  7. nlp_sentiment      — FMP headlines + keyword lexicon, optional FMP per-article scores; else Alpha Vantage; else Yahoo Finance headlines + lexicon (no API key)
+  7. nlp_sentiment      — FMP headlines + keyword lexicon (with SEO/low-signal URL + title filters), optional FMP per-article scores; else Alpha Vantage (filtered); else Yahoo Finance headlines + lexicon (no API key). When HMM bear or bull ≥ confidence.extreme_regime_news.certainty_threshold, part of the news layer weight shifts to regime_hmm.
 
 Weights are now ASSET-TYPE-AWARE via the pre-flight classifier:
   - ETF_VOLATILITY (UVXY) → INCOMPATIBLE, returns early
@@ -61,6 +61,108 @@ _PF_TO_ENGINE: dict[str, str] = {
     "fundamentals": "fundamental_score",
     "news":         "nlp_sentiment",
 }
+
+
+def _apply_extreme_regime_news_shrink(
+    weights: dict[str, float],
+    hmm: dict[str, Any],
+    config: dict | None,
+) -> tuple[dict[str, float], dict[str, Any] | None]:
+    """
+    When HMM bear or bull probability is very high, reduce the NLP news layer's
+    share of the blend and add the freed mass to regime_hmm so keyword headlines
+    do not dominate an otherwise extreme regime read.
+
+    ``mode`` (from config): ``fraction`` — multiply news weight by
+    ``news_weight_fraction``; ``taper`` — linear taper toward ``news_weight_floor``
+    as certainty approaches 100%% (see ``news_weight_cap.compute_news_weight``).
+    """
+    w = dict(weights)
+    cfg = ((config or {}).get("confidence") or {}).get("extreme_regime_news") or {}
+    if not cfg.get("enabled", True):
+        return w, None
+
+    thresh = float(cfg.get("certainty_threshold", 0.90))
+    mode = str(cfg.get("mode", "fraction")).strip().lower()
+
+    bp_f: float | None
+    bup_f: float | None
+    try:
+        bp = hmm.get("bear_probability")
+        bp_f = float(bp) if bp is not None else None
+    except (TypeError, ValueError):
+        bp_f = None
+    try:
+        bup = hmm.get("bull_probability")
+        bup_f = float(bup) if bup is not None else None
+    except (TypeError, ValueError):
+        bup_f = None
+
+    extreme = (bp_f is not None and bp_f >= thresh) or (bup_f is not None and bup_f >= thresh)
+    if not extreme:
+        return w, None
+
+    nlp_key = "nlp_sentiment"
+    reg_key = "regime_hmm"
+    w_news = float(w.get(nlp_key) or 0.0)
+    w_reg = float(w.get(reg_key) or 0.0)
+    if w_news <= 0:
+        return w, None
+
+    if mode == "taper":
+        from signals.news_weight_cap import compute_news_weight
+
+        floor = float(cfg.get("news_weight_floor", 0.05))
+        w_nlp_new, w_reg_new, reason = compute_news_weight(
+            bup_f,
+            bp_f,
+            news_weight_standard=w_news,
+            regime_weight_standard=w_reg,
+            certainty_threshold=thresh,
+            news_weight_floor=floor,
+        )
+        if "not certain" in reason:
+            return w, None
+        if abs(w_nlp_new - w_news) < 1e-9 and abs(w_reg_new - w_reg) < 1e-9:
+            return w, None
+        w[nlp_key] = w_nlp_new
+        w[reg_key] = w_reg_new
+        audit: dict[str, Any] = {
+            "applied": True,
+            "mode": "taper",
+            "certainty_threshold": thresh,
+            "bear_probability": bp_f,
+            "bull_probability": bup_f,
+            "news_weight_before": round(w_news, 4),
+            "news_weight_after": round(w_nlp_new, 4),
+            "regime_weight_before": round(w_reg, 4),
+            "regime_weight_after": round(w_reg_new, 4),
+            "news_weight_floor": floor,
+            "reason": reason,
+        }
+        return w, audit
+
+    news_keep = float(cfg.get("news_weight_fraction", 0.35))
+    news_keep = float(np.clip(news_keep, 0.0, 1.0))
+
+    w_nlp_new = w_news * news_keep
+    delta = w_news - w_nlp_new
+    w[nlp_key] = w_nlp_new
+    w[reg_key] = w_reg + delta
+
+    audit_frac: dict[str, Any] = {
+        "applied": True,
+        "mode": "fraction",
+        "certainty_threshold": thresh,
+        "bear_probability": bp_f,
+        "bull_probability": bup_f,
+        "news_weight_before": round(w_news, 4),
+        "news_weight_after": round(w_nlp_new, 4),
+        "regime_weight_before": round(w_reg, 4),
+        "regime_weight_after": round(w[reg_key], 4),
+        "news_weight_fraction_kept": news_keep,
+    }
+    return w, audit_frac
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +526,14 @@ class ConfidenceEngine:
         except Exception:
             pass
 
+        effective_weights, extreme_regime_news_audit = _apply_extreme_regime_news_shrink(
+            effective_weights,
+            details.get("hmm") or {},
+            config,
+        )
+        if extreme_regime_news_audit:
+            details["extreme_regime_news_shrink"] = extreme_regime_news_audit
+
         # ── Weighted confidence (renormalize over available layers) ────────
         # Respect asset-type zero-weights (e.g. insider=0 for ETFs/ADRs)
         available = {
@@ -440,6 +550,7 @@ class ConfidenceEngine:
         # Structured audit: layer blend vs multiplicative gates (HMM bear, insider)
         penalty_audit: dict[str, Any] = {
             "confidence_blend_only": confidence_blend_only,
+            "extreme_regime_news_shrink": extreme_regime_news_audit,
             "hmm_bear_penalty": {
                 "triggered": False,
                 "bear_probability": None,
@@ -927,6 +1038,8 @@ def _nlp_pack_sentiment_summary(
     method_note = ""
     if method == "keyword":
         method_note = " · keyword lexicon"
+    elif method == "keyword_commodity":
+        method_note = " · commodity phrase lexicon"
     elif method == "fmp_field":
         method_note = " · FMP article scores"
     elif method == "yfinance":
@@ -974,23 +1087,25 @@ def _yfinance_news_summary(ticker: str) -> dict | None:
             if not title.strip():
                 continue
             summ = (n.get("summary") or n.get("description") or "")[:2000]
-            raw_items.append({"title": title, "text": summ})
+            link = (n.get("link") or n.get("url") or "") or ""
+            raw_items.append({"title": title, "text": summ, "url": link})
         if not raw_items:
             return None
         from signals.news_keyword_sentiment import aggregate_keyword_sentiment
 
-        kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items, ticker=sym)
+        kw_avg, n_h, kw_hit, _kw_method = aggregate_keyword_sentiment(raw_items, ticker=sym)
         headlines = [
             {"title": (it.get("title") or "")[:120], "score": None, "label": "Neutral"}
             for it in raw_items[:10]
         ]
         if kw_hit and kw_avg is not None:
             label = "Bullish" if kw_avg > 0.15 else "Bearish" if kw_avg < -0.15 else "Neutral"
+            _m = _kw_method if _kw_method == "keyword_commodity" else "keyword"
             return {
                 "ticker": sym,
                 "sentiment_score_avg": round(float(kw_avg), 4),
                 "sentiment_label": label,
-                "sentiment_method": "keyword",
+                "sentiment_method": _m,
                 "headline_count": n_h,
                 "headlines": headlines,
             }

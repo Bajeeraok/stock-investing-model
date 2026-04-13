@@ -445,7 +445,7 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
     # Keyword lexicon on title + text
     from signals.news_keyword_sentiment import aggregate_keyword_sentiment
 
-    kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items, ticker=ticker)
+    kw_avg, n_h, kw_hit, kw_method = aggregate_keyword_sentiment(raw_items, ticker=ticker)
     headlines = []
     for item in raw_items[:10]:
         title = (item.get("title") or item.get("headline") or "")[:120]
@@ -457,7 +457,7 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
             "ticker": ticker,
             "sentiment_score_avg": round(kw_avg, 4),
             "sentiment_label": label,
-            "sentiment_method": "keyword",
+            "sentiment_method": kw_method if kw_method == "keyword_commodity" else "keyword",
             "headline_count": n_h,
             "headlines": headlines,
         }

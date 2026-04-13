@@ -475,6 +475,14 @@ confidence:
     bear_penalty_mult: 0.46           # was 0.40 — slightly less harsh before ease
     bear_penalty_mult_above_ma200: 0.76  # was 0.72
     bear_penalty_ease_toward_one: 0.18   # pull multipliers toward 1.0 to limit stacked HMM leverage
+  # When HMM bear or bull ≥ threshold, reduce news layer weight and add the rest to regime_hmm
+  # mode: fraction — multiply news weight by news_weight_fraction | taper — linear taper to news_weight_floor
+  extreme_regime_news:
+    enabled: true
+    certainty_threshold: 0.90
+    mode: fraction
+    news_weight_fraction: 0.35      # used when mode=fraction
+    news_weight_floor: 0.05         # used when mode=taper (see signals/news_weight_cap.py)
   calibration:
     enabled: false                        # set true after running scripts/fit_probability_calibration.py
     path: data/calibration/ml_horizons.json  # relative to backend/

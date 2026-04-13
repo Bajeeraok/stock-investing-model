@@ -192,7 +192,7 @@ export interface ConfidenceData {
 
 const LAYER_META: Record<string, { name: string; icon: React.ElementType }> = {
   regime_hmm:        { name: "Regime (HMM)",      icon: Activity     },
-  pattern_technical: { name: "Pattern Score",     icon: TrendingUp   },
+  pattern_technical: { name: "Technical setup", icon: TrendingUp   },
   lgbm_probability:  { name: "ML Probability",    icon: Zap          },
   options_sentiment: { name: "Options Sentiment", icon: Shield       },
   insider_signal:    { name: "Insider Activity",  icon: Eye          },
@@ -436,7 +436,8 @@ function ConfidenceGauge({ value }: { value: number }) {
         <text x="50" y="49" textAnchor="middle" fontSize="17" fontWeight="800"
               fill={colour} dominantBaseline="auto">{pct}%</text>
       </svg>
-      <span className="text-[10px] text-slate-400 -mt-1">ML Confidence</span>
+      <span className="text-[10px] text-slate-400 -mt-1">Model confidence</span>
+      <span className="text-[9px] text-slate-500 -mt-0.5 max-w-[9rem] text-center leading-tight">7-layer fused (primary)</span>
     </div>
   );
 }
@@ -690,7 +691,7 @@ function FlipToBuy({ breakdown, action }: {
 
   const TARGETS: Record<string, { threshold: number; label: string }> = {
     lgbm_probability:  { threshold: 0.40, label: "ML Probability" },
-    pattern_technical: { threshold: 0.60, label: "Pattern Score" },
+    pattern_technical: { threshold: 0.60, label: "Technical setup" },
     options_sentiment: { threshold: 0.50, label: "Options Sentiment" },
     regime_hmm:        { threshold: 0.60, label: "Regime (HMM)" },
     fundamental_score: { threshold: 0.55, label: "Fundamentals" },
@@ -1079,6 +1080,14 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-bold text-white">{data.ticker}</span>
             <RegimePill regime={data.market_regime ?? "UNKNOWN"} />
+            {breakdown.regime_hmm?.label && (
+              <span
+                className="text-[10px] text-slate-400 max-w-[14rem] leading-snug"
+                title="Same HMM label as the Regime (HMM) layer below"
+              >
+                {breakdown.regime_hmm.label}
+              </span>
+            )}
             {pf?.asset_type && (
               <AssetTypeBadge assetType={pf.asset_type} weightLabel={pf.weight_label} />
             )}
@@ -1086,11 +1095,9 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           </div>
           <ActionBadge action={data.action ?? "WATCH"} confidence={confidence} />
           <p className="text-[11px] text-slate-500 leading-snug max-w-[68ch] border-l-2 border-slate-600/60 pl-2.5 py-1">
-            <span className="text-slate-400 font-medium">Confidence vs roadmap:</span> this score blends regime, pattern,
-            short-horizon ML, options, and fundamentals <span className="text-slate-400">now</span>. The buy/sell roadmap in
-            the detail view is a <span className="text-slate-400">conditional staged plan</span> (MA tiers, targets, scenario
-            zones). Low confidence does not invalidate a future add at a lower roadmap price — it means today’s fused
-            signals are cautious.
+            <span className="text-slate-400 font-medium">Model confidence vs roadmap:</span> the gauge is the 7-layer fused
+            score (regime, technical setup layer, short-horizon ML, options, fundamentals, etc.). It is not the same number
+            as the rule-based “technical composite” on the price card. The roadmap is a <span className="text-slate-400">conditional staged plan</span> (MA tiers, targets). Low model confidence means today’s fused read is cautious — not that a future add at a lower tier is impossible.
           </p>
           {actionSummary && (
             <p className="text-sm text-slate-300 leading-snug max-w-[64ch]">

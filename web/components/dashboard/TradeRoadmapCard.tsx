@@ -241,7 +241,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
             <p className="text-[11px] text-slate-500 mt-1.5 w-full">
               Score labels use mean-reversion bucket mapping (score.interpretation).
               {data.score_interpretation_meta?.reason === "force_mean_reverting" && (
-                <> Ticker is listed under <span className="text-slate-400">force_mean_reverting</span> in config.</>
+                <> The model uses conservative signal interpretation for this ticker (mean-reversion buckets).</>
               )}
             </p>
           )}

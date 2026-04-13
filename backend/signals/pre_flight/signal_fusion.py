@@ -553,6 +553,11 @@ def run_conditional_playbook(
     if classification.asset_type in (AssetType.ETF_COMMODITY, AssetType.ETF_VOLATILITY):
         scenarios = [sc for sc in scenarios if sc.name != "Earnings Catalyst"]
 
+    # Deep bear: surface bear / earnings-adjacent scenarios first (display order only)
+    if is_deep_bear:
+        _order = {1: 0, 5: 1, 2: 2, 3: 3, 4: 4}
+        scenarios = sorted(scenarios, key=lambda sc: _order.get(sc.scenario_id, 99))
+
     return mode, action, pos_size, scenarios
 
 

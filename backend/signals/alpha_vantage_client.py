@@ -11,6 +11,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from signals.news_keyword_sentiment import filter_articles_for_scoring
+
 logger = logging.getLogger("signals.alpha_vantage_client")
 
 AV_BASE = "https://www.alphavantage.co/query"

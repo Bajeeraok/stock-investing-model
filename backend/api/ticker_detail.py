@@ -211,6 +211,15 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     if drawdown_52w is not None and abs(drawdown_52w) > 80:
         sanity_errors.append("drawdown_extreme")
 
+    # Single fused confidence pass for this request (price_reasoning + investor_summary + news layer)
+    conf_snapshot_for_request: dict | None = None
+    try:
+        from signals.confidence_engine import run_confidence
+
+        conf_snapshot_for_request = run_confidence(ticker, config=config)
+    except Exception:
+        pass
+
     # Signal reasoning (HOLD/BUY/SELL with brief why)
     signal_data = {}
     price_reasoning: dict[str, str] = {}
@@ -227,6 +236,10 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
             score = sig.get("composite_buy")
             buy_conf = sig.get("buy_target_confidence_pct")
             sell_conf = sig.get("sell_target_confidence_pct")
+            model_confidence_pct = None
+            if conf_snapshot_for_request and conf_snapshot_for_request.get("confidence") is not None:
+                model_confidence_pct = int(round(float(conf_snapshot_for_request["confidence"]) * 100))
+
             signal_data = {
                 "score_interpretation_style": _sty,
                 "score_interpretation_meta": _meta,
@@ -242,6 +255,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 "rsi": sig.get("rsi"),
                 "buy_target_confidence_pct": buy_conf,
                 "sell_target_confidence_pct": sell_conf,
+                "model_confidence_pct": model_confidence_pct,
                 "ma20": sig.get("ma20"),
                 "ma50": sig.get("ma50"),
                 "ma200": sig.get("ma200"),
@@ -252,16 +266,33 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                     "composite": sig.get("composite_buy"),
                 },
             }
-            # Human-readable reasoning for modal (helps learn and understand)
+            # Human-readable reasoning — distinguish model (7-layer) vs technical composite (rule-based)
             if buy_p is not None:
-                conf_s = f" (confidence {int(buy_conf)}%)" if buy_conf is not None else ""
-                price_reasoning["buy"] = f"Buy: ${buy_p:.2f}{conf_s} – add on pullback to MA50/200"
+                tech_b = int(buy_conf) if buy_conf is not None else None
+                parts_buy: list[str] = [
+                    f"Technical entry level ~${buy_p:.2f} (MA50/200 support zone).",
+                ]
+                if model_confidence_pct is not None:
+                    parts_buy.append(
+                        f"Model confidence {model_confidence_pct}% (7-layer fused) — use this as the primary action gauge; "
+                        "wait for regime confirmation before sizing new adds mainly on this level."
+                    )
+                if tech_b is not None:
+                    parts_buy.append(
+                        f"Technical setup strength ~{tech_b}% (momentum/RSI/MACD composite only — not the same measure as model confidence)."
+                    )
+                price_reasoning["buy"] = " ".join(parts_buy)
             else:
                 price_reasoning["buy"] = "Buy: – (no add level; price below MA50 or insufficient data)"
 
             if sell_p is not None:
-                conf_s = f" (confidence {int(sell_conf)}%)" if sell_conf is not None else ""
-                price_reasoning["sell"] = f"Sell: ${sell_p:.2f}{conf_s} – consider trim/exit (overbought or weak)"
+                tech_s = int(sell_conf) if sell_conf is not None else None
+                parts_sell: list[str] = [f"Technical trim/exit zone ~${sell_p:.2f}."]
+                if model_confidence_pct is not None:
+                    parts_sell.append(f"Model confidence {model_confidence_pct}% reflects the full thesis, not this rule-based exit flag alone.")
+                if tech_s is not None:
+                    parts_sell.append(f"Technical exit signal strength ~{tech_s}% (rule-based).")
+                price_reasoning["sell"] = " ".join(parts_sell)
             else:
                 rsi_s = f"RSI {rsi:.0f}" if rsi is not None else "RSI n/a"
                 score_s = f"score {score:.0f}" if score is not None else "score n/a"
@@ -346,7 +377,12 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **fmp_data,
     }
     response["investor_summary"] = _build_investor_summary(
-        ticker, config, response, close_ticker=close_ticker, signal_data=signal_data
+        ticker,
+        config,
+        response,
+        close_ticker=close_ticker,
+        signal_data=signal_data,
+        conf_snapshot=conf_snapshot_for_request,
     )
     # Ensure 52w range is always 2 decimals (yfinance/merge can leave raw floats)
     if response.get("high_52w") is not None:
@@ -466,6 +502,7 @@ def _build_investor_summary(
     *,
     close_ticker=None,
     signal_data: dict | None = None,
+    conf_snapshot: dict | None = None,
 ) -> dict | None:
     """
     Build Investor Decision Summary (horizon entry tiers + verdicts) for the ticker detail modal.
@@ -476,7 +513,6 @@ def _build_investor_summary(
     """
     signal_data = signal_data or {}
     try:
-        from signals.confidence_engine import run_confidence
         from signals.horizon_entry_calculator import build_all_horizons_payload
         from signals.fair_value_estimator import (
             FairValueResult,
@@ -497,14 +533,21 @@ def _build_investor_summary(
         return None
 
     # ML probs and regime from confidence engine (full `conf` kept for roadmap news transparency)
-    conf_snapshot: dict | None = None
     st_ml_prob = mt_ml_prob = lt_ml_prob = 25.0
     regime_bull_pct = 50.0
     pattern_score = 50.0
+    regime_hmm_label: str | None = None
+    model_confidence_pct_summary: int | None = None
     if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
         pattern_score = float(response["score_breakdown"]["composite"])
+    if conf_snapshot is None:
+        try:
+            from signals.confidence_engine import run_confidence
+
+            conf_snapshot = run_confidence(ticker, config=config)
+        except Exception:
+            conf_snapshot = None
     try:
-        conf_snapshot = run_confidence(ticker, config=config)
         if conf_snapshot:
             mh = conf_snapshot.get("ml_horizons") or {}
             st_ml_prob = float(mh.get("short", {}).get("prob") or 0.25) * 100.0
@@ -512,11 +555,15 @@ def _build_investor_summary(
             lt_ml_prob = float(mh.get("long", {}).get("prob") or 0.25) * 100.0
             hmm = conf_snapshot.get("hmm") or {}
             regime_bull_pct = float(hmm.get("bull_probability") or 0.5) * 100.0
-            # Use 7-layer pattern_technical when available so horizon and confidence show same number
+            if conf_snapshot.get("confidence") is not None:
+                model_confidence_pct_summary = int(round(float(conf_snapshot["confidence"]) * 100))
             b = conf_snapshot.get("breakdown") or {}
             pl = b.get("pattern") or b.get("pattern_technical")
             if isinstance(pl, dict) and pl.get("score") is not None:
                 pattern_score = float(pl["score"]) * 100.0
+            rh = b.get("regime_hmm")
+            if isinstance(rh, dict) and rh.get("label"):
+                regime_hmm_label = str(rh["label"])
     except Exception:
         pass
 
@@ -768,6 +815,8 @@ def _build_investor_summary(
         "horizons": payload,
         "pattern_score": round(pattern_score, 1) if pattern_score is not None else None,
         "regime_bull_pct": round(regime_bull_pct, 1),
+        "regime_hmm_label": regime_hmm_label,
+        "model_confidence_pct": model_confidence_pct_summary,
     }
 
     def _fv_pct_vs_ref(model: float, ref: float | None) -> float | None:
@@ -1005,7 +1054,14 @@ def _build_trade_roadmap(
         t3_lo, t3_hi = _safe_float(tiers[2].get("low")), _safe_float(tiers[2].get("high"))
 
     stop_52w = round((low_52w or current_price * 0.8) * 0.97, 2)
-    regime_label = f"Bull {regime_bull_pct:.0f}%" if regime_bull_pct >= 50 else f"Bear {100 - regime_bull_pct:.0f}%"
+    regime_label = (
+        investor_out.get("regime_hmm_label")
+        or (
+            f"Bull {regime_bull_pct:.0f}%"
+            if regime_bull_pct >= 50
+            else f"Bear {100 - regime_bull_pct:.0f}%"
+        )
+    )
 
     # Core / MA200 tier (3–6m) — compute first so near-term rows can match the same entry ladder.
     c6_lo, c6_hi, c6_when, c6_cond = _roadmap_core_zone_3_to_6(
