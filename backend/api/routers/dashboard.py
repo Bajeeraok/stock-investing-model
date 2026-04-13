@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
 
 logger = logging.getLogger("api.dashboard")
 
@@ -1025,7 +1026,7 @@ async def get_dashboard(
     # Performance vs benchmark (portfolio vs SPY/QQQ over 1m, 3m, 6m, 1y)
     performance_vs_benchmark = {"periods": [], "as_of": None, "message": None}
     t0_perf = time.perf_counter()
-    if holdings and (portfolios or config.get("portfolio")):
+    if holdings and (portfolios_cfg or config.get("portfolio")):
         try:
             merged_prices = dict(prices_by_ticker) if prices_by_ticker else {}
             for r in results:
@@ -1410,13 +1411,18 @@ async def get_dashboard(
 @router.get("/dashboard/opportunities-bundle")
 async def get_dashboard_opportunities_bundle():
     """Lazy load: opportunity scan, best 2026 picks, Portfolio Doctor add-side (uses cached dashboard signals)."""
-    out = compute_opportunities_bundle()
+    try:
+        out = compute_opportunities_bundle()
+    except Exception as e:
+        logger.exception("opportunities-bundle compute failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
     if out is None:
         raise HTTPException(
             status_code=503,
             detail="Dashboard cache unavailable. Load the dashboard once or click Refresh, then try again.",
         )
-    return out
+    # numpy/pandas scalars from scanners → JSON-safe
+    return jsonable_encoder(out)
 
 
 @router.get("/dashboard/signals-panel")

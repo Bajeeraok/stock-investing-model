@@ -58,7 +58,14 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             logger.info("← %s %s %s", request.method, request.url.path, response.status_code)
             return response
         except Exception as e:
-            logger.exception("← %s %s ERROR: %s", request.method, request.url.path, e)
+            # logger.exception includes traceback; prefix with type for quick grep in Railway logs
+            logger.exception(
+                "← %s %s ERROR [%s]: %s",
+                request.method,
+                request.url.path,
+                type(e).__name__,
+                e,
+            )
             raise
 
 

@@ -107,7 +107,8 @@ function formatZone(lo: number | null, hi: number | null): string {
   return "—";
 }
 
-function convictionColor(c: string): string {
+/** Styling for horizon-role labels (Medium / High / Stress — scenario tone, not size rank). */
+function horizonRoleColor(c: string): string {
   if (!c || c === "None") return "text-slate-500";
   if (c.includes("Highest")) return "text-emerald-400";
   if (c.includes("High")) return "text-green-400";
@@ -116,8 +117,8 @@ function convictionColor(c: string): string {
   return "text-slate-300";
 }
 
-/** Hide meaningless "None" conviction in the table */
-function formatConvictionDisplay(c: string | undefined): string | null {
+/** Hide meaningless "None" horizon role in the table */
+function formatHorizonRoleDisplay(c: string | undefined): string | null {
   const s = (c || "").trim();
   if (!s || s.toLowerCase() === "none") return null;
   return s;
@@ -478,14 +479,24 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                         <th className="text-left py-2 pr-2">When to act</th>
                         <th className="text-left py-2 pr-2">Price zone</th>
                         <th className="text-left py-2 pr-2">Condition</th>
-                        <th className="text-left py-2 pr-2">Conviction</th>
-                        <th className="text-right py-2">Size</th>
+                        <th
+                          className="text-left py-2 pr-2 cursor-help underline decoration-slate-600 decoration-dotted underline-offset-2"
+                          title="Qualitative label for this horizon’s role (e.g. tactical add vs. core vs. stress). Not a ranking against the tranche % column."
+                        >
+                          Horizon role
+                        </th>
+                        <th
+                          className="text-right py-2 cursor-help underline decoration-slate-600 decoration-dotted underline-offset-2"
+                          title="Tranche % of planned position — staged deployment slice in the ladder. Not ordered by horizon role; tail rows can be larger when completing the plan."
+                        >
+                          Tranche %
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {buyRowsDisplay.map((row) => {
                         const cue = buyStageCue(row.when_to_act);
-                        const conv = formatConvictionDisplay(row.conviction);
+                        const conv = formatHorizonRoleDisplay(row.conviction);
                         const hl = buyRowTimelineHighlight(row, activeTimelineKey);
                         return (
                         <tr
@@ -518,7 +529,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                           <td className="py-2 pr-2 text-slate-400 max-w-[min(100vw,260px)] sm:max-w-[320px] text-[11px] leading-snug">
                             {row.condition}
                           </td>
-                          <td className={clsx("py-2 pr-2 align-top", conv ? convictionColor(row.conviction) : "")}>
+                          <td className={clsx("py-2 pr-2 align-top", conv ? horizonRoleColor(row.conviction) : "")}>
                             {conv ? conv : null}
                           </td>
                           <td className="py-2 text-right text-slate-300 align-top">{row.position_pct}%</td>
@@ -527,6 +538,11 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     </tbody>
                   </table>
                 </div>
+                <p className="text-[10px] text-slate-500 mt-2 leading-snug max-w-3xl">
+                  <strong className="text-slate-400">How to read this:</strong> Horizon role describes the scenario for that
+                  row (not “bigger % = higher conviction”). Tranche % is the slice of your planned position for that leg of
+                  the staged entry ladder—risk-budget style—not a sort order by the role labels.
+                </p>
               </div>
             )}
 
