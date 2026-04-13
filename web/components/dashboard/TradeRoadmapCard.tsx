@@ -48,6 +48,9 @@ export interface NewsSentimentLayerPayload {
   layer_weight?: number | null;
   layer_available?: boolean | null;
   message?: string | null;
+  /** Whether the running backend loaded FMP / AV keys (booleans only — no secrets) */
+  fmp_key_configured?: boolean;
+  alpha_vantage_key_configured?: boolean;
 }
 
 export interface TradeRoadmapData {
@@ -320,6 +323,14 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   <div className="px-3 pb-2.5 pt-0 border-t border-cyan-500/15">
                     {data.news_sentiment_layer.pipeline_note && (
                       <p className="text-[11px] text-slate-500 mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
+                    )}
+                    {(data.news_sentiment_layer.fmp_key_configured != null ||
+                      data.news_sentiment_layer.alpha_vantage_key_configured != null) && (
+                      <p className="text-[11px] text-slate-500 mb-2 font-mono">
+                        Keys loaded on server: FMP{" "}
+                        {data.news_sentiment_layer.fmp_key_configured ? "yes" : "no"} · Alpha Vantage{" "}
+                        {data.news_sentiment_layer.alpha_vantage_key_configured ? "yes" : "no"}
+                      </p>
                     )}
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mb-2 font-mono">
                       {data.news_sentiment_layer.score_0_1 != null && (

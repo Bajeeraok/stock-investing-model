@@ -43,7 +43,12 @@ from scripts.run_daily import (
     save_last_run,
 )
 from scripts.accuracy_price_targets import run_accuracy_and_save
-from signals.cross_asset import run_crypto_signals, run_cross_asset_daily, compute_cross_asset_guidelines
+from signals.cross_asset import (
+    run_crypto_signals,
+    run_cross_asset_daily,
+    compute_cross_asset_guidelines,
+    normalize_vix_close_price,
+)
 from signals.breadth_rs import get_market_regime, apply_rotation_step_down
 from signals.typical_move import typical_move_for_symbols
 from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_backtest
@@ -621,7 +626,7 @@ async def get_dashboard():
     vix_val = None
     for c in cross_asset or []:
         if isinstance(c, dict) and (c.get("label") == "VIX" or c.get("ticker") == "^VIX"):
-            vix_val = c.get("close")
+            vix_val = normalize_vix_close_price(c.get("close"))
             break
     if real_yield is not None and real_yield > 2.0:
         macro_regime = "Risk-Off"

@@ -11,7 +11,7 @@ Seven signal layers (each 0-1, missing layers are skipped with weight renormaliz
   4. options_sentiment  — Put/call ratio, IV rank (contrarian)
   5. insider_signal     — Net insider buying from SEC Form 4
   6. fundamental_score  — Valuation + quality (from existing FMP data)
-  7. nlp_sentiment      — FMP headlines + keyword lexicon, optional FMP per-article scores; else Alpha Vantage; else skipped
+  7. nlp_sentiment      — FMP headlines + keyword lexicon, optional FMP per-article scores; else Alpha Vantage; else Yahoo Finance headlines + lexicon (no API key)
 
 Weights are now ASSET-TYPE-AWARE via the pre-flight classifier:
   - ETF_VOLATILITY (UVXY) → INCOMPATIBLE, returns early
@@ -377,8 +377,8 @@ class ConfidenceEngine:
             details["nlp"] = nlp_result
         else:
             labels["nlp_sentiment"] = (
-                "News sentiment N/A (FMP or Alpha Vantage key not configured or rate limited). "
-                "10% weight redistributed to other layers."
+                "News sentiment N/A (no usable headlines from FMP, Alpha Vantage, or Yahoo Finance for this symbol). "
+                "Layer weight redistributed to other layers."
             )
 
         # Structured logging: positive-weight layers with no score (weight redistributed)
@@ -838,6 +838,8 @@ def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> d
         method_note = " · keyword lexicon"
     elif method == "fmp_field":
         method_note = " · FMP article scores"
+    elif method == "yfinance":
+        method_note = " · Yahoo Finance headlines"
     label = f"News {sentiment_label} ({headline_count} headlines · {source}{method_note}{note})"
     return {
         "score": score,
@@ -851,15 +853,76 @@ def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> d
     }
 
 
+def _yfinance_news_summary(ticker: str) -> dict | None:
+    """
+    Free path: Yahoo Finance ticker.news (no API key). Same keyword lexicon as FMP when scores missing.
+    Returns a summary dict compatible with _nlp_pack_sentiment_summary, or None.
+    """
+    if not ticker:
+        return None
+    try:
+        import yfinance as yf
+    except ImportError:
+        return None
+    try:
+        sym = (ticker or "").upper().split("-")[0].strip()
+        if not sym:
+            return None
+        t = yf.Ticker(sym)
+        news = getattr(t, "news", None) or []
+        if not isinstance(news, list) or not news:
+            return None
+        raw_items: list[dict] = []
+        for n in news[:15]:
+            if not isinstance(n, dict):
+                continue
+            title = (n.get("title") or "")[:500]
+            if not title.strip():
+                continue
+            summ = (n.get("summary") or n.get("description") or "")[:2000]
+            raw_items.append({"title": title, "text": summ})
+        if not raw_items:
+            return None
+        from signals.news_keyword_sentiment import aggregate_keyword_sentiment
+
+        kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items)
+        headlines = [
+            {"title": (it.get("title") or "")[:120], "score": None, "label": "Neutral"}
+            for it in raw_items[:10]
+        ]
+        if kw_hit and kw_avg is not None:
+            label = "Bullish" if kw_avg > 0.15 else "Bearish" if kw_avg < -0.15 else "Neutral"
+            return {
+                "ticker": sym,
+                "sentiment_score_avg": round(float(kw_avg), 4),
+                "sentiment_label": label,
+                "sentiment_method": "keyword",
+                "headline_count": n_h,
+                "headlines": headlines,
+            }
+        # Headlines present but no lexicon hit — neutral 0.0 so layer still shows copy + headlines
+        return {
+            "ticker": sym,
+            "sentiment_score_avg": 0.0,
+            "sentiment_label": "Neutral",
+            "sentiment_method": "yfinance",
+            "headline_count": len(raw_items),
+            "headlines": headlines,
+        }
+    except Exception as exc:
+        logger.debug("yfinance news NLP for %s: %s", ticker, exc)
+        return None
+
+
 def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
     """
-    News sentiment: FMP (headlines + optional API fields + keyword lexicon), then Alpha Vantage.
-    Alpha Vantage runs when FMP returns no score (method \"none\") or FMP request fails.
+    News sentiment: FMP (headlines + optional API fields + keyword lexicon), then Alpha Vantage,
+    then Yahoo Finance headlines + lexicon (no API key).
     Raw scores are -1..+1 from vendors/lexicon; mapped to 0..1 for the layer.
-    Returns None if no keys, both paths fail, or rate limits — weight redistributes.
     """
     if not config:
         return None
+    use_yf = (config.get("data") or {}).get("use_yfinance_news_fallback", True)
     try:
         from signals.alpha_vantage_client import fetch_news_sentiment, get_api_key as get_av_key
         from signals.fmp_client import fetch_stock_news, get_api_key as get_fmp_key
@@ -879,19 +942,33 @@ def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
                     p2 = _nlp_pack_sentiment_summary(s2, "Alpha Vantage", note=fmp_note)
                     if p2 is not None:
                         return p2
-            logger.debug("News sentiment N/A for %s after FMP (+ optional AV)", ticker)
+            if use_yf:
+                yf_sum = _yfinance_news_summary(ticker)
+                if yf_sum is not None:
+                    p3 = _nlp_pack_sentiment_summary(yf_sum, "Yahoo Finance", note=fmp_note)
+                    if p3 is not None:
+                        return p3
+            logger.debug("News sentiment N/A for %s after FMP (+ optional AV + yfinance)", ticker)
             return None
 
         # 2) Alpha Vantage only (no FMP key)
         if get_av_key(config):
             summary, err = fetch_news_sentiment(config, ticker, limit=10)
-            if err or summary is None:
-                logger.debug("News sentiment skipped for %s: %s", ticker, err)
-                return None
-            if summary.get("sentiment_score_avg") is None:
-                return None
-            return _nlp_pack_sentiment_summary(summary, "Alpha Vantage")
+            if not err and summary is not None and summary.get("sentiment_score_avg") is not None:
+                return _nlp_pack_sentiment_summary(summary, "Alpha Vantage")
+            if use_yf:
+                yf_sum = _yfinance_news_summary(ticker)
+                if yf_sum is not None:
+                    p3 = _nlp_pack_sentiment_summary(yf_sum, "Yahoo Finance", note=" (Alpha Vantage unavailable)")
+                    if p3 is not None:
+                        return p3
+            return None
 
+        # 3) No paid keys — Yahoo Finance only
+        if use_yf:
+            yf_sum = _yfinance_news_summary(ticker)
+            if yf_sum is not None:
+                return _nlp_pack_sentiment_summary(yf_sum, "Yahoo Finance")
         return None
     except Exception as exc:
         logger.debug("NLP sentiment failed for %s: %s", ticker, exc)

@@ -89,6 +89,8 @@ def build_market_forecast_brief(
     """
     Returns a small structured brief for UI, or None if nothing to say.
     """
+    from signals.cross_asset import normalize_vix_close_price
+
     config = config or {}
     bx = _by_label(cross_asset)
     dxy = bx.get("DXY") or bx.get("DX-Y.NYB")
@@ -143,11 +145,16 @@ def build_market_forecast_brief(
             f"Dollar (DXY) {dxy_pct:+.1f}% — strong dollar can pressure commodities and EM-heavy names."
         )
 
-    if vix is not None:
-        if vix > 22:
-            bullets.append(f"VIX ~{vix:.0f}: fear elevated — favor smaller size and wider stops until compression.")
-        elif vix < 14:
-            bullets.append(f"VIX ~{vix:.0f}: complacency risk — shocks can reprice quickly; do not narrow bands blindly.")
+    vix_n = normalize_vix_close_price(vix)
+    if vix_n is not None:
+        if vix_n > 22:
+            bullets.append(
+                f"VIX ~{vix_n:.2f}: fear elevated — favor smaller size and wider stops until compression."
+            )
+        elif vix_n < 14:
+            bullets.append(
+                f"VIX ~{vix_n:.2f}: complacency risk — shocks can reprice quickly; do not narrow bands blindly."
+            )
 
     ev_lines = _upcoming_macro_events(economic_calendar, days=14, max_items=4)
     if ev_lines:
@@ -166,11 +173,11 @@ def build_market_forecast_brief(
         score += 1
     if real_yield is not None and real_yield > 2.0:
         score -= 1
-    if vix is not None and vix > 20:
+    if vix_n is not None and vix_n > 20:
         score -= 1
     if oil_pct is not None and oil_pct >= 1.5:
         score -= 1
-    if (gld or {}).get("pct_change") is not None and (gld or {}).get("pct_change", 0) < -0.5 and vix and vix > 18:
+    if (gld or {}).get("pct_change") is not None and (gld or {}).get("pct_change", 0) < -0.5 and vix_n and vix_n > 18:
         score -= 1
     if score <= -2:
         bias = "cautious"

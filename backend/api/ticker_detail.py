@@ -356,12 +356,36 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     return response
 
 
-def _build_news_sentiment_layer_for_ui(conf: dict | None) -> dict | None:
+def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = None) -> dict | None:
     """
     Sanitized news/NLP payload for the roadmap UI — same run_confidence() pass as ML/HMM/pattern inputs.
+    Includes booleans fmp_key_configured / alpha_vantage_key_configured (no secrets) for deploy debugging.
     """
+    cfg = config or {}
+    try:
+        from signals.fmp_client import get_api_key as _fmp_key
+        from signals.alpha_vantage_client import get_api_key as _av_key
+
+        fmp_key_configured = bool(_fmp_key(cfg))
+        alpha_vantage_key_configured = bool(_av_key(cfg))
+    except Exception:
+        fmp_key_configured = False
+        alpha_vantage_key_configured = False
+
     if not conf:
-        return None
+        return {
+            "pipeline_note": (
+                "Headlines feed the news sentiment layer in the same confidence run as ML/HMM/pattern. "
+                "Confidence response was empty — cannot show NLP details."
+            ),
+            "fmp_key_configured": fmp_key_configured,
+            "alpha_vantage_key_configured": alpha_vantage_key_configured,
+            "message": (
+                "Confidence engine did not return a payload for this ticker (check backend logs). "
+                "Keys only matter once the engine runs: set FMP_API_KEY / ALPHA_VANTAGE_API_KEY on the host or "
+                "data.fmp_api_key / data.alpha_vantage_api_key in config."
+            ),
+        }
     nlp = conf.get("nlp")
     bd = conf.get("breakdown") or {}
     news_b = bd.get("nlp_sentiment") if isinstance(bd.get("nlp_sentiment"), dict) else {}
@@ -386,11 +410,40 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None) -> dict | None:
                 headlines_out.append({"title": h[:220], "score": None, "label": None})
 
     has_score = isinstance(nlp, dict) and nlp.get("score") is not None
+
+    if has_score:
+        msg = None
+    elif available is False and (weight == 0 or weight is None):
+        msg = (
+            "News layer weight is 0 for this asset class (e.g. some ETFs) — not a missing API key. "
+            "Other layers drive the roadmap."
+        )
+    elif not fmp_key_configured and not alpha_vantage_key_configured:
+        msg = (
+            "No FMP or Alpha Vantage API key is loaded in this process. "
+            "Set environment variables FMP_API_KEY and/or ALPHA_VANTAGE_API_KEY on Railway (or fill "
+            "data.fmp_api_key / data.alpha_vantage_api_key in config). "
+            "Subscription alone does not inject keys — they must be configured where the API runs."
+        )
+    elif fmp_key_configured and not isinstance(nlp, dict):
+        msg = (
+            "FMP key is configured, but NLP did not attach headline data this run — often rate limit, "
+            "transient FMP error, or Yahoo Finance fallback in use. Check server logs for "
+            "'News sentiment' / 'fetch_stock_news'."
+        )
+    else:
+        msg = (
+            "No scored news sentiment this run (empty headlines, rate limit, or lexicon miss). "
+            "Other layers still drive the roadmap; weights may be redistributed."
+        )
+
     return {
         "pipeline_note": (
             "Headlines feed the news sentiment layer in the same confidence run that supplies "
             "ML horizons, HMM regime, and pattern scores for this roadmap — not a separate price engine."
         ),
+        "fmp_key_configured": fmp_key_configured,
+        "alpha_vantage_key_configured": alpha_vantage_key_configured,
         "score_0_1": nlp.get("score") if isinstance(nlp, dict) else None,
         "raw_score_neg1_to_1": nlp.get("raw_score") if isinstance(nlp, dict) else None,
         "summary_label": (nlp.get("label") if isinstance(nlp, dict) else None) or label_bd,
@@ -401,14 +454,7 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None) -> dict | None:
         "headlines": headlines_out,
         "layer_weight": weight,
         "layer_available": available,
-        "message": (
-            None
-            if has_score
-            else (
-                "No scored news sentiment this run (missing API data, rate limit, or news layer disabled "
-                "for this asset type). Other layers still drive the roadmap; weights may be redistributed."
-            )
-        ),
+        "message": msg,
     }
 
 
@@ -804,7 +850,7 @@ def _build_investor_summary(
         roadmap_cfg=roadmap_cfg,
         regime_signal_precedence_note=regime_signal_note,
     )
-    news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot)
+    news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config)
     if news_layer and isinstance(out.get("trade_roadmap"), dict):
         out["trade_roadmap"] = {**out["trade_roadmap"], "news_sentiment_layer": news_layer}
     out["scenario_target"] = (out.get("trade_roadmap") or {}).get("scenario_target")

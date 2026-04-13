@@ -16,6 +16,23 @@ from signals.regime import get_regime, get_signal
 from signals.score_interpretation import effective_buy_min
 
 
+def normalize_vix_close_price(close: float | None) -> float | None:
+    """
+    VIX index is almost always ~8–90. Some feeds occasionally return hundredfold values
+    (e.g. 2181 instead of 21.81). Normalize for display and regime logic.
+    """
+    if close is None:
+        return None
+    try:
+        x = float(close)
+    except (TypeError, ValueError):
+        return None
+    # Hundredfold bug (e.g. 2181); real VIX prints are almost always < 120.
+    if x > 200:
+        x = x / 100.0
+    return x
+
+
 def run_crypto_signals(tickers: list[str], config: dict) -> list[dict]:
     """Run signals for crypto tickers (BTC-USD, ETH-USD). Same logic as equities."""
     period = config.get("data", {}).get("period", "2y") or "2y"
@@ -153,12 +170,12 @@ def compute_cross_asset_guidelines(
 
     # VIX spike + GLD down = risk-off
     if vix and gld:
-        vix_val = vix.get("close")
+        vix_val = normalize_vix_close_price(vix.get("close"))
         gld_pct = gld.get("pct_change")
         if vix_val is not None and gld_pct is not None and gld_pct < -0.5:
             if vix_val > 20:
                 guidelines.append({
-                    "text": f"Risk-off: VIX elevated ({vix_val:.0f}) + metals down – reduce size, tighten stops",
+                    "text": f"Risk-off: VIX elevated ({vix_val:.2f}) + metals down – reduce size, tighten stops",
                     "type": "risk",
                 })
 
