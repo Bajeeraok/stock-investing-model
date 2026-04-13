@@ -50,23 +50,31 @@ export default function Home() {
 
   const lastFetchRef = useRef<number>(0);
 
-  const refresh = useCallback(async (isAutoRetry = false) => {
+  const refresh = useCallback(async (isAutoRetry = false, forceRefresh = false) => {
     const now = Date.now();
-    // Per-call debounce (same as before)
-    if (now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
+    // Per-call debounce (same as before); manual force refresh bypasses debounce + min interval
+    if (!forceRefresh && now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
     lastFetchRef.current = now;
 
     // Single-flight: don't start another fetch while one is in progress (avoids Strict Mode double-mount)
     if (dashboardFetchInProgress) return;
     // Min interval between fetches after we've started one (avoids loop; uses module-level so it survives remount)
-    if (lastDashboardFetchStart !== 0 && now - lastDashboardFetchStart < DASHBOARD_MIN_INTERVAL_MS) return;
+    if (
+      !forceRefresh &&
+      lastDashboardFetchStart !== 0 &&
+      now - lastDashboardFetchStart < DASHBOARD_MIN_INTERVAL_MS
+    ) {
+      return;
+    }
 
     dashboardFetchInProgress = true;
     lastDashboardFetchStart = now;
     setLoading(true);
     if (!isAutoRetry) setError(null);
     try {
-      const res = await fetch(API_BASE ? `${API_BASE}/api/dashboard` : "/api/dashboard");
+      const base = API_BASE ? `${API_BASE}/api/dashboard` : "/api/dashboard";
+      const url = forceRefresh ? `${base}${base.includes("?") ? "&" : "?"}refresh=true` : base;
+      const res = await fetch(url);
       if (!res.ok) {
         let errMsg = res.status === 503
           ? "Service temporarily unavailable (503)"
@@ -194,7 +202,14 @@ export default function Home() {
 
   return data ? (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-pulse text-slate-500">Loading…</div></div>}>
-      <Dashboard data={data} onRefresh={refresh} loading={loading} lastRefreshedAt={lastRefreshedAt} />
+      <Dashboard
+        data={data}
+        onRefresh={(force?: boolean) => {
+          void refresh(false, !!force);
+        }}
+        loading={loading}
+        lastRefreshedAt={lastRefreshedAt}
+      />
     </Suspense>
   ) : null;
 }
@@ -336,6 +351,14 @@ export interface MarketReversalOverlay {
 
 export interface DashboardData {
   signals: Signal[];
+  /** Lite rows for Overview chart when full `signals` is deferred (smaller first payload). */
+  signal_scores?: Array<
+    Pick<Signal, "ticker" | "composite_buy" | "regime"> & { error?: string }
+  >;
+  /** When true, full per-ticker rows load via GET /api/dashboard/signals-panel (Redis). */
+  signals_deferred?: boolean;
+  /** When true, opportunities + best 2026 + doctor adds load via GET /api/dashboard/opportunities-bundle. */
+  opportunities_deferred?: boolean;
   /** Top-level watchlist from API (config.watchlist). */
   watchlist?: string[];
   crypto?: CryptoSignal[];

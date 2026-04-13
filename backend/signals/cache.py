@@ -2,7 +2,8 @@
 Redis cache layer for non–signal-critical data.
 
 Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
-  - dashboard: full dashboard JSON (3 min) – avoids re-run on retry/refresh
+  - dashboard: full dashboard JSON – TTL via DASHBOARD_CACHE_TTL_SECONDS (default 600s / 10 min);
+    avoids re-run on retry/refresh; warm scripts can pre-populate
   - backtest, next_day_backtest (24h)
   - economic_calendar (6h)
   - price_target, price_target_consensus (6h)
@@ -11,6 +12,11 @@ Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
   - target_bands (4–24h, move-dependent) – prior ST/MT/LT for optional trailing re-anchor
   - ticker_detail (5 min), edgar_insider_flow (12h)
   - thrive_phase2 (15 min) – GET /api/thrive-phase2
+
+Recommended TTL bands (override per env where noted):
+  - Short (2–15 min): dashboard bundle, ticker_detail, thrive_phase2 – intraday-ish freshness
+  - Medium (6h): economic calendar, price targets – daily decision support
+  - Long (12–24h): fundamentals aggregates, insider batch, long_horizon_risk, backtest – slow-moving
 
 Not cached (by design): live price, MAs, RSI, MACD, cross-asset (signal-critical).
 """
@@ -34,7 +40,19 @@ TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
-TTL_DASHBOARD = 3 * 60  # 3 min – full dashboard JSON (avoids re-running on retry/refresh)
+
+
+def _dashboard_ttl_seconds() -> int:
+    """Full dashboard JSON in Redis; default 10 min. Env DASHBOARD_CACHE_TTL_SECONDS (60–3600)."""
+    raw = (os.environ.get("DASHBOARD_CACHE_TTL_SECONDS") or "").strip()
+    if raw:
+        try:
+            return max(60, min(3600, int(raw)))
+        except ValueError:
+            pass
+    return 10 * 60  # 10 min – balances intraday freshness vs API load
+
+
 TTL_THRIVE_PHASE2 = 15 * 60  # 15 min – intraday + FMP + composite gate (UI-friendly)
 
 
@@ -385,7 +403,7 @@ def cached_edgar_insider_flow(tickers: list[str], fetch_fn):
 
 
 def get_cached_dashboard() -> dict | None:
-    """Return cached full dashboard payload if present and Redis available. TTL 3 min."""
+    """Return cached full dashboard payload if present and Redis available (TTL DASHBOARD_CACHE_TTL_SECONDS)."""
     key = cache_key("dashboard", "default")
     hit = get_cached(key)
     if hit is not None and isinstance(hit, dict) and hit.get("config") is not None:
@@ -394,9 +412,9 @@ def get_cached_dashboard() -> dict | None:
 
 
 def set_cached_dashboard(payload: dict) -> bool:
-    """Store full dashboard payload in Redis. TTL 3 min."""
+    """Store full dashboard payload in Redis. TTL from _dashboard_ttl_seconds()."""
     key = cache_key("dashboard", "default")
-    return set_cached(key, payload, TTL_DASHBOARD)
+    return set_cached(key, payload, _dashboard_ttl_seconds())
 
 
 # ─── EOD snapshots (persistent; no TTL) ─────────────────────────────────────

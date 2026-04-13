@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import sys
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -84,6 +86,22 @@ app.include_router(scanner.router, prefix="/api", tags=["scanner"])
 app.include_router(signal_diagnostics.router, prefix="/api", tags=["signal-diagnostics"])
 
 
+def _warm_dashboard_background():
+    """Optional: after delay, GET WARM_DASHBOARD_URL to populate Redis (same as cron warm script)."""
+    delay_s = float((os.getenv("WARM_DASHBOARD_DELAY_SECONDS") or "8").strip() or "8")
+    url = (os.getenv("WARM_DASHBOARD_URL") or "").strip()
+    if not url:
+        return
+    time.sleep(max(1.0, delay_s))
+    try:
+        import requests
+
+        r = requests.get(url, timeout=900)
+        logger.info("Warm dashboard: %s → HTTP %s", url[:80], r.status_code)
+    except Exception as e:
+        logger.warning("Warm dashboard failed (%s): %s", url[:80], e)
+
+
 @app.on_event("startup")
 def startup():
     logger.info("FastAPI server startup complete. Listening for requests on /api/*")
@@ -91,6 +109,9 @@ def startup():
         scanner.startup_scanner()
     except Exception as e:
         logger.warning("Scanner startup failed: %s", e)
+    if (os.getenv("WARM_DASHBOARD_ON_STARTUP") or "").strip().lower() in ("1", "true", "yes", "on"):
+        t = threading.Thread(target=_warm_dashboard_background, name="warm-dashboard", daemon=True)
+        t.start()
 
 
 @app.on_event("shutdown")

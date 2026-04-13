@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Calendar, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
-import type { DashboardData } from "@/app/page";
+import type {
+  DashboardData,
+  Signal,
+  Opportunity,
+  Best2026Pick,
+  PortfolioDoctorRecommendation,
+} from "@/app/page";
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
 import { clsx } from "clsx";
 import {
@@ -81,9 +87,12 @@ function formatRefreshAgo(date: Date | null): string {
   return `${h}h ago`;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
 interface Props {
   data: DashboardData;
-  onRefresh: () => void;
+  /** Pass `true` to bypass Redis-backed cache read on the server (full recompute). */
+  onRefresh: (forceRefresh?: boolean) => void | Promise<void>;
   loading: boolean;
   lastRefreshedAt?: Date | null;
 }
@@ -113,7 +122,17 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   );
   const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
-  const [activeTab, setActiveTabState] = useState<TabId>("signals");
+  const [activeTab, setActiveTabState] = useState<TabId>("overview");
+  const [lazySignals, setLazySignals] = useState<Signal[] | null>(null);
+  const [signalsFetchErr, setSignalsFetchErr] = useState<string | null>(null);
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [oppBundle, setOppBundle] = useState<{
+    opportunities: Opportunity[];
+    best_2026: Best2026Pick[];
+    portfolio_doctor_recommendations: Record<string, PortfolioDoctorRecommendation>;
+  } | null>(null);
+  const [oppLoading, setOppLoading] = useState(false);
+  const [oppFetchErr, setOppFetchErr] = useState<string | null>(null);
 
   const setActiveTab = useCallback((id: TabId) => {
     setActiveTabState(id);
@@ -131,7 +150,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("thrive-tab") : null;
-    const tab = (saved && isValidTab(saved)) ? saved : "signals";
+    const tab = (saved && isValidTab(saved)) ? saved : "overview";
     setActiveTabState(tab);
     // Clear tab from URL on load if present (e.g. shared link with ?tab=)
     if (typeof window !== "undefined" && window.location.search) {
@@ -146,10 +165,121 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
   const handleTabChange = setActiveTab;
 
+  useEffect(() => {
+    setLazySignals(null);
+    setSignalsFetchErr(null);
+    setOppBundle(null);
+    setOppFetchErr(null);
+  }, [data.as_of_date, data.signals_deferred, data.opportunities_deferred]);
+
+  useEffect(() => {
+    if (!data.signals_deferred) return;
+    if (activeTab !== "signals") return;
+    if (lazySignals !== null) return;
+    let cancelled = false;
+    setSignalsLoading(true);
+    setSignalsFetchErr(null);
+    const url = API_BASE ? `${API_BASE}/api/dashboard/signals-panel` : "/api/dashboard/signals-panel";
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 503
+              ? "Signals cache unavailable — click Refresh on the dashboard, then open Signals again."
+              : `HTTP ${r.status}`
+          );
+        }
+        return r.json();
+      })
+      .then((j) => {
+        if (!cancelled && Array.isArray(j.signals)) setLazySignals(j.signals);
+      })
+      .catch((e) => {
+        if (!cancelled) setSignalsFetchErr(e instanceof Error ? e.message : "Failed to load signals");
+      })
+      .finally(() => {
+        if (!cancelled) setSignalsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data.signals_deferred, data.as_of_date, activeTab, lazySignals]);
+
+  useEffect(() => {
+    if (data.opportunities_deferred !== true) return;
+    if (oppBundle !== null) return;
+    if (activeTab !== "opportunities" && activeTab !== "portfolio") return;
+    let cancelled = false;
+    setOppLoading(true);
+    setOppFetchErr(null);
+    const url = API_BASE ? `${API_BASE}/api/dashboard/opportunities-bundle` : "/api/dashboard/opportunities-bundle";
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 503
+              ? "Opportunities bundle unavailable — load the dashboard or click Refresh, then open Opportunities or Portfolio."
+              : `HTTP ${r.status}`
+          );
+        }
+        return r.json();
+      })
+      .then((j) => {
+        if (cancelled || !j || typeof j !== "object") return;
+        setOppBundle({
+          opportunities: Array.isArray(j.opportunities) ? j.opportunities : [],
+          best_2026: Array.isArray(j.best_2026) ? j.best_2026 : [],
+          portfolio_doctor_recommendations:
+            j.portfolio_doctor_recommendations && typeof j.portfolio_doctor_recommendations === "object"
+              ? j.portfolio_doctor_recommendations
+              : {},
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) setOppFetchErr(e instanceof Error ? e.message : "Failed to load opportunities");
+      })
+      .finally(() => {
+        if (!cancelled) setOppLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
+
+  const effectiveSignals = useMemo(() => {
+    if (!data.signals_deferred) return data.signals ?? [];
+    return lazySignals ?? [];
+  }, [data.signals_deferred, data.signals, lazySignals]);
+
+  const scoreChartSignals = useMemo((): Signal[] => {
+    if (!data.signals_deferred && (data.signals?.length ?? 0) > 0) return data.signals ?? [];
+    if ((lazySignals?.length ?? 0) > 0) return lazySignals ?? [];
+    return (data.signal_scores ?? []) as Signal[];
+  }, [data.signals_deferred, data.signals, data.signal_scores, lazySignals]);
+
+  const mergedOpportunities = oppBundle?.opportunities ?? data.opportunities ?? [];
+  const mergedBest2026 = oppBundle?.best_2026 ?? data.best_2026 ?? [];
+  const mergedDoctorRec = oppBundle?.portfolio_doctor_recommendations ?? data.portfolio_doctor_recommendations;
+
+  const dataForCopilot = useMemo(
+    () => ({
+      ...data,
+      signals: effectiveSignals,
+      opportunities: mergedOpportunities,
+      best_2026: mergedBest2026,
+    }),
+    [data, effectiveSignals, mergedOpportunities, mergedBest2026]
+  );
+
+  const signalCountForBadge =
+    data.signal_scores?.length ?? data.signals?.length ?? effectiveSignals.length ?? 0;
+
+  const oppCountForBadge = mergedOpportunities.length;
+
   const tabBadges: Partial<Record<TabId, number>> = {
-    signals: data.signals?.length ?? 0,
+    signals: signalCountForBadge,
     portfolio: selectedReport?.per_holding?.length ?? 0,
-    opportunities: data.opportunities?.length ?? 0,
+    opportunities: oppCountForBadge,
   };
 
   useEffect(() => {
@@ -214,7 +344,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <span className="text-xs text-slate-600 hidden sm:inline" title="Report timestamp">As of: {new Date(data.as_of_date).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
             )}
             <button
-              onClick={onRefresh}
+              onClick={() => onRefresh(true)}
               disabled={loading}
               className={clsx(
                 "flex items-center gap-2 px-3 py-2.5 sm:px-4 rounded-lg font-medium transition min-h-[44px] sm:min-h-0",
@@ -228,7 +358,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
             <button
               onClick={() => {
                 if (!data) return;
-                const blob = new Blob([JSON.stringify({ as_of: data.as_of_date, portfolio: data.portfolio, portfolios: data.portfolios, signals_count: data.signals?.length, opportunities_count: data.opportunities?.length }, null, 2)], { type: "application/json" });
+                const blob = new Blob([JSON.stringify({ as_of: data.as_of_date, portfolio: data.portfolio, portfolios: data.portfolios, signals_count: signalCountForBadge, opportunities_count: oppCountForBadge }, null, 2)], { type: "application/json" });
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(blob);
                 a.download = `thrive-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
@@ -289,7 +419,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
       </header>
 
       <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4">
-        <AddTickerBar onAdded={onRefresh} />
+        <AddTickerBar onAdded={() => onRefresh(true)} />
       </div>
 
       {/* Compact alert strip - always visible */}
@@ -426,7 +556,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </ToggleSection>
               <ToggleSection id="overview-score-regime" title="Confidence & Regime Charts" icon={<Activity />} defaultOpen>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <ScoreChart signals={data.signals} onTickerClick={setSelectedTicker} />
+                  <ScoreChart signals={scoreChartSignals} onTickerClick={setSelectedTicker} />
                   <RegimeChart report={selectedReport} />
                 </div>
               </ToggleSection>
@@ -620,7 +750,26 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           </p>
             </div>
           </ToggleSection>
-          <SignalsTable signals={data.signals} horizons={data.config?.horizons} onTickerClick={setSelectedTicker} riskSizing={data.config?.risk_sizing} cotByTicker={data.cot_by_ticker} tickerActions={data.retail_briefing?.ticker_actions} />
+          {data.signals_deferred && signalsLoading && (
+            <div className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-400 text-sm">
+              Loading full signals table…
+            </div>
+          )}
+          {data.signals_deferred && signalsFetchErr && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+              {signalsFetchErr}
+            </div>
+          )}
+          {(!data.signals_deferred || lazySignals !== null) && (
+            <SignalsTable
+              signals={effectiveSignals}
+              horizons={data.config?.horizons}
+              onTickerClick={setSelectedTicker}
+              riskSizing={data.config?.risk_sizing}
+              cotByTicker={data.cot_by_ticker}
+              tickerActions={data.retail_briefing?.ticker_actions}
+            />
+          )}
             </div>
           )}
 
@@ -628,7 +777,12 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {activeTab === "roadmaps" && (
             <div className="p-4 sm:p-6 space-y-4">
               <RoadmapsPanel
-                tickers={data.watchlist ?? data.signals?.map((s) => s.ticker) ?? []}
+                tickers={
+                  data.watchlist ??
+                  data.signal_scores?.map((s) => s.ticker).filter(Boolean) ??
+                  data.signals?.map((s) => s.ticker) ??
+                  []
+                }
                 onTickerClick={setSelectedTicker}
               />
             </div>
@@ -694,14 +848,29 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
                 <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={setSelectedTicker} />
               </ToggleSection>
-              <ToggleSection id="portfolio-doctor" title="Portfolio Doctor" icon={<Target />} badge={(data.portfolio_doctor_recommendations?.[selectedPortfolio]?.trim?.length ?? 0) + (data.portfolio_doctor_recommendations?.[selectedPortfolio]?.add?.length ?? 0) || undefined} defaultOpen={false}>
+              <ToggleSection
+                id="portfolio-doctor"
+                title="Portfolio Doctor"
+                icon={<Target />}
+                badge={
+                  (mergedDoctorRec?.[selectedPortfolio]?.trim?.length ?? 0) +
+                    (mergedDoctorRec?.[selectedPortfolio]?.add?.length ?? 0) || undefined
+                }
+                defaultOpen={false}
+              >
                 <div className="space-y-6">
+                  {data.opportunities_deferred === true && oppLoading && (
+                    <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
+                  )}
+                  {data.opportunities_deferred === true && oppFetchErr && (
+                    <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
+                  )}
                   <div>
                     <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Portfolio risk (holdings)</p>
                     <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
                   </div>
                   <PortfolioDoctorRecommendations
-                    recommendation={data.portfolio_doctor_recommendations?.[selectedPortfolio]}
+                    recommendation={mergedDoctorRec?.[selectedPortfolio]}
                     selectedPortfolio={selectedPortfolio}
                     onTickerClick={setSelectedTicker}
                   />
@@ -724,20 +893,30 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Opportunities tab */}
           {activeTab === "opportunities" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={data.opportunities?.length ?? 0} defaultOpen>
-                {data.opportunities?.length ? (
-                  <Opportunities items={data.opportunities} onTickerClick={setSelectedTicker} />
+              {data.opportunities_deferred === true && oppLoading && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-slate-400 text-sm">
+                  Loading daily opportunities and Best 2026…
+                </div>
+              )}
+              {data.opportunities_deferred === true && oppFetchErr && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">{oppFetchErr}</div>
+              )}
+              <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
+                {mergedOpportunities.length ? (
+                  <Opportunities items={mergedOpportunities} onTickerClick={setSelectedTicker} />
                 ) : (
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
                     <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
-                    <p className="text-slate-400 font-medium">No opportunities today</p>
+                    <p className="text-slate-400 font-medium">
+                      {data.opportunities_deferred === true && oppLoading ? "Loading…" : "No opportunities today"}
+                    </p>
                     <p className="text-slate-500 text-sm mt-1">Tickers with score ≥ 70 and UP regime will appear here.</p>
                   </div>
                 )}
               </ToggleSection>
-              {data.best_2026?.length ? (
-                <ToggleSection id="opps-best-2026" title="Best 2026 picks" icon={<Target />} badge={data.best_2026.length} defaultOpen>
-                  <Best2026Section items={data.best_2026} onTickerClick={setSelectedTicker} />
+              {mergedBest2026.length ? (
+                <ToggleSection id="opps-best-2026" title="Best 2026 picks" icon={<Target />} badge={mergedBest2026.length} defaultOpen>
+                  <Best2026Section items={mergedBest2026} onTickerClick={setSelectedTicker} />
                 </ToggleSection>
               ) : null}
               {data.thesis_check.length > 0 && (
@@ -946,7 +1125,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
         <TickerDetailModal ticker={selectedTicker} onClose={() => setSelectedTicker(null)} />
       )}
 
-      <ChatCopilot data={data} />
+      <ChatCopilot data={dataForCopilot} />
     </div>
   );
 }
