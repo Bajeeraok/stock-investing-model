@@ -30,6 +30,33 @@ BEARISH_KEYWORDS = frozenset({
     "bankruptcy", "probe", "fraud", "guidance", "slashes", "slashed",
 })
 
+# Gold / silver / broad commodity ETF headlines (Yahoo/FMP often cite spot, macro, USD)
+COMMODITY_BULLISH_KEYWORDS = frozenset({
+    "gold", "silver", "bullion", "precious", "metals", "mining", "miners",
+    "inflation", "hedge", "haven", "safe-haven", "safehaven",
+    "dxy", "treasury", "cuts",
+    "ounces", "ounce", "spot", "commodity", "commodities", "futures",
+    "rally", "rallies", "surge", "record", "highs", "breakout",
+})
+
+COMMODITY_BEARISH_KEYWORDS = frozenset({
+    "hawkish", "tightening", "risk-on", "riskon", "slump", "deflation",
+    "outflows", "liquidation",
+})
+
+# Tickers that should merge COMMODITY_* with base lexicon (ETF symbols only)
+_COMMODITY_LEXICON_TICKERS = frozenset({
+    "GLD", "SLV", "IAU", "SGOL", "BAR", "OUNZ", "AAAU", "GLDM", "SIVR", "PSLV",
+    "GDX", "GDXJ", "SIL", "RING", "USO", "UNG", "DBC", "COM", "BNO", "UGA",
+})
+
+
+def _use_commodity_lexicon(ticker: str | None) -> bool:
+    if not ticker:
+        return False
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0].strip()
+    return sym in _COMMODITY_LEXICON_TICKERS
+
 
 def _normalize_words(text: str) -> set[str]:
     if not text:
@@ -38,13 +65,23 @@ def _normalize_words(text: str) -> set[str]:
     return {w for w in s.split() if len(w) >= 2}
 
 
-def score_headline_text(title: str, text: str = "") -> tuple[float, bool]:
+def _lexicons_for_ticker(ticker: str | None):
+    bull, bear = BULLISH_KEYWORDS, BEARISH_KEYWORDS
+    if _use_commodity_lexicon(ticker):
+        bull = frozenset(bull | COMMODITY_BULLISH_KEYWORDS)
+        bear = frozenset(bear | COMMODITY_BEARISH_KEYWORDS)
+    return bull, bear
+
+
+def score_headline_text(title: str, text: str = "", *, ticker: str | None = None) -> tuple[float, bool]:
     """
     Return (raw -1..1, hit) for one article. hit=False if no lexicon overlap.
+    Commodity ETFs (GLD, SLV, …) merge a macro/precious-metals lexicon with the base set.
     """
     words = _normalize_words(f"{title} {text or ''}")
-    bull = len(words & BULLISH_KEYWORDS)
-    bear = len(words & BEARISH_KEYWORDS)
+    lb, dk = _lexicons_for_ticker(ticker)
+    bull = len(words & lb)
+    bear = len(words & dk)
     if bull + bear == 0:
         return 0.0, False
     raw = (bull - bear) / float(bull + bear)
@@ -55,6 +92,7 @@ def aggregate_keyword_sentiment(
     articles: list[dict[str, Any]],
     *,
     decay: float = 0.08,
+    ticker: str | None = None,
 ) -> tuple[float | None, int, bool]:
     """
     Weight recent articles higher (index 0 = newest from FMP).
@@ -78,7 +116,7 @@ def aggregate_keyword_sentiment(
             or item.get("summary")
             or ""
         )[:2000]
-        raw, hit = score_headline_text(title, body)
+        raw, hit = score_headline_text(title, body, ticker=ticker)
         if hit:
             any_hit = True
             scores.append(raw)

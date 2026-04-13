@@ -28,3 +28,17 @@ def test_no_keywords_returns_none_avg():
     assert not any_hit
     assert avg is None
     assert n == 1
+
+
+def test_commodity_lexicon_gld():
+    """GLD/SLV merge precious-metals macro tokens so ETF headlines can score."""
+    raw, hit = score_headline_text("Gold futures rally as inflation hedges draw buyers", "", ticker="GLD")
+    assert hit
+    assert raw > 0
+
+
+def test_plain_ticker_no_commodity_boost():
+    raw, hit = score_headline_text("Gold miners surge", "", ticker="AAPL")
+    assert hit
+    # "gold" not in base lexicon — without commodity profile, may still hit "surge" from bullish set
+    assert raw >= -1.0

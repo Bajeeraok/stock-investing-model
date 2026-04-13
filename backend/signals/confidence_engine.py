@@ -7,8 +7,8 @@ They need: why, what could go wrong, how confident the model is, what to watch.
 Seven signal layers (each 0-1, missing layers are skipped with weight renormalized):
   1. regime_hmm         — HMM bull-state probability
   2. pattern_technical  — Near-bottom pattern score + composite technical score
-  3. lgbm_probability   — LightGBM P(threshold gain) for the asset type
-  4. options_sentiment  — Put/call ratio, IV rank (contrarian)
+  3. lgbm_probability   — LightGBM P(threshold gain), **short horizon only** (not avg of S/M/L)
+  4. options_sentiment  — Put/call ratio, IV rank (**contrarian**: high P/C nudges score up as “fear”)
   5. insider_signal     — Net insider buying from SEC Form 4
   6. fundamental_score  — Valuation + quality (from existing FMP data)
   7. nlp_sentiment      — FMP headlines + keyword lexicon, optional FMP per-article scores; else Alpha Vantage; else Yahoo Finance headlines + lexicon (no API key)
@@ -23,7 +23,7 @@ Weights are now ASSET-TYPE-AWARE via the pre-flight classifier:
   - EQUITY_US             → standard 7-layer profile
 
 Hard disqualifiers (override final score):
-  - HMM bear probability > 0.80  → ×0.40 by default; softer ×0.72 when price > MA200 if confidence.regime_blend enabled
+  - HMM bear probability > 0.80  → configurable mult (see config confidence.regime_blend); eased toward 1.0 to limit stacked leverage
   - Net insider selling > 80%    → ×0.60 (institutional conviction against)
 
 Returns:
@@ -42,13 +42,13 @@ logger = logging.getLogger(__name__)
 
 # Fallback weights (overridden per-asset by the pre-flight classifier)
 WEIGHTS: dict[str, float] = {
-    "regime_hmm":        0.15,
+    "regime_hmm":        0.11,
     "pattern_technical": 0.15,
-    "lgbm_probability":  0.20,
-    "options_sentiment": 0.15,
-    "insider_signal":    0.15,
-    "fundamental_score": 0.10,
-    "nlp_sentiment":     0.10,
+    "lgbm_probability":  0.18,
+    "options_sentiment": 0.14,
+    "insider_signal":    0.14,
+    "fundamental_score": 0.14,
+    "nlp_sentiment":     0.14,
 }
 
 # Maps pre_flight weight profile keys → engine layer keys
@@ -262,12 +262,25 @@ class ConfidenceEngine:
                 short = ml_horizons.get("short", {})
                 lgbm_prob = short.get("prob")
                 if lgbm_prob is not None:
-                    scores["lgbm_probability"] = lgbm_prob
+                    ml_adj = float(lgbm_prob)
+                    ml_cfg = (config or {}).get("confidence", {}).get("ml_short_horizon", {}) or {}
+                    if ml_cfg.get("shrink_neutral_band", True):
+                        lo = float(ml_cfg.get("neutral_low", 0.38))
+                        hi = float(ml_cfg.get("neutral_high", 0.58))
+                        pull = float(ml_cfg.get("neutral_pull_to_50_factor", 0.55))
+                        if lo <= ml_adj <= hi:
+                            ml_adj = 0.5 + (ml_adj - 0.5) * pull
+                            ml_adj = round(float(np.clip(ml_adj, 0.0, 1.0)), 3)
+                    scores["lgbm_probability"] = ml_adj
                     thr = short.get("threshold_pct", 5)
                     cal_note = " (calibrated)" if short.get("prob_raw") is not None else ""
+                    nb_note = ""
+                    if ml_adj != float(lgbm_prob):
+                        nb_note = " · neutral-band shrink (mid-range 20d prob pulled toward 50%)"
                     labels["lgbm_probability"] = (
-                        f"{lgbm_prob*100:.0f}% prob of {thr}%+ gain in 20d{cal_note} "
-                        f"({short.get('interpretation', '')})"
+                        f"{ml_adj*100:.0f}% layer score from {lgbm_prob*100:.0f}% raw P({thr}%+ in 20d){cal_note} "
+                        f"({short.get('interpretation', '')}) — short-horizon momentum, not full thesis confidence"
+                        f"{nb_note}"
                     )
                 else:
                     logger.debug("LGBM model not trained for %s — skipping layer", ticker)
@@ -283,7 +296,20 @@ class ConfidenceEngine:
                           "XLE", "XLF", "XLI", "XLB", "XLU", "XLP"}
         if ticker.upper() not in _ETFS_VIX_PROXY:
             from signals.options_signals import fetch_options_signals
-            opts = fetch_options_signals(ticker)
+
+            hmm_bear_p: float | None = None
+            _hd = details.get("hmm")
+            if isinstance(_hd, dict) and _hd.get("bear_probability") is not None:
+                try:
+                    hmm_bear_p = float(_hd["bear_probability"])
+                except (TypeError, ValueError):
+                    hmm_bear_p = None
+            opt_mode = str((config or {}).get("confidence", {}).get("options_pc_mode") or "auto").lower()
+            opts = fetch_options_signals(
+                ticker,
+                hmm_bear_probability=hmm_bear_p,
+                options_pc_mode=opt_mode,
+            )
             details["options"] = opts
             if not opts.get("error") and opts.get("options_score") is not None:
                 scores["options_sentiment"] = opts["options_score"]
@@ -410,44 +436,91 @@ class ConfidenceEngine:
         else:
             confidence = sum(available[k] * effective_weights[k] for k in available) / total_w
 
+        confidence_blend_only = round(float(confidence), 4)
+        # Structured audit: layer blend vs multiplicative gates (HMM bear, insider)
+        penalty_audit: dict[str, Any] = {
+            "confidence_blend_only": confidence_blend_only,
+            "hmm_bear_penalty": {
+                "triggered": False,
+                "bear_probability": None,
+                "multiplier": 1.0,
+                "variant": None,
+                "suppressed_pct_if_applied": None,
+            },
+            "insider_sell_penalty": {"triggered": False, "multiplier": 1.0},
+        }
+
         # ── Hard disqualifiers ─────────────────────────────────────────────
         disqualifiers: list[str] = []
 
         hmm_data = details.get("hmm", {})
+        try:
+            _bp = hmm_data.get("bear_probability")
+            penalty_audit["hmm_bear_penalty"]["bear_probability"] = float(_bp) if _bp is not None else None
+        except (TypeError, ValueError):
+            pass
+
         if hmm_data.get("bear_probability", 0) > 0.80:
             rb = (config or {}).get("confidence", {}).get("regime_blend", {}) or {}
             soften = bool(rb.get("soften_bear_when_above_ma200", True))
-            mult_hard = float(rb.get("bear_penalty_mult", 0.40))
-            mult_soft = float(rb.get("bear_penalty_mult_above_ma200", 0.72))
+            mult_hard = float(rb.get("bear_penalty_mult", 0.46))
+            mult_soft = float(rb.get("bear_penalty_mult_above_ma200", 0.76))
+            ease = float(np.clip(float(rb.get("bear_penalty_ease_toward_one", 0.18)), 0.0, 1.0))
+
+            def _ease_toward_one(mult: float) -> float:
+                m = float(mult)
+                return float(m + (1.0 - m) * ease)
+
             above_ma = False
             if close_s is not None and len(close_s.dropna()) >= 200:
                 c_arr = close_s.dropna()
                 last_c = float(c_arr.iloc[-1])
                 ma200 = float(c_arr.rolling(200).mean().iloc[-1])
                 above_ma = last_c > ma200 and not pd.isna(ma200)
+            penalty_audit["hmm_bear_penalty"]["triggered"] = True
+            penalty_audit["hmm_bear_penalty"]["ease_toward_one"] = ease
             if soften and above_ma:
-                confidence *= mult_soft
+                m_raw, m_use = mult_soft, _ease_toward_one(mult_soft)
+                confidence *= m_use
+                penalty_audit["hmm_bear_penalty"]["multiplier_raw"] = m_raw
+                penalty_audit["hmm_bear_penalty"]["multiplier"] = m_use
+                penalty_audit["hmm_bear_penalty"]["variant"] = "soft_above_ma200"
+                penalty_audit["hmm_bear_penalty"]["suppressed_pct_if_applied"] = round((1 - m_use) * 100, 1)
                 disqualifiers.append(
                     f"HMM bear probability {hmm_data['bear_probability']*100:.0f}% — "
-                    f"confidence suppressed {round((1 - mult_soft) * 100):.0f}% "
-                    "(price still above MA200; trend/regime conflict — soft penalty)"
+                    f"confidence suppressed ~{round((1 - m_use) * 100):.0f}% "
+                    "(price still above MA200; trend/regime conflict — soft penalty, eased vs raw mult)"
                 )
             else:
-                confidence *= mult_hard
+                m_raw, m_use = mult_hard, _ease_toward_one(mult_hard)
+                confidence *= m_use
+                penalty_audit["hmm_bear_penalty"]["multiplier_raw"] = m_raw
+                penalty_audit["hmm_bear_penalty"]["multiplier"] = m_use
+                penalty_audit["hmm_bear_penalty"]["variant"] = "hard"
+                penalty_audit["hmm_bear_penalty"]["suppressed_pct_if_applied"] = round((1 - m_use) * 100, 1)
                 disqualifiers.append(
                     f"HMM bear probability {hmm_data['bear_probability']*100:.0f}% — "
-                    f"deep bear regime detected, confidence suppressed {round((1 - mult_hard) * 100):.0f}%"
+                    f"deep bear regime — confidence suppressed ~{round((1 - m_use) * 100):.0f}% "
+                    "(eased vs raw mult; see confidence.regime_blend in config)"
                 )
 
         insider_data = details.get("insider", {})
         if insider_data.get("sell_ratio", 0) > 0.80:
             confidence *= 0.60
+            penalty_audit["insider_sell_penalty"] = {"triggered": True, "multiplier": 0.60}
             disqualifiers.append(
                 "Heavy net insider selling (>80% of activity) — "
                 "institutional conviction against; confidence suppressed 40%"
             )
 
         confidence = round(float(np.clip(confidence, 0.0, 1.0)), 3)
+        penalty_audit["confidence_final"] = confidence
+        try:
+            hm = float(penalty_audit["hmm_bear_penalty"].get("multiplier") or 1.0)
+            im = float(penalty_audit["insider_sell_penalty"].get("multiplier") or 1.0)
+            penalty_audit["combined_multiplier"] = round(hm * im, 4)
+        except (TypeError, ValueError):
+            penalty_audit["combined_multiplier"] = None
 
         # ── Action label ───────────────────────────────────────────────────
         action = _confidence_to_action(confidence)
@@ -498,6 +571,8 @@ class ConfidenceEngine:
             "analyst_estimates": details.get("analyst_est"),
             # Headlines + score for UI (roadmap / ticker detail transparency)
             "nlp":               details.get("nlp"),
+            # Blend vs multiplicative penalties (HMM bear gate, insider) — for audits & UI
+            "penalty_audit":     penalty_audit,
             # Pre-flight enrichment
             "pre_flight":       pre_flight_data,
         }
@@ -904,7 +979,7 @@ def _yfinance_news_summary(ticker: str) -> dict | None:
             return None
         from signals.news_keyword_sentiment import aggregate_keyword_sentiment
 
-        kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items)
+        kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items, ticker=sym)
         headlines = [
             {"title": (it.get("title") or "")[:120], "score": None, "label": "Neutral"}
             for it in raw_items[:10]
@@ -1075,6 +1150,7 @@ def _incompatible_result(ticker: str, classification: Any) -> dict:
         "watch_levels":    {},
         "market_regime":   "N/A",
         "n_layers_active": 0,
+        "penalty_audit": None,
         "pre_flight": {
             "is_scoreable":      False,
             "asset_type":        classification.asset_type.value if classification else "UNKNOWN",

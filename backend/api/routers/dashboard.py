@@ -1765,7 +1765,8 @@ async def get_roadmaps(tickers: str = ""):
 async def get_confidence(ticker: str):
     """
     7-layer ConfidenceEngine breakdown for a single ticker.
-    Returns: confidence (0-1), action, breakdown per layer, disqualifiers, risk_factors, watch_levels.
+    Returns: confidence (0-1), action, breakdown per layer, disqualifiers, risk_factors, watch_levels,
+    penalty_audit (layer blend vs HMM/insider multipliers), pre_flight, ml_horizons, nlp, etc.
     Layers: HMM regime, pattern+technical, LightGBM prob, options sentiment, insider, fundamentals, NLP.
     Gracefully degrades — missing layers are redistributed. Safe to call any time.
     """

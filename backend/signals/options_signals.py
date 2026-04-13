@@ -3,6 +3,7 @@ Options market intelligence from yfinance (free, no extra API key needed).
 
 Why options matter:
   - Put/call ratio > 1.2 = retail fear peak → contrarian buy signal
+  - Mild P/C (1.0–1.2) while HMM bear > 50%: small boost only (hedging in downtrend ≠ washout)
   - Low IV rank (< 25) = cheap options, market complacent → pre-breakout
   - High IV rank (> 75) = expensive options, fear spike → potential bottom
   - Max pain = where market makers profit most → gravitational price level
@@ -31,9 +32,20 @@ logger = logging.getLogger(__name__)
 # Public API
 # ---------------------------------------------------------------------------
 
-def fetch_options_signals(ticker: str) -> dict:
+def fetch_options_signals(
+    ticker: str,
+    *,
+    hmm_bear_probability: float | None = None,
+    hmm_bull_probability: float | None = None,
+    options_pc_mode: str | None = None,
+) -> dict:
     """
     Fetch and score options market intelligence for ticker.
+
+    hmm_bear_probability: optional HMM bear state probability (0–1). When > 0.5, mild P/C (1.0–1.2)
+    applies a smaller contrarian boost — hedging in a bear regime is not treated as washout fear.
+    options_pc_mode: contrarian (default), directional (high P/C lowers score), or auto
+    (directional when HMM bear > 55%, else contrarian).
 
     Returns dict with:
         pc_ratio, atm_iv, iv_rank, max_pain, options_score (0-1),
@@ -119,9 +131,34 @@ def fetch_options_signals(ticker: str) -> dict:
     #   High P/C ratio (fear) at oversold levels  → bullish (potential bottom)
     #   Low IV rank + low P/C                     → complacency, mixed signal
     #   Very high IV rank                         → fear spike, near-term caution but potential bottom
-    options_score, label = _composite_options_score(pc_ratio, iv_rank, max_pain, price)
+    mode_raw = (options_pc_mode or "contrarian").strip().lower()
+    if mode_raw == "auto":
+        try:
+            br = float(hmm_bear_probability) if hmm_bear_probability is not None else None
+        except (TypeError, ValueError):
+            br = None
+        mode_eff = "directional" if br is not None and br > 0.55 else "contrarian"
+    elif mode_raw in ("contrarian", "directional"):
+        mode_eff = mode_raw
+    else:
+        mode_eff = "contrarian"
+    result["options_pc_mode_effective"] = mode_eff
+
+    options_score, label = _composite_options_score(
+        pc_ratio,
+        iv_rank,
+        max_pain,
+        price,
+        hmm_bear_probability=hmm_bear_probability,
+        pc_mode=mode_eff,
+    )
     result["options_score"] = round(options_score, 3)
-    result["options_label"] = label
+    if mode_eff == "directional":
+        result["options_label"] = f"Directional P/C+IV — {label}"
+        result["pc_interpretation"] = "directional"
+    else:
+        result["options_label"] = f"Contrarian P/C+IV — {label}"
+        result["pc_interpretation"] = "contrarian"
 
     return result
 
@@ -207,31 +244,88 @@ def _max_pain(calls: pd.DataFrame, puts: pd.DataFrame) -> float | None:
         return None
 
 
+def _composite_options_directional(
+    pc_ratio: float,
+    iv_rank: float | None,
+) -> tuple[float, str]:
+    """
+    Trend-style read: elevated put flow / fear → lower layer score; call-heavy → higher.
+    IV: elevated fear subtracts slightly (defensive).
+    """
+    score = 0.5
+    parts: list[str] = []
+    if pc_ratio > 1.5:
+        score -= 0.20
+        parts.append(f"P/C {pc_ratio:.2f} (directional: heavy puts — bearish tilt)")
+    elif pc_ratio > 1.0:
+        score -= 0.12
+        parts.append(f"P/C {pc_ratio:.2f} (directional: more puts than calls — bearish)")
+    elif pc_ratio < 0.65:
+        score += 0.10
+        parts.append(f"P/C {pc_ratio:.2f} (directional: call-heavy — constructive)")
+    if iv_rank is not None:
+        if iv_rank > 75:
+            score -= 0.12
+            parts.append(f"IV rank {iv_rank:.0f} (directional: high fear — cautious)")
+        elif iv_rank < 22:
+            score += 0.05
+            parts.append(f"IV rank {iv_rank:.0f} (calm IV)")
+    score = round(float(np.clip(score, 0.0, 1.0)), 3)
+    if not parts:
+        parts.append(f"P/C {pc_ratio:.2f} (directional mode)")
+    return score, "; ".join(parts)
+
+
 def _composite_options_score(
     pc_ratio: float,
     iv_rank: float | None,
     max_pain: float | None,
     current_price: float,
+    *,
+    hmm_bear_probability: float | None = None,
+    pc_mode: str = "contrarian",
 ) -> tuple[float, str]:
     """
-    Contrarian composite score (0-1):
-      - Fear (high P/C) at potential bottoms is bullish
-      - Complacency (low P/C + low IV) is neutral-to-bearish
-      - Very high IV rank = fear spike → cautious near-term but potential reversal
+    Contrarian composite score (0-1) unless pc_mode=directional (see _composite_options_directional).
+
+    Mild P/C band (1.0–1.2) in a **bearish HMM regime** gets a smaller contrarian boost:
+    modest hedging during a downtrend is not the same as washout fear — avoids overstating
+    conviction when bear_prob > 50% unless P/C is clearly elevated (>1.2) or regime is not bear.
     """
+    if pc_mode == "directional":
+        return _composite_options_directional(pc_ratio, iv_rank)
+
     score = 0.5
     parts = []
 
-    # P/C ratio signal (contrarian)
+    bear_regime = (
+        hmm_bear_probability is not None and float(hmm_bear_probability) > 0.5
+    )
+
+    # P/C ratio signal (contrarian — NOT directional flow)
+    # High P/C means more put than call volume (often read as bearish positioning).
+    # This layer treats elevated P/C as fear premium → nudges score UP toward "bullish"
+    # for mean-reversion / washout narratives (not the same as directional put-flow bearishness).
     if pc_ratio > 1.5:
         score += 0.25
-        parts.append(f"P/C {pc_ratio:.2f} (extreme fear — contrarian buy)")
+        parts.append(
+            f"P/C {pc_ratio:.2f} (heavy put volume — contrarian: fear tilt adds to this layer’s score, not bearish flow)"
+        )
     elif pc_ratio > 1.0:
-        score += 0.15
-        parts.append(f"P/C {pc_ratio:.2f} (elevated put buying)")
+        # Strong contrarian only when fear is clearer (>1.2) or tape is not classified bearish
+        if pc_ratio > 1.2 or not bear_regime:
+            score += 0.15
+            parts.append(
+                f"P/C {pc_ratio:.2f} (more puts than calls — contrarian boost)"
+            )
+        else:
+            score += 0.05
+            parts.append(
+                f"P/C {pc_ratio:.2f} (mild hedging in bear regime — weak contrarian tilt only; not washout-level fear)"
+            )
     elif pc_ratio < 0.6:
         score -= 0.10
-        parts.append(f"P/C {pc_ratio:.2f} (complacency — caution)")
+        parts.append(f"P/C {pc_ratio:.2f} (call-heavy — complacency tilt)")
 
     # IV rank signal
     if iv_rank is not None:
@@ -250,9 +344,10 @@ def _composite_options_score(
 
     score = round(float(np.clip(score, 0.0, 1.0)), 3)
     if not parts:
-        # Clarify mapping: P/C <1 = more calls (conventionally bullish); we use contrarian (high P/C = fear = bullish)
         if 0.8 <= pc_ratio <= 1.2:
-            parts.append(f"P/C {pc_ratio:.2f} (neutral: <1 = more calls; we score contrarian)")
+            parts.append(
+                f"P/C {pc_ratio:.2f} (near parity — neutral P/C contribution; layer uses contrarian mapping elsewhere)"
+            )
         else:
             parts.append(f"P/C {pc_ratio:.2f}")
     label = "; ".join(parts)

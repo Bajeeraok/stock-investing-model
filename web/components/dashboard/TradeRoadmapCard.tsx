@@ -66,6 +66,11 @@ export interface TradeRoadmapData {
   display_verdict: string;
   buy_roadmap: BuyRoadmapStage[];
   sell_roadmap: SellRoadmapStage[];
+  /** From score.interpretation (ACF / force lists); mirrors signal payload for transparency */
+  score_interpretation_style?: string;
+  score_interpretation_meta?: { reason?: string; [key: string]: unknown };
+  /** Backend roadmap caveats (overlap, Hurst vs ACF, etc.) */
+  consistency_notes?: string[];
   trader_summary: {
     short_term: string;
     medium_term: string;
@@ -77,10 +82,9 @@ export interface TradeRoadmapData {
 }
 
 const TRADER_FILTER: Record<string, string[]> = {
-  /** `near_term_watch` is a UI-merged row replacing today + days 1–10 + week 2–4 when all are watch / 0% */
-  day_trader: ["near_term_watch", "today", "days_1_10", "week_2_4"],
+  day_trader: ["today", "days_1_10", "week_2_4"],
   swing_trader: ["1_3_months", "3_6_months"],
-  investor: ["near_term_watch", "today", "3_6_months", "6_12_months"],
+  investor: ["today", "days_1_10", "week_2_4", "3_6_months", "6_12_months"],
 };
 
 const SELL_FILTER: Record<string, string[]> = {
@@ -124,67 +128,13 @@ function formatHorizonRoleDisplay(c: string | undefined): string | null {
   return s;
 }
 
-const NEAR_TERM_KEYS = ["today", "days_1_10", "week_2_4"] as const;
-
-/**
- * When Today, Days 1–10, and Week 2–4 are all watch-only / 0% (common when aligned to core),
- * merge into one row to avoid repetitive inaction messaging. Clarifies when spot already sits
- * in the short-term ±2% band (informational churn, not a buy trigger).
- */
-function mergeNearTermWatchRows(rows: BuyRoadmapStage[], spot: number): BuyRoadmapStage[] {
-  if (rows.length < 3) return rows;
-  const [a, b, c] = rows;
-  const keysOk =
-    a.timeline_key === "today" &&
-    b.timeline_key === "days_1_10" &&
-    c.timeline_key === "week_2_4";
-  if (!keysOk) return rows;
-  const watchish = (w: string) => /watch/i.test(w || "");
-  const allWatch =
-    a.position_pct === 0 &&
-    b.position_pct === 0 &&
-    c.position_pct === 0 &&
-    watchish(a.when_to_act) &&
-    watchish(b.when_to_act) &&
-    watchish(c.when_to_act);
-  if (!allWatch) return rows;
-
-  const stLo = b.price_zone_low;
-  const stHi = b.price_zone_high;
-  const inStBand =
-    stLo != null && stHi != null && spot >= stLo && spot <= stHi;
-
-  const stZ = formatZone(stLo, stHi);
-  const spotClarify = inStBand
-    ? ` Spot is already in the short-term ${stZ} window — that is local range around print, not a separate buy trigger while the row stays watch-only.`
-    : "";
-
-  const condition = [a.condition, spotClarify.trim(), b.condition, c.condition].filter(Boolean).join(" ");
-
-  const merged: BuyRoadmapStage = {
-    timeline_key: "near_term_watch",
-    label: "Today → week 4",
-    when_to_act: "Watch only — no new size yet",
-    price_zone_low: null,
-    price_zone_high: null,
-    price_zone_lines: [
-      { label: "Preferred adds", lo: a.price_zone_low, hi: a.price_zone_high },
-      { label: "ST ±2% (around spot)", lo: stLo, hi: stHi },
-    ],
-    condition,
-    conviction: "None",
-    position_pct: 0,
-    cumulative_pct: a.cumulative_pct,
-  };
-
-  return [merged, ...rows.slice(3)];
+function zoneFingerprint(lo: number | null, hi: number | null): string | null {
+  if (lo == null || hi == null) return null;
+  return `${lo.toFixed(2)}|${hi.toFixed(2)}`;
 }
 
 function buyRowTimelineHighlight(row: BuyRoadmapStage, activeKey: string | undefined): boolean {
   if (!activeKey) return false;
-  if (row.timeline_key === "near_term_watch") {
-    return NEAR_TERM_KEYS.includes(activeKey as (typeof NEAR_TERM_KEYS)[number]);
-  }
   return row.timeline_key === activeKey;
 }
 
@@ -240,10 +190,15 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
     return data.buy_roadmap.filter((r) => allowedKeys.includes(r.timeline_key));
   }, [data.buy_roadmap, allowedKeys, tab]);
 
-  const buyRowsDisplay = useMemo(
-    () => mergeNearTermWatchRows(buyFiltered, data.current_price),
-    [buyFiltered, data.current_price]
-  );
+  const buyRowsWithZoneHints = useMemo(() => {
+    let lastZone: string | null = null;
+    return buyFiltered.map((row) => {
+      const z = zoneFingerprint(row.price_zone_low, row.price_zone_high);
+      const sameBandAsPrior = z !== null && z === lastZone;
+      if (z !== null) lastZone = z;
+      return { row, sameBandAsPrior };
+    });
+  }, [buyFiltered]);
 
   const sellAllowedKeys = SELL_FILTER[traderType] || [];
   const sellFiltered = useMemo(() => {
@@ -282,6 +237,14 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
               {data.regime_label && ` | Regime: ${data.regime_label}`}
             </span>
           </div>
+          {(data.score_interpretation_style || "").toUpperCase() === "MEAN_REVERTING" && (
+            <p className="text-[11px] text-slate-500 mt-1.5 w-full">
+              Score labels use mean-reversion bucket mapping (score.interpretation).
+              {data.score_interpretation_meta?.reason === "force_mean_reverting" && (
+                <> Ticker is listed under <span className="text-slate-400">force_mean_reverting</span> in config.</>
+              )}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => setExpanded((e) => !e)}
@@ -370,6 +333,15 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
               )}
               {tickerNote(ticker) && (
                 <p className="text-xs text-slate-500 mt-1.5 border-t border-slate-600/50 pt-1.5">{tickerNote(ticker)}</p>
+              )}
+              {(data.consistency_notes?.length ?? 0) > 0 && (
+                <ul className="text-[11px] text-slate-500 mt-2 space-y-1 border-t border-slate-600/40 pt-2 list-disc list-inside">
+                  {(data.consistency_notes ?? []).map((n, i) => (
+                    <li key={i} className="leading-snug">
+                      {n}
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
 
@@ -494,7 +466,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                       </tr>
                     </thead>
                     <tbody>
-                      {buyRowsDisplay.map((row) => {
+                      {buyRowsWithZoneHints.map(({ row, sameBandAsPrior }) => {
                         const cue = buyStageCue(row.when_to_act);
                         const conv = formatHorizonRoleDisplay(row.conviction);
                         const hl = buyRowTimelineHighlight(row, activeTimelineKey);
@@ -523,7 +495,14 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                                 ))}
                               </div>
                             ) : (
-                              formatZone(row.price_zone_low, row.price_zone_high)
+                              <div>
+                                {formatZone(row.price_zone_low, row.price_zone_high)}
+                                {sameBandAsPrior && (
+                                  <span className="block text-[9px] text-slate-500 font-sans mt-0.5 leading-tight">
+                                    Same accumulation band — conviction / horizon role steps up over time.
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
                           <td className="py-2 pr-2 text-slate-400 max-w-[min(100vw,260px)] sm:max-w-[320px] text-[11px] leading-snug">
@@ -541,7 +520,8 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <p className="text-[10px] text-slate-500 mt-2 leading-snug max-w-3xl">
                   <strong className="text-slate-400">How to read this:</strong> Horizon role describes the scenario for that
                   row (not “bigger % = higher conviction”). Tranche % is the slice of your planned position for that leg of
-                  the staged entry ladder—risk-budget style—not a sort order by the role labels.
+                  the staged entry ladder—risk-budget style—not a sort order by the role labels. Repeating dollar bands across
+                  timelines are intentional when the model uses one accumulation zone with different time roles.
                 </p>
               </div>
             )}
@@ -594,6 +574,11 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     </tbody>
                   </table>
                 </div>
+                <p className="text-[10px] text-slate-500 mt-2 leading-snug max-w-3xl">
+                  <strong className="text-slate-400">Overlapping trim windows:</strong> Short-term and longer trims can share
+                  price ranges when targets align. Earlier rows are the first tranche to consider; later rows size what is
+                  left — not a separate trigger that only fires if you skipped an earlier leg.
+                </p>
               </div>
             )}
           </div>

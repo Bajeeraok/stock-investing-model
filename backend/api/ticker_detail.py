@@ -848,6 +848,7 @@ def _build_investor_summary(
         current_price,
         close_series=close_ticker,
         interpretation_style=signal_data.get("score_interpretation_style"),
+        interpretation_meta=signal_data.get("score_interpretation_meta"),
         roadmap_cfg=roadmap_cfg,
         regime_signal_precedence_note=regime_signal_note,
     )
@@ -950,6 +951,7 @@ def _build_trade_roadmap(
     current_price: float,
     close_series=None,
     interpretation_style: str | None = None,
+    interpretation_meta: dict | None = None,
     roadmap_cfg: dict | None = None,
     regime_signal_precedence_note: str | None = None,
 ) -> dict:
@@ -1368,6 +1370,10 @@ def _build_trade_roadmap(
             "threshold flips follow config score.interpretation, not Hurst alone."
         )
 
+    nest_note = _sell_major_trim_inside_short_trim_note(sell_stages)
+    if nest_note:
+        consistency_notes.append(nest_note)
+
     # Trader-type one-liners — derived from the same Today-row logic as the buy roadmap (when/pos/align_buy_rows_to_core).
     short_stop = _safe_float(short.get("stop_loss"))
     short_tgt = _safe_float(short.get("target"))
@@ -1475,6 +1481,8 @@ def _build_trade_roadmap(
         "roadmap_validation": roadmap_validation,
         "signal_regime": signal_regime,
         "consistency_notes": consistency_notes,
+        "score_interpretation_style": (interpretation_style or "TRENDING"),
+        "score_interpretation_meta": interpretation_meta if isinstance(interpretation_meta, dict) else {},
         "trader_summary": {
             "short_term": trader_summary_short,
             "medium_term": trader_summary_medium,
@@ -1878,6 +1886,33 @@ def _sell_roadmap_config() -> dict[str, float]:
     except Exception:
         pass
     return defaults
+
+
+def _sell_major_trim_inside_short_trim_note(sell_stages: list) -> str | None:
+    """
+    When the 3–6 month trim band lies inside the short-term trim window (targets can align that way),
+    explain that later legs size remaining position — not a separate gate that only fires if ST was skipped.
+    """
+    if len(sell_stages) < 4:
+        return None
+    try:
+        st = sell_stages[1]
+        mj = sell_stages[3]
+        sl, sh = st.get("price_zone_low"), st.get("price_zone_high")
+        ml, mh = mj.get("price_zone_low"), mj.get("price_zone_high")
+        if None in (sl, sh, ml, mh):
+            return None
+        slf, shf = float(sl), float(sh)
+        mlf, mhf = float(ml), float(mh)
+        if mlf >= slf and mhf <= shf:
+            return (
+                "Sell roadmap: the 3–6 month trim band can sit inside the short-term trim window when targets align — "
+                "later rows apply to size remaining after earlier trims (or a larger move through the band), "
+                "not a separate trigger that only runs if you skipped the short-term leg."
+            )
+    except (TypeError, ValueError):
+        return None
+    return None
 
 
 def _apply_sell_roadmap_band_alignment(

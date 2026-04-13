@@ -125,9 +125,13 @@ class WeightProfile:
 
 WEIGHT_PROFILES: Dict[AssetType, WeightProfile] = {
     AssetType.EQUITY_US: WeightProfile(
-        regime=0.15, pattern=0.15, ml=0.20, options=0.15,
-        insider=0.15, fundamentals=0.10, news=0.10,
+        regime=0.11, pattern=0.15, ml=0.18, options=0.14,
+        insider=0.14, fundamentals=0.14, news=0.14,
         label="Standard Equity",
+        note=(
+            "Rebalanced vs legacy 15/20/10: lower HMM weight (regime also drives a separate bear penalty), "
+            "higher fundamentals+news for investor credibility; ML is short-horizon only — see ml_short_horizon in config."
+        ),
     ),
     AssetType.EQUITY_SPECULATIVE: WeightProfile(
         regime=0.12, pattern=0.15, ml=0.20, options=0.25,
@@ -156,11 +160,14 @@ WEIGHT_PROFILES: Dict[AssetType, WeightProfile] = {
         disabled_layers=["insider", "fundamentals", "news"],
     ),
     AssetType.ETF_COMMODITY: WeightProfile(
-        regime=0.35, pattern=0.20, ml=0.20, options=0.25,
-        insider=0.00, fundamentals=0.00, news=0.00,
-        label="Commodity ETF — Macro/Regime dominant",
-        note="Commodity ETF: no fundamentals or insider. Regime (macro) is the primary signal.",
-        disabled_layers=["insider", "fundamentals", "news"],
+        regime=0.30, pattern=0.18, ml=0.18, options=0.22,
+        insider=0.00, fundamentals=0.00, news=0.12,
+        label="Commodity ETF — Regime + macro news",
+        note=(
+            "No P/E-style fundamentals or insider. News layer uses commodity/precious-metals lexicon "
+            "(GLD/SLV/…); regime + options remain primary."
+        ),
+        disabled_layers=["insider", "fundamentals"],
     ),
     AssetType.ETF_VOLATILITY: WeightProfile(
         regime=0.00, pattern=0.00, ml=0.00, options=0.00,

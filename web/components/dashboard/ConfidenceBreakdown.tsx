@@ -135,10 +135,29 @@ export interface PreFlightData {
   position_size:     string | null;
 }
 
+/** Layer blend vs multiplicative gates (HMM bear, insider) — from confidence_engine penalty_audit */
+export interface PenaltyAudit {
+  confidence_blend_only: number;
+  confidence_final?: number;
+  combined_multiplier?: number | null;
+  hmm_bear_penalty: {
+    triggered: boolean;
+    bear_probability: number | null;
+    multiplier: number;
+    multiplier_raw?: number;
+    variant?: string | null;
+    suppressed_pct_if_applied?: number | null;
+    ease_toward_one?: number;
+  };
+  insider_sell_penalty: { triggered: boolean; multiplier: number };
+}
+
 export interface ConfidenceData {
   ticker:          string;
   confidence:      number | null;   // null for INCOMPATIBLE instruments
   action:          string;
+  /** Blend vs stacked penalties — for charts / transparency (API passes through from run_confidence) */
+  penalty_audit?:  PenaltyAudit | null;
   // Optional raw HMM payload (from backend) for regime-aware one-liners
   hmm?: {
     dominant_state?: string | null;
@@ -302,6 +321,7 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
 
       {/* Rows */}
       {rows.map(([key, h]) => {
+        const inMlWeight = key === "short";
         const probPct  = h.prob != null ? Math.round(h.prob * 100) : null;
         const barWidth = probPct ?? 0;
         const barColour =
@@ -315,23 +335,48 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
         const ic         = INTERP_COLOUR[interpKey] ?? INTERP_COLOUR.Unavailable;
 
         return (
-          <div key={key} className="grid grid-cols-[100px_1fr_52px_90px] gap-x-3 items-center px-3 py-2.5 border-b border-slate-700/30 last:border-b-0">
+          <div
+            key={key}
+            className={clsx(
+              "grid grid-cols-[100px_1fr_52px_90px] gap-x-3 items-center px-3 py-2.5 border-b border-slate-700/30 last:border-b-0",
+              !inMlWeight && "opacity-[0.78]"
+            )}
+          >
             {/* Horizon label */}
             <div>
               <p className="text-xs font-semibold text-slate-200">{h.description}</p>
               <p className="text-[11px] text-slate-500">{h.label} · P({h.threshold_pct}%+)</p>
+              <p
+                className={clsx(
+                  "text-[10px] mt-0.5 font-medium",
+                  inMlWeight ? "text-emerald-400/90" : "text-slate-500"
+                )}
+              >
+                {inMlWeight ? "Feeds 20% ML layer" : "Context only — not in weighted score"}
+              </p>
             </div>
 
-            {/* Progress bar */}
-            <div className="h-2 rounded-full bg-slate-700/60 overflow-hidden">
+            {/* Progress bar — dashed / muted track when not the scored horizon */}
+            <div
+              className={clsx(
+                "h-2 rounded-full overflow-hidden",
+                inMlWeight ? "bg-slate-700/60" : "bg-slate-800/80 border border-dashed border-slate-600/50"
+              )}
+            >
               <div
-                className={clsx("h-full rounded-full transition-all duration-500", barColour)}
+                className={clsx(
+                  "h-full rounded-full transition-all duration-500",
+                  barColour,
+                  !inMlWeight && "opacity-55"
+                )}
                 style={{ width: `${barWidth}%` }}
               />
             </div>
 
             {/* Probability % */}
-            <span className={clsx("text-xs font-bold font-mono text-right",
+            <span className={clsx(
+              "text-xs font-bold font-mono text-right",
+              !inMlWeight && "opacity-80",
               probPct == null  ? "text-slate-500" :
               probPct >= 65    ? "text-emerald-300" :
               probPct >= 50    ? "text-green-300" :
@@ -345,7 +390,8 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
             <div className="flex justify-end">
               <span className={clsx(
                 "text-[11px] font-semibold px-2 py-0.5 rounded border",
-                ic.text, ic.bg, ic.border
+                ic.text, ic.bg, ic.border,
+                !inMlWeight && "opacity-75"
               )}>
                 {interpKey}
               </span>
@@ -353,6 +399,10 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
           </div>
         );
       })}
+      <p className="text-[10px] text-slate-500 px-3 py-2 border-t border-slate-700/40 leading-snug">
+        Only the <span className="text-slate-400 font-medium">short</span> row feeds the ML contribution above.
+        Medium and long are for context (different horizons, same models) — not averaged into the 20% weight.
+      </p>
     </div>
   );
 }
@@ -496,10 +546,73 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
   );
 }
 
+/** Stacked multipliers after layer blend (HMM bear gate, insider) — from API penalty_audit */
+function PenaltyAuditPanel({ pa }: { pa: PenaltyAudit }) {
+  const [open, setOpen] = useState(false);
+  const hmm = pa.hmm_bear_penalty;
+  const ins = pa.insider_sell_penalty;
+  const hasStack =
+    (hmm?.triggered && hmm.multiplier < 0.999) ||
+    (ins?.triggered && ins.multiplier < 0.999);
+  if (!hasStack && pa.combined_multiplier == null) return null;
+
+  return (
+    <div className="border-t border-slate-700/40 pt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors w-full font-medium text-left"
+      >
+        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+        <span>
+          Penalty stack
+          {pa.combined_multiplier != null && pa.combined_multiplier < 1 && (
+            <span className="text-amber-400/90 font-mono ml-1.5">×{pa.combined_multiplier.toFixed(3)}</span>
+          )}
+        </span>
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg bg-slate-800/50 border border-slate-700/40 p-3 text-[11px] text-slate-400 space-y-2 font-mono">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span>
+              Layer blend: <span className="text-slate-200">{Math.round(pa.confidence_blend_only * 100)}%</span>
+            </span>
+            {pa.confidence_final != null && (
+              <span>
+                Final: <span className="text-emerald-400/90">{Math.round(pa.confidence_final * 100)}%</span>
+              </span>
+            )}
+          </div>
+          {hmm?.triggered && (
+            <div className="border-t border-slate-600/40 pt-2 space-y-0.5">
+              <span className="text-slate-500 font-sans uppercase text-[10px]">HMM bear &gt;80%</span>
+              <div className="text-slate-300">
+                mult {hmm.multiplier_raw != null ? `${hmm.multiplier_raw.toFixed(3)} → ` : ""}
+                {hmm.multiplier.toFixed(3)} effective
+                {hmm.variant && <span className="text-slate-500"> · {hmm.variant}</span>}
+              </div>
+              {hmm.bear_probability != null && (
+                <div>Bear prob: {(hmm.bear_probability * 100).toFixed(0)}%</div>
+              )}
+            </div>
+          )}
+          {ins?.triggered && (
+            <div className="border-t border-slate-600/40 pt-2">
+              <span className="text-slate-500 font-sans uppercase text-[10px]">Insider sell</span>
+              <div className="text-slate-300">×{ins.multiplier.toFixed(2)}</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Weighted math table — shows exactly how 45% is computed from the layers. */
-function WeightedMathTable({ breakdown, confidence }: {
+function WeightedMathTable({ breakdown, confidence, penalty_audit }: {
   breakdown: Record<string, BreakdownLayer>;
   confidence: number;
+  penalty_audit?: PenaltyAudit | null;
 }) {
   const [open, setOpen] = useState(false);
   const rows = Object.entries(breakdown).map(([key, layer]) => {
@@ -547,8 +660,17 @@ function WeightedMathTable({ breakdown, confidence }: {
           ))}
           <div className="border-t border-slate-600/50 pt-1.5 mt-1 grid grid-cols-[1fr_44px_44px_56px] gap-x-2">
             <span className="text-slate-300 col-span-3 font-sans">Normalised ÷ {Math.round(activeWeightTotal * 100)}% active weight</span>
-            <span className="text-right text-emerald-400 font-bold">= {Math.round(confidence * 100)}%</span>
+            <span className="text-right text-emerald-400 font-bold">
+              = {Math.round((penalty_audit?.confidence_blend_only ?? confidence) * 100)}%
+            </span>
           </div>
+          {penalty_audit != null &&
+            Math.abs(penalty_audit.confidence_blend_only - confidence) > 0.003 && (
+            <p className="text-[11px] text-amber-200/85 pt-1 font-sans border-t border-slate-600/30 mt-1">
+              After HMM/insider penalties → <span className="font-mono font-semibold">{Math.round(confidence * 100)}%</span> final
+              (see Penalty stack below).
+            </p>
+          )}
           <p className="text-[11px] text-slate-400 pt-1 font-sans">
             Unavailable layers (N/A) are excluded and their weight is redistributed.
           </p>
@@ -587,26 +709,65 @@ function FlipToBuy({ breakdown, action }: {
 
   if (gaps.length === 0) return null;
 
+  const regimeGap = gaps.find((g) => g.label === "Regime (HMM)");
+  const regimeIsHardBlock =
+    regimeGap != null &&
+    regimeGap.current != null &&
+    regimeGap.current < 25 &&
+    regimeGap.needed >= 55;
+
+  const displayGaps = regimeIsHardBlock
+    ? [
+        ...gaps.filter((g) => g.label === "Regime (HMM)"),
+        ...gaps.filter((g) => g.label !== "Regime (HMM)"),
+      ]
+    : gaps;
+
   return (
     <div className="rounded-lg border border-blue-500/25 bg-blue-500/8 p-3.5 space-y-2.5">
       <p className="text-xs font-semibold text-blue-200 flex items-center gap-1.5">
         <Zap size={13} />
         What would upgrade this to BUY?
       </p>
+      {regimeIsHardBlock && (
+        <p className="text-[10px] text-amber-200/85 font-medium leading-snug">
+          Regime (HMM) is listed first — it is usually the slowest gate. Pattern or ML can improve over days; regime
+          alignment typically needs weeks of sustained tape.
+        </p>
+      )}
       <div className="space-y-2">
-        {gaps.map((g, i) => (
-          <div key={i} className="flex items-center justify-between gap-2">
-            <span className="text-xs text-slate-300 font-medium">{g.label}</span>
-            <div className="flex items-center gap-1.5 text-xs font-mono">
-              <span className={clsx("font-semibold", g.current != null ? scoreColourClass(g.current, "text") : "text-slate-500")}>
-                {g.current != null ? `${g.current}%` : "N/A"}
+        {displayGaps.map((g, i) => {
+          const isRegime = g.label === "Regime (HMM)" && regimeIsHardBlock;
+          return (
+            <div
+              key={`${g.label}-${i}`}
+              className={clsx(
+                "flex items-center justify-between gap-2 rounded-md",
+                isRegime && "border-l-2 border-amber-500/70 pl-2 -ml-0.5 bg-amber-500/5 py-1.5"
+              )}
+            >
+              <span className={clsx("text-xs font-medium", isRegime ? "text-amber-100" : "text-slate-300")}>
+                {g.label}
               </span>
-              <span className="text-slate-500">→</span>
-              <span className="text-blue-300 font-semibold">needs {g.needed}%+</span>
+              <div className="flex items-center gap-1.5 text-xs font-mono">
+                <span className={clsx("font-semibold", g.current != null ? scoreColourClass(g.current, "text") : "text-slate-500")}>
+                  {g.current != null ? `${g.current}%` : "N/A"}
+                </span>
+                <span className="text-slate-500">→</span>
+                <span className="text-blue-300 font-semibold">needs {g.needed}%+</span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+      {regimeIsHardBlock && (
+        <p className="text-[11px] text-slate-400 border-t border-blue-500/20 pt-2.5 leading-snug">
+          <span className="text-slate-300 font-medium">Regime (HMM)</span> encodes multi-week structure (bull vs bear
+          state), not a tweak to chart pattern or ML. Getting from deep bear toward the score this layer needs often takes
+          roughly <span className="text-slate-300">15–30 trading days</span> of supportive follow-through — not a one- or
+          two-day bounce. Expect pattern or ML to move before regime does.
+        </p>
+      )}
     </div>
   );
 }
@@ -924,6 +1085,13 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             {coherence && <CoherenceBadge coherence={coherence} />}
           </div>
           <ActionBadge action={data.action ?? "WATCH"} confidence={confidence} />
+          <p className="text-[11px] text-slate-500 leading-snug max-w-[68ch] border-l-2 border-slate-600/60 pl-2.5 py-1">
+            <span className="text-slate-400 font-medium">Confidence vs roadmap:</span> this score blends regime, pattern,
+            short-horizon ML, options, and fundamentals <span className="text-slate-400">now</span>. The buy/sell roadmap in
+            the detail view is a <span className="text-slate-400">conditional staged plan</span> (MA tiers, targets, scenario
+            zones). Low confidence does not invalidate a future add at a lower roadmap price — it means today’s fused
+            signals are cautious.
+          </p>
           {actionSummary && (
             <p className="text-sm text-slate-300 leading-snug max-w-[64ch]">
               {actionSummary}
@@ -1008,7 +1176,14 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       {regimeTrans && <RegimeTransitionRow rt={regimeTrans} />}
 
       {/* Weighted math — expandable "how is 45% calculated?" */}
-      <WeightedMathTable breakdown={breakdown as Record<string, BreakdownLayer>} confidence={confidence} />
+      <WeightedMathTable
+        breakdown={breakdown as Record<string, BreakdownLayer>}
+        confidence={confidence}
+        penalty_audit={data.penalty_audit ?? null}
+      />
+
+      {/* Layer blend vs multiplicative penalties (for charts / transparency) */}
+      {data.penalty_audit && <PenaltyAuditPanel pa={data.penalty_audit} />}
 
       {/* What would flip this to BUY */}
       <FlipToBuy breakdown={breakdown as Record<string, BreakdownLayer>} action={data.action ?? "WATCH"} />

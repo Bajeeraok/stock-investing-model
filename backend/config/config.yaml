@@ -459,11 +459,22 @@ paper_trading:
   benchmark_ticker: SPY
 
 # 7-layer confidence: HMM bear penalty vs MA200 trend conflict; ML prob calibration (Platt / isotonic)
+# Standard equity weights: see pre_flight/constants.py (EQUITY_US — fundamentals 14%, regime 11%).
+# Roadmap (staged prices) uses MA/analyst/scenario logic; confidence is a multi-layer nowcast — they can diverge by design.
+# HMM penalty frequency: scripts/audit_hmm_bear_penalty.py; API returns penalty_audit.
 confidence:
+  # options_pc_mode: contrarian | directional | auto (auto = directional when HMM bear > 55%, else contrarian)
+  options_pc_mode: auto
+  ml_short_horizon:
+    shrink_neutral_band: true       # pull 20d ML prob toward 50% when in dead zone (sideways tape)
+    neutral_low: 0.38
+    neutral_high: 0.58
+    neutral_pull_to_50_factor: 0.55
   regime_blend:
-    soften_bear_when_above_ma200: true   # blend regime with trend: softer penalty when price > MA200
-    bear_penalty_mult: 0.40              # HMM bear > 80% (default hard)
-    bear_penalty_mult_above_ma200: 0.72   # same condition but uptrend vs MA200
+    soften_bear_when_above_ma200: true
+    bear_penalty_mult: 0.46           # was 0.40 — slightly less harsh before ease
+    bear_penalty_mult_above_ma200: 0.76  # was 0.72
+    bear_penalty_ease_toward_one: 0.18   # pull multipliers toward 1.0 to limit stacked HMM leverage
   calibration:
     enabled: false                        # set true after running scripts/fit_probability_calibration.py
     path: data/calibration/ml_horizons.json  # relative to backend/
