@@ -381,6 +381,23 @@ class ConfidenceEngine:
                 "10% weight redistributed to other layers."
             )
 
+        # Structured logging: positive-weight layers with no score (weight redistributed)
+        try:
+            for layer in effective_weights:
+                w = float(effective_weights.get(layer) or 0)
+                if w <= 0:
+                    continue
+                if scores.get(layer) is None:
+                    logger.info(
+                        "confidence_layer_omitted ticker=%s layer=%s weight=%.4f label=%s",
+                        ticker,
+                        layer,
+                        w,
+                        (labels.get(layer) or "")[:220],
+                    )
+        except Exception:
+            pass
+
         # ── Weighted confidence (renormalize over available layers) ────────
         # Respect asset-type zero-weights (e.g. insider=0 for ETFs/ADRs)
         available = {
@@ -479,6 +496,8 @@ class ConfidenceEngine:
             "short_interest":   details.get("short_interest"),
             # Analyst EPS consensus (FMP) — certainty, dispersion, count
             "analyst_estimates": details.get("analyst_est"),
+            # Headlines + score for UI (roadmap / ticker detail transparency)
+            "nlp":               details.get("nlp"),
             # Pre-flight enrichment
             "pre_flight":       pre_flight_data,
         }
@@ -826,7 +845,7 @@ def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> d
         "raw_score": raw_f,
         "headline_count": headline_count,
         "sentiment_label": sentiment_label,
-        "headlines": summary.get("headlines", [])[:3],
+        "headlines": summary.get("headlines", [])[:10],
         "source": source,
         "method": method or None,
     }
@@ -948,6 +967,7 @@ def _incompatible_result(ticker: str, classification: Any) -> dict:
         "confidence":      None,
         "action":          "INCOMPATIBLE",
         "breakdown":       {},
+        "nlp":             None,
         "ml_horizons":     None,
         "disqualifiers":   ["Standard equity model not applicable for this instrument type."],
         "risk_factors":    ["Volatility ETFs behave inversely to equity market — do not use standard signals."],

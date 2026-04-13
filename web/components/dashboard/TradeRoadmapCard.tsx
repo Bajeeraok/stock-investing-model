@@ -7,6 +7,7 @@ import {
   TrendingUp,
   TrendingDown,
   LayoutGrid,
+  Newspaper,
 } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -33,6 +34,22 @@ export interface SellRoadmapStage {
   reason: string;
 }
 
+/** Same `run_confidence()` pass as ML/HMM/pattern — headlines + NLP score for transparency */
+export interface NewsSentimentLayerPayload {
+  pipeline_note?: string;
+  score_0_1?: number | null;
+  raw_score_neg1_to_1?: number | null;
+  summary_label?: string | null;
+  sentiment_label?: string | null;
+  headline_count?: number | null;
+  source?: string | null;
+  method?: string | null;
+  headlines?: { title: string; score?: number | null; label?: string | null }[];
+  layer_weight?: number | null;
+  layer_available?: boolean | null;
+  message?: string | null;
+}
+
 export interface TradeRoadmapData {
   current_price: number;
   fair_value: number;
@@ -47,6 +64,7 @@ export interface TradeRoadmapData {
     medium_term: string;
     long_term: string;
   };
+  news_sentiment_layer?: NewsSentimentLayerPayload | null;
 }
 
 const TRADER_FILTER: Record<string, string[]> = {
@@ -129,6 +147,8 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
   const [traderType, setTraderType] = useState<"day_trader" | "swing_trader" | "investor">("swing_trader");
   const [timelineIndex, setTimelineIndex] = useState(0);
   const [expanded, setExpanded] = useState(true);
+  /** News block collapsed by default — expand to verify headlines / NLP inputs */
+  const [newsExpanded, setNewsExpanded] = useState(false);
 
   const allowedKeys = TRADER_FILTER[traderType] || [];
   const activeTimelineKey = TIMELINE_SLIDER_LABELS[timelineIndex]?.key;
@@ -260,6 +280,85 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <p className="text-xs text-slate-500 mt-1.5 border-t border-slate-600/50 pt-1.5">{tickerNote(ticker)}</p>
               )}
             </div>
+
+            {data.news_sentiment_layer && (
+              <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/25 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setNewsExpanded((n) => !n)}
+                  className="w-full px-3 py-2.5 flex items-start gap-2 text-left hover:bg-cyan-950/40 transition-colors"
+                  aria-expanded={newsExpanded}
+                >
+                  <Newspaper className="h-3.5 w-3.5 shrink-0 text-cyan-200/90 mt-0.5" aria-hidden />
+                  <span className="flex-1 min-w-0">
+                    <span className="text-xs text-cyan-200/90 font-medium block">Headlines (news sentiment layer)</span>
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                      {data.news_sentiment_layer.sentiment_label && (
+                        <span className="text-slate-400">{data.news_sentiment_layer.sentiment_label}</span>
+                      )}
+                      {data.news_sentiment_layer.score_0_1 != null && (
+                        <span className={data.news_sentiment_layer.sentiment_label ? " · " : ""}>
+                          Score {(data.news_sentiment_layer.score_0_1 * 100).toFixed(0)}%
+                        </span>
+                      )}
+                      {data.news_sentiment_layer.headline_count != null && (
+                        <span>
+                          {" "}
+                          · {data.news_sentiment_layer.headline_count} articles sampled
+                        </span>
+                      )}
+                      {!newsExpanded && <span className="text-slate-600"> · Tap to expand</span>}
+                    </span>
+                  </span>
+                  {newsExpanded ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" aria-hidden />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" aria-hidden />
+                  )}
+                </button>
+                {newsExpanded && (
+                  <div className="px-3 pb-2.5 pt-0 border-t border-cyan-500/15">
+                    {data.news_sentiment_layer.pipeline_note && (
+                      <p className="text-[11px] text-slate-500 mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
+                    )}
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mb-2 font-mono">
+                      {data.news_sentiment_layer.score_0_1 != null && (
+                        <span>
+                          Layer score:{" "}
+                          <span className="text-slate-200">{(data.news_sentiment_layer.score_0_1 * 100).toFixed(0)}%</span>
+                        </span>
+                      )}
+                      {data.news_sentiment_layer.sentiment_label && (
+                        <span>Label: {data.news_sentiment_layer.sentiment_label}</span>
+                      )}
+                      {data.news_sentiment_layer.source && <span>Source: {data.news_sentiment_layer.source}</span>}
+                      {data.news_sentiment_layer.method && <span>Method: {data.news_sentiment_layer.method}</span>}
+                      {data.news_sentiment_layer.layer_weight != null && (
+                        <span>Weight in confidence: {(Number(data.news_sentiment_layer.layer_weight) * 100).toFixed(0)}%</span>
+                      )}
+                      {data.news_sentiment_layer.layer_available === false && (
+                        <span className="text-amber-400/90">Layer omitted (redistributed)</span>
+                      )}
+                    </div>
+                    {data.news_sentiment_layer.message && (
+                      <p className="text-[11px] text-amber-200/80 mb-2">{data.news_sentiment_layer.message}</p>
+                    )}
+                    {data.news_sentiment_layer.summary_label && (
+                      <p className="text-xs text-slate-400 mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
+                    )}
+                    {(data.news_sentiment_layer.headlines?.length ?? 0) > 0 && (
+                      <ul className="space-y-1.5 text-xs text-slate-300 border-t border-slate-600/40 pt-2">
+                        {(data.news_sentiment_layer.headlines ?? []).map((h, i) => (
+                          <li key={i} className="leading-snug pl-2 border-l-2 border-slate-600/60">
+                            {h.title}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Buy Roadmap table */}
             {(tab === "buy" || tab === "full") && (

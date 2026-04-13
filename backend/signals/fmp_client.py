@@ -445,7 +445,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
         avg = float(_np.mean(_np.clip(_np.array(fmp_scores, dtype=float), -1.0, 1.0)))
         label = "Bullish" if avg > 0.15 else "Bearish" if avg < -0.15 else "Neutral"
         headlines = []
-        for item in raw_items[:5]:
+        for item in raw_items[:10]:
             title = (item.get("title") or "")[:120]
             headlines.append(
                 {
@@ -468,7 +468,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
 
     kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items)
     headlines = []
-    for item in raw_items[:5]:
+    for item in raw_items[:10]:
         title = (item.get("title") or "")[:120]
         headlines.append({"title": title, "score": None, "label": "Neutral"})
 

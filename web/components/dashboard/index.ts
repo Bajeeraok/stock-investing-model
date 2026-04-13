@@ -29,6 +29,7 @@ export { PortfolioDoctorRecommendations } from "./PortfolioDoctorRecommendations
 export { PortfolioRiskMetricsPanel } from "./PortfolioRiskMetricsPanel";
 export { MarketReversalBanner } from "./MarketReversalBanner";
 export { PaperTradingPanel } from "./PaperTradingPanel";
+export { PaperVsBacktestDrift, type PaperVsBacktestDriftPayload } from "./PaperVsBacktestDrift";
 export { MarketScenarios } from "./MarketScenarios";
 export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";
 export { ForwardTracking } from "./ForwardTracking";

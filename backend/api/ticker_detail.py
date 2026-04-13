@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -355,6 +356,62 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     return response
 
 
+def _build_news_sentiment_layer_for_ui(conf: dict | None) -> dict | None:
+    """
+    Sanitized news/NLP payload for the roadmap UI — same run_confidence() pass as ML/HMM/pattern inputs.
+    """
+    if not conf:
+        return None
+    nlp = conf.get("nlp")
+    bd = conf.get("breakdown") or {}
+    news_b = bd.get("nlp_sentiment") if isinstance(bd.get("nlp_sentiment"), dict) else {}
+    if not news_b and isinstance(bd.get("news"), dict):
+        news_b = bd["news"]
+    weight = news_b.get("weight")
+    available = news_b.get("available")
+    label_bd = news_b.get("label")
+
+    headlines_out: list[dict[str, Any]] = []
+    if isinstance(nlp, dict):
+        for h in (nlp.get("headlines") or [])[:10]:
+            if isinstance(h, dict):
+                headlines_out.append(
+                    {
+                        "title": str(h.get("title") or "")[:220],
+                        "score": h.get("score"),
+                        "label": h.get("label"),
+                    }
+                )
+            elif isinstance(h, str):
+                headlines_out.append({"title": h[:220], "score": None, "label": None})
+
+    has_score = isinstance(nlp, dict) and nlp.get("score") is not None
+    return {
+        "pipeline_note": (
+            "Headlines feed the news sentiment layer in the same confidence run that supplies "
+            "ML horizons, HMM regime, and pattern scores for this roadmap — not a separate price engine."
+        ),
+        "score_0_1": nlp.get("score") if isinstance(nlp, dict) else None,
+        "raw_score_neg1_to_1": nlp.get("raw_score") if isinstance(nlp, dict) else None,
+        "summary_label": (nlp.get("label") if isinstance(nlp, dict) else None) or label_bd,
+        "sentiment_label": nlp.get("sentiment_label") if isinstance(nlp, dict) else None,
+        "headline_count": nlp.get("headline_count") if isinstance(nlp, dict) else None,
+        "source": nlp.get("source") if isinstance(nlp, dict) else None,
+        "method": nlp.get("method") if isinstance(nlp, dict) else None,
+        "headlines": headlines_out,
+        "layer_weight": weight,
+        "layer_available": available,
+        "message": (
+            None
+            if has_score
+            else (
+                "No scored news sentiment this run (missing API data, rate limit, or news layer disabled "
+                "for this asset type). Other layers still drive the roadmap; weights may be redistributed."
+            )
+        ),
+    }
+
+
 def _build_investor_summary(
     ticker: str,
     config: dict,
@@ -392,23 +449,24 @@ def _build_investor_summary(
     if ma50 is None or ma200 is None or low_52w is None:
         return None
 
-    # ML probs and regime from confidence engine
+    # ML probs and regime from confidence engine (full `conf` kept for roadmap news transparency)
+    conf_snapshot: dict | None = None
     st_ml_prob = mt_ml_prob = lt_ml_prob = 25.0
     regime_bull_pct = 50.0
     pattern_score = 50.0
     if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
         pattern_score = float(response["score_breakdown"]["composite"])
     try:
-        conf = run_confidence(ticker, config=config)
-        if conf:
-            mh = conf.get("ml_horizons") or {}
+        conf_snapshot = run_confidence(ticker, config=config)
+        if conf_snapshot:
+            mh = conf_snapshot.get("ml_horizons") or {}
             st_ml_prob = float(mh.get("short", {}).get("prob") or 0.25) * 100.0
             mt_ml_prob = float(mh.get("medium", {}).get("prob") or 0.25) * 100.0
             lt_ml_prob = float(mh.get("long", {}).get("prob") or 0.25) * 100.0
-            hmm = conf.get("hmm") or {}
+            hmm = conf_snapshot.get("hmm") or {}
             regime_bull_pct = float(hmm.get("bull_probability") or 0.5) * 100.0
             # Use 7-layer pattern_technical when available so horizon and confidence show same number
-            b = conf.get("breakdown") or {}
+            b = conf_snapshot.get("breakdown") or {}
             pl = b.get("pattern") or b.get("pattern_technical")
             if isinstance(pl, dict) and pl.get("score") is not None:
                 pattern_score = float(pl["score"]) * 100.0
@@ -746,6 +804,9 @@ def _build_investor_summary(
         roadmap_cfg=roadmap_cfg,
         regime_signal_precedence_note=regime_signal_note,
     )
+    news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot)
+    if news_layer and isinstance(out.get("trade_roadmap"), dict):
+        out["trade_roadmap"] = {**out["trade_roadmap"], "news_sentiment_layer": news_layer}
     out["scenario_target"] = (out.get("trade_roadmap") or {}).get("scenario_target")
 
     # One Answer + Trader / Investor roadmaps (horizons.medium.target already synced in _build_trade_roadmap)
@@ -897,12 +958,46 @@ def _build_trade_roadmap(
     stop_52w = round((low_52w or current_price * 0.8) * 0.97, 2)
     regime_label = f"Bull {regime_bull_pct:.0f}%" if regime_bull_pct >= 50 else f"Bear {100 - regime_bull_pct:.0f}%"
 
+    # Core / MA200 tier (3–6m) — compute first so near-term rows can match the same entry ladder.
+    c6_lo, c6_hi, c6_when, c6_cond = _roadmap_core_zone_3_to_6(
+        current_price, ma200, t1_lo, t1_hi, t2_lo, t2_hi, low_52w
+    )
+    # Same story as long-horizon investor copy: pullbacks toward MA200 when spot is not meaningfully below MA200.
+    lt_pullback_toward_ma200 = bool(
+        ma200 and ma200 > 0 and current_price >= ma200 * 0.985
+    )
+    extended_above_core_zone = bool(
+        c6_lo is not None and c6_hi is not None and current_price > float(c6_hi) * 1.002
+    )
+    align_buy_rows_to_core = bool(
+        lt_pullback_toward_ma200
+        and extended_above_core_zone
+        and display_verdict not in ("REDUCE", "AVOID")
+    )
+
+    zone_core_lo = round(c6_lo, 2) if c6_lo is not None else None
+    zone_core_hi = round(c6_hi, 2) if c6_hi is not None else None
+    core_zone_fmt = (
+        f"${zone_core_lo:.2f}–${zone_core_hi:.2f}"
+        if (zone_core_lo is not None and zone_core_hi is not None)
+        else "core zone"
+    )
+
     # ── Buy roadmap stages ───────────────────────────────────────────────────
     buy_stages = []
-    # Today
+
+    # Today — when extended above MA200/core, do not show a competing ST band as the primary entry.
     if display_verdict in ("REDUCE", "AVOID"):
         when = "Do not buy"
         cond = f"Regime {regime_label} — {display_verdict} today"
+        conv = "None"
+        pos = 0
+    elif align_buy_rows_to_core:
+        when = "Watch only"
+        cond = (
+            f"Spot is above preferred adds at {core_zone_fmt} (MA200 / core tier — same ladder as summary). "
+            f"Wait for pullback; short-term band is not the plan entry."
+        )
         conv = "None"
         pos = 0
     else:
@@ -910,8 +1005,6 @@ def _build_trade_roadmap(
         in_st_band = bool(s_lo and s_hi and s_lo <= current_price <= s_hi)
         st_conv = (short.get("conviction") or "").strip()
         st_conv_l = st_conv.lower()
-        # Reserve "In entry zone" for when the short horizon itself is at least medium conviction;
-        # otherwise price-in-band is geographic only (weak setup / starter size).
         if not in_st_band:
             cond = "Wait for pullback"
         elif st_conv_l in ("medium", "high"):
@@ -923,9 +1016,21 @@ def _build_trade_roadmap(
         else:
             conv = "None"
         pos = 25 if when == "Start small" else 0
-    # Show ST band for Today when available so zone matches the entry-zone / band wording
-    today_lo = round(s_lo, 2) if s_lo else round(current_price, 2)
-    today_hi = round(s_hi, 2) if s_hi else round(current_price, 2)
+    if align_buy_rows_to_core:
+        today_lo = zone_core_lo
+        today_hi = zone_core_hi
+    else:
+        today_lo = round(s_lo, 2) if s_lo else round(current_price, 2)
+        today_hi = round(s_hi, 2) if s_hi else round(current_price, 2)
+
+    # Cumulative % is staged deployment (legacy: 25 → 25 → 60 → 85 → 100), not a raw sum of rows.
+    if align_buy_rows_to_core:
+        cum_today, cum_days, cum_week, cum_13, cum_36, cum_612 = 0, 0, 0, 35, 60, 100
+    else:
+        cum_today = cum_days = pos
+        cum_week = 25
+        cum_13, cum_36, cum_612 = 60, 85, 100
+
     buy_stages.append({
         "timeline_key": "today",
         "label": "Today",
@@ -935,7 +1040,7 @@ def _build_trade_roadmap(
         "condition": cond,
         "conviction": conv,
         "position_pct": pos,
-        "cumulative_pct": pos,
+        "cumulative_pct": cum_today,
     })
 
     # Days 1–10
@@ -950,39 +1055,59 @@ def _build_trade_roadmap(
         "condition": "Wait for regime shift signal",
         "conviction": "None",
         "position_pct": 0,
-        "cumulative_pct": pos,
+        "cumulative_pct": cum_days,
     })
 
-    # Week 2–4 (short entry)
+    # Week 2–4 (short entry) — align zone to core ladder when extended (no separate ST band as entry).
+    if align_buy_rows_to_core:
+        w_pos = 0
+        w_when = "Watch only"
+        w_cond = f"Same preferred zone {core_zone_fmt} — wait for price into band (aligned with 3–6 mo row)."
+        w_lo, w_hi = zone_core_lo, zone_core_hi
+    else:
+        w_pos = 25
+        w_when = "Start small"
+        w_cond = f"Price touches MA50 + ML crosses 25%"
+        w_lo = round(s_lo, 2) if s_lo else None
+        w_hi = round(s_hi, 2) if s_hi else None
     buy_stages.append({
         "timeline_key": "week_2_4",
         "label": "Week 2–4",
-        "when_to_act": "Start small",
-        "price_zone_low": round(s_lo, 2) if s_lo else None,
-        "price_zone_high": round(s_hi, 2) if s_hi else None,
-        "condition": f"Price touches MA50 + ML crosses 25%",
-        "conviction": "Low-Medium",
-        "position_pct": 25,
-        "cumulative_pct": 25,
+        "when_to_act": w_when,
+        "price_zone_low": w_lo,
+        "price_zone_high": w_hi,
+        "condition": w_cond,
+        "conviction": "None" if align_buy_rows_to_core else "Low-Medium",
+        "position_pct": w_pos,
+        "cumulative_pct": cum_week,
     })
 
-    # 1–3 months (medium zone)
+    # 1–3 months (medium zone) — same core zone when aligning so entry bands do not disagree.
+    if align_buy_rows_to_core:
+        m13_lo, m13_hi = zone_core_lo, zone_core_hi
+        m13_cond = (
+            f"Adds when price reaches {core_zone_fmt} over this window (MA50/HMM context). "
+            f"Same entry ladder as Today / Week 2–4 / 3–6 mo — not a different price story."
+        )
+    else:
+        m13_lo = round(m_lo, 2) if m_lo else None
+        m13_hi = round(m_hi, 2) if m_hi else None
+        m13_cond = f"MA50 holds + HMM transitions + Pattern >50%"
+    pos_13 = 35
     buy_stages.append({
         "timeline_key": "1_3_months",
         "label": "1–3 months",
         "when_to_act": "Add position",
-        "price_zone_low": round(m_lo, 2) if m_lo else None,
-        "price_zone_high": round(m_hi, 2) if m_hi else None,
-        "condition": f"MA50 holds + HMM transitions + Pattern >50%",
+        "price_zone_low": m13_lo,
+        "price_zone_high": m13_hi,
+        "condition": m13_cond,
         "conviction": "Medium",
-        "position_pct": 35,
-        "cumulative_pct": 60,
+        "position_pct": pos_13,
+        "cumulative_pct": cum_13,
     })
 
-    # 3–6 months (long-term core): avoid MA200 tier as "buy higher" when spot is below that band
-    c6_lo, c6_hi, c6_when, c6_cond = _roadmap_core_zone_3_to_6(
-        current_price, ma200, t1_lo, t1_hi, t2_lo, t2_hi, low_52w
-    )
+    # 3–6 months (long-term core)
+    pos_36 = 25
     buy_stages.append({
         "timeline_key": "3_6_months",
         "label": "3–6 months",
@@ -991,21 +1116,27 @@ def _build_trade_roadmap(
         "price_zone_high": c6_hi,
         "condition": c6_cond,
         "conviction": "High",
-        "position_pct": 25,
-        "cumulative_pct": 85,
+        "position_pct": pos_36,
+        "cumulative_pct": cum_36,
     })
 
-    # 6–12 months (T3 52w stress) — tail risk, not a planned “core” entry
+    # 6–12 months (T3 52w stress) — when early tranches were 0, complete 100% with a larger tail slice.
+    pos_612 = 40 if align_buy_rows_to_core else 15
+    tail_extra = (
+        " Remaining slice completes the 100% plan after waiting for core zone (early rows were 0%)."
+        if align_buy_rows_to_core
+        else ""
+    )
     buy_stages.append({
         "timeline_key": "6_12_months",
         "label": "6–12 months (tail risk)",
         "when_to_act": "Tail risk / black swan zone only",
         "price_zone_low": round(t3_lo, 2) if t3_lo else (round((low_52w or current_price * 0.75) * 1.05, 2) if low_52w else None),
         "price_zone_high": round(t3_hi, 2) if t3_hi else (round((low_52w or current_price * 0.75) * 1.15, 2) if low_52w else None),
-        "condition": "Only if 52w low breaks or liquidity crash — not a base-case entry",
+        "condition": "Only if 52w low breaks or liquidity crash — not a base-case entry" + tail_extra,
         "conviction": "Stress / rare",
-        "position_pct": 15,
-        "cumulative_pct": 100,
+        "position_pct": pos_612,
+        "cumulative_pct": cum_612,
     })
 
     # ── Sell roadmap stages ───────────────────────────────────────────────────

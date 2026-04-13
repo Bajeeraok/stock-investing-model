@@ -44,6 +44,7 @@ import {
   ModelHealthStrip,
   MorningNewsletter,
   PaperTradingPanel,
+  PaperVsBacktestDrift,
   PreMarketPanel,
   PreMarketStrip,
   type PreMarketData,
@@ -865,7 +866,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   />
                 </ToggleSection>
               )}
-              {data.paper_trading && (
+              {(data.paper_trading || data.paper_vs_backtest_drift) && (
                 <ToggleSection
                   id="analysis-paper"
                   title="Paper trading"
@@ -873,7 +874,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   badge={data.paper_trading?.summary?.completed ?? undefined}
                   defaultOpen={false}
                 >
-                  <PaperTradingPanel data={data} />
+                  {data.paper_vs_backtest_drift && (
+                    <PaperVsBacktestDrift drift={data.paper_vs_backtest_drift} />
+                  )}
+                  {data.paper_trading && <PaperTradingPanel data={data} />}
                 </ToggleSection>
               )}
               {data.forward_tracking?.message && !data.forward_tracking?.records?.length && (

@@ -419,6 +419,18 @@ def run_signals(
             except Exception:
                 pass
 
+        ohlcv_last_date = None
+        if close is not None and len(close) > 0:
+            try:
+                ix = close.dropna().index
+                if len(ix) > 0:
+                    lix = ix[-1]
+                    ohlcv_last_date = (
+                        lix.strftime("%Y-%m-%d") if hasattr(lix, "strftime") else str(lix)[:10]
+                    )
+            except Exception:
+                pass
+
         row = {
             "ticker": ticker,
             "close": sig["close"],
@@ -483,6 +495,7 @@ def run_signals(
             "fair_pe_high": fair_pe_high,
             "band_event_multiplier": band_event_mult,
             "band_event_note": band_event_note,
+            "ohlcv_last_date": ohlcv_last_date,
         }
         add_target_bands(row)
         results.append(row)

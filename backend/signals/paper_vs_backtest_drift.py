@@ -1,0 +1,73 @@
+"""
+Paper vs forward-tracking baseline — drift smoke test.
+
+Compares realized returns on completed paper trades to the unconditional
+20-trading-day mean from `get_forward_tracking` (EOD snapshot population).
+Not a rigorous A/B (different samples); useful to spot gross divergence.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from signals.paper_trade_logger import PaperTradeLogger
+
+
+def build_paper_vs_backtest_drift(
+    forward_tracking: dict[str, Any] | None,
+    data_root: Path | None = None,
+) -> dict[str, Any] | None:
+    """
+    Returns a small dict for the dashboard API, or None if nothing to show.
+    """
+    if forward_tracking is None:
+        return None
+
+    root = data_root
+    if root is None:
+        from config_loader import get_data_root
+
+        root = get_data_root()
+
+    ft_20 = (forward_tracking.get("summary_by_horizon") or {}).get(20)
+    forward_mean = None
+    forward_n = None
+    if isinstance(ft_20, dict):
+        forward_mean = ft_20.get("avg_return_pct")
+        forward_n = ft_20.get("n_observations")
+
+    ptl = PaperTradeLogger(root)
+    summ = ptl.get_performance_summary(min_completed=3, min_actionable=3)
+
+    completed = int(summ.get("completed") or 0)
+    if completed < 3:
+        return {
+            "status": "insufficient_paper",
+            "paper_completed_n": completed,
+            "forward_20d_baseline_pct": forward_mean,
+            "forward_20d_n": forward_n,
+            "message": "Need 3+ completed paper trades to compare drift (20d horizon outcomes).",
+        }
+
+    paper_avg = summ.get("avg_return_pct")
+    drift = None
+    if forward_mean is not None and paper_avg is not None:
+        try:
+            drift = round(float(paper_avg) - float(forward_mean), 2)
+        except (TypeError, ValueError):
+            pass
+
+    return {
+        "status": summ.get("status") or "ok",
+        "paper_completed_n": completed,
+        "paper_avg_return_pct": paper_avg,
+        "paper_win_rate_pct": summ.get("win_rate_pct"),
+        "paper_avg_excess_vs_spy_pct": summ.get("avg_excess_vs_spy_pct"),
+        "forward_20d_baseline_pct": forward_mean,
+        "forward_20d_n": forward_n,
+        "drift_vs_forward_pct": drift,
+        "note": (
+            "Forward-tracking 20d mean is a population baseline from EOD snapshots; "
+            "paper trades are your subset — large drift warrants checking fills and horizons."
+        ),
+    }

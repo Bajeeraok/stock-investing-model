@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
+import type { PaperVsBacktestDriftPayload } from "@/components/dashboard/PaperVsBacktestDrift";
 
 // Use relative /api/* so Next.js rewrites proxy to backend (BACKEND_API_URL). No NEXT_PUBLIC needed for Railway.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -386,6 +387,8 @@ export interface DashboardData {
     summary_by_signal?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
     message?: string | null;
   };
+  /** Paper realized returns vs forward-tracking 20d population mean (smoke test; Analysis tab) */
+  paper_vs_backtest_drift?: PaperVsBacktestDriftPayload | null;
   /** EOD freshness, accuracy report, forward ADD hit rate, optional weekly backtest (data/model_health.json) */
   model_health?: import("@/components/dashboard/index").ModelHealthData;
   /** Morning brief (Markets tab): market pulse, key levels, today's focus, action items */
@@ -524,6 +527,9 @@ export interface DashboardData {
     fundamentals?: string;
     macro?: string;
     disclaimer?: string;
+    price_last_bar_date?: string | null;
+    eod_snapshot_latest_date?: string | null;
+    precision_note?: string | null;
   };
   /** Parallel shock scenarios to total portfolio value (illustrative) */
   portfolio_stress?: {

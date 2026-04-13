@@ -1034,13 +1034,37 @@ async def get_dashboard():
     from datetime import datetime as _dt
     as_of_date = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    ohlcv_dates: list[str] = []
+    for r in results or []:
+        if isinstance(r, dict) and r.get("ohlcv_last_date"):
+            ohlcv_dates.append(str(r["ohlcv_last_date"])[:10])
+    price_last_bar_date = max(ohlcv_dates) if ohlcv_dates else None
+    eod_latest_date = None
+    if eod_snapshots and isinstance(eod_snapshots, list) and len(eod_snapshots) > 0:
+        e0 = eod_snapshots[0]
+        if isinstance(e0, dict):
+            eod_latest_date = e0.get("date")
+
     data_freshness = {
         "as_of_utc": as_of_date,
         "prices": "Daily adjusted close from the data pipeline (typically prior session close vs. run time).",
         "fundamentals": "FMP / estimates can lag filings; not point-in-time perfect for backtests.",
         "macro": "FRED / cross-asset as of last observation before this run.",
         "disclaimer": "Signals are model output, not investment advice.",
+        "price_last_bar_date": price_last_bar_date,
+        "eod_snapshot_latest_date": eod_latest_date,
+        "precision_note": (
+            "Targets and stops are model ranges and thresholds, not guaranteed prices."
+        ),
     }
+
+    paper_vs_backtest_drift = None
+    try:
+        from signals.paper_vs_backtest_drift import build_paper_vs_backtest_drift
+
+        paper_vs_backtest_drift = build_paper_vs_backtest_drift(forward_tracking, data_root)
+    except Exception as e:
+        logger.debug("paper_vs_backtest_drift: %s", e)
 
     portfolio_stress: dict = {}
     try:
@@ -1136,6 +1160,7 @@ async def get_dashboard():
         "indicator_comparisons": indicator_comparisons,
         "model_validation": model_validation,
         "forward_tracking": forward_tracking,
+        "paper_vs_backtest_drift": paper_vs_backtest_drift,
         "paper_trading": paper_trading,
         "pre_market": pre_market,
         "pre_market_full": pre_market_full,

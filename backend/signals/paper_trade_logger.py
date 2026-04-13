@@ -808,7 +808,9 @@ class PaperTradeLogger:
             "completed": len(completed),
         }
 
-        if len(completed) < 5:
+        # Need enough rows for basic stats; cap at 5 for default (60) runs, allow 3 when caller passes min_completed=3 (e.g. paper vs forward drift).
+        stats_floor = max(3, min(5, int(min_completed)))
+        if len(completed) < stats_floor:
             out["status"] = f"Need more data: {len(completed)}/{min_completed} completed trades"
             out["message"] = None
             return out
