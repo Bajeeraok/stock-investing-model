@@ -396,32 +396,11 @@ def _fmp_item_sentiment_raw(item: dict) -> float | None:
     return None
 
 
-def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict | None, str | None]:
+def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) -> dict:
     """
-    Fetch recent stock news (FMP v3 stock_news).
-
-    Returns summary:
-      sentiment_score_avg — raw in [-1, 1] for ConfidenceEngine (mapped to 0..1 there)
-      sentiment_method — "fmp_field" | "keyword" | "none" (caller may try Alpha Vantage)
-      headline_count, headlines
-
-    v3 stock_news usually has no sentiment field; we aggregate keyword scores from
-    title + text. If API adds scores later, _fmp_item_sentiment_raw uses them first.
+    Build FMP-style summary dict from stable or v3 news rows (raw JSON objects).
     """
-    api_key = get_api_key(config)
-    if not api_key:
-        return None, "No FMP API key"
-    sym = (ticker or "").upper().split("-")[0]
-    if not sym:
-        return None, "No ticker"
-    url = f"{BASE_V3}/stock_news?tickers={sym}&limit={min(limit, 50)}"
-    data, err = _request(url, api_key)
-    if err:
-        return None, err
-    if not isinstance(data, list):
-        return None, "Unexpected stock_news response"
-
-    raw_items = [x for x in data[:limit] if isinstance(x, dict)]
+    raw_items = [x for x in rows[:limit] if isinstance(x, dict)]
     if not raw_items:
         return {
             "ticker": ticker,
@@ -430,7 +409,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
             "sentiment_method": "none",
             "headline_count": 0,
             "headlines": [],
-        }, None
+        }
 
     # Per-article API sentiment when present
     fmp_scores: list[float] = []
@@ -446,7 +425,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
         label = "Bullish" if avg > 0.15 else "Bearish" if avg < -0.15 else "Neutral"
         headlines = []
         for item in raw_items[:10]:
-            title = (item.get("title") or "")[:120]
+            title = (item.get("title") or item.get("headline") or "")[:120]
             headlines.append(
                 {
                     "title": title,
@@ -461,7 +440,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
             "sentiment_method": "fmp_field",
             "headline_count": len(raw_items),
             "headlines": headlines,
-        }, None
+        }
 
     # Keyword lexicon on title + text
     from signals.news_keyword_sentiment import aggregate_keyword_sentiment
@@ -469,7 +448,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
     kw_avg, n_h, kw_hit = aggregate_keyword_sentiment(raw_items)
     headlines = []
     for item in raw_items[:10]:
-        title = (item.get("title") or "")[:120]
+        title = (item.get("title") or item.get("headline") or "")[:120]
         headlines.append({"title": title, "score": None, "label": "Neutral"})
 
     if kw_hit and kw_avg is not None:
@@ -481,7 +460,7 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
             "sentiment_method": "keyword",
             "headline_count": n_h,
             "headlines": headlines,
-        }, None
+        }
 
     # Headlines only — no usable signal for this path; caller should try Alpha Vantage
     return {
@@ -491,7 +470,49 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
         "sentiment_method": "none",
         "headline_count": len(raw_items),
         "headlines": headlines,
-    }, None
+    }
+
+
+def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict | None, str | None]:
+    """
+    Fetch recent stock news: prefer FMP stable ``/news/stock``, fall back to legacy v3 ``stock_news``.
+
+    Returns summary:
+      sentiment_score_avg — raw in [-1, 1] for ConfidenceEngine (mapped to 0..1 there)
+      sentiment_method — "fmp_field" | "keyword" | "none" (caller may try Alpha Vantage)
+      headline_count, headlines
+
+    Rows usually have no ML sentiment field; we aggregate keyword scores from title + body.
+    If API adds scores later, _fmp_item_sentiment_raw uses them first.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    lim = min(limit, 50)
+    errs: list[str] = []
+
+    # Primary: stable search stock news (documented path; v3 may be restricted on some plans)
+    url_stable = f"{BASE}/news/stock?symbols={sym}"
+    data_s, err_s = _request(url_stable, api_key)
+    if not err_s and isinstance(data_s, list) and data_s:
+        return _stock_news_summary_from_items(data_s, ticker, limit), None
+    if err_s:
+        errs.append(f"stable: {err_s}")
+
+    # Fallback: legacy v3
+    url_v3 = f"{BASE_V3}/stock_news?tickers={sym}&limit={lim}"
+    data_v, err_v = _request(url_v3, api_key)
+    if not err_v and isinstance(data_v, list) and data_v:
+        return _stock_news_summary_from_items(data_v, ticker, limit), None
+    if err_v:
+        errs.append(f"v3: {err_v}")
+
+    if errs:
+        return None, "; ".join(errs)
+    return None, "Empty stock news (stable and v3)"
 
 
 def fetch_profile(config: dict, ticker: str) -> tuple[dict | None, str | None]:

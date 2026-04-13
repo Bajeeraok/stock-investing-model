@@ -61,6 +61,61 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
   );
 }
 
+/** 7-layer action — same engine as Roadmaps / ticker detail */
+function PlanActionBadge({
+  action,
+  conf,
+}: {
+  action: string | null | undefined;
+  conf?: number | null;
+}) {
+  if (!action) {
+    return (
+      <span className="text-[10px] text-slate-500" title="Run dashboard with watchlist tickers to load 7-layer plan">
+        —
+      </span>
+    );
+  }
+  const a = action.toUpperCase();
+  const style =
+    a.includes("STRONG BUY")
+      ? SIGNAL_STYLES["STRONG BUY"]
+      : a.includes("BUY") && !a.includes("WATCH")
+        ? SIGNAL_STYLES["BUY"]
+        : a.includes("AVOID")
+          ? SIGNAL_STYLES["AVOID"]
+          : a.includes("REDUCE")
+            ? SIGNAL_STYLES["REDUCE"]
+            : a.includes("WATCH")
+              ? SIGNAL_STYLES["WATCH"]
+              : SIGNAL_STYLES["HOLD"];
+  const pct = conf != null ? Math.round(conf * 100) : null;
+  const title = [
+    `${action}${pct != null ? ` · ${pct}% confidence` : ""}`,
+    "Confluence + ML tiers + fundamentals/news where applicable — matches Roadmaps tab.",
+  ].join(" ");
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-semibold max-w-[10rem] text-left leading-snug",
+        style.bg,
+        style.text,
+        style.border,
+      )}
+      title={title}
+    >
+      {action}
+    </span>
+  );
+}
+
+function sanitizeEarningsFlag(s: string): string {
+  if (/403|401|Forbidden|timeout|Client Error/i.test(s)) {
+    return "Earnings quality unavailable (data source)";
+  }
+  return s.length > 80 ? `${s.slice(0, 77)}…` : s;
+}
+
 // ── Mini signal-dot helper ────────────────────────────────────────────────────
 // Shows 3 compact dots (Trend / RSI / MACD) below the confluence number so the
 // user can instantly see WHICH signals are aligned without opening the modal.
@@ -138,8 +193,11 @@ function EarningsCell({ signal: r }: { signal: Signal }) {
         </div>
       )}
       {flagStr ? (
-        <span className="text-[10px] text-slate-500 block truncate" title={flags.join("; ")}>
-          {flagStr}
+        <span
+          className="text-[10px] text-slate-500 block truncate"
+          title={flags.join("; ")}
+        >
+          {sanitizeEarningsFlag(flagStr)}
         </span>
       ) : null}
     </div>
@@ -260,14 +318,16 @@ export function SignalsTable({
               <span className="font-mono font-semibold text-emerald-400 text-base">{r.ticker}</span>
               <div className="flex flex-col items-end gap-0.5">
                 <div className="flex items-center gap-2">
-                  {tickerActions?.[r.ticker] && (
+                  {r.plan_action ? (
+                    <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />
+                  ) : tickerActions?.[r.ticker] ? (
                     <span
                       className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300")}
                       title={tickerActions[r.ticker].one_liner}
                     >
                       {tickerActions[r.ticker].action}
                     </span>
-                  )}
+                  ) : null}
                   <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
                 </div>
                 {r.risk_sizing && (
@@ -302,6 +362,7 @@ export function SignalsTable({
               )}>
                 {r.regime ?? "-"}
               </span>
+              <span className="text-[9px] text-slate-600 uppercase tracking-wide">Tech+ML</span>
               <SignalBadge signal={r.signal} />
               {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
             </div>
@@ -316,7 +377,7 @@ export function SignalsTable({
 
       {/* Desktop: table with sticky header + sticky first column */}
       <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[1120px] text-sm border-collapse">
+        <table className="w-full min-w-[1240px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">
               <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800/95 backdrop-blur-sm px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
@@ -346,8 +407,17 @@ export function SignalsTable({
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Regime
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
-                Signal
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help text-left min-w-[7rem]"
+                title="7-layer confidence action — same model as the Roadmaps tab and ticker detail (not the old confluence-only tier)."
+              >
+                Plan (7L)
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help whitespace-nowrap"
+                title="Confluence + ML short-term tier (technical alignment). Can differ from Plan when ML is weak or regime gates apply."
+              >
+                Tech+ML
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help text-left"
@@ -361,8 +431,11 @@ export function SignalsTable({
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Buy / Sell / Support
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
-                Short / Med / Long
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 min-w-[11rem]"
+                title="Horizon cues (ST/MT/LT) — aligned with Plan when plan says reduce/avoid."
+              >
+                Horizons ST / MT / LT
               </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
                 Vol / DD
@@ -398,7 +471,7 @@ export function SignalsTable({
                     >
                       {r.ticker}
                     </button>
-                    {tickerActions?.[r.ticker] && (
+                    {!r.plan_action && tickerActions?.[r.ticker] && (
                       <span
                         className={clsx(
                           "text-[10px] font-semibold px-1.5 py-0.5 rounded",
@@ -467,7 +540,10 @@ export function SignalsTable({
                     {r.regime ?? "-"}
                   </span>
                 </td>
-                <td className="px-3 py-2.5">
+                <td className="px-3 py-2.5 align-top max-w-[10.5rem]">
+                  <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />
+                </td>
+                <td className="px-3 py-2.5 align-top">
                   <SignalBadge signal={r.signal} />
                 </td>
                 <td className="px-3 py-2.5 align-top text-xs">
@@ -497,29 +573,36 @@ export function SignalsTable({
                     </>
                   )}
                 </td>
-                <td className="px-4 py-3 text-base text-slate-400">
-                  <div>
-                    {[r.short_suggestion, r.medium_suggestion, r.long_suggestion]
-                      .filter(Boolean)
-                      .join(" / ") || "-"}
+                <td className="px-3 py-2.5 align-top text-slate-400 max-w-[min(100vw,20rem)]">
+                  <div className="space-y-1.5 text-[11px] leading-snug">
+                    <div className="flex gap-1.5">
+                      <span className="text-slate-600 shrink-0 w-7">ST</span>
+                      <span className="text-slate-300 min-w-0">{r.short_suggestion || "—"}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <span className="text-slate-600 shrink-0 w-7">MT</span>
+                      <span className="text-slate-300 min-w-0">{r.medium_suggestion || "—"}</span>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <span className="text-slate-600 shrink-0 w-7">LT</span>
+                      <span className="text-slate-300 min-w-0">{r.long_suggestion || "—"}</span>
+                    </div>
                     {(r.st_band || r.mt_band || r.lt_band) && (
-                      <div className="text-xs text-slate-500 mt-1 space-y-0.5" title="ST: stop–target. MT: vol band. LT: fair+consensus">
+                      <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5" title="ST: stop–target. MT: vol band. LT: fair+consensus">
                         {r.st_band && (
-                          <span className="block">ST: ${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)}</span>
+                          <span className="block font-mono">${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)} ST band</span>
                         )}
                         {r.mt_band && (
-                          <span className="block">MT: ${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)}</span>
+                          <span className="block font-mono">${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)} MT band</span>
                         )}
                         {r.lt_band && (
-                          <span className="block">
-                            LT: ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)}
+                          <span className="block font-mono">
+                            ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)} LT
                             {r.lt_band_low_confidence && " (low conf)"}
                           </span>
                         )}
                         {r.uncertainty?.st_band_width_pct != null && (
-                          <span className="block text-slate-600">
-                            ST band width {r.uncertainty.st_band_width_pct}% of spot
-                          </span>
+                          <span className="block text-slate-600">ST width {r.uncertainty.st_band_width_pct}% spot</span>
                         )}
                         {r.uncertainty?.typical_range_label && (
                           <span className="block text-slate-600">{r.uncertainty.typical_range_label}</span>

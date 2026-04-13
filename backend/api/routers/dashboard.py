@@ -820,6 +820,65 @@ async def get_dashboard():
     if add_candidate_tickers:
         logger.info("[dashboard] confidence for %d add candidates (%.0f ms)", sum(1 for t in add_candidate_tickers if t in confidence_by_ticker), (time.perf_counter() - t0_conf_add) * 1000)
 
+    # 7-layer confidence for remaining watchlist tickers — same engine as roadmaps / ticker detail
+    dash_cfg = config.get("dashboard") or {}
+    conf_watch_cap = int(dash_cfg.get("confidence_watchlist_max", 40))
+    watchlist_for_conf = [
+        r["ticker"] for r in results
+        if not r.get("error") and r.get("ticker") and r["ticker"] not in confidence_by_ticker
+    ][:conf_watch_cap]
+    if watchlist_for_conf:
+        t0_conf_wl = time.perf_counter()
+
+        def _confidence_watch(ticker: str):
+            try:
+                conf = run_confidence(ticker, config=config)
+                return (ticker, conf) if conf.get("confidence") is not None else (ticker, None)
+            except Exception as e:
+                logger.debug("Confidence watchlist %s: %s", ticker, e)
+                return (ticker, None)
+
+        try:
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                futures = [ex.submit(_confidence_watch, t) for t in watchlist_for_conf]
+                for fut in as_completed(futures):
+                    ticker, conf = fut.result()
+                    if conf is not None:
+                        confidence_by_ticker[ticker] = conf
+            logger.info(
+                "[dashboard] confidence for %d watchlist tickers (parallel, %.0f ms)",
+                len(watchlist_for_conf),
+                (time.perf_counter() - t0_conf_wl) * 1000,
+            )
+        except Exception as e:
+            logger.debug("Watchlist confidence batch failed: %s", e)
+
+    for r in results:
+        if r.get("error"):
+            continue
+        t = r.get("ticker")
+        co = confidence_by_ticker.get(t) if t else None
+        if isinstance(co, dict):
+            r["plan_action"] = co.get("action")
+            r["plan_confidence"] = co.get("confidence")
+        else:
+            r["plan_action"] = None
+            r["plan_confidence"] = None
+
+    # Align horizon suggestion strings with 7-layer plan when plan says de-risk (matches roadmap tone)
+    for r in results:
+        if r.get("error"):
+            continue
+        pa = (r.get("plan_action") or "").upper()
+        if "AVOID" in pa:
+            for k in ("short_suggestion", "medium_suggestion", "long_suggestion"):
+                r[k] = "HOLD"
+        elif "REDUCE" in pa:
+            for k in ("short_suggestion", "medium_suggestion", "long_suggestion"):
+                v = r.get(k)
+                if isinstance(v, str) and "ADD" in v.upper():
+                    r[k] = "HOLD"
+
     # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
     t0 = time.perf_counter()
     portfolio_doctor_recommendations = {}
@@ -1083,6 +1142,12 @@ async def get_dashboard():
     retail_briefing = {}
     try:
         from retail_briefing import build_retail_briefing
+
+        plan_actions_for_retail = {
+            t: c.get("action")
+            for t, c in confidence_by_ticker.items()
+            if isinstance(c, dict) and c.get("action")
+        }
         retail_briefing = build_retail_briefing(
             results=results,
             report=report,
@@ -1096,6 +1161,7 @@ async def get_dashboard():
             paper_trading=paper_trading,
             thesis_check=thesis_check,
             config=config,
+            plan_actions=plan_actions_for_retail,
         )
     except Exception as e:
         logger.debug("Retail briefing failed: %s", e)

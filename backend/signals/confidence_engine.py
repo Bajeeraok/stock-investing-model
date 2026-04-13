@@ -823,7 +823,23 @@ def _score_yfinance_fundamentals(ticker: str) -> dict | None:
         return None
 
 
-def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> dict | None:
+def _sanitize_fmp_request_error(err: str | None, max_len: int = 120) -> str | None:
+    """Short, single-line hint for UI when FMP news fails (no secrets in fmp_client errors)."""
+    if not err:
+        return None
+    s = " ".join(str(err).split())
+    if len(s) > max_len:
+        s = s[: max_len - 3] + "..."
+    return s
+
+
+def _nlp_pack_sentiment_summary(
+    summary: dict,
+    source: str,
+    note: str = "",
+    *,
+    fmp_request_error: str | None = None,
+) -> dict | None:
     """Map raw [-1,1] to layer score [0,1]. Returns None if no raw score."""
     raw_score = summary.get("sentiment_score_avg")
     if raw_score is None:
@@ -841,7 +857,7 @@ def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> d
     elif method == "yfinance":
         method_note = " · Yahoo Finance headlines"
     label = f"News {sentiment_label} ({headline_count} headlines · {source}{method_note}{note})"
-    return {
+    out: dict = {
         "score": score,
         "label": label,
         "raw_score": raw_f,
@@ -851,6 +867,9 @@ def _nlp_pack_sentiment_summary(summary: dict, source: str, note: str = "") -> d
         "source": source,
         "method": method or None,
     }
+    if fmp_request_error:
+        out["fmp_request_error"] = fmp_request_error
+    return out
 
 
 def _yfinance_news_summary(ticker: str) -> dict | None:
@@ -936,16 +955,21 @@ def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
                     return packed
             # No usable FMP sentiment, or request error — try AV before giving up
             fmp_note = " (FMP request failed)" if err else " (FMP had no sentiment score)"
+            fmp_err_safe = _sanitize_fmp_request_error(err) if err else None
             if get_av_key(config):
                 s2, e2 = fetch_news_sentiment(config, ticker, limit=10)
                 if not e2 and s2 is not None and s2.get("sentiment_score_avg") is not None:
-                    p2 = _nlp_pack_sentiment_summary(s2, "Alpha Vantage", note=fmp_note)
+                    p2 = _nlp_pack_sentiment_summary(
+                        s2, "Alpha Vantage", note=fmp_note, fmp_request_error=fmp_err_safe
+                    )
                     if p2 is not None:
                         return p2
             if use_yf:
                 yf_sum = _yfinance_news_summary(ticker)
                 if yf_sum is not None:
-                    p3 = _nlp_pack_sentiment_summary(yf_sum, "Yahoo Finance", note=fmp_note)
+                    p3 = _nlp_pack_sentiment_summary(
+                        yf_sum, "Yahoo Finance", note=fmp_note, fmp_request_error=fmp_err_safe
+                    )
                     if p3 is not None:
                         return p3
             logger.debug("News sentiment N/A for %s after FMP (+ optional AV + yfinance)", ticker)

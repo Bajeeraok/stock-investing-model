@@ -143,6 +143,29 @@ def _action_badge(
     return "WAIT"
 
 
+def _plan_action_to_retail_badge(plan: str | None) -> str | None:
+    """
+    Map 7-layer confidence action (run_confidence) to the same BUY | WAIT | TRIM | HOLD
+    chips as the rest of retail — keeps the signals row aligned with Roadmaps / ticker detail.
+    """
+    if not plan or not isinstance(plan, str):
+        return None
+    u = plan.upper().strip()
+    if u == "INCOMPATIBLE":
+        return "WAIT"
+    if "STRONG BUY" in u or u == "BUY":
+        return "BUY"
+    if "BUY" in u and "WATCH" not in u:
+        return "BUY"
+    if "AVOID" in u:
+        return "WAIT"
+    if "REDUCE" in u:
+        return "TRIM"
+    if "HOLD" in u or "WATCH" in u:
+        return "HOLD"
+    return None
+
+
 def build_retail_briefing(
     *,
     results: list[dict],
@@ -157,6 +180,7 @@ def build_retail_briefing(
     paper_trading: dict | None,
     thesis_check: list[dict],
     config: dict | None,
+    plan_actions: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """
     Build daily briefing, portfolio heat, concentration, regime sentence,
@@ -266,6 +290,10 @@ def build_retail_briefing(
             _earnings_days_from_note(r.get("earnings_note")),
             ticker in portfolio_tickers,
         )
+        if plan_actions:
+            pb = _plan_action_to_retail_badge(plan_actions.get(ticker))
+            if pb:
+                badge = pb
         ticker_actions[ticker] = {"action": badge, "one_liner": one}
 
     tax_approaching: list[dict] = []

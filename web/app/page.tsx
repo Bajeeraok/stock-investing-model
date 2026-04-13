@@ -703,6 +703,9 @@ export interface Signal {
   rsi_signal?: string | null;
   macd_signal?: string | null;
   ml_short_prob?: number | null;  // P(threshold gain in 20d) from LightGBM, 0-1
+  /** 7-layer model action — aligned with Roadmaps / ticker detail */
+  plan_action?: string | null;
+  plan_confidence?: number | null;
   error?: string;
 }
 

@@ -70,8 +70,14 @@ def aggregate_keyword_sentiment(
     for i, item in enumerate(articles):
         if not isinstance(item, dict):
             continue
-        title = (item.get("title") or "")[:500]
-        body = (item.get("text") or item.get("description") or "")[:2000]
+        title = (item.get("title") or item.get("headline") or "")[:500]
+        body = (
+            item.get("text")
+            or item.get("description")
+            or item.get("content")
+            or item.get("summary")
+            or ""
+        )[:2000]
         raw, hit = score_headline_text(title, body)
         if hit:
             any_hit = True

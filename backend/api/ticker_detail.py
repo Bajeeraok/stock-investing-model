@@ -415,8 +415,8 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = 
         msg = None
     elif available is False and (weight == 0 or weight is None):
         msg = (
-            "News layer weight is 0 for this asset class (e.g. some ETFs) — not a missing API key. "
-            "Other layers drive the roadmap."
+            "News layer weight is 0 for this asset class (e.g. commodity ETFs) — not a missing API key. "
+            "Headlines are shown for transparency; other layers drive the roadmap."
         )
     elif not fmp_key_configured and not alpha_vantage_key_configured:
         msg = (
@@ -455,6 +455,7 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = 
         "layer_weight": weight,
         "layer_available": available,
         "message": msg,
+        "fmp_request_error": (nlp.get("fmp_request_error") if isinstance(nlp, dict) else None),
     }
 
 
@@ -1367,25 +1368,61 @@ def _build_trade_roadmap(
             "threshold flips follow config score.interpretation, not Hurst alone."
         )
 
-    # Trader-type one-liners (from GLD sample)
+    # Trader-type one-liners — derived from the same Today-row logic as the buy roadmap (when/pos/align_buy_rows_to_core).
     short_stop = _safe_float(short.get("stop_loss"))
     short_tgt = _safe_float(short.get("target"))
     short_zone = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else f"${current_price:.2f}"
     medium_zone = f"${m_lo:.2f}–${m_hi:.2f}" if (m_lo and m_hi) else "entry zone"
     ma50_str = f"${ma50:.2f}" if ma50 else "MA50"
     ma200_str = f"${ma200:.2f}" if ma200 else "MA200"
-    trader_summary_short = (
-        f"Don't touch {ticker} today. "
-        + (f"If it pulls to {short_zone}, buy small with stop at ${short_stop:.2f}. Target ${short_tgt:.2f}. " if (short_stop and short_tgt) else "")
-        + (f"Exit before 52w high ${high_52w:.2f}. " if high_52w else "")
-    ).strip()
-    trader_summary_medium = (
-        f"Wait for MA50 test + regime stabilization. Build 60% position between {medium_zone}. "
-        + (f"Target ${_safe_float(medium.get('target')):.2f} (scenario). " if medium.get("target") else "")
-        + (f"Stop: ${_safe_float(medium.get('stop_loss')):.2f}." if medium.get("stop_loss") else "Stop: below MA50.")
-    ).strip()
     full_by = (t1_hi or ma200 or current_price)
     exit_line = _long_horizon_structural_exit_phrase(sell_stages, low_52w)
+
+    if display_verdict in ("REDUCE", "AVOID"):
+        trader_summary_short = (
+            f"No new buys today — model read {display_verdict} ({regime_label}). "
+            f"Matches the Today row in the buy roadmap."
+        ).strip()
+    elif align_buy_rows_to_core:
+        trader_summary_short = (
+            f"Short-term ({ticker}): watch only — spot is extended above preferred adds at {core_zone_fmt} "
+            f"(same as the Today row). Wait for pullback into that ladder; do not treat current print as the primary entry."
+        ).strip()
+    elif when == "Start small":
+        parts_ts = [
+            f"Short-term ({ticker}): Today row allows a starter ({pos}% tranche) in/near {short_zone} "
+            f"(starter only — see Today condition). ",
+        ]
+        if short_stop and short_tgt:
+            parts_ts.append(f"Stop ${short_stop:.2f}, target ${short_tgt:.2f}. ")
+        if high_52w:
+            parts_ts.append(f"Tactical trim consideration near 52w high ${high_52w:.2f}. ")
+        trader_summary_short = "".join(parts_ts).strip()
+    else:
+        parts_tw = [
+            f"Short-term ({ticker}): Today row is watch only — prefer pullback toward {short_zone} before sizing. ",
+        ]
+        if short_stop and short_tgt:
+            parts_tw.append(f"If band is tested: stop ${short_stop:.2f}, target ${short_tgt:.2f}. ")
+        trader_summary_short = "".join(parts_tw).strip()
+
+    if align_buy_rows_to_core:
+        trader_summary_medium = (
+            f"Swing: same staged ladder as the table — adds concentrate on {core_zone_fmt} over the next weeks/months "
+            f"(see 1–3 mo and 3–6 mo rows), not a separate medium-term price story."
+        )
+        if medium.get("target"):
+            trader_summary_medium += f" Scenario target ~${_safe_float(medium.get('target')):.2f}."
+        if medium.get("stop_loss"):
+            trader_summary_medium += f" Stop context: ${_safe_float(medium.get('stop_loss')):.2f}."
+        trader_summary_medium = trader_summary_medium.strip()
+    else:
+        trader_summary_medium = (
+            f"Wait for MA50 test + regime stabilization. Build toward {medium_zone} per roadmap. "
+            + (f"Target ${_safe_float(medium.get('target')):.2f} (scenario). " if medium.get("target") else "")
+            + (f"Stop: ${_safe_float(medium.get('stop_loss')):.2f}." if medium.get("stop_loss") else "Stop: below MA50.")
+        ).strip()
+
     # MA200 is support when price is above it; when below, it is overhead — do not frame as "accumulate toward" a higher level
     if ma200 and current_price < ma200 * 0.985:
         tier_txt = (
@@ -1394,17 +1431,36 @@ def _build_trade_roadmap(
             else ""
         )
         trader_summary_long = (
-            f"Price is below MA200 ({ma200_str}) — MA200 is overhead until reclaimed, not a dip to buy toward. "
+            f"Investor: price is below MA200 ({ma200_str}) — overhead until reclaimed. "
             f"Stage adds near {ma50_str} and long-term tiers on weakness; {tier_txt}"
             f"Fair value ~${fair_value:.2f} over 12–18m. "
             + exit_line
         ).strip()
+    elif align_buy_rows_to_core:
+        trader_summary_long = (
+            f"Investor: structural adds on pullbacks toward MA200 / core around {core_zone_fmt} — "
+            f"aligned with the 3–6 mo row (full core ~${full_by:.2f} when the tier fills). "
+            f"Fair value ~${fair_value:.2f} over 12–18m. "
+            + exit_line
+        ).strip()
+    elif when == "Start small":
+        trader_summary_long = (
+            f"Investor: accumulate on pullbacks toward MA200 support ({ma200_str}). "
+            f"Optional tactical starter in {short_zone} matches the Today row; larger core builds on planned dips. "
+            f"Full core by ~${full_by:.2f} when tier fills. Fair value ~${fair_value:.2f} over 12–18m. "
+            + exit_line
+        ).strip()
     else:
         trader_summary_long = (
-            f"Accumulate on pullbacks toward MA200 support ({ma200_str}). Full core by ~${full_by:.2f} when tier fills. "
+            f"Investor: accumulate on pullbacks toward MA200 support ({ma200_str}). Full core by ~${full_by:.2f} when tier fills. "
             + f"Fair value ~${fair_value:.2f} over 12–18m. "
             + exit_line
         ).strip()
+
+    trader_summary_horizon_note = (
+        "Each view emphasizes a different horizon; the buy roadmap table is the full staged plan. "
+        "If a line here and a table row disagree, use the table row for that timeline."
+    )
 
     return {
         "current_price": round(current_price, 2),
@@ -1423,6 +1479,7 @@ def _build_trade_roadmap(
             "short_term": trader_summary_short,
             "medium_term": trader_summary_medium,
             "long_term": trader_summary_long,
+            "horizon_note": trader_summary_horizon_note,
         },
     }
 
