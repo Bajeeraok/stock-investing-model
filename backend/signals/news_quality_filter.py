@@ -96,6 +96,16 @@ HEADLINE_PATTERN_FILTERS: list[tuple[str, float, str]] = [
     (r"trade strategy for .{5,50}and",                      0.25, "multi-ticker strategy"),
     (r"stocks? to (watch|buy|avoid) (this week|today|now|in \d{4})",
                                                              0.3,  "market roundup"),
+    (r"charts? to watch",                                     0.22, "chart roundup / multi-asset"),
+    (r"\b(solid|top|best) .{0,40}\b(stocks?|picks?)\b.{0,30}\b(as|to)\b",
+                                                             0.22, "multi-ticker listicle"),
+    (r"\bstocks? to (grab|snag|own)\b",                       0.24, "listicle CTA"),
+    (r"\b(takeover|merger) talk\b|\bstirs.{0,30}(buzz|speculation)", 0.25, "rumor / takeover chatter"),
+    (r"\b(hinges on|volatility).{0,50}(iran|china|tariff|geopolitical|middle east)\b|"
+     r"\b(geopolitical|iran).{0,40}(volatility|hinges|risk)\b",
+                                                             0.22, "geopolitical macro headline"),
+    (r"\b(saas|semiconductor|tech).{0,20}(recovery|strength).{0,40}(hinges|depends)\b",
+                                                             0.25, "thematic macro roundup"),
 
     (r"wall street analyst(s)? (see|target|expect|consensus|look)", 0.4, "analyst consensus summary"),
     (r"price target (raised|lowered|cut|increased) to",     0.7,  "analyst PT change — keep but downweight"),

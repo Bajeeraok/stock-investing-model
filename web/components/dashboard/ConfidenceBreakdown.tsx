@@ -103,6 +103,31 @@ export interface RegimeTransitionData {
   shift_probability: number;
   days_estimate:     string;
   label:             string;
+  /** From HMM transition matrix row for latent transition state (direction-agnostic shift prob is separate). */
+  hmm_next_step?: {
+    p_next_bull: number;
+    p_next_bear: number;
+    p_next_transition: number;
+    p_exit_to_bull?: number;
+    p_exit_to_bear?: number;
+  };
+  /** Multi-step HMM projection + UI payload from ``hmm_regime_shift_direction``. */
+  hmm_shift_direction?: {
+    shift_probability?: number;
+    horizon_days?: number;
+    interpretation?: string;
+    current_state?: string;
+    shift_direction?: {
+      bull: number;
+      bear: number;
+      transition_cycle?: number;
+      dominant: string;
+      dominant_confidence: number;
+      label?: string;
+      color?: string;
+    };
+    detail?: Record<string, unknown>;
+  };
 }
 
 export interface PlaybookScenario {
@@ -206,16 +231,35 @@ function toPct(v: number | null | undefined): number | null {
   return v <= 1.0 ? Math.round(v * 100) : Math.round(v);
 }
 
+const LAYER_STABLE_ORDER = [
+  "regime_hmm",
+  "lgbm_probability",
+  "pattern_technical",
+  "options_sentiment",
+  "fundamental_score",
+  "nlp_sentiment",
+  "insider_signal",
+] as const;
+
 function topDriverFromBreakdown(breakdown: ConfidenceData["breakdown"] | undefined | null) {
   if (!breakdown) return null;
-  let best: { key: string; contrib: number } | null = null;
+  const candidates: { key: string; contrib: number }[] = [];
   for (const [key, layer] of Object.entries(breakdown)) {
     const l = layer as BreakdownLayer;
     if (!l || !l.available || l.score == null || l.weight == null) continue;
     const contrib = Math.max(0, Math.min(1, l.score)) * Math.max(0, l.weight);
-    if (!best || contrib > best.contrib) best = { key, contrib };
+    candidates.push({ key, contrib });
   }
-  if (!best) return null;
+  if (candidates.length === 0) return null;
+  const orderRank = (k: string) => {
+    const i = LAYER_STABLE_ORDER.indexOf(k as (typeof LAYER_STABLE_ORDER)[number]);
+    return i === -1 ? 999 : i;
+  };
+  candidates.sort((a, b) => {
+    if (Math.abs(b.contrib - a.contrib) > 1e-7) return b.contrib - a.contrib;
+    return orderRank(a.key) - orderRank(b.key);
+  });
+  const best = candidates[0];
   const meta = LAYER_META[best.key] ?? { name: best.key, icon: Activity };
   return { name: meta.name, key: best.key, contrib: best.contrib };
 }
@@ -267,8 +311,11 @@ function generateActionSummary(data: ConfidenceData): string | null {
 
   if (action.includes("REDUCE") || action.includes("AVOID") || action.includes("SELL") || action.includes("TRIM")) {
     const driver = top?.name ? `${top.name} weakening` : "signal confluence weakening";
-    const level = invalidation != null ? ` Reassess above $${invalidation.toFixed(2)}.` : "";
-    return `${actionRaw} — ${driver}.${level}`.trim();
+    const floor =
+      invalidation != null
+        ? ` Structural / tail-risk floor ~$${invalidation.toFixed(2)} (≈52w-based) — full thesis exit if broken, not a “buy above” trigger.`
+        : "";
+    return `${actionRaw} — ${driver}.${floor}`.trim();
   }
 
   return null;
@@ -475,7 +522,21 @@ function ActionBadge({ action, confidence }: { action: string; confidence: numbe
   );
 }
 
-function RegimePill({ regime }: { regime: string }) {
+function RegimePill({ regime, action }: { regime: string; action?: string }) {
+  const a = (action || "").toUpperCase();
+  const trimReduce =
+    a.includes("REDUCE") || a.includes("TRIM") || a.includes("AVOID") || a.includes("SELL");
+  const looksBull = regime.includes("BULL") && !regime.includes("BEAR");
+  if (trimReduce && looksBull) {
+    return (
+      <span
+        className="text-[11px] font-semibold px-2 py-0.5 rounded border text-amber-200 bg-amber-500/12 border-amber-500/35"
+        title="Regime label can lag the action badge — sizing follows the verdict"
+      >
+        Mixed tape
+      </span>
+    );
+  }
   const colour =
     regime.includes("STRONG_BULL") ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" :
     regime.includes("BULL")        ? "text-green-400   bg-green-500/10   border-green-500/30"   :
@@ -892,6 +953,14 @@ function TransitionBonusBanner({ bonus }: { bonus: TransitionBonusData }) {
 function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
   const pct   = rt.shift_probability;
   const watch = rt.label === "WATCH_CLOSELY";
+  const hm = rt.hmm_next_step;
+  const hsd = rt.hmm_shift_direction;
+  const exitB = hm?.p_exit_to_bull != null ? hm.p_exit_to_bull * 100 : null;
+  const exitBr = hm?.p_exit_to_bear != null ? hm.p_exit_to_bear * 100 : null;
+  const stayT = hm?.p_next_transition != null ? hm.p_next_transition * 100 : null;
+  const dir = hsd?.shift_direction;
+  const spRaw = hsd?.shift_probability;
+  const spPct = spRaw != null && spRaw <= 1 ? spRaw * 100 : spRaw;
   return (
     <div className={clsx(
       "rounded-lg px-3 py-2.5 border space-y-1.5",
@@ -912,8 +981,63 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
              style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
       <p className="text-[11px] text-slate-400">
-        {pct.toFixed(0)}% probability of regime shift within {rt.days_estimate}
+        {pct.toFixed(0)}% blended outlook of regime change within {rt.days_estimate}
+        {hsd?.interpretation ? " — HMM multi-step direction below." : " (fusion heuristic — not directional by itself)."}
       </p>
+      {hsd?.interpretation && dir && (
+        <div className="rounded-md bg-slate-900/60 border border-emerald-500/20 px-2.5 py-2 space-y-1">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+            HMM shift projection ({hsd.horizon_days ?? 10}d)
+            {spPct != null && (
+              <span className="text-slate-500 font-normal normal-case">
+                {" "}· leave dominant bucket ~{spPct.toFixed(0)}%
+              </span>
+            )}
+          </p>
+          {dir.label && (
+            <p className={clsx(
+              "text-xs font-semibold",
+              dir.color === "green" && "text-emerald-300",
+              dir.color === "red" && "text-red-300",
+              dir.color === "amber" && "text-amber-300",
+            )}>
+              {dir.label}
+            </p>
+          )}
+          <p className="text-[11px] text-slate-300 leading-snug">
+            {hsd.interpretation}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            Mass after horizon (excl. sticky bucket): Bull {(dir.bull * 100).toFixed(0)}% · Bear {(dir.bear * 100).toFixed(0)}%
+            {dir.transition_cycle != null && dir.transition_cycle > 0.02 && (
+              <> · Transition cycle {(dir.transition_cycle * 100).toFixed(0)}%</>
+            )}
+          </p>
+        </div>
+      )}
+      {hm && exitB != null && exitBr != null && (
+        <div className="rounded-md bg-slate-900/50 border border-slate-600/40 px-2.5 py-2 space-y-1">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">HMM one-step (from transition state)</p>
+          <p className="text-[11px] text-slate-300 leading-snug">
+            If latent state were transition: next bar → Bull{" "}
+            <span className="font-mono text-emerald-300/90">{(hm.p_next_bull * 100).toFixed(0)}%</span>
+            {" · "}Bear{" "}
+            <span className="font-mono text-red-300/90">{(hm.p_next_bear * 100).toFixed(0)}%</span>
+            {stayT != null && (
+              <>
+                {" · "}Stay transition{" "}
+                <span className="font-mono text-slate-300">{stayT.toFixed(0)}%</span>
+              </>
+            )}
+          </p>
+          <p className="text-[10px] text-slate-500 leading-snug">
+            Conditional on exiting transition (Bull vs Bear only):{" "}
+            <span className="text-emerald-300/85 font-mono">{exitB.toFixed(0)}%</span>
+            {" / "}
+            <span className="text-red-300/85 font-mono">{exitBr.toFixed(0)}%</span>
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1079,7 +1203,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         <div className="space-y-1.5 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-bold text-white">{data.ticker}</span>
-            <RegimePill regime={data.market_regime ?? "UNKNOWN"} />
+            <RegimePill regime={data.market_regime ?? "UNKNOWN"} action={data.action} />
             {breakdown.regime_hmm?.label && (
               <span
                 className="text-[10px] text-slate-400 max-w-[14rem] leading-snug"

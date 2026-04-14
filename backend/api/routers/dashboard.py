@@ -814,7 +814,7 @@ async def get_dashboard(
 
                     close_spy_hmm = fetch_ohlcv_safe("SPY", "2y")
                     if close_spy_hmm is not None and len(close_spy_hmm) >= 252:
-                        hmm = get_hmm_regime("SPY", close_spy_hmm)
+                        hmm = get_hmm_regime("SPY", close_spy_hmm, vix=vix_val)
                         if hmm and hmm.get("bear_probability") is not None:
                             hmm_bear_pct = float(hmm["bear_probability"]) * 100.0
                 except Exception as e:

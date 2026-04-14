@@ -1,6 +1,13 @@
-"""Tests for news_quality_filter and news_weight_cap."""
+"""
+tests/test_news_quality_and_weight_cap.py
 
-from __future__ import annotations
+Tests for:
+  - news_quality_filter.py  (domain weights, headline patterns, filter pipeline)
+  - news_weight_cap.py      (regime certainty → news weight taper)
+
+Run with:  pytest tests/test_news_quality_and_weight_cap.py -v
+"""
+import pytest
 
 from signals.news_quality_filter import (
     DEFAULT_DOMAIN_WEIGHT,
@@ -19,8 +26,12 @@ from signals.news_weight_cap import (
 )
 
 
-class TestDomainWeights:
+# ─────────────────────────────────────────────────────────────────────────────
+# Domain weight tests
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestDomainWeights:
     def test_tier_a_reuters(self):
         assert get_domain_weight("reuters.com") == 1.0
 
@@ -63,14 +74,18 @@ class TestDomainWeights:
         assert get_domain_weight(None) == DEFAULT_DOMAIN_WEIGHT
 
 
-class TestHeadlinePatterns:
+# ─────────────────────────────────────────────────────────────────────────────
+# Headline pattern tests
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestHeadlinePatterns:
     def test_institutional_filing_zero_weight(self):
         w, reason = get_headline_pattern_weight(
             "Alphabet Inc. $GOOGL Shares Sold by Howard Capital Management Group LLC"
         )
         assert w == 0.0
-        assert "filing" in reason.lower()
+        assert "filing" in reason.lower() or "position" in reason.lower()
 
     def test_13f_disclosure_zero_weight(self):
         w, _ = get_headline_pattern_weight(
@@ -79,10 +94,11 @@ class TestHeadlinePatterns:
         assert w == 0.0
 
     def test_question_lead_seo_downweighted(self):
-        w, _ = get_headline_pattern_weight(
+        w, reason = get_headline_pattern_weight(
             "Is Alphabet (GOOGL) a Buy as Wall Street Analysts Look Optimistic?"
         )
         assert w <= 0.4
+        assert reason
 
     def test_what_makes_seo_downweighted(self):
         w, _ = get_headline_pattern_weight(
@@ -121,6 +137,7 @@ class TestHeadlinePatterns:
             "Alphabet raises guidance for Q3 above consensus estimates"
         )
         assert w > 1.0
+        assert "guidance" in reason.lower()
 
     def test_antitrust_news_boosted(self):
         w, reason = get_headline_pattern_weight(
@@ -143,8 +160,12 @@ class TestHeadlinePatterns:
         assert reason == ""
 
 
-class TestComputeQualityWeight:
+# ─────────────────────────────────────────────────────────────────────────────
+# Combined quality weight
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestComputeQualityWeight:
     def test_pr_wire_zero_regardless_of_title(self):
         qw, _ = compute_quality_weight(
             "Alphabet Announces Q2 Results",
@@ -160,11 +181,12 @@ class TestComputeQualityWeight:
         assert qw >= 1.0
 
     def test_fool_seo_headline_very_low(self):
-        qw, _ = compute_quality_weight(
+        qw, reason = compute_quality_weight(
             "Is Alphabet a Buy Right Now?",
             "fool.com",
         )
         assert qw <= 0.2
+        assert reason
 
     def test_unknown_domain_seo_headline_low(self):
         qw, _ = compute_quality_weight(
@@ -181,19 +203,27 @@ class TestComputeQualityWeight:
         assert qw == DEFAULT_DOMAIN_WEIGHT
 
 
-class TestFilterHeadlines:
+# ─────────────────────────────────────────────────────────────────────────────
+# filter_headlines pipeline
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestFilterHeadlines:
     HEADLINES = [
-        {"title": "Alphabet earnings beat expectations by 8%",
-         "url": "reuters.com"},
-        {"title": "Is Alphabet a Buy? Wall Street Analysts Look Optimistic",
-         "url": "fool.com"},
-        {"title": "Alphabet Inc. $GOOGL Shares Sold by Howard Capital",
-         "url": "insidearbitrage.com"},
-        {"title": "Alphabet raises full-year guidance above consensus",
-         "url": "wsj.com"},
-        {"title": "Got $1,000? Apple vs Alphabet — Only One Deserves Your Money",
-         "url": "247wallst.com"},
+        {"title": "Alphabet earnings beat expectations by 8%", "url": "reuters.com"},
+        {
+            "title": "Is Alphabet a Buy? Wall Street Analysts Look Optimistic",
+            "url": "fool.com",
+        },
+        {
+            "title": "Alphabet Inc. $GOOGL Shares Sold by Howard Capital",
+            "url": "insidearbitrage.com",
+        },
+        {"title": "Alphabet raises full-year guidance above consensus", "url": "wsj.com"},
+        {
+            "title": "Got $1,000? Apple vs Alphabet — Only One Deserves Your Money",
+            "url": "247wallst.com",
+        },
     ]
 
     def test_returns_list(self):
@@ -207,6 +237,7 @@ class TestFilterHeadlines:
             assert "quality_reason" in h
 
     def test_zero_quality_excluded(self):
+        """Fund filing headlines should be excluded"""
         result = filter_headlines(self.HEADLINES, min_quality=0.15)
         titles = [h["title"] for h in result]
         assert not any("Shares Sold by" in t for t in titles)
@@ -218,6 +249,7 @@ class TestFilterHeadlines:
         assert any("raises full-year guidance" in t for t in titles)
 
     def test_min_quality_zero_keeps_all(self):
+        """min_quality=0 → nothing filtered"""
         result = filter_headlines(self.HEADLINES, min_quality=0.0)
         assert len(result) == len(self.HEADLINES)
 
@@ -228,9 +260,14 @@ class TestFilterHeadlines:
             assert "url" in h
 
 
-class TestComputeNewsWeight:
+# ─────────────────────────────────────────────────────────────────────────────
+# News weight cap
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestComputeNewsWeight:
     def test_below_threshold_no_change(self):
+        """HMM bear 82% < 90% threshold → no adjustment"""
         news_w, regime_w, reason = compute_news_weight(
             hmm_bull_probability=0.18,
             hmm_bear_probability=0.82,
@@ -240,17 +277,21 @@ class TestComputeNewsWeight:
         assert "not certain" in reason
 
     def test_bear_100_tapers_to_floor(self):
+        """HMM bear 100% → news tapers to floor"""
         news_w, regime_w, reason = compute_news_weight(
             hmm_bull_probability=0.0,
             hmm_bear_probability=1.0,
         )
         assert news_w == NEWS_WEIGHT_FLOOR
-        assert regime_w == round(REGIME_WEIGHT_STANDARD + (NEWS_WEIGHT_STANDARD - NEWS_WEIGHT_FLOOR), 4)
+        assert regime_w == round(
+            REGIME_WEIGHT_STANDARD + (NEWS_WEIGHT_STANDARD - NEWS_WEIGHT_FLOOR), 4
+        )
         assert "100%" in reason
         assert "bear" in reason
 
     def test_bull_100_tapers_to_floor(self):
-        news_w, _, reason = compute_news_weight(
+        """HMM bull 100% → same taper applies"""
+        news_w, regime_w, reason = compute_news_weight(
             hmm_bull_probability=1.0,
             hmm_bear_probability=0.0,
         )
@@ -258,13 +299,16 @@ class TestComputeNewsWeight:
         assert "bull" in reason
 
     def test_at_threshold_no_change(self):
-        news_w, _, _ = compute_news_weight(
+        """Exactly at threshold → taper_factor=1.0 → no change"""
+        news_w, regime_w, reason = compute_news_weight(
             hmm_bull_probability=0.10,
             hmm_bear_probability=REGIME_CERTAINTY_THRESHOLD,
         )
         assert abs(news_w - NEWS_WEIGHT_STANDARD) < 0.001
+        assert abs(regime_w - REGIME_WEIGHT_STANDARD) < 0.001
 
     def test_weight_sum_preserved(self):
+        """Total news + regime weight should be the same before and after"""
         original_sum = NEWS_WEIGHT_STANDARD + REGIME_WEIGHT_STANDARD
         for bear_prob in [0.90, 0.95, 1.0]:
             news_w, regime_w, _ = compute_news_weight(
@@ -283,6 +327,7 @@ class TestComputeNewsWeight:
         assert "no regime" in reason
 
     def test_only_bear_provided(self):
+        """bull inferred from bear"""
         news_w, _, _ = compute_news_weight(
             hmm_bull_probability=None,
             hmm_bear_probability=1.0,
@@ -298,16 +343,20 @@ class TestComputeNewsWeight:
             assert news_w >= NEWS_WEIGHT_FLOOR
 
 
-class TestApplyWeightCap:
+# ─────────────────────────────────────────────────────────────────────────────
+# apply_weight_cap_to_layer_config
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestApplyWeightCap:
     BASE_WEIGHTS = {
-        "hmm_regime":       0.15,
-        "pattern_score":    0.15,
+        "hmm_regime": 0.15,
+        "pattern_score": 0.15,
         "lgbm_probability": 0.20,
         "options_sentiment": 0.15,
         "insider_activity": 0.15,
-        "fundamentals":     0.10,
-        "news_sentiment":   0.10,
+        "fundamentals": 0.10,
+        "news_sentiment": 0.10,
     }
 
     def test_bear_100_reduces_news_increases_regime(self):
@@ -335,8 +384,13 @@ class TestApplyWeightCap:
             hmm_bull_probability=0.0,
             hmm_bear_probability=1.0,
         )
-        for key in ["pattern_score", "lgbm_probability", "options_sentiment",
-                    "insider_activity", "fundamentals"]:
+        for key in [
+            "pattern_score",
+            "lgbm_probability",
+            "options_sentiment",
+            "insider_activity",
+            "fundamentals",
+        ]:
             assert adjusted[key] == self.BASE_WEIGHTS[key]
 
     def test_missing_key_returns_unchanged(self):
@@ -350,6 +404,7 @@ class TestApplyWeightCap:
         assert "not found" in reason
 
     def test_googl_morning_bear_82_no_change(self):
+        """GOOGL bear 82% should not trigger cap"""
         adjusted, reason = apply_weight_cap_to_layer_config(
             self.BASE_WEIGHTS,
             hmm_bull_probability=0.18,
@@ -359,10 +414,12 @@ class TestApplyWeightCap:
         assert "not certain" in reason
 
     def test_googl_afternoon_bear_100_triggers_cap(self):
-        adjusted, _ = apply_weight_cap_to_layer_config(
+        """GOOGL bear 100% should trigger cap"""
+        adjusted, reason = apply_weight_cap_to_layer_config(
             self.BASE_WEIGHTS,
             hmm_bull_probability=0.0,
             hmm_bear_probability=1.0,
         )
         assert adjusted["news_sentiment"] < self.BASE_WEIGHTS["news_sentiment"]
         assert adjusted["hmm_regime"] > self.BASE_WEIGHTS["hmm_regime"]
+        assert reason

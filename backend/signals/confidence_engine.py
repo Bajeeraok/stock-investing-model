@@ -302,6 +302,7 @@ class ConfidenceEngine:
                 days_since_earnings=days_since_earnings,
                 post_earnings_return_pct=post_earnings_return_pct,
                 post_earnings_volume_ratio=post_earnings_volume_ratio,
+                vix=vix,
             )
             if hmm and not hmm.get("error"):
                 scores["regime_hmm"] = hmm["bull_probability"]
@@ -642,7 +643,7 @@ class ConfidenceEngine:
             scores, market_regime, vix, disqualifiers, composite_score,
             short_interest=si_data,
         )
-        watch_levels = _build_watch_levels(df, composite_score)
+        watch_levels = _build_watch_levels(df, composite_score, ticker=ticker)
 
         # ── Pre-flight deep analysis (coherence, playbook, divergence) ─────
         pre_flight_data = _run_pre_flight(
@@ -1229,24 +1230,37 @@ def _build_risk_factors(
     return risks
 
 
-def _build_watch_levels(df: pd.DataFrame | None, composite_score: float) -> dict:
+def _build_watch_levels(df: pd.DataFrame | None, composite_score: float, ticker: str = "") -> dict:
     """Key price levels to watch for thesis invalidation."""
     if df is None or "close" not in df.columns or df.empty:
         return {}
+    from signals.providers import MAJOR_INDEX_ETFS
+
     close = df["close"].dropna()
     price = float(close.iloc[-1])
     ma50  = float(close.rolling(50, min_periods=20).mean().iloc[-1])
     ma200 = float(close.rolling(200, min_periods=60).mean().iloc[-1])
     low_52w = float(close.rolling(252, min_periods=60).min().iloc[-1])
-    return {
-        "current_price":     round(price, 2),
-        "invalidation_below": round(low_52w * 0.97, 2),
-        "key_support_ma50":   round(ma50, 2),
-        "key_support_ma200":  round(ma200, 2),
-        "note": (
+    tkey = (ticker or "").upper().strip()
+    # Broad index ETFs: do not use 52w tail floor alone — align with MA200 structural break.
+    if tkey in MAJOR_INDEX_ETFS:
+        inv_below = max(ma200 * 0.97, low_52w * 0.97)
+        note = (
+            "Broad index ETF: invalidation uses the tighter of MA200×0.97 vs 52w-low×0.97 "
+            "(tail floor alone is a stress exit, not the primary ‘reassess’ trigger)."
+        )
+    else:
+        inv_below = low_52w * 0.97
+        note = (
             "Break below 52-week low (×0.97) invalidates the setup — exit if breached. "
             "MA50 and MA200 are key support levels to watch."
-        ),
+        )
+    return {
+        "current_price":     round(price, 2),
+        "invalidation_below": round(inv_below, 2),
+        "key_support_ma50":   round(ma50, 2),
+        "key_support_ma200":  round(ma200, 2),
+        "note": note,
     }
 
 
@@ -1370,6 +1384,16 @@ def _run_pre_flight(
             "current_action":    rd.get("current_action"),
             "position_size":     rd.get("summary", {}).get("position_size"),
         })
+        _orig_rt = base.get("regime_transition")
+        _rt_merge: dict = {**_orig_rt} if isinstance(_orig_rt, dict) else {}
+        tn = hmm_data.get("transition_next") if isinstance(hmm_data, dict) else None
+        hsd = hmm_data.get("hmm_shift_direction") if isinstance(hmm_data, dict) else None
+        if isinstance(tn, dict) and tn:
+            _rt_merge["hmm_next_step"] = tn
+        if isinstance(hsd, dict) and hsd:
+            _rt_merge["hmm_shift_direction"] = hsd
+        if _rt_merge:
+            base["regime_transition"] = _rt_merge
         # Surface tension when bull is high but shift probability is also high
         rt = base.get("regime_transition")
         bull_p = hmm_data.get("bull_probability") or 0

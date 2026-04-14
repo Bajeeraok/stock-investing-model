@@ -26,10 +26,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from signals.providers import MAJOR_INDEX_ETFS
+
 logger = logging.getLogger(__name__)
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "data" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Broad equity index ETFs: HMM on price returns alone lags macro shocks; blend with stress context.
+_MAJOR_INDEX_ETF_MACRO = frozenset(MAJOR_INDEX_ETFS) | frozenset({"VOO", "VTI"})
 
 MIN_BARS_TO_FIT = 252   # Need at least 1 year to fit meaningfully
 RECENT_BARS     = 60    # Bars used to estimate current regime probability
@@ -247,6 +252,88 @@ def _adjust_hmm_probs_for_display(
     return round(b, 3), round(t, 3), round(r, 3), note
 
 
+def _index_etf_macro_stress(
+    close: pd.Series | None,
+    vix: float | None,
+    recent_63d_return_pct: float | None,
+) -> tuple[float, dict]:
+    """
+    Composite stress 0–1 for major index ETFs from drawdown vs 52w peak, VIX, and 63d return.
+    Used to temper price-only HMM bull mass during macro dislocations.
+    """
+    dbg: dict = {"dd_from_peak_pct": None, "vix": vix, "recent_63d_return_pct": recent_63d_return_pct}
+    dd = 0.0
+    if close is not None:
+        cs = close.dropna()
+        if len(cs) >= 60:
+            last = float(cs.iloc[-1])
+            peak = float(cs.rolling(252, min_periods=60).max().iloc[-1])
+            if peak > 0:
+                dd = (last / peak - 1.0) * 100.0
+                dbg["dd_from_peak_pct"] = round(dd, 2)
+
+    s_dd = min(1.0, max(0.0, (-dd) / 20.0)) * 0.45
+    s_vix = 0.0
+    if vix is not None and np.isfinite(vix):
+        s_vix = min(1.0, max(0.0, (float(vix) - 14.0) / 28.0)) * 0.38
+    s_63 = 0.0
+    if recent_63d_return_pct is not None and np.isfinite(recent_63d_return_pct):
+        s_63 = min(1.0, max(0.0, (-float(recent_63d_return_pct)) / 12.0)) * 0.17
+
+    stress = float(min(1.0, s_dd + s_vix + s_63))
+    dbg["components"] = {"s_dd": round(s_dd, 4), "s_vix": round(s_vix, 4), "s_63": round(s_63, 4)}
+    return stress, dbg
+
+
+def _apply_major_index_etf_macro(
+    bull: float,
+    trans: float,
+    bear: float,
+    *,
+    ticker: str,
+    close: pd.Series | None,
+    vix: float | None,
+    recent_63d_return_pct: float | None,
+) -> tuple[float, float, float, dict | None]:
+    """Down-weight displayed bull % for index ETFs when macro/price stress is high."""
+    tkey = ticker.upper().strip()
+    if tkey not in _MAJOR_INDEX_ETF_MACRO:
+        return bull, trans, bear, None
+
+    stress, dbg = _index_etf_macro_stress(close, vix, recent_63d_return_pct)
+    if stress < 0.07:
+        return bull, trans, bear, {"applied": False, "stress": round(stress, 4), **dbg}
+
+    bull_mult = max(0.20, 1.0 - 0.80 * stress)
+    new_b = bull * bull_mult
+    freed = bull - new_b
+    new_t = trans + freed * 0.58
+    new_r = bear + freed * 0.42
+    s = new_b + new_t + new_r
+    if s > 1e-12:
+        new_b, new_t, new_r = new_b / s, new_t / s, new_r / s
+
+    audit = {
+        "applied": True,
+        "stress": round(stress, 4),
+        "bull_mult": round(bull_mult, 4),
+        **dbg,
+        "note": (
+            "Major index ETF: HMM blended with VIX / drawdown-from-peak / 63d return — "
+            "price-only HMM can stay nominally bull while the tape is stressed"
+        ),
+    }
+    return round(new_b, 3), round(new_t, 3), round(new_r, 3), audit
+
+
+def _dominant_from_probs(bull: float, trans: float, bear: float) -> str:
+    if bull > 0.55:
+        return "BULL"
+    if bear > 0.55:
+        return "BEAR"
+    return "TRANSITION"
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -260,6 +347,7 @@ def get_hmm_regime(
     days_since_earnings: int | None = None,
     post_earnings_return_pct: float | None = None,
     post_earnings_volume_ratio: float | None = None,
+    vix: float | None = None,
 ) -> dict | None:
     """
     Fit (or load) a 3-state HMM and return current regime probabilities.
@@ -418,15 +506,81 @@ def get_hmm_regime(
         recent_63d_return_pct,
     )
 
+    bull_fin, tr_fin, br_fin, macro_audit = _apply_major_index_etf_macro(
+        bull_adj,
+        tr_adj,
+        br_adj,
+        ticker=ticker,
+        close=close,
+        vix=vix,
+        recent_63d_return_pct=recent_63d_return_pct,
+    )
+    dominant_display = _dominant_from_probs(bull_fin, tr_fin, br_fin)
+
+    # One-step transition matrix row for "transition" state — direction of next bar if latent state were transition
+    transition_next: dict | None = None
+    try:
+        tm = getattr(model, "transmat_", None)
+        if tm is not None and getattr(tm, "shape", None) == (3, 3):
+            row = np.asarray(tm[transition_idx], dtype=float)
+            rs = float(row.sum())
+            if rs > 0:
+                row = row / rs
+            pb = float(row[bull_idx])
+            pe = float(row[bear_idx])
+            pt = float(row[transition_idx])
+            exit_mass = pb + pe
+            transition_next = {
+                "p_next_bull": round(pb, 4),
+                "p_next_bear": round(pe, 4),
+                "p_next_transition": round(pt, 4),
+            }
+            if exit_mass > 1e-9:
+                transition_next["p_exit_to_bull"] = round(pb / exit_mass, 4)
+                transition_next["p_exit_to_bear"] = round(pe / exit_mass, 4)
+    except Exception:
+        transition_next = None
+
+    hmm_shift_direction: dict | None = None
+    try:
+        from signals.hmm_regime_shift_direction import (
+            build_ui_payload,
+            compute_shift_direction_semantic,
+        )
+
+        tm = getattr(model, "transmat_", None)
+        if tm is not None and getattr(tm, "shape", None) == (3, 3):
+            pi_model = np.zeros(3, dtype=float)
+            pi_model[bull_idx] = bull_fin
+            pi_model[transition_idx] = tr_fin
+            pi_model[bear_idx] = br_fin
+            ps = float(pi_model.sum())
+            if ps > 1e-12:
+                pi_model = pi_model / ps
+            raw_sd = compute_shift_direction_semantic(
+                tm,
+                pi_model,
+                bull_idx,
+                transition_idx,
+                bear_idx,
+                horizon_days=10,
+            )
+            if raw_sd:
+                hmm_shift_direction = {**build_ui_payload(raw_sd), "detail": raw_sd}
+    except Exception:
+        hmm_shift_direction = None
+
     return {
-        "bull_probability":       bull_adj,
-        "transition_probability": tr_adj,
-        "bear_probability":       br_adj,
+        "bull_probability":       bull_fin,
+        "transition_probability": tr_fin,
+        "bear_probability":       br_fin,
         "bull_probability_raw":    round(bull_prob, 3),
         "display_adjustment_note": display_note,
+        "index_etf_macro":       macro_audit,
         "recent_63d_return_pct": round(recent_63d_return_pct, 2) if recent_63d_return_pct is not None else None,
         "gap_ma200_pct":          round(gap_ma200_pct, 2) if gap_ma200_pct is not None else None,
-        "dominant_state":         dominant,
+        "dominant_state":         dominant_display,
+        "dominant_state_model_raw": dominant,
         "dominant_state_validated": dominant_validated,
         "ma_conflict":           conflict,
         "earnings_context": {
@@ -437,6 +591,8 @@ def get_hmm_regime(
         },
         "state_means_daily_ret":  [round(float(means[i]), 5) for i in order],
         "n_bars_fit":             len(features),
+        "transition_next":      transition_next,
+        "hmm_shift_direction":  hmm_shift_direction,
         "error":                  None,
     }
 

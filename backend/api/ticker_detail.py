@@ -1148,16 +1148,30 @@ def _build_trade_roadmap(
         "cumulative_pct": cum_today,
     })
 
-    # Days 1–10
-    p_lo = round((current_price * 0.98), 2) if current_price else None
-    p_hi = round((current_price * 1.02), 2) if current_price else None
+    # Days 1–10 — use the same price ladder as Today (ST band or core zone). A raw ±2% envelope
+    # around spot used to dip below the ST low, so "Watch only" looked like a better fill than
+    # "Start small" on the row above (confusing).
+    if align_buy_rows_to_core:
+        days_lo = zone_core_lo if zone_core_lo is not None else today_lo
+        days_hi = zone_core_hi if zone_core_hi is not None else today_hi
+        days_cond = (
+            f"Near-term chop — hold any starter; do not add until price is in {core_zone_fmt} "
+            "or you get a clear regime-shift confirmation (same zone as Today / summary)."
+        )
+    else:
+        days_lo = round(s_lo, 2) if s_lo else (round((current_price * 0.98), 2) if current_price else None)
+        days_hi = round(s_hi, 2) if s_hi else (round((current_price * 1.02), 2) if current_price else None)
+        days_cond = (
+            "Near-term tape — keep Today’s starter only; wait for regime shift before scaling "
+            "(same ST band as Today — not a separate ‘cheaper’ dip zone below it)."
+        )
     buy_stages.append({
         "timeline_key": "days_1_10",
         "label": "Days 1–10",
         "when_to_act": "Watch only",
-        "price_zone_low": p_lo,
-        "price_zone_high": p_hi,
-        "condition": "Wait for regime shift signal",
+        "price_zone_low": days_lo,
+        "price_zone_high": days_hi,
+        "condition": days_cond,
         "conviction": "None",
         "position_pct": 0,
         "cumulative_pct": cum_days,
