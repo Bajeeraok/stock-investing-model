@@ -4,6 +4,7 @@ Uses parallel fetches and 5-min cache to reduce timeout risk.
 """
 from __future__ import annotations
 
+import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -25,6 +26,11 @@ except ImportError:
     pd = None
 
 _MAX_PEERS_RETURNS = 2  # Fewer peer fetches = faster (was 4)
+
+# 52w min() on metal/commodity ETFs can pick a single bad bar or mixed vendor scale; prefer 5th pct when insane
+_METAL_ETF_52W_SANITY = frozenset(
+    {"GLD", "IAU", "SGOL", "GLDM", "BAR", "OUNZ", "SLV", "SIL", "PSLV", "USO", "GDX", "GDXJ"}
+)
 
 
 def _returns_over_periods(close: pd.Series, periods_days: dict) -> dict:
@@ -197,7 +203,16 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     if close_ticker is not None and len(close_ticker) >= 252 and current_price:
         last_252 = close_ticker.iloc[-252:]
         range_high = round(float(last_252.max()), 2)
-        range_low = round(float(last_252.min()), 2)
+        raw_lo = float(last_252.min())
+        range_low = round(raw_lo, 2)
+        sym_u = (ticker or "").upper().split("-")[0]
+        if sym_u in _METAL_ETF_52W_SANITY:
+            try:
+                q05 = float(last_252.quantile(0.05))
+                if raw_lo < q05 * 0.92 and raw_lo < float(current_price) * 0.48:
+                    range_low = round(q05, 2)
+            except Exception:
+                pass
         if range_high and range_high > 0:
             drawdown_52w = round(100 * (current_price - range_high) / range_high, 1)
 
@@ -1877,8 +1892,14 @@ def _build_trade_roadmap(
         vix=market_regime_layer.get("vix"),
     )
     try:
-        if ticker.upper() in MAJOR_INDEX_ETFS and ma200 and low_52w:
-            key_inv = max(float(ma200) * 0.97, float(low_52w) * 0.97)
+        ma200_k = float(ma200) if ma200 else None
+        tail_k = float(low_52w) * 0.97 if low_52w is not None else None
+        # Same idea as index ETFs: TL;DR "key level" must not be only a deep 52w tail (~spot-scale)
+        # when MA200 defines a nearer structural floor (common on commodity ETFs).
+        if ma200_k is not None and tail_k is not None:
+            key_inv = max(ma200_k * 0.97, tail_k)
+        elif ma200_k is not None:
+            key_inv = ma200_k * 0.97
         else:
             key_inv = float(stop_52w)
     except (TypeError, ValueError):
@@ -1902,7 +1923,7 @@ def _build_trade_roadmap(
             else "Staged adds on planned dips (per rows below)"
         ),
         "key_level": round(key_inv, 2),
-        "key_level_label": "Structural invalidation / support reference (see watch levels in confidence)",
+        "key_level_label": "Structural zone — max(~MA200×0.97, 52w tail); invalidation / support (see confidence watch levels)",
         "model_confidence_pct": model_confidence_pct,
         "dominant_near_term_action": dom_action,
     }
@@ -2499,6 +2520,61 @@ def _apply_sell_roadmap_band_alignment(
             hi_f = lo_f + pad * 2
             sell_stages[i]["price_zone_high"] = round(hi_f, 2)
         prev_hi = float(sell_stages[i]["price_zone_high"])
+
+    # 1–3 mo vs 3–6 mo: bands come from different anchors (medium target vs FV ladder) so the
+    # earlier row can end up *higher* in price than the later row while still carrying the smaller
+    # trim. Retail expectation: take more off into higher prints — swap copy when zones invert.
+    _reconcile_partial_vs_major_sell_trim_order(sell_stages)
+
+
+def _sell_trim_fraction_from_action(action: str | None) -> float | None:
+    """Rough parse: Trim 35% -> 35, Sell 50% -> 50."""
+    if not action:
+        return None
+    m = re.search(r"(?:trim|sell)\s+(\d+)\s*[–-]?\s*(\d+)?%?", str(action), re.I)
+    if m:
+        a, b = m.group(1), m.group(2)
+        if b:
+            return (float(a) + float(b)) / 2.0
+        return float(a)
+    nums = re.findall(r"\d+", str(action))
+    if nums:
+        return float(nums[0])
+    return None
+
+
+def _sell_zone_midpoint(stage: dict) -> float | None:
+    lo = _safe_float(stage.get("price_zone_low"))
+    hi = _safe_float(stage.get("price_zone_high"))
+    if lo is not None and hi is not None:
+        return (lo + hi) / 2.0
+    if hi is not None:
+        return hi
+    return lo
+
+
+def _reconcile_partial_vs_major_sell_trim_order(sell_stages: list[dict]) -> None:
+    """
+    Stages [2] and [3] are 1–3 month (partial) and 3–6 month (major) trims. If the 1–3 month
+    price band sits *above* the 3–6 month band but carries the *smaller* trim %, swap their
+    user-facing fields so larger sells align with higher zones (profit-taking into strength).
+    """
+    if len(sell_stages) < 4:
+        return
+    s2, s3 = sell_stages[2], sell_stages[3]
+    mid2, mid3 = _sell_zone_midpoint(s2), _sell_zone_midpoint(s3)
+    if mid2 is None or mid3 is None:
+        return
+    f2 = _sell_trim_fraction_from_action(s2.get("action"))
+    f3 = _sell_trim_fraction_from_action(s3.get("action"))
+    if f2 is None or f3 is None or f2 >= f3:
+        return
+    if mid2 <= mid3 + 1e-6:
+        return
+    keys = ("when_to_sell", "action", "reason", "condition", "exit_category")
+    for k in keys:
+        if k in s2 and k in s3:
+            s2[k], s3[k] = s3[k], s2[k]
 
 
 # Fix 5: Sector-specific metrics (AUM for financials, etc.)
