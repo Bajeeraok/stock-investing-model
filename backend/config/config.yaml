@@ -239,6 +239,10 @@ score:
   ml_strong_buy_prob: 0.55       # ML prob (0-1) for STRONG BUY
   ml_buy_prob: 0.40              # ML prob for BUY; below this but confluence ok -> WATCH
   ml_avoid_max_prob: 0.20        # ML prob below this -> REDUCE or AVOID
+  # Aliases (optional): same gates as ml_*_prob — set to override for docs/UI clarity
+  strong_buy_ml: 0.55
+  buy_ml: 0.40
+  avoid_ml: 0.20
   # Mean-reverting tape: momentum scores can invert vs forward returns. When enabled, we only
   # flip threshold mapping (100 - confluence for signals); raw composite_buy is unchanged.
   interpretation:
@@ -401,6 +405,13 @@ retail:
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
 alerts:
+  # Optional per-alert cooldown (minutes) for retail band/earnings/ML alerts — overrides scanner defaults
+  retail_cooldown_min:
+    EARNINGS_SOON: 360
+    ENTRY_ZONE_ENTERED: 120
+    STOP_HIT: 60
+    TARGET_HIT: 120
+    ML_PROB_CROSSED: 180
   # Daily digest: retail = story changes OR trim candidates OR earnings-week holdings; story_only = stories only
   digest_mode: retail
   # Scanner (Level-2): IV rank / flow / premium-selling surfacing — off by default; use band alerts below.
@@ -463,6 +474,12 @@ paper_trading:
 # Roadmap (staged prices) uses MA/analyst/scenario logic; confidence is a multi-layer nowcast — they can diverge by design.
 # HMM penalty frequency: scripts/audit_hmm_bear_penalty.py; API returns penalty_audit.
 confidence:
+  # Action labels for 7-layer confidence — align with model_rules add/trim (add_min_confidence / trim_max_confidence) when omitted
+  action_thresholds:
+    strong_buy: 0.80
+    buy: 0.70
+    hold: 0.45
+    reduce: 0.30
   # options_pc_mode: contrarian | directional | auto (auto = directional when HMM bear > 55%, else contrarian)
   options_pc_mode: auto
   ml_short_horizon:

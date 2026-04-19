@@ -26,7 +26,10 @@ regime_plain_english:
   DOWN: "Weak trend or momentum; consider trimming or avoiding new buys; protect capital."
 signal: "BUY (score>=70), HOLD, SELL (score<=30). With ML model: see ml_signal."
 # When ML short-term probability is available, signals use confluence + ML tiers (regime.get_ml_aware_signal)
-ml_signal: "STRONG BUY = confluence ≥72 and ML ≥55%. BUY = confluence ≥65 and ML ≥40%. WATCH = good confluence but ML <40% (wait for confirmation). REDUCE/AVOID when confluence ≤35 or ML <20%. Add only when both technical and ML agree."
+ml_signal: "STRONG BUY = confluence ≥ ml_strong_buy_confluence and ML ≥ strong_buy_ml (alias: ml_strong_buy_prob). BUY = confluence ≥ buy_min and ML ≥ buy_ml (alias: ml_buy_prob). WATCH = good confluence but ML below buy_ml. REDUCE/AVOID when confluence ≤ sell_max or ML below avoid_ml (alias: ml_avoid_max_prob). Thresholds live in config score.* — one source of truth."
+strong_buy_ml: "Probability gate for STRONG BUY (config score.strong_buy_ml; defaults to ml_strong_buy_prob)"
+buy_ml: "Probability gate for BUY tier (config score.buy_ml; defaults to ml_buy_prob)"
+avoid_ml: "ML floor for trim/avoid routing (config score.avoid_ml; defaults to ml_avoid_max_prob)"
 earnings_note: "Reduce confidence or avoid trading near earnings"
 thesis: "Why you own it; review when regime/score changes"
 exit_condition: "When to trim or sell; model nudges when conditions match"
@@ -41,3 +44,7 @@ st_target_err_pct: "|close − short-term target| / close. ≤5% = good; 5–10%
 support_err_pct: "|close − MA20| / close. MA20 lags; ≤5% good, >10% common in fast moves"
 mape_pct: "Mean absolute % error across tickers for this level. Lower = model tracks close better. ≤5–8% = acceptable; >8% ST = consider ATR tweak"
 accuracy_acceptable: "No tweak: ST target err ≤5% per ticker, MAPE ≤5–8%. Tweak: ST MAPE >8% or many tickers with err >10%"
+
+# Macro / breadth
+breadth_rsp_spy: "RSP (equal-weight S&P) vs SPY ratio + trend — participation proxy for rotation risk with XLK/QQQ leadership."
+cross_asset_sensitivity: "60d return correlation vs GLD, UUP (~USD), ^VIX; |ρ|≥0.25 surfaces gold / USD / volatility sensitivity badges on ticker detail."

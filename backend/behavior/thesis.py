@@ -45,16 +45,44 @@ def get_nudge(
     regime: str,
     score: float | None,
     theses: dict[str, dict],
+    *,
+    prev_regime: str | None = None,
+    prev_score: float | None = None,
 ) -> str | None:
     """
     Return nudge text when conditions match thesis exit_condition.
     - "Regime DOWN; you said trim if DOWN" when regime DOWN and exit mentions DOWN/trim
     - "Trend still strong; check thesis before selling" when score >= 65 and signal good
+    - When prev_regime differs from regime: resurface thesis + exit for a regime/score change
     """
     t = theses.get(ticker)
     if not t:
         return None
     exit_cond = (t.get("exit_condition") or "").lower()
+    thesis_txt = (t.get("thesis") or "").strip()
+
+    # Regime or score shift vs last dashboard run — resurface stored thesis
+    if prev_regime and regime and prev_regime != regime:
+        parts = [f"Regime shifted {prev_regime}→{regime}."]
+        if thesis_txt:
+            parts.append(f"Your thesis: {thesis_txt[:140]}{'…' if len(thesis_txt) > 140 else ''}")
+        if exit_cond:
+            parts.append(f"Exit if: {t.get('exit_condition', '')[:120]}{'…' if len((t.get('exit_condition') or '')) > 120 else ''}")
+        return " ".join(parts)
+
+    if prev_score is not None and score is not None and abs(float(prev_score) - float(score)) >= 10:
+        if thesis_txt:
+            ec = (t.get("exit_condition") or "").strip()
+            if ec:
+                return (
+                    f"Score moved {prev_score:.0f}→{score:.0f}. Revisit thesis ({thesis_txt[:100]}{'…' if len(thesis_txt) > 100 else ''}) "
+                    f"and exit rule ({ec[:100]}{'…' if len(ec) > 100 else ''})."
+                )
+            return (
+                f"Score moved {prev_score:.0f}→{score:.0f}. Revisit thesis: "
+                f"{thesis_txt[:200]}{'…' if len(thesis_txt) > 200 else ''}"
+            )
+
     if not exit_cond:
         return None
 

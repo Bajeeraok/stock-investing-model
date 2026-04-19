@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
@@ -21,7 +22,7 @@ from signals.providers import get_sector_and_industry
 def get_best_picks_2026(config: dict, max_results: int = 20) -> list[dict]:
     """
     Rank tickers by LT score + regime + confidence. Exclude earnings within 2 weeks.
-    Returns [{ticker, score, regime, confidence, reason}].
+    Returns [{ticker, score, regime, confidence, reason, snapshot_week, as_of}].
     """
     from signals.providers import get_next_earnings
 
@@ -32,6 +33,8 @@ def get_best_picks_2026(config: dict, max_results: int = 20) -> list[dict]:
     up_min = config.get("regime", {}).get("up_min", 60)
     down_max = config.get("regime", {}).get("down_max", 40)
     period = config.get("data", {}).get("period", "2y") or "2y"
+    now = datetime.utcnow()
+    iso_week = f"{now.isocalendar().year}-W{now.isocalendar().week:02d}"
 
     picks = []
     for ticker in tickers:
@@ -89,6 +92,8 @@ def get_best_picks_2026(config: dict, max_results: int = 20) -> list[dict]:
             "confidence": confidence,
             "reason": reason,
             "close": sig.get("close"),
+            "snapshot_week": iso_week,
+            "as_of": now.strftime("%Y-%m-%d"),
         })
 
     # Sort by confidence * (score/100), filter regime DOWN low

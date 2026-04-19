@@ -392,6 +392,8 @@ export interface DashboardData {
     rs_xlk_spy?: number | null;
     rs_qqq_spy?: number | null;
     rs_rsp_spy?: number | null;
+    /** RSP/SPY ratio trend: Rising | Flat | Falling — equal-weight participation */
+    rsp_spy_trend?: string | null;
   };
   next_day_outlook?: { ticker: string; bias: string; pct_green: number | null; avg_return_pct: number | null; typical_range_pct: number | null; state_key?: string | null }[];
   typical_move?: { ticker: string; typical_pct_1d: number; typical_pct_60d?: number; high_vol_pct?: number | null; vol_regime?: string }[];

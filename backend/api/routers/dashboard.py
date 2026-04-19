@@ -1065,7 +1065,15 @@ async def get_dashboard(
         t = theses.get(r["ticker"])
         if not t:
             continue
-        nudge = get_nudge(r["ticker"], r.get("regime", ""), r.get("composite_buy"), theses)
+        prev_row = last_run_prev.get(r["ticker"]) if last_run_prev else None
+        nudge = get_nudge(
+            r["ticker"],
+            r.get("regime", ""),
+            r.get("composite_buy"),
+            theses,
+            prev_regime=(prev_row or {}).get("regime") if prev_row else None,
+            prev_score=(prev_row or {}).get("composite_buy") if prev_row else None,
+        )
         thesis_check.append({
             "ticker": r["ticker"],
             "thesis": t.get("thesis", ""),
@@ -1098,7 +1106,7 @@ async def get_dashboard(
         if not prev:
             continue
         diffs, summary = what_changed(prev, r)
-        if diffs or summary:
+        if diffs:
             what_changed_list.append({"ticker": r["ticker"], "changes": diffs, "summary": summary})
     logger.info("[dashboard] section: thesis_check + what_changed DONE (%d changed, %.0f ms)", len(what_changed_list), (time.perf_counter() - t0) * 1000)
 
@@ -1162,6 +1170,14 @@ async def get_dashboard(
         enrich_results_earnings_quality(config, results)
     except Exception as e:
         logger.debug("enrich_results_earnings_quality: %s", e)
+
+    try:
+        from scanner.horizon_levels import sync_horizon_levels_from_signal_results
+
+        _nhl = sync_horizon_levels_from_signal_results(get_data_root(), results)
+        logger.info("[dashboard] scanner horizon_levels synced (%d tickers with bands/ML)", _nhl)
+    except Exception as e:
+        logger.debug("horizon_levels sync: %s", e)
 
     save_last_run(results)  # Save AFTER building what_changed
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)

@@ -1,6 +1,7 @@
 """
 Horizon levels cache and retail-alert state for ENTRY_ZONE_ENTERED, STOP_HIT, TARGET_HIT, ML_PROB_CROSSED.
-Levels are written when ticker detail builds investor_summary; scanner reads them to fire price-level alerts.
+Levels are written from (1) ticker detail investor_summary, (2) daily run / dashboard via
+sync_horizon_levels_from_signal_results — so the scanner has bands without opening every modal.
 """
 from __future__ import annotations
 
@@ -170,3 +171,72 @@ def merge_ml_prob_for_ticker(data_root: Path, ticker: str, prob_pct: float) -> N
         path.write_text(json.dumps(probs, indent=2), encoding="utf-8")
     except Exception as e:
         logger.warning("merge_ml_prob_for_ticker failed: %s", e)
+
+
+def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]) -> int:
+    """
+    Populate horizon_levels.json + ml_probs.json from run_signals / dashboard rows.
+    Maps st_band/mt_band/lt_band (low/high) to entry zone + stop (just below ST low) + target (band high).
+    Returns number of tickers that had at least one band or ML prob written.
+    """
+    n_tickers = 0
+    for r in results:
+        if not isinstance(r, dict) or r.get("error"):
+            continue
+        ticker = r.get("ticker")
+        if not ticker:
+            continue
+        try:
+            p = float(r.get("close") or 0)
+        except (TypeError, ValueError):
+            p = 0.0
+        if p <= 0:
+            continue
+
+        wrote = False
+
+        def _one_band(band: dict | None, bk: str, label: str) -> None:
+            nonlocal wrote
+            if not isinstance(band, dict):
+                return
+            lo, hi = band.get("low"), band.get("high")
+            if lo is None or hi is None:
+                return
+            try:
+                lo_f, hi_f = float(lo), float(hi)
+            except (TypeError, ValueError):
+                return
+            if lo_f >= hi_f:
+                return
+            pad = max(0.01, p * 0.001)
+            stop_loss = round(lo_f - pad, 2)
+            merge_horizon_band_for_ticker(
+                data_root,
+                ticker,
+                bk,
+                entry_low=round(lo_f, 2),
+                entry_high=round(hi_f, 2),
+                stop_loss=stop_loss,
+                target=round(hi_f, 2),
+                horizon_label=label,
+            )
+            wrote = True
+
+        _one_band(r.get("st_band"), "short", "Short-term")
+        _one_band(r.get("mt_band"), "medium", "Medium-term")
+        _one_band(r.get("lt_band"), "long", "Long-term")
+
+        mlp = r.get("ml_short_prob")
+        if mlp is not None:
+            try:
+                pv = float(mlp)
+                if 0.0 <= pv <= 1.0:
+                    merge_ml_prob_for_ticker(data_root, ticker, pv * 100.0)
+                    wrote = True
+            except (TypeError, ValueError):
+                pass
+
+        if wrote:
+            n_tickers += 1
+
+    return n_tickers

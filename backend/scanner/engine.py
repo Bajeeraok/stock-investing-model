@@ -608,6 +608,7 @@ def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
             "enable_earnings_alerts": a.get("enable_earnings_alerts", True),
             "enable_ml_prob_alerts": a.get("enable_ml_prob_alerts", True),
             "trim_approach_fraction": float(a.get("trim_approach_fraction", 0.95)),
+            "cooldown_overrides": a.get("retail_cooldown_min") or {},
         }
         return enable_options, retail
     except Exception:
@@ -616,6 +617,7 @@ def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
             "enable_earnings_alerts": True,
             "enable_ml_prob_alerts": True,
             "trim_approach_fraction": 0.95,
+            "cooldown_overrides": {},
         }
 
 
@@ -655,6 +657,12 @@ class ScanEngine:
         enable_earnings = rc.get("enable_earnings_alerts", True)
         enable_ml = rc.get("enable_ml_prob_alerts", True)
         trim_frac = float(rc.get("trim_approach_fraction", 0.95))  # alert "consider trim" when price >= frac * target
+        for _at_name, _mins in (rc.get("cooldown_overrides") or {}).items():
+            try:
+                _at = AlertType[_at_name]
+                self.dedupe.cooldowns_min[_at] = int(_mins)
+            except Exception:
+                pass
 
         for s in snaps:
             try:

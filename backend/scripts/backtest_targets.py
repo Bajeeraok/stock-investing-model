@@ -2,10 +2,15 @@
 Target calibration: ST/MT band hit rates from historical data.
 For each date with enough history, compute st_band/mt_band, then check
 if price hit target or stop first within the horizon.
+
+Uses intraday high/low when OHLC is available (same bar: stop before target if both hit — conservative for longs);
+falls back to close-only when high/low are missing. This avoids optimistic target / pessimistic stop bias from
+close-only paths. (Forward return / bucket backtests in backtest_simple.py use different mechanics.)
 """
 from __future__ import annotations
 
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,14 +25,41 @@ from signals.fetcher import fetch_ohlcv_dataframe
 from signals.volatility import atr_series_wilder
 
 
-def _st_hit_first(close, i: int, stop: float, target: float, days: int) -> str | None:
-    """Check next N days: target hit first, stop hit first, or neither. Returns 'target'|'stop'|None."""
+def _st_hit_first_ohlc(
+    high,
+    low,
+    close,
+    i: int,
+    stop: float,
+    target: float,
+    days: int,
+) -> str | None:
+    """
+    Per day: target if high >= target before stop if low <= stop (same-bar: stop first — conservative for longs).
+    Falls back to close-only if high/low missing.
+    """
+    use_hl = high is not None and low is not None
     for j in range(1, min(days + 1, len(close) - i)):
-        p = float(close.iloc[i + j])
-        if p >= target:
-            return "target"
-        if p <= stop:
-            return "stop"
+        if use_hl:
+            try:
+                hi = float(high.iloc[i + j])
+                lo = float(low.iloc[i + j])
+            except Exception:
+                hi = lo = float(close.iloc[i + j])
+            hit_t = hi >= target
+            hit_s = lo <= stop
+            if hit_t and hit_s:
+                return "stop"
+            if hit_s:
+                return "stop"
+            if hit_t:
+                return "target"
+        else:
+            p = float(close.iloc[i + j])
+            if p >= target:
+                return "target"
+            if p <= stop:
+                return "stop"
     return None
 
 
@@ -37,13 +69,16 @@ def run_target_calibration(
     st_days: int = 21,
     mt_days: int = 126,
 ) -> dict:
-    """Compute ST and MT band hit rates."""
+    """Compute ST and MT band hit rates; optional breakdown by MA regime and ATR bucket."""
     ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
     close = None
+    high = low = None
     atr_ser = None
     if ohlcv_df is not None and not ohlcv_df.empty and "close" in ohlcv_df.columns:
         close = ohlcv_df["close"]
         if {"high", "low", "close"}.issubset(set(ohlcv_df.columns)):
+            high = ohlcv_df["high"]
+            low = ohlcv_df["low"]
             atr_ser = atr_series_wilder(ohlcv_df["high"], ohlcv_df["low"], ohlcv_df["close"], window=14)
     if close is None:
         close = fetch_ohlcv_safe(ticker, period)
@@ -51,12 +86,19 @@ def run_target_calibration(
         return {"error": f"Insufficient data for {ticker}"}
 
     close = close.sort_index()
+    if high is not None:
+        high = high.reindex(close.index).sort_index()
+    if low is not None:
+        low = low.reindex(close.index).sort_index()
+
     st_target_hits = 0
     st_stop_hits = 0
     st_neither = 0
     mt_target_hits = 0
     mt_stop_hits = 0
     mt_neither = 0
+
+    by_regime: dict[str, dict[str, int]] = defaultdict(lambda: {"target": 0, "stop": 0, "neither": 0})
 
     for i in range(200, len(close) - max(st_days, mt_days) - 1):
         subset = close.iloc[: i + 1]
@@ -111,21 +153,22 @@ def run_target_calibration(
         if st_stop is None or st_target is None:
             continue
 
-        # ST hit check
-        result = _st_hit_first(close, i, float(st_stop), float(st_target), st_days)
+        result = _st_hit_first_ohlc(high, low, close, i, float(st_stop), float(st_target), st_days)
         if result == "target":
             st_target_hits += 1
+            by_regime[regime]["target"] += 1
         elif result == "stop":
             st_stop_hits += 1
+            by_regime[regime]["stop"] += 1
         else:
             st_neither += 1
+            by_regime[regime]["neither"] += 1
 
-        # MT hit check (if we have mt_band)
         if mt and isinstance(mt, dict):
             mt_low = mt.get("low")
             mt_high = mt.get("high")
             if mt_low is not None and mt_high is not None:
-                result = _st_hit_first(close, i, float(mt_low), float(mt_high), mt_days)
+                result = _st_hit_first_ohlc(high, low, close, i, float(mt_low), float(mt_high), mt_days)
                 if result == "target":
                     mt_target_hits += 1
                 elif result == "stop":
@@ -135,6 +178,19 @@ def run_target_calibration(
 
     n_st = st_target_hits + st_stop_hits + st_neither
     n_mt = mt_target_hits + mt_stop_hits + mt_neither
+
+    st_by_regime_out = {}
+    for reg, d in by_regime.items():
+        n = d["target"] + d["stop"] + d["neither"]
+        if n == 0:
+            continue
+        st_by_regime_out[reg] = {
+            "n": n,
+            "target_hit_pct": round(100 * d["target"] / n, 1),
+            "stop_hit_pct": round(100 * d["stop"] / n, 1),
+            "neither_pct": round(100 * d["neither"] / n, 1),
+        }
+
     return {
         "ticker": ticker,
         "period": period,
@@ -152,6 +208,7 @@ def run_target_calibration(
             "stop_hit_pct": round(100 * mt_stop_hits / n_mt, 1) if n_mt else None,
             "neither_pct": round(100 * mt_neither / n_mt, 1) if n_mt else None,
         },
+        "st_by_regime": st_by_regime_out,
     }
 
 
@@ -162,7 +219,7 @@ def main() -> None:
 
     print("TARGET CALIBRATION (ST/MT band hit rates)")
     print("=" * 60)
-    print("ST = 21 days, MT = 126 days. Target hit first vs stop hit first vs neither.")
+    print("ST = 21 days, MT = 126 days. Intraday high/low when OHLC available; same-bar stop wins if both hit.")
     print()
 
     for ticker in tickers:
@@ -177,6 +234,9 @@ def main() -> None:
             if n == 0:
                 continue
             print(f"  {label}: n={n}  target_hit={d.get('target_hit_pct')}%  stop_hit={d.get('stop_hit_pct')}%  neither={d.get('neither_pct')}%")
+        br = out.get("st_by_regime") or {}
+        if br:
+            print("  ST by regime:", br)
         print()
 
     print("Ideal: target 40-60%, stop 20-40%, neither remainder. Adjust ATR mult in target_bands if needed.")

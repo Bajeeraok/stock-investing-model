@@ -96,6 +96,8 @@ export interface TickerDetail {
     interpretation: string;
     note: string;
   };
+  /** Rolling correlation vs GLD / UUP / VIX — macro sensitivity badges */
+  cross_asset?: { badges: string[]; correlations?: Record<string, number | null> } | null;
   investor_summary?: InvestorDecisionSummary | null;
   /** PE/EPS/FMP data are latest vendor snapshot — not point-in-time historical fundamentals. */
   fundamentals_snapshot?: {
@@ -289,6 +291,21 @@ export function TickerDetailModal({
                   </div>
                 )}
               </section>
+
+              {detail.cross_asset && (detail.cross_asset.badges?.length ?? 0) > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mb-4">
+                  <span className="text-xs text-slate-500">Macro sensitivity:</span>
+                  {detail.cross_asset.badges.map((b) => (
+                    <span
+                      key={b}
+                      className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-300"
+                      title="60d return correlation vs GLD / UUP / ^VIX (|ρ|≥0.25)"
+                    >
+                      {b}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {confidence && playbookStage3 && (
                 <button

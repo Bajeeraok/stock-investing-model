@@ -162,6 +162,7 @@ def get_market_regime(
         "rs_xlk_spy": rs_data.get("rs_xlk_spy"),
         "rs_qqq_spy": rs_data.get("rs_qqq_spy"),
         "rs_rsp_spy": rs_data.get("rs_rsp_spy"),
+        "rsp_spy_trend": rs_data.get("trend_rsp"),
     }
 
 

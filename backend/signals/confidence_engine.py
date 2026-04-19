@@ -728,8 +728,8 @@ class ConfidenceEngine:
                 except Exception as _hce:
                     logger.debug("per-horizon confidence failed %s/%s: %s", ticker, _hz, _hce)
 
-        # ── Action label ───────────────────────────────────────────────────
-        action = _confidence_to_action(confidence)
+        # ── Action label (thresholds from config — aligned with model_rules add/trim) ──
+        action = _confidence_to_action(confidence, _confidence_action_thresholds(config))
 
         # ── Risk factors and watch levels ──────────────────────────────────
         si_data = details.get("short_interest")
@@ -1288,11 +1288,39 @@ def _score_nlp_sentiment(ticker: str, config: dict | None) -> dict | None:
         return None
 
 
-def _confidence_to_action(confidence: float) -> str:
-    if confidence >= 0.80: return "STRONG BUY"
-    if confidence >= 0.65: return "BUY"
-    if confidence >= 0.45: return "HOLD / WATCH"
-    if confidence >= 0.30: return "REDUCE"
+def _confidence_action_thresholds(config: dict | None) -> dict[str, float]:
+    raw = ((config or {}).get("confidence") or {}).get("action_thresholds") or {}
+    mr = (config or {}).get("model_rules") or {}
+    buy = raw.get("buy")
+    if buy is None and mr.get("add_min_confidence") is not None:
+        try:
+            buy = float(mr["add_min_confidence"]) / 100.0
+        except (TypeError, ValueError):
+            buy = None
+    red = raw.get("reduce")
+    if red is None and mr.get("trim_max_confidence") is not None:
+        try:
+            red = float(mr["trim_max_confidence"]) / 100.0
+        except (TypeError, ValueError):
+            red = None
+    return {
+        "strong_buy": float(raw.get("strong_buy", 0.80)),
+        "buy": float(buy if buy is not None else 0.70),
+        "hold": float(raw.get("hold", 0.45)),
+        "reduce": float(red if red is not None else 0.30),
+    }
+
+
+def _confidence_to_action(confidence: float, thresholds: dict[str, float] | None = None) -> str:
+    t = thresholds or {"strong_buy": 0.80, "buy": 0.70, "hold": 0.45, "reduce": 0.30}
+    if confidence >= t["strong_buy"]:
+        return "STRONG BUY"
+    if confidence >= t["buy"]:
+        return "BUY"
+    if confidence >= t["hold"]:
+        return "HOLD / WATCH"
+    if confidence >= t["reduce"]:
+        return "REDUCE"
     return "AVOID"
 
 

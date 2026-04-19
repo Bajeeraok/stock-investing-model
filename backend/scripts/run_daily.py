@@ -53,6 +53,7 @@ from signals.regime import (
     get_global_market_regime,
     get_score_label,
     get_vix_min_hit_rate,
+    resolve_ml_prob_thresholds,
 )
 from signals.target_bands import add_target_bands, compute_vol_6m, compute_swing_high_low
 from signals.market_reversal_overlay import apply_overlay_to_composite, build_market_reversal_overlay
@@ -94,9 +95,7 @@ def run_signals(
 
     sell_max = score_cfg.get("sell_max", 30)
     ml_strong_buy_confluence = float(score_cfg.get("ml_strong_buy_confluence", 72))
-    ml_strong_buy_prob = float(score_cfg.get("ml_strong_buy_prob", 0.55))
-    ml_buy_prob = float(score_cfg.get("ml_buy_prob", 0.40))
-    ml_avoid_max_prob = float(score_cfg.get("ml_avoid_max_prob", 0.20))
+    ml_strong_buy_prob, ml_buy_prob, ml_avoid_max_prob = resolve_ml_prob_thresholds(score_cfg)
     up_min = regime_cfg.get("up_min", 60)
     down_max = regime_cfg.get("down_max", 40)
 
@@ -668,6 +667,12 @@ def run_eod_snapshot_only(config: dict | None = None, snapshot_date: str | None 
             next_day_outlook=next_day_outlook_eod,
             typical_move=typical_move_eod,
         )
+        try:
+            from scanner.horizon_levels import sync_horizon_levels_from_signal_results
+
+            sync_horizon_levels_from_signal_results(get_data_root(), results)
+        except Exception:
+            pass
         save_last_run(results)
         if snapshot_path:
             result["snapshot_path"] = str(snapshot_path)
@@ -829,7 +834,15 @@ def main() -> None:
             t = theses.get(r["ticker"])
             if not t:
                 continue
-            nudge = get_nudge(r["ticker"], r.get("regime", ""), r.get("composite_buy"), theses)
+            prev_r = last_run.get(r["ticker"]) if last_run else None
+            nudge = get_nudge(
+                r["ticker"],
+                r.get("regime", ""),
+                r.get("composite_buy"),
+                theses,
+                prev_regime=(prev_r or {}).get("regime") if prev_r else None,
+                prev_score=(prev_r or {}).get("composite_buy") if prev_r else None,
+            )
             print(f"  {r['ticker']:6}  Why: {t.get('thesis', '-')[:60]}...")
             print(f"         Exit if: {t.get('exit_condition', '-')}")
             if nudge:
@@ -904,7 +917,14 @@ def main() -> None:
         except Exception as e:
             print(f"\nAlert send failed: {e}")
 
-    # Persist for next-run alerts
+    # Persist for next-run alerts + scanner price-level alerts (entry/stop/target)
+    try:
+        from scanner.horizon_levels import sync_horizon_levels_from_signal_results
+
+        n_sync = sync_horizon_levels_from_signal_results(get_data_root(), results)
+        print(f"\nScanner horizon_levels synced ({n_sync} tickers with bands/ML) for entry/stop/target alerts.")
+    except Exception as e:
+        print(f"\nHorizon levels sync skipped: {e}")
     save_last_run(results)
     print("\nSaved to data/last_run.json (story-change alerts on next run).")
 

@@ -637,6 +637,14 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </span>
               {" · "}
               <span className="text-slate-400">Tech leadership:</span> {data.market_regime.tech_leadership ?? "—"} &middot;{" "}
+              {data.market_regime.rs_rsp_spy != null && data.market_regime.rsp_spy_trend && (
+                <>
+                  <span className="text-slate-400">RSP/SPY:</span>{" "}
+                  <span className="text-slate-200">{data.market_regime.rs_rsp_spy.toFixed(3)}</span>{" "}
+                  <span className="text-slate-500">({data.market_regime.rsp_spy_trend})</span>
+                  {" · "}
+                </>
+              )}
               <span className={clsx(
                 data.market_regime.rotation_risk === "High" && "text-amber-400",
                 data.market_regime.rotation_risk === "Medium" && "text-amber-300",

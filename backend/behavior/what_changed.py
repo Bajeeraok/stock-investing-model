@@ -52,42 +52,24 @@ def what_changed(prev: dict | None, curr: dict) -> tuple[list[str], str]:
         elif not prev_above and curr_above:
             changes.append("MA50 crossed above MA20 (short-term strength)")
 
-    # Build brief reason for summary
-    reason_parts = []
-
-    # RSI extremes
+    # RSI extremes (only when crossing into a band or large move — avoid duplicate noise)
     if curr_rsi is not None:
         if curr_rsi > 70:
             changes.append(f"RSI {curr_rsi:.0f} (overbought)")
-            reason_parts.append("RSI overbought")
         elif curr_rsi < 30:
             changes.append(f"RSI {curr_rsi:.0f} (oversold)")
-            reason_parts.append("RSI oversold")
 
     # Score move
-    score_delta = None
     if prev_score is not None and curr_score is not None:
         delta = curr_score - prev_score
-        if abs(delta) >= 10:  # Lower threshold for summary
+        if abs(delta) >= 10:
             direction = "up" if delta > 0 else "down"
-            changes.append(f"Score {direction} {abs(delta):.0f} pts ({prev_score:.0f} -> {curr_score:.0f})")
-            score_delta = delta
-            if not reason_parts:
-                if delta < 0 and prev_ma20 is not None and prev_ma50 is not None and curr_ma20 is not None and curr_ma50 is not None:
-                    prev_above = prev_ma50 > prev_ma20
-                    curr_above = curr_ma50 > curr_ma20
-                    if prev_above and not curr_above:
-                        reason_parts.append("trend weakened after break below 50D MA")
-                elif delta > 0 and curr_rsi is not None and curr_rsi < 40:
-                    reason_parts.append("RSI recovered from oversold")
-                elif delta > 0 and prev_ma20 is not None and prev_ma50 is not None and curr_ma20 is not None and curr_ma50 is not None:
-                    if not (prev_ma50 > prev_ma20) and (curr_ma50 > curr_ma20):
-                        reason_parts.append("price back above 50D MA")
+            changes.append(f"Score {direction} {abs(delta):.0f} pts ({prev_score:.0f} → {curr_score:.0f})")
 
     # Regime change
     regime_change = bool(prev_regime and curr_regime and prev_regime != curr_regime)
     if regime_change:
-        changes.append(f"Regime {prev_regime} -> {curr_regime}")
+        changes.append(f"Regime {prev_regime} → {curr_regime}")
 
     # MACD flip
     if prev_macd is not None and curr_macd is not None:
@@ -97,17 +79,17 @@ def what_changed(prev: dict | None, curr: dict) -> tuple[list[str], str]:
             changes.append("MACD turned negative (momentum weakening)")
         elif not prev_pos and curr_pos:
             changes.append("MACD turned positive (momentum improving)")
-            if not reason_parts:
-                reason_parts.append("momentum improving")
 
-    # Build one-line summary
+    if not changes:
+        return [], ""
+
+    # One-line summary: score + regime headline, then top drivers (dedupe-friendly)
     ticker = curr.get("ticker", "")
     prev_score_s = f"{prev_score:.0f}" if prev_score is not None else "?"
     curr_score_s = f"{curr_score:.0f}" if curr_score is not None else "?"
-    regime_s = f"({prev_regime}→{curr_regime})" if regime_change else ""
-    reason_s = "; ".join(reason_parts) if reason_parts else (changes[0] if changes else "")
-    summary = f"{ticker}: {prev_score_s} → {curr_score_s} {regime_s}".strip()
-    if reason_s:
-        summary += f": {reason_s}"
+    regime_s = f" ({prev_regime}→{curr_regime})" if regime_change else ""
+    headline = f"{ticker}: {prev_score_s} → {curr_score_s}{regime_s}".strip()
+    detail = "; ".join(changes[:5])
+    summary = f"{headline}: {detail}"
 
     return changes, summary

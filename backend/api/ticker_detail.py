@@ -163,7 +163,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     if close_sector is None:
         close_sector = close_spy
     if close_ticker is None:
-        close_ticker, volume = fetch_ohlcv_with_volume(ticker, period), None
+        close_ticker, volume = fetch_ohlcv_with_volume(ticker, period)
         if close_ticker is None:
             close_ticker = fetch_ohlcv_safe(ticker, period)
 
@@ -376,6 +376,12 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **signal_data,
         **fmp_data,
     }
+    try:
+        from signals.cross_asset_sensitivity import compute_cross_asset_sensitivity
+
+        response["cross_asset"] = compute_cross_asset_sensitivity(ticker)
+    except Exception:
+        response["cross_asset"] = None
     response["investor_summary"] = _build_investor_summary(
         ticker,
         config,
@@ -547,6 +553,9 @@ def _build_investor_summary(
             conf_snapshot = run_confidence(ticker, config=config)
         except Exception:
             conf_snapshot = None
+    st_confidence_pct: float | None = None
+    mt_confidence_pct: float | None = None
+    lt_confidence_pct: float | None = None
     try:
         if conf_snapshot:
             mh = conf_snapshot.get("ml_horizons") or {}
@@ -564,6 +573,14 @@ def _build_investor_summary(
             rh = b.get("regime_hmm")
             if isinstance(rh, dict) and rh.get("label"):
                 regime_hmm_label = str(rh["label"])
+            # Per-horizon 7-layer fused confidence
+            hc = conf_snapshot.get("horizon_confidence") or {}
+            if hc.get("short") is not None:
+                st_confidence_pct = float(hc["short"]) * 100.0
+            if hc.get("medium") is not None:
+                mt_confidence_pct = float(hc["medium"]) * 100.0
+            if hc.get("long") is not None:
+                lt_confidence_pct = float(hc["long"]) * 100.0
     except Exception:
         pass
 
@@ -736,6 +753,24 @@ def _build_investor_summary(
     if fair_value is None or fair_value <= 0:
         fair_value = current_price * 1.15
 
+    # Sanity cap for broad index ETFs: earnings-yield FV can inflate when yfinance forwardEps
+    # reflects aggregate S&P 500 earnings rather than fund distributions, producing implausible
+    # "25%+ undervalued" readings. Cap at 20% above spot and annotate.
+    if ticker.upper() in MAJOR_INDEX_ETFS and fair_value > 0 and current_price and current_price > 0:
+        _fv_cap_ratio = 1.20
+        if fair_value > current_price * _fv_cap_ratio:
+            _raw_fv = fair_value
+            fair_value = round(current_price * _fv_cap_ratio, 2)
+            _cap_note = (
+                f"Index ETF fair value capped at {_fv_cap_ratio*100:.0f}% of spot "
+                f"(raw model: ${_raw_fv:.2f}) — yfinance forwardEps for ETFs can differ from "
+                "fund distributions; tune fair_value.risk_free_rate / equity_risk_premium in config."
+            )
+            if fv_result is not None:
+                existing = list(getattr(fv_result, "notes", []) or [])
+                existing.append(_cap_note)
+                fv_result.notes = existing
+
     days_to_earnings = None
     if response.get("earnings") and isinstance(response["earnings"], dict):
         days_to_earnings = response["earnings"].get("days_until")
@@ -790,6 +825,9 @@ def _build_investor_summary(
             model_confidence_pct=float(model_confidence_pct_summary)
             if model_confidence_pct_summary is not None
             else None,
+        st_confidence_pct=st_confidence_pct,
+        mt_confidence_pct=mt_confidence_pct,
+        lt_confidence_pct=lt_confidence_pct,
         )
     except Exception:
         return None
@@ -903,7 +941,7 @@ def _build_investor_summary(
         interpretation_meta=signal_data.get("score_interpretation_meta"),
         roadmap_cfg=roadmap_cfg,
         regime_signal_precedence_note=regime_signal_note,
-        conf_snapshot=conf_snapshot_for_request,
+        conf_snapshot=conf_snapshot,
     )
     news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config)
     if news_layer and isinstance(out.get("trade_roadmap"), dict):
@@ -2039,8 +2077,13 @@ def _build_one_answer_roadmaps(
             headline_parts.append(f"{verdict_label}: Wait for pullback. Buy at {z}.")
         else:
             headline_parts.append(f"{verdict_label}: Hold. No new position here.")
-        if stop_s and tgt_s:
+        # Show stop + target only when target is genuinely above current price (upside target).
+        # For WAIT/HOLD, tgt_s is the short-term entry trigger (often below spot) — labelling it
+        # "target" would be misleading.
+        if stop_s and tgt_s and tgt_s > current_price:
             headline_parts.append(f" Stop ${stop_s:.2f}, target ${tgt_s:.2f} (~1 mo).")
+        elif stop_s and action_today in ("enter_now", "wait_for_pullback"):
+            headline_parts.append(f" Stop ${stop_s:.2f}.")
         subline = None
     headline = "".join(headline_parts).strip() or f"{verdict_label}: See trader/investor roadmaps below."
 

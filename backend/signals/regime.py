@@ -177,6 +177,16 @@ def get_signal(composite_buy: float, buy_min: float = 70, sell_max: float = 30) 
     return "HOLD"
 
 
+def resolve_ml_prob_thresholds(score_cfg: dict | None) -> tuple[float, float, float]:
+    """Config aliases strong_buy_ml / buy_ml / avoid_ml override ml_*_prob."""
+    sc = score_cfg or {}
+    return (
+        float(sc.get("strong_buy_ml", sc.get("ml_strong_buy_prob", 0.55))),
+        float(sc.get("buy_ml", sc.get("ml_buy_prob", 0.40))),
+        float(sc.get("avoid_ml", sc.get("ml_avoid_max_prob", 0.20))),
+    )
+
+
 def get_ml_aware_signal(
     confluence: float,
     ml_short_prob: float | None = None,
