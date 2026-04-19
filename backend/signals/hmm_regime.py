@@ -12,9 +12,13 @@ Three hidden states fit naturally to:
   State 1 (transition): near-zero return, moderate volatility
   State 2 (bull):       positive mean return, low-to-moderate volatility
 
-Features: [daily_return, |daily_return| (vol proxy), log_volume_change]
+Features (default): [daily_return, |daily_return| (vol proxy), log_volume_change]
 
-Model persistence: backend/data/models/hmm_{ticker}.pkl
+Major index ETFs (SPY/QQQ/…): optional **macro** features — first ``hmm_{ticker}_macro.pkl``
+(VIX + ^TNX/^IRX yield spread), else ``hmm_{ticker}_vix.pkl`` (VIX only), else price/volume.
+Falls back when Yahoo series cannot be aligned.
+
+Model persistence: backend/data/models/hmm_{ticker}.pkl (and hmm_{ticker}_vix.pkl when used)
 Graceful degradation: returns None if hmmlearn is not installed.
 """
 from __future__ import annotations
@@ -334,6 +338,142 @@ def _dominant_from_probs(bull: float, trans: float, bear: float) -> str:
     return "TRANSITION"
 
 
+def _align_vix_series(close: pd.Series) -> pd.Series | None:
+    """Align Yahoo ^VIX closes to ``close`` index (equity sessions)."""
+    try:
+        from signals.fetcher import fetch_ohlcv_safe
+    except Exception:
+        return None
+    try:
+        vx = fetch_ohlcv_safe("^VIX", "max")
+    except Exception:
+        vx = None
+    if vx is None or len(vx) < 126:
+        return None
+    aligned = vx.reindex(close.index).ffill().bfill()
+    if aligned.isna().mean() > 0.08:
+        return None
+    return aligned
+
+
+def _align_yahoo_yield_series(close: pd.Series, symbol: str) -> pd.Series | None:
+    """Align a Yahoo yield series (e.g. ^TNX, ^IRX) to equity ``close`` index."""
+    try:
+        from signals.fetcher import fetch_ohlcv_safe
+    except Exception:
+        return None
+    try:
+        ys = fetch_ohlcv_safe(symbol, "max")
+    except Exception:
+        ys = None
+    if ys is None or len(ys) < 126:
+        return None
+    aligned = ys.reindex(close.index).ffill().bfill()
+    if aligned.isna().mean() > 0.08:
+        return None
+    return aligned
+
+
+def _build_features_index_etf_vix(
+    close: pd.Series,
+    volume: pd.Series | None,
+    vix: pd.Series,
+) -> np.ndarray | None:
+    """
+    Same scaling/clipping as :func:`_build_features`, plus VIX daily return and
+    rolling z-score of VIX level (126d) for macro stress co-movement with equities.
+    """
+    ret = close.pct_change().dropna()
+    if len(ret) < MIN_BARS_TO_FIT:
+        return None
+    idx = ret.index
+    vx = vix.reindex(close.index).ffill().bfill()
+    vix_ret = vx.pct_change().reindex(idx)
+    vma = vx.rolling(126, min_periods=40).mean()
+    vsd = vx.rolling(126, min_periods=40).std().replace(0, np.nan)
+    vix_z = ((vx - vma) / (vsd + 1e-9)).fillna(0.0).reindex(idx)
+
+    feats = [ret.values, np.abs(ret.values)]
+    if volume is not None:
+        vol_aligned = volume.reindex(idx).ffill().fillna(1)
+        log_vol = np.log(vol_aligned.values.clip(1))
+        log_vol_change = np.diff(log_vol, prepend=log_vol[0])
+        feats.append(log_vol_change)
+
+    feats.append(vix_ret.values.astype(float))
+    feats.append(vix_z.values.astype(float))
+
+    arr = np.column_stack(feats)
+    mask = np.all(np.isfinite(arr), axis=1)
+    arr = arr[mask]
+    if len(arr) < MIN_BARS_TO_FIT:
+        return None
+
+    std = arr.std(axis=0)
+    std[std == 0] = 1.0
+    arr = (arr - arr.mean(axis=0)) / std
+    arr = np.clip(arr, -4.0, 4.0)
+    return arr
+
+
+def _build_features_index_etf_macro(
+    close: pd.Series,
+    volume: pd.Series | None,
+    vix: pd.Series,
+    yield_10y: pd.Series,
+    yield_short: pd.Series,
+) -> np.ndarray | None:
+    """
+    VIX features plus 10y–short-rate **spread** level and changes (recession / steepening signal).
+    First column remains equity daily return for state ordering in :func:`get_hmm_regime`.
+    """
+    ret = close.pct_change().dropna()
+    if len(ret) < MIN_BARS_TO_FIT:
+        return None
+    idx = ret.index
+    vx = vix.reindex(close.index).ffill().bfill()
+    vix_ret = vx.pct_change().reindex(idx)
+    vma = vx.rolling(126, min_periods=40).mean()
+    vsd = vx.rolling(126, min_periods=40).std().replace(0, np.nan)
+    vix_z = ((vx - vma) / (vsd + 1e-9)).fillna(0.0).reindex(idx)
+
+    y10 = yield_10y.reindex(close.index).ffill().bfill()
+    ys = yield_short.reindex(close.index).ffill().bfill()
+    spread = (y10 - ys).reindex(close.index).ffill().bfill()
+    spread_d = spread.diff().reindex(idx)
+    sma = spread.rolling(126, min_periods=40).mean()
+    ssd = spread.rolling(126, min_periods=40).std().replace(0, np.nan)
+    spread_z = ((spread - sma) / (ssd + 1e-9)).fillna(0.0).reindex(idx)
+
+    feats = [ret.values, np.abs(ret.values)]
+    if volume is not None:
+        vol_aligned = volume.reindex(idx).ffill().fillna(1)
+        log_vol = np.log(vol_aligned.values.clip(1))
+        log_vol_change = np.diff(log_vol, prepend=log_vol[0])
+        feats.append(log_vol_change)
+
+    feats.extend(
+        [
+            vix_ret.values.astype(float),
+            vix_z.values.astype(float),
+            spread_d.values.astype(float),
+            spread_z.values.astype(float),
+        ]
+    )
+
+    arr = np.column_stack(feats)
+    mask = np.all(np.isfinite(arr), axis=1)
+    arr = arr[mask]
+    if len(arr) < MIN_BARS_TO_FIT:
+        return None
+
+    std = arr.std(axis=0)
+    std[std == 0] = 1.0
+    arr = (arr - arr.mean(axis=0)) / std
+    arr = np.clip(arr, -4.0, 4.0)
+    return arr
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -373,11 +513,32 @@ def get_hmm_regime(
     if close is None or len(close) < MIN_BARS_TO_FIT:
         return _error_result(f"Need {MIN_BARS_TO_FIT}+ bars; got {len(close) if close is not None else 0}")
 
-    features = _build_features(close, volume)
+    tkey = ticker.upper().strip()
+    features: np.ndarray | None = None
+    model_suffix = ""
+    used_augmented_hmm = False
+    if tkey in _MAJOR_INDEX_ETF_MACRO:
+        vx_ser = _align_vix_series(close)
+        y10 = _align_yahoo_yield_series(close, "^TNX")
+        yshort = _align_yahoo_yield_series(close, "^IRX")
+        if vx_ser is not None and y10 is not None and yshort is not None:
+            fm = _build_features_index_etf_macro(close, volume, vx_ser, y10, yshort)
+            if fm is not None and len(fm) >= MIN_BARS_TO_FIT:
+                features = fm
+                model_suffix = "_macro"
+                used_augmented_hmm = True
+        if features is None and vx_ser is not None:
+            fv = _build_features_index_etf_vix(close, volume, vx_ser)
+            if fv is not None and len(fv) >= MIN_BARS_TO_FIT:
+                features = fv
+                model_suffix = "_vix"
+                used_augmented_hmm = True
+    if features is None:
+        features = _build_features(close, volume)
     if features is None or len(features) < MIN_BARS_TO_FIT:
         return _error_result("Could not build HMM features")
 
-    model = _load_or_fit(ticker, features, force_refit)
+    model = _load_or_fit(ticker, features, force_refit, model_suffix=model_suffix)
     if model is None:
         return _error_result("HMM fit failed")
 
@@ -506,15 +667,26 @@ def get_hmm_regime(
         recent_63d_return_pct,
     )
 
-    bull_fin, tr_fin, br_fin, macro_audit = _apply_major_index_etf_macro(
-        bull_adj,
-        tr_adj,
-        br_adj,
-        ticker=ticker,
-        close=close,
-        vix=vix,
-        recent_63d_return_pct=recent_63d_return_pct,
-    )
+    if used_augmented_hmm:
+        bull_fin, tr_fin, br_fin = bull_adj, tr_adj, br_adj
+        spec = "VIX + yield-curve spread (^TNX−^IRX)" if model_suffix == "_macro" else "VIX-augmented"
+        macro_audit = {
+            "applied": False,
+            "note": (
+                f"{spec} HMM features for index ETF — post-hoc macro blend skipped "
+                "to avoid double-counting stress"
+            ),
+        }
+    else:
+        bull_fin, tr_fin, br_fin, macro_audit = _apply_major_index_etf_macro(
+            bull_adj,
+            tr_adj,
+            br_adj,
+            ticker=ticker,
+            close=close,
+            vix=vix,
+            recent_63d_return_pct=recent_63d_return_pct,
+        )
     dominant_display = _dominant_from_probs(bull_fin, tr_fin, br_fin)
 
     # One-step transition matrix row for "transition" state — direction of next bar if latent state were transition
@@ -577,6 +749,13 @@ def get_hmm_regime(
         "bull_probability_raw":    round(bull_prob, 3),
         "display_adjustment_note": display_note,
         "index_etf_macro":       macro_audit,
+        "hmm_feature_spec": (
+            "index_macro_vix_yield"
+            if model_suffix == "_macro"
+            else "index_vix_augmented"
+            if model_suffix == "_vix"
+            else "price_volume"
+        ),
         "recent_63d_return_pct": round(recent_63d_return_pct, 2) if recent_63d_return_pct is not None else None,
         "gap_ma200_pct":          round(gap_ma200_pct, 2) if gap_ma200_pct is not None else None,
         "dominant_state":         dominant_display,
@@ -642,20 +821,39 @@ def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | 
     return arr
 
 
-def _model_path(ticker: str) -> Path:
-    return MODELS_DIR / f"hmm_{ticker.upper()}.pkl"
+def _model_path(ticker: str, *, suffix: str = "") -> Path:
+    return MODELS_DIR / f"hmm_{ticker.upper()}{suffix}.pkl"
 
 
-def _load_or_fit(ticker: str, features: np.ndarray, force_refit: bool) -> object | None:
+def _load_or_fit(
+    ticker: str,
+    features: np.ndarray,
+    force_refit: bool,
+    *,
+    model_suffix: str = "",
+) -> object | None:
     import warnings
     import logging as _std_logging
     from hmmlearn.hmm import GaussianHMM
 
-    path = _model_path(ticker)
+    path = _model_path(ticker, suffix=model_suffix)
     if path.exists() and not force_refit:
         try:
             with open(path, "rb") as f:
-                return pickle.load(f)
+                cached = pickle.load(f)
+            means = getattr(cached, "means_", None)
+            if means is not None and getattr(means, "shape", None):
+                if int(means.shape[1]) != int(features.shape[1]):
+                    logger.info(
+                        "HMM cached model %s dim %s vs features %s — refitting",
+                        path.name,
+                        means.shape[1],
+                        features.shape[1],
+                    )
+                else:
+                    return cached
+            else:
+                return cached
         except Exception:
             logger.debug("HMM cache corrupt for %s — refitting", ticker)
 

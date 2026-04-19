@@ -787,6 +787,9 @@ def _build_investor_summary(
             ticker=ticker,
             tier2_mos_by_class=tier2_mos_by_class,
             tier2_mos_pct_by_ticker=tier2_mos_pct_by_ticker,
+            model_confidence_pct=float(model_confidence_pct_summary)
+            if model_confidence_pct_summary is not None
+            else None,
         )
     except Exception:
         return None
@@ -900,6 +903,7 @@ def _build_investor_summary(
         interpretation_meta=signal_data.get("score_interpretation_meta"),
         roadmap_cfg=roadmap_cfg,
         regime_signal_precedence_note=regime_signal_note,
+        conf_snapshot=conf_snapshot_for_request,
     )
     news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config)
     if news_layer and isinstance(out.get("trade_roadmap"), dict):
@@ -993,6 +997,206 @@ def _roadmap_core_zone_3_to_6(
     )
 
 
+def _roadmap_scenario_probabilities(
+    *,
+    regime_bull_pct: float,
+    st_ml: float,
+    mt_ml: float,
+    lt_ml: float,
+    pattern_score: float,
+    risk_off: bool | None = None,
+    vix: float | None = None,
+) -> dict:
+    """
+    Rough scenario weights (sum ≈ 100%) from ML horizons + HMM + pattern — not a forecast, a blend for UX.
+    When ``risk_off`` (from VIX / ATR / HMM) is true, shifts mass toward bear vs a pure ML blend.
+    """
+    def _c(x: float) -> float:
+        return max(0.05, min(0.95, x))
+
+    rb = _c(regime_bull_pct / 100.0)
+    s = _c(st_ml / 100.0)
+    m = _c(mt_ml / 100.0)
+    l = _c(lt_ml / 100.0)
+    p = _c(pattern_score / 100.0)
+    w_bull = 0.28 * rb + 0.22 * s + 0.18 * m + 0.12 * l + 0.20 * p
+    w_bear = 0.35 * (1.0 - rb) + 0.25 * (1.0 - s) + 0.15 * max(0.0, 0.55 - p)
+    w_base = max(0.08, 1.0 - w_bull - w_bear)
+    ssum = w_bull + w_base + w_bear
+    b_pct = w_bull / ssum
+    be_pct = w_bear / ssum
+    ba_pct = w_base / ssum
+
+    method_bits = ["HMM bull %", "short/med/long ML P(hit)", "pattern score"]
+    if risk_off:
+        freed = b_pct * 0.14
+        b_pct *= 0.86
+        be_pct += freed * 0.62 + 0.02
+        ba_pct += freed * 0.36
+        method_bits.append("risk-off gate (VIX/ATR/HMM)")
+    try:
+        vix_n = float(vix) if vix is not None else None
+        if vix_n is not None and vix_n == vix_n and vix_n >= 26.0:
+            b_pct *= 0.94
+            be_pct += 0.04
+            method_bits.append("elevated VIX")
+    except (TypeError, ValueError):
+        pass
+
+    tot = b_pct + be_pct + ba_pct
+    if tot > 1e-12:
+        b_pct /= tot
+        be_pct /= tot
+        ba_pct /= tot
+
+    bull = round(100.0 * b_pct, 0)
+    base = round(100.0 * ba_pct, 0)
+    bear = 100.0 - bull - base
+    bear = max(0.0, bear)
+    return {
+        "bull_pct": bull,
+        "base_pct": base,
+        "bear_pct": round(bear, 0),
+        "method": "weighted blend of " + ", ".join(method_bits) + " — illustrative",
+    }
+
+
+def _roadmap_market_regime_layer(
+    *,
+    vix: float | None,
+    atr: float | None,
+    current_price: float,
+    regime_bull_pct: float,
+) -> dict:
+    atr_pct = (float(atr) / float(current_price)) if (atr and current_price and current_price > 0) else None
+    try:
+        vix_n = float(vix) if vix is not None else None
+        if vix_n is not None and (vix_n != vix_n):  # NaN
+            vix_n = None
+    except (TypeError, ValueError):
+        vix_n = None
+    risk_off = False
+    if vix_n is not None and vix_n >= 22.0:
+        risk_off = True
+    if regime_bull_pct < 42.0:
+        risk_off = True
+    if atr_pct is not None and atr_pct >= 0.035:
+        risk_off = True
+
+    if vix_n is None:
+        vol_bucket = "unknown"
+    elif vix_n >= 28:
+        vol_bucket = "high"
+    elif vix_n >= 18:
+        vol_bucket = "elevated"
+    else:
+        vol_bucket = "low"
+
+    parts = []
+    if risk_off:
+        parts.append("Risk-off")
+    else:
+        parts.append("Risk-on / neutral")
+    parts.append(f"vol regime: {vol_bucket}")
+    if vix_n is not None:
+        parts.append(f"VIX ~{vix_n:.1f}")
+    if atr_pct is not None:
+        parts.append(f"ATR/price ~{atr_pct * 100:.1f}%")
+
+    return {
+        "vix": round(vix_n, 2) if vix_n is not None else None,
+        "atr_pct_of_price": round(atr_pct * 100, 2) if atr_pct is not None else None,
+        "risk_off": risk_off,
+        "vol_bucket": vol_bucket,
+        "label": " · ".join(parts),
+    }
+
+
+def _roadmap_resolve_near_term_conflict(buy_stages: list[dict]) -> None:
+    """If Today and Days 1–10 share the same price band but differ in action, make dominance explicit."""
+    today = next((s for s in buy_stages if s.get("timeline_key") == "today"), None)
+    d110 = next((s for s in buy_stages if s.get("timeline_key") == "days_1_10"), None)
+    if not today or not d110:
+        return
+    zt = (
+        round(float(today.get("price_zone_low") or 0), 2),
+        round(float(today.get("price_zone_high") or 0), 2),
+    )
+    zd = (
+        round(float(d110.get("price_zone_low") or 0), 2),
+        round(float(d110.get("price_zone_high") or 0), 2),
+    )
+    if zt[0] <= 0 or zd[0] <= 0:
+        return
+    if zt != zd:
+        return
+    dom = (today.get("when_to_act") or "").strip()
+    d110["when_to_act"] = "Patience — no new buy yet"
+    d110["condition"] = (
+        f"Dominant near-term action is “{dom}” (Today row). Same price band — Days 1–10 means "
+        "hold any starter only; do not scale until a later row confirms (not a conflicting entry)."
+    )
+    d110["priority_note"] = "Subordinate to Today — time discipline, not a second trigger."
+    today["priority_note"] = "Governs near-term buys; next row is wait-only in the same band."
+
+
+def _roadmap_you_are_here(buy_stages: list[dict], price: float) -> dict | None:
+    for s in buy_stages:
+        lo = s.get("price_zone_low")
+        hi = s.get("price_zone_high")
+        if lo is None or hi is None:
+            continue
+        try:
+            if float(lo) <= price <= float(hi):
+                return {
+                    "timeline_key": s.get("timeline_key"),
+                    "label": s.get("label"),
+                    "within_zone": True,
+                }
+        except (TypeError, ValueError):
+            continue
+    return {"timeline_key": None, "label": None, "within_zone": False, "note": "Price between staged bands — see nearest rows."}
+
+
+def _roadmap_buy_row_risk_reward(
+    *,
+    horizon_key: str,
+    zone_lo: float | None,
+    zone_hi: float | None,
+    current_price: float,
+    fair_value: float,
+    ma50: float | None,
+    ma200: float | None,
+    stop_52w: float,
+) -> dict:
+    if zone_lo is None or zone_hi is None:
+        return {}
+    mid = (float(zone_lo) + float(zone_hi)) / 2.0
+    if mid <= 0:
+        return {}
+    upside_pct = max(0.0, (float(fair_value) - mid) / mid * 100.0) if fair_value else None
+    if horizon_key in ("today", "days_1_10", "week_2_4"):
+        ref_stop = float(ma50) * 0.97 if ma50 else stop_52w
+        stop_kind = "technical (≈ MA50×0.97)"
+    elif horizon_key in ("1_3_months", "3_6_months"):
+        ref_stop = float(ma200) * 0.97 if ma200 else stop_52w
+        stop_kind = "technical (≈ MA200×0.97)"
+    else:
+        ref_stop = float(stop_52w)
+        stop_kind = "tail / structural (52w-based)"
+    downside_pct = max(0.0, (mid - ref_stop) / mid * 100.0) if ref_stop < mid else 0.0
+    rr = None
+    if downside_pct > 0.05 and upside_pct is not None:
+        rr = round(upside_pct / downside_pct, 2)
+    return {
+        "upside_to_model_fv_pct": round(upside_pct, 1) if upside_pct is not None else None,
+        "downside_to_ref_stop_pct": round(downside_pct, 1),
+        "risk_reward": rr,
+        "ref_stop_level": round(ref_stop, 2),
+        "ref_stop_kind": stop_kind,
+    }
+
+
 def _build_trade_roadmap(
     ticker: str,
     investor_out: dict,
@@ -1003,6 +1207,7 @@ def _build_trade_roadmap(
     interpretation_meta: dict | None = None,
     roadmap_cfg: dict | None = None,
     regime_signal_precedence_note: str | None = None,
+    conf_snapshot: dict | None = None,
 ) -> dict:
     """
     Build complete Trade Roadmap: buy stages (Today → 6–12 mo) and sell stages (stop → full target),
@@ -1020,6 +1225,18 @@ def _build_trade_roadmap(
     fair_value = investor_out.get("fair_value") or current_price * 1.1
     regime_bull_pct = investor_out.get("regime_bull_pct") or 50.0
     pattern_score = investor_out.get("pattern_score") or 50.0
+
+    vix_cc: float | None = None
+    model_confidence_pct: int | None = None
+    try:
+        if conf_snapshot:
+            vx = conf_snapshot.get("vix")
+            if vx is not None:
+                vix_cc = float(vx)
+            if conf_snapshot.get("confidence") is not None:
+                model_confidence_pct = int(round(float(conf_snapshot["confidence"]) * 100))
+    except (TypeError, ValueError):
+        pass
 
     display_verdict = (
         (response.get("short_suggestion") or response.get("medium_suggestion") or response.get("long_suggestion"))
@@ -1246,17 +1463,76 @@ def _build_trade_roadmap(
         if align_buy_rows_to_core
         else ""
     )
+    tail_weekly_trigger = round((low_52w or current_price * 0.75) * 0.98, 2)
     buy_stages.append({
         "timeline_key": "6_12_months",
         "label": "6–12 months (tail risk)",
         "when_to_act": "Tail risk / black swan zone only",
         "price_zone_low": round(t3_lo, 2) if t3_lo else (round((low_52w or current_price * 0.75) * 1.05, 2) if low_52w else None),
         "price_zone_high": round(t3_hi, 2) if t3_hi else (round((low_52w or current_price * 0.75) * 1.15, 2) if low_52w else None),
-        "condition": "Only if 52w low breaks or liquidity crash — not a base-case entry" + tail_extra,
+        "condition": (
+            f"Execution trigger: weekly close below ~${tail_weekly_trigger:,.2f} (52w stress) OR acute liquidity stress "
+            f"(e.g. VIX spike + sustained breadth washout). Not a base-case dip-buy." + tail_extra
+        ),
         "conviction": "Stress / rare",
         "position_pct": pos_612,
         "cumulative_pct": cum_612,
     })
+
+    _roadmap_resolve_near_term_conflict(buy_stages)
+    atr_for_notes = _safe_float(response.get("atr14"))
+    if atr_for_notes is None or atr_for_notes <= 0:
+        atr_for_notes = current_price * 0.02
+    ext_ma200_pct = ((current_price / float(ma200)) - 1.0) * 100.0 if ma200 and ma200 > 0 else 0.0
+    atr_pct_s = (atr_for_notes / current_price * 100.0) if current_price else 0.0
+    tranche_policy = ((long_h.get("entry_tiers") or {}).get("tranche_policy")) or None
+    _road_note_fn = None
+    try:
+        from signals.tranche_heuristic import (
+            compute_long_horizon_tier_percentages,
+            roadmap_allocation_note_for_timeline,
+        )
+
+        _road_note_fn = roadmap_allocation_note_for_timeline
+        if tranche_policy is None:
+            tranche_policy = compute_long_horizon_tier_percentages(
+                current_price=float(current_price),
+                ma200=float(ma200) if ma200 else None,
+                atr=atr_for_notes,
+                model_confidence_pct=float(model_confidence_pct) if model_confidence_pct is not None else None,
+            )
+    except Exception:
+        tranche_policy = None
+        _road_note_fn = None
+
+    for s in buy_stages:
+        tk = str(s.get("timeline_key") or "")
+        s["risk_reward_context"] = _roadmap_buy_row_risk_reward(
+            horizon_key=tk,
+            zone_lo=s.get("price_zone_low"),
+            zone_hi=s.get("price_zone_high"),
+            current_price=float(current_price),
+            fair_value=float(fair_value),
+            ma50=ma50,
+            ma200=ma200,
+            stop_52w=float(stop_52w),
+        )
+        if tranche_policy and _road_note_fn:
+            note = _road_note_fn(tk, tranche_policy)
+            s["allocation_note"] = note or (
+                f"Heuristic: {ext_ma200_pct:+.1f}% vs MA200; ATR/price {atr_pct_s:.1f}% — staged ladder."
+            )
+        elif model_confidence_pct is not None:
+            s["allocation_note"] = (
+                f"Tranche scale heuristic: model confidence {model_confidence_pct}%; "
+                f"{ext_ma200_pct:+.1f}% vs MA200; ATR/price {atr_pct_s:.1f}%. "
+                "Nearer support / lower vol → larger slice; extended / high vol → smaller starter."
+            )
+        else:
+            s["allocation_note"] = (
+                f"Heuristic: {ext_ma200_pct:+.1f}% vs MA200; ATR/price {atr_pct_s:.1f}% — "
+                "staged ladder (not equal conviction in every row)."
+            )
 
     # ── Sell roadmap stages ───────────────────────────────────────────────────
     sell_stages = []
@@ -1266,9 +1542,10 @@ def _build_trade_roadmap(
         "when_to_sell": "Hard stop",
         "price_zone_low": None,
         "price_zone_high": round(stop_52w, 2),
-        "condition": "Breaks 52w low — thesis dead",
+        "condition": "Weekly close below structural invalidation — thesis broken (price / technical)",
         "action": "Exit 100%",
         "reason": "Invalidation",
+        "exit_category": "technical_structure",
     })
     near_high = round((high_52w or current_price * 1.1) * 0.98, 2) if high_52w else None
     high_val = round(high_52w, 2) if high_52w else None
@@ -1278,9 +1555,10 @@ def _build_trade_roadmap(
         "when_to_sell": "Trim",
         "price_zone_low": near_high,
         "price_zone_high": high_val,
-        "condition": "Near 52w high, RSI elevated, low volume",
+        "condition": "Technical: near 52w high + RSI extended + weak volume confirmation",
         "action": "Trim 25%",
         "reason": "Extended, poor R/R",
+        "exit_category": "technical_momentum",
     })
     fv_82 = round(fair_value * 0.82, 2)
     fv_88 = round(fair_value * 0.88, 2)
@@ -1290,9 +1568,10 @@ def _build_trade_roadmap(
         "when_to_sell": "Partial exit",
         "price_zone_low": fv_82,
         "price_zone_high": round(fair_value * 0.85, 2),
-        "condition": "Fed / scenario target hit, take profit",
+        "condition": "Macro scenario: policy / Fed path hits your pre-defined trim band (tracked separately from pure price)",
         "action": "Trim 35%",
         "reason": "Scenario target reached",
+        "exit_category": "macro_scenario",
     })
     sell_stages.append({
         "timeline_key": "3_6_months",
@@ -1300,9 +1579,10 @@ def _build_trade_roadmap(
         "when_to_sell": "Major trim",
         "price_zone_low": round(fair_value * 0.87, 2),
         "price_zone_high": round(fair_value * 0.92, 2),
-        "condition": "Inflation / scenario target hit",
+        "condition": "Valuation: price enters fair-value band — reduce into strength",
         "action": "Sell 50%",
         "reason": "Near fair value",
+        "exit_category": "valuation_fair_value",
     })
     sell_stages.append({
         "timeline_key": "6_12_months",
@@ -1310,9 +1590,10 @@ def _build_trade_roadmap(
         "when_to_sell": "Full target",
         "price_zone_low": round(fair_value * 0.93, 2),
         "price_zone_high": round(fair_value, 2),
-        "condition": f"Price approaches fair value ${fair_value:.2f}",
+        "condition": f"Valuation: approaches model fair value ${fair_value:.2f}",
         "action": "Sell 75–100%",
         "reason": "Fair value achieved",
+        "exit_category": "valuation_fair_value",
     })
     sell_stages.append({
         "timeline_key": "anytime",
@@ -1320,9 +1601,10 @@ def _build_trade_roadmap(
         "when_to_sell": "Regime flip",
         "price_zone_low": None,
         "price_zone_high": None,
-        "condition": "HMM flips Bear >80% after being Bull",
+        "condition": "Model regime: HMM bear probability >80% after sustained bull read",
         "action": "Exit 50% immediately",
         "reason": "Regime invalidates thesis",
+        "exit_category": "model_regime",
     })
 
     _apply_sell_roadmap_band_alignment(
@@ -1538,6 +1820,69 @@ def _build_trade_roadmap(
         "If a line here and a table row disagree, use the table row for that timeline."
     )
 
+    atr_rm_layer = _safe_float(response.get("atr14"))
+    if atr_rm_layer is None or atr_rm_layer <= 0:
+        atr_rm_layer = current_price * 0.02
+    market_regime_layer = _roadmap_market_regime_layer(
+        vix=vix_cc,
+        atr=atr_rm_layer,
+        current_price=float(current_price),
+        regime_bull_pct=regime_bull_pct,
+    )
+    scenario_outlook = _roadmap_scenario_probabilities(
+        regime_bull_pct=regime_bull_pct,
+        st_ml=float(st_ml) if st_ml is not None else 25.0,
+        mt_ml=float(mt_ml) if mt_ml is not None else 25.0,
+        lt_ml=float(lt_ml) if lt_ml is not None else 25.0,
+        pattern_score=pattern_score,
+        risk_off=bool(market_regime_layer.get("risk_off")),
+        vix=market_regime_layer.get("vix"),
+    )
+    try:
+        if ticker.upper() in MAJOR_INDEX_ETFS and ma200 and low_52w:
+            key_inv = max(float(ma200) * 0.97, float(low_52w) * 0.97)
+        else:
+            key_inv = float(stop_52w)
+    except (TypeError, ValueError):
+        key_inv = float(stop_52w)
+
+    dom_action = buy_stages[0].get("when_to_act") if buy_stages else None
+    tldr = {
+        "bias": (
+            (
+                "Constructive"
+                if display_verdict in ("BUY", "STRONG BUY")
+                else "Defensive"
+                if display_verdict in ("REDUCE", "AVOID")
+                else "Neutral / selective"
+            )
+            + f" · {regime_label}"
+        ),
+        "strategy": (
+            "Wait for pullback into core / MA200 zones before scaling"
+            if align_buy_rows_to_core
+            else "Staged adds on planned dips (per rows below)"
+        ),
+        "key_level": round(key_inv, 2),
+        "key_level_label": "Structural invalidation / support reference (see watch levels in confidence)",
+        "model_confidence_pct": model_confidence_pct,
+        "dominant_near_term_action": dom_action,
+    }
+    you_are_here = _roadmap_you_are_here(buy_stages, float(current_price))
+    action_glossary = {
+        "Start small": "Starter tranche only — first slice of your planned position (not full size).",
+        "Watch only": "Do not add shares; observe. Any existing starter is held, not enlarged here.",
+        "Patience — no new buy yet": "Subordinate row: defers to Today — hold only, no scale in the same band.",
+        "Add position": "Scale toward your target allocation once this row’s conditions are met.",
+        "Tail risk / black swan zone only": "Reserved slice for extreme stress — not ordinary dips.",
+        "Do not buy": "Model verdict blocks new purchases in this zone.",
+    }
+    probabilistic_framing = (
+        f"Illustrative scenario mix: Bull ~{scenario_outlook['bull_pct']:.0f}%, "
+        f"Base ~{scenario_outlook['base_pct']:.0f}%, Bear ~{scenario_outlook['bear_pct']:.0f}% "
+        f"({scenario_outlook.get('method', '')})."
+    )
+
     return {
         "current_price": round(current_price, 2),
         "fair_value": round(fair_value, 2),
@@ -1559,6 +1904,12 @@ def _build_trade_roadmap(
             "long_term": trader_summary_long,
             "horizon_note": trader_summary_horizon_note,
         },
+        "tldr": tldr,
+        "you_are_here": you_are_here,
+        "scenario_outlook": scenario_outlook,
+        "market_regime_layer": market_regime_layer,
+        "action_glossary": action_glossary,
+        "probabilistic_framing": probabilistic_framing,
     }
 
 

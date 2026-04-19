@@ -3,7 +3,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from signals.hmm_regime import _apply_major_index_etf_macro, _index_etf_macro_stress
+from signals.hmm_regime import (
+    _apply_major_index_etf_macro,
+    _build_features_index_etf_vix,
+    _index_etf_macro_stress,
+)
+from signals.horizon_entry_calculator import LongTermInputs, compute_long_term_entry
 
 
 def test_macro_stress_rises_with_drawdown_vix_and_63d():
@@ -63,3 +68,45 @@ def test_price_targets_long_stop_index_etf_uses_ma200_cap():
     assert out["stop_loss"] == round(max(661.0 * 0.97, 508.0 * 0.97), 2)
     out_nvda = _horizon_targets(lv, h, "NEUTRAL", "long", ticker="NVDA")
     assert out_nvda["stop_loss"] == round(508.0 * 0.97, 2)
+
+
+def test_vix_augmented_feature_matrix_has_expected_width():
+    idx = pd.date_range("2018-01-01", periods=400, freq="B")
+    close = pd.Series(np.linspace(100.0, 150.0, 400), index=idx)
+    vix = pd.Series(np.linspace(14.0, 22.0, 400), index=idx)
+    vol = pd.Series(np.ones(400) * 1e6, index=idx)
+    arr = _build_features_index_etf_vix(close, vol, vix)
+    assert arr is not None
+    assert arr.shape[1] == 5
+
+
+def test_long_term_entry_index_etf_structural_stop_uses_ma200_cap():
+    inp = LongTermInputs(
+        current_price=500.0,
+        fair_value=520.0,
+        ma200=480.0,
+        week52_low=400.0,
+        ml_prob=40.0,
+        regime_bull_pct=55.0,
+        fundamentals_score=60.0,
+        ticker="SPY",
+    )
+    sig = compute_long_term_entry(inp)
+    assert sig.stop_loss == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
+    assert sig.entry_tiers["structural_invalidation"]["kind"] == "index_structural_floor"
+
+
+def test_long_term_entry_single_name_uses_52w_floor():
+    inp = LongTermInputs(
+        current_price=180.0,
+        fair_value=200.0,
+        ma200=170.0,
+        week52_low=140.0,
+        ml_prob=40.0,
+        regime_bull_pct=55.0,
+        fundamentals_score=60.0,
+        ticker="NVDA",
+    )
+    sig = compute_long_term_entry(inp)
+    assert sig.stop_loss == round(140.0 * 0.95, 2)
+    assert sig.entry_tiers["structural_invalidation"]["kind"] == "52w_stress_floor"

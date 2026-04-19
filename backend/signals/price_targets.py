@@ -550,6 +550,44 @@ def _fetch_earnings_info(ticker: str) -> dict:
     return result
 
 
+def _tilt_universal_scenarios_for_hmm(
+    scenarios: list[dict],
+    hmm_probs: dict | None,
+) -> None:
+    """Soften bull/base/bear probabilities when HMM is bearish / transitional (see scenario_regime_aware)."""
+    if not hmm_probs:
+        return
+    try:
+        from signals.scenario_regime_aware import compute_regime_factor
+
+        factor, desc = compute_regime_factor(
+            hmm_probs.get("bull"),
+            hmm_probs.get("bear"),
+            hmm_probs.get("transition"),
+        )
+    except Exception:
+        return
+    if abs(factor - 1.0) < 1e-6:
+        return
+    for scen in scenarios:
+        st = scen.get("scenario_type")
+        if st not in ("bull", "base", "bear"):
+            continue
+        try:
+            p = float(scen.get("probability", 0.05))
+        except (TypeError, ValueError):
+            p = 0.05
+        if st == "bull":
+            p *= factor
+        elif st == "bear":
+            p *= 2.0 - factor
+        else:
+            p *= 1.0 + (factor - 1.0) * 0.3
+        scen["probability"] = round(min(0.95, max(0.05, p)), 2)
+        scen["regime_hmm_factor"] = round(factor, 3)
+        scen["regime_hmm_note"] = desc
+
+
 def _build_scenarios(
     price: float,
     ml_prob_short: float | None,
@@ -561,6 +599,7 @@ def _build_scenarios(
     earnings_info: dict | None = None,
     analyst_targets: dict | None = None,
     short_interest: dict | None = None,
+    regime_hmm_probs: dict | None = None,
 ) -> list[dict]:
     """
     Build 5-6 scenarios: 3 universal (bull/base/bear) + up to 3 asset-specific.
@@ -568,6 +607,7 @@ def _build_scenarios(
 
     macro: live context from _fetch_macro_context() — gates scenario probabilities
     earnings_info: from _fetch_earnings_info() — annotates earnings scenarios with timing
+    regime_hmm_probs: optional dict with bull/bear/transition (0–1) — tilts universal scenario probs
     """
     ctx = macro or {}
     at  = analyst_targets or {}
@@ -754,6 +794,8 @@ def _build_scenarios(
             "si_note":       si_note,
         })
 
+    _tilt_universal_scenarios_for_hmm(scenarios, regime_hmm_probs)
+
     # Sort by return (descending — bull to bear)
     scenarios.sort(key=lambda x: x["return_pct"], reverse=True)
     return scenarios
@@ -909,6 +951,23 @@ def run_price_targets(
     # ── Earnings timing ───────────────────────────────────────────────────
     earnings_info = _fetch_earnings_info(ticker)
 
+    # ── HMM regime (for scenario probability tilt — same object as dashboard HMM) ──
+    regime_hmm_probs: dict | None = None
+    try:
+        from signals.hmm_regime import get_hmm_regime
+
+        vol_series = df["volume"] if df is not None and "volume" in df.columns else None
+        vix_live = macro.get("vix") if isinstance(macro, dict) else None
+        hr = get_hmm_regime(ticker, close, volume=vol_series, vix=vix_live)
+        if hr and not hr.get("error"):
+            regime_hmm_probs = {
+                "bull": hr.get("bull_probability"),
+                "bear": hr.get("bear_probability"),
+                "transition": hr.get("transition_probability"),
+            }
+    except Exception as _hmm_sc:
+        logger.debug("HMM regime for scenario tilt failed %s: %s", ticker, _hmm_sc)
+
     # ── Scenario engine ────────────────────────────────────────────────────
     short_prob = ml_horizons.get("short", {}).get("prob")
     short_thr  = float(ml_horizons.get("short", {}).get("threshold_pct", 5.0))
@@ -918,6 +977,7 @@ def run_price_targets(
         macro=macro, earnings_info=earnings_info,
         analyst_targets=analyst_targets,
         short_interest=si_data,
+        regime_hmm_probs=regime_hmm_probs,
     )
 
     return {

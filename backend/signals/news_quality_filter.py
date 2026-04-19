@@ -113,9 +113,9 @@ HEADLINE_PATTERN_FILTERS: list[tuple[str, float, str]] = [
                                                              0.8,  "analyst rating — meaningful"),
 
     (r"(earnings|revenue|profit).{0,20}(beat|miss|surpass|exceed|disappoint)",
-                                                             1.3,  "earnings result — high signal"),
+                                                             1.12, "earnings result — high signal"),
     (r"(guidance|outlook).{0,20}(raised|lowered|cut|above|below|reaffirm)",
-                                                             1.3,  "guidance change — high signal"),
+                                                             1.12, "guidance change — high signal"),
     (r"(antitrust|regulation|lawsuit|doj|ftc|eu).{0,30}(alphabet|google|googl)",
                                                              1.2,  "regulatory — high signal"),
     (r"(layoff|restructur|reorg|job cut)",                   1.1,  "restructuring — moderate signal"),
@@ -173,6 +173,11 @@ def compute_quality_weight(
     domain_w = get_domain_weight(url_or_source)
     pattern_w, reason = get_headline_pattern_weight(title)
 
+    # Cap positive pattern boosts so SEO domains cannot inherit “earnings beat” multipliers at full strength.
+    if pattern_w > 1.0:
+        max_boost = 1.0 + 0.15 * domain_w
+        pattern_w = min(pattern_w, max_boost)
+
     combined = round(min(1.0, domain_w * pattern_w), 4)
 
     label_parts = []
@@ -187,7 +192,7 @@ def compute_quality_weight(
 
 def filter_headlines(
     headlines: list[dict],
-    min_quality: float = 0.15,
+    min_quality: float = 0.20,
 ) -> list[dict]:
     result = []
     for h in headlines:

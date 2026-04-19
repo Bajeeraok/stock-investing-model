@@ -141,6 +141,16 @@ export interface PlaybookScenario {
   conflict_score: string;
 }
 
+/** Signal-first reassess line (not a 52w tail “reassess above $X”). */
+export interface ReassessGuidance {
+  primary_condition: string;
+  primary_label:     string;
+  price_level:        number | null;
+  price_label:        string | null;
+  current_price:      number;
+  display:            string;
+}
+
 export interface PreFlightData {
   is_scoreable:      boolean;
   asset_type:        string | null;
@@ -158,6 +168,7 @@ export interface PreFlightData {
   current_mode:      string | null;
   current_action:    string | null;
   position_size:     string | null;
+  reassess_guidance?: ReassessGuidance | null;
 }
 
 /** Layer blend vs multiplicative gates (HMM bear, insider) — from confidence_engine penalty_audit */
@@ -1226,6 +1237,12 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           {actionSummary && (
             <p className="text-sm text-slate-300 leading-snug max-w-[64ch]">
               {actionSummary}
+            </p>
+          )}
+          {pf?.reassess_guidance?.display && (
+            <p className="text-[11px] text-slate-400 leading-snug max-w-[68ch] border-l border-amber-500/30 pl-2.5">
+              <span className="text-amber-100/90 font-medium">Re-evaluate: </span>
+              {pf.reassess_guidance.display}
             </p>
           )}
           <p className="text-[11px] text-slate-500">

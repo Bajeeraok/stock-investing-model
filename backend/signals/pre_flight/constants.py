@@ -57,6 +57,10 @@ class FlagType(str, Enum):
 
 # ─────────────────────────────────────────────
 # THRESHOLDS — tune these to calibrate model
+#
+# Playbook scenario 3 text must stay aligned with is_regime_shifting in
+# signals/pre_flight/signal_fusion.py (strict AND: bear < exit, transition ≥ min,
+# pattern > PATTERN_STAGE3_REGIME_SHIFT).
 # ─────────────────────────────────────────────
 
 class Thresholds:
@@ -71,9 +75,10 @@ class Thresholds:
     ML_FULL_TRIGGER         = 40    # ML % for full position
     PATTERN_FULL_TRIGGER    = 60    # Pattern score for full position
 
-    # Regime shift
+    # Regime shift (must match playbook scenario 3: Pattern Score > this threshold)
     HMM_TRANSITION_MIN      = 30    # HMM transition % indicating shift
     HMM_BEAR_EXIT           = 60    # HMM bear below this = shifting
+    PATTERN_STAGE3_REGIME_SHIFT = 50  # Pattern score % required for regime-shift / Stage 3
 
     # Stand-down
     OPTIONS_FADE_MAX        = 50    # Options below this = thesis fading

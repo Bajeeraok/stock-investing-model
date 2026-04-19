@@ -27,6 +27,10 @@ if str(_BACKEND) not in sys.path:
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional
 
+from signals.providers import MAJOR_INDEX_ETFS
+
+_BROAD_INDEX_ETF_TICKERS = frozenset(MAJOR_INDEX_ETFS) | frozenset({"VOO", "VTI"})
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS  — tune these per your model calibration
@@ -291,6 +295,7 @@ class ShortTermInputs:
     pattern_score: float     # technical pattern score 0-100
     volume_ratio: float      # today's volume / 20-day avg volume
     fair_value: Optional[float] = None  # caps ST band so we do not imply buying above intrinsic
+    horizon_confidence_pct: Optional[float] = None  # 0-100, per-horizon 7-layer fused score
 
 
 def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
@@ -355,7 +360,12 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
     )
     stop_loss     = _r(el - stop_dist)
     stop_loss_pct = _r((stop_loss - eh) / eh * 100, 1)
-    target        = _r(min(inp.resistance_level * 0.98, eh + inp.atr * ST_ATR_TARGET_MULT))
+    _atr_target   = _r(eh + inp.atr * ST_ATR_TARGET_MULT)
+    target        = _r(min(inp.resistance_level * 0.98, _atr_target))
+    # When resistance cap sits at/below entry zone high (price near 52w high), resistance * 0.98
+    # can produce a target below entry high — enforce a minimum of the ATR-based target.
+    if target <= eh + 0.01:
+        target = _atr_target
     target_pct    = _r((target - eh) / eh * 100, 1)
     risk          = eh - stop_loss
     rr            = _r((target - eh) / risk, 2) if risk > 0 else 0.0
@@ -377,6 +387,18 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
         verdict, conviction = "WATCH", "Low"
     else:
         verdict, conviction = "WAIT", "Low"
+
+    # ── Per-horizon 7-layer confidence boost ────────────────────────────
+    if inp.horizon_confidence_pct is not None:
+        hc = float(inp.horizon_confidence_pct)
+        if verdict == "WAIT" and hc >= 55 and inp.ml_prob >= ST_MIN_ML_PROB and rr >= 1.2:
+            verdict, conviction = "WATCH", "Low"
+        elif verdict == "WATCH" and conviction == "Low" and hc >= 62:
+            conviction = "Medium"
+        elif verdict in ("WATCH", "BUY") and hc >= 72 and inp.ml_prob >= ST_MIN_ML_PROB and rr >= ST_MIN_RR:
+            verdict, conviction = "BUY", "Medium"
+        elif verdict == "BUY" and conviction == "Medium" and hc >= 78:
+            conviction = "High"
 
     # ── Rationale & trigger ──────────────────────────────────────────────
     rsi_note = ("oversold — bounce setup" if inp.rsi < ST_RSI_OVERSOLD
@@ -440,6 +462,7 @@ class MediumTermInputs:
     short_entry_high: Optional[float] = None
     # Caps swing target so minimum R/R math cannot inflate 3m target far above FV (NVDA-style outlier)
     fair_value: Optional[float] = None
+    horizon_confidence_pct: Optional[float] = None  # 0-100, per-horizon 7-layer fused score
 
 
 def _harmonize_medium_entry_with_short(
@@ -565,6 +588,18 @@ def _medium_term_signal_from_zone(
     else:
         verdict, conviction = "WAIT", "Low"
 
+    # ── Per-horizon 7-layer confidence boost ────────────────────────────
+    if getattr(inp, "horizon_confidence_pct", None) is not None:
+        hc = float(inp.horizon_confidence_pct)
+        if verdict == "WAIT" and hc >= 55 and inp.ml_prob >= MT_MIN_ML_PROB:
+            verdict, conviction = "WATCH", "Low"
+        elif verdict == "WATCH" and conviction == "Low" and hc >= 62:
+            conviction = "Medium"
+        elif verdict == "WATCH" and hc >= 68 and rr >= MT_MIN_RR:
+            verdict, conviction = "BUY", "Medium"
+        elif verdict == "BUY" and hc >= 75:
+            conviction = "High"
+
     # ── Rationale & trigger ──────────────────────────────────────────────
     rationale = (
         "ML {ml:.0f}% ({dir} {thresh:.0f}% threshold). "
@@ -650,11 +685,12 @@ def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
 # ──────────────────────────────────────────────────────────────────────────────
 # Three tiered entry zones — NONE anchored to current price.
 #
-#   T1  MA200 ± 5%          → 25% allocation  starter position  ~2.5x R/R
-#   T2  Fair Value × 0.75   → 50% allocation  core position     ~3.5x R/R
-#   T3  52w_low × 1.05–1.15 → 25% allocation  max conviction    ~5x+  R/R
+#   T1  MA200 ± 5%          → dynamic % (starter)  ~2.5x R/R  — see tranche_heuristic
+#   T2  Fair Value × MOS    → dynamic % (core)     ~3.5x R/R
+#   T3  52w_low × 1.05–1.15 → dynamic % (tail)     ~5x+  R/R
 #
-# Stop:   5% below 52w low (structural invalidation level)
+# Stop:   ~5% below 52w low (structural invalidation) for single names; broad index ETFs use
+#         max(MA200, 52w low) × 0.97 — same as price_targets / confidence watch levels (not tail-only).
 # Target: Fair value (primary) → Tier 1 entry used for R/R calc
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -677,6 +713,10 @@ class LongTermInputs:
     short_entry_high: Optional[float] = None
     # Swing (medium) entry zone high — Tier 1 MA200 ceiling never above this (investor core ≤ swing top)
     medium_entry_high: Optional[float] = None
+    # Dynamic T1/T2/T3 % (shared with trade roadmap) — ATR + distance vs MA200 + fused model confidence
+    atr: Optional[float] = None
+    model_confidence_pct: Optional[float] = None
+    horizon_confidence_pct: Optional[float] = None  # 0-100, per-horizon 7-layer fused score
 
 
 def _harmonize_long_entry_zone_with_short(
@@ -821,8 +861,23 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     )
     entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
 
-    # ── Structural invalidation (not a day-to-day stop): 5% below 52w low ──
-    stop_loss     = _r(inp.week52_low * 0.95)
+    # ── Structural invalidation (not a day-to-day stop) ────────────────────
+    tkey_lt = _norm_ticker_sym(inp.ticker)
+    if tkey_lt in _BROAD_INDEX_ETF_TICKERS:
+        stop_loss = _r(max(float(inp.ma200) * 0.97, float(inp.week52_low) * 0.97))
+        inv_note = (
+            "Broad index ETF: structural floor ≈ max(MA200×0.97, 52w-low×0.97) — "
+            "tracks structural risk, not the 52w tail alone."
+        )
+        inv_kind = "index_structural_floor"
+    else:
+        stop_loss = _r(inp.week52_low * 0.95)
+        inv_note = (
+            "Long-term floor ≈5% under the 52-week low — structural invalidation only, "
+            "not a tight stop. Use nearer-term levels when you enter; treat this as a "
+            "tail-stress / thesis-broken reference if price ever gets there."
+        )
+        inv_kind = "52w_stress_floor"
     stop_loss_pct = _r((stop_loss - tier1.high) / tier1.high * 100, 1)
     target        = fv
     target_pct    = _r((fv - tier1.high) / tier1.high * 100, 1)
@@ -842,6 +897,16 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         verdict, conviction = "WATCH", "Medium"
     else:
         verdict, conviction = "WAIT", "Low"
+
+    # ── Per-horizon 7-layer confidence boost ────────────────────────────
+    if inp.horizon_confidence_pct is not None:
+        hc = float(inp.horizon_confidence_pct)
+        if verdict == "WAIT" and hc >= 58 and inp.ml_prob >= 25 and assess_verdict != "WAIT":
+            verdict, conviction = "WATCH", "Medium"
+        elif verdict == "WATCH" and hc >= 68:
+            verdict, conviction = "BUY", "Medium"
+        elif verdict == "BUY" and hc >= 75:
+            conviction = "High"
 
     # ── Rationale & trigger ──────────────────────────────────────────────
     parts = []
@@ -864,6 +929,35 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         "AND ML prob > 25%"
     ).format(low=tier1.low, high=tier1.high)
 
+    from signals.tranche_heuristic import compute_long_horizon_tier_percentages
+
+    tranche_policy = compute_long_horizon_tier_percentages(
+        current_price=float(p),
+        ma200=float(inp.ma200) if inp.ma200 else None,
+        atr=inp.atr,
+        model_confidence_pct=inp.model_confidence_pct,
+    )
+    t1p = int(tranche_policy["t1_pct"])
+    t2p = int(tranche_policy["t2_pct"])
+    t3p = int(tranche_policy["t3_pct"])
+    position_sizing = [
+        {
+            "tier": "T1 (MA200)",
+            "allocation_pct": t1p,
+            "note": "starter — MA200 zone (weight scales with extension vs MA200, vol, confidence)",
+        },
+        {
+            "tier": "T2 ({:.0f}% MOS)".format(mos_t2),
+            "allocation_pct": t2p,
+            "note": "core — profile: {} (dynamic split)".format(t2_profile_note),
+        },
+        {
+            "tier": "T3 (Tail risk)",
+            "allocation_pct": t3p,
+            "note": "stress sleeve — larger when front-load is reduced (extended / high vol)",
+        },
+    ]
+
     return HorizonSignal(
         label="Long-term", duration="6–18 months",
         verdict=verdict, signal=_ml_to_signal(inp.ml_prob), conviction=conviction,
@@ -873,11 +967,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         risk_reward=rr, rationale=rationale, trigger_buy=trigger, warnings=warnings,
         fair_value=fv,
         stop_loss_kind="structural_invalidation",
-        stop_loss_framing=(
-            "Long-term floor ≈5% under the 52-week low — structural invalidation only, "
-            "not a tight stop. Use nearer-term levels when you enter; treat this as a "
-            "tail-stress / thesis-broken reference if price ever gets there."
-        ),
+        stop_loss_framing=inv_note,
         entry_tiers={
             "current_assessment": {
                 "verdict":              assess_verdict,
@@ -894,23 +984,21 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             },
             "structural_invalidation": {
                 "price": stop_loss,
-                "kind": "52w_stress_floor",
+                "kind": inv_kind,
                 "note": (
                     "≈5% below the 52-week low — thesis / tail-risk invalidation, "
                     "not a normal trailing stop. Manage risk at Tier 1 entries; "
                     "this level is a last-resort ‘broken story’ reference."
+                )
+                if inv_kind == "52w_stress_floor"
+                else (
+                    "Broad index ETF: invalidation uses the tighter of MA200×0.97 vs 52w-low×0.97 — "
+                    "full thesis exit if broken; not a day-to-day trailing stop."
                 ),
             },
             "tiers": [asdict(tier1), asdict(tier2), asdict(tier3)],
-            "position_sizing": [
-                {"tier": "T1 (MA200)",      "allocation_pct": 25, "note": "starter position"},
-                {
-                    "tier": "T2 ({:.0f}% MOS)".format(mos_t2),
-                    "allocation_pct": 50,
-                    "note": "core position — profile: {}".format(t2_profile_note),
-                },
-                {"tier": "T3 (Tail risk)",  "allocation_pct": 25, "note": "only if 52w / regime stress"},
-            ],
+            "position_sizing": position_sizing,
+            "tranche_policy": tranche_policy,
         },
     )
 
@@ -985,6 +1073,11 @@ def build_all_horizons_payload(
     tier2_mos_pct: Optional[float] = None,
     tier2_mos_by_class: Optional[Dict[str, Any]] = None,
     tier2_mos_pct_by_ticker: Optional[Dict[str, Any]] = None,
+    model_confidence_pct: Optional[float] = None,
+    # Per-horizon 7-layer fused confidence (0-100) — used to refine verdict/conviction per horizon
+    st_confidence_pct: Optional[float] = None,
+    mt_confidence_pct: Optional[float] = None,
+    lt_confidence_pct: Optional[float] = None,
 ) -> dict:
     """
     Builds all three horizon signals and returns a dict ready to attach
@@ -1000,6 +1093,7 @@ def build_all_horizons_payload(
         pattern_score=pattern_score,
         volume_ratio=volume_ratio,
         fair_value=fair_value,
+        horizon_confidence_pct=st_confidence_pct,
     ))
 
     medium = compute_medium_term_entry(MediumTermInputs(
@@ -1015,6 +1109,7 @@ def build_all_horizons_payload(
         short_entry_low=short.entry_zone.low,
         short_entry_high=short.entry_zone.high,
         fair_value=fair_value,
+        horizon_confidence_pct=mt_confidence_pct,
     ))
 
     long_term = compute_long_term_entry(LongTermInputs(
@@ -1032,6 +1127,9 @@ def build_all_horizons_payload(
         short_entry_low=short.entry_zone.low,
         short_entry_high=short.entry_zone.high,
         medium_entry_high=medium.entry_zone.high,
+        atr=atr,
+        model_confidence_pct=model_confidence_pct,
+        horizon_confidence_pct=lt_confidence_pct,
     ))
 
     return {

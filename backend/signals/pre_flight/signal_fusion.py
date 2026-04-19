@@ -422,9 +422,11 @@ def run_conditional_playbook(
     )
     is_ml_recovering    = (s.ml_probability or 0) >= Thresholds.ML_STAGE2_TRIGGER
     is_pattern_recover  = (s.pattern_score or 0) >= Thresholds.PATTERN_STAGE2_TRIGGER
-    is_regime_shifting  = (
+    # Strict AND: matches scenario 3 text (Pattern Score >50% was missing before).
+    is_regime_shifting = (
         s.hmm_bear_prob < Thresholds.HMM_BEAR_EXIT
         and s.hmm_transition_prob >= Thresholds.HMM_TRANSITION_MIN
+        and (s.pattern_score or 0) > Thresholds.PATTERN_STAGE3_REGIME_SHIFT
     )
     is_options_fading   = (s.options_sentiment or 100) < Thresholds.OPTIONS_FADE_MAX
 

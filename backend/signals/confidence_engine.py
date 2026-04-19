@@ -51,6 +51,40 @@ WEIGHTS: dict[str, float] = {
     "nlp_sentiment":     0.14,
 }
 
+# Per-horizon weight profiles — each horizon emphasises different signal layers.
+# Short: reactive (pattern + ST ML + options dominate).
+# Medium: balanced (regime + MT ML + fundamentals).
+# Long: fundamental/insider driven (LT ML + quality layers dominate).
+_HORIZON_WEIGHTS: dict[str, dict[str, float]] = {
+    "short": {
+        "regime_hmm":        0.10,
+        "pattern_technical": 0.22,
+        "lgbm_probability":  0.28,
+        "options_sentiment": 0.20,
+        "insider_signal":    0.05,
+        "fundamental_score": 0.05,
+        "nlp_sentiment":     0.10,
+    },
+    "medium": {
+        "regime_hmm":        0.18,
+        "pattern_technical": 0.15,
+        "lgbm_probability":  0.22,
+        "options_sentiment": 0.12,
+        "insider_signal":    0.10,
+        "fundamental_score": 0.13,
+        "nlp_sentiment":     0.10,
+    },
+    "long": {
+        "regime_hmm":        0.16,
+        "pattern_technical": 0.07,
+        "lgbm_probability":  0.13,
+        "options_sentiment": 0.07,
+        "insider_signal":    0.18,
+        "fundamental_score": 0.27,
+        "nlp_sentiment":     0.12,
+    },
+}
+
 # Maps pre_flight weight profile keys → engine layer keys
 _PF_TO_ENGINE: dict[str, str] = {
     "regime":       "regime_hmm",
@@ -168,6 +202,54 @@ def _apply_extreme_regime_news_shrink(
 # ---------------------------------------------------------------------------
 # Main engine
 # ---------------------------------------------------------------------------
+
+def _compute_horizon_confidence(
+    horizon: str,
+    scores: dict[str, float | None],
+    ml_horizons: dict | None,
+    effective_weights: dict[str, float],
+    hmm_data: dict,
+    close_s: "pd.Series | None",
+    config: dict | None,
+) -> float:
+    """
+    Blend 7-layer scores with horizon-specific weights + the ML probability for that horizon.
+    Applies the same HMM bear penalty as the main engine.
+    Asset-type zero-weight rules from effective_weights are respected.
+    """
+    hw = dict(_HORIZON_WEIGHTS[horizon])
+    for k in list(hw.keys()):
+        if effective_weights.get(k, 0) <= 0:
+            hw[k] = 0.0
+
+    horizon_scores = dict(scores)
+    if ml_horizons is not None:
+        h_prob = (ml_horizons.get(horizon) or {}).get("prob")
+        if h_prob is not None:
+            horizon_scores["lgbm_probability"] = float(h_prob)
+
+    available = {k: v for k, v in horizon_scores.items() if v is not None and hw.get(k, 0) > 0}
+    total_w = sum(hw[k] for k in available)
+    if total_w == 0:
+        return 0.5
+
+    conf = sum(available[k] * hw[k] for k in available) / total_w
+
+    bear_p = float((hmm_data or {}).get("bear_probability") or 0)
+    if bear_p > 0.80:
+        rb = ((config or {}).get("confidence") or {}).get("regime_blend") or {}
+        mult = float(rb.get("bear_penalty_mult", 0.46))
+        ease = float(np.clip(float(rb.get("bear_penalty_ease_toward_one", 0.18)), 0.0, 1.0))
+        m_use = mult + (1.0 - mult) * ease
+        if close_s is not None and len(close_s.dropna()) >= 200:
+            c_arr = close_s.dropna()
+            if float(c_arr.iloc[-1]) > float(c_arr.rolling(200).mean().iloc[-1]):
+                mult_soft = float(rb.get("bear_penalty_mult_above_ma200", 0.76))
+                m_use = mult_soft + (1.0 - mult_soft) * ease
+        conf *= m_use
+
+    return round(float(np.clip(conf, 0.0, 1.0)), 3)
+
 
 class ConfidenceEngine:
     """
@@ -634,6 +716,18 @@ class ConfidenceEngine:
         except (TypeError, ValueError):
             penalty_audit["combined_multiplier"] = None
 
+        # ── Per-horizon confidence (7-layer blend, horizon-specific weights + ML prob) ──
+        horizon_confidence: dict[str, float] = {}
+        if ml_horizons is not None:
+            for _hz in ("short", "medium", "long"):
+                try:
+                    horizon_confidence[_hz] = _compute_horizon_confidence(
+                        _hz, scores, ml_horizons, effective_weights,
+                        details.get("hmm") or {}, close_s, config,
+                    )
+                except Exception as _hce:
+                    logger.debug("per-horizon confidence failed %s/%s: %s", ticker, _hz, _hce)
+
         # ── Action label ───────────────────────────────────────────────────
         action = _confidence_to_action(confidence)
 
@@ -654,12 +748,15 @@ class ConfidenceEngine:
             close_s=close if close is not None else (
                 df["close"] if df is not None and "close" in df.columns else None
             ),
+            confidence_score=confidence,
+            action_verdict=action,
         )
 
         return {
             "ticker":          ticker,
             "confidence":      confidence,
             "action":          action,
+            "vix":             vix,
             # HMM debug payload (includes MA conflict override info)
             "hmm":             details.get("hmm"),
             "breakdown":       {
@@ -687,6 +784,7 @@ class ConfidenceEngine:
             "penalty_audit":     penalty_audit,
             # Pre-flight enrichment
             "pre_flight":       pre_flight_data,
+            "horizon_confidence": horizon_confidence,
         }
 
 
@@ -1295,6 +1393,7 @@ def _incompatible_result(ticker: str, classification: Any) -> dict:
             "current_mode":      "INCOMPATIBLE",
             "current_action":    "Standard equity model not applicable for this instrument type.",
             "position_size":     "0%",
+            "reassess_guidance": None,
         },
     }
 
@@ -1305,6 +1404,9 @@ def _run_pre_flight(
     scores: dict,
     hmm_data: dict,
     close_s: pd.Series | None,
+    *,
+    confidence_score: float | None = None,
+    action_verdict: str | None = None,
 ) -> dict:
     """
     Run the full pre-flight signal fusion engine and return a serialisable dict.
@@ -1325,6 +1427,7 @@ def _run_pre_flight(
         "current_mode":      None,
         "current_action":    None,
         "position_size":     None,
+        "reassess_guidance": None,
     }
 
     if classification is not None:
@@ -1394,6 +1497,60 @@ def _run_pre_flight(
             _rt_merge["hmm_shift_direction"] = hsd
         if _rt_merge:
             base["regime_transition"] = _rt_merge
+
+        # Signal-first reassess line (avoids framing tail / 52w floors as “reassess above $X”)
+        try:
+            from signals.reassess_level import compute_reassess_level
+
+            def _map_action_to_reassess_verdict(act: str | None) -> str:
+                a = (act or "").upper()
+                if a.startswith("STRONG BUY") or a.strip() == "BUY":
+                    return "BUY"
+                if "REDUCE" in a:
+                    return "REDUCE"
+                if "HOLD" in a or "WATCH" in a:
+                    return "WATCH"
+                if "AVOID" in a:
+                    return "WAIT"
+                return "WATCH"
+
+            cs = close_s.dropna() if close_s is not None else None
+            if cs is not None and len(cs) >= 20:
+                spot = float(cs.iloc[-1])
+                ma50 = float(cs.rolling(50, min_periods=20).mean().iloc[-1])
+                ma200 = (
+                    float(cs.rolling(200, min_periods=60).mean().iloc[-1])
+                    if len(cs) >= 200
+                    else ma50
+                )
+                hi52 = (
+                    float(cs.rolling(252, min_periods=60).max().iloc[-1])
+                    if len(cs) >= 60
+                    else float(cs.max())
+                )
+                lo52 = (
+                    float(cs.rolling(252, min_periods=60).min().iloc[-1])
+                    if len(cs) >= 60
+                    else float(cs.min())
+                )
+                pt = scores.get("pattern_technical")
+                pattern_pct = round(float(pt) * 100, 1) if pt is not None else None
+                rg = compute_reassess_level(
+                    current_price=spot,
+                    verdict=_map_action_to_reassess_verdict(action_verdict),
+                    confidence_score=float(confidence_score) if confidence_score is not None else 0.0,
+                    ml_probability=scores.get("lgbm_probability"),
+                    pattern_score=pattern_pct,
+                    hmm_bull_prob=hmm_data.get("bull_probability"),
+                    ma50=ma50,
+                    ma200=ma200,
+                    week52_high=hi52,
+                    week52_low=lo52,
+                )
+                base["reassess_guidance"] = rg.to_dict()
+        except Exception as exc:
+            logger.debug("reassess_guidance skipped for %s: %s", ticker, exc)
+
         # Surface tension when bull is high but shift probability is also high
         rt = base.get("regime_transition")
         bull_p = hmm_data.get("bull_probability") or 0
