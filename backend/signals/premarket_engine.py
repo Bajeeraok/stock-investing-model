@@ -8,6 +8,7 @@ Design: Equity Futures 35%, International 20%, Volatility 10%, Rates 12%,
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -128,7 +129,6 @@ def _fetch_volatility() -> list[PreMarketSignal]:
         return [PreMarketSignal(name="VIX level + direction", score=0, weight=0.10, raw_value="N/A", direction="Neutral", confidence=0)]
     level = float(close.iloc[-1])
     prev_level = float(close.iloc[-2])
-    prev_prev = float(close.iloc[-3])
     change = level - prev_level
     # Level: <18 bullish, 18-22 neutral, >22 bearish
     if level < 18:
@@ -376,13 +376,22 @@ class PreMarketEngine:
             ts = __import__("datetime").datetime.utcnow()
 
         all_signals: list[PreMarketSignal] = []
-        all_signals.extend(_fetch_futures())
-        all_signals.extend(_fetch_international())
-        all_signals.extend(_fetch_volatility())
-        all_signals.extend(_fetch_rates())
-        all_signals.extend(_fetch_currencies())
-        all_signals.extend(_fetch_commodities())
-        all_signals.extend(_fetch_crypto_megacap())
+        fetchers = [
+            _fetch_futures,
+            _fetch_international,
+            _fetch_volatility,
+            _fetch_rates,
+            _fetch_currencies,
+            _fetch_commodities,
+            _fetch_crypto_megacap,
+        ]
+        with ThreadPoolExecutor(max_workers=len(fetchers)) as ex:
+            futures = {ex.submit(fn): fn.__name__ for fn in fetchers}
+            for fut in as_completed(futures):
+                try:
+                    all_signals.extend(fut.result())
+                except Exception:
+                    pass
 
         composite, confidence = _confidence_weighted_composite(all_signals)
         bias = _score_to_bias(composite)

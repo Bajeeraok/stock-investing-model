@@ -1387,6 +1387,15 @@ async def get_dashboard(
     morning_newsletter = None
     try:
         from signals.morning_newsletter import build_morning_newsletter
+        # Load pre_market_latest.json written by the scheduler (best-effort)
+        _pm_report: dict | None = None
+        try:
+            import json as _json
+            _pm_path = data_root / "pre_market_latest.json"
+            if _pm_path.exists():
+                _pm_report = _json.loads(_pm_path.read_text())
+        except Exception:
+            pass
         morning_newsletter = build_morning_newsletter(
             as_of_date=as_of_date,
             macro_regime=macro_regime,
@@ -1398,6 +1407,8 @@ async def get_dashboard(
             results=results,
             model_rules=config.get("model_rules"),
             trim_candidates=trim_candidates,
+            regime_validation=regime_validation,
+            premarket_report=_pm_report,
         )
     except Exception as e:
         logger.debug("Morning newsletter failed: %s", e)

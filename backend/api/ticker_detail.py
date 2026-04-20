@@ -1003,6 +1003,12 @@ def _build_investor_summary(
     return out
 
 
+# VIX thresholds shared across roadmap helpers (change here to affect all three uses)
+_VIX_RISK_OFF = 22.0       # market_regime_layer: risk-off gate
+_VIX_SCENARIO_PENALTY = 26.0  # scenario_probabilities: bear shift
+_VIX_HIGH_VOL = 28.0       # vol_bucket: "high" vs "elevated"
+
+
 def _roadmap_core_zone_3_to_6(
     current_price: float,
     ma200: float | None,
@@ -1090,7 +1096,7 @@ def _roadmap_scenario_probabilities(
         method_bits.append("risk-off gate (VIX/ATR/HMM)")
     try:
         vix_n = float(vix) if vix is not None else None
-        if vix_n is not None and vix_n == vix_n and vix_n >= 26.0:
+        if vix_n is not None and vix_n == vix_n and vix_n >= _VIX_SCENARIO_PENALTY:
             b_pct *= 0.94
             be_pct += 0.04
             method_bits.append("elevated VIX")
@@ -1130,7 +1136,7 @@ def _roadmap_market_regime_layer(
     except (TypeError, ValueError):
         vix_n = None
     risk_off = False
-    if vix_n is not None and vix_n >= 22.0:
+    if vix_n is not None and vix_n >= _VIX_RISK_OFF:
         risk_off = True
     if regime_bull_pct < 42.0:
         risk_off = True
@@ -1139,9 +1145,9 @@ def _roadmap_market_regime_layer(
 
     if vix_n is None:
         vol_bucket = "unknown"
-    elif vix_n >= 28:
+    elif vix_n >= _VIX_HIGH_VOL:
         vol_bucket = "high"
-    elif vix_n >= 18:
+    elif vix_n >= _VIX_RISK_OFF:
         vol_bucket = "elevated"
     else:
         vol_bucket = "low"
@@ -1195,21 +1201,37 @@ def _roadmap_resolve_near_term_conflict(buy_stages: list[dict]) -> None:
 
 
 def _roadmap_you_are_here(buy_stages: list[dict], price: float) -> dict | None:
+    highest_zone_hi: float | None = None
     for s in buy_stages:
         lo = s.get("price_zone_low")
         hi = s.get("price_zone_high")
         if lo is None or hi is None:
             continue
         try:
-            if float(lo) <= price <= float(hi):
+            lo_f, hi_f = float(lo), float(hi)
+            if lo_f <= price <= hi_f:
                 return {
                     "timeline_key": s.get("timeline_key"),
                     "label": s.get("label"),
                     "within_zone": True,
                 }
+            if highest_zone_hi is None or hi_f > highest_zone_hi:
+                highest_zone_hi = hi_f
         except (TypeError, ValueError):
             continue
-    return {"timeline_key": None, "label": None, "within_zone": False, "note": "Price between staged bands — see nearest rows."}
+    if highest_zone_hi is not None and price > highest_zone_hi:
+        return {
+            "timeline_key": None,
+            "label": None,
+            "within_zone": False,
+            "note": "Price is extended above all staged buy zones — wait for pullback into a band before adding.",
+        }
+    return {
+        "timeline_key": None,
+        "label": None,
+        "within_zone": False,
+        "note": "Price is between staged bands — see the nearest row above and below for context.",
+    }
 
 
 def _roadmap_buy_row_risk_reward(
@@ -1622,7 +1644,7 @@ def _build_trade_roadmap(
         "when_to_sell": "Partial exit",
         "price_zone_low": fv_82,
         "price_zone_high": round(fair_value * 0.85, 2),
-        "condition": "Macro scenario: policy / Fed path hits your pre-defined trim band (tracked separately from pure price)",
+        "condition": "Macro scenario: your pre-defined trim band reached — reduce into strength before thesis changes",
         "action": "Trim 35%",
         "reason": "Scenario target reached",
         "exit_category": "macro_scenario",

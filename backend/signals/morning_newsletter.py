@@ -20,6 +20,8 @@ def build_morning_newsletter(
     results: list[dict] | None = None,
     model_rules: dict | None = None,
     trim_candidates: list[dict] | None = None,
+    regime_validation: dict | None = None,
+    premarket_report: dict | None = None,
 ) -> dict[str, Any]:
     """
     Build a morning brief for the newsletter section.
@@ -40,18 +42,35 @@ def build_morning_newsletter(
 
     # —— Compressed 3-line decision UX (regime → actions → risk) ——
     three_line: list[str] = []
+    # Line 1: regime + validation status
+    rv = regime_validation or {}
+    rv_summary = ""
+    if rv.get("validated") is True:
+        rv_summary = f" ✓ validated ({rv.get('consensus_score', 0):.0%} consensus, {rv.get('days_stable', 0)}d stable)"
+    elif rv.get("validated") is False:
+        div = rv.get("divergence_severity", "")
+        days = rv.get("days_stable", 0)
+        rv_summary = f" ⚠ unconfirmed ({days}d stable" + (f", {div.lower()} divergence" if div and div != "NONE" else "") + ")"
     if macro_regime:
-        three_line.append(f"Regime — {macro_regime}: {REGIME_PLAIN.get(macro_regime, '')}")
+        three_line.append(f"Regime — {macro_regime}{rv_summary}: {REGIME_PLAIN.get(macro_regime, '')}")
     elif macro_analog and macro_analog.get("plain_language"):
         three_line.append(f"Context — {macro_analog['plain_language'][:140]}")
     else:
         three_line.append("Regime — check macro and breadth before sizing up.")
     line2_parts: list[str] = []
+    # Pre-market bias is the most time-sensitive morning signal — lead with it
+    pm = premarket_report or {}
+    pm_bias = pm.get("bias")
+    pm_score = pm.get("composite_score")
+    pm_conf = pm.get("confidence")
+    if pm_bias and pm_score is not None:
+        conf_str = f", conf {pm_conf:.0%}" if pm_conf is not None else ""
+        line2_parts.append(f"Pre-market {pm_bias} ({pm_score:+.2f}{conf_str})")
     tc = trim_candidates or []
     if tc:
         tickers = [h.get("ticker") for h in tc[:4] if h.get("ticker")]
         if tickers:
-            line2_parts.append(f"Trim watch (weak score): {', '.join(tickers)}")
+            line2_parts.append(f"Trim watch: {', '.join(tickers)}")
     if earnings_risk_count and earnings_risk_count > 0:
         line2_parts.append(f"{earnings_risk_count} holding(s) report this week — avoid new adds there")
     db0 = (retail_briefing or {}).get("daily_briefing") or {}
@@ -59,7 +78,7 @@ def build_morning_newsletter(
         line2_parts.append(db0["summary_sentence"][:160])
     if not line2_parts:
         line2_parts.append(f"Follow model rules: add ≥{add_pct}% confidence & UP regime; trim ≤{trim_pct}% or REDUCE/AVOID.")
-    three_line.append("Today — " + (" · ".join(line2_parts[:2]) if len(line2_parts) > 1 else line2_parts[0]))
+    three_line.append("Today — " + " · ".join(line2_parts[:3]))
     risk_bits: list[str] = []
     if market_regime and market_regime.get("rotation_risk") == "High":
         risk_bits.append("Rotation risk elevated — favor holds over new tech adds")
@@ -72,9 +91,14 @@ def build_morning_newsletter(
         risk_bits.append(
             f"Forward 20d ADD hit rate {ha0['hit_rate_pct']:.0f}% (n={ha0['n_observations']})"
         )
+    # VIX from pre-market report
+    vix_sig = next((s for s in (pm.get("signals") or []) if "VIX" in s.get("name", "")), None)
+    if vix_sig and vix_sig.get("raw_value") and vix_sig.get("raw_value") != "N/A":
+        vix_dir = vix_sig.get("direction", "")
+        risk_bits.append(f"VIX {vix_sig['raw_value']} — {vix_dir.lower()}")
     if not risk_bits:
         risk_bits.append("Risk — use stops and position caps from Portfolio Doctor.")
-    three_line.append(risk_bits[0])
+    three_line.append(" · ".join(risk_bits) if len(risk_bits) > 1 else risk_bits[0])
 
     # —— Market pulse ——
     pulse_items: list[str] = []
@@ -88,6 +112,18 @@ def build_morning_newsletter(
             pulse_items.append(f"Rotation risk: {rot}. High = step down tech adds, favor holds.")
     if pulse_items:
         sections.append({"title": "Market pulse", "items": pulse_items})
+
+    # —— Pre-market engine snapshot ——
+    if pm_bias and pm_score is not None:
+        pm_items: list[str] = []
+        pm_items.append(f"Composite: {pm_bias} ({pm_score:+.2f})" + (f" — confidence {pm_conf:.0%}" if pm_conf is not None else ""))
+        for label_key, items_key in [("↑ Bullish drivers", "top_bullish"), ("↓ Bearish drivers", "top_bearish")]:
+            items_list = pm.get(items_key) or []
+            if items_list:
+                pm_items.append(f"{label_key}: {' · '.join(items_list[:2])}")
+        for risk in (pm.get("key_risks") or [])[:2]:
+            pm_items.append(f"⚠ {risk}")
+        sections.append({"title": "Pre-market", "items": pm_items})
 
     # —— Key levels (SPY / QQQ from results) ——
     key_levels: list[str] = []

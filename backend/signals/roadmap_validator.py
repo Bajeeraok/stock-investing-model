@@ -245,14 +245,16 @@ class RoadmapValidator:
             if tier.zone is None:
                 continue
             if "partial" in tier.action.lower() or "trim" in tier.action.lower():
-                if tier.zone.low < r.fair_value * 0.98:
+                # Allow pre-FV staged exits (e.g. trim at 82–93% of FV as price approaches target).
+                # Only flag zones genuinely deep below fair value (< 65%), which indicate a
+                # miscalculation rather than an intentional approach-to-FV exit ladder.
+                if tier.zone.low < r.fair_value * 0.65:
                     issues.append(
                         (
                             "RC-2",
                             f"Sell tier '{tier.label} / {tier.action}' lower bound "
-                            f"${tier.zone.low:.2f} is below fair value "
-                            f"${r.fair_value:.2f}. Trim zones should start at or "
-                            f"above fair value.",
+                            f"${tier.zone.low:.2f} is deeply below fair value "
+                            f"${r.fair_value:.2f} (< 65% of FV). Check zone generation.",
                             "MEDIUM",
                         )
                     )
@@ -273,6 +275,11 @@ class RoadmapValidator:
                 )
         for tier in r.sell_tiers:
             if tier.zone and tier.zone.is_single_point(ref_price=r.current_price, atr=r.atr):
+                # Hard stops and structural invalidation levels are intentionally single-point —
+                # they are price triggers, not entry bands. Skip RC-3 for these.
+                action_l = tier.action.lower()
+                if "hard stop" in action_l or "exit 100" in action_l or "invalidation" in tier.condition.lower():
+                    continue
                 issues.append(
                     (
                         "RC-3",
@@ -380,7 +387,7 @@ class RoadmapFixer:
             if tier.zone is None:
                 continue
             if "partial" in tier.action.lower() or "trim" in tier.action.lower():
-                if tier.zone.low < fv * 0.98:
+                if tier.zone.low < fv * 0.65:
                     old_low = tier.zone.low
                     original_width = tier.zone.high - old_low
                     tier.zone.low = round(fv, 2)
@@ -409,6 +416,9 @@ class RoadmapFixer:
                 )
         for tier in r.sell_tiers:
             if tier.zone and tier.zone.is_single_point(ref_price=r.current_price, atr=r.atr):
+                action_l = tier.action.lower()
+                if "hard stop" in action_l or "exit 100" in action_l or "invalidation" in tier.condition.lower():
+                    continue
                 mid = (tier.zone.low + tier.zone.high) / 2
                 tier.zone.low = round(mid - half_band, 2)
                 tier.zone.high = round(mid + half_band, 2)
@@ -453,8 +463,8 @@ def print_validation_report(ticker: str, issues: list[tuple[str, str, str]]) -> 
     root_causes = {
         "RC-1": "scenario_target computed before sell tiers finalized — "
         "two code paths set target independently",
-        "RC-2": "sell zone generator not anchored to fair_value — "
-        "uses raw scenario multiplier without FV floor",
+        "RC-2": "sell zone lower bound is deeply below fair value (< 65% FV) — "
+        "indicates a miscalculation; staged pre-FV exits (82-93% FV) are intentional and not flagged",
         "RC-3": "current-price snapshot passed as low=high — "
         "ATR band expansion never applied for 'Today' row",
         "RC-4": "tail risk zone uses week52_low anchor which can be > "
