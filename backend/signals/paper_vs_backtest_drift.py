@@ -36,6 +36,14 @@ def build_paper_vs_backtest_drift(
         forward_mean = ft_20.get("avg_return_pct")
         forward_n = ft_20.get("n_observations")
 
+    # Buy-side forward baseline (HOLD/ADD signal bucket at 20d)
+    ft_buy = (forward_tracking.get("summary_by_signal") or {}).get("HOLD/ADD")
+    forward_buy_mean = None
+    forward_buy_n = None
+    if isinstance(ft_buy, dict):
+        forward_buy_mean = ft_buy.get("avg_return_20d_pct")
+        forward_buy_n = ft_buy.get("n_observations")
+
     ptl = PaperTradeLogger(root)
     summ = ptl.get_performance_summary(min_completed=3, min_actionable=3)
 
@@ -46,6 +54,8 @@ def build_paper_vs_backtest_drift(
             "paper_completed_n": completed,
             "forward_20d_baseline_pct": forward_mean,
             "forward_20d_n": forward_n,
+            "forward_buy_baseline_pct": forward_buy_mean,
+            "forward_buy_n": forward_buy_n,
             "message": "Need 3+ completed paper trades to compare drift (20d horizon outcomes).",
         }
 
@@ -54,6 +64,16 @@ def build_paper_vs_backtest_drift(
     if forward_mean is not None and paper_avg is not None:
         try:
             drift = round(float(paper_avg) - float(forward_mean), 2)
+        except (TypeError, ValueError):
+            pass
+
+    # Buy-side drift: paper BUY/HOLD-ADD avg vs forward HOLD/ADD bucket
+    buy_summ = summ.get("buy_signals_summary")
+    buy_avg = buy_summ.get("avg_return_pct") if isinstance(buy_summ, dict) else None
+    buy_drift = None
+    if forward_buy_mean is not None and buy_avg is not None:
+        try:
+            buy_drift = round(float(buy_avg) - float(forward_buy_mean), 2)
         except (TypeError, ValueError):
             pass
 
@@ -66,6 +86,12 @@ def build_paper_vs_backtest_drift(
         "forward_20d_baseline_pct": forward_mean,
         "forward_20d_n": forward_n,
         "drift_vs_forward_pct": drift,
+        # Buy-side slice (more apples-to-apples)
+        "buy_signals_avg_return_pct": buy_avg,
+        "buy_signals_n": buy_summ.get("completed_n") if isinstance(buy_summ, dict) else None,
+        "forward_buy_baseline_pct": forward_buy_mean,
+        "forward_buy_n": forward_buy_n,
+        "buy_drift_vs_forward_pct": buy_drift,
         "note": (
             "Forward-tracking 20d mean is a population baseline from EOD snapshots; "
             "paper trades are your subset — large drift warrants checking fills and horizons."

@@ -11,6 +11,12 @@ export type PaperVsBacktestDriftPayload = {
   drift_vs_forward_pct?: number | null;
   paper_win_rate_pct?: number | null;
   paper_avg_excess_vs_spy_pct?: number | null;
+  // Buy-side slice
+  buy_signals_avg_return_pct?: number | null;
+  buy_signals_n?: number | null;
+  forward_buy_baseline_pct?: number | null;
+  forward_buy_n?: number | null;
+  buy_drift_vs_forward_pct?: number | null;
   message?: string | null;
   note?: string;
 };
@@ -72,6 +78,46 @@ export function PaperVsBacktestDrift({ drift }: { drift: PaperVsBacktestDriftPay
             <p className="text-slate-500">
               Avg excess vs SPY (paper window): {drift.paper_avg_excess_vs_spy_pct.toFixed(2)}%
             </p>
+          )}
+          {(drift.buy_signals_avg_return_pct != null || drift.buy_drift_vs_forward_pct != null) && (
+            <div className="mt-1.5 pt-1.5 border-t border-slate-700/50 space-y-0.5">
+              <p className="text-slate-500">Buy-side only (BUY / HOLD/ADD):</p>
+              {drift.buy_signals_avg_return_pct != null && (
+                <p>
+                  Paper avg:{" "}
+                  <span className="text-slate-200">{drift.buy_signals_avg_return_pct.toFixed(2)}%</span>
+                  {drift.buy_signals_n != null && (
+                    <span className="text-slate-500"> (n={drift.buy_signals_n})</span>
+                  )}
+                </p>
+              )}
+              {drift.forward_buy_baseline_pct != null && (
+                <p>
+                  Forward HOLD/ADD baseline:{" "}
+                  <span className="text-slate-200">{drift.forward_buy_baseline_pct.toFixed(2)}%</span>
+                  {drift.forward_buy_n != null && (
+                    <span className="text-slate-500"> (n={drift.forward_buy_n})</span>
+                  )}
+                </p>
+              )}
+              {drift.buy_drift_vs_forward_pct != null && (
+                <p>
+                  Drift:{" "}
+                  <span
+                    className={
+                      drift.buy_drift_vs_forward_pct > 1
+                        ? "text-emerald-400"
+                        : drift.buy_drift_vs_forward_pct < -1
+                          ? "text-amber-400"
+                          : "text-slate-300"
+                    }
+                  >
+                    {drift.buy_drift_vs_forward_pct >= 0 ? "+" : ""}
+                    {drift.buy_drift_vs_forward_pct.toFixed(2)}%
+                  </span>
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}

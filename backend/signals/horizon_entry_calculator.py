@@ -28,8 +28,14 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional
 
 from signals.providers import MAJOR_INDEX_ETFS
+from signals.structural_invalidation import structural_invalidation_below
 
 _BROAD_INDEX_ETF_TICKERS = frozenset(MAJOR_INDEX_ETFS) | frozenset({"VOO", "VTI"})
+# Match api.ticker_detail metal sanity set — deep 52w min can mis-state structural risk
+_COMMODITY_METAL_ETFS = frozenset(
+    {"GLD", "IAU", "SGOL", "GLDM", "BAR", "OUNZ", "SLV", "SIL", "PSLV", "USO", "GDX", "GDXJ"}
+)
+_STRUCTURAL_TAIL_ETFS = _BROAD_INDEX_ETF_TICKERS | _COMMODITY_METAL_ETFS
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -863,13 +869,28 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
 
     # ── Structural invalidation (not a day-to-day stop) ────────────────────
     tkey_lt = _norm_ticker_sym(inp.ticker)
-    if tkey_lt in _BROAD_INDEX_ETF_TICKERS:
-        stop_loss = _r(max(float(inp.ma200) * 0.97, float(inp.week52_low) * 0.97))
-        inv_note = (
-            "Broad index ETF: structural floor ≈ max(MA200×0.97, 52w-low×0.97) — "
-            "tracks structural risk, not the 52w tail alone."
+    if tkey_lt in _STRUCTURAL_TAIL_ETFS:
+        w52 = float(inp.week52_low) if inp.week52_low is not None else None
+        fb = (w52 * 0.97) if w52 is not None else 0.0
+        stop_loss = _r(
+            structural_invalidation_below(
+                float(inp.ma200) if inp.ma200 is not None else None,
+                w52,
+                fallback=fb,
+            )
         )
-        inv_kind = "index_structural_floor"
+        if tkey_lt in _COMMODITY_METAL_ETFS:
+            inv_note = (
+                "Commodity/metal ETF: structural floor ≈ max(MA200×0.97, 52w-low×0.97) — "
+                "tracks structural risk, not the 52w tail alone."
+            )
+            inv_kind = "commodity_structural_floor"
+        else:
+            inv_note = (
+                "Broad index ETF: structural floor ≈ max(MA200×0.97, 52w-low×0.97) — "
+                "tracks structural risk, not the 52w tail alone."
+            )
+            inv_kind = "index_structural_floor"
     else:
         stop_loss = _r(inp.week52_low * 0.95)
         inv_note = (
@@ -991,6 +1012,11 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                     "this level is a last-resort ‘broken story’ reference."
                 )
                 if inv_kind == "52w_stress_floor"
+                else (
+                    "Commodity/metal ETF: invalidation uses the tighter of MA200×0.97 vs 52w-low×0.97 — "
+                    "full thesis exit if broken; not a day-to-day trailing stop."
+                )
+                if inv_kind == "commodity_structural_floor"
                 else (
                     "Broad index ETF: invalidation uses the tighter of MA200×0.97 vs 52w-low×0.97 — "
                     "full thesis exit if broken; not a day-to-day trailing stop."

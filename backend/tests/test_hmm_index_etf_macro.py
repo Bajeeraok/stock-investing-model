@@ -54,7 +54,7 @@ def test_non_index_ticker_unchanged():
     assert audit is None
 
 
-def test_price_targets_long_stop_index_etf_uses_ma200_cap():
+def test_price_targets_long_stop_uses_structural_max_not_tail_only():
     from signals.price_targets import _horizon_targets
 
     lv = {
@@ -64,10 +64,11 @@ def test_price_targets_long_stop_index_etf_uses_ma200_cap():
         "low_52w": 508.0,
     }
     h = {"prob": 0.4, "threshold_pct": 12, "horizon_days": 120, "label": "long", "interpretation": "n"}
+    expected = round(max(661.0 * 0.97, 508.0 * 0.97), 2)
     out = _horizon_targets(lv, h, "NEUTRAL", "long", ticker="SPY")
-    assert out["stop_loss"] == round(max(661.0 * 0.97, 508.0 * 0.97), 2)
+    assert out["stop_loss"] == expected
     out_nvda = _horizon_targets(lv, h, "NEUTRAL", "long", ticker="NVDA")
-    assert out_nvda["stop_loss"] == round(508.0 * 0.97, 2)
+    assert out_nvda["stop_loss"] == expected
 
 
 def test_vix_augmented_feature_matrix_has_expected_width():
@@ -94,6 +95,22 @@ def test_long_term_entry_index_etf_structural_stop_uses_ma200_cap():
     sig = compute_long_term_entry(inp)
     assert sig.stop_loss == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
     assert sig.entry_tiers["structural_invalidation"]["kind"] == "index_structural_floor"
+
+
+def test_long_term_entry_commodity_etf_matches_index_structural_math():
+    inp = LongTermInputs(
+        current_price=500.0,
+        fair_value=520.0,
+        ma200=480.0,
+        week52_low=400.0,
+        ml_prob=40.0,
+        regime_bull_pct=55.0,
+        fundamentals_score=60.0,
+        ticker="SLV",
+    )
+    sig = compute_long_term_entry(inp)
+    assert sig.stop_loss == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
+    assert sig.entry_tiers["structural_invalidation"]["kind"] == "commodity_structural_floor"
 
 
 def test_long_term_entry_single_name_uses_52w_floor():

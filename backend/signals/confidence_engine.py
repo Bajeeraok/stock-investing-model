@@ -617,6 +617,66 @@ class ConfidenceEngine:
         if extreme_regime_news_audit:
             details["extreme_regime_news_shrink"] = extreme_regime_news_audit
 
+        # ── Regime validation weight adjustment (Issues 3 & 6) ────────────
+        # Adjusts regime_hmm layer weight based on cross-signal consensus and
+        # HMM vs MA divergence severity — no I/O, runs inline without blocking.
+        _regime_val_inline: dict[str, Any] | None = None
+        try:
+            from signals.regime_consensus import compute_regime_consensus
+            from signals.regime_validation import compute_divergence_severity, WEIGHT_ADJUSTMENTS
+
+            _hmm_d = details.get("hmm") or {}
+            _hmm_conflict = _hmm_d.get("conflict_severity")
+            if not _hmm_conflict:
+                _mc = _hmm_d.get("ma_conflict")
+                if isinstance(_mc, dict):
+                    _hmm_conflict = _mc.get("conflict_severity")
+
+            # Use whatever MA regime is embedded in HMM data, else fall back to market_regime param
+            _ma_reg = _hmm_d.get("ma_regime") or _hmm_d.get("resolved_regime") or market_regime
+
+            _cons = compute_regime_consensus(
+                hmm_bull_prob=scores.get("regime_hmm"),
+                ma_regime=_ma_reg,
+                macro_regime=market_regime,
+            )
+            _cons_score  = _cons["consensus_score"]
+            _cons_dir    = _cons["consensus_direction"]
+            _hmm_dir     = (_cons.get("signals") or {}).get("hmm")
+            _divergence  = compute_divergence_severity(_hmm_conflict, _cons_score, _cons_dir, _hmm_dir)
+
+            # Simplified gate (no I/O): use consensus + divergence only
+            if _divergence == "SEVERE":
+                _adj_key = "unvalidated_severe"
+            elif _divergence == "MODERATE":
+                _adj_key = "unvalidated_moderate"
+            elif _cons_score >= 0.80:
+                _adj_key = "validated_high_consensus"
+            elif _cons_score >= 0.60:
+                _adj_key = "validated"
+            elif _divergence == "MILD":
+                _adj_key = "unvalidated_mild"
+            else:
+                _adj_key = "unvalidated_new"
+
+            _adj = WEIGHT_ADJUSTMENTS[_adj_key]
+            if "regime_hmm" in effective_weights and abs(_adj - 1.0) > 0.005:
+                effective_weights = dict(effective_weights)
+                effective_weights["regime_hmm"] = round(effective_weights["regime_hmm"] * _adj, 4)
+
+            _regime_val_inline = {
+                "consensus_score":              round(_cons_score, 3),
+                "consensus_direction":          _cons_dir,
+                "divergence_severity":          _divergence,
+                "confidence_weight_adjustment": round(_adj, 3),
+                "weight_adjustment_key":        _adj_key,
+                "signals":                      _cons.get("signals"),
+                "dissenting_signals":           _cons.get("dissenting") or [],
+            }
+            details["regime_validation"] = _regime_val_inline
+        except Exception as _rve:
+            logger.debug("Regime validation inline skipped for %s: %s", ticker, _rve)
+
         # ── Weighted confidence (renormalize over available layers) ────────
         # Respect asset-type zero-weights (e.g. insider=0 for ETFs/ADRs)
         available = {
@@ -785,6 +845,8 @@ class ConfidenceEngine:
             # Pre-flight enrichment
             "pre_flight":       pre_flight_data,
             "horizon_confidence": horizon_confidence,
+            # Regime validation (inline, no I/O): consensus + divergence severity + weight adj
+            "regime_validation": details.get("regime_validation"),
         }
 
 
@@ -1360,27 +1422,18 @@ def _build_watch_levels(df: pd.DataFrame | None, composite_score: float, ticker:
     """Key price levels to watch for thesis invalidation."""
     if df is None or "close" not in df.columns or df.empty:
         return {}
-    from signals.providers import MAJOR_INDEX_ETFS
+    from signals.structural_invalidation import structural_invalidation_below
 
     close = df["close"].dropna()
     price = float(close.iloc[-1])
     ma50  = float(close.rolling(50, min_periods=20).mean().iloc[-1])
     ma200 = float(close.rolling(200, min_periods=60).mean().iloc[-1])
     low_52w = float(close.rolling(252, min_periods=60).min().iloc[-1])
-    tkey = (ticker or "").upper().strip()
-    # Broad index ETFs: do not use 52w tail floor alone — align with MA200 structural break.
-    if tkey in MAJOR_INDEX_ETFS:
-        inv_below = max(ma200 * 0.97, low_52w * 0.97)
-        note = (
-            "Broad index ETF: invalidation uses the tighter of MA200×0.97 vs 52w-low×0.97 "
-            "(tail floor alone is a stress exit, not the primary ‘reassess’ trigger)."
-        )
-    else:
-        inv_below = low_52w * 0.97
-        note = (
-            "Break below 52-week low (×0.97) invalidates the setup — exit if breached. "
-            "MA50 and MA200 are key support levels to watch."
-        )
+    inv_below = structural_invalidation_below(ma200, low_52w, fallback=low_52w * 0.97)
+    note = (
+        "Invalidation reference: max(MA200×0.97, 52w-low×0.97) when both exist — deep 52w tails alone "
+        "can mis-state structural risk when spot is far above the low. MA50/MA200 are live supports to watch."
+    )
     return {
         "current_price":     round(price, 2),
         "invalidation_below": round(inv_below, 2),

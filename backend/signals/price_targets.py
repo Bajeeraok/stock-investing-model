@@ -17,8 +17,7 @@ Entry zone logic (consolidated with technical score):
 Stop loss:
   - Short-term: MA50 × 0.97 (break below MA50 = thesis challenged)
   - Medium-term: MA200 × 0.97 (break below MA200 = structural breakdown)
-  - Long-term: 52w-low × 0.97 (catastrophic stop) for single names;
-    broad index ETFs (SPY/QQQ/…) use max(MA200, 52w-low) × 0.97 so the level tracks structural risk, not tail-only
+  - Long-term: max(MA200, 52w-low) × 0.97 when both exist (structural vs tail); else legacy 52w-based
 
 Scenarios (asset-type-aware):
   Each scenario has:  name, trigger, probability, short/med/long targets,
@@ -33,11 +32,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from signals.providers import MAJOR_INDEX_ETFS
+from signals.structural_invalidation import structural_invalidation_below
 
 logger = logging.getLogger(__name__)
-
-_BROAD_INDEX_ETF_TICKERS = frozenset(MAJOR_INDEX_ETFS) | frozenset({"VOO", "VTI"})
 
 
 # ---------------------------------------------------------------------------
@@ -136,11 +133,7 @@ def _horizon_targets(
     elif horizon_key == "medium":
         stop = ma200 * 0.97       # below MA200 = structural breakdown
     else:
-        tk = (ticker or "").upper().strip()
-        if tk in _BROAD_INDEX_ETF_TICKERS:
-            stop = max(ma200 * 0.97, low52 * 0.97)
-        else:
-            stop = low52 * 0.97       # below 52w-low = catastrophic stop
+        stop = structural_invalidation_below(ma200, low52, fallback=low52 * 0.97)
 
     # ── Price targets ──────────────────────────────────────────────────────
     # Base  = current × (1 + threshold) — the ML model's own bar
@@ -163,15 +156,10 @@ def _horizon_targets(
     rr_ratio   = _risk_reward(entry_mid, target_base, stop)
 
     # ── Rationale ─────────────────────────────────────────────────────────
-    tk = (ticker or "").upper().strip()
     support_label = (
         f"MA50 ${ma50:.2f}" if horizon_key == "short" else
         f"MA200 ${ma200:.2f}" if horizon_key == "medium" else
-        (
-            f"index ETF max(MA200 ${ma200:.2f}, 52w-low ${low52:.2f})"
-            if tk in _BROAD_INDEX_ETF_TICKERS
-            else f"52w-low ${low52:.2f}"
-        )
+        f"structural max(MA200 ${ma200:.2f}, 52w-low ${low52:.2f})"
     )
     if prob is None:
         action_hint = "ML model not yet trained — rely on technical levels only"

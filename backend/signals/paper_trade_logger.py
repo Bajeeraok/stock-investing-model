@@ -566,15 +566,19 @@ class PaperTradeLogger:
 
                 ret_pct = round(100 * (actual - entry) / entry, 2)
                 tgt = _safe_float(row.get("target_1"))
-                hit = None
                 if tgt is not None:
                     hit = 1 if actual >= tgt else 0
+                    outcome = "HIT" if hit == 1 else "MISS"
+                else:
+                    # No target band recorded — close based on return direction at horizon
+                    hit = None
+                    outcome = "HIT" if ret_pct >= 0 else "MISS"
 
                 row["next_date"] = next_date
                 row["actual_price"] = round(actual, 2)
                 row["return_pct"] = ret_pct
                 row["hit_target"] = hit
-                row["outcome"] = "HIT" if hit == 1 else ("MISS" if hit == 0 else None)
+                row["outcome"] = outcome
                 updated += 1
             except Exception:
                 continue

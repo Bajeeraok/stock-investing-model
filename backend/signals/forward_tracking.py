@@ -96,6 +96,8 @@ def get_forward_tracking(
     tickers: list[str] | None = None,
     horizons: list[int] | None = None,
     max_pairs_per_horizon: int = 30,
+    buy_min: float | None = None,
+    sell_max: float | None = None,
 ) -> dict[str, Any]:
     """
     Multi-horizon forward returns and signal accuracy.
@@ -116,6 +118,18 @@ def get_forward_tracking(
         eod_dir = data_root / _EOD_DIR_NAME
     if eod_dir is None:
         eod_dir = Path(__file__).resolve().parent.parent / "data" / _EOD_DIR_NAME
+
+    if buy_min is None or sell_max is None:
+        try:
+            from config_loader import load_config
+            sc = load_config().get("score", {}) or {}
+            if buy_min is None:
+                buy_min = float(sc.get("buy_min", 70))
+            if sell_max is None:
+                sell_max = float(sc.get("sell_max", 30))
+        except Exception:
+            buy_min = buy_min if buy_min is not None else 70.0
+            sell_max = sell_max if sell_max is not None else 30.0
 
     syms = tickers or ["SPY", "QQQ"]
     horizon_list = list(horizons or [5, 20, 60])
@@ -176,7 +190,7 @@ def get_forward_tracking(
                 if prior <= 0:
                     continue
                 ret_pct = round(100 * (actual - prior) / prior, 2)
-                our_signal = signal_bucket_from_row(row)
+                our_signal = signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max)
 
                 records.append({
                     "as_of_date": as_of_date,

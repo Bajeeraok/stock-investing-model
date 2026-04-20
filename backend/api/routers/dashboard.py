@@ -663,6 +663,83 @@ async def get_dashboard(
             ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)}
             return ("forward_tracking", ft)
 
+    def _task_regime_validation():
+        """
+        Full market-level regime validation (Issues 1-6).
+        Uses SPY/QQQ signals from the current run + EOD persistence history.
+        Runs in parallel — safe because it only reads EOD snapshots (no writes).
+        """
+        try:
+            from signals.regime_consensus import compute_regime_consensus
+            from signals.regime_persistence import compute_regime_persistence
+            from signals.regime_validation import build_regime_validation
+
+            # Extract SPY HMM bull probability from current run results
+            spy_row = next(
+                (r for r in results if isinstance(r, dict) and str(r.get("ticker") or "").upper() == "SPY"),
+                None,
+            )
+            hmm_bull_prob: float | None = None
+            hmm_data_spy: dict | None = None
+            if spy_row:
+                conf = spy_row.get("confidence") or {}
+                if isinstance(conf, dict):
+                    hmm_data_spy = conf.get("hmm")
+                    if isinstance(hmm_data_spy, dict):
+                        try:
+                            hmm_bull_prob = float(hmm_data_spy.get("bull_probability") or 0)
+                        except (TypeError, ValueError):
+                            pass
+
+            # MA regime: prefer resolved regime from HMM validation payload
+            ma_regime: str | None = None
+            if isinstance(hmm_data_spy, dict):
+                ma_regime = hmm_data_spy.get("ma_regime") or hmm_data_spy.get("resolved_regime")
+            if not ma_regime and market_regime_data:
+                # Fall back to global market regime label from run_signals
+                ma_regime = next(
+                    (r.get("_global_market_regime") for r in results
+                     if isinstance(r, dict) and r.get("_global_market_regime")),
+                    None,
+                )
+
+            # Composite regime from average composite_buy of SPY/QQQ
+            composite_regime: str | None = None
+            try:
+                from signals.regime import get_regime
+                spy_score = float((spy_row or {}).get("composite_buy") or 50)
+                composite_regime = get_regime(spy_score)
+            except Exception:
+                pass
+
+            # Breadth RS tech leadership from market_regime_data (already computed above)
+            tech_leadership: str | None = (market_regime_data or {}).get("tech_leadership")
+
+            consensus = compute_regime_consensus(
+                hmm_bull_prob=hmm_bull_prob,
+                ma_regime=ma_regime,
+                composite_regime=composite_regime,
+                macro_regime=macro_regime,
+                tech_leadership=tech_leadership,
+            )
+
+            # Persistence: track current consensus direction in EOD history
+            persistence = compute_regime_persistence(
+                current_regime=consensus["consensus_direction"],
+                data_root=data_root,
+            )
+
+            validation = build_regime_validation(
+                consensus=consensus,
+                persistence=persistence,
+                hmm_data=hmm_data_spy,
+                data_root=data_root,
+            )
+            return ("regime_validation", validation)
+        except Exception as exc:
+            logger.debug("regime_validation task failed: %s", exc)
+            return ("regime_validation", {"validated": None, "summary": str(exc), "error": True})
+
     # Pre-market full: lazy-loaded with pre_market above (PreMarketPanel fetches /api/pre-market).
 
     def _task_paper_trading_async():
@@ -684,7 +761,7 @@ async def get_dashboard(
             )
             recent = pt.get_recent(limit=40)
             recent = pt.enrich_trades_with_benchmark(recent, benchmark=bench_sym)
-            mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=12)
+            mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
             return ("paper_trading_async", {
                 "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
                 "fill": fill, "summary": summary, "recent": recent, "mtm_history": mtm_history,
@@ -715,6 +792,7 @@ async def get_dashboard(
         ("model_validation", _task_model_validation),
         ("forward_tracking", _task_forward_tracking),
         ("paper_trading_async", _task_paper_trading_async),
+        ("regime_validation", _task_regime_validation),
     ]
     parallel_results: dict = {}
     t_parallel = time.perf_counter()
@@ -745,6 +823,7 @@ async def get_dashboard(
     best_2026: list = []  # lazy: GET /api/dashboard/opportunities-bundle
     model_validation = parallel_results.get("model_validation", {"records": [], "summary": {}})
     forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
+    regime_validation = parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"})
     paper_async = parallel_results.get("paper_trading_async")
     if paper_async:
         paper_trading["sync_targets"] = paper_async.get("sync_targets")
@@ -1370,6 +1449,7 @@ async def get_dashboard(
         "indicator_comparisons": indicator_comparisons,
         "model_validation": model_validation,
         "forward_tracking": forward_tracking,
+        "regime_validation": regime_validation,
         "paper_vs_backtest_drift": paper_vs_backtest_drift,
         "paper_trading": paper_trading,
         "pre_market": pre_market,

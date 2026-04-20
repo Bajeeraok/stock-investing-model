@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 from behavior.thesis import load_theses
 from signals.fetcher import fetch_ohlcv_safe, fetch_ohlcv_with_volume
 from signals.providers import MAJOR_INDEX_ETFS
+from signals.structural_invalidation import structural_invalidation_below
 from signals.indicators import multi_horizon_scores
 from signals.providers import get_next_earnings, get_sector_and_industry, get_peers
 
@@ -1665,6 +1666,9 @@ def _build_trade_roadmap(
         current_price=current_price,
         fair_value=fair_value,
         high_52w=high_52w,
+        ma200=ma200,
+        low_52w=low_52w,
+        stop_52w=float(stop_52w),
         short_h=short,
         medium_h=medium,
         long_h=long_h,
@@ -1891,19 +1895,9 @@ def _build_trade_roadmap(
         risk_off=bool(market_regime_layer.get("risk_off")),
         vix=market_regime_layer.get("vix"),
     )
-    try:
-        ma200_k = float(ma200) if ma200 else None
-        tail_k = float(low_52w) * 0.97 if low_52w is not None else None
-        # Same idea as index ETFs: TL;DR "key level" must not be only a deep 52w tail (~spot-scale)
-        # when MA200 defines a nearer structural floor (common on commodity ETFs).
-        if ma200_k is not None and tail_k is not None:
-            key_inv = max(ma200_k * 0.97, tail_k)
-        elif ma200_k is not None:
-            key_inv = ma200_k * 0.97
-        else:
-            key_inv = float(stop_52w)
-    except (TypeError, ValueError):
-        key_inv = float(stop_52w)
+    key_inv = structural_invalidation_below(
+        ma200, low_52w, fallback=float(stop_52w)
+    )
 
     dom_action = buy_stages[0].get("when_to_act") if buy_stages else None
     tldr = {
@@ -2406,6 +2400,9 @@ def _apply_sell_roadmap_band_alignment(
     current_price: float,
     fair_value: float,
     high_52w: float | None,
+    ma200: float | None,
+    low_52w: float | None,
+    stop_52w: float,
     short_h: dict,
     medium_h: dict,
     long_h: dict,
@@ -2436,14 +2433,22 @@ def _apply_sell_roadmap_band_alignment(
     cfg = _sell_roadmap_config()
     pad = max(cfg["pad_min_pct_of_spot"] * current_price, cfg["pad_floor"])
 
-    # 0 — Hard stop: stricter (higher) invalidation when short horizon stop is tighter than 52w-based
-    if sell_stages[0].get("price_zone_high") is not None and short_stop:
+    # 0 — Hard stop: align with TL;DR key level — max(MA200×0.97, 52w tail), then horizon stop if tighter.
+    if sell_stages[0].get("price_zone_high") is not None:
         try:
             ph = float(sell_stages[0]["price_zone_high"])
-            sell_stages[0]["price_zone_high"] = round(max(ph, short_stop), 2)
+            structural = structural_invalidation_below(
+                ma200, low_52w, fallback=float(stop_52w)
+            )
+            merged = max(ph, structural)
+            if short_stop:
+                merged = max(merged, float(short_stop))
+            sell_stages[0]["price_zone_high"] = round(merged, 2)
             c = sell_stages[0].get("condition") or ""
-            if "horizon" not in c.lower():
-                sell_stages[0]["condition"] = c + " — max(52w-based, short-term horizon stop)"
+            if merged > ph + 1e-6 and "max(" not in c.lower():
+                sell_stages[0]["condition"] = (
+                    c + " — max(structural invalidation, short-term horizon stop when present)"
+                )
         except (TypeError, ValueError):
             pass
 
