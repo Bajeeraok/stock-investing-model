@@ -134,6 +134,7 @@ export function TickerDetailModal({
 
   useEffect(() => {
     if (!ticker) return;
+    setModalTab("overview");
     setLoading(true);
     setError(null);
     setConfidence(null);
@@ -227,7 +228,7 @@ export function TickerDetailModal({
             ))}
             </div>
             <p className="text-center text-[11px] text-slate-500 px-2 py-1.5 border-t border-slate-800">
-              Overview = decision &amp; bands · Roadmaps = timeline · Details = ML, scenarios &amp; fundamentals
+              Overview: today&apos;s takeaway · Roadmaps: prices &amp; steps to follow · Details: background, models, and how the stock has performed
             </p>
           </div>
         )}
@@ -251,55 +252,18 @@ export function TickerDetailModal({
                   className="text-xs text-slate-500 border border-slate-600/80 bg-slate-800/40 rounded-lg px-3 py-2 mb-3 leading-snug"
                   title={detail.fundamentals_snapshot.detail}
                 >
-                  <span className="text-amber-400/90 font-medium">{detail.fundamentals_snapshot.short_label}:</span>{" "}
-                  Valuation metrics use the latest data vendor snapshot at load — not restated point-in-time history. Fair value and PE help context; they are not a causal backtest of fundamentals.
+                  <span className="text-amber-400/90 font-medium">Note:</span>{" "}
+                  Fair value and valuation numbers reflect the latest available data, not a historical snapshot. Treat them as helpful context, not a precise calculation.
                 </p>
               )}
-              {/* Quick reference – collapsible so modal has less vertical scroll */}
-              <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden mb-4">
-                <button
-                  type="button"
-                  onClick={() => setQuickRefOpen((o) => !o)}
-                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-emerald-500/10 transition-colors"
-                >
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
-                    <HelpCircle className="h-4 w-4 shrink-0" />
-                    Quick reference – What each metric means
-                  </h3>
-                  {quickRefOpen ? (
-                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
-                  )}
-                </button>
-                {quickRefOpen && (
-                  <div className="px-4 pb-4 pt-0 border-t border-emerald-500/20">
-                    <ul className="space-y-1.5 text-sm text-slate-300 list-disc list-inside columns-1 sm:columns-2 gap-x-4">
-                      <li><span className="font-medium text-slate-200">Price vs MAs:</span> Price {'>'} MA50 {'>'} MA200 = uptrend; below = downtrend.</li>
-                      <li><span className="font-medium text-slate-200">MA20/50/200:</span> Short/medium/long trend. Above = bullish.</li>
-                      <li><span className="font-medium text-emerald-400">Buy:</span> Suggested add level (e.g. pullback to MA50).</li>
-                      <li><span className="font-medium text-red-400">Sell:</span> Trim/exit when overbought or score weak.</li>
-                      <li><span className="font-medium text-amber-400">Support:</span> MA20; break below = caution.</li>
-                      <li><span className="font-medium text-slate-200">Position size:</span> Reduce when guidelines show elevated risk.</li>
-                      <li><span className="font-medium text-amber-400">Crowded Long/Short:</span> CFTC specs extreme; reversal risk.</li>
-                      <li><span className="font-medium text-slate-200">Macro regime:</span> Risk-On vs Risk-Off; affects sizing.</li>
-                      <li><span className="font-medium text-slate-200">Rotation risk:</span> High = tech stepped down (ADD→HOLD).</li>
-                      <li><span className="font-medium text-slate-200">Short/Med/Long:</span> ~1 mo / ~3–6 mo / ~12–18 mo view.</li>
-                      <li><span className="font-medium text-slate-200">Vol, Drawdown 52w, 52w range:</span> Volume vs avg; % off high; low–high.</li>
-                      <li><span className="font-medium text-slate-200">Dividend, Beta, vs Market:</span> Yield; volatility vs SPY; outperformance.</li>
-                    </ul>
-                  </div>
-                )}
-              </section>
-
               {detail.cross_asset && (detail.cross_asset.badges?.length ?? 0) > 0 && (
                 <div className="flex flex-wrap items-center gap-2 mb-4">
-                  <span className="text-xs text-slate-500">Macro sensitivity:</span>
+                  <span className="text-xs text-slate-500">Tends to move with:</span>
                   {detail.cross_asset.badges.map((b) => (
                     <span
                       key={b}
                       className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-300"
-                      title="60d return correlation vs GLD / UUP / ^VIX (|ρ|≥0.25)"
+                      title="How this stock has tended to move with gold, the U.S. dollar, and the fear gauge (VIX) over the last ~60 trading days"
                     >
                       {b}
                     </span>
@@ -315,9 +279,9 @@ export function TickerDetailModal({
                 >
                   <Zap className="h-5 w-5 text-amber-300 shrink-0" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-amber-100">Stage 3 playbook active</p>
+                    <p className="text-sm font-semibold text-amber-100">Possible change in market mood</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      Regime-shift setup is live in the conditional playbook — see Details for model confidence and full scenarios.
+                      Our read suggests the backdrop for stocks may be shifting. Open Details for the full breakdown.
                     </p>
                   </div>
                   <ChevronRight className="h-5 w-5 text-amber-400/80 shrink-0" aria-hidden />
@@ -350,6 +314,43 @@ export function TickerDetailModal({
                   </button>
                 </section>
               )}
+
+              {/* Quick reference – at bottom so it doesn't clutter the primary decision view */}
+              <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setQuickRefOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-emerald-500/10 transition-colors"
+                >
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-emerald-400">
+                    <HelpCircle className="h-4 w-4 shrink-0" />
+                    Terms explained
+                  </h3>
+                  {quickRefOpen ? (
+                    <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" aria-hidden />
+                  )}
+                </button>
+                {quickRefOpen && (
+                  <div className="px-4 pb-4 pt-0 border-t border-emerald-500/20">
+                    <ul className="space-y-1.5 text-sm text-slate-300 list-disc list-inside columns-1 sm:columns-2 gap-x-4">
+                      <li><span className="font-medium text-slate-200">Price vs averages:</span> Above the 50- and 200-day lines usually means a stronger uptrend; below usually means weaker.</li>
+                      <li><span className="font-medium text-slate-200">20 / 50 / 200-day lines:</span> Short-, medium-, and long-term average price—often used as support or resistance.</li>
+                      <li><span className="font-medium text-emerald-400">Add / buy zone:</span> A price area where adding shares may make sense (for example after a dip to an average).</li>
+                      <li><span className="font-medium text-red-400">Trim / take profits:</span> A zone where taking some profit or cutting size may make sense.</li>
+                      <li><span className="font-medium text-amber-400">Support:</span> A level where price has tended to hold; a clean break below can mean extra caution.</li>
+                      <li><span className="font-medium text-slate-200">Position size:</span> Smaller size when risk flags show up.</li>
+                      <li><span className="font-medium text-amber-400">Crowded bets:</span> When many traders are leaning the same way, reversals can happen.</li>
+                      <li><span className="font-medium text-slate-200">Risk-on vs risk-off:</span> Whether markets broadly favor stocks vs safer assets—helps with how much to invest.</li>
+                      <li><span className="font-medium text-slate-200">Sector rotation risk:</span> When money is moving out of a group (e.g. tech), ratings can soften.</li>
+                      <li><span className="font-medium text-slate-200">Near term / medium / long:</span> About the next month · about 3–6 months · about a year or more.</li>
+                      <li><span className="font-medium text-slate-200">Volume, drop from high, yearly range:</span> Trading activity vs normal; how far price is under the 52-week high; high–low of the past year.</li>
+                      <li><span className="font-medium text-slate-200">Dividend, volatility vs market, vs S&amp;P:</span> Income from dividends; how jumpy the stock is vs the S&amp;P 500; return vs the index.</li>
+                    </ul>
+                  </div>
+                )}
+              </section>
                 </>
               )}
 
@@ -374,385 +375,36 @@ export function TickerDetailModal({
               {/* ── Details tab: Confidence, signals, targets, thesis, etc. ── */}
               {modalTab === "details" && (
                 <>
-              {/* Rule-based technical scores (Details only — Overview focuses on investor summary) */}
-              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
-                    <BarChart3 className="h-4 w-4 text-emerald-500" />
-                    Technical signal strength
-                  </h3>
-                  <p className="text-slate-500 text-xs mb-3">
-                    Rule-based (0–100 strength, not probability). Composite = 50% trend + 30% RSI + 20% MACD.
-                    For calibrated probability use 7-layer confidence below.
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    {detail.score_breakdown.trend != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Trend</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.rsi != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">RSI</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.macd != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">MACD</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.composite != null && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Composite</p>
-                        <p className="font-mono font-semibold text-emerald-400">
-                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {confidence && playbookStage3 && (
-                <section
-                  className="rounded-xl border border-amber-500/45 bg-gradient-to-br from-amber-500/12 to-slate-900/40 p-4 space-y-2"
-                  aria-label="Conditional playbook stage 3 active"
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 rounded-lg bg-amber-500/20 p-1.5 border border-amber-500/35">
-                      <Zap className="h-4 w-4 text-amber-300 shrink-0" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-sm font-semibold text-amber-100">
-                        Conditional playbook: Stage 3 active
-                      </p>
-                      <p className="text-xs text-amber-200/90 leading-snug">
-                        <span className="font-medium text-amber-100">{playbookStage3.name}</span>
-                        {" — "}
-                        {playbookStage3.action}
-                      </p>
-                      {regimeShift && (
-                        <p className="text-[11px] text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
-                          Regime shift outlook:{" "}
-                          <span className="font-mono font-semibold text-amber-300/95">
-                            {regimeShift.shift_probability.toFixed(0)}%
-                          </span>{" "}
-                          probability of a shift within {regimeShift.days_estimate}
-                          {regimeShift.label === "WATCH_CLOSELY" && (
-                            <span className="text-amber-400/90"> · watch closely</span>
-                          )}
-                          . This is the key near-term setup — read model confidence below as supporting context, not the only headline.
-                        </p>
-                      )}
-                      {!regimeShift && (
-                        <p className="text-[11px] text-slate-500 pt-1">
-                          Full scenario list is in the confidence card below (Conditional Playbook).
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
-              {confidence ? (
-                <ConfidenceBreakdownSafe data={confidence} />
-              ) : (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
-                  <Activity className="h-4 w-4 shrink-0" />
-                  <span>Loading ML confidence breakdown…</span>
-                </div>
-              )}
-
-              {/* ── Unified Signal Engine (regime + pattern + momentum) ─ */}
-              {unified ? (
-                <PatternSignalCardSafe data={unified} />
-              ) : (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
-                  <Activity className="h-4 w-4 shrink-0" />
-                  <span>Loading pattern signal engine…</span>
-                </div>
-              )}
-
-              {/* ── Price Targets & Scenario Analysis ──────────────────── */}
-              {priceTargets ? (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
-                  <PriceTargetsPanel data={priceTargets} hideHorizonZones={!!detail.investor_summary} />
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
-                  <Activity className="h-4 w-4 shrink-0" />
-                  <span>Computing price targets &amp; scenarios…</span>
-                </div>
-              )}
-
-              {/* Price vs MAs — one line (grid was redundant with Overview bands) */}
-              {(detail.current_price != null || detail.ma20 != null || detail.ma50 != null || detail.ma200 != null) && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">
-                    <BarChart3 className="h-4 w-4 text-emerald-500" />
-                    Price vs moving averages
-                  </h3>
-                  <p className="text-sm text-slate-200 font-mono flex flex-wrap gap-x-3 gap-y-1">
-                    {detail.current_price != null && (
-                      <span><span className="text-slate-500 font-sans text-xs mr-1">Spot</span>${detail.current_price.toFixed(2)}</span>
-                    )}
-                    {detail.ma20 != null && (
-                      <span><span className="text-slate-500 font-sans text-xs mr-1">MA20</span>${detail.ma20.toFixed(2)}</span>
-                    )}
-                    {detail.ma50 != null && (
-                      <span><span className="text-slate-500 font-sans text-xs mr-1">MA50</span>${detail.ma50.toFixed(2)}</span>
-                    )}
-                    {detail.ma200 != null && (
-                      <span><span className="text-slate-500 font-sans text-xs mr-1">MA200</span>${detail.ma200.toFixed(2)}</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-2">
-                    Price above MA50 &amp; MA200 → stronger uptrend; below → weaker. Same context as Overview entry zones.
-                  </p>
-                </section>
-              )}
-
-              {/* Target bands — only when no investor summary (otherwise ST/MT/LT are in Overview + scenarios below) */}
-              {!detail.investor_summary && (detail.st_band || detail.mt_band || detail.lt_band) && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
-                    <TrendingUp className="h-4 w-4 text-emerald-500" />
-                    Target price bands (context, not promises)
-                  </h3>
-                  <div className="space-y-4 text-sm">
-                    {detail.st_band && (
-                      <div>
-                        <p className="font-medium text-slate-300 mb-1">Short-term (days–weeks)</p>
-                        {detail.st_checkpoints && detail.st_checkpoints.length > 0 ? (
-                          <p className="text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
-                            {detail.st_checkpoints.map((p, i) => (
-                              <span key={i} className={i === 0 ? "text-amber-400" : i === detail.st_checkpoints!.length - 1 ? "text-emerald-400" : "text-slate-500"}>
-                                ${p.toFixed(2)}{i < (detail.st_checkpoints!.length - 1) ? " ·" : ""}
-                              </span>
-                            ))}
-                          </p>
-                        ) : (
-                          <p className="text-slate-400">
-                            Stop: ${detail.st_band.low.toFixed(2)} – Target: ${detail.st_band.high.toFixed(2)}
-                            {detail.st_target_confidence_pct != null && (
-                              <span className="text-slate-500 text-sm ml-1">(conf: {detail.st_target_confidence_pct}% over 20d)</span>
-                            )}
-                          </p>
-                        )}
-                        <p className="text-sm text-slate-500 mt-0.5">ATR-based; MA20/swing context. Confidence from historical hit rates under similar conditions; not a guarantee.</p>
-                        {detail.st_level_hit === "target" && (
-                          <p className="text-xs text-emerald-400 mt-0.5">Target hit — bands trailed up (stop locked at prior target)</p>
-                        )}
-                        {detail.st_level_hit === "stop" && (
-                          <p className="text-sm text-amber-400 mt-0.5">Stop hit — bands recomputed from current price</p>
-                        )}
-                      </div>
-                    )}
-                    {detail.mt_band && (
-                      <div>
-                        <p className="font-medium text-slate-300 mb-1">Medium-term (months)</p>
-                        {detail.mt_checkpoints && detail.mt_checkpoints.length > 0 ? (
-                          <p className="text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
-                            {detail.mt_checkpoints.map((p, i) => (
-                              <span key={i} className={i === 0 ? "text-amber-400" : i === detail.mt_checkpoints!.length - 1 ? "text-emerald-400" : "text-slate-500"}>
-                                ${p.toFixed(2)}{i < (detail.mt_checkpoints!.length - 1) ? " ·" : ""}
-                              </span>
-                            ))}
-                          </p>
-                        ) : (
-                          <p className="text-slate-400">
-                            Low: ${detail.mt_band.low.toFixed(2)} – High: ${detail.mt_band.high.toFixed(2)}
-                            {detail.mt_target_confidence_pct != null && (
-                              <span className="text-slate-500 text-sm ml-1">(conf: {detail.mt_target_confidence_pct}% over 6mo)</span>
-                            )}
-                          </p>
-                        )}
-                        <p className="text-sm text-slate-500 mt-0.5">Regime + 6m volatility band</p>
-                      </div>
-                    )}
-                    {(detail.lt_band || detail.st_band || detail.mt_band) && (
-                      <div>
-                        <p className="font-medium text-slate-300 mb-1">Long-term (1–3+ yr)</p>
-                        {detail.lt_band ? (
-                          <>
-                            {detail.lt_scenarios && (
-                              <p className="text-slate-400 mb-1">
-                                <span className="text-red-400">Bear</span> ${detail.lt_scenarios.bear.toFixed(2)}
-                                {" · "}
-                                <span className="text-slate-300">Base</span> ${detail.lt_scenarios.base.toFixed(2)}
-                                {" · "}
-                                <span className="text-emerald-400">Bull</span> ${detail.lt_scenarios.bull.toFixed(2)}
-                              </p>
-                            )}
-                            {detail.lt_checkpoints && detail.lt_checkpoints.length > 0 ? (
-                              <p className="text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
-                                {detail.lt_checkpoints.map((p, i) => (
-                                  <span key={i} className={i === 0 ? "text-amber-400" : i === detail.lt_checkpoints!.length - 1 ? "text-emerald-400" : "text-slate-500"}>
-                                    ${p.toFixed(2)}{i < (detail.lt_checkpoints!.length - 1) ? " ·" : ""}
-                                  </span>
-                                ))}
-                              </p>
-                            ) : (
-                              <p className="text-slate-400">
-                                Low: ${detail.lt_band.low.toFixed(2)} – High: ${detail.lt_band.high.toFixed(2)}
-                              </p>
-                            )}
-                            {detail.lt_band_low_confidence && (
-                              <span className="text-amber-400 text-sm">(low confidence – high analyst dispersion)</span>
-                            )}
-                            {detail.street_vs_model && (
-                              <p className="text-sm text-slate-400 mt-2">
-                                Street: ${detail.street_vs_model.street_low.toFixed(1)}–${detail.street_vs_model.street_high.toFixed(1)}
-                                {" · "}
-                                Model vs Street: low {detail.street_vs_model.delta_low_pct >= 0 ? "+" : ""}{detail.street_vs_model.delta_low_pct}%, high {detail.street_vs_model.delta_high_pct >= 0 ? "+" : ""}{detail.street_vs_model.delta_high_pct}%
-                                {detail.street_vs_model.model_more_bullish && (
-                                  <span className="text-emerald-400"> · model more bullish</span>
-                                )}
-                              </p>
-                            )}
-                            <p className="text-sm text-slate-500 mt-0.5">
-                              {["GLD", "SLV", "IAU", "USO", "GDX", "GDXJ"].includes(detail.ticker) || detail.sector === "Commodities"
-                                ? "Price band from analyst consensus and volatility (no P/E — commodity ETF). Bear level uses 10+yr stress when available."
-                                : "Fair value (EPS × P/E) blended with analyst consensus. Bear level uses 10+yr stress drawdown when available."}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-slate-500 text-base">Not available — requires analyst consensus or forward EPS (FMP)</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-400 mt-3 border-t border-slate-700/50 pt-3">
-                    Use ST band for trades up to ~1 month, MT band for 3–6 months; LT is 1–3+ years.
-                  </p>
-                </section>
-              )}
-
-              {/* Price-level hints + horizon suggestions (single section — was two) */}
-              {((detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support)) ||
-                detail.short_suggestion || detail.medium_suggestion || detail.long_suggestion) && (
-                <section className="bg-slate-800/40 border border-slate-700/80 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
-                    <TrendingUp className="h-4 w-4 text-emerald-500" />
-                    Actions &amp; reasoning
-                  </h3>
-                  {detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support) && (
-                    <div className="space-y-2 text-sm border-b border-slate-700/50 pb-3 mb-3">
-                      <p className="text-xs text-slate-500 uppercase tracking-wide">Price levels (rule-based; not model confidence)</p>
-                      <p className="text-[11px] text-slate-500 leading-snug">
-                        Technical add/trim zones use momentum/MA rules. Use <span className="text-slate-400">Model confidence</span> in the breakdown above as the primary action gauge — it can disagree with these levels by design.
-                      </p>
-                      {detail.price_reasoning.buy && (
-                        <p className="text-slate-300">
-                          <span className="text-emerald-400 font-medium">Technical add level:</span> {detail.price_reasoning.buy}
-                        </p>
-                      )}
-                      {detail.price_reasoning.sell && (
-                        <p className="text-slate-300">
-                          <span className="text-red-400 font-medium">Technical trim level:</span> {detail.price_reasoning.sell}
-                        </p>
-                      )}
-                      {detail.price_reasoning.support && (
-                        <p className="text-slate-300">
-                          <span className="text-amber-400 font-medium">Support:</span> {detail.price_reasoning.support}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {(detail.short_suggestion || detail.medium_suggestion || detail.long_suggestion) && (
-                    <div className="space-y-3">
-                      <p className="text-xs text-slate-500 uppercase tracking-wide">Horizon signals</p>
-                    {detail.short_suggestion && (
-                      <div className="bg-slate-800/50 rounded-lg p-3">
-                        <span className={clsx(
-                          "font-medium",
-                          detail.short_suggestion.includes("ADD") && "text-emerald-400",
-                          detail.short_suggestion.includes("TRIM") && "text-red-400",
-                          detail.short_suggestion === "HOLD" && "text-slate-300"
-                        )}>
-                          Short (~1 mo): {detail.short_suggestion}
-                        </span>
-                        {detail.short_reason && (
-                          <p className="text-sm text-slate-400 mt-1">{detail.short_reason}</p>
-                        )}
-                      </div>
-                    )}
-                    {detail.medium_suggestion && (
-                      <div className="bg-slate-800/50 rounded-lg p-3">
-                        <span className={clsx(
-                          "font-medium",
-                          detail.medium_suggestion.includes("ADD") && "text-emerald-400",
-                          detail.medium_suggestion.includes("TRIM") && "text-red-400",
-                          detail.medium_suggestion === "HOLD" && "text-slate-300"
-                        )}>
-                          Medium (~3–6 mo): {detail.medium_suggestion}
-                        </span>
-                        {detail.medium_reason && (
-                          <p className="text-sm text-slate-400 mt-1">{detail.medium_reason}</p>
-                        )}
-                      </div>
-                    )}
-                    {detail.long_suggestion && (
-                      <div className="bg-slate-800/50 rounded-lg p-3">
-                        <span className={clsx(
-                          "font-medium",
-                          detail.long_suggestion.includes("ADD") && "text-emerald-400",
-                          detail.long_suggestion.includes("TRIM") && "text-red-400",
-                          detail.long_suggestion === "HOLD" && "text-slate-300"
-                        )}>
-                          Long (~12–18 mo): {detail.long_suggestion}
-                        </span>
-                        {detail.long_reason && (
-                          <p className="text-sm text-slate-400 mt-1">{detail.long_reason}</p>
-                        )}
-                      </div>
-                    )}
-                    </div>
-                  )}
-                </section>
-              )}
-
-              {/* Thesis */}
+              {/* ── 1. Story & catalysts (plain context before models) ─────── */}
               {(detail.thesis || detail.exit_condition) && (
                 <section>
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-2">
                     <FileText className="h-4 w-4" />
-                    Thesis
+                    Why we&apos;re watching this name
                   </h3>
                   <div className="bg-slate-800/50 rounded-lg p-4 text-base text-slate-300 space-y-2">
                     {detail.thesis && <p>{detail.thesis}</p>}
                     {detail.exit_condition && (
                       <p className="text-amber-400/90">
-                        <span className="text-slate-400">Exit when:</span> {detail.exit_condition}
+                        <span className="text-slate-400">Sell or rethink if:</span> {detail.exit_condition}
                       </p>
                     )}
                     {!detail.thesis && !detail.exit_condition && (
-                      <p className="text-slate-500 italic">No thesis. Add in data/theses.yaml or via add_thesis.py</p>
+                      <p className="text-slate-500 italic">No written thesis yet. Add in data/theses.yaml or via add_thesis.py</p>
                     )}
                   </div>
                 </section>
               )}
 
-              {/* Earnings: next report + history in one place */}
               {(detail.earnings || (detail.earnings_history?.history?.length ?? 0) > 0) && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
                     <Calendar className="h-4 w-4 text-emerald-500" />
-                    Earnings
+                    Earnings calendar
                   </h3>
                   {detail.earnings && (
                     <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 text-sm text-amber-200 mb-3">
-                      <span className="text-slate-400 text-xs uppercase tracking-wide mr-2">Next</span>
+                      <span className="text-slate-400 text-xs mr-2">Next report</span>
                       {detail.earnings.date}
                       {detail.earnings.days_until != null && (
                         <span className="text-amber-400/80 ml-2">
@@ -763,16 +415,16 @@ export function TickerDetailModal({
                   )}
                   {detail.earnings_history && (detail.earnings_history.history?.length ?? 0) > 0 && (
                     <>
-                  <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Recent quarters</p>
+                  <p className="text-xs text-slate-500 mb-1">Recent quarters vs expectations</p>
                   <p className="text-slate-400 text-xs mb-2">{detail.earnings_history.summary}</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-left text-slate-500">
                           <th className="pr-3 py-1">Quarter</th>
-                          <th className="pr-3 py-1">Actual</th>
-                          <th className="pr-3 py-1">Estimate</th>
-                          <th className="py-1">Beat/Miss</th>
+                          <th className="pr-3 py-1">Reported</th>
+                          <th className="pr-3 py-1">Expected</th>
+                          <th className="py-1">Surprise</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -798,22 +450,25 @@ export function TickerDetailModal({
                 </section>
               )}
 
-              {/* Benchmark comparison */}
-              <section>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-1">
-                  <BarChart3 className="h-4 w-4" />
-                  Performance vs Benchmarks
-                </h3>
-                <p className="text-xs text-slate-500 mb-3">SPY = market; sector column = {detail.sector_etf}. Peers table follows.</p>
-                <div className="rounded-lg border border-slate-700 overflow-hidden">
+              {/* Returns: market + sector + peers in one narrative block */}
+              <section className="space-y-4">
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-1">
+                    <BarChart3 className="h-4 w-4" />
+                    How the stock has performed
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-3">
+                    &ldquo;Market&rdquo; is the broad U.S. market (S&amp;P 500, ticker SPY). &ldquo;Sector&rdquo; is {detail.sector_etf_name || "the sector ETF"} ({detail.sector_etf}). &ldquo;Extra vs market&rdquo; is this stock&apos;s return minus the market for the same period.
+                  </p>
+                  <div className="rounded-lg border border-slate-700 overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-800/80 text-left text-slate-400">
                         <th className="px-4 py-2 font-medium">Period</th>
                         <th className="px-4 py-2 font-medium text-emerald-400">{detail.ticker}</th>
-                        <th className="px-4 py-2 font-medium">SPY (Market)</th>
-                        <th className="px-4 py-2 font-medium">{detail.sector_etf_name}</th>
-                        <th className="px-4 py-2 font-medium text-slate-500">vs Market</th>
+                        <th className="px-4 py-2 font-medium">Market (SPY)</th>
+                        <th className="px-4 py-2 font-medium">Sector</th>
+                        <th className="px-4 py-2 font-medium text-slate-500">Extra vs market</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -854,14 +509,14 @@ export function TickerDetailModal({
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
-              </section>
 
-              {/* Peer comparison */}
-              {(detail.peer_returns?.length ?? 0) > 0 && (
-                <section>
-                  <h3 className="text-sm font-semibold text-slate-300 mb-2">Top Peers ({detail.industry || detail.sector || "same sector"})</h3>
-                  <div className="rounded-lg border border-slate-700 overflow-hidden">
+                {(detail.peer_returns?.length ?? 0) > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-300 mb-2">Similar companies (for context)</h4>
+                    <p className="text-xs text-slate-500 mb-2">{detail.industry || detail.sector || "Peers in the same area"} — returns over the same windows. Your ticker is in the table above.</p>
+                    <div className="rounded-lg border border-slate-700 overflow-hidden">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-slate-800/80 text-left text-slate-400">
@@ -872,16 +527,6 @@ export function TickerDetailModal({
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-t border-slate-700/50 bg-emerald-500/5">
-                          <td className="px-4 py-2 font-mono font-medium text-emerald-400">{detail.ticker}</td>
-                          {periods.map((p) => (
-                            <td key={p} className="px-4 py-2">
-                              <span className={detail.returns[p] != null ? (detail.returns[p]! >= 0 ? "text-emerald-400" : "text-red-400") : "text-slate-500"}>
-                                {detail.returns[p] != null ? `${detail.returns[p]! >= 0 ? "+" : ""}${detail.returns[p]}%` : "-"}
-                              </span>
-                            </td>
-                          ))}
-                        </tr>
                         {detail.peer_returns.map((pr) => (
                           <tr key={pr.ticker} className="border-t border-slate-700/50">
                             <td className="px-4 py-2 font-mono text-slate-300">
@@ -905,17 +550,366 @@ export function TickerDetailModal({
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
-                  <p className="text-sm text-slate-500 mt-2">
-                    Compare vs industry ETF ({detail.sector_etf}) and peers to gauge relative strength.
+                )}
+              </section>
+
+              {confidence && playbookStage3 && (
+                <section
+                  className="rounded-xl border border-amber-500/45 bg-gradient-to-br from-amber-500/12 to-slate-900/40 p-4 space-y-2"
+                  aria-label="Special playbook step active"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 rounded-lg bg-amber-500/20 p-1.5 border border-amber-500/35">
+                      <Zap className="h-4 w-4 text-amber-300 shrink-0" />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold text-amber-100">
+                        Special playbook step is active
+                      </p>
+                      <p className="text-xs text-amber-200/90 leading-snug">
+                        <span className="font-medium text-amber-100">{playbookStage3.name}</span>
+                        {" — "}
+                        {playbookStage3.action}
+                      </p>
+                      {regimeShift && (
+                        <p className="text-[11px] text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
+                          Chance the market backdrop changes meaningfully in about {regimeShift.days_estimate}:{" "}
+                          <span className="font-mono font-semibold text-amber-300/95">
+                            {regimeShift.shift_probability.toFixed(0)}%
+                          </span>
+                          {regimeShift.label === "WATCH_CLOSELY" && (
+                            <span className="text-amber-400/90"> — worth watching closely</span>
+                          )}
+                          . Use the confidence section below as supporting context, not the only thing you read.
+                        </p>
+                      )}
+                      {!regimeShift && (
+                        <p className="text-[11px] text-slate-500 pt-1">
+                          Full scenario list is in the confidence card below under the playbook section.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
+              {confidence ? (
+                <ConfidenceBreakdownSafe data={confidence} />
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Loading full confidence model…</span>
+                </div>
+              )}
+
+              {/* ── Unified Signal Engine (regime + pattern + momentum) ─ */}
+              {unified ? (
+                <PatternSignalCardSafe data={unified} />
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Loading chart-pattern readout…</span>
+                </div>
+              )}
+
+              {/* ── Price Targets & Scenario Analysis ──────────────────── */}
+              {priceTargets ? (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
+                  <PriceTargetsPanel data={priceTargets} hideHorizonZones={!!detail.investor_summary} />
+                </div>
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Computing price ranges &amp; scenarios…</span>
+                </div>
+              )}
+
+              {/* Simple rule-based momentum (secondary to ML confidence above) */}
+              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
+                    <BarChart3 className="h-4 w-4 text-emerald-500" />
+                    Quick momentum check (rules, not odds)
+                  </h3>
+                  <p className="text-slate-500 text-xs mb-3">
+                    These are 0–100 rule scores (not win probabilities). For odds and sizing, rely on the confidence block above.
+                    The blended number is about 50% trend, 30% how &ldquo;stretched&rdquo; the move is, and 20% momentum shift.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    {detail.score_breakdown.trend != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Trend strength</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.rsi != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Stretched vs normal</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.macd != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Momentum shift</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.composite != null && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Blended</p>
+                        <p className="font-mono font-semibold text-emerald-400">
+                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* Spot vs averages — skip when price-targets panel already shows MA lines */}
+              {!priceTargets && (detail.current_price != null || detail.ma20 != null || detail.ma50 != null || detail.ma200 != null) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">
+                    <BarChart3 className="h-4 w-4 text-emerald-500" />
+                    Price vs key averages
+                  </h3>
+                  <p className="text-sm text-slate-200 font-mono flex flex-wrap gap-x-3 gap-y-1">
+                    {detail.current_price != null && (
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">Last price</span>${detail.current_price.toFixed(2)}</span>
+                    )}
+                    {detail.ma20 != null && (
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">20-day avg</span>${detail.ma20.toFixed(2)}</span>
+                    )}
+                    {detail.ma50 != null && (
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">50-day avg</span>${detail.ma50.toFixed(2)}</span>
+                    )}
+                    {detail.ma200 != null && (
+                      <span><span className="text-slate-500 font-sans text-xs mr-1">200-day avg</span>${detail.ma200.toFixed(2)}</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2">
+                    When price sits above the 50- and 200-day averages, the trend is usually stronger; below both often means a weaker setup. (Also covered in Overview when entry zones are shown.)
                   </p>
                 </section>
               )}
 
+              {/* Target bands — only when no investor summary (otherwise ST/MT/LT are in Overview + scenarios below) */}
+              {!detail.investor_summary && (detail.st_band || detail.mt_band || detail.lt_band) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                    <TrendingUp className="h-4 w-4 text-emerald-500" />
+                    Target price bands (context, not promises)
+                  </h3>
+                  <div className="space-y-4 text-sm">
+                    {detail.st_band && (
+                      <div>
+                        <p className="font-medium text-slate-300 mb-1">Short-term (days–weeks)</p>
+                        {detail.st_checkpoints && detail.st_checkpoints.length > 0 ? (
+                          <p className="text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
+                            {detail.st_checkpoints.map((p, i) => (
+                              <span key={i} className={i === 0 ? "text-amber-400" : i === detail.st_checkpoints!.length - 1 ? "text-emerald-400" : "text-slate-500"}>
+                                ${p.toFixed(2)}{i < (detail.st_checkpoints!.length - 1) ? " ·" : ""}
+                              </span>
+                            ))}
+                          </p>
+                        ) : (
+                          <p className="text-slate-400">
+                            Stop: ${detail.st_band.low.toFixed(2)} – Target: ${detail.st_band.high.toFixed(2)}
+                            {detail.st_target_confidence_pct != null && (
+                              <span className="text-slate-500 text-sm ml-1">(roughly {detail.st_target_confidence_pct}% historical hit rate in similar ~20-day setups)</span>
+                            )}
+                          </p>
+                        )}
+                        <p className="text-sm text-slate-500 mt-0.5">Based on recent volatility and short-term averages—not a price promise. The hit-rate note is from similar past periods.</p>
+                        {detail.st_level_hit === "target" && (
+                          <p className="text-xs text-emerald-400 mt-0.5">Target hit — bands trailed up (stop locked at prior target)</p>
+                        )}
+                        {detail.st_level_hit === "stop" && (
+                          <p className="text-sm text-amber-400 mt-0.5">Stop hit — bands recomputed from current price</p>
+                        )}
+                      </div>
+                    )}
+                    {detail.mt_band && (
+                      <div>
+                        <p className="font-medium text-slate-300 mb-1">Medium-term (months)</p>
+                        {detail.mt_checkpoints && detail.mt_checkpoints.length > 0 ? (
+                          <p className="text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
+                            {detail.mt_checkpoints.map((p, i) => (
+                              <span key={i} className={i === 0 ? "text-amber-400" : i === detail.mt_checkpoints!.length - 1 ? "text-emerald-400" : "text-slate-500"}>
+                                ${p.toFixed(2)}{i < (detail.mt_checkpoints!.length - 1) ? " ·" : ""}
+                              </span>
+                            ))}
+                          </p>
+                        ) : (
+                          <p className="text-slate-400">
+                            Low: ${detail.mt_band.low.toFixed(2)} – High: ${detail.mt_band.high.toFixed(2)}
+                            {detail.mt_target_confidence_pct != null && (
+                              <span className="text-slate-500 text-sm ml-1">(roughly {detail.mt_target_confidence_pct}% historical hit rate in similar ~6-month setups)</span>
+                            )}
+                          </p>
+                        )}
+                        <p className="text-sm text-slate-500 mt-0.5">Blends the market backdrop with a six-month volatility range.</p>
+                      </div>
+                    )}
+                    {(detail.lt_band || detail.st_band || detail.mt_band) && (
+                      <div>
+                        <p className="font-medium text-slate-300 mb-1">Long-term (1–3+ yr)</p>
+                        {detail.lt_band ? (
+                          <>
+                            {detail.lt_scenarios && (
+                              <p className="text-slate-400 mb-1">
+                                <span className="text-red-400">Bear</span> ${detail.lt_scenarios.bear.toFixed(2)}
+                                {" · "}
+                                <span className="text-slate-300">Base</span> ${detail.lt_scenarios.base.toFixed(2)}
+                                {" · "}
+                                <span className="text-emerald-400">Bull</span> ${detail.lt_scenarios.bull.toFixed(2)}
+                              </p>
+                            )}
+                            {detail.lt_checkpoints && detail.lt_checkpoints.length > 0 ? (
+                              <p className="text-slate-400 flex flex-wrap gap-x-2 gap-y-0.5">
+                                {detail.lt_checkpoints.map((p, i) => (
+                                  <span key={i} className={i === 0 ? "text-amber-400" : i === detail.lt_checkpoints!.length - 1 ? "text-emerald-400" : "text-slate-500"}>
+                                    ${p.toFixed(2)}{i < (detail.lt_checkpoints!.length - 1) ? " ·" : ""}
+                                  </span>
+                                ))}
+                              </p>
+                            ) : (
+                              <p className="text-slate-400">
+                                Low: ${detail.lt_band.low.toFixed(2)} – High: ${detail.lt_band.high.toFixed(2)}
+                              </p>
+                            )}
+                            {detail.lt_band_low_confidence && (
+                              <span className="text-amber-400 text-sm">(low confidence – high analyst dispersion)</span>
+                            )}
+                            {detail.street_vs_model && (
+                              <p className="text-sm text-slate-400 mt-2">
+                                Analysts (sell-side range): ${detail.street_vs_model.street_low.toFixed(1)}–${detail.street_vs_model.street_high.toFixed(1)}
+                                {" · "}
+                                Our range vs theirs: low end {detail.street_vs_model.delta_low_pct >= 0 ? "+" : ""}{detail.street_vs_model.delta_low_pct}%, high end {detail.street_vs_model.delta_high_pct >= 0 ? "+" : ""}{detail.street_vs_model.delta_high_pct}%
+                                {detail.street_vs_model.model_more_bullish && (
+                                  <span className="text-emerald-400"> · our model is more optimistic</span>
+                                )}
+                              </p>
+                            )}
+                            <p className="text-sm text-slate-500 mt-0.5">
+                              {["GLD", "SLV", "IAU", "USO", "GDX", "GDXJ"].includes(detail.ticker) || detail.sector === "Commodities"
+                                ? "Price band from analyst consensus and volatility (no P/E — commodity ETF). Bear level uses 10+yr stress when available."
+                                : "Fair value (EPS × P/E) blended with analyst consensus. Bear level uses 10+yr stress drawdown when available."}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-slate-500 text-base">Not available — requires analyst consensus or forward EPS (FMP)</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-400 mt-3 border-t border-slate-700/50 pt-3">
+                    Use the short band for trades up to about a month, the middle band for a few months, and the long band for multi-year planning—not for timing next week&apos;s move.
+                  </p>
+                </section>
+              )}
+
+              {/* Technical price levels + horizon signals (horizon signals hidden when investor_summary covers them) */}
+              {(() => {
+                const hasPriceReasoning = detail.price_reasoning && (detail.price_reasoning.buy || detail.price_reasoning.sell || detail.price_reasoning.support);
+                const showHorizonSignals = !detail.investor_summary && (detail.short_suggestion || detail.medium_suggestion || detail.long_suggestion);
+                if (!hasPriceReasoning && !showHorizonSignals) return null;
+                return (
+                  <section className="bg-slate-800/40 border border-slate-700/80 rounded-xl p-4">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                      <TrendingUp className="h-4 w-4 text-emerald-500" />
+                      {hasPriceReasoning && !showHorizonSignals ? "Rule-based price zones" : "Simple actions by timeframe"}
+                    </h3>
+                    {hasPriceReasoning && (
+                      <div className={clsx("space-y-2 text-sm", showHorizonSignals && "border-b border-slate-700/50 pb-3 mb-3")}>
+                        <p className="text-xs text-slate-500">From chart rules (not the full confidence model)</p>
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                          These add/trim zones follow momentum and average-price rules. Prefer the <span className="text-slate-400">confidence section</span> above for the main buy/sell read—they can disagree on purpose.
+                        </p>
+                        {detail.price_reasoning!.buy && (
+                          <p className="text-slate-300">
+                            <span className="text-emerald-400 font-medium">Where buys often make sense:</span> {detail.price_reasoning!.buy}
+                          </p>
+                        )}
+                        {detail.price_reasoning!.sell && (
+                          <p className="text-slate-300">
+                            <span className="text-red-400 font-medium">Where taking profits often makes sense:</span> {detail.price_reasoning!.sell}
+                          </p>
+                        )}
+                        {detail.price_reasoning!.support && (
+                          <p className="text-slate-300">
+                            <span className="text-amber-400 font-medium">Support to watch:</span> {detail.price_reasoning!.support}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {showHorizonSignals && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-slate-500">By holding period</p>
+                        {detail.short_suggestion && (
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <span className={clsx(
+                              "font-medium",
+                              detail.short_suggestion.includes("ADD") && "text-emerald-400",
+                              detail.short_suggestion.includes("TRIM") && "text-red-400",
+                              detail.short_suggestion === "HOLD" && "text-slate-300"
+                            )}>
+                              Short (~1 mo): {detail.short_suggestion}
+                            </span>
+                            {detail.short_reason && (
+                              <p className="text-sm text-slate-400 mt-1">{detail.short_reason}</p>
+                            )}
+                          </div>
+                        )}
+                        {detail.medium_suggestion && (
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <span className={clsx(
+                              "font-medium",
+                              detail.medium_suggestion.includes("ADD") && "text-emerald-400",
+                              detail.medium_suggestion.includes("TRIM") && "text-red-400",
+                              detail.medium_suggestion === "HOLD" && "text-slate-300"
+                            )}>
+                              Medium (~3–6 mo): {detail.medium_suggestion}
+                            </span>
+                            {detail.medium_reason && (
+                              <p className="text-sm text-slate-400 mt-1">{detail.medium_reason}</p>
+                            )}
+                          </div>
+                        )}
+                        {detail.long_suggestion && (
+                          <div className="bg-slate-800/50 rounded-lg p-3">
+                            <span className={clsx(
+                              "font-medium",
+                              detail.long_suggestion.includes("ADD") && "text-emerald-400",
+                              detail.long_suggestion.includes("TRIM") && "text-red-400",
+                              detail.long_suggestion === "HOLD" && "text-slate-300"
+                            )}>
+                              Long (~12–18 mo): {detail.long_suggestion}
+                            </span>
+                            {detail.long_reason && (
+                              <p className="text-sm text-slate-400 mt-1">{detail.long_reason}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </section>
+                );
+              })()}
+
               {/* Sector-specific (Fix 5): AUM, P/B, ROE for financials; P/S, margins for tech */}
               {detail.sector_specific && Object.keys(detail.sector_specific).length > 0 && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">Sector metrics</h3>
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">Extra numbers for this sector</h3>
                   <div className="flex flex-wrap gap-3 text-sm">
                     {Object.entries(detail.sector_specific).map(([k, v]) => (
                       v != null && (
@@ -932,9 +926,9 @@ export function TickerDetailModal({
               {/* Rate sensitivity (Fix 5): correlation with TLT */}
               {detail.rate_sensitivity && !("error" in detail.rate_sensitivity) && (
                 <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">Rate sensitivity</h3>
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-2">Sensitivity to bond prices (long-term Treasuries)</h3>
                   <p className="text-slate-300 text-sm">
-                    Corr with TLT: <span className="font-mono text-slate-100">{detail.rate_sensitivity.correlation_with_tlt}</span>
+                    Tendency to move with the Treasury bond ETF (TLT): <span className="font-mono text-slate-100">{detail.rate_sensitivity.correlation_with_tlt}</span>
                     {" · "}{detail.rate_sensitivity.interpretation}
                   </p>
                   <p className="text-slate-500 text-xs mt-1">{detail.rate_sensitivity.note}</p>
@@ -945,8 +939,8 @@ export function TickerDetailModal({
               {detail.sanity_errors && detail.sanity_errors.length > 0 && (
                 <section className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
                   <h3 className="flex items-center gap-2 text-base font-semibold text-amber-400 mb-2">Data quality</h3>
-                  <p className="text-sm text-slate-300">Some metrics flagged: {detail.sanity_errors.join(", ")}</p>
-                  <p className="text-xs text-slate-500 mt-1">yield = dividend out of 0–15% range; range_drawdown = price outside 52w; drawdown_extreme = |drawdown| {'>'} 80%; bb_band_order = bear/base/bull inconsistent.</p>
+                  <p className="text-sm text-slate-300">Some numbers looked odd and were flagged: {detail.sanity_errors.join(", ")}</p>
+                  <p className="text-xs text-slate-500 mt-1">Examples: dividend yield outside a normal band; price outside its 52-week range; an extreme drawdown; or bear/base/bull levels that don&apos;t line up.</p>
                 </section>
               )}
 
@@ -1026,8 +1020,8 @@ export function TickerDetailModal({
                     )}
                     {detail.beta != null && (
                       <div>
-                        <p className="font-medium text-slate-200">Beta vs SPY: {detail.beta}</p>
-                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">β {'>'} 1 = more volatile than market; β {'<'} 1 = less. Gold (GLD) often has low/negative beta.</p>
+                        <p className="font-medium text-slate-200">Moves vs the market (beta): {detail.beta}</p>
+                        <p className="text-slate-300 mt-2 text-sm leading-relaxed">Above 1 usually means more jumpy than the S&amp;P 500; below 1 calmer. Gold funds often sit near zero or negative.</p>
                       </div>
                     )}
                     {detail.long_horizon_risk && (

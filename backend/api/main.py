@@ -46,6 +46,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 logger.info("Backend: importing dashboard router...")
 from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2
+from api import eod_scheduler
 
 logger.info("Backend: imports complete.")
 
@@ -119,10 +120,18 @@ def startup():
     if (os.getenv("WARM_DASHBOARD_ON_STARTUP") or "").strip().lower() in ("1", "true", "yes", "on"):
         t = threading.Thread(target=_warm_dashboard_background, name="warm-dashboard", daemon=True)
         t.start()
+    try:
+        eod_scheduler.start()
+    except Exception as e:
+        logger.warning("EOD scheduler failed to start: %s", e)
 
 
 @app.on_event("shutdown")
 def shutdown():
+    try:
+        eod_scheduler.shutdown()
+    except Exception:
+        pass
     try:
         scanner.shutdown_scanner()
     except Exception:

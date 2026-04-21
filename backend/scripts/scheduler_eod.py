@@ -48,13 +48,13 @@ def main() -> None:
         today = now.date()
         if last_run_date == today:
             return
-        last_run_date = today
         print(f"[scheduler_eod] Running EOD snapshot at {now.strftime('%Y-%m-%d %H:%M:%S')} {tz_name}")
         result = run_eod_snapshot_only(config)
         if result.get("error"):
             print(f"[scheduler_eod] ERROR: {result['error']}")
-        else:
-            print(f"[scheduler_eod] Saved {result.get('snapshot_path', '')} (tickers={result.get('tickers_count', 0)}, pruned={result.get('pruned', 0)})")
+            return
+        last_run_date = today
+        print(f"[scheduler_eod] Saved {result.get('snapshot_path', '')} (tickers={result.get('tickers_count', 0)}, pruned={result.get('pruned', 0)})")
 
     print(f"[scheduler_eod] EOD snapshot will run daily at {schedule_time} {tz_name}")
     print("[scheduler_eod] Press Ctrl+C to stop.")

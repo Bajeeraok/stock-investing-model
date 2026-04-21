@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
 
 logger = logging.getLogger("api.dashboard")
@@ -2149,13 +2150,21 @@ def eod_save_from_last_run(snapshot_date: str | None = None):
 
 
 @router.post("/eod/run")
-def run_eod_now(snapshot_date: str | None = None):
+def run_eod_now(
+    snapshot_date: str | None = None,
+    authorization: str | None = Header(None),
+):
     """
     Run EOD snapshot ad-hoc: compute signals and save data/eod/YYYY-MM-DD.json.
     snapshot_date: optional query param (YYYY-MM-DD, e.g. 2026-02-17) to save for that EST date; if omitted, uses today EST.
     Skips if a snapshot for that date already exists (idempotent once per day when no date given).
     May take 1-2 minutes when run. Use for manual trigger or to backfill a day.
+
+    If env EOD_RUN_SECRET is set, require header: Authorization: Bearer <secret>.
     """
+    secret = os.environ.get("EOD_RUN_SECRET", "").strip()
+    if secret and (authorization or "").strip() != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
     from datetime import datetime as _dt
     try:
         from zoneinfo import ZoneInfo

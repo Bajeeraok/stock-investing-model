@@ -1,0 +1,12 @@
+# Example: daily EOD snapshot after US cash equity close (data usually stable by 8pm ET).
+# Adjust path and time to your machine. Times below use the server's local timezone.
+#
+# Install: crontab -e
+# Paste one line (uncomment), fix paths:
+#
+# 0 20 * * 1-5 cd /path/to/stock-investing-model/backend && /path/to/venv/bin/python scripts/run_eod_snapshot.py >> /path/to/logs/eod.log 2>&1
+#
+# Mon–Fri 8:00 PM local — if your server is UTC, use e.g. 0 1 * * 2-6 for ~8pm ET previous US session (verify DST).
+#
+# Minimal log to file:
+# 0 20 * * 1-5 cd /path/to/stock-investing-model/backend && . ../.venv/bin/activate && python scripts/run_eod_snapshot.py >> ~/eod.log 2>&1

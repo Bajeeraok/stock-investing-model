@@ -9,6 +9,13 @@ function fmtPct(p: number | null | undefined) {
   return `${sign}${p.toFixed(2)}%`;
 }
 
+/** CSV / JSON may use "" for missing numbers; Number("") is 0 — treat as absent for display. */
+function hasNumericValue(v: unknown): boolean {
+  if (v == null) return false;
+  if (typeof v === "string" && v.trim() === "") return false;
+  return !Number.isNaN(Number(v));
+}
+
 type MtmPoint = { mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null };
 
 function formatPnlHistory(history: MtmPoint[] | undefined, maxPoints = 6): { short: string; tooltip: string } {
@@ -36,7 +43,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           <p className="text-xs text-slate-500 mt-0.5">
             Entry = live quote when batch/Yahoo prices are available; otherwise last OHLCV bar (same as indicators).
             Outcomes use the first EOD snapshot on or after signal date + N <strong>business</strong> days.
-            <strong> Return</strong> = vs signal entry; <strong>Last mark / daily Δ</strong> = vs prior EOD mark once history exists.
+            <strong> Return</strong> = vs signal entry; <strong>Last mark / daily Δ</strong> = change from <em>yesterday&apos;s</em> end-of-day mark to <em>today&apos;s</em> mark (shows &ldquo;—&rdquo; until two different EOD snapshots exist after you started logging).
             <strong> Bench %</strong> = same-window return for the benchmark (default SPY); <strong>Excess</strong> = your return minus bench (open uses MTM vs entry).
           </p>
         </div>
@@ -170,10 +177,10 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium" title="Latest EOD close used as mark (stored in rolling_entry_price)">
                   Last mark
                 </th>
-                <th className="py-1.5 pr-2 font-medium" title="Dollar change vs previous mark only (empty on first MTM)">
+                <th className="py-1.5 pr-2 font-medium" title="Day-over-day move of the mark: prior EOD close vs latest EOD close. Empty until a second trading day is captured.">
                   Daily Δ$
                 </th>
-                <th className="py-1.5 pr-2 font-medium" title="Percent change vs previous mark only (empty on first MTM)">
+                <th className="py-1.5 pr-2 font-medium" title="Day-over-day % move of the mark. Empty until a second trading day is captured.">
                   Daily Δ%
                 </th>
                 <th className="py-1.5 pr-2 font-medium">P&L history</th>
@@ -224,11 +231,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <td className="py-1.5 pr-2 text-slate-300" title={r.entry_price != null && r.rolling_entry_price != null ? `Signal entry $${Number(r.entry_price).toFixed(2)} → latest mark $${Number(r.rolling_entry_price).toFixed(2)} (total ${fmtPct(100 * (Number(r.rolling_entry_price) - r.entry_price) / r.entry_price)} vs entry)` : undefined}>
                     {r.rolling_entry_price != null ? `$${Number(r.rolling_entry_price).toFixed(2)}` : "—"}
                   </td>
-                  <td className={clsx("py-1.5 pr-2", (Number(r.rolling_pnl) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
-                    {r.rolling_pnl != null ? `$${Number(r.rolling_pnl).toFixed(2)}` : "—"}
+                  <td className={clsx("py-1.5 pr-2", !hasNumericValue(r.rolling_pnl) ? "text-slate-500" : (Number(r.rolling_pnl) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    {hasNumericValue(r.rolling_pnl) ? `$${Number(r.rolling_pnl).toFixed(2)}` : "—"}
                   </td>
-                  <td className={clsx("py-1.5 pr-2", (Number(r.rolling_return_pct) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
-                    {r.rolling_return_pct != null ? fmtPct(Number(r.rolling_return_pct)) : "—"}
+                  <td className={clsx("py-1.5 pr-2", !hasNumericValue(r.rolling_return_pct) ? "text-slate-500" : (Number(r.rolling_return_pct) || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    {hasNumericValue(r.rolling_return_pct) ? fmtPct(Number(r.rolling_return_pct)) : "—"}
                   </td>
                   <td className="py-1.5 pr-2 text-slate-400 max-w-[200px]">
                     {(() => {

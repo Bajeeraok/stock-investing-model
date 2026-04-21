@@ -63,6 +63,8 @@ Optional (API keys – env vars override config.yaml; use these so you don't com
 | Backend | `FINNHUB_API_KEY` | Finnhub recommendations |
 | Backend | `OPENAI_API_KEY` | Chat copilot (gpt-4o-mini) |
 | Backend | `REDIS_URL` | Optional. Use `${{Redis.REDIS_URL}}` to reference Railway Redis. |
+| Backend | `EOD_SCHEDULER_CRON` | Optional. 5-field cron (e.g. `0 20 * * 1-5`) so the API runs a daily EOD snapshot in-process (APScheduler). Unset = no schedule. |
+| Backend | `EOD_SCHEDULER_TZ` | Optional. IANA timezone for that cron (default `America/New_York`). |
 | Web | `NEXT_PUBLIC_API_URL` | Only if you need client-side direct API calls. Server-side rewrites use `BACKEND_API_URL`. |
 
 **Local:** Use `config.yaml`. **Railway:** Set env vars above; they override config. Leave API keys empty in `config.yaml` when deploying if you use env vars.
