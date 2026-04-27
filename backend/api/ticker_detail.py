@@ -639,10 +639,10 @@ def _build_investor_summary(
             )
             forward_pe = _safe_float(fmp_km.get("forwardPE"))
 
+        trailing_eps = _safe_float(info.get("trailingEps"))
         if ttm_pe is None and current_price:
-            eps = _safe_float(info.get("trailingEps"))
-            if eps and eps > 0:
-                ttm_pe = round(current_price / eps, 2)
+            if trailing_eps and trailing_eps > 0:
+                ttm_pe = round(current_price / trailing_eps, 2)
         if ttm_pe is None:
             ttm_pe = _safe_float(info.get("trailingPE"))
         if forward_pe is None:
@@ -738,16 +738,42 @@ def _build_investor_summary(
                 )
                 fair_value = fv_sp
 
-        pe = ttm_pe or forward_pe
         if ttm_pe is not None and ttm_pe > 0:
             ttm_pe_used = ttm_pe
         if forward_pe is not None and forward_pe > 0:
             forward_pe_used = forward_pe
-        if fv_result is None and pe and pe > 0 and margin is not None:
+        # Guardrail: do not treat forward P/E as a TTM P/E substitute for names with
+        # negative trailing earnings. That can produce unrealistically low "fair value"
+        # (e.g. high-growth software names with GAAP-negative EPS).
+        if (
+            fv_result is None
+            and (ttm_pe is None or ttm_pe <= 0)
+            and trailing_eps is not None
+            and trailing_eps <= 0
+            and analyst_target is not None
+            and analyst_target > 0
+        ):
+            fv_result = FairValueResult(
+                fair_value=float(analyst_target),
+                stock_type="growth_no_ttm_earnings",
+                method_used="analyst_consensus_anchor",
+                confidence="Low",
+                discount_pct=round((float(analyst_target) - current_price) / current_price * 100, 1),
+                analyst_target=analyst_target,
+                notes=[
+                    "Trailing EPS is non-positive; skipped PE-based fair value to avoid distorted outputs.",
+                    "Using Yahoo analyst 12m mean as interim fair-value anchor until positive TTM earnings normalize PE math.",
+                ],
+                bear_case=round(float(analyst_target) * 0.75, 2),
+                methodology_summary="Consensus anchor for loss-making growth names (PE model bypassed).",
+            )
+            fair_value = float(analyst_target)
+
+        if fv_result is None and ttm_pe is not None and ttm_pe > 0 and margin is not None:
             _fv_gr = (config.get("fair_value") or {}).get("guardrails")
             fv_result = estimate_fair_value_full(
                 current_price=current_price,
-                ttm_pe=ttm_pe if (ttm_pe is not None and ttm_pe > 0) else (forward_pe or pe),
+                ttm_pe=ttm_pe,
                 sector_pe=sector_pe,
                 revenue_growth_pct=revenue_growth or 10.0,
                 earnings_growth_pct=earnings_growth if earnings_growth is not None else (revenue_growth or 10.0),
@@ -763,6 +789,49 @@ def _build_investor_summary(
                 fair_value = fv_result.fair_value
     except Exception:
         pass
+
+    # Extreme-divergence guardrail (UI safety): when model FV collapses far below
+    # external consensus, anchor to Yahoo 12m mean to avoid obviously broken copy
+    # like "$27 fair value" on liquid mega-cap names.
+    if (
+        fair_value is not None
+        and fair_value > 0
+        and analyst_target_yahoo is not None
+        and analyst_target_yahoo > 0
+        and fair_value < analyst_target_yahoo * 0.25
+    ):
+        _raw_fv = float(fair_value)
+        fair_value = float(analyst_target_yahoo)
+        if fv_result is not None:
+            notes = list(getattr(fv_result, "notes", []) or [])
+            notes.append(
+                "Model fair value was >75% below analyst mean; anchored to Yahoo 12m mean for display safety."
+            )
+            fv_result.notes = notes
+            fv_result.fair_value = fair_value
+            fv_result.discount_pct = round((fair_value - current_price) / current_price * 100, 1)
+            fv_result.bear_case = round(fair_value * 0.75, 2)
+            if getattr(fv_result, "method_used", None):
+                fv_result.method_used = f"{fv_result.method_used} + consensus_floor_override"
+            fv_result.methodology_summary = (
+                f"Consensus floor override: raw model FV ${_raw_fv:.2f} "
+                f"replaced with Yahoo mean ${fair_value:.2f}."
+            )
+        else:
+            fv_result = FairValueResult(
+                fair_value=fair_value,
+                stock_type="consensus_floor_override",
+                method_used="analyst_consensus_floor",
+                confidence="Low",
+                discount_pct=round((fair_value - current_price) / current_price * 100, 1),
+                analyst_target=analyst_target_yahoo,
+                notes=[
+                    "Model fair value was >75% below analyst mean; using Yahoo 12m mean as display floor."
+                ],
+                bear_case=round(fair_value * 0.75, 2),
+                methodology_summary=f"Raw model FV ${_raw_fv:.2f} replaced by consensus floor.",
+            )
+
     # Fallback: LT band high (blends model + analyst consensus)
     if fair_value is None or fair_value <= 0:
         fair_value = _safe_float(response.get("lt_band", {}).get("high")) if isinstance(response.get("lt_band"), dict) else None

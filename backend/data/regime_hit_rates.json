@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "tickers": [
+      "SPY",
+      "QQQ"
+    ],
+    "horizons": [
+      5,
+      20,
+      60
+    ],
+    "snapshots_found": 2,
+    "total_observations": 0,
+    "note": "Horizons are EOD snapshot steps, not calendar days. Refresh monthly: cd backend && python scripts/backtest_regime.py"
+  }
+}
