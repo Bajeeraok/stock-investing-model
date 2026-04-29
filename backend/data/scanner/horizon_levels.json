@@ -507,24 +507,24 @@
   },
   "GLD": {
     "short": {
-      "entry_low": 410.58,
-      "entry_high": 418.91,
-      "stop_loss": 393.91,
-      "target": 443.92,
+      "entry_low": 411.25,
+      "entry_high": 419.6,
+      "stop_loss": 394.55,
+      "target": 444.65,
       "horizon_label": "Short-term"
     },
     "medium": {
-      "entry_low": 410.58,
-      "entry_high": 449.91,
-      "stop_loss": 418.73,
-      "target": 512.27,
+      "entry_low": 411.25,
+      "entry_high": 449.92,
+      "stop_loss": 418.74,
+      "target": 512.28,
       "horizon_label": "Medium-term"
     },
     "long": {
       "entry_low": 370.85,
       "entry_high": 409.89,
       "stop_loss": 378.66,
-      "target": 479.35,
+      "target": 480.14,
       "horizon_label": "Long-term"
     }
   },

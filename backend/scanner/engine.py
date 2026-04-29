@@ -205,6 +205,9 @@ def _bias_prob_range_line(
     regime: str,
     regime_confidence: float | None = None,
     prob_override: float | None = None,
+    earnings_move_pct: float | None = None,
+    earnings_hit_rate: float | None = None,
+    earnings_events: int | None = None,
 ) -> str:
     bias = _bias_from_regime(regime)
     prob = (
@@ -216,7 +219,52 @@ def _bias_prob_range_line(
     exp_move_pct = max(float(atr_pct or 0.0) * 0.65, 0.6)
     lo = float(price) * (1.0 - exp_move_pct / 100.0)
     hi = float(price) * (1.0 + exp_move_pct / 100.0)
+    if earnings_move_pct is not None and earnings_move_pct > 0:
+        e_seg = f"Earnings +/-{float(earnings_move_pct):.1f}%"
+        if earnings_hit_rate is not None and earnings_events is not None and earnings_events > 0:
+            e_seg += f" | Backtest {float(earnings_hit_rate):.0f}% ({int(earnings_events)} evts)"
+        return f"{bias} {prob:.0f}% | {e_seg} | Range ${lo:.2f}–${hi:.2f}"
     return f"{bias} {prob:.0f}% | Range ${lo:.2f}–${hi:.2f}"
+
+
+def _earnings_target_for_alert(
+    ticker: str,
+    snap: MarketSnapshot,
+    state_row: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Best-effort earnings target summary for one-liner alerts.
+    Uses same model output as ticker detail price-targets; caches in retail state row.
+    """
+    st = state_row if isinstance(state_row, dict) else {}
+    cached = st.get("earnings_target_cache")
+    if isinstance(cached, dict):
+        return cached
+    out: dict[str, Any] = {}
+    try:
+        from config_loader import load_config
+        from signals.price_targets import run_price_targets
+
+        pt = run_price_targets(
+            ticker=ticker,
+            market_regime=(snap.regime or "NEUTRAL"),
+            config=load_config(),
+        )
+        et = pt.get("earnings_target") if isinstance(pt, dict) else None
+        if isinstance(et, dict):
+            out = {
+                "expected_move_pct": et.get("expected_move_pct"),
+                "calibration_hit_rate": (
+                    float(et.get("calibration_hit_rate")) * 100.0
+                    if et.get("calibration_hit_rate") is not None
+                    else None
+                ),
+                "backtest_events": et.get("backtest_events") or et.get("historical_events"),
+            }
+    except Exception as e:
+        logger.debug("earnings target summary unavailable for %s: %s", ticker, e)
+    st["earnings_target_cache"] = out
+    return out
 
 
 def _entry_zone_actionable(band_key: str, entry_low: float, entry_high: float, price: float) -> bool:
@@ -449,13 +497,23 @@ def evaluate_retail_alerts(
         # EARNINGS_SOON — only for watchlist
         if enable_earnings and in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS:
             ed = snap.er_days_away
+            et = _earnings_target_for_alert(ticker, snap, st)
+            e_move = et.get("expected_move_pct")
+            e_hit = et.get("calibration_hit_rate")
+            e_n = et.get("backtest_events")
             alerts.append(_build_retail_alert(
                 ticker,
                 AlertType.EARNINGS_SOON,
                 f"{ticker} earnings in {ed} day(s)",
                 f"Reduce size or wait for post-earnings reaction. Earnings in {ed} days.",
                 snap.scan_tier,
-                {"erDaysAway": ed, "price": price},
+                {
+                    "erDaysAway": ed,
+                    "price": price,
+                    "earningsExpectedMovePct": e_move,
+                    "earningsBacktestHitRatePct": e_hit,
+                    "earningsBacktestEvents": e_n,
+                },
                 actionable=(
                     f"Do not open new positions until after earnings (in {ed} days). "
                     f"If you already hold, reduce size or hedge by then. "
@@ -467,6 +525,9 @@ def evaluate_retail_alerts(
                     regime=snap.regime,
                     regime_confidence=snap.regime_confidence,
                     prob_override=snap.ml_prob_short,
+                    earnings_move_pct=float(e_move) if e_move is not None else None,
+                    earnings_hit_rate=float(e_hit) if e_hit is not None else None,
+                    earnings_events=int(e_n) if e_n is not None else None,
                 ),
                 dedupe_extra="earnings",
             ))

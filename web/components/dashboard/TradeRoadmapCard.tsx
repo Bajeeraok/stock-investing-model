@@ -99,6 +99,7 @@ export interface TradeRoadmapData {
     key_level_label?: string;
     model_confidence_pct?: number | null;
     dominant_near_term_action?: string | null;
+    execution_plan_lines?: string[];
   } | null;
   you_are_here?: {
     timeline_key?: string | null;
@@ -121,6 +122,7 @@ export interface TradeRoadmapData {
   } | null;
   action_glossary?: Record<string, string>;
   probabilistic_framing?: string | null;
+  execution_plan_lines?: string[];
 }
 
 const TRADER_FILTER: Record<string, string[]> = {
@@ -445,6 +447,16 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
             <div className="rounded-lg bg-slate-800/80 border border-slate-600/50 px-3 py-2">
               <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Summary for your horizon</p>
               <p className="text-sm text-slate-200">{currentSummary}</p>
+              {((data.execution_plan_lines?.length ?? 0) > 0 || (data.tldr?.execution_plan_lines?.length ?? 0) > 0) && (
+                <ul className="mt-2 space-y-1 text-xs text-slate-300 leading-snug list-disc list-inside border-t border-slate-600/40 pt-2">
+                  {(data.execution_plan_lines && data.execution_plan_lines.length > 0
+                    ? data.execution_plan_lines
+                    : (data.tldr?.execution_plan_lines ?? [])
+                  ).map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              )}
               {data.trader_summary.horizon_note && (
                 <p className="text-[11px] text-slate-500 mt-2 leading-snug border-t border-slate-600/40 pt-2">
                   {data.trader_summary.horizon_note}

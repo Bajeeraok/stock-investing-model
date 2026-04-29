@@ -18,6 +18,7 @@ export interface OneAnswer {
   subline?: string | null;
   verdict: string;
   action_today: string;
+  execution_plan_lines?: string[];
   /** Retail: hold 5–10y vs take profits — education + tie-in to today’s signals */
   hold_vs_trade?: {
     title: string;
@@ -320,6 +321,15 @@ export function InvestorDecisionSummarySection({
       ),
       React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
       one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline),
+      Array.isArray(one_answer.execution_plan_lines) &&
+        one_answer.execution_plan_lines.length > 0 &&
+        React.createElement(
+          "ul",
+          { className: "mt-2 space-y-1 text-xs text-slate-300 leading-snug list-disc list-inside" },
+          one_answer.execution_plan_lines.map((line, i) =>
+            React.createElement("li", { key: i }, line)
+          )
+        ),
       one_answer.hold_vs_trade &&
         React.createElement(
           "div",

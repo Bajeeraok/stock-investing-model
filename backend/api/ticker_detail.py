@@ -1991,6 +1991,104 @@ def _build_trade_roadmap(
     )
 
     dom_action = buy_stages[0].get("when_to_act") if buy_stages else None
+    def _fmt_zone(lo: float | None, hi: float | None) -> str | None:
+        if lo is None or hi is None:
+            return None
+        return f"${float(lo):.2f}-${float(hi):.2f}"
+
+    def _mid(lo: float | None, hi: float | None) -> float | None:
+        if lo is None or hi is None:
+            return None
+        return round((float(lo) + float(hi)) / 2.0, 2)
+
+    def _tight_zone(anchor: float | None, ref_price: float) -> tuple[float, float] | None:
+        if anchor is None or ref_price <= 0:
+            return None
+        half = max(1.25, min(ref_price * 0.005, 4.0))
+        lo = max(0.01, float(anchor) - half)
+        hi = float(anchor) + half
+        return round(lo, 2), round(hi, 2)
+
+    row_today = next((r for r in buy_stages if r.get("timeline_key") == "today"), {}) or {}
+    row_13 = next((r for r in buy_stages if r.get("timeline_key") == "1_3_months"), {}) or {}
+    row_36 = next((r for r in buy_stages if r.get("timeline_key") == "3_6_months"), {}) or {}
+    z_today = _fmt_zone(_safe_float(row_today.get("price_zone_low")), _safe_float(row_today.get("price_zone_high")))
+    z_13 = _fmt_zone(_safe_float(row_13.get("price_zone_low")), _safe_float(row_13.get("price_zone_high")))
+    z_36 = _fmt_zone(_safe_float(row_36.get("price_zone_low")), _safe_float(row_36.get("price_zone_high")))
+    z_13_mid = _mid(_safe_float(row_13.get("price_zone_low")), _safe_float(row_13.get("price_zone_high")))
+    z_36_mid = _mid(_safe_float(row_36.get("price_zone_low")), _safe_float(row_36.get("price_zone_high")))
+
+    execution_plan_lines: list[str] = []
+    starter_anchor = None
+    if _safe_float(row_today.get("price_zone_low")) is not None and _safe_float(row_today.get("price_zone_high")) is not None:
+        rlo = float(_safe_float(row_today.get("price_zone_low")))
+        rhi = float(_safe_float(row_today.get("price_zone_high")))
+        starter_anchor = (
+            float(current_price)
+            if rlo <= float(current_price) <= rhi
+            else rhi
+        )
+    tight_starter = _tight_zone(starter_anchor, float(current_price))
+    if tight_starter is not None:
+        execution_plan_lines.append(
+            f"Scale in, don't all-in at once: start partial near ${tight_starter[0]:.2f}-${tight_starter[1]:.2f}."
+        )
+    elif z_today:
+        execution_plan_lines.append(
+            f"Scale in, don't all-in at once: start partial near {z_today}."
+        )
+
+    lower_add_anchor = None
+    if t2_lo is not None and t2_hi is not None:
+        lower_add_anchor = _mid(t2_lo, t2_hi)
+    elif z_13_mid is not None:
+        lower_add_anchor = z_13_mid
+
+    ma200_zone = _tight_zone(float(ma200), float(current_price)) if ma200 else None
+    if lower_add_anchor is not None and ma200_zone is not None and abs(float(lower_add_anchor) - float(ma200)) > 1.0:
+        execution_plan_lines.append(
+            f"Keep dry powder for lower adds around ${float(lower_add_anchor):.2f} and near ${ma200_zone[0]:.2f}-${ma200_zone[1]:.2f} (MA200 zone)."
+        )
+    elif z_13 and z_36 and z_13 != z_36:
+        execution_plan_lines.append(
+            f"Keep dry powder for lower adds around {z_13} and near {z_36} (core zone)."
+        )
+    elif z_13 and z_36 and z_13 == z_36 and ma200:
+        anchor = z_13_mid if z_13_mid is not None else _safe_float(row_13.get("price_zone_high"))
+        if anchor is not None:
+            if abs(float(anchor) - float(ma200)) < 0.5:
+                if ma200_zone is not None:
+                    execution_plan_lines.append(
+                        f"Keep dry powder for lower adds near ${ma200_zone[0]:.2f}-${ma200_zone[1]:.2f} (MA200/core zone)."
+                    )
+                else:
+                    execution_plan_lines.append(
+                        f"Keep dry powder for lower adds near ${float(ma200):.2f} (MA200/core zone)."
+                    )
+            else:
+                execution_plan_lines.append(
+                    f"Keep dry powder for lower adds around ${float(anchor):.2f} and near ${float(ma200):.2f} (MA200 zone)."
+                )
+        else:
+            execution_plan_lines.append(
+                f"Keep dry powder for lower adds near {z_36} and near ${float(ma200):.2f} (MA200 zone)."
+            )
+    elif z_13_mid is not None and z_36_mid is not None and abs(z_13_mid - z_36_mid) > 0.75:
+        execution_plan_lines.append(
+            f"Keep dry powder for lower adds around ${z_13_mid:.2f} and near ${z_36_mid:.2f} (core zone)."
+        )
+    elif z_36:
+        execution_plan_lines.append(
+            f"Keep dry powder for lower adds near {z_36} (core zone)."
+        )
+    elif z_13:
+        execution_plan_lines.append(
+            f"Keep dry powder for lower adds near {z_13}."
+        )
+    execution_plan_lines.append(
+        f"If price loses ${key_inv:.2f} with momentum, reassess instead of averaging blindly."
+    )
+
     tldr = {
         "bias": (
             (
@@ -2011,6 +2109,7 @@ def _build_trade_roadmap(
         "key_level_label": "Structural zone — max(~MA200×0.97, 52w tail); invalidation / support (see confidence watch levels)",
         "model_confidence_pct": model_confidence_pct,
         "dominant_near_term_action": dom_action,
+        "execution_plan_lines": execution_plan_lines,
     }
     you_are_here = _roadmap_you_are_here(buy_stages, float(current_price))
     action_glossary = {
@@ -2054,6 +2153,7 @@ def _build_trade_roadmap(
         "market_regime_layer": market_regime_layer,
         "action_glossary": action_glossary,
         "probabilistic_framing": probabilistic_framing,
+        "execution_plan_lines": execution_plan_lines,
     }
 
 
@@ -2194,11 +2294,17 @@ def _build_one_answer_roadmaps(
     headline = "".join(headline_parts).strip() or f"{verdict_label}: See trader/investor roadmaps below."
 
     regime_bull_pct = investor_out.get("regime_bull_pct")
+    execution_plan_lines = (
+        ((investor_out.get("trade_roadmap") or {}).get("execution_plan_lines"))
+        if isinstance(investor_out.get("trade_roadmap"), dict)
+        else None
+    )
     one_answer = {
         "headline": headline,
         "subline": subline if display_verdict in ("REDUCE", "AVOID") else None,
         "verdict": verdict_label,
         "action_today": action_today,
+        "execution_plan_lines": execution_plan_lines if isinstance(execution_plan_lines, list) else [],
         "hold_vs_trade": _hold_vs_trade_guidance(
             display_verdict=verdict_label,
             overall=overall,

@@ -538,6 +538,188 @@ def _fetch_earnings_info(ticker: str) -> dict:
     return result
 
 
+def _next_trading_day(close_idx: pd.Index, ts: pd.Timestamp) -> pd.Timestamp | None:
+    """First close index day strictly after ts."""
+    if close_idx is None or len(close_idx) == 0:
+        return None
+    try:
+        pos = close_idx.searchsorted(ts, side="right")
+        if pos >= len(close_idx):
+            return None
+        return close_idx[pos]
+    except Exception:
+        return None
+
+
+def _compute_earnings_target_block(
+    ticker: str,
+    *,
+    price: float,
+    close: pd.Series,
+    short_prob: float | None,
+    earnings_info: dict | None,
+) -> dict:
+    """
+    Build a dedicated earnings-event target block:
+    - expected one-day earnings move from historical earnings reactions
+    - implied upside/downside targets around current price
+    - simple directional bias from short-horizon ML probability
+    - calibration hit-rate from prior events (walk-forward, no lookahead)
+    """
+    out = {
+        "available": False,
+        "next_earnings_date": (earnings_info or {}).get("next_earnings_date"),
+        "days_until_earnings": (earnings_info or {}).get("days_until_earnings"),
+    }
+    if price <= 0 or close is None or len(close) < 40:
+        return out
+
+    event_rows: list[dict] = []
+    try:
+        import yfinance as yf
+
+        t = yf.Ticker(ticker)
+        ed_df = getattr(t, "earnings_dates", None)
+        if ed_df is not None and not ed_df.empty:
+            close_s = close.dropna()
+            if len(close_s) >= 40:
+                close_idx = close_s.index
+                # Keep only recent history for stability/performance
+                event_dates_raw = pd.to_datetime(ed_df.index, errors="coerce").dropna()
+                normed: list[pd.Timestamp] = []
+                for d in event_dates_raw:
+                    try:
+                        ts = pd.Timestamp(d)
+                        if ts.tzinfo is not None:
+                            ts = ts.tz_localize(None)
+                        normed.append(ts.normalize())
+                    except Exception:
+                        continue
+                event_dates = sorted(list(set(normed)))[-16:]
+                for ed in event_dates:
+                    next_day = _next_trading_day(close_idx, ed)
+                    if next_day is None:
+                        continue
+                    try:
+                        pos = close_idx.get_loc(next_day)
+                        if isinstance(pos, slice):
+                            pos = pos.start
+                        if pos is None or pos < 1 or pos + 1 >= len(close_idx):
+                            continue
+                        pre_close = float(close_s.iloc[pos - 1])
+                        post_close = float(close_s.iloc[pos + 1])
+                        if pre_close <= 0:
+                            continue
+                        signed_move = (post_close / pre_close - 1.0) * 100.0
+                        abs_move = abs(signed_move)
+                        if np.isfinite(abs_move):
+                            event_rows.append({
+                                "event_date": pd.to_datetime(ed).date().isoformat(),
+                                "pre_close": round(pre_close, 2),
+                                "post_close": round(post_close, 2),
+                                "realized_move_pct": round(float(signed_move), 2),
+                                "abs_move_pct": round(float(abs_move), 2),
+                            })
+                    except Exception:
+                        continue
+    except Exception as exc:
+        logger.debug("Earnings target history fetch failed for %s: %s", ticker, exc)
+
+    event_rows = sorted(event_rows, key=lambda x: x.get("event_date", ""))
+    abs_moves = [float(r["abs_move_pct"]) for r in event_rows if r.get("abs_move_pct") is not None]
+
+    eval_rows: list[dict] = []
+    if len(event_rows) > 1:
+        for i in range(1, len(event_rows)):
+            hist = [float(x["abs_move_pct"]) for x in event_rows[max(0, i - 6):i] if x.get("abs_move_pct") is not None]
+            if not hist:
+                continue
+            exp_i = float(np.mean(hist))
+            realized_i = float(event_rows[i]["abs_move_pct"])
+            eval_rows.append({
+                "event_date": event_rows[i]["event_date"],
+                "expected_move_pct": round(exp_i, 2),
+                "realized_abs_move_pct": round(realized_i, 2),
+                "hit": realized_i <= exp_i,
+            })
+
+    if len(abs_moves) == 0:
+        fallback_move = max(3.0, min(12.0, float(close.pct_change().dropna().tail(20).std() * 100 * np.sqrt(2))))
+        expected_move = round(fallback_move, 1)
+        sample = 0
+        hit_rate = None
+        mae = None
+        method_note = "Fallback from recent realized volatility (no earnings history available)"
+    else:
+        sample = len(abs_moves)
+        hits = sum(1 for r in eval_rows if r.get("hit"))
+        eval_n = len(eval_rows)
+        hit_rate = round(hits / eval_n, 2) if eval_n > 0 else None
+        mae = (
+            round(
+                float(np.mean([abs(float(r["realized_abs_move_pct"]) - float(r["expected_move_pct"])) for r in eval_rows])),
+                2,
+            )
+            if eval_rows
+            else None
+        )
+        expected_move = round(float(np.mean(abs_moves[-6:])), 1)
+        method_note = f"Expected move from last {min(6, sample)} earnings reactions (1-day post-earnings)"
+
+    upside = round(price * (1 + expected_move / 100), 2)
+    downside = round(price * (1 - expected_move / 100), 2)
+
+    if short_prob is None:
+        bias = "Neutral"
+        bias_prob = None
+        directional = round(price, 2)
+    else:
+        bias_prob = round(short_prob * 100, 1)
+        if short_prob >= 0.55:
+            bias = "Bullish"
+            directional = round(price * (1 + (expected_move * 0.55) / 100), 2)
+        elif short_prob <= 0.45:
+            bias = "Bearish"
+            directional = round(price * (1 - (expected_move * 0.55) / 100), 2)
+        else:
+            bias = "Neutral"
+            directional = round(price, 2)
+
+    confidence = None
+    if hit_rate is not None:
+        sample_factor = min(1.0, sample / 8.0)
+        confidence = int(round((hit_rate * 100) * sample_factor))
+
+    out.update({
+        "available": True,
+        "expected_move_pct": expected_move,
+        "upside_target": upside,
+        "downside_target": downside,
+        "directional_target": directional,
+        "bias": bias,
+        "bias_prob_pct": bias_prob,
+        "historical_events": sample,
+        "historical_avg_abs_move_pct": round(float(np.mean(abs_moves)), 1) if abs_moves else None,
+        "historical_median_abs_move_pct": round(float(np.median(abs_moves)), 1) if abs_moves else None,
+        "calibration_hit_rate": hit_rate,
+        "calibration_mae_pct": mae,
+        "confidence_pct": confidence,
+        "backtest_events": len(eval_rows),
+        "backtest_summary": (
+            {
+                "evaluated_events": len(eval_rows),
+                "containment_hit_rate": hit_rate,
+                "mean_abs_error_pct": mae,
+            }
+            if eval_rows
+            else None
+        ),
+        "recent_events": event_rows[-5:] if event_rows else [],
+        "method_note": method_note,
+    })
+    return out
+
+
 def _tilt_universal_scenarios_for_hmm(
     scenarios: list[dict],
     hmm_probs: dict | None,
@@ -967,6 +1149,13 @@ def run_price_targets(
         short_interest=si_data,
         regime_hmm_probs=regime_hmm_probs,
     )
+    earnings_target = _compute_earnings_target_block(
+        ticker,
+        price=price,
+        close=close,
+        short_prob=short_prob,
+        earnings_info=earnings_info,
+    )
 
     return {
         "ticker":          ticker,
@@ -1013,6 +1202,7 @@ def run_price_targets(
                 "Analyst targets unavailable — using ML-derived synthetic targets"
             ),
         },
+        "earnings_target": earnings_target,
         "horizons":  horizons_out,
         "scenarios": scenarios,
     }

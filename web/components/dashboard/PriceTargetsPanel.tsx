@@ -106,6 +106,38 @@ export interface EarningsInfo {
   earnings_note?:       string;
 }
 
+export interface EarningsTarget {
+  available: boolean;
+  next_earnings_date?: string;
+  days_until_earnings?: number;
+  expected_move_pct?: number;
+  upside_target?: number;
+  downside_target?: number;
+  directional_target?: number;
+  bias?: string;
+  bias_prob_pct?: number | null;
+  historical_events?: number;
+  historical_avg_abs_move_pct?: number | null;
+  historical_median_abs_move_pct?: number | null;
+  calibration_hit_rate?: number | null;
+  calibration_mae_pct?: number | null;
+  confidence_pct?: number | null;
+  backtest_events?: number;
+  backtest_summary?: {
+    evaluated_events?: number;
+    containment_hit_rate?: number | null;
+    mean_abs_error_pct?: number | null;
+  } | null;
+  recent_events?: Array<{
+    event_date: string;
+    pre_close: number;
+    post_close: number;
+    realized_move_pct: number;
+    abs_move_pct: number;
+  }>;
+  method_note?: string;
+}
+
 export interface PriceTargetsData {
   ticker:           string;
   analysis_date:    string;
@@ -115,6 +147,7 @@ export interface PriceTargetsData {
   confluence_score: number;
   macro_context?:   MacroContext;
   earnings_info?:   EarningsInfo;
+  earnings_target?: EarningsTarget;
   analyst_targets?: AnalystTargets;
   technical_levels: TechnicalLevels;
   horizons: {
@@ -314,6 +347,101 @@ function EarningsBanner({ info }: { info: EarningsInfo }) {
           </span>
         )}
       </p>
+    </div>
+  );
+}
+
+function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }) {
+  if (!et.available) return null;
+  const hitRatePct = et.calibration_hit_rate != null ? et.calibration_hit_rate * 100 : null;
+  const biasTone =
+    et.bias === "Bullish" ? "text-emerald-300" :
+    et.bias === "Bearish" ? "text-red-300" :
+    "text-amber-300";
+
+  return (
+    <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl px-3.5 py-3 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <Target size={11} className="text-indigo-300" />
+        <span className="text-[10px] font-semibold text-indigo-200 uppercase tracking-widest">
+          Earnings Event Target (1-Day Reaction)
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div>
+          <p className="text-[10px] text-slate-500">Expected Move</p>
+          <p className="text-sm font-mono font-bold text-indigo-200">{fmtPct(et.expected_move_pct)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">Upside</p>
+          <p className="text-sm font-mono font-bold text-emerald-300">{fmt(et.upside_target)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">Downside</p>
+          <p className="text-sm font-mono font-bold text-red-300">{fmt(et.downside_target)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">Bias</p>
+          <p className={clsx("text-xs font-semibold", biasTone)}>
+            {et.bias ?? "Neutral"}
+            {et.bias_prob_pct != null ? ` (${Math.round(et.bias_prob_pct)}%)` : ""}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-500">Directional</p>
+          <p className="text-sm font-mono font-bold text-slate-100">{fmt(et.directional_target)}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+        <div>
+          <span className="text-slate-500">Current</span>{" "}
+          <span className="font-mono text-slate-300">{fmt(price)}</span>
+        </div>
+        <div>
+          <span className="text-slate-500">Events</span>{" "}
+          <span className="font-mono text-slate-300">{et.historical_events ?? 0}</span>
+        </div>
+        <div>
+          <span className="text-slate-500">Hit Rate</span>{" "}
+          <span className="font-mono text-slate-300">{hitRatePct != null ? `${Math.round(hitRatePct)}%` : "—"}</span>
+        </div>
+        <div>
+          <span className="text-slate-500">Confidence</span>{" "}
+          <span className="font-mono text-slate-300">{et.confidence_pct != null ? `${et.confidence_pct}%` : "—"}</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
+        <div>
+          <span className="text-slate-500">Backtest Events</span>{" "}
+          <span className="font-mono text-slate-300">{et.backtest_events ?? 0}</span>
+        </div>
+        <div>
+          <span className="text-slate-500">MAE</span>{" "}
+          <span className="font-mono text-slate-300">{et.calibration_mae_pct != null ? `${et.calibration_mae_pct.toFixed(2)}%` : "—"}</span>
+        </div>
+        <div>
+          <span className="text-slate-500">Avg Hist Move</span>{" "}
+          <span className="font-mono text-slate-300">{et.historical_avg_abs_move_pct != null ? `${et.historical_avg_abs_move_pct.toFixed(1)}%` : "—"}</span>
+        </div>
+      </div>
+      {!!(et.recent_events && et.recent_events.length) && (
+        <div className="rounded-lg border border-slate-700/40 bg-slate-900/30 px-2.5 py-2">
+          <p className="text-[10px] text-slate-500 mb-1 uppercase tracking-widest">Recent Earnings Outcomes</p>
+          <div className="space-y-1">
+            {et.recent_events!.slice().reverse().map((ev) => (
+              <div key={ev.event_date} className="flex items-center justify-between gap-2 text-[10px]">
+                <span className="text-slate-400">{ev.event_date}</span>
+                <span className={clsx("font-mono", ev.realized_move_pct >= 0 ? "text-emerald-300" : "text-red-300")}>
+                  {ev.realized_move_pct >= 0 ? "+" : ""}{ev.realized_move_pct.toFixed(2)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {et.method_note && (
+        <p className="text-[10px] text-slate-500 leading-snug">{et.method_note}</p>
+      )}
     </div>
   );
 }
@@ -661,6 +789,7 @@ export function PriceTargetsPanel({ data, hideHorizonZones }: { data: PriceTarge
 
       {/* ── Earnings timing ── */}
       {data.earnings_info && <EarningsBanner info={data.earnings_info} />}
+      {data.earnings_target && <EarningsTargetCard et={data.earnings_target} price={data.current_price} />}
 
       {/* ── Technical level anchors ── */}
       <TechnicalLevelsBar lv={data.technical_levels} price={data.current_price} />
