@@ -276,6 +276,34 @@ def _cap_short_entry_zone_vs_fair_value(
     return _r(new_el), _r(new_eh), True, note
 
 
+def _compress_entry_zone_for_display(
+    *,
+    band_key: str,
+    low: float,
+    high: float,
+    current_price: float,
+) -> tuple[float, float, bool]:
+    """
+    Keep entry zones actionable for UI/alerts.
+    Very wide zones read as low precision and become "always in zone".
+    """
+    if not (low > 0 and high > low and current_price > 0):
+        return low, high, False
+    width_pct = (high - low) / current_price
+    max_pct_by_band = {
+        "short": 0.14,
+        "medium": 0.30,
+        "long": 0.45,
+    }
+    max_pct = max_pct_by_band.get(str(band_key).lower(), 0.30)
+    if width_pct <= max_pct:
+        return low, high, False
+    new_high = low + current_price * max_pct
+    min_pad = max(0.01, current_price * 0.002)
+    new_high = max(min(new_high, high), low + min_pad)
+    return _r(low), _r(new_high), True
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SHORT-TERM CALCULATOR  (1 month)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -358,6 +386,16 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
         )
         if quality == "Ideal":
             quality, q_color = "Acceptable", "#f5a623"
+
+    el, eh, zone_compressed = _compress_entry_zone_for_display(
+        band_key="short",
+        low=el,
+        high=eh,
+        current_price=inp.current_price,
+    )
+    if zone_compressed:
+        zone_anchor = zone_anchor + " | Actionable-width cap applied"
+        warnings.append("Short-term entry zone was too wide; narrowed for actionable execution.")
 
     # ── Stop & target ────────────────────────────────────────────────────
     stop_dist = max(
@@ -683,6 +721,16 @@ def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
     el, eh, quality, q_color, zone_anchor = _harmonize_medium_entry_with_short(
         inp, el, eh, quality, q_color, zone_anchor)
 
+    el, eh, zone_compressed = _compress_entry_zone_for_display(
+        band_key="medium",
+        low=el,
+        high=eh,
+        current_price=inp.current_price,
+    )
+    if zone_compressed:
+        zone_anchor = zone_anchor + " | Actionable-width cap applied"
+        warnings.append("Medium-term entry zone was too wide; narrowed for clearer timing.")
+
     return _medium_term_signal_from_zone(inp, el, eh, quality, q_color, zone_anchor, warnings)
 
 
@@ -866,6 +914,21 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         quality_color="#f5a623",
     )
     entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
+    ez_lo, ez_hi, zone_compressed = _compress_entry_zone_for_display(
+        band_key="long",
+        low=entry_zone.low,
+        high=entry_zone.high,
+        current_price=inp.current_price,
+    )
+    if zone_compressed:
+        warnings.append("Long-term entry zone was too wide; narrowed for actionable use.")
+        entry_zone = EntryZone(
+            low=ez_lo,
+            high=ez_hi,
+            anchor=entry_zone.anchor + " | Actionable-width cap applied",
+            quality=entry_zone.quality,
+            quality_color=entry_zone.quality_color,
+        )
 
     # ── Structural invalidation (not a day-to-day stop) ────────────────────
     tkey_lt = _norm_ticker_sym(inp.ticker)

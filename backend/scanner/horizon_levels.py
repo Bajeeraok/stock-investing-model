@@ -25,6 +25,35 @@ ML_PROB_CROSS_THRESHOLD = 25.0
 BAND_KEYS = frozenset({"short", "medium", "long"})
 
 
+def _compress_entry_zone_for_alerts(
+    *,
+    band_key: str,
+    price: float,
+    low: float,
+    high: float,
+) -> tuple[float, float]:
+    """
+    Scanner alerts should use actionable entry slices, not the full model band.
+    Very wide full bands (especially long horizon) can create "always in buy zone"
+    alerts that read as weak prediction quality.
+    """
+    if not (price > 0 and high > low > 0):
+        return low, high
+    width = high - low
+    # Keep only the lower part of each band for entry alerts.
+    # Also cap absolute width vs spot so zones stay practical.
+    width_frac_by_band = {"short": 0.65, "medium": 0.45, "long": 0.30}
+    max_pct_by_band = {"short": 0.12, "medium": 0.20, "long": 0.28}
+    frac = width_frac_by_band.get(band_key, 0.45)
+    max_pct = max_pct_by_band.get(band_key, 0.20)
+    capped_width = min(width * frac, price * max_pct)
+    hi = low + capped_width
+    # Preserve ordering and avoid degenerate zones.
+    min_pad = max(0.01, price * 0.002)
+    hi = max(min(hi, high), low + min_pad)
+    return round(low, 2), round(hi, 2)
+
+
 def _scanner_dir(data_root: Path) -> Path:
     d = data_root / "scanner"
     d.mkdir(parents=True, exist_ok=True)
@@ -208,14 +237,20 @@ def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]
                 return
             if lo_f >= hi_f:
                 return
+            entry_lo, entry_hi = _compress_entry_zone_for_alerts(
+                band_key=bk,
+                price=p,
+                low=lo_f,
+                high=hi_f,
+            )
             pad = max(0.01, p * 0.001)
-            stop_loss = round(lo_f - pad, 2)
+            stop_loss = round(entry_lo - pad, 2)
             merge_horizon_band_for_ticker(
                 data_root,
                 ticker,
                 bk,
-                entry_low=round(lo_f, 2),
-                entry_high=round(hi_f, 2),
+                entry_low=entry_lo,
+                entry_high=entry_hi,
                 stop_loss=stop_loss,
                 target=round(hi_f, 2),
                 horizon_label=label,

@@ -70,6 +70,8 @@ class ScanAlert:
     dismissed: bool = False
     # Plain-language entry/exit/duration so alerts are actionable
     actionable: Optional[str] = None
+    # Compact quick-summary line for alert cards
+    one_liner: Optional[str] = None
     # Disambiguate ST vs MT vs LT for dedupe/cooldown (same AlertType, different horizon band)
     dedupe_extra: Optional[str] = None
 
@@ -174,6 +176,64 @@ def _actionable_for_alert(snap: MarketSnapshot, alert_type: AlertType) -> str:
         )
     # Default: at least give price and date
     return f"Reference price ${price:.2f} as of {today}. Check chart for entry and set your own stop and target."
+
+
+def _snapshot_one_liner(snap: MarketSnapshot) -> str:
+    """Compact summary in: Bias + probability + expected range."""
+    return _bias_prob_range_line(
+        price=snap.price,
+        atr_pct=snap.atr_pct,
+        regime=snap.regime,
+        regime_confidence=snap.regime_confidence,
+        prob_override=snap.ml_prob_short,
+    )
+
+
+def _bias_from_regime(regime: str) -> str:
+    r = (regime or "").upper()
+    if "BULL" in r:
+        return "Bullish"
+    if "BEAR" in r:
+        return "Bearish"
+    return "Neutral"
+
+
+def _bias_prob_range_line(
+    *,
+    price: float,
+    atr_pct: float,
+    regime: str,
+    regime_confidence: float | None = None,
+    prob_override: float | None = None,
+) -> str:
+    bias = _bias_from_regime(regime)
+    prob = (
+        float(prob_override)
+        if prob_override is not None
+        else float(regime_confidence or 50.0)
+    )
+    prob = max(0.0, min(100.0, prob))
+    exp_move_pct = max(float(atr_pct or 0.0) * 0.65, 0.6)
+    lo = float(price) * (1.0 - exp_move_pct / 100.0)
+    hi = float(price) * (1.0 + exp_move_pct / 100.0)
+    return f"{bias} {prob:.0f}% | Range ${lo:.2f}–${hi:.2f}"
+
+
+def _entry_zone_actionable(band_key: str, entry_low: float, entry_high: float, price: float) -> bool:
+    """
+    Filter out "always-in-zone" ranges that are too wide to be actionable.
+    Prevents alerts like SPY long-term zones spanning huge portions of spot.
+    """
+    if not (entry_low > 0 and entry_high > entry_low and price > 0):
+        return False
+    width_pct_of_spot = (entry_high - entry_low) / price
+    max_width_by_band = {
+        "short": 0.14,   # <= 14% of spot
+        "medium": 0.30,  # <= 30% of spot
+        "long": 0.45,    # <= 45% of spot
+    }
+    max_width = max_width_by_band.get(str(band_key).lower(), 0.30)
+    return width_pct_of_spot <= max_width
 
 
 def _risk_level(snap: MarketSnapshot, alert_type: AlertType) -> str:
@@ -310,6 +370,7 @@ class SignalEvaluator:
             scan_tier=snap.scan_tier,
             surface_to_all=SURFACING_THRESHOLDS[alert_type].surface_to_all,
             actionable=actionable,
+            one_liner=_snapshot_one_liner(snap),
             dedupe_extra=None,
         )
 
@@ -322,6 +383,7 @@ def _build_retail_alert(
     scan_tier: ScanTier,
     signals: dict[str, Any],
     actionable: Optional[str] = None,
+    one_liner: Optional[str] = None,
     dedupe_extra: Optional[str] = None,
 ) -> ScanAlert:
     """Build a retail quick-decision alert with one-line plain English and optional actionable text."""
@@ -345,6 +407,7 @@ def _build_retail_alert(
         scan_tier=scan_tier,
         surface_to_all=True,
         actionable=actionable,
+        one_liner=one_liner,
         dedupe_extra=dedupe_extra,
     )
 
@@ -398,6 +461,13 @@ def evaluate_retail_alerts(
                     f"If you already hold, reduce size or hedge by then. "
                     f"Exit any speculative position before the report. Current price ${price:.2f}."
                 ),
+                one_liner=_bias_prob_range_line(
+                    price=price,
+                    atr_pct=snap.atr_pct,
+                    regime=snap.regime,
+                    regime_confidence=snap.regime_confidence,
+                    prob_override=snap.ml_prob_short,
+                ),
                 dedupe_extra="earnings",
             ))
 
@@ -413,9 +483,10 @@ def evaluate_retail_alerts(
             zone_flag = f"was_in_entry_zone_{band_key}"
             was_in_zone = bool(st.get(zone_flag, False))
             in_zone = el <= price <= eh if (el and eh) else False
+            actionable_zone = in_zone and _entry_zone_actionable(band_key, el, eh, price)
             dex = band_key
 
-            if el and eh and in_zone and not was_in_zone:
+            if el and eh and actionable_zone and not was_in_zone:
                 act = (
                     f"Entry: buy in range ${el:.2f}–${eh:.2f} (current ${price:.2f}). "
                     f"Exit: use stop ${stop:.2f} and target ${target:.2f}. "
@@ -438,6 +509,13 @@ def evaluate_retail_alerts(
                         "target": target,
                     },
                     actionable=act,
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=snap.ml_prob_short,
+                    ),
                     dedupe_extra=dex,
                 ))
             if stop and price < stop:
@@ -451,6 +529,13 @@ def evaluate_retail_alerts(
                     actionable=(
                         f"Exit: price ${price:.2f} is below {band_key} stop ${stop:.2f}. "
                         f"Trim or close now to limit loss."
+                    ),
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=snap.ml_prob_short,
                     ),
                     dedupe_extra=dex,
                 ))
@@ -466,6 +551,13 @@ def evaluate_retail_alerts(
                         f"Price ${price:.2f} is near {band_key} stop ${stop:.2f}. "
                         f"Decide within 1–2 days: hold or trim before stop is hit."
                     ),
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=snap.ml_prob_short,
+                    ),
                     dedupe_extra=dex,
                 ))
             if target and price >= target:
@@ -479,6 +571,13 @@ def evaluate_retail_alerts(
                     actionable=(
                         f"Exit: {band_key} target ${target:.2f} reached (price ${price:.2f}). "
                         f"Consider taking profit or scaling out."
+                    ),
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=snap.ml_prob_short,
                     ),
                     dedupe_extra=dex,
                 ))
@@ -494,10 +593,17 @@ def evaluate_retail_alerts(
                         f"Price ${price:.2f} is near {band_key} target ${target:.2f}. "
                         f"Consider trimming a portion or tightening stops."
                     ),
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=snap.ml_prob_short,
+                    ),
                     dedupe_extra=dex,
                 ))
 
-            st = {**st, zone_flag: in_zone}
+            st = {**st, zone_flag: actionable_zone}
 
         st = {**st, "last_price": price}
         new_state[ticker] = st
@@ -517,6 +623,13 @@ def evaluate_retail_alerts(
                     actionable=(
                         f"Entry: model supports adding at current price ${price:.2f}; consider on pullbacks. "
                         f"Set your own stop and target. Duration: medium term (weeks)."
+                    ),
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=float(ml_current),
                     ),
                     dedupe_extra="ml",
                 ))

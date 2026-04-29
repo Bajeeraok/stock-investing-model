@@ -526,12 +526,12 @@ fair_value:
 # See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
   # When FMP batch quotes are on, overwrite SPY/QQQ/DIA/IWM with Yahoo last close so dashboard marks match OHLCV vendor.
-  # Set false to skip extra Yahoo calls and use FMP-only marks for index ETFs.
-  yahoo_overlay_index_etf_quotes: true
+  # Set false to keep FMP as primary quote source (including index ETFs).
+  yahoo_overlay_index_etf_quotes: false
   period: 5y         # Live signals, indicators, ATR, vol, MA (short-term); keep 5y for responsiveness
   period_long: 20y   # What-if only: event scenarios (FOMC/CPI reaction stats); NOT used for live signals
   period_long_risk: 20y   # Long-horizon risk: max drawdown, stress bear, worst 3y (monthly data; 2007-present = 2008 crisis included)
-  use_fmp_batch_quote: false  # Set true when FMP plan includes batch-quote (saves API calls); current plan = per-ticker data
+  use_fmp_batch_quote: true  # Use FMP batch-quote for primary latest-price marks
   # Set via environment (FMP_API_KEY, FRED_API_KEY, …) in production — see config_loader.py. Do not commit real keys.
   fmp_api_key: ""
   fred_api_key: ""

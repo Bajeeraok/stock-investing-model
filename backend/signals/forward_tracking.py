@@ -86,8 +86,37 @@ def signal_bucket_from_row(row: dict | None, buy_min: float = 70, sell_max: floa
 
 
 def _signal_from_row(row: dict | None, buy_min: float = 70, sell_max: float = 30) -> str:
-    """Backward-compatible alias."""
+    """
+    Tracking signal bucket aligned with run_signals.
+    Prefer ML-aware `signal` field when present; fallback to score-threshold bucket.
+    """
+    if row and isinstance(row, dict):
+        sig = str(row.get("signal") or "").upper().strip()
+        if sig:
+            if any(x in sig for x in ("STRONG BUY", "BUY", "HOLD/ADD")):
+                return "HOLD/ADD"
+            if any(x in sig for x in ("TRIM", "SELL", "REDUCE", "AVOID")):
+                return "CONSIDER TRIM"
+            if sig in ("HOLD", "WATCH"):
+                return "HOLD"
     return signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max)
+
+
+def _signal_and_source_from_row(
+    row: dict | None,
+    buy_min: float = 70,
+    sell_max: float = 30,
+) -> tuple[str, str]:
+    """
+    Return normalized tracking bucket and its source:
+    - ml_signal: mapped from run_signals `signal`
+    - score_fallback: derived from composite_buy thresholds
+    """
+    if row and isinstance(row, dict):
+        sig = str(row.get("signal") or "").upper().strip()
+        if sig:
+            return _signal_from_row(row, buy_min=buy_min, sell_max=sell_max), "ml_signal"
+    return signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max), "score_fallback"
 
 
 def get_forward_tracking(
@@ -151,6 +180,7 @@ def get_forward_tracking(
     records: list[dict[str, Any]] = []
     by_horizon: dict[int, list[float]] = {h: [] for h in horizon_list}
     by_signal_20: dict[str, list[float]] = {}
+    signal_source_counts: dict[str, int] = {"ml_signal": 0, "score_fallback": 0}
 
     for horizon in horizon_list:
         if horizon >= len(dates):
@@ -190,7 +220,9 @@ def get_forward_tracking(
                 if prior <= 0:
                     continue
                 ret_pct = round(100 * (actual - prior) / prior, 2)
-                our_signal = signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max)
+                our_signal, signal_source = _signal_and_source_from_row(
+                    row, buy_min=buy_min, sell_max=sell_max
+                )
 
                 records.append({
                     "as_of_date": as_of_date,
@@ -198,8 +230,10 @@ def get_forward_tracking(
                     "ticker": tk,
                     "horizon_days": horizon,
                     "our_signal": our_signal,
+                    "signal_source": signal_source,
                     "actual_return_pct": ret_pct,
                 })
+                signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
                 by_horizon[horizon].append(ret_pct)
                 if horizon == 20:
                     by_signal_20.setdefault(our_signal, []).append(ret_pct)
@@ -227,6 +261,7 @@ def get_forward_tracking(
         "records": records[-200:],  # Cap for response size
         "summary_by_horizon": summary_by_horizon,
         "summary_by_signal": summary_by_signal,
+        "signal_source_counts": signal_source_counts,
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
 
@@ -319,13 +354,16 @@ def collect_forward_records(
                 if prior <= 0:
                     continue
                 ret_pct = round(100 * (actual - prior) / prior, 2)
-                our_signal = signal_bucket_from_row(row, buy_min=buy_min, sell_max=sell_max)
+                our_signal, signal_source = _signal_and_source_from_row(
+                    row, buy_min=buy_min, sell_max=sell_max
+                )
                 records.append({
                     "as_of_date": as_of_date,
                     "next_date": next_date,
                     "ticker": tk,
                     "horizon_days": horizon,
                     "our_signal": our_signal,
+                    "signal_source": signal_source,
                     "actual_return_pct": ret_pct,
                 })
 

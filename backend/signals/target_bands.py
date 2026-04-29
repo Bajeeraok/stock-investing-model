@@ -78,6 +78,34 @@ def _reset_st_band_around_spot(P: float, atr: float, vol6: float) -> tuple[float
     return P - w, P + w
 
 
+def _cap_band_width_for_display(
+    low: float,
+    high: float,
+    *,
+    spot: float,
+    band_key: str,
+) -> tuple[float, float, bool]:
+    """
+    Cap very wide MT/LT display bands so they remain decision-useful.
+    Wide ranges can look like weak model confidence and become non-actionable.
+    """
+    if not (spot > 0 and high > low > 0):
+        return low, high, False
+    width_pct = (high - low) / spot
+    max_pct_by_band = {
+        "st": 0.18,
+        "mt": 0.30,
+        "lt": 0.35,
+    }
+    cap = max_pct_by_band.get(str(band_key).lower(), 0.30)
+    if width_pct <= cap:
+        return low, high, False
+    new_high = low + spot * cap
+    min_pad = max(0.01, spot * 0.002)
+    new_high = max(min(new_high, high), low + min_pad)
+    return round(low, 2), round(new_high, 2), True
+
+
 def _st_signal_from_suggestion(sugg: str | None) -> str:
     """Map short_suggestion to BUY/SELL/HOLD for band logic."""
     if not sugg:
@@ -254,6 +282,12 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         mt_low = round(mt_low, 2)
         mt_high = round(mt_high, 2)
 
+    mt_low, mt_high, mt_capped = _cap_band_width_for_display(
+        float(mt_low), float(mt_high), spot=P, band_key="mt"
+    )
+    if mt_capped:
+        row["mt_band_width_capped"] = True
+
     row["mt_band"] = {"low": mt_low, "high": mt_high}
 
     # ---------- Long-term band (1–3+ yrs) ----------
@@ -307,6 +341,11 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
             if lt_note:
                 row["lt_band_dispersion_note"] = lt_note
+        lt_low, lt_high, lt_capped = _cap_band_width_for_display(
+            float(lt_low), float(lt_high), spot=P, band_key="lt"
+        )
+        if lt_capped:
+            row["lt_band_width_capped"] = True
         row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
         row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
         # LT bear/base/bull: bear = low, base = midpoint, bull = high
@@ -334,6 +373,11 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
                 lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
                 if lt_note:
                     row["lt_band_dispersion_note"] = lt_note
+            lt_low, lt_high, lt_capped = _cap_band_width_for_display(
+                float(lt_low), float(lt_high), spot=P, band_key="lt"
+            )
+            if lt_capped:
+                row["lt_band_width_capped"] = True
             row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
             row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
             row["lt_scenarios"] = {

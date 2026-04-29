@@ -34,6 +34,8 @@ export interface ScanAlert {
   body: string;
   /** Plain-language entry / exit / duration (when present, show instead of body for actionable guidance) */
   actionable?: string | null;
+  /** Compact quick-prediction line from backend */
+  one_liner?: string | null;
   risk_level: string;
   color?: string;
   emoji?: string;
@@ -170,13 +172,18 @@ export function AlertsPanel({ onTickerClick }: { onTickerClick?: (ticker: string
                     a.priority === 2 ? "bg-amber-500/15 text-amber-300 border-amber-500/30" :
                     "bg-slate-700/20 text-slate-300 border-slate-600/30"
                   )}>
-                    {prLabel(a.priority)}
+                    {`Priority: ${prLabel(a.priority)}`}
                   </span>
-                  <span className="text-[10px] text-slate-500">{a.risk_level}</span>
+                  <span className="text-[10px] text-slate-500">{`Risk: ${a.risk_level}`}</span>
                 </div>
                 <p className="text-xs text-slate-400 mt-1 leading-snug">
                   {a.actionable ?? a.body}
                 </p>
+                {a.one_liner && (
+                  <p className="text-[11px] text-emerald-300/90 mt-1 leading-snug">
+                    {a.one_liner}
+                  </p>
+                )}
                 {a.actionable && a.body && (
                   <p className="text-[11px] text-slate-500 mt-1 leading-snug" title="Context">
                     {a.body}
