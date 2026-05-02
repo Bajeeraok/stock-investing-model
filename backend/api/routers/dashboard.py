@@ -428,7 +428,9 @@ async def get_dashboard(
         paper_trade_date = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
         from signals.paper_trade_logger import PaperTradeLogger
 
-        pt = PaperTradeLogger(data_root=get_data_root())
+        pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
+        pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
+        pt = PaperTradeLogger(data_root=get_data_root(), execution_cfg=pt_exec_cfg)
         paper_log = pt.log_signals_from_results(
             results, only_actionable=False, date_str=paper_trade_date
         )
@@ -750,7 +752,8 @@ async def get_dashboard(
             min_done = int(pt_cfg.get("min_completed_for_summary", 60))
             min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
             bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
-            pt = PaperTradeLogger(data_root=data_root)
+            pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
+            pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
             sync = pt.sync_targets_stops_from_results(results)
             mtm = pt.mark_to_market()
             mtm_history_log = pt.append_mtm_history()

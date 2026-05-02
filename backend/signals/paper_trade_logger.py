@@ -78,6 +78,12 @@ _FIELDS = [
     "regime",
     "entry_price",
     "entry_price_source",
+    "effective_entry_date",
+    "effective_entry_price",
+    "effective_entry_source",
+    "execution_mode",
+    "entry_cost_pct",
+    "exit_cost_pct",
     "target_1",
     "hard_stop",
     "atr_14",
@@ -87,12 +93,15 @@ _FIELDS = [
     "horizon_trading_days",
     "next_date",
     "actual_price",
+    "actual_price_net",
     "return_pct",
     "hit_target",
+    "hit_stop",
     "outcome",
     # Mark-to-market (filled daily from latest EOD snapshot)
     "mtm_date",
     "mtm_price",
+    "mtm_price_net",
     "mtm_return_pct",
     # Rolling daily reference (compare signal-date entry vs latest close)
     "rolling_entry_price",
@@ -211,9 +220,22 @@ class PaperTradeRecord:
 
 
 class PaperTradeLogger:
-    def __init__(self, data_root: Path | None = None):
+    def __init__(self, data_root: Path | None = None, execution_cfg: dict[str, Any] | None = None):
         self.data_root = data_root or _default_data_root()
         self.path = _paper_file(self.data_root)
+        self.execution_cfg = execution_cfg or {}
+        mode = str(self.execution_cfg.get("mode", "close_to_close")).strip().lower()
+        if mode not in ("close_to_close", "next_session"):
+            mode = "close_to_close"
+        self.execution_mode = mode
+        # Per-side cost is applied on entry and exit independently.
+        # Supports either explicit per-side config or round-trip shorthand.
+        rt = _safe_float(self.execution_cfg.get("round_trip_cost_pct"))
+        per_side = _safe_float(self.execution_cfg.get("per_side_cost_pct"))
+        if per_side is None and rt is not None and rt >= 0:
+            per_side = rt / 2.0
+        self.cost_per_side_pct = max(0.0, float(per_side or 0.0))
+        self.use_intraday_touch = bool(self.execution_cfg.get("use_intraday_touch", True))
         self._init_file()
 
     def _init_file(self) -> None:
@@ -340,6 +362,72 @@ class PaperTradeLogger:
             except Exception:
                 continue
         return {"date": date_str, "seen": n_seen, "appended": n_appended}
+
+    def _row_mode(self, row: dict[str, Any]) -> str:
+        m = str(row.get("execution_mode") or self.execution_mode or "close_to_close").strip().lower()
+        return m if m in ("close_to_close", "next_session") else "close_to_close"
+
+    def _row_cost_pct(self, row: dict[str, Any], key: str) -> float:
+        # Stored as percent in CSV for readability; convert to fraction.
+        v = _safe_float(row.get(key))
+        if v is None:
+            return self.cost_per_side_pct
+        return max(0.0, float(v) / 100.0)
+
+    def _ensure_effective_entry(self, row: dict[str, Any], dates: list[str]) -> tuple[float | None, str | None]:
+        """
+        Ensure row has an effective entry (fill model + entry cost).
+        Returns (effective_entry_price, effective_entry_date).
+        """
+        eff = _safe_float(row.get("effective_entry_price"))
+        eff_date = str(row.get("effective_entry_date") or "").strip() or None
+        if eff is not None and eff > 0 and eff_date:
+            return eff, eff_date
+
+        mode = self._row_mode(row)
+        signal_date = str(row.get("date") or "")
+        entry_cost = self._row_cost_pct(row, "entry_cost_pct")
+
+        base_px = None
+        base_date = None
+        base_src = None
+
+        if mode == "next_session":
+            try:
+                target_ts = pd.Timestamp(signal_date).normalize() + BDay(1)
+            except Exception:
+                target_ts = None
+            if target_ts is not None:
+                for d in dates:
+                    try:
+                        if pd.Timestamp(d).normalize() >= target_ts:
+                            px = self._ticker_close_on_snapshot(d, str(row.get("ticker") or ""))
+                            if px is not None and px > 0:
+                                base_px = float(px)
+                                base_date = d
+                                base_src = "next_session_close"
+                                break
+                    except Exception:
+                        continue
+
+        if base_px is None:
+            base_px = _safe_float(row.get("entry_price"))
+            if base_px is not None and base_px > 0:
+                base_date = _first_eod_on_or_after(dates, signal_date) or signal_date
+                base_src = str(row.get("entry_price_source") or "signal_entry")
+
+        if base_px is None or base_px <= 0 or not base_date:
+            return None, None
+
+        eff_px = round(float(base_px) * (1.0 + entry_cost), 4)
+        row["entry_price"] = round(float(base_px), 2)
+        row["effective_entry_price"] = eff_px
+        row["effective_entry_date"] = base_date
+        row["effective_entry_source"] = base_src
+        row["execution_mode"] = mode
+        row["entry_cost_pct"] = round(entry_cost * 100, 4)
+        row["exit_cost_pct"] = round(self._row_cost_pct(row, "exit_cost_pct") * 100, 4)
+        return eff_px, base_date
 
     def sync_targets_stops_from_results(self, results: list[dict[str, Any]] | None = None, max_rows: int = 500) -> dict[str, Any]:
         """
@@ -498,7 +586,7 @@ class PaperTradeLogger:
                 r["benchmark_return_pct"] = None
                 r["excess_return_pct"] = None
                 continue
-            if str(r.get("outcome") or "") in ("HIT", "MISS") and r.get("next_date"):
+            if str(r.get("outcome") or "") in ("HIT", "MISS", "STOP_HIT") and r.get("next_date"):
                 end_d = str(r.get("next_date"))
             else:
                 end_d = str(r.get("mtm_date") or dates[-1])
@@ -510,7 +598,7 @@ class PaperTradeLogger:
             br = self._benchmark_return_pct_between(str(r.get("date") or ""), end_d, bench)
             r["benchmark_return_pct"] = br
             tr = None
-            if str(r.get("outcome") or "") in ("HIT", "MISS") and _safe_float(r.get("return_pct")) is not None:
+            if str(r.get("outcome") or "") in ("HIT", "MISS", "STOP_HIT") and _safe_float(r.get("return_pct")) is not None:
                 tr = float(r["return_pct"])
             elif _safe_float(r.get("mtm_return_pct")) is not None:
                 tr = float(r["mtm_return_pct"])
@@ -538,11 +626,14 @@ class PaperTradeLogger:
                 as_of = row.get("date")
                 if not as_of:
                     continue
+                eff_entry, eff_entry_date = self._ensure_effective_entry(row, dates)
+                if eff_entry is None or not eff_entry_date:
+                    continue
                 horizon = int(float(row.get("horizon_trading_days") or 20))
                 # First EOD snapshot on or after (as_of + N business days) — not "N rows" in the list
                 # (avoids mis-counting when some calendar days lack a snapshot).
                 try:
-                    target_ts = pd.Timestamp(as_of).normalize() + BDay(horizon)
+                    target_ts = pd.Timestamp(eff_entry_date).normalize() + BDay(horizon)
                 except Exception:
                     continue
                 next_date = None
@@ -560,24 +651,43 @@ class PaperTradeLogger:
                 t = (row.get("ticker") or "").upper()
                 r_next = run_by_ticker.get(t)
                 actual = _safe_float((r_next or {}).get("close"))
-                entry = _safe_float(row.get("entry_price"))
-                if actual is None or entry is None or entry <= 0:
+                if actual is None or eff_entry <= 0:
                     continue
 
-                ret_pct = round(100 * (actual - entry) / entry, 2)
+                exit_cost = self._row_cost_pct(row, "exit_cost_pct")
+                actual_net = round(float(actual) * (1.0 - exit_cost), 4)
+                ret_pct = round(100 * (actual_net - eff_entry) / eff_entry, 2)
                 tgt = _safe_float(row.get("target_1"))
+                stop = _safe_float(row.get("hard_stop"))
+                hi = _safe_float((r_next or {}).get("high"))
+                lo = _safe_float((r_next or {}).get("low"))
+                hit_target = None
+                hit_stop = None
                 if tgt is not None:
-                    hit = 1 if actual >= tgt else 0
-                    outcome = "HIT" if hit == 1 else "MISS"
+                    if self.use_intraday_touch and hi is not None:
+                        hit_target = 1 if hi >= tgt else 0
+                    else:
+                        hit_target = 1 if actual >= tgt else 0
+                if stop is not None:
+                    if self.use_intraday_touch and lo is not None:
+                        hit_stop = 1 if lo <= stop else 0
+                    else:
+                        hit_stop = 1 if actual <= stop else 0
+
+                if hit_stop == 1:
+                    outcome = "STOP_HIT"
+                elif hit_target is not None:
+                    outcome = "HIT" if hit_target == 1 else "MISS"
                 else:
-                    # No target band recorded — close based on return direction at horizon
-                    hit = None
+                    # No target band recorded — close based on net return direction at horizon
                     outcome = "HIT" if ret_pct >= 0 else "MISS"
 
                 row["next_date"] = next_date
                 row["actual_price"] = round(actual, 2)
+                row["actual_price_net"] = round(actual_net, 2)
                 row["return_pct"] = ret_pct
-                row["hit_target"] = hit
+                row["hit_target"] = hit_target
+                row["hit_stop"] = hit_stop
                 row["outcome"] = outcome
                 updated += 1
             except Exception:
@@ -614,18 +724,22 @@ class PaperTradeLogger:
                 if row.get("outcome"):
                     continue
                 self._ensure_trade_id(row)
+                eff_entry, _eff_date = self._ensure_effective_entry(row, dates)
+                if eff_entry is None or eff_entry <= 0:
+                    continue
                 t = (row.get("ticker") or "").upper()
                 r_now = run_by_ticker.get(t)
                 px = _safe_float((r_now or {}).get("close"))
-                entry = _safe_float(row.get("entry_price"))
-                if px is None or entry is None or entry <= 0:
+                if px is None:
                     continue
-                mtm_ret = round(100 * (px - entry) / entry, 2)
+                exit_cost = self._row_cost_pct(row, "exit_cost_pct")
+                px_net = round(float(px) * (1.0 - exit_cost), 4)
+                mtm_ret = round(100 * (px_net - eff_entry) / eff_entry, 2)
                 # Rolling columns: only after we have a prior mark — daily $/% vs last snapshot; first MTM has no prior day.
                 prev_mark = _safe_float(row.get("rolling_entry_price"))
                 if prev_mark is not None and prev_mark > 0:
-                    rolling_ret = round(100 * (px - prev_mark) / prev_mark, 2)
-                    rolling_pnl = round(px - prev_mark, 2)
+                    rolling_ret = round(100 * (px_net - prev_mark) / prev_mark, 2)
+                    rolling_pnl = round(px_net - prev_mark, 2)
                 else:
                     rolling_ret = None
                     rolling_pnl = None
@@ -634,8 +748,9 @@ class PaperTradeLogger:
                     continue
                 row["mtm_date"] = latest
                 row["mtm_price"] = round(px, 2)
+                row["mtm_price_net"] = round(px_net, 2)
                 row["mtm_return_pct"] = mtm_ret
-                row["rolling_entry_price"] = round(px, 2)
+                row["rolling_entry_price"] = round(px_net, 2)
                 row["rolling_pnl"] = rolling_pnl
                 row["rolling_return_pct"] = rolling_ret
                 updated += 1
@@ -759,7 +874,20 @@ class PaperTradeLogger:
 
     def _stats_for_completed(self, completed: list[dict[str, Any]], benchmark: str = "SPY") -> dict[str, Any]:
         returns = [float(r["return_pct"]) for r in completed if _safe_float(r.get("return_pct")) is not None]
-        hits = [int(float(r["hit_target"])) for r in completed if str(r.get("hit_target") or "").strip() != ""]
+        hits: list[int] = []
+        for r in completed:
+            ht = str(r.get("hit_target") or "").strip()
+            if ht != "":
+                try:
+                    hits.append(int(float(ht)))
+                    continue
+                except Exception:
+                    pass
+            oc = str(r.get("outcome") or "").upper()
+            if oc == "HIT":
+                hits.append(1)
+            elif oc in ("MISS", "STOP_HIT"):
+                hits.append(0)
         win_rate = round(100 * (sum(hits) / len(hits)), 1) if hits else None
         avg_return = round(sum(returns) / len(returns), 2) if returns else None
         wins = [float(r["return_pct"]) for r in completed if str(r.get("hit_target")) == "1" and _safe_float(r.get("return_pct")) is not None]
@@ -798,7 +926,7 @@ class PaperTradeLogger:
         shows preview when 5+ completed but below min. Adds buy-side-only slice (STRONG BUY / BUY / HOLD/ADD).
         """
         rows = self._read_all()
-        completed = [r for r in rows if r.get("outcome") in ("HIT", "MISS") and _safe_float(r.get("return_pct")) is not None]
+        completed = [r for r in rows if r.get("outcome") in ("HIT", "MISS", "STOP_HIT") and _safe_float(r.get("return_pct")) is not None]
 
         horizon_note = (
             "Completed trades: exit = first EOD on or after signal date + N business days "
