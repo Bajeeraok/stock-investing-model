@@ -642,8 +642,8 @@ export function InvestorDecisionSummarySection({
           "p",
           { className: "text-[11px] text-slate-400 mt-2 leading-snug" },
           etaDays != null
-            ? `Estimated time: ~${etaDays} trading days (model-based transition estimate).`
-            : "Estimated time: timing uncertain; wait for gate progress above."
+            ? `Estimated time: about ${etaDays} trading days if regime confirms.`
+            : "Estimated time: uncertain — wait for gate progress above."
         )
       ),
       whyBullets.length > 0 &&

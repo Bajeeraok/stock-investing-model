@@ -585,6 +585,18 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
     return rawLabel;
   })();
 
+  const patternTechnicalSplit = (() => {
+    if (layerKey !== "pattern_technical") return null;
+    const m = rawLabel.match(/Pattern\s*(\d+)\/100[\s\-–;,:]*technical\s*(\d+)\/100/i);
+    if (!m) return null;
+    const patternScore = Number.parseInt(m[1], 10);
+    const technicalScore = Number.parseInt(m[2], 10);
+    if (!Number.isFinite(patternScore) || !Number.isFinite(technicalScore)) return null;
+    const gap = technicalScore - patternScore;
+    if (gap < 30) return null;
+    return `Momentum is improving (${technicalScore}/100), but setup quality is still weak (${patternScore}/100). Indicators track momentum; patterns confirm structure. For a higher-conviction entry, both should align.`;
+  })();
+
   // Score-aware label colour so the description visually echoes the result
   const labelColour = !available
     ? "text-slate-500 italic"
@@ -622,6 +634,11 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
       <p className={clsx("text-xs pl-4 leading-snug", labelColour)}>
         {cleanLabel}
       </p>
+      {patternTechnicalSplit && (
+        <p className="text-[11px] pl-4 leading-snug text-slate-400">
+          {patternTechnicalSplit}
+        </p>
+      )}
     </div>
   );
 }
@@ -761,9 +778,10 @@ function WeightedMathTable({ breakdown, confidence, penalty_audit }: {
 }
 
 /** "What would flip this to BUY?" — most actionable section for a trader. */
-function FlipToBuy({ breakdown, action }: {
+function FlipToBuy({ breakdown, action, preFlight }: {
   breakdown: Record<string, BreakdownLayer>;
   action: string;
+  preFlight?: PreFlightData | null;
 }) {
   const isBullish = action.toUpperCase().includes("BUY");
   if (isBullish) return null;
@@ -803,6 +821,35 @@ function FlipToBuy({ breakdown, action }: {
       ]
     : gaps;
 
+  const gateTimeEstimate = (() => {
+    const blockingMap: Record<string, string> = {
+      "Regime (HMM)": "regime",
+      "ML Probability": "ml",
+      "Technical setup": "technical",
+      "Options Sentiment": "options",
+      Fundamentals: "fundamentals",
+    };
+    const blockingGates = displayGaps.map((g) => blockingMap[g.label] ?? g.label.toLowerCase());
+    const rt = preFlight?.regime_transition;
+    const shift = rt?.hmm_shift_direction;
+    const shiftProbRaw = shift?.shift_probability ?? rt?.shift_probability ?? null;
+    const shiftProb = shiftProbRaw != null ? Number(shiftProbRaw) : null;
+    const direction = (shift?.shift_direction?.label || shift?.interpretation || rt?.label || "").toString();
+    const isLikelyBull = /likely bull/i.test(direction);
+    const days = shift?.horizon_days ?? preFlight?.transition_bonus?.days_to_confirm ?? null;
+
+    if (shiftProb != null && shiftProb >= 0.9 && isLikelyBull && days != null) {
+      return `${(shiftProb * 100).toFixed(0)}% chance of a likely-bull regime shift within ${days} days — upgrade could come sooner than usual.`;
+    }
+    if (shiftProb != null && shiftProb >= 0.7 && days != null) {
+      return `If regime confirms, upgrade timing is roughly ${days} trading days.`;
+    }
+    if (blockingGates.length === 1 && blockingGates[0] === "regime") {
+      return "Likely needs 15–30 trading days of sustained follow-through.";
+    }
+    return null;
+  })();
+
   return (
     <div className="rounded-lg border border-blue-500/25 bg-blue-500/8 p-3.5 space-y-2.5">
       <p className="text-xs font-semibold text-blue-200 flex items-center gap-1.5">
@@ -840,6 +887,11 @@ function FlipToBuy({ breakdown, action }: {
           );
         })}
       </div>
+      {gateTimeEstimate && (
+        <p className="text-[11px] text-blue-100/90 border-t border-blue-500/20 pt-2.5 leading-snug">
+          Estimated time: {gateTimeEstimate}
+        </p>
+      )}
       {regimeIsHardBlock && (
         <p className="text-[11px] text-slate-400 border-t border-blue-500/20 pt-2.5 leading-snug">
           <span className="text-slate-300 font-medium">Regime (HMM)</span> encodes multi-week structure (bull vs bear
@@ -1346,7 +1398,11 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       {data.penalty_audit && <PenaltyAuditPanel pa={data.penalty_audit} />}
 
       {/* What would flip this to BUY */}
-      <FlipToBuy breakdown={breakdown as Record<string, BreakdownLayer>} action={data.action ?? "WATCH"} />
+      <FlipToBuy
+        breakdown={breakdown as Record<string, BreakdownLayer>}
+        action={data.action ?? "WATCH"}
+        preFlight={data.pre_flight ?? null}
+      />
 
       {/* Risk factors */}
       {riskFactors.length > 0 && (

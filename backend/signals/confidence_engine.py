@@ -902,11 +902,14 @@ class ConfidenceEngine:
 
         # ── Risk factors and watch levels ──────────────────────────────────
         si_data = details.get("short_interest")
+        watch_levels = _build_watch_levels(df, composite_score, ticker=ticker)
         risk_factors = _build_risk_factors(
             scores, market_regime, vix, disqualifiers, composite_score,
+            watch_levels=watch_levels,
+            ticker=ticker,
+            config=config,
             short_interest=si_data,
         )
-        watch_levels = _build_watch_levels(df, composite_score, ticker=ticker)
 
         # ── Pre-flight deep analysis (coherence, playbook, divergence) ─────
         pre_flight_data = _run_pre_flight(
@@ -1502,15 +1505,46 @@ def _build_risk_factors(
     vix: float | None,
     disqualifiers: list[str],
     composite_score: float,
+    watch_levels: dict | None = None,
+    ticker: str = "",
+    config: dict | None = None,
     short_interest: dict | None = None,
 ) -> list[str]:
     risks = list(disqualifiers)
+    wl = watch_levels or {}
+    cfg = config or {}
     if market_regime in ("BEAR", "STRONG_BEAR"):
         risks.append(f"Macro regime is {market_regime} — counter-trend trades carry elevated risk")
     if vix is not None and vix > 28:
         risks.append(f"VIX {vix:.1f} — extreme volatility, size down and widen stops")
     if composite_score < 40:
         risks.append("Technical score weak — no momentum confirmation yet")
+    # Ticker-specific structural risk: proximity to thesis floor (invalidation level).
+    try:
+        price = wl.get("current_price")
+        thesis_floor = wl.get("invalidation_below")
+        if price is not None and thesis_floor is not None and float(price) > 0:
+            floor_buffer = (float(price) - float(thesis_floor)) / float(price)
+            if floor_buffer < 0.15:
+                risks.append(
+                    f"Only {floor_buffer:.0%} above thesis floor (${float(thesis_floor):.2f}). "
+                    "If that level breaks, treat it as thesis invalidation and exit rather than averaging down."
+                )
+    except Exception:
+        pass
+    # Earnings-event risk for single names with near-term catalysts.
+    if ticker:
+        try:
+            from signals.providers import get_next_earnings
+            nxt = get_next_earnings(ticker, cfg)
+            days_until = nxt.get("days_until") if isinstance(nxt, dict) else None
+            if days_until is not None and int(days_until) <= 21:
+                risks.append(
+                    f"Earnings in about {int(days_until)} days — regime and ML signals can reprice sharply "
+                    "after the event. If adding, use smaller size into earnings."
+                )
+        except Exception:
+            pass
     hmm_val = scores.get("regime_hmm")
     if hmm_val is not None and hmm_val < 0.40:
         risks.append("HMM assigns <40% probability to bull state — regime is uncertain")
