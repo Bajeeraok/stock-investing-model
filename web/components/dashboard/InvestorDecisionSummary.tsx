@@ -421,6 +421,19 @@ export function InvestorDecisionSummarySection({
   const chartSummary = `Pattern ${Math.round(Number(pattern_score ?? 50))}/100 · Short ${short?.verdict || "N/A"} · ML ${Number(medium?.ml_prob ?? 0).toFixed(0)}%`;
   const flowSummary = `Confidence ${medium?.conviction || "mixed"} / ${long?.conviction || "mixed"}`;
   const businessSummary = `Long verdict ${long?.verdict || "N/A"} · FV gap ${assessmentPct >= 0 ? "+" : ""}${assessmentPct.toFixed(1)}%`;
+  const gateRows: Array<{ label: string; value: number | null; target: number; unit: "%" | "pts" }> = [
+    { label: "Regime", value: regime_bull_pct ?? null, target: 60, unit: "%" },
+    { label: "Pattern", value: pattern_score ?? null, target: 60, unit: "pts" },
+    { label: "Confidence", value: confidenceBandMid ?? null, target: 55, unit: "%" },
+  ];
+  const gateTone = (v: number | null, t: number): string =>
+    v == null
+      ? "text-slate-400"
+      : v >= t
+        ? "text-emerald-300"
+        : v >= Math.max(t - 10, 0)
+          ? "text-amber-300"
+          : "text-red-300";
 
   return React.createElement(
     "div",
@@ -586,19 +599,48 @@ export function InvestorDecisionSummarySection({
       ),
       React.createElement(
         "div",
-        { className: "mt-3 rounded-lg border border-slate-700/70 bg-slate-900/30 px-3 py-2" },
-        React.createElement("p", { className: "text-[11px] text-slate-400 mb-1" }, "What would change this?"),
+        { className: "mt-3 rounded-xl border border-slate-700/80 bg-slate-900/35 px-3.5 py-3" },
+        React.createElement("p", { className: "text-[11px] text-slate-400 mb-2 uppercase tracking-wide font-semibold" }, "What would change this"),
         React.createElement(
           "div",
-          { className: "text-[11px] text-slate-300 space-y-1 font-mono" },
-          regime_bull_pct != null && React.createElement("p", null, `Regime  ${regime_bull_pct.toFixed(0)}% -> needs 60%`),
-          React.createElement("p", null, `Pattern ${Math.round(Number(pattern_score ?? 50))} -> needs 60`),
-          confidenceBandMid != null &&
-            React.createElement("p", null, `Confidence ${confidenceBandMid.toFixed(0)}% -> needs 55%`)
+          { className: "space-y-2" },
+          gateRows.map((g) => {
+            const val = g.value;
+            const shown = val == null ? "N/A" : `${Math.round(val)}${g.unit}`;
+            const tgt = `${Math.round(g.target)}${g.unit}`;
+            const barPct = val == null ? 0 : Math.max(0, Math.min(100, (val / g.target) * 100));
+            const pass = val != null && val >= g.target;
+            return React.createElement(
+              "div",
+              { key: g.label, className: "rounded-lg border border-slate-700/70 bg-slate-950/40 px-2.5 py-2" },
+              React.createElement(
+                "div",
+                { className: "flex items-center justify-between text-[11px]" },
+                React.createElement(
+                  "span",
+                  { className: "text-slate-300 font-medium" },
+                  g.label
+                ),
+                React.createElement(
+                  "span",
+                  { className: gateTone(val, g.target) },
+                  `${shown} -> needs ${tgt}`
+                )
+              ),
+              React.createElement(
+                "div",
+                { className: "mt-1.5 h-1.5 rounded-full bg-slate-800 overflow-hidden" },
+                React.createElement("div", {
+                  className: pass ? "h-full bg-emerald-500" : "h-full bg-amber-500",
+                  style: { width: `${barPct}%` },
+                })
+              )
+            );
+          })
         ),
         React.createElement(
           "p",
-          { className: "text-[11px] text-slate-400 mt-2" },
+          { className: "text-[11px] text-slate-400 mt-2 leading-snug" },
           etaDays != null
             ? `Estimated time: ~${etaDays} trading days (model-based transition estimate).`
             : "Estimated time: timing uncertain; wait for gate progress above."

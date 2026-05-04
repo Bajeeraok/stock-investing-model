@@ -175,6 +175,19 @@ export function TickerDetailModal({
     confidence?.pre_flight?.playbook?.find((s) => s.condition_met && s.scenario_id === 3) ?? null;
   const regimeShift = confidence?.pre_flight?.regime_transition ?? null;
 
+  const normalizeActionClass = (v?: string | null): "constructive" | "neutral" | "cautionary" => {
+    const s = (v || "").toUpperCase();
+    if (s.includes("STRONG BUY") || s.includes("BUY") || s.includes("ADD")) return "constructive";
+    if (s.includes("AVOID") || s.includes("REDUCE") || s.includes("TRIM") || s.includes("SELL")) return "cautionary";
+    return "neutral";
+  };
+  const overviewVerdict = detail?.investor_summary?.one_answer?.verdict ?? detail?.investor_summary?.overall_verdict ?? null;
+  const patternVerdict = unified?.action ?? null;
+  const hasVerdictConflict =
+    !!overviewVerdict &&
+    !!patternVerdict &&
+    normalizeActionClass(overviewVerdict) !== normalizeActionClass(patternVerdict);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-3 sm:p-4" onClick={onClose}>
       <div
@@ -618,6 +631,15 @@ export function TickerDetailModal({
                     <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
                     <p className="text-[11px] text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
                   </div>
+                  {hasVerdictConflict && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                      <p className="text-[11px] text-amber-200 leading-snug">
+                        Overview says <span className="font-semibold">{overviewVerdict}</span> (fused multi-layer model),
+                        while Technical Pattern says <span className="font-semibold">{patternVerdict}</span> (chart-only).
+                        This is expected when structural thesis and tactical timing diverge.
+                      </p>
+                    </div>
+                  )}
                   <PatternSignalCardSafe data={unified} />
                 </section>
               ) : (

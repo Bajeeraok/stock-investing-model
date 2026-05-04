@@ -2172,17 +2172,33 @@ def _build_trade_roadmap(
     def _is_lower_level(level: float | None) -> bool:
         return level is not None and float(level) < (lower_ref - 0.25)
 
+    def _lower_zone_label(lo: float | None, hi: float | None) -> tuple[str, float] | None:
+        if lo is None or hi is None:
+            return None
+        cap = lower_ref - 0.25
+        z_lo = float(lo)
+        z_hi = min(float(hi), cap)
+        if z_hi <= z_lo:
+            return None
+        mid = round((z_lo + z_hi) / 2.0, 2)
+        return (f"near ${z_lo:.2f}-${z_hi:.2f}", mid)
+
     ma200_zone = _tight_zone(float(ma200), float(current_price)) if ma200 else None
     lower_candidates: list[tuple[str, float]] = []
 
     if _is_lower_level(lower_add_anchor):
         lower_candidates.append((f"around ${float(lower_add_anchor):.2f}", float(lower_add_anchor)))
-    if _is_lower_level(z_13_mid):
-        lower_candidates.append(((f"near {z_13}" if z_13 else f"near ${float(z_13_mid):.2f}"), float(z_13_mid)))
-    if _is_lower_level(z_36_mid):
-        lower_candidates.append(((f"near {z_36}" if z_36 else f"near ${float(z_36_mid):.2f}"), float(z_36_mid)))
+    z13_label = _lower_zone_label(_safe_float(row_13.get("price_zone_low")), _safe_float(row_13.get("price_zone_high")))
+    if z13_label is not None and _is_lower_level(z13_label[1]):
+        lower_candidates.append(z13_label)
+    z36_label = _lower_zone_label(_safe_float(row_36.get("price_zone_low")), _safe_float(row_36.get("price_zone_high")))
+    if z36_label is not None and _is_lower_level(z36_label[1]):
+        lower_candidates.append(z36_label)
     if ma200_zone is not None and _is_lower_level(float(ma200)):
-        lower_candidates.append((f"near ${ma200_zone[0]:.2f}-${ma200_zone[1]:.2f} (MA200 zone)", float(ma200)))
+        ma_lo = float(ma200_zone[0])
+        ma_hi = min(float(ma200_zone[1]), lower_ref - 0.25)
+        if ma_hi > ma_lo:
+            lower_candidates.append((f"near ${ma_lo:.2f}-${ma_hi:.2f} (MA200 zone)", float(ma200)))
 
     deduped: list[tuple[str, float]] = []
     for label, level in lower_candidates:
