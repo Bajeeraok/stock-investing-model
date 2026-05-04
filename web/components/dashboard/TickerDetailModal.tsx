@@ -176,12 +176,12 @@ export function TickerDetailModal({
   const regimeShift = confidence?.pre_flight?.regime_transition ?? null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-3 sm:p-4" onClick={onClose}>
       <div
-        className="bg-slate-900 border border-slate-700 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-slate-900/95 border border-slate-700/90 rounded-2xl w-[min(96vw,1280px)] max-h-[92vh] overflow-y-auto shadow-2xl shadow-black/40"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-slate-900 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
+        <div className="sticky top-0 bg-gradient-to-b from-slate-900 to-slate-900/95 border-b border-slate-700/80 px-5 sm:px-6 py-4 flex items-center justify-between z-20">
           <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2 flex-wrap">
             <TrendingUp className="h-6 w-6 text-emerald-500 shrink-0" />
             <span className="font-mono text-emerald-400">{ticker}</span>
@@ -233,7 +233,7 @@ export function TickerDetailModal({
           </div>
         )}
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {loading && (
             <div className="flex justify-center py-12">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-emerald-500 border-t-transparent" />

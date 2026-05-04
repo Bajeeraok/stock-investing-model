@@ -4,6 +4,7 @@ import { Info } from "lucide-react";
 
 export type DataFreshness = {
   as_of_utc: string;
+  as_of_et?: string;
   prices?: string;
   fundamentals?: string;
   macro?: string;
@@ -27,8 +28,8 @@ export function DataFreshnessBar({ data }: { data: DataFreshness }) {
       <div className="min-w-0 space-y-1">
         <p>
           <span className="text-slate-400 font-medium">As of:</span>{" "}
-          <span className="font-mono text-slate-300">{data.as_of_utc}</span>
-          <span className="text-slate-600"> (UTC)</span>
+          <span className="font-mono text-slate-300">{data.as_of_et ?? data.as_of_utc}</span>
+          <span className="text-slate-600"> (EST)</span>
         </p>
         {(data.price_last_bar_date || data.eod_snapshot_latest_date) && (
           <p className="text-slate-500 leading-snug">

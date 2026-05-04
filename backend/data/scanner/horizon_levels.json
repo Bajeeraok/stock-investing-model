@@ -507,24 +507,24 @@
   },
   "GLD": {
     "short": {
-      "entry_low": 411.25,
-      "entry_high": 419.6,
-      "stop_loss": 394.55,
-      "target": 444.65,
+      "entry_low": 416.83,
+      "entry_high": 425.3,
+      "stop_loss": 399.9,
+      "target": 450.69,
       "horizon_label": "Short-term"
     },
     "medium": {
-      "entry_low": 411.25,
-      "entry_high": 449.92,
-      "stop_loss": 418.74,
-      "target": 512.28,
+      "entry_low": 416.83,
+      "entry_high": 448.49,
+      "stop_loss": 417.41,
+      "target": 510.65,
       "horizon_label": "Medium-term"
     },
     "long": {
-      "entry_low": 370.85,
-      "entry_high": 409.89,
-      "stop_loss": 378.66,
-      "target": 480.14,
+      "entry_low": 371.95,
+      "entry_high": 411.11,
+      "stop_loss": 379.78,
+      "target": 486.66,
       "horizon_label": "Long-term"
     }
   },
@@ -599,24 +599,24 @@
   },
   "NVDA": {
     "short": {
-      "entry_low": 211.04,
-      "entry_high": 214.24,
-      "stop_loss": 202.51,
-      "target": 227.03,
+      "entry_low": 172.42,
+      "entry_high": 177.75,
+      "stop_loss": 164.48,
+      "target": 189.66,
       "horizon_label": "Short-term"
     },
     "medium": {
-      "entry_low": 184.36,
-      "entry_high": 193.67,
-      "stop_loss": 175.05,
-      "target": 285.14,
+      "entry_low": 172.42,
+      "entry_high": 187.15,
+      "stop_loss": 175.92,
+      "target": 213.12,
       "horizon_label": "Medium-term"
     },
     "long": {
-      "entry_low": 174.17,
-      "entry_high": 192.51,
-      "stop_loss": 98.88,
-      "target": 295.48,
+      "entry_low": 172.42,
+      "entry_high": 187.15,
+      "stop_loss": 105.28,
+      "target": 177.75,
       "horizon_label": "Long-term"
     }
   },

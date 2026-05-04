@@ -1027,6 +1027,7 @@ def _build_investor_summary(
         roadmap_cfg=roadmap_cfg,
         regime_signal_precedence_note=regime_signal_note,
         conf_snapshot=conf_snapshot,
+        config=config,
     )
     news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config)
     if news_layer and isinstance(out.get("trade_roadmap"), dict):
@@ -1353,6 +1354,7 @@ def _build_trade_roadmap(
     roadmap_cfg: dict | None = None,
     regime_signal_precedence_note: str | None = None,
     conf_snapshot: dict | None = None,
+    config: dict | None = None,
 ) -> dict:
     """
     Build complete Trade Roadmap: buy stages (Today → 6–12 mo) and sell stages (stop → full target),
@@ -1874,6 +1876,123 @@ def _build_trade_roadmap(
     if nest_note:
         consistency_notes.append(nest_note)
 
+    rec_cfg = (((config or {}).get("confidence") or {}).get("reconciliation") or {})
+    fused_cautious_max = float(rec_cfg.get("fused_cautious_max_pct", 40))
+    lt_strong_min = float(rec_cfg.get("long_horizon_strong_min_pct", 80))
+    transition_uncertain_shift_min = float(rec_cfg.get("transition_uncertain_shift_min", 0.70))
+    pre_flip_shift_min = float(rec_cfg.get("pre_flip_shift_prob_min", 0.85))
+    pre_flip_bull_share_min = float(rec_cfg.get("pre_flip_bull_share_min", 0.55))
+    pre_flip_window_days = int(rec_cfg.get("pre_flip_window_days", 10))
+    options_constructive_min_pct = float(rec_cfg.get("options_constructive_min_pct", 55))
+    options_constructive_pc_max = float(rec_cfg.get("options_constructive_pc_max", 0.70))
+
+    # Signal reconciliation layer: explain conflicts when major model components diverge.
+    reconciliation_notes: list[str] = []
+    conf_band_display: str | None = None
+    conf_band_note: str | None = None
+    shift_p_val: float | None = None
+    shift_dom: str = ""
+    shift_bull_prob: float | None = None
+    if isinstance(conf_snapshot, dict):
+        try:
+            fused_pct = float(model_confidence_pct) if model_confidence_pct is not None else None
+            hz_conf = conf_snapshot.get("horizon_confidence") or {}
+            lt_conf_pct = (
+                float(hz_conf.get("long")) * 100.0
+                if isinstance(hz_conf, dict) and hz_conf.get("long") is not None
+                else float(lt_ml)
+            )
+            if fused_pct is not None and fused_pct < fused_cautious_max and lt_conf_pct >= lt_strong_min:
+                reconciliation_notes.append(
+                    f"Long-horizon confidence is strong ({lt_conf_pct:.0f}%) but fused confidence is cautious ({fused_pct:.0f}%). "
+                    "Near-term regime and transition uncertainty are suppressing timing confidence."
+                )
+            if display_verdict in ("REDUCE", "AVOID") and lt_conf_pct >= lt_strong_min:
+                reconciliation_notes.append(
+                    f"{display_verdict} reflects near-term regime/technical risk control, not a long-term thesis break "
+                    f"(long-horizon confidence {lt_conf_pct:.0f}%)."
+                )
+
+            hmm_d = conf_snapshot.get("hmm") or {}
+            shift_d = (hmm_d.get("hmm_shift_direction") or {}) if isinstance(hmm_d, dict) else {}
+            shift_p = shift_d.get("shift_probability")
+            shift_dir = (shift_d.get("shift_direction") or {}) if isinstance(shift_d, dict) else {}
+            dom = str(shift_dir.get("dominant") or "").strip().lower()
+            bull_shift = shift_dir.get("bull")
+            bear_shift = shift_dir.get("bear")
+            shift_p_val = _safe_float(shift_p)
+            shift_dom = dom
+            shift_bull_prob = _safe_float(bull_shift)
+            if shift_p is not None and float(shift_p) >= transition_uncertain_shift_min and dom in ("", "uncertain"):
+                bull_str = (
+                    f"{float(bull_shift) * 100:.0f}%"
+                    if bull_shift is not None
+                    else "n/a"
+                )
+                bear_str = (
+                    f"{float(bear_shift) * 100:.0f}%"
+                    if bear_shift is not None
+                    else "n/a"
+                )
+                reconciliation_notes.append(
+                    f"HMM shows high transition probability ({float(shift_p) * 100:.0f}%) with uncertain direction "
+                    f"(Bull {bull_str} vs Bear {bear_str} of shift mass) — treat regime gate as lower-confidence during transition."
+                )
+            if (
+                shift_p is not None
+                and float(shift_p) >= pre_flip_shift_min
+                and dom == "bull"
+                and (shift_bull_prob is None or float(shift_bull_prob) >= pre_flip_bull_share_min)
+                and overall in ("STRONG BUY", "BUY")
+                and display_verdict in ("WAIT", "WATCH")
+            ):
+                reconciliation_notes.append(
+                    f"Pattern and fundamentals are buy-grade; we're waiting on HMM confirmation that is {float(shift_p) * 100:.0f}% likely to flip bull within ~{pre_flip_window_days} trading days."
+                )
+
+            opts = conf_snapshot.get("options") or {}
+            pc = _safe_float(opts.get("pc_oi_ratio") if isinstance(opts, dict) else None)
+            opts_score_raw = None
+            if isinstance(opts, dict) and opts.get("options_score") is not None:
+                opts_score_raw = _safe_float(opts.get("options_score"))
+            if opts_score_raw is None:
+                bk = conf_snapshot.get("breakdown") or {}
+                if isinstance(bk, dict):
+                    opts_score_raw = _safe_float(((bk.get("options_sentiment") or {}).get("score")))
+            opts_pct = float(opts_score_raw) * 100.0 if opts_score_raw is not None else None
+            if (
+                opts_pct is not None
+                and opts_pct >= options_constructive_min_pct
+                and pc is not None
+                and pc < options_constructive_pc_max
+                and display_verdict in ("REDUCE", "AVOID")
+            ):
+                reconciliation_notes.append(
+                    f"Options layer is constructive (score {opts_pct:.0f}%, P/C {pc:.2f}) but recommendation is {display_verdict}. "
+                    "This is a deliberate conflict: options positioning is supportive while regime risk still dominates the near-term action."
+                )
+
+            # Confidence band: expose uncertainty range (coverage + transitional regime uncertainty).
+            if fused_pct is not None:
+                n_active = _safe_float(conf_snapshot.get("n_layers_active"))
+                coverage_ratio = max(0.0, min(1.0, float(n_active or 0.0) / 7.0))
+                hmm_uncertain = (
+                    shift_p is not None and float(shift_p) >= transition_uncertain_shift_min and dom in ("", "uncertain")
+                )
+                base_unc = (1.0 - coverage_ratio) * 15.0
+                hmm_unc = 8.0 if hmm_uncertain else 0.0
+                lo = max(0.0, fused_pct - base_unc - hmm_unc)
+                hi = min(100.0, fused_pct + base_unc)
+                conf_band_display = f"{lo:.0f}-{hi:.0f}%"
+                if hmm_uncertain or coverage_ratio < 0.95:
+                    conf_band_note = (
+                        "Band widened by partial layer coverage and/or uncertain HMM transition direction."
+                    )
+        except Exception:
+            pass
+    if reconciliation_notes:
+        consistency_notes.extend(reconciliation_notes)
+
     # Trader-type one-liners — derived from the same Today-row logic as the buy roadmap (when/pos/align_buy_rows_to_core).
     short_stop = _safe_float(short.get("stop_loss"))
     short_tgt = _safe_float(short.get("target"))
@@ -2089,6 +2208,45 @@ def _build_trade_roadmap(
         f"If price loses ${key_inv:.2f} with momentum, reassess instead of averaging blindly."
     )
 
+    structural_label = (
+        "STRONG BULL"
+        if overall in ("STRONG BUY", "BUY")
+        else "DEFENSIVE"
+        if overall in ("REDUCE", "AVOID")
+        else "NEUTRAL"
+    )
+    tactical_label = (
+        "HOLD / WATCH"
+        if display_verdict in ("WAIT", "WATCH")
+        else "DEFENSIVE / RISK CONTROL"
+        if display_verdict in ("REDUCE", "AVOID")
+        else "ACTIONABLE BUY"
+        if display_verdict in ("BUY", "STRONG BUY")
+        else (display_verdict or "HOLD / WATCH")
+    )
+    pre_flip_watch = (
+        structural_label == "STRONG BULL"
+        and tactical_label == "HOLD / WATCH"
+        and shift_p_val is not None
+        and shift_p_val >= pre_flip_shift_min
+        and shift_dom == "bull"
+        and (shift_bull_prob is None or shift_bull_prob >= pre_flip_bull_share_min)
+    )
+    dual_signal = {
+        "structural": structural_label,
+        "tactical": tactical_label,
+        "display_mode": "pre_flip_watch" if pre_flip_watch else "standard",
+        "bridge_note": (
+            f"Regime flip {shift_p_val * 100:.0f}% likely bull"
+            + (
+                f" (bull share {shift_bull_prob * 100:.0f}% of shift mass)"
+                if shift_bull_prob is not None
+                else ""
+            )
+            + f" within ~{pre_flip_window_days} trading days. Tactical hold/watch is the waiting room, not a thesis conflict."
+        ) if pre_flip_watch else None,
+    }
+
     tldr = {
         "bias": (
             (
@@ -2108,8 +2266,12 @@ def _build_trade_roadmap(
         "key_level": round(key_inv, 2),
         "key_level_label": "Structural zone — max(~MA200×0.97, 52w tail); invalidation / support (see confidence watch levels)",
         "model_confidence_pct": model_confidence_pct,
+        "model_confidence_band": conf_band_display,
+        "model_confidence_band_note": conf_band_note,
         "dominant_near_term_action": dom_action,
+        "dual_signal": dual_signal,
         "execution_plan_lines": execution_plan_lines,
+        "reconciliation_notes": reconciliation_notes,
     }
     you_are_here = _roadmap_you_are_here(buy_stages, float(current_price))
     action_glossary = {
@@ -2258,6 +2420,8 @@ def _build_one_answer_roadmaps(
     in_medium = m_lo is not None and m_hi is not None and m_lo <= current_price <= m_hi
     in_zone = in_short or in_medium
     action_today = _action_today(display_verdict, in_zone)
+    short_zone = f"${s_lo:.2f}-${s_hi:.2f}" if (s_lo is not None and s_hi is not None) else "short entry zone"
+    medium_zone = f"${m_lo:.2f}-${m_hi:.2f}" if (m_lo is not None and m_hi is not None) else "medium entry zone"
 
     # Headline: one sentence
     verdict_label = display_verdict or overall
@@ -2294,17 +2458,80 @@ def _build_one_answer_roadmaps(
     headline = "".join(headline_parts).strip() or f"{verdict_label}: See trader/investor roadmaps below."
 
     regime_bull_pct = investor_out.get("regime_bull_pct")
+    tr = (investor_out.get("trade_roadmap") or {}) if isinstance(investor_out.get("trade_roadmap"), dict) else {}
+    tldr = (tr.get("tldr") or {}) if isinstance(tr, dict) else {}
+    dual = (tldr.get("dual_signal") or {}) if isinstance(tldr, dict) else {}
+    structural = str(dual.get("structural") or "")
+    tactical = str(dual.get("tactical") or "")
+    dual_mode = str(dual.get("display_mode") or "")
+    bridge_note = str(dual.get("bridge_note") or "").strip() or None
+    conf_band = tldr.get("model_confidence_band")
+    regime_label = tr.get("regime_label")
     execution_plan_lines = (
         ((investor_out.get("trade_roadmap") or {}).get("execution_plan_lines"))
         if isinstance(investor_out.get("trade_roadmap"), dict)
         else None
     )
+    reconciliation_notes = (
+        ((investor_out.get("trade_roadmap") or {}).get("tldr") or {}).get("reconciliation_notes")
+        if isinstance(investor_out.get("trade_roadmap"), dict)
+        else None
+    )
+
+    # Single-message narrative: "bottom line + why" so users don't have to reconcile layers manually.
+    if dual_mode == "pre_flip_watch":
+        bottom_line = (
+            f"Bottom line: structurally bullish but tactically patient - scale in only on planned dips "
+            f"({short_zone}) while waiting for regime confirmation."
+        )
+    elif display_verdict in ("REDUCE", "AVOID"):
+        bottom_line = (
+            f"Bottom line: risk-control mode ({display_verdict}) - avoid fresh adds here; prefer trims into strength "
+            "and re-enter only at lower planned zones."
+        )
+    elif action_today == "enter_now":
+        bottom_line = (
+            f"Bottom line: buy is actionable now - price is inside planned entry zone ({short_zone}); "
+            "enter staged, not all at once."
+        )
+    elif action_today == "wait_for_pullback":
+        bottom_line = (
+            f"Bottom line: constructive setup, but wait for pullback toward {short_zone} "
+            f"(fallback: {medium_zone}) before adding."
+        )
+    else:
+        bottom_line = "Bottom line: hold/watch for now - setup is not clean enough for a new add at current price."
+
+    why_this_call: list[str] = []
+    if structural or tactical:
+        why_this_call.append(f"Structural vs tactical: {structural or 'N/A'} / {tactical or 'N/A'}.")
+    if bridge_note:
+        why_this_call.append(bridge_note)
+    if conf_band:
+        why_this_call.append(
+            f"Model confidence band is {conf_band}; treat this as timing uncertainty, not thesis certainty."
+        )
+    if regime_label:
+        why_this_call.append(f"Current regime context: {regime_label}.")
+    if isinstance(reconciliation_notes, list):
+        for note in reconciliation_notes:
+            if isinstance(note, str) and note.strip():
+                why_this_call.append(note.strip())
+            if len(why_this_call) >= 3:
+                break
+    why_this_call = why_this_call[:3]
+    next_trigger = (short.get("trigger_buy") or medium.get("trigger_buy") or "").strip() or None
+
     one_answer = {
         "headline": headline,
         "subline": subline if display_verdict in ("REDUCE", "AVOID") else None,
         "verdict": verdict_label,
         "action_today": action_today,
+        "bottom_line": bottom_line,
+        "why_this_call": why_this_call,
+        "next_trigger": next_trigger,
         "execution_plan_lines": execution_plan_lines if isinstance(execution_plan_lines, list) else [],
+        "signal_reconciliation_notes": reconciliation_notes if isinstance(reconciliation_notes, list) else [],
         "hold_vs_trade": _hold_vs_trade_guidance(
             display_verdict=verdict_label,
             overall=overall,

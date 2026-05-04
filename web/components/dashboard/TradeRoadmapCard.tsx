@@ -98,7 +98,16 @@ export interface TradeRoadmapData {
     key_level: number;
     key_level_label?: string;
     model_confidence_pct?: number | null;
+    model_confidence_band?: string | null;
+    model_confidence_band_note?: string | null;
     dominant_near_term_action?: string | null;
+    dual_signal?: {
+      structural?: string;
+      tactical?: string;
+      display_mode?: string;
+      bridge_note?: string | null;
+    } | null;
+    reconciliation_notes?: string[];
     execution_plan_lines?: string[];
   } | null;
   you_are_here?: {
@@ -226,8 +235,20 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
   const [expanded, setExpanded] = useState(true);
   /** News block collapsed by default — expand to verify headlines / NLP inputs */
   const [newsExpanded, setNewsExpanded] = useState(false);
-  /** Full roadmap vs TL;DR-first (retail) — default advanced so power users keep full tables */
-  const [advancedRoadmap, setAdvancedRoadmap] = useState(true);
+  /** Full roadmap vs TL;DR-first (retail) — default simple for faster decisions */
+  const [advancedRoadmap, setAdvancedRoadmap] = useState(false);
+  /** Compact evidence rows for fast decision flow */
+  const [evidenceOpen, setEvidenceOpen] = useState<{
+    market: boolean;
+    chart: boolean;
+    flow: boolean;
+    business: boolean;
+  }>({
+    market: false,
+    chart: false,
+    flow: false,
+    business: false,
+  });
 
   const allowedKeys = TRADER_FILTER[traderType] || [];
   const activeTimelineKey = TIMELINE_SLIDER_LABELS[timelineIndex]?.key;
@@ -260,10 +281,27 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
         ? data.trader_summary.medium_term
         : data.trader_summary.long_term;
 
+  const decisionAction =
+    data.tldr?.dominant_near_term_action ||
+    (data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
+      ? "Actionable buy"
+      : data.display_verdict === "REDUCE" || data.display_verdict === "AVOID"
+        ? "Risk-control mode"
+        : "Hold / watch");
+  const whyLines = [
+    data.tldr?.dual_signal?.bridge_note,
+    data.tldr?.strategy ? `Strategy context: ${data.tldr.strategy}` : null,
+    ...(data.tldr?.reconciliation_notes ?? []),
+  ].filter((x): x is string => Boolean(x)).slice(0, 3);
+  const nextTrigger =
+    (data.tldr?.execution_plan_lines ?? [])[0] ||
+    (data.execution_plan_lines ?? [])[0] ||
+    currentSummary;
+
   return (
-    <div className="rounded-xl border border-slate-700 bg-slate-800/50 overflow-hidden">
+    <div className="rounded-2xl border border-slate-700/80 bg-slate-800/55 overflow-hidden shadow-xl shadow-black/20">
       {/* Header: verdict + current price / fair value / regime */}
-      <div className="p-4 border-b border-slate-700 bg-slate-900/60">
+      <div className="p-4 border-b border-slate-700/80 bg-gradient-to-b from-slate-900/80 to-slate-900/40">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <span
@@ -331,6 +369,98 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
               {data.tldr && (
                 <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2">
                   <p className="text-[10px] text-emerald-200/80 uppercase tracking-wide font-medium">TL;DR</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Action
+                  </p>
+                  <p className="text-sm text-emerald-200/95 font-semibold">
+                    {decisionAction}
+                  </p>
+                  {nextTrigger && (
+                    <>
+                      <p className="text-[11px] text-slate-400 mt-2">Next trigger</p>
+                      <p className="text-xs text-sky-200/90 border-l-2 border-sky-500/50 pl-2 mt-0.5">{nextTrigger}</p>
+                    </>
+                  )}
+                  {(whyLines.length > 0) && (
+                    <>
+                      <p className="text-[11px] text-slate-400 mt-2">Why this call</p>
+                      <ul className="mt-1 space-y-1 text-[11px] text-slate-300 list-disc list-inside">
+                        {whyLines.map((n, i) => (
+                          <li key={i}>{n}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  <div className="mt-2 rounded border border-slate-700/70 bg-slate-900/30 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setEvidenceOpen((s) => ({ ...s, market: !s.market }))}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between"
+                    >
+                      <span>Market structure</span>
+                      {evidenceOpen.market ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                    </button>
+                    {evidenceOpen.market && (
+                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                        {data.market_regime_layer?.label || data.tldr.bias}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEvidenceOpen((s) => ({ ...s, chart: !s.chart }))}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                    >
+                      <span>Chart and momentum</span>
+                      {evidenceOpen.chart ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                    </button>
+                    {evidenceOpen.chart && (
+                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                        {data.you_are_here?.note || "Use current roadmap row and key level for timing."}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEvidenceOpen((s) => ({ ...s, flow: !s.flow }))}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                    >
+                      <span>Smart money</span>
+                      {evidenceOpen.flow ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                    </button>
+                    {evidenceOpen.flow && (
+                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                        {data.tldr.model_confidence_band ? `Confidence band ${data.tldr.model_confidence_band}.` : "Model confidence context is mixed; stage entries."}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEvidenceOpen((s) => ({ ...s, business: !s.business }))}
+                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                    >
+                      <span>Business and news</span>
+                      {evidenceOpen.business ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                    </button>
+                    {evidenceOpen.business && (
+                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                        {data.probabilistic_framing || "Review scenario mix and roadmap tiers before sizing."}
+                      </p>
+                    )}
+                  </div>
+                  <div className="mt-2 rounded border border-slate-700/70 bg-slate-900/30 px-2.5 py-2">
+                    <p className="text-[11px] text-slate-400">What would change this?</p>
+                    <p className="text-[11px] text-slate-300 font-mono mt-1">
+                      Key level: ${data.tldr.key_level.toFixed(2)}
+                    </p>
+                    {data.tldr.model_confidence_band && (
+                      <p className="text-[11px] text-slate-300 font-mono">
+                        Confidence: {data.tldr.model_confidence_band}
+                      </p>
+                    )}
+                    {data.scenario_outlook && (
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Bull {data.scenario_outlook.bull_pct}% | Base {data.scenario_outlook.base_pct}% | Bear {data.scenario_outlook.bear_pct}%
+                      </p>
+                    )}
+                  </div>
                   <p className="text-sm text-slate-100 mt-1">
                     <span className="text-slate-400">Bias:</span> {data.tldr.bias}
                   </p>
@@ -353,6 +483,30 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   )}
                   {data.tldr.model_confidence_pct != null && (
                     <p className="text-[11px] text-slate-500 mt-1">Model confidence (fused): {data.tldr.model_confidence_pct}%</p>
+                  )}
+                  {data.tldr.model_confidence_band && (
+                    <p className="text-[11px] text-slate-500">
+                      Confidence band: {data.tldr.model_confidence_band}
+                    </p>
+                  )}
+                  {data.tldr.model_confidence_band_note && (
+                    <p className="text-[10px] text-slate-600 leading-snug mt-0.5">{data.tldr.model_confidence_band_note}</p>
+                  )}
+                  {data.tldr.dual_signal && (
+                    <p className="text-[11px] text-sky-200/90 mt-1">
+                      Structural: <strong>{data.tldr.dual_signal.structural || "N/A"}</strong> · Tactical:{" "}
+                      <strong>{data.tldr.dual_signal.tactical || "N/A"}</strong>
+                    </p>
+                  )}
+                  {data.tldr.dual_signal?.bridge_note && (
+                    <p className="text-[11px] text-sky-300/90 mt-0.5">{data.tldr.dual_signal.bridge_note}</p>
+                  )}
+                  {(data.tldr.reconciliation_notes?.length ?? 0) > 0 && (
+                    <ul className="mt-2 space-y-1 text-[11px] text-slate-300 list-disc list-inside">
+                      {(data.tldr.reconciliation_notes ?? []).map((n, i) => (
+                        <li key={i}>{n}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}

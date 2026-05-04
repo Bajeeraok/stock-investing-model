@@ -74,7 +74,7 @@ function formatLastRefresh(date: Date | null): string {
     minute: "2-digit",
     second: "2-digit",
     hour12: true,
-  }) + " ET";
+  }) + " EST";
 }
 
 function formatRefreshAgo(date: Date | null): string {
@@ -85,6 +85,34 @@ function formatRefreshAgo(date: Date | null): string {
   if (min < 60) return `${min} min ago`;
   const h = Math.floor(min / 60);
   return `${h}h ago`;
+}
+
+function formatEtDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return (
+    d.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      dateStyle: "short",
+      timeStyle: "short",
+    }) + " EST"
+  );
+}
+
+function etDateParamFromIso(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const y = parts.find((p) => p.type === "year")?.value;
+  const m = parts.find((p) => p.type === "month")?.value;
+  const day = parts.find((p) => p.type === "day")?.value;
+  if (!y || !m || !day) return "";
+  return `${y}-${m}-${day}`;
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -341,7 +369,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </span>
             )}
             {data.as_of_date && (
-              <span className="text-xs text-slate-600 hidden sm:inline" title="Report timestamp">As of: {new Date(data.as_of_date).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })}</span>
+              <span className="text-xs text-slate-600 hidden sm:inline" title="Report timestamp (EST)">As of: {formatEtDateTime(data.as_of_date)}</span>
             )}
             <button
               onClick={() => onRefresh(true)}
@@ -377,9 +405,8 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 setEodMessage(null);
                 setEodSaving(true);
                 try {
-                  const dateParam = data.as_of_date
-                    ? `?snapshot_date=${new Date(data.as_of_date).toISOString().slice(0, 10)}`
-                    : "";
+                  const asOfEtDate = data.as_of_date ? etDateParamFromIso(data.as_of_date) : "";
+                  const dateParam = asOfEtDate ? `?snapshot_date=${asOfEtDate}` : "";
                   const res = await fetch(`/api/eod/save-from-last-run${dateParam}`, { method: "POST" });
                   const json = await res.json().catch(() => ({}));
                   if (!res.ok) {

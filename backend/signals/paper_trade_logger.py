@@ -387,6 +387,7 @@ class PaperTradeLogger:
         mode = self._row_mode(row)
         signal_date = str(row.get("date") or "")
         entry_cost = self._row_cost_pct(row, "entry_cost_pct")
+        next_session_date: str | None = None
 
         base_px = None
         base_date = None
@@ -395,6 +396,7 @@ class PaperTradeLogger:
         if mode == "next_session":
             try:
                 target_ts = pd.Timestamp(signal_date).normalize() + BDay(1)
+                next_session_date = target_ts.strftime("%Y-%m-%d")
             except Exception:
                 target_ts = None
             if target_ts is not None:
@@ -413,7 +415,12 @@ class PaperTradeLogger:
         if base_px is None:
             base_px = _safe_float(row.get("entry_price"))
             if base_px is not None and base_px > 0:
-                base_date = _first_eod_on_or_after(dates, signal_date) or signal_date
+                if mode == "next_session" and next_session_date:
+                    # Next-session mode with no next snapshot yet:
+                    # keep planned effective date so MTM doesn't start too early.
+                    base_date = next_session_date
+                else:
+                    base_date = _first_eod_on_or_after(dates, signal_date) or signal_date
                 base_src = str(row.get("entry_price_source") or "signal_entry")
 
         if base_px is None or base_px <= 0 or not base_date:
@@ -581,7 +588,8 @@ class PaperTradeLogger:
                 r["benchmark_return_pct"] = None
                 r["excess_return_pct"] = None
                 continue
-            start_d = _first_eod_on_or_after(dates, str(r.get("date") or ""))
+            start_ref = str(r.get("effective_entry_date") or r.get("date") or "")
+            start_d = _first_eod_on_or_after(dates, start_ref)
             if not start_d:
                 r["benchmark_return_pct"] = None
                 r["excess_return_pct"] = None
@@ -595,7 +603,7 @@ class PaperTradeLogger:
                     end_d = dates[-1]
             except Exception:
                 pass
-            br = self._benchmark_return_pct_between(str(r.get("date") or ""), end_d, bench)
+            br = self._benchmark_return_pct_between(start_ref, end_d, bench)
             r["benchmark_return_pct"] = br
             tr = None
             if str(r.get("outcome") or "") in ("HIT", "MISS", "STOP_HIT") and _safe_float(r.get("return_pct")) is not None:
@@ -727,6 +735,12 @@ class PaperTradeLogger:
                 eff_entry, _eff_date = self._ensure_effective_entry(row, dates)
                 if eff_entry is None or eff_entry <= 0:
                     continue
+                # Do not MTM a trade before its effective entry date.
+                try:
+                    if _eff_date and pd.Timestamp(latest).normalize() < pd.Timestamp(_eff_date).normalize():
+                        continue
+                except Exception:
+                    pass
                 t = (row.get("ticker") or "").upper()
                 r_now = run_by_ticker.get(t)
                 px = _safe_float((r_now or {}).get("close"))

@@ -1318,7 +1318,12 @@ async def get_dashboard(
             logger.warning("[dashboard] Tier 1 risk engine failed: %s", e)
 
     from datetime import datetime as _dt
-    as_of_date = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    from zoneinfo import ZoneInfo
+
+    _now_et = _dt.now(ZoneInfo("America/New_York"))
+    as_of_date = _now_et.isoformat(timespec="seconds")
+    as_of_utc = _now_et.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+    as_of_et = _now_et.strftime("%Y-%m-%d %H:%M:%S EST")
 
     ohlcv_dates: list[str] = []
     for r in results or []:
@@ -1332,7 +1337,8 @@ async def get_dashboard(
             eod_latest_date = e0.get("date")
 
     data_freshness = {
-        "as_of_utc": as_of_date,
+        "as_of_utc": as_of_utc,
+        "as_of_et": as_of_et,
         "prices": "Daily adjusted close from the data pipeline (typically prior session close vs. run time).",
         "fundamentals": "FMP / estimates can lag filings; not point-in-time perfect for backtests.",
         "macro": "FRED / cross-asset as of last observation before this run.",

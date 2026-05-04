@@ -545,9 +545,10 @@ export interface DashboardData {
     horizons?: { short_term: string; medium_term: string; long_term: string };
   };
   as_of_date?: string;
-  /** As-of UTC + data limitation copy for retail trust */
+  /** As-of timestamp + data limitation copy for retail trust */
   data_freshness?: {
     as_of_utc: string;
+    as_of_et?: string;
     prices?: string;
     fundamentals?: string;
     macro?: string;

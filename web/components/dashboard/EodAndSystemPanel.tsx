@@ -36,6 +36,19 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function formatRunDateEt(runDate: string | null | undefined): string {
+  if (!runDate) return "";
+  const d = new Date(runDate);
+  if (Number.isNaN(d.getTime())) return String(runDate).slice(0, 19);
+  return (
+    d.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      dateStyle: "short",
+      timeStyle: "short",
+    }) + " EST"
+  );
+}
+
 export function EodAndSystemPanel({ eodSnapshots, redisStatus, onRefresh }: EodAndSystemPanelProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -127,7 +140,7 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, onRefresh }: EodA
                 <span className="font-mono">{s.date}.json</span>
                 <span className="text-slate-500 text-xs">
                   {formatBytes(s.size_bytes)}
-                  {s.run_date ? ` · ${String(s.run_date).slice(0, 19)}` : ""}
+                  {s.run_date ? ` · ${formatRunDateEt(s.run_date)}` : ""}
                 </span>
               </li>
             ))}

@@ -486,6 +486,24 @@ confidence:
     reduce: 0.30
   # options_pc_mode: contrarian | directional | auto (auto = directional when HMM bear > 55%, else contrarian)
   options_pc_mode: auto
+  # Asset-aware options narrative thresholds for UI wording consistency.
+  options_narrative:
+    equity:
+      constructive_max: 0.65
+      complacency_from: 0.50
+      weak_score_threshold_pct: 45
+    commodity_etf:
+      constructive_max: 0.70
+  # Reconciliation tuning for structural-vs-tactical messaging in ticker detail.
+  reconciliation:
+    fused_cautious_max_pct: 40
+    long_horizon_strong_min_pct: 80
+    transition_uncertain_shift_min: 0.70
+    pre_flip_shift_prob_min: 0.85
+    pre_flip_bull_share_min: 0.55
+    pre_flip_window_days: 10
+    options_constructive_min_pct: 55
+    options_constructive_pc_max: 0.70
   ml_short_horizon:
     shrink_neutral_band: true       # pull 20d ML prob toward 50% when in dead zone (sideways tape)
     neutral_low: 0.38

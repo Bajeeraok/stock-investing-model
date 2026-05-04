@@ -199,6 +199,45 @@ def _apply_extreme_regime_news_shrink(
     return w, audit_frac
 
 
+def _options_asset_narrative(
+    *,
+    put_call_ratio: float | None,
+    asset_type: str | None,
+    options_score: float | None,
+    config: dict | None = None,
+) -> str | None:
+    """
+    Asset-aware options narrative so similar P/C values aren't framed inconsistently
+    across equities vs commodity ETFs.
+    """
+    if put_call_ratio is None:
+        return None
+    at = str(asset_type or "").upper()
+    is_commodity_etf = "ETF_COMMODITY" in at
+    ocfg = (((config or {}).get("confidence") or {}).get("options_narrative") or {})
+    eq_cfg = (ocfg.get("equity") or {}) if isinstance(ocfg, dict) else {}
+    cmd_cfg = (ocfg.get("commodity_etf") or {}) if isinstance(ocfg, dict) else {}
+    constructive_hi = float(
+        cmd_cfg.get("constructive_max", 0.70)
+        if is_commodity_etf
+        else eq_cfg.get("constructive_max", 0.65)
+    )
+    complacency_from = float(eq_cfg.get("complacency_from", 0.50))
+    weak_score_threshold = float(eq_cfg.get("weak_score_threshold_pct", 45))
+    pcr = float(put_call_ratio)
+    score_pct = round(float(options_score or 0.0) * 100)
+
+    if pcr <= constructive_hi:
+        if (not is_commodity_etf) and pcr >= complacency_from:
+            weak_hint = "below" if score_pct < weak_score_threshold else "<="
+            return (
+                f"P/C {pcr:.2f} - call-heavy but approaching equity complacency zone; "
+                f"monitor options score ({weak_hint} {weak_score_threshold:.0f} weakens this layer, now {score_pct}%)."
+            )
+        return f"P/C {pcr:.2f} - constructive positioning for this asset class."
+    return f"P/C {pcr:.2f} - bearish options flow for this asset class."
+
+
 # ---------------------------------------------------------------------------
 # Main engine
 # ---------------------------------------------------------------------------
@@ -495,10 +534,32 @@ class ConfidenceEngine:
                 hmm_bear_probability=hmm_bear_p,
                 options_pc_mode=opt_mode,
             )
+            try:
+                _pc = float(opts.get("pc_oi_ratio")) if opts.get("pc_oi_ratio") is not None else None
+            except (TypeError, ValueError):
+                _pc = None
+            try:
+                _os = float(opts.get("options_score")) if opts.get("options_score") is not None else None
+            except (TypeError, ValueError):
+                _os = None
+            _asset_type = (
+                classification.asset_type.value
+                if classification is not None and getattr(classification, "asset_type", None) is not None
+                else None
+            )
+            _narr = _options_asset_narrative(
+                put_call_ratio=_pc,
+                asset_type=_asset_type,
+                options_score=_os,
+                config=config,
+            )
+            if _narr:
+                opts["asset_narrative"] = _narr
             details["options"] = opts
             if not opts.get("error") and opts.get("options_score") is not None:
                 scores["options_sentiment"] = opts["options_score"]
-                labels["options_sentiment"] = opts.get("options_label", "options data")
+                _base = opts.get("options_label", "options data")
+                labels["options_sentiment"] = f"{_base}; {opts.get('asset_narrative')}" if opts.get("asset_narrative") else _base
             elif opts.get("error"):
                 # Omit layer so weight redistributes — do not inject neutral 0.5 as signal
                 labels["options_sentiment"] = (
@@ -674,6 +735,40 @@ class ConfidenceEngine:
                 "dissenting_signals":           _cons.get("dissenting") or [],
             }
             details["regime_validation"] = _regime_val_inline
+
+            # Transitional HMM uncertainty gate:
+            # when shift probability is high but direction is unclear, soften regime suppression.
+            _hsd = _hmm_d.get("hmm_shift_direction") if isinstance(_hmm_d, dict) else None
+            _sp = _hsd.get("shift_probability") if isinstance(_hsd, dict) else None
+            _sd = (_hsd.get("shift_direction") or {}) if isinstance(_hsd, dict) else {}
+            _dom = str(_sd.get("dominant") or "").strip().lower()
+            _bull_shift = _sd.get("bull")
+            _bear_shift = _sd.get("bear")
+            if (
+                _sp is not None
+                and float(_sp) >= 0.70
+                and (_dom in ("", "uncertain"))
+                and "regime_hmm" in effective_weights
+            ):
+                try:
+                    _spread = abs(float(_bull_shift or 0.0) - float(_bear_shift or 0.0))
+                except (TypeError, ValueError):
+                    _spread = 1.0
+                _damp = 0.40 if _spread < 0.20 else 0.65
+                effective_weights = dict(effective_weights)
+                _before = float(effective_weights["regime_hmm"])
+                effective_weights["regime_hmm"] = round(_before * _damp, 4)
+                details["regime_transition_dampening"] = {
+                    "applied": True,
+                    "reason": "high_shift_uncertain_direction",
+                    "shift_probability": round(float(_sp), 3),
+                    "shift_direction_bull": round(float(_bull_shift or 0.0), 3),
+                    "shift_direction_bear": round(float(_bear_shift or 0.0), 3),
+                    "direction_spread": round(float(_spread), 3),
+                    "regime_weight_before": round(_before, 4),
+                    "regime_weight_after": round(float(effective_weights["regime_hmm"]), 4),
+                    "dampening_factor": _damp,
+                }
         except Exception as _rve:
             logger.debug("Regime validation inline skipped for %s: %s", ticker, _rve)
 
@@ -819,6 +914,7 @@ class ConfidenceEngine:
             "vix":             vix,
             # HMM debug payload (includes MA conflict override info)
             "hmm":             details.get("hmm"),
+            "options":         details.get("options"),
             "breakdown":       {
                 k: {
                     "score":     round(scores.get(k, 0.0), 3) if scores.get(k) is not None else None,
