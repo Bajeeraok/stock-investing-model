@@ -2163,46 +2163,39 @@ def _build_trade_roadmap(
     elif z_13_mid is not None:
         lower_add_anchor = z_13_mid
 
+    # "Lower adds" must be below both current price and starter area.
+    lower_ref = min(
+        float(current_price),
+        float(starter_anchor) if starter_anchor is not None else float(current_price),
+    )
+
+    def _is_lower_level(level: float | None) -> bool:
+        return level is not None and float(level) < (lower_ref - 0.25)
+
     ma200_zone = _tight_zone(float(ma200), float(current_price)) if ma200 else None
-    if lower_add_anchor is not None and ma200_zone is not None and abs(float(lower_add_anchor) - float(ma200)) > 1.0:
+    lower_candidates: list[tuple[str, float]] = []
+
+    if _is_lower_level(lower_add_anchor):
+        lower_candidates.append((f"around ${float(lower_add_anchor):.2f}", float(lower_add_anchor)))
+    if _is_lower_level(z_13_mid):
+        lower_candidates.append(((f"near {z_13}" if z_13 else f"near ${float(z_13_mid):.2f}"), float(z_13_mid)))
+    if _is_lower_level(z_36_mid):
+        lower_candidates.append(((f"near {z_36}" if z_36 else f"near ${float(z_36_mid):.2f}"), float(z_36_mid)))
+    if ma200_zone is not None and _is_lower_level(float(ma200)):
+        lower_candidates.append((f"near ${ma200_zone[0]:.2f}-${ma200_zone[1]:.2f} (MA200 zone)", float(ma200)))
+
+    deduped: list[tuple[str, float]] = []
+    for label, level in lower_candidates:
+        if all(abs(level - prev_level) > 0.75 for _, prev_level in deduped):
+            deduped.append((label, level))
+
+    if len(deduped) >= 2:
         execution_plan_lines.append(
-            f"Keep dry powder for lower adds around ${float(lower_add_anchor):.2f} and near ${ma200_zone[0]:.2f}-${ma200_zone[1]:.2f} (MA200 zone)."
+            f"Keep dry powder for lower adds {deduped[0][0]} and {deduped[1][0]}."
         )
-    elif z_13 and z_36 and z_13 != z_36:
+    elif len(deduped) == 1:
         execution_plan_lines.append(
-            f"Keep dry powder for lower adds around {z_13} and near {z_36} (core zone)."
-        )
-    elif z_13 and z_36 and z_13 == z_36 and ma200:
-        anchor = z_13_mid if z_13_mid is not None else _safe_float(row_13.get("price_zone_high"))
-        if anchor is not None:
-            if abs(float(anchor) - float(ma200)) < 0.5:
-                if ma200_zone is not None:
-                    execution_plan_lines.append(
-                        f"Keep dry powder for lower adds near ${ma200_zone[0]:.2f}-${ma200_zone[1]:.2f} (MA200/core zone)."
-                    )
-                else:
-                    execution_plan_lines.append(
-                        f"Keep dry powder for lower adds near ${float(ma200):.2f} (MA200/core zone)."
-                    )
-            else:
-                execution_plan_lines.append(
-                    f"Keep dry powder for lower adds around ${float(anchor):.2f} and near ${float(ma200):.2f} (MA200 zone)."
-                )
-        else:
-            execution_plan_lines.append(
-                f"Keep dry powder for lower adds near {z_36} and near ${float(ma200):.2f} (MA200 zone)."
-            )
-    elif z_13_mid is not None and z_36_mid is not None and abs(z_13_mid - z_36_mid) > 0.75:
-        execution_plan_lines.append(
-            f"Keep dry powder for lower adds around ${z_13_mid:.2f} and near ${z_36_mid:.2f} (core zone)."
-        )
-    elif z_36:
-        execution_plan_lines.append(
-            f"Keep dry powder for lower adds near {z_36} (core zone)."
-        )
-    elif z_13:
-        execution_plan_lines.append(
-            f"Keep dry powder for lower adds near {z_13}."
+            f"Keep dry powder for lower adds {deduped[0][0]}."
         )
     execution_plan_lines.append(
         f"If price loses ${key_inv:.2f} with momentum, reassess instead of averaging blindly."

@@ -597,7 +597,13 @@ export function TickerDetailModal({
 
               {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
               {confidence ? (
-                <ConfidenceBreakdownSafe data={confidence} />
+                <section className="space-y-2">
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-200 uppercase tracking-wide">7-Layer model signal</p>
+                    <p className="text-[11px] text-slate-400">Regime + ML + options + fundamentals fused.</p>
+                  </div>
+                  <ConfidenceBreakdownSafe data={confidence} />
+                </section>
               ) : (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
                   <Activity className="h-4 w-4 shrink-0" />
@@ -607,7 +613,13 @@ export function TickerDetailModal({
 
               {/* ── Unified Signal Engine (regime + pattern + momentum) ─ */}
               {unified ? (
-                <PatternSignalCardSafe data={unified} />
+                <section className="space-y-2">
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/20 px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
+                    <p className="text-[11px] text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
+                  </div>
+                  <PatternSignalCardSafe data={unified} />
+                </section>
               ) : (
                 <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
                   <Activity className="h-4 w-4 shrink-0" />

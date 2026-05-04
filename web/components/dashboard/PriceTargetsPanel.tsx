@@ -201,16 +201,24 @@ function rrColor(rr: number | null | undefined): string {
   return "text-red-400";
 }
 
+function normalizeToneLabel(raw: string | null | undefined): "Constructive" | "Neutral" | "Cautionary" | "Unavailable" {
+  const s = String(raw || "").trim().toLowerCase();
+  if (!s) return "Unavailable";
+  if (s === "strong" || s === "bullish" || s === "constructive") return "Constructive";
+  if (s === "neutral") return "Neutral";
+  if (s === "cautious" || s === "weak" || s === "bearish" || s === "cautionary") return "Cautionary";
+  return "Unavailable";
+}
+
 function interpBadge(interp: string) {
   const cfg: Record<string, string> = {
-    Strong:      "text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
-    Bullish:     "text-green-300   bg-green-500/10   border-green-500/30",
-    Neutral:     "text-amber-300   bg-amber-500/10   border-amber-500/30",
-    Cautious:    "text-orange-300  bg-orange-500/10  border-orange-500/30",
-    Weak:        "text-red-300     bg-red-500/10     border-red-500/30",
-    Unavailable: "text-slate-500   bg-slate-700/20   border-slate-600/20",
+    Constructive: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
+    Neutral:      "text-amber-300   bg-amber-500/10   border-amber-500/30",
+    Cautionary:   "text-orange-300  bg-orange-500/10  border-orange-500/30",
+    Unavailable:  "text-slate-500   bg-slate-700/20   border-slate-600/20",
   };
-  return cfg[interp] ?? cfg.Unavailable;
+  const tone = normalizeToneLabel(interp);
+  return cfg[tone] ?? cfg.Unavailable;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -354,9 +362,10 @@ function EarningsBanner({ info }: { info: EarningsInfo }) {
 function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }) {
   if (!et.available) return null;
   const hitRatePct = et.calibration_hit_rate != null ? et.calibration_hit_rate * 100 : null;
+  const biasLabel = normalizeToneLabel(et.bias);
   const biasTone =
-    et.bias === "Bullish" ? "text-emerald-300" :
-    et.bias === "Bearish" ? "text-red-300" :
+    biasLabel === "Constructive" ? "text-emerald-300" :
+    biasLabel === "Cautionary" ? "text-orange-300" :
     "text-amber-300";
 
   return (
@@ -383,7 +392,7 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
         <div>
           <p className="text-[10px] text-slate-500">Bias</p>
           <p className={clsx("text-xs font-semibold", biasTone)}>
-            {et.bias ?? "Neutral"}
+            {biasLabel === "Unavailable" ? "Neutral" : biasLabel}
             {et.bias_prob_pct != null ? ` (${Math.round(et.bias_prob_pct)}%)` : ""}
           </p>
         </div>
@@ -461,6 +470,7 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
   const meta = HORIZON_META[h.horizon_key] ?? HORIZON_META.short;
   const Icon = meta.Icon;
   const hasML = h.ml_prob_pct !== null;
+  const toneLabel = normalizeToneLabel(h.interpretation);
 
   return (
     <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 overflow-hidden">
@@ -476,7 +486,7 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
             <span className="text-xs text-slate-400">{h.label}</span>
             {hasML && (
               <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded border", interpBadge(h.interpretation))}>
-                {h.interpretation}
+                {toneLabel === "Unavailable" ? h.interpretation : toneLabel}
               </span>
             )}
           </div>

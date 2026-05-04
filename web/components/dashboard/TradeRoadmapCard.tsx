@@ -237,6 +237,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
   const [newsExpanded, setNewsExpanded] = useState(false);
   /** Full roadmap vs TL;DR-first (retail) — default simple for faster decisions */
   const [advancedRoadmap, setAdvancedRoadmap] = useState(false);
+  const [showRoadmapAnalysis, setShowRoadmapAnalysis] = useState(false);
   /** Compact evidence rows for fast decision flow */
   const [evidenceOpen, setEvidenceOpen] = useState<{
     market: boolean;
@@ -366,7 +367,33 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
           {/* TL;DR + market regime (probabilistic, not deterministic) */}
           {(data.tldr || data.market_regime_layer || data.scenario_outlook) && (
             <div className="px-4 py-3 border-b border-slate-700/70 space-y-2 bg-slate-900/40">
-              {data.tldr && (
+              <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2 flex items-center gap-3 flex-wrap">
+                <span
+                  className={clsx(
+                    "text-xs font-bold px-2 py-0.5 rounded",
+                    data.display_verdict === "AVOID" || data.display_verdict === "REDUCE"
+                      ? "bg-red-500/20 text-red-300"
+                      : data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : "bg-amber-500/20 text-amber-300"
+                  )}
+                >
+                  {data.display_verdict}
+                </span>
+                <span className="text-xs text-slate-400">
+                  ${data.current_price.toFixed(2)} · FV ${data.fair_value.toFixed(2)} · {data.regime_label}
+                </span>
+                <span className="text-[11px] text-slate-500 ml-auto">See Overview for full analysis</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRoadmapAnalysis((s) => !s)}
+                className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1"
+              >
+                {showRoadmapAnalysis ? "Hide expanded analysis" : "Show expanded analysis"}
+                {showRoadmapAnalysis ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+              {showRoadmapAnalysis && data.tldr && (
                 <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2">
                   <p className="text-[10px] text-emerald-200/80 uppercase tracking-wide font-medium">TL;DR</p>
                   <p className="text-[11px] text-slate-400 mt-1">
@@ -510,17 +537,17 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   )}
                 </div>
               )}
-              {data.market_regime_layer && (
+              {showRoadmapAnalysis && data.market_regime_layer && (
                 <p className="text-xs text-slate-300 leading-snug">
                   <span className="text-cyan-400/90 font-medium">Market regime layer:</span> {data.market_regime_layer.label}
                 </p>
               )}
-              {data.scenario_outlook && (
+              {showRoadmapAnalysis && data.scenario_outlook && (
                 <p className="text-xs text-slate-400 leading-snug">
                   <span className="text-slate-300">Scenario mix (illustrative):</span> Bull ~{data.scenario_outlook.bull_pct}% · Base ~{data.scenario_outlook.base_pct}% · Bear ~{data.scenario_outlook.bear_pct}%
                 </p>
               )}
-              {data.probabilistic_framing && (
+              {showRoadmapAnalysis && data.probabilistic_framing && (
                 <p className="text-[10px] text-slate-500 leading-snug">{data.probabilistic_framing}</p>
               )}
             </div>

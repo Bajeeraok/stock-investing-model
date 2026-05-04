@@ -352,13 +352,20 @@ function scoreColourClass(pct: number | null, type: "text" | "bg") {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERP_COLOUR: Record<string, { text: string; bg: string; border: string }> = {
-  Strong:      { text: "text-emerald-300", bg: "bg-emerald-500/15", border: "border-emerald-500/30" },
-  Bullish:     { text: "text-green-300",   bg: "bg-green-500/15",   border: "border-green-500/30"   },
-  Neutral:     { text: "text-amber-300",   bg: "bg-amber-500/15",   border: "border-amber-500/30"   },
-  Cautious:    { text: "text-orange-300",  bg: "bg-orange-500/15",  border: "border-orange-500/30"  },
-  Weak:        { text: "text-red-300",     bg: "bg-red-500/15",     border: "border-red-500/30"     },
-  Unavailable: { text: "text-slate-500",   bg: "bg-slate-700/20",   border: "border-slate-600/30"   },
+  Constructive: { text: "text-emerald-300", bg: "bg-emerald-500/15", border: "border-emerald-500/30" },
+  Neutral:      { text: "text-amber-300",   bg: "bg-amber-500/15",   border: "border-amber-500/30"   },
+  Cautionary:   { text: "text-orange-300",  bg: "bg-orange-500/15",  border: "border-orange-500/30"  },
+  Unavailable:  { text: "text-slate-500",   bg: "bg-slate-700/20",   border: "border-slate-600/30"   },
 };
+
+function normalizeToneLabel(raw: string | null | undefined): "Constructive" | "Neutral" | "Cautionary" | "Unavailable" {
+  const s = String(raw || "").trim().toLowerCase();
+  if (!s) return "Unavailable";
+  if (s === "strong" || s === "bullish" || s === "constructive") return "Constructive";
+  if (s === "neutral") return "Neutral";
+  if (s === "cautious" || s === "weak" || s === "bearish" || s === "cautionary") return "Cautionary";
+  return "Unavailable";
+}
 
 function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
   const rows: [string, MLHorizonEntry][] = [
@@ -389,7 +396,7 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
           probPct >= 35    ? "bg-amber-500" :
           probPct >= 20    ? "bg-orange-500" :
                              "bg-red-500";
-        const interpKey  = h.interpretation ?? "Unavailable";
+        const interpKey  = normalizeToneLabel(h.interpretation);
         const ic         = INTERP_COLOUR[interpKey] ?? INTERP_COLOUR.Unavailable;
 
         return (
@@ -960,7 +967,7 @@ function TransitionBonusBanner({ bonus }: { bonus: TransitionBonusData }) {
   );
 }
 
-/** Regime shift outlook row — forward-looking HMM probability */
+/** Regime change display — separate blended score vs raw HMM shift probability */
 function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
   const pct   = rt.shift_probability;
   const watch = rt.label === "WATCH_CLOSELY";
@@ -980,7 +987,7 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <ArrowRight size={12} className={watch ? "text-amber-400" : "text-slate-500"} />
-          <span className="text-xs font-semibold text-slate-200">Regime Shift Outlook</span>
+          <span className="text-xs font-semibold text-slate-200">Regime change score</span>
           {watch && <span className="text-[10px] text-amber-400 font-semibold uppercase tracking-wide">Watch Closely</span>}
         </div>
         <span className={clsx("text-xs font-mono font-bold", pct >= 40 ? "text-amber-300" : "text-slate-400")}>
@@ -992,8 +999,7 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
              style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
       <p className="text-[11px] text-slate-400">
-        {pct.toFixed(0)}% blended outlook of regime change within {rt.days_estimate}
-        {hsd?.interpretation ? " — HMM multi-step direction below." : " (fusion heuristic — not directional by itself)."}
+        {pct.toFixed(0)}% blended composite score. Low score can reflect uncertain direction, not low probability of movement.
       </p>
       {hsd?.interpretation && dir && (
         <div className="rounded-md bg-slate-900/60 border border-emerald-500/20 px-2.5 py-2 space-y-1">
@@ -1018,6 +1024,12 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
           <p className="text-[11px] text-slate-300 leading-snug">
             {hsd.interpretation}
           </p>
+          {spPct != null && (
+            <p className="text-[10px] text-slate-400 leading-snug">
+              Plain English: HMM sees about {spPct.toFixed(0)}% chance the current regime shifts within{" "}
+              {hsd.horizon_days ?? 10} days; uncertainty in direction is why blended regime change score is {pct.toFixed(0)}%.
+            </p>
+          )}
           <p className="text-[10px] text-slate-500">
             Mass after horizon (excl. sticky bucket): Bull {(dir.bull * 100).toFixed(0)}% · Bear {(dir.bear * 100).toFixed(0)}%
             {dir.transition_cycle != null && dir.transition_cycle > 0.02 && (

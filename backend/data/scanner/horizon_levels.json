@@ -622,24 +622,24 @@
   },
   "GOOGL": {
     "short": {
-      "entry_low": 346.28,
-      "entry_high": 351.53,
-      "stop_loss": 332.29,
-      "target": 372.52,
+      "entry_low": 381.83,
+      "entry_high": 387.62,
+      "stop_loss": 366.4,
+      "target": 410.76,
       "horizon_label": "Short-term"
     },
     "medium": {
-      "entry_low": 308.1,
-      "entry_high": 323.66,
-      "stop_loss": 292.54,
-      "target": 385.9,
+      "entry_low": 312.31,
+      "entry_high": 328.08,
+      "stop_loss": 296.53,
+      "target": 439.22,
       "horizon_label": "Medium-term"
     },
     "long": {
-      "entry_low": 264.09,
-      "entry_high": 291.89,
+      "entry_low": 266.83,
+      "entry_high": 294.91,
       "stop_loss": 140.45,
-      "target": 378.34,
+      "target": 455.15,
       "horizon_label": "Long-term"
     }
   },

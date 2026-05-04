@@ -205,7 +205,7 @@ def _options_asset_narrative(
     asset_type: str | None,
     options_score: float | None,
     config: dict | None = None,
-) -> str | None:
+) -> dict[str, Any] | None:
     """
     Asset-aware options narrative so similar P/C values aren't framed inconsistently
     across equities vs commodity ETFs.
@@ -227,15 +227,28 @@ def _options_asset_narrative(
     pcr = float(put_call_ratio)
     score_pct = round(float(options_score or 0.0) * 100)
 
-    if pcr <= constructive_hi:
+    is_constructive = pcr < constructive_hi
+    verdict = "constructive" if is_constructive else "bearish"
+    if is_constructive:
+        descriptor = "call-heavy, constructive"
         if (not is_commodity_etf) and pcr >= complacency_from:
-            weak_hint = "below" if score_pct < weak_score_threshold else "<="
-            return (
-                f"P/C {pcr:.2f} - call-heavy but approaching equity complacency zone; "
-                f"monitor options score ({weak_hint} {weak_score_threshold:.0f} weakens this layer, now {score_pct}%)."
-            )
-        return f"P/C {pcr:.2f} - constructive positioning for this asset class."
-    return f"P/C {pcr:.2f} - bearish options flow for this asset class."
+            descriptor = "call-heavy, constructive but near equity complacency zone"
+    else:
+        descriptor = "put-heavy, bearish"
+    line = (
+        f"P/C {pcr:.2f} - {descriptor} "
+        f"(threshold for {'commodity_etf' if is_commodity_etf else 'equity'}: {constructive_hi:.2f}; "
+        f"options score {score_pct}%)."
+    )
+    if (not is_commodity_etf) and pcr >= complacency_from:
+        line += f" Watch if options score drops below {weak_score_threshold:.0f}%."
+    return {
+        "pc_ratio": round(pcr, 3),
+        "threshold_used": round(constructive_hi, 3),
+        "verdict": verdict,
+        "display_line": line,
+        "secondary_line": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -535,7 +548,8 @@ class ConfidenceEngine:
                 options_pc_mode=opt_mode,
             )
             try:
-                _pc = float(opts.get("pc_oi_ratio")) if opts.get("pc_oi_ratio") is not None else None
+                # Single source of truth for display: use the same P/C used by options scoring.
+                _pc = float(opts.get("pc_ratio")) if opts.get("pc_ratio") is not None else None
             except (TypeError, ValueError):
                 _pc = None
             try:
@@ -554,12 +568,12 @@ class ConfidenceEngine:
                 config=config,
             )
             if _narr:
-                opts["asset_narrative"] = _narr
+                opts["asset_narrative"] = _narr.get("display_line")
+                opts["asset_narrative_meta"] = _narr
             details["options"] = opts
             if not opts.get("error") and opts.get("options_score") is not None:
                 scores["options_sentiment"] = opts["options_score"]
-                _base = opts.get("options_label", "options data")
-                labels["options_sentiment"] = f"{_base}; {opts.get('asset_narrative')}" if opts.get("asset_narrative") else _base
+                labels["options_sentiment"] = opts.get("asset_narrative") or opts.get("options_label", "options data")
             elif opts.get("error"):
                 # Omit layer so weight redistributes — do not inject neutral 0.5 as signal
                 labels["options_sentiment"] = (
