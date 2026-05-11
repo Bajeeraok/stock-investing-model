@@ -1,8 +1,43 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronRight, AlertTriangle, Info, Zap, TrendingUp, Calendar } from "lucide-react";
+import {
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+  Info,
+  Zap,
+  TrendingUp,
+  Calendar,
+  Target,
+  Sun,
+  CloudSun,
+  CloudRain,
+  Cloud,
+} from "lucide-react";
 import type { TradeRoadmapData } from "./TradeRoadmapCard";
+import {
+  buildPatternDecisionDriverSummary,
+  buildMlHorizonGapExplainer,
+  marketWeatherFromRegimeBull,
+  type MarketWeather,
+} from "./patternDecisionDriver";
+
+const STRENGTH_CONVICTION_HINT =
+  "Strength = this horizon’s ML signal tier (how bullish the model read is for that specific window). " +
+  "Conviction = how confident the fused stack is about acting on that horizon (timing / sizing). " +
+  "They can disagree: e.g. a statistically strong 3‑month window can still show Low conviction if regime or other layers want more proof.";
+
+function horizonVerdictPillClass(v: string | undefined): string {
+  const u = String(v || "").toUpperCase();
+  if (u === "STRONG BUY" || u === "BUY") return "border-emerald-500/55 bg-emerald-500/15 text-emerald-200";
+  if (u === "WATCH") return "border-teal-500/55 bg-teal-500/12 text-teal-200";
+  if (u === "WAIT") return "border-red-500/55 bg-red-500/12 text-red-200";
+  return "border-slate-600 bg-slate-800/80 text-slate-300";
+}
 
 // Use bracket types to avoid ambiguous generics in .tsx (Array<T> can be parsed as JSX)
 export interface FairValueMetadata {
@@ -23,6 +58,21 @@ export interface OneAnswer {
   next_trigger?: string | null;
   execution_plan_lines?: string[];
   signal_reconciliation_notes?: string[];
+  /** When bull regime + near highs + rising ML clash with stretched FV (catalyst / momentum risk). */
+  momentum_valuation_tension?: {
+    active: boolean;
+    headline: string;
+    detail: string;
+    premium_vs_fair_value_pct?: number;
+    regime_bull_pct?: number;
+  } | null;
+  /** Strong non-bull HMM vs price at highs — regime is macro-heavy, not necessarily name weakness. */
+  ath_macro_regime_disconnect?: {
+    active: boolean;
+    headline: string;
+    detail: string;
+    non_bull_pct?: number;
+  } | null;
   /** Retail: hold 5–10y vs take profits — education + tie-in to today’s signals */
   hold_vs_trade?: {
     title: string;
@@ -79,6 +129,8 @@ export interface FairValueVsExternal {
 export interface InvestorDecisionSummary {
   fair_value: number;
   overall_verdict: "WAIT" | "WATCH" | "BUY" | "STRONG BUY";
+  /** HMM label when provided by API (e.g. Bull / Non-bull) — optional display */
+  regime_hmm_label?: string | null;
   regime_bull_pct?: number | null;
   model_confidence_pct?: number | null;
   /** TTM PE used for fair value (FMP > price/trailingEps > yfinance). Shown so card reflects correct PE, not stale feed. */
@@ -125,7 +177,13 @@ export interface HorizonSignalPayload {
   /** Explains wide long-term level vs a normal stop */
   stop_loss_framing?: string | null;
   entry_tiers?: {
-    current_assessment: { verdict: string; label: string; color?: string };
+    current_assessment: {
+      verdict: string;
+      label: string;
+      color?: string;
+      margin_of_safety_pct?: number | null;
+      min_price_to_buy?: number | null;
+    };
     tiers: {
       id: string;
       label: string;
@@ -150,13 +208,29 @@ export interface HorizonSignalPayload {
   fair_value?: number;
 }
 
+function regimeWeatherIcon(weather: MarketWeather) {
+  const cls = "h-3.5 w-3.5 shrink-0";
+  switch (weather) {
+    case "favorable":
+      return React.createElement(Sun, { className: `${cls} text-amber-300`, "aria-hidden": true });
+    case "mixed":
+      return React.createElement(CloudSun, { className: `${cls} text-slate-400`, "aria-hidden": true });
+    case "stormy":
+      return React.createElement(CloudRain, { className: `${cls} text-sky-400`, "aria-hidden": true });
+    default:
+      return React.createElement(Cloud, { className: `${cls} text-slate-500`, "aria-hidden": true });
+  }
+}
+
 function verdictIcon(verdict: string) {
   switch (verdict) {
     case "STRONG BUY":
     case "BUY":
       return <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" aria-hidden />;
     case "WATCH":
-      return <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" aria-hidden />;
+      return <AlertCircle className="h-4 w-4 text-teal-400 shrink-0" aria-hidden />;
+    case "WAIT":
+      return <XCircle className="h-4 w-4 text-red-400 shrink-0" aria-hidden />;
     default:
       return <XCircle className="h-4 w-4 text-red-400 shrink-0" aria-hidden />;
   }
@@ -179,8 +253,10 @@ function HorizonCard({
     horizon.verdict === "BUY" || horizon.verdict === "STRONG BUY"
       ? "text-emerald-400"
       : horizon.verdict === "WATCH"
-        ? "text-amber-400"
-        : "text-red-400";
+        ? "text-teal-400"
+        : horizon.verdict === "WAIT"
+          ? "text-red-400"
+          : "text-red-400";
   const hasRationale = horizon.rationale && horizon.rationale.trim().length > 0;
   const hasTrigger = horizon.trigger_buy && horizon.trigger_buy.trim().length > 0;
   const warnings = Array.isArray(horizon.warnings) ? horizon.warnings.filter((w) => w && String(w).trim()) : [];
@@ -202,7 +278,25 @@ function HorizonCard({
         React.createElement("span", { className: verdictClass }, horizon.verdict)
       )
     ),
-    React.createElement("p", { className: "text-slate-500 text-xs" }, `${horizon.signal} strength · ${horizon.conviction} conviction`),
+    React.createElement(
+      "p",
+      {
+        className: "text-slate-500 text-xs flex items-center gap-1.5 flex-wrap",
+      },
+      React.createElement(
+        "span",
+        {
+          className: "cursor-help border-b border-dotted border-slate-500/50",
+          title: STRENGTH_CONVICTION_HINT,
+        },
+        `${horizon.signal} strength · ${horizon.conviction} conviction`
+      ),
+      React.createElement(
+        "span",
+        { className: "inline-flex shrink-0", title: STRENGTH_CONVICTION_HINT, "aria-label": "Strength vs conviction" },
+        React.createElement(Info, { className: "h-3.5 w-3.5 text-slate-500 cursor-help" })
+      )
+    ),
     React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `Entry: $${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
     React.createElement(
       "p",
@@ -274,6 +368,311 @@ function HorizonCard({
   );
 }
 
+function anchorSnippet(anchor: string | undefined, max = 160): string {
+  if (!anchor || !anchor.trim()) return "";
+  const t = anchor.trim();
+  return t.length <= max ? t : `${t.slice(0, max).trim()}…`;
+}
+
+/** Retail-focused buy band vs spot vs risk floors — uses short-term horizon entry_zone + stops from API. */
+function BuyRangeRetailCard({
+  currentPrice,
+  short,
+  long,
+}: {
+  currentPrice: number;
+  short: HorizonSignalPayload;
+  long: HorizonSignalPayload;
+}): React.ReactElement | null {
+  const ez = short?.entry_zone;
+  if (!ez || !(ez.low > 0) || !(ez.high > 0)) return null;
+  const low = Math.min(ez.low, ez.high);
+  const high = Math.max(ez.low, ez.high);
+  const range = high - low;
+  const stStop = short.stop_loss != null && short.stop_loss > 0 ? short.stop_loss : null;
+  const stressRaw =
+    long?.entry_tiers?.structural_invalidation?.price ??
+    (long?.stop_loss != null && long.stop_loss > 0 ? long.stop_loss : null);
+  const stress = stressRaw != null && stressRaw > 0 ? stressRaw : null;
+
+  let statusLabel = "—";
+  let statusBadgeClass =
+    "text-[11px] px-2 py-0.5 rounded border font-semibold border-slate-500/40 bg-slate-600/20 text-slate-300";
+  if (currentPrice > 0) {
+    if (currentPrice >= low && currentPrice <= high) {
+      statusLabel = "Inside buy zone";
+      statusBadgeClass =
+        "text-[11px] px-2 py-0.5 rounded border font-semibold border-emerald-500/45 bg-emerald-500/15 text-emerald-300";
+    } else if (currentPrice > high) {
+      statusLabel = "Wait for pullback";
+      statusBadgeClass =
+        "text-[11px] px-2 py-0.5 rounded border font-semibold border-amber-500/45 bg-amber-500/15 text-amber-200";
+    } else {
+      statusLabel = "Below modeled band";
+      statusBadgeClass =
+        "text-[11px] px-2 py-0.5 rounded border font-semibold border-sky-500/40 bg-sky-500/10 text-sky-200";
+    }
+  }
+
+  const pad = Math.max(range * 0.25, Math.max(low, high) * 0.008, 0.5);
+  const scaleMin = low - pad;
+  const scaleMax = high + pad;
+  const denom = scaleMax - scaleMin;
+  const pctRaw = denom > 0 && currentPrice > 0 ? ((currentPrice - scaleMin) / denom) * 100 : 50;
+  const pct = Math.max(0, Math.min(100, pctRaw));
+  const zoneStartPct = denom > 0 ? ((low - scaleMin) / denom) * 100 : 0;
+  const zoneWidthPct = denom > 0 ? ((high - low) / denom) * 100 : 100;
+
+  const anchorNote = anchorSnippet(ez.anchor);
+
+  const maxBuyMos = long?.entry_tiers?.current_assessment?.min_price_to_buy;
+  const rr = short?.risk_reward != null && Number(short.risk_reward) > 0 ? Number(short.risk_reward) : null;
+  const rrRiskShare = rr != null ? 1 / (1 + rr) : null;
+
+  return React.createElement(
+    "section",
+    {
+      className:
+        "p-4 border-b border-emerald-500/30 bg-gradient-to-br from-emerald-950/50 via-slate-900/60 to-slate-950/80",
+      "aria-label": "Buy range and stress levels",
+    },
+    React.createElement(
+      "div",
+      { className: "flex items-start justify-between gap-3 flex-wrap mb-3" },
+      React.createElement(
+        "div",
+        { className: "flex items-center gap-2 min-w-0" },
+        React.createElement(Target, { className: "h-5 w-5 text-emerald-400 shrink-0", "aria-hidden": true }),
+        React.createElement(
+          "div",
+          { className: "min-w-0" },
+          React.createElement(
+            "h3",
+            { className: "text-xs font-semibold text-emerald-200/95 uppercase tracking-wide" },
+            "Buy zone vs stress"
+          ),
+          React.createElement(
+            "p",
+            { className: "text-[11px] text-slate-500 mt-0.5" },
+            "Near-term buy band vs today’s price — green range comes from the same support / VWAP logic as your stops."
+          )
+        )
+      ),
+      React.createElement("span", { className: statusBadgeClass }, statusLabel)
+    ),
+    React.createElement(
+      "div",
+      { className: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3" },
+      React.createElement(
+        "div",
+        {
+          className:
+            "rounded-xl border border-emerald-500/35 bg-emerald-950/25 px-3.5 py-3 shadow-inner shadow-black/20",
+        },
+        React.createElement(
+          "p",
+          { className: "text-[11px] text-emerald-200/80 uppercase tracking-wide font-semibold mb-1" },
+          "Optimal entry (near-term)"
+        ),
+        React.createElement(
+          "p",
+          { className: "text-xl font-bold font-mono text-emerald-100 tracking-tight" },
+          `$${low.toFixed(2)} – $${high.toFixed(2)}`
+        ),
+        ez.quality
+          ? React.createElement(
+              "p",
+              { className: "text-[11px] text-slate-400 mt-1" },
+              React.createElement("span", { className: "text-slate-500" }, "Band quality: "),
+              ez.quality
+            )
+          : null
+      ),
+      React.createElement(
+        "div",
+        {
+          className:
+            "rounded-xl border border-slate-600/70 bg-slate-950/50 px-3.5 py-3",
+        },
+        React.createElement(
+          "p",
+          { className: "text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-1" },
+          "Current price"
+        ),
+        React.createElement(
+          "p",
+          { className: "text-xl font-bold font-mono text-slate-100 tracking-tight" },
+          currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : "—"
+        ),
+        React.createElement(
+          "p",
+          { className: "mt-2 text-sm font-medium text-slate-200" },
+          React.createElement("span", { className: "text-slate-500 font-normal text-xs mr-2" }, "Status:"),
+          statusLabel
+        )
+      )
+    ),
+    React.createElement(
+      "div",
+      { className: "mb-3" },
+      React.createElement(
+        "p",
+        { className: "text-[10px] text-slate-500 mb-1 flex justify-between font-mono gap-2" },
+        React.createElement("span", null, `$${low.toFixed(2)} band low`),
+        React.createElement("span", null, `$${high.toFixed(2)} band high`)
+      ),
+      React.createElement(
+        "div",
+        { className: "relative h-4 rounded-full bg-slate-800/90 border border-slate-700/80" },
+        React.createElement("div", {
+          className: "absolute top-0 bottom-0 rounded-full bg-emerald-500/30 border border-emerald-400/25",
+          style: { left: `${zoneStartPct}%`, width: `${zoneWidthPct}%` },
+        }),
+        React.createElement("div", {
+          className:
+            "absolute top-1/2 w-2.5 h-2.5 rounded-full bg-white border-2 border-emerald-600 shadow-md z-10",
+          style: {
+            left: `${pct}%`,
+            transform: "translate(-50%, -50%)",
+            top: "50%",
+          },
+          title: currentPrice > 0 ? `Spot $${currentPrice.toFixed(2)}` : "Spot",
+        })
+      ),
+      React.createElement(
+        "p",
+        { className: "text-[10px] text-slate-500 mt-1 text-center" },
+        "Dot = last price vs modeled buy band (not a forecast)."
+      )
+    ),
+    ((maxBuyMos != null && maxBuyMos > 0) || rr != null) &&
+      React.createElement(
+        "div",
+        { className: "mb-3 grid grid-cols-1 sm:grid-cols-2 gap-3" },
+        maxBuyMos != null &&
+          maxBuyMos > 0 &&
+          React.createElement(
+            "div",
+            {
+              className:
+                "rounded-xl border border-cyan-500/35 bg-cyan-950/20 px-3.5 py-3",
+            },
+            React.createElement(
+              "p",
+              { className: "text-[11px] text-cyan-200/85 uppercase tracking-wide font-semibold mb-1" },
+              "Max buy price (full MOS)"
+            ),
+            React.createElement(
+              "p",
+              { className: "text-lg font-bold font-mono text-cyan-100 tracking-tight" },
+              `$${maxBuyMos.toFixed(2)}`
+            ),
+            React.createElement(
+              "p",
+              { className: "text-[10px] text-slate-500 mt-1 leading-snug" },
+              "Rough ceiling from long-term margin-of-safety rule — stricter than the near-term band."
+            )
+          ),
+        rr != null &&
+          React.createElement(
+            "div",
+            {
+              className:
+                "rounded-xl border border-slate-600/70 bg-slate-950/50 px-3.5 py-3",
+            },
+            React.createElement(
+              "p",
+              { className: "text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-1" },
+              "Near-term risk / reward"
+            ),
+            React.createElement(
+              "p",
+              { className: "text-lg font-bold font-mono text-slate-100 mb-2" },
+              `1 : ${rr.toFixed(1)}`
+            ),
+            React.createElement(
+              "div",
+              { className: "flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/80" },
+              React.createElement("div", {
+                className: "h-full bg-amber-500/70",
+                style: { width: `${((rrRiskShare ?? 0.5) * 100).toFixed(1)}%` },
+                title: "Risk (unit)",
+              }),
+              React.createElement("div", {
+                className: "h-full bg-emerald-500/55 flex-1 min-w-0",
+                title: "Reward (modeled vs stop)",
+              })
+            ),
+            React.createElement(
+              "p",
+              { className: "text-[10px] text-slate-500 mt-1 leading-snug" },
+              "Bar width is proportional (1 unit risk vs modeled reward). From short-term horizon math."
+            )
+          )
+      ),
+    (stStop != null || stress != null) &&
+      React.createElement(
+        "div",
+        {
+          className:
+            "rounded-lg border border-slate-700/80 bg-slate-900/40 px-3 py-2.5 grid grid-cols-1 sm:grid-cols-2 gap-3",
+        },
+        stStop != null &&
+          React.createElement(
+            "div",
+            null,
+            React.createElement(
+              "p",
+              { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold" },
+              "Risk reference (short-term stop)"
+            ),
+            React.createElement(
+              "p",
+              { className: "text-sm font-mono text-amber-200/95" },
+              `~$${stStop.toFixed(2)}`
+            ),
+            React.createElement(
+              "p",
+              { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
+              "Break here challenges the tactical setup — not where we aim to initiate."
+            )
+          ),
+        stress != null &&
+          React.createElement(
+            "div",
+            null,
+            React.createElement(
+              "p",
+              { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold" },
+              "Stress / structural floor"
+            ),
+            React.createElement(
+              "p",
+              { className: "text-sm font-mono text-slate-400" },
+              `~$${stress.toFixed(2)}`
+            ),
+            React.createElement(
+              "p",
+              { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
+              long?.stop_loss_kind === "structural_invalidation"
+                ? "Tail-risk / thesis-break reference — not an entry zone."
+                : "Long-horizon floor reference."
+            )
+          )
+      ),
+    anchorNote &&
+      React.createElement(
+        "p",
+        {
+          className: "text-[11px] text-slate-400 leading-snug border-t border-slate-700/60 pt-2 mt-1",
+          title: ez.anchor,
+        },
+        React.createElement("span", { className: "text-slate-500" }, "Why this band: "),
+        anchorNote
+      )
+  );
+}
+
 export function InvestorDecisionSummarySection({
   summary,
   currentPrice,
@@ -334,6 +733,9 @@ export function InvestorDecisionSummarySection({
       : hasDivergence
         ? "Horizons disagree — short/medium/long use different inputs (RSI, volume, ML). Prefer the horizon that matches your holding period."
         : null;
+  const swingVsShortLift =
+    String(short?.verdict || "").toUpperCase() === "WAIT" &&
+    String(medium?.verdict || "").toUpperCase() === "WATCH";
   // When pattern_score is 0, the card already shows "Confluence" fallback — avoid duplicate "Pattern score low (0/100)" block
   const patternLow = pattern_score != null && pattern_score > 0 && pattern_score < 50;
   const tldr = summary.trade_roadmap?.tldr ?? null;
@@ -382,8 +784,8 @@ export function InvestorDecisionSummarySection({
   const contextFlags: Array<{ severity: "warning" | "info"; message: string }> = [
     ...(patternLow
       ? [{
-          severity: "warning" as const,
-          message: `Pattern score low (${Math.round(Number(pattern_score))}/100) - short-term setup is weaker.`,
+          severity: "info" as const,
+          message: `Pattern reads ${Math.round(Number(pattern_score))}/100 — expand “Why this score?” below (often regime-weighted, not “bad company”).`,
         }]
       : []),
     ...(hasDivergence && divergenceMessage
@@ -435,6 +837,28 @@ export function InvestorDecisionSummarySection({
           ? "text-amber-300"
           : "text-red-300";
 
+  const regimeWeather = marketWeatherFromRegimeBull(regime_bull_pct);
+  const patternDecisionOneLiner = buildPatternDecisionDriverSummary({
+    patternScore: pattern_score,
+    regimeBullPct: regime_bull_pct,
+    undervaluationPct: assessmentPct,
+    shortVerdict: short?.verdict,
+  });
+
+  const CONFIDENCE_GATE_TARGET = 55;
+  const ptsToConfidenceGate =
+    confidenceBandMid != null && !Number.isNaN(Number(confidenceBandMid))
+      ? CONFIDENCE_GATE_TARGET - Number(confidenceBandMid)
+      : null;
+  const confidenceNearlyThere =
+    ptsToConfidenceGate != null && ptsToConfidenceGate > 0 && ptsToConfidenceGate <= 10;
+
+  const mlHorizonGapExplainer = buildMlHorizonGapExplainer(
+    short?.ml_prob,
+    medium?.ml_prob,
+    long?.ml_prob
+  );
+
   return React.createElement(
     "div",
     {
@@ -442,6 +866,7 @@ export function InvestorDecisionSummarySection({
       "aria-label": "Investor Decision Summary",
       className: "bg-slate-800/55 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl shadow-black/20",
     },
+    React.createElement(BuyRangeRetailCard, { currentPrice, short, long }),
     /* One Answer card (top) */
     one_answer && React.createElement(
       "div",
@@ -459,9 +884,11 @@ export function InvestorDecisionSummarySection({
             className:
               overall_verdict === "STRONG BUY" || overall_verdict === "BUY"
                 ? "text-[11px] px-2 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-semibold"
-                : overall_verdict === "WATCH" || overall_verdict === "WAIT"
-                  ? "text-[11px] px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 text-amber-300 font-semibold"
-                  : "text-[11px] px-2 py-0.5 rounded border border-slate-500/40 bg-slate-500/15 text-slate-300 font-semibold",
+                : overall_verdict === "WATCH"
+                  ? "text-[11px] px-2 py-0.5 rounded border border-teal-500/55 bg-teal-500/10 text-teal-200 font-semibold"
+                  : overall_verdict === "WAIT"
+                    ? "text-[11px] px-2 py-0.5 rounded border border-red-500/55 bg-red-500/10 text-red-200 font-semibold"
+                    : "text-[11px] px-2 py-0.5 rounded border border-slate-500/40 bg-slate-500/15 text-slate-300 font-semibold",
           },
           overall_verdict
         ),
@@ -476,6 +903,64 @@ export function InvestorDecisionSummarySection({
           `${Math.abs(assessmentPct).toFixed(1)}% ${assessmentPct >= 0 ? "undervalued" : "overvalued"}`
         )
       ),
+      confidenceNearlyThere &&
+        React.createElement(
+          "div",
+          {
+            className:
+              "mb-3 rounded-xl border-2 border-violet-400/60 bg-violet-950/45 px-3 py-2.5 shadow-[0_0_22px_-6px_rgba(167,139,250,0.45)] ring-1 ring-violet-400/25",
+            role: "status",
+          },
+          React.createElement(
+            "p",
+            { className: "text-[11px] font-semibold text-violet-200 mb-0.5 flex items-center gap-1.5" },
+            React.createElement("span", { className: "inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" }),
+            "Nearly there — confidence gate"
+          ),
+          React.createElement(
+            "p",
+            { className: "text-[11px] text-violet-100/95 leading-snug" },
+            `Fused model confidence is ${Math.round(Number(confidenceBandMid))}% vs ${CONFIDENCE_GATE_TARGET}% used here — you’re within about ${Math.ceil(Number(ptsToConfidenceGate))} point${Math.ceil(Number(ptsToConfidenceGate)) === 1 ? "" : "s"}. Fresh sessions often move this; worth a quick revisit.`
+          )
+        ),
+      one_answer.momentum_valuation_tension?.active &&
+        React.createElement(
+          "div",
+          {
+            className:
+              "mb-3 rounded-xl border border-cyan-500/45 bg-cyan-950/35 px-3 py-2.5 ring-1 ring-cyan-400/20",
+            role: "note",
+          },
+          React.createElement(
+            "p",
+            { className: "text-[11px] font-semibold text-cyan-200 mb-1" },
+            one_answer.momentum_valuation_tension.headline
+          ),
+          React.createElement(
+            "p",
+            { className: "text-[11px] text-cyan-100/90 leading-snug" },
+            one_answer.momentum_valuation_tension.detail
+          )
+        ),
+      one_answer.ath_macro_regime_disconnect?.active &&
+        React.createElement(
+          "div",
+          {
+            className:
+              "mb-3 rounded-xl border border-amber-500/45 bg-amber-950/30 px-3 py-2.5 ring-1 ring-amber-400/20",
+            role: "note",
+          },
+          React.createElement(
+            "p",
+            { className: "text-[11px] font-semibold text-amber-200 mb-1" },
+            one_answer.ath_macro_regime_disconnect.headline
+          ),
+          React.createElement(
+            "p",
+            { className: "text-[11px] text-amber-100/90 leading-snug" },
+            one_answer.ath_macro_regime_disconnect.detail
+          )
+        ),
       React.createElement(
         "p",
         { className: "text-[11px] text-slate-400 mb-1" },
@@ -610,23 +1095,52 @@ export function InvestorDecisionSummarySection({
             const tgt = `${Math.round(g.target)}${g.unit}`;
             const barPct = val == null ? 0 : Math.max(0, Math.min(100, (val / g.target) * 100));
             const pass = val != null && val >= g.target;
+            const isRegime = g.label === "Regime";
+            const isPattern = g.label === "Pattern";
+            const isConfidenceRow = g.label === "Confidence";
+            const confidenceRowHot = isConfidenceRow && confidenceNearlyThere;
             return React.createElement(
               "div",
-              { key: g.label, className: "rounded-lg border border-slate-700/70 bg-slate-950/40 px-2.5 py-2" },
+              {
+                key: g.label,
+                className:
+                  "rounded-lg border px-2.5 py-2 " +
+                  (confidenceRowHot
+                    ? "border-violet-400/65 bg-violet-950/30 ring-1 ring-violet-400/35 shadow-[0_0_18px_-8px_rgba(167,139,250,0.5)]"
+                    : "border-slate-700/70 bg-slate-950/40"),
+              },
               React.createElement(
                 "div",
-                { className: "flex items-center justify-between text-[11px]" },
+                { className: "flex items-center justify-between text-[11px] gap-2" },
                 React.createElement(
                   "span",
-                  { className: "text-slate-300 font-medium" },
-                  g.label
+                  { className: "text-slate-300 font-medium flex items-center gap-1.5 min-w-0" },
+                  isRegime ? regimeWeatherIcon(regimeWeather.weather) : null,
+                  isRegime
+                    ? React.createElement(
+                        "span",
+                        { className: "flex flex-col gap-0.5 min-w-0" },
+                        React.createElement("span", null, g.label),
+                        React.createElement(
+                          "span",
+                          { className: "text-[10px] font-normal text-slate-500 leading-tight" },
+                          regimeWeather.headline
+                        )
+                      )
+                    : g.label
                 ),
                 React.createElement(
                   "span",
-                  { className: gateTone(val, g.target) },
+                  { className: `${gateTone(val, g.target)} shrink-0 text-right` },
                   `${shown} -> needs ${tgt}`
                 )
               ),
+              isRegime &&
+                React.createElement(
+                  "p",
+                  { className: "text-[10px] text-slate-500 mt-1 leading-snug pl-5" },
+                  regimeWeather.detail
+                ),
               React.createElement(
                 "div",
                 { className: "mt-1.5 h-1.5 rounded-full bg-slate-800 overflow-hidden" },
@@ -634,9 +1148,42 @@ export function InvestorDecisionSummarySection({
                   className: pass ? "h-full bg-emerald-500" : "h-full bg-amber-500",
                   style: { width: `${barPct}%` },
                 })
-              )
+              ),
+              isPattern &&
+                React.createElement(
+                  "p",
+                  {
+                    className:
+                      "text-[10px] text-slate-500 mt-1.5 leading-snug border-t border-slate-700/50 pt-1.5",
+                  },
+                  "Raw score measures chart structure — see ",
+                  React.createElement(
+                    "span",
+                    { className: "text-sky-300/90 font-medium" },
+                    "Why this score?"
+                  ),
+                  " below for what actually drives it."
+                )
             );
           })
+        ),
+        React.createElement(
+          "div",
+          {
+            className:
+              "mt-3 rounded-lg border border-sky-500/30 bg-sky-950/30 px-3 py-2.5",
+            role: "note",
+          },
+          React.createElement(
+            "p",
+            { className: "text-[10px] text-sky-200/85 uppercase tracking-wide font-semibold mb-1" },
+            "Why this score?"
+          ),
+          React.createElement(
+            "p",
+            { className: "text-[11px] text-sky-50/95 leading-snug" },
+            patternDecisionOneLiner
+          )
         ),
         React.createElement(
           "p",
@@ -705,6 +1252,77 @@ export function InvestorDecisionSummarySection({
       "div",
       { className: "p-4 border-b border-slate-700/80 bg-slate-900/30" },
       React.createElement("p", { className: "text-xs text-slate-400 uppercase tracking-wide mb-2" }, "Which timeframe fits you?"),
+      React.createElement(
+        "div",
+        {
+          className:
+            "mb-3 rounded-xl border px-3 py-2.5 " +
+            (hasDivergence || swingVsShortLift
+              ? "border-amber-500/45 bg-amber-500/10"
+              : "border-slate-600/70 bg-slate-950/50"),
+        },
+        React.createElement(
+          "p",
+          { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-2" },
+          "Horizon verdicts — compare tickers at a glance"
+        ),
+        React.createElement(
+          "div",
+          { className: "flex flex-wrap gap-2 items-center" },
+          (
+            [
+              ["Short", short?.verdict] as const,
+              ["Medium", medium?.verdict] as const,
+              ["Long", long?.verdict] as const,
+            ] as const
+          ).map(([label, v]) =>
+            React.createElement(
+              "span",
+              {
+                key: label,
+                className:
+                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold " +
+                  horizonVerdictPillClass(v),
+              },
+              React.createElement("span", { className: "text-slate-500 font-normal" }, `${label}:`),
+              v || "—"
+            )
+          )
+        ),
+        swingVsShortLift &&
+          React.createElement(
+            "p",
+            {
+              className:
+                "mt-2 text-[11px] text-cyan-100/95 leading-snug border-t border-cyan-500/25 pt-2",
+              role: "note",
+            },
+            React.createElement("span", { className: "font-semibold text-cyan-200" }, "Swing vs short-term: "),
+            "Medium is WATCH while Short is WAIT — the 3‑month ladder can still allow staged adds on pullbacks even when the 1‑month tape is guarded (e.g. growth vs a defensive where both horizons sit on WAIT). Match the row to your actual holding period."
+          ),
+        hasDivergence &&
+          divergenceMessage &&
+          React.createElement(
+            "p",
+            { className: "mt-2 text-[11px] text-amber-200/90 leading-snug border-t border-amber-500/20 pt-2" },
+            divergenceMessage
+          )
+      ),
+      mlHorizonGapExplainer &&
+        React.createElement(
+          "p",
+          {
+            className:
+              "text-[11px] text-slate-300 leading-snug mb-3 rounded-lg border border-slate-600/70 bg-slate-950/50 px-3 py-2",
+            role: "note",
+          },
+          React.createElement(
+            "span",
+            { className: "font-semibold text-cyan-200/95" },
+            "Why ML % differs by horizon: "
+          ),
+          mlHorizonGapExplainer
+        ),
       React.createElement(
         "div",
         { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },

@@ -514,6 +514,8 @@ function ActionBadge({ action, confidence }: { action: string; confidence: numbe
     a.includes("BUY")        ? { bg: "bg-green-500/20",   text: "text-green-200",   border: "border-green-400/50",   Icon: TrendingUp } :
     a.includes("REDUCE")     ? { bg: "bg-amber-500/20",   text: "text-amber-200",   border: "border-amber-400/50",   Icon: TrendingDown } :
     a.includes("AVOID")      ? { bg: "bg-red-500/20",     text: "text-red-200",     border: "border-red-400/50",     Icon: TrendingDown } :
+    a.includes("WAIT")       ? { bg: "bg-red-500/15",     text: "text-red-200",     border: "border-red-400/55",     Icon: Ban } :
+    a.includes("WATCH")      ? { bg: "bg-teal-500/15",    text: "text-teal-200",    border: "border-teal-400/55",    Icon: Eye } :
                                { bg: "bg-slate-500/20",   text: "text-slate-200",   border: "border-slate-400/50",   Icon: Eye };
 
   // Position size suggestion from confidence
@@ -1372,6 +1374,15 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         {Object.entries(breakdown).map(([key, layer]) => (
           <div key={key}>
             <LayerBar layerKey={key} layer={layer as BreakdownLayer} />
+            {key === "nlp_sentiment" &&
+              (layer as BreakdownLayer).weight != null &&
+              Number((layer as BreakdownLayer).weight) > 0 && (
+                <p className="text-[10px] text-cyan-300/85 pl-4 -mt-0.5 leading-snug">
+                  Headlines feed in as a <span className="font-semibold">weighted</span> input (
+                  {Math.round(Number((layer as BreakdownLayer).weight) * 100)}% of the fuse) — not a standalone
+                  buy/sell vote; keep this row visible when judging tone vs price action.
+                </p>
+              )}
             {/* RSI direction sub-indicator expands below the pattern_technical bar */}
             {key === "pattern_technical" && rsiDir && (
               <RSIDirectionPill rsi={rsiDir} />

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity, LayoutGrid, Target, Layers, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity, LayoutGrid, Target, Layers, Zap, Ban, Eye, CheckCircle } from "lucide-react";
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
@@ -17,6 +18,189 @@ function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
 function PatternSignalCardSafe({ data }: { data: UnifiedSignalData }) {
   try { return <PatternSignalCard data={data} />; }
   catch { return null; }
+}
+
+/** Traffic-light headline for retail: execution vs research vs avoid (aligned with FV + regime + pattern + optional news). */
+export type RetailActionLight = "red" | "yellow" | "green" | "neutral";
+
+export interface RetailActionStatus {
+  light: RetailActionLight;
+  title: string;
+  subtitle: string;
+}
+
+function computeRetailActionStatus(input: {
+  currentPrice: number | null | undefined;
+  fairValue: number | null | undefined;
+  regimeBullPct: number | null | undefined;
+  patternScore: number | null | undefined;
+  newsScore0to1: number | null | undefined;
+  newsLayerAvailable: boolean;
+}): RetailActionStatus | null {
+  const cp = input.currentPrice;
+  const fv = input.fairValue;
+  if (cp == null || !(cp > 0) || fv == null || !(fv > 0)) return null;
+
+  const premiumPct = ((cp - fv) / fv) * 100;
+  const discountPct = ((fv - cp) / fv) * 100;
+
+  const regime = input.regimeBullPct;
+  const pattern = input.patternScore;
+
+  const newsScore = input.newsScore0to1;
+  const newsBearish =
+    input.newsLayerAvailable &&
+    newsScore != null &&
+    !Number.isNaN(newsScore) &&
+    newsScore < 0.38;
+
+  /** Paying clearly above model fair value → avoid (tiny tolerance for rounding). */
+  const overvalued = premiumPct > 0.12;
+
+  /**
+   * Catastrophic backdrop only when there is little valuation cushion — avoids labeling
+   * deep-value + risk-off (e.g. META) as red; those stay yellow.
+   */
+  const regimeSevereRiskOff =
+    regime != null &&
+    regime < 22 &&
+    discountPct < 10;
+
+  if (overvalued || newsBearish || regimeSevereRiskOff) {
+    const parts: string[] = [];
+    if (overvalued) parts.push("price is above model fair value");
+    if (newsBearish) parts.push("news flow skews negative");
+    if (regimeSevereRiskOff && !overvalued && !newsBearish) {
+      parts.push("risk-off backdrop without much margin of safety");
+    }
+    return {
+      light: "red",
+      title: "AVOID",
+      subtitle:
+        parts.length > 0
+          ? `Why: ${parts.join(" · ")}.`
+          : "Elevated risk versus reward at today’s prices.",
+    };
+  }
+
+  const undervaluedEnough = discountPct >= 5;
+  const bullishRegime = regime != null && regime >= 48;
+  const positiveTechnical = pattern != null && pattern >= 55;
+
+  if (undervaluedEnough && bullishRegime && positiveTechnical) {
+    return {
+      light: "green",
+      title: "ENTRY OPPORTUNITY",
+      subtitle:
+        "Undervalued vs model, bullish regime, and technical setup supportive — confirm sizing on Roadmaps.",
+    };
+  }
+
+  if (discountPct >= 5 && regime != null && regime < 48 && pattern != null && pattern < 55) {
+    return {
+      light: "yellow",
+      title: "WATCH OR HOLD",
+      subtitle:
+        "Valuation is attractive, but regime and chart still cautious — research mode; wait for clearer triggers.",
+    };
+  }
+
+  if (discountPct >= 5 && regime != null && regime < 48) {
+    return {
+      light: "yellow",
+      title: "WATCH OR HOLD",
+      subtitle: "Cheap vs fair value, but market regime is not bullish yet — patience or smaller probes only.",
+    };
+  }
+
+  if (discountPct >= 5 && pattern != null && pattern < 55) {
+    return {
+      light: "yellow",
+      title: "WATCH OR HOLD",
+      subtitle: "Undervalued on fundamentals; technical score still weak — wait for momentum to improve.",
+    };
+  }
+
+  if (discountPct < 5 && discountPct >= -2) {
+    return {
+      light: "yellow",
+      title: "WATCH OR HOLD",
+      subtitle: "Little margin of safety vs model fair value — mixed setup; see Roadmaps for levels.",
+    };
+  }
+
+  return {
+    light: "yellow",
+    title: "WATCH OR HOLD",
+    subtitle: "Mixed signals — use Roadmaps for entry zones and stops before sizing.",
+  };
+}
+
+function RetailActionStatusBanner({ status }: { status: RetailActionStatus | null }) {
+  if (!status) {
+    return (
+      <div
+        className="border-b border-slate-700 bg-slate-800/40 px-4 py-3 sm:px-6"
+        role="status"
+        aria-live="polite"
+      >
+        <p className="text-sm text-slate-400">
+          Action status appears when fair value and price are available from the summary.
+        </p>
+      </div>
+    );
+  }
+
+  const styles =
+    status.light === "green"
+      ? {
+          wrap: "border-emerald-600/50 bg-emerald-950/70",
+          accent: "text-emerald-300",
+          icon: CheckCircle,
+        }
+      : status.light === "yellow"
+        ? {
+            wrap: "border-amber-500/50 bg-amber-950/65",
+            accent: "text-amber-200",
+            icon: Eye,
+          }
+        : status.light === "red"
+          ? {
+              wrap: "border-red-500/55 bg-red-950/75",
+              accent: "text-red-100",
+              icon: Ban,
+            }
+          : {
+              wrap: "border-slate-600 bg-slate-800/70",
+              accent: "text-slate-200",
+              icon: Activity,
+            };
+
+  const Icon = styles.icon;
+
+  return (
+    <div
+      className={clsx(
+        "border-b px-4 py-3 sm:px-6 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4",
+        styles.wrap
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black/25 border border-white/10">
+          <Icon className={clsx("h-5 w-5", styles.accent)} aria-hidden />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Action status</p>
+          <p className={clsx("text-lg font-bold tracking-tight", styles.accent)}>{status.title}</p>
+        </div>
+      </div>
+      <p className="text-sm text-slate-200/95 leading-snug sm:flex-1 sm:min-w-0 border-t border-white/5 sm:border-0 sm:border-l sm:border-white/10 sm:pl-4 pt-2 sm:pt-0">
+        {status.subtitle}
+      </p>
+    </div>
+  );
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -188,14 +372,49 @@ export function TickerDetailModal({
     !!patternVerdict &&
     normalizeActionClass(overviewVerdict) !== normalizeActionClass(patternVerdict);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-3 sm:p-4" onClick={onClose}>
+  const retailActionStatus = useMemo(() => {
+    const inv = detail?.investor_summary;
+    if (!inv) return null;
+    const roadmapNews = inv.trade_roadmap?.news_sentiment_layer;
+    let newsScore = roadmapNews?.score_0_1 ?? null;
+    let newsAvail =
+      roadmapNews != null &&
+      roadmapNews.layer_available !== false &&
+      (roadmapNews.headline_count ?? 0) > 0 &&
+      newsScore != null;
+    const confNlp = confidence?.breakdown?.nlp_sentiment;
+    if (confNlp?.available && confNlp.score != null) {
+      newsScore = confNlp.score;
+      newsAvail = true;
+    }
+    return computeRetailActionStatus({
+      currentPrice: detail?.current_price,
+      fairValue: inv.fair_value,
+      regimeBullPct: inv.regime_bull_pct,
+      patternScore: inv.pattern_score,
+      newsScore0to1: newsScore,
+      newsLayerAvailable: newsAvail,
+    });
+  }, [detail, confidence]);
+
+  /** Portal + high z-index: avoids clipping under sticky dashboard header (also z-50) and parent overflow on mobile. */
+  if (typeof window === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overscroll-y-contain bg-black/75 backdrop-blur-md px-3 pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
+      onClick={onClose}
+      role="presentation"
+    >
       <div
-        className="bg-slate-900/95 border border-slate-700/90 rounded-2xl w-[min(96vw,1280px)] max-h-[92vh] overflow-y-auto shadow-2xl shadow-black/40"
+        className="bg-slate-900/95 border border-slate-700/90 rounded-2xl w-[min(96vw,1280px)] max-w-full max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] sm:max-h-[92vh] my-2 sm:my-0 overflow-y-auto overscroll-contain shadow-2xl shadow-black/40"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ticker-detail-title"
       >
         <div className="sticky top-0 bg-gradient-to-b from-slate-900 to-slate-900/95 border-b border-slate-700/80 px-5 sm:px-6 py-4 flex items-center justify-between z-20">
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2 flex-wrap">
+          <h2 id="ticker-detail-title" className="text-xl font-bold text-slate-100 flex items-center gap-2 flex-wrap">
             <TrendingUp className="h-6 w-6 text-emerald-500 shrink-0" />
             <span className="font-mono text-emerald-400">{ticker}</span>
             {detail?.company_name && (
@@ -213,9 +432,13 @@ export function TickerDetailModal({
           </button>
         </div>
 
+        {detail && !loading && detail.investor_summary && (
+          <RetailActionStatusBanner status={retailActionStatus} />
+        )}
+
         {/* Tab bar: Overview | Roadmaps | Details — keeps modal from feeling crowded */}
         {detail && !loading && (
-          <div className="border-b border-slate-700 bg-slate-900/90 sticky top-0 z-10">
+          <div className="border-b border-slate-700 bg-slate-900/90 sticky top-0 z-[15]">
             <div className="flex">
             {(
               [
@@ -1079,6 +1302,7 @@ export function TickerDetailModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

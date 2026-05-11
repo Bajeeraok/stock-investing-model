@@ -15,9 +15,10 @@
  */
 
 import { AlertTriangle, TrendingUp, TrendingDown, Minus,
-         Activity, Zap, Eye, ChevronDown, ChevronRight } from "lucide-react";
+         Activity, Zap, Eye, ChevronDown, ChevronRight, Ban } from "lucide-react";
 import { useState } from "react";
 import { clsx } from "clsx";
+import { buildPatternDecisionDriverUnified } from "./patternDecisionDriver";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  TYPES  (mirrors unified_signal_engine.py + pattern_signals.py)
@@ -89,11 +90,13 @@ function ActionBadge({ action }: { action: string }) {
                              ? "bg-amber-500/20  text-amber-200  border-amber-400/50"     :
     a.includes("SELL")       ? "bg-red-500/20    text-red-200    border-red-400/50"       :
     a.includes("SPECULATIVE") ? "bg-orange-500/20 text-orange-200 border-orange-400/50"  :
-    a.includes("WATCH")      ? "bg-blue-500/20   text-blue-200   border-blue-400/50"     :
+    a.includes("WAIT")       ? "bg-red-500/12    text-red-200    border-red-400/55"       :
+    a.includes("WATCH")      ? "bg-teal-500/15   text-teal-200    border-teal-400/55"     :
                                "bg-slate-500/20  text-slate-200  border-slate-400/50";
   const Icon =
     a.includes("BUY")   ? TrendingUp   :
     a.includes("SELL")  ? TrendingDown :
+    a.includes("WAIT")  ? Ban          :
     a.includes("WATCH") ? Eye          : Minus;
   return (
     <span className={clsx("inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded border", style)}>
@@ -198,6 +201,12 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
   const kellyBoost  = kellyMult > 1.05;
   const kellyReduce = kellyMult < 0.95;
 
+  const decisionDriverUnified = buildPatternDecisionDriverUnified({
+    regime: regime || "NEUTRAL",
+    patternScore,
+    action: data.action ?? "WATCH",
+  });
+
   return (
     <div className={clsx(
       "rounded-xl border p-4 bg-slate-900 space-y-3 transition-colors",
@@ -212,6 +221,11 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
         </div>
         <BottomScoreMeter score={patternScore} />
       </div>
+
+      <p className="text-[11px] text-sky-200/90 leading-snug border-t border-slate-700/70 pt-2 -mt-1">
+        <span className="font-semibold text-sky-300/95">Why this score? </span>
+        {decisionDriverUnified}
+      </p>
 
       {/* High-conviction alert */}
       {isHighConviction && (

@@ -2385,6 +2385,113 @@ def _hold_vs_trade_guidance(
     }
 
 
+def _momentum_valuation_tension_payload(
+    *,
+    current_price: float,
+    fair_value: float | None,
+    high_52w: float | None,
+    regime_bull_pct: float | None,
+    short_ml: float,
+    medium_ml: float,
+    long_ml: float,
+) -> dict | None:
+    """
+    Value vs momentum: very bullish regime + near 52w highs + ML stepping up by horizon,
+    but spot materially above model fair value. DCF-style FV can lag headline catalysts.
+    """
+    if fair_value is None or fair_value <= 0 or current_price <= 0:
+        return None
+    try:
+        import math
+
+        premium = (current_price - fair_value) / fair_value * 100.0
+        rb = float(regime_bull_pct) if regime_bull_pct is not None else 0.0
+        if math.isnan(rb) or math.isnan(premium):
+            return None
+    except (TypeError, ValueError):
+        return None
+
+    near_hi = (
+        high_52w is not None
+        and high_52w > 0
+        and current_price >= float(high_52w) * 0.95
+    )
+    ml_edges_up = (medium_ml >= short_ml + 3.0 and short_ml >= 28.0) or (
+        long_ml >= medium_ml + 3.0 and medium_ml >= 28.0
+    )
+    if not (rb >= 88.0 and premium >= 18.0 and near_hi and ml_edges_up):
+        return None
+
+    headline = "Valuation stretched — momentum regime dominant"
+    detail = (
+        f"Spot is about {premium:.0f}% above model fair value while HMM bull is ~{rb:.0f}% "
+        "and price sits within ~5% of the 52-week high with ML estimates stepping up by horizon. "
+        "Fair value here is fundamentals-based (similar in spirit to third-party DCF) and can lag "
+        "headline catalysts. Treat continuation as a live scenario until estimates rebase; if you "
+        "participate, use smaller size and explicit risk controls."
+    )
+    note_line = (
+        f"Momentum vs value: ~{premium:.0f}% above model FV with ~{rb:.0f}% bull regime, near 52w highs, "
+        "ML horizons rising — stretched vs fundamentals but tape favors momentum; catalyst continuation risk."
+    )
+    return {
+        "active": True,
+        "headline": headline,
+        "detail": detail,
+        "note_line": note_line,
+        "premium_vs_fair_value_pct": round(premium, 1),
+        "regime_bull_pct": round(rb, 0),
+    }
+
+
+def _ath_vs_macro_regime_disconnect_payload(
+    *,
+    current_price: float,
+    high_52w: float | None,
+    regime_bull_pct: float | None,
+) -> dict | None:
+    """
+    Price is tagging the rolling high watermark while HMM skews materially non-bull.
+    Clarifies macro/market-weighted regime vs name-level momentum (communication gap).
+    """
+    if high_52w is None or high_52w <= 0 or current_price <= 0:
+        return None
+    if regime_bull_pct is None:
+        return None
+    try:
+        import math
+
+        rb = float(regime_bull_pct)
+        if math.isnan(rb):
+            return None
+    except (TypeError, ValueError):
+        return None
+    non_bull = 100.0 - rb
+    # Strong non-bull skew (~60%+ non-bull); captures "99% non-bull" GOOGL-style reads.
+    if non_bull < 58.0:
+        return None
+    hi = float(high_52w)
+    # Near top of available range (52-week high used as ATH proxy in this API).
+    if current_price < hi * 0.996:
+        return None
+    headline = "Highs vs macro-heavy regime"
+    detail = (
+        "Price is at all-time highs driven by fundamental strength — regime signal reflects macro caution, "
+        "not company-specific weakness."
+    )
+    note_line = (
+        f"~{non_bull:.0f}% non-bull regime while price is at/near its 52-week high — "
+        "macro/market caution in the HMM read, not a clean read of company-specific weakness."
+    )
+    return {
+        "active": True,
+        "headline": headline,
+        "detail": detail,
+        "note_line": note_line,
+        "non_bull_pct": round(non_bull, 0),
+    }
+
+
 def _build_one_answer_roadmaps(
     ticker: str,
     investor_out: dict,
@@ -2487,6 +2594,43 @@ def _build_one_answer_roadmaps(
         else None
     )
 
+    st_ml = float(short.get("ml_prob") or 0)
+    mt_ml = float(medium.get("ml_prob") or 0)
+    lt_ml = float(long_h.get("ml_prob") or 0)
+    fv_only = _safe_float(investor_out.get("fair_value"))
+    h52w = _safe_float(response.get("high_52w"))
+    rb_raw = investor_out.get("regime_bull_pct")
+    rb_for_tension = float(rb_raw) if isinstance(rb_raw, (int, float)) else None
+    tension = _momentum_valuation_tension_payload(
+        current_price=current_price,
+        fair_value=fv_only,
+        high_52w=h52w,
+        regime_bull_pct=rb_for_tension,
+        short_ml=st_ml,
+        medium_ml=mt_ml,
+        long_ml=lt_ml,
+    )
+    ath_macro = _ath_vs_macro_regime_disconnect_payload(
+        current_price=current_price,
+        high_52w=h52w,
+        regime_bull_pct=rb_for_tension,
+    )
+    sig_notes: list[str] = []
+    if isinstance(reconciliation_notes, list):
+        for n in reconciliation_notes:
+            if isinstance(n, str) and n.strip():
+                sig_notes.append(n.strip())
+    prefix_sig: list[str] = []
+    if tension:
+        nl = tension.get("note_line")
+        if isinstance(nl, str) and nl.strip():
+            prefix_sig.append(nl.strip())
+    if ath_macro:
+        nl2 = ath_macro.get("note_line")
+        if isinstance(nl2, str) and nl2.strip():
+            prefix_sig.append(nl2.strip())
+    sig_notes = prefix_sig + sig_notes
+
     # Single-message narrative: "bottom line + why" so users don't have to reconcile layers manually.
     if dual_mode == "pre_flip_watch":
         bottom_line = (
@@ -2540,7 +2684,13 @@ def _build_one_answer_roadmaps(
         "why_this_call": why_this_call,
         "next_trigger": next_trigger,
         "execution_plan_lines": execution_plan_lines if isinstance(execution_plan_lines, list) else [],
-        "signal_reconciliation_notes": reconciliation_notes if isinstance(reconciliation_notes, list) else [],
+        "signal_reconciliation_notes": sig_notes,
+        "momentum_valuation_tension": (
+            {k: v for k, v in tension.items() if k != "note_line"} if tension else None
+        ),
+        "ath_macro_regime_disconnect": (
+            {k: v for k, v in ath_macro.items() if k != "note_line"} if ath_macro else None
+        ),
         "hold_vs_trade": _hold_vs_trade_guidance(
             display_verdict=verdict_label,
             overall=overall,

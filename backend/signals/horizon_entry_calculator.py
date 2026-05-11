@@ -55,6 +55,30 @@ ST_SUPPORT_MAX_DEPTH_PCT = 22.0
 ST_MAX_NEAR_TERM_ZONE_DEPTH_PCT = 10.0
 # On low-ATR% days, avoid stops that are unrealistically tight vs spot (semis / high-beta)
 ST_MIN_STOP_DISTANCE_PCT_OF_SPOT = 4.0
+# Short-term target vs entry_zone.high — HMM non-bull dampening (ATR×3 + resistance can imply 6–10% tactical
+# upside that is mis-stated as a base case when tape is risk-off; long-horizon already warns on similar skew).
+ST_ST_REGIME_CAP_RB48 = 48.0   # at/above: no upside cap (bullish-enough backdrop)
+ST_ST_REGIME_CAP_RB42 = 42.0   # [42, 48): max upside % vs eh
+ST_ST_UPSIDE_CAP_RB42_TO_48 = 6.5
+ST_ST_REGIME_CAP_RB35 = 35.0   # [35, 42)
+ST_ST_UPSIDE_CAP_RB35_TO_42 = 5.0
+ST_ST_UPSIDE_CAP_BELOW_RB35 = 4.0  # regime_bull < 35
+
+
+def _short_term_regime_cap_upside_pct(regime_bull_pct: float) -> Optional[float]:
+    """
+    Max upside % above short-term entry_zone.high when HMM skews non-bull.
+    None = keep raw min(resistance×0.98, ATR target).
+    """
+    rb = float(regime_bull_pct)
+    if rb >= ST_ST_REGIME_CAP_RB48:
+        return None
+    if rb >= ST_ST_REGIME_CAP_RB42:
+        return ST_ST_UPSIDE_CAP_RB42_TO_48
+    if rb >= ST_ST_REGIME_CAP_RB35:
+        return ST_ST_UPSIDE_CAP_RB35_TO_42
+    return ST_ST_UPSIDE_CAP_BELOW_RB35
+
 
 # Medium-term
 MT_MA50_BAND_PCT       = 4.0    # acceptable range above MA50 for entry
@@ -313,7 +337,8 @@ def _compress_entry_zone_for_display(
 #   RSI > 50  (elevated)  → current price, flagged as stretched
 #
 # Stop:   entry_low  - (ATR × 1.5)
-# Target: min(resistance × 0.98,  entry_high + ATR × 3.0)
+# Target: min(resistance × 0.98,  entry_high + ATR × 3.0), then optional cap vs entry_high
+#         when HMM bull % is below 48% — keeps 1m upside from implying 6–10% base-case bounces in non-bull tape.
 # ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -410,6 +435,19 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
     # can produce a target below entry high — enforce a minimum of the ATR-based target.
     if target <= eh + 0.01:
         target = _atr_target
+
+    st_cap_pct = _short_term_regime_cap_upside_pct(inp.regime_bull_pct)
+    if st_cap_pct is not None:
+        cap_px = _r(eh * (1.0 + st_cap_pct / 100.0))
+        if target > cap_px + 1e-9:
+            target = cap_px
+            warnings.append(
+                "Short-term upside capped at {:.1f}% above the entry band (HMM bull ~{:.0f}%) — "
+                "non-bull tape dampens tactical targets vs raw ATR/resistance; treat larger moves as stretch / regime-shift scenarios.".format(
+                    st_cap_pct, inp.regime_bull_pct
+                )
+            )
+
     target_pct    = _r((target - eh) / eh * 100, 1)
     risk          = eh - stop_loss
     rr            = _r((target - eh) / risk, 2) if risk > 0 else 0.0

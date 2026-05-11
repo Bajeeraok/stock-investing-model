@@ -228,6 +228,138 @@ function tickerNote(ticker: string | undefined): string | null {
   return null;
 }
 
+/** Mobile-only card row — key columns + expandable tranche / condition text */
+function BuyRoadmapMobileCard({
+  row,
+  sameBandAsPrior,
+  activeTimelineKey,
+  youAreHereKey,
+  withinZone,
+}: {
+  row: BuyRoadmapStage;
+  sameBandAsPrior: boolean;
+  activeTimelineKey: string | undefined;
+  youAreHereKey?: string | null;
+  withinZone?: boolean;
+}) {
+  const cue = buyStageCue(row.when_to_act);
+  const conv = formatHorizonRoleDisplay(row.conviction);
+  const hl = buyRowTimelineHighlight(row, activeTimelineKey);
+  const rr = row.risk_reward_context;
+  return (
+    <div
+      className={clsx(
+        "rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-xs space-y-2 shadow-sm",
+        cue.rowBg,
+        hl && "ring-1 ring-amber-500/35"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-semibold text-slate-200">{row.label}</p>
+          {youAreHereKey === row.timeline_key && withinZone && (
+            <span className="mt-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-amber-300 bg-amber-500/15 px-1 py-0.5 rounded">
+              You are here
+            </span>
+          )}
+        </div>
+        <span className="shrink-0 text-right font-mono text-slate-300 tabular-nums">{row.position_pct}%</span>
+      </div>
+      <p className="text-slate-200 leading-snug">
+        <span className="mr-1" aria-hidden>
+          {cue.emoji}
+        </span>
+        {row.when_to_act}
+      </p>
+      <div>
+        <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Price zone</p>
+        {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
+          <div className="space-y-1 font-mono text-[11px] text-slate-300">
+            {row.price_zone_lines.map((z, zi) => (
+              <div key={zi}>
+                <span className="text-slate-500 font-sans">{z.label}: </span>
+                {formatZone(z.lo, z.hi)}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="font-mono text-slate-300">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
+        )}
+        {sameBandAsPrior && (
+          <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+            Same band as prior row — horizon role / tranche step up over time.
+          </p>
+        )}
+      </div>
+      {(rr?.risk_reward != null || row.priority_note) && (
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Risk / reward</p>
+          {row.priority_note && <p className="text-[10px] text-amber-200/90 mb-1">{row.priority_note}</p>}
+          {rr?.risk_reward != null && (
+            <p className="text-[11px] text-slate-400 leading-snug">
+              R:R ~{rr.risk_reward}× · upside ~{rr.upside_to_model_fv_pct ?? "—"}% / downside ~{rr.downside_to_ref_stop_pct ?? "—"}%
+              {rr.ref_stop_kind && <span className="text-slate-500"> ({String(rr.ref_stop_kind).replace(/_/g, " ")})</span>}
+            </p>
+          )}
+        </div>
+      )}
+      {conv && (
+        <p className="text-[11px]">
+          <span className="text-slate-500">Horizon role: </span>
+          <span className={horizonRoleColor(row.conviction)}>{conv}</span>
+        </p>
+      )}
+      <details className="group border-t border-slate-700/60 pt-2">
+        <summary className="cursor-pointer text-cyan-300/90 text-[11px] font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
+          Condition & tranche detail (T1/T2/T3 text)
+        </summary>
+        <div className="mt-2 space-y-2 text-[11px] text-slate-400 leading-relaxed pl-1">
+          <p className="text-slate-300">{row.condition}</p>
+          {row.allocation_note && <p className="text-slate-500 font-mono text-[10px] leading-snug">{row.allocation_note}</p>}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function SellRoadmapMobileCard({
+  row,
+  activeTimelineKey,
+}: {
+  row: SellRoadmapStage;
+  activeTimelineKey: string | undefined;
+}) {
+  const cue = sellStageCue(row.when_to_sell);
+  const hl = activeTimelineKey === row.timeline_key;
+  return (
+    <div className={clsx("rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-xs space-y-2", cue.rowBg, hl && "ring-1 ring-amber-500/35")}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-semibold text-slate-200">{row.label}</p>
+        <span className="text-[10px] text-slate-500 font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
+      </div>
+      <p className="text-slate-200 leading-snug">
+        <span className="mr-1" aria-hidden>
+          {cue.emoji}
+        </span>
+        {row.when_to_sell}
+      </p>
+      <p className="font-mono text-slate-300">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
+      <p className="text-amber-200/90 font-medium">{row.action}</p>
+      <details className="group border-t border-slate-700/60 pt-2">
+        <summary className="cursor-pointer text-cyan-300/90 text-[11px] font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
+          Condition & reason
+        </summary>
+        <div className="mt-2 space-y-2 text-[11px] text-slate-400 leading-relaxed pl-1">
+          <p>{row.condition}</p>
+          {row.reason && <p className="text-slate-500">{row.reason}</p>}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; ticker?: string }) {
   const [tab, setTab] = useState<"buy" | "sell" | "full">("buy");
   const [traderType, setTraderType] = useState<"day_trader" | "swing_trader" | "investor">("swing_trader");
@@ -307,12 +439,16 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
           <div className="flex items-center gap-2 flex-wrap">
             <span
               className={clsx(
-                "text-sm font-bold px-2 py-0.5 rounded",
+                "text-sm font-bold px-2 py-0.5 rounded border",
                 data.display_verdict === "AVOID" || data.display_verdict === "REDUCE"
-                  ? "bg-red-500/20 text-red-300"
+                  ? "bg-red-500/20 text-red-300 border-red-500/45"
                   : data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
-                    ? "bg-emerald-500/20 text-emerald-300"
-                    : "bg-amber-500/20 text-amber-300"
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/45"
+                    : data.display_verdict === "WATCH"
+                      ? "bg-teal-500/15 text-teal-200 border-teal-500/50"
+                      : data.display_verdict === "WAIT"
+                        ? "bg-red-500/15 text-red-200 border-red-500/50"
+                        : "bg-amber-500/20 text-amber-300 border-amber-500/45"
               )}
             >
               {data.display_verdict}
@@ -370,12 +506,16 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
               <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2 flex items-center gap-3 flex-wrap">
                 <span
                   className={clsx(
-                    "text-xs font-bold px-2 py-0.5 rounded",
+                    "text-xs font-bold px-2 py-0.5 rounded border",
                     data.display_verdict === "AVOID" || data.display_verdict === "REDUCE"
-                      ? "bg-red-500/20 text-red-300"
+                      ? "bg-red-500/20 text-red-300 border-red-500/45"
                       : data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : "bg-amber-500/20 text-amber-300"
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/45"
+                        : data.display_verdict === "WATCH"
+                          ? "bg-teal-500/15 text-teal-200 border-teal-500/50"
+                          : data.display_verdict === "WAIT"
+                            ? "bg-red-500/15 text-red-200 border-red-500/50"
+                            : "bg-amber-500/20 text-amber-300 border-amber-500/45"
                   )}
                 >
                   {data.display_verdict}
@@ -683,6 +823,12 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                           · {data.news_sentiment_layer.headline_count} articles sampled
                         </span>
                       )}
+                      {data.news_sentiment_layer.layer_weight != null && (
+                        <span className="text-cyan-300/95 font-semibold">
+                          {" "}
+                          · {(Number(data.news_sentiment_layer.layer_weight) * 100).toFixed(0)}% fused-model weight
+                        </span>
+                      )}
                       {!newsExpanded && <span className="text-slate-600"> · Tap to expand</span>}
                     </span>
                   </span>
@@ -776,8 +922,31 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-emerald-400 mb-2">
                   <TrendingUp className="h-4 w-4" /> Buy roadmap
                 </h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
+                <p className="text-[10px] text-slate-500 mb-2 sm:hidden">
+                  On small screens use the cards below; swipe the desktop table on larger screens for all columns.
+                </p>
+                <div className="sm:hidden space-y-3">
+                  {buyRowsWithZoneHints.map(({ row, sameBandAsPrior }) => (
+                    <BuyRoadmapMobileCard
+                      key={row.timeline_key}
+                      row={row}
+                      sameBandAsPrior={sameBandAsPrior}
+                      activeTimelineKey={activeTimelineKey}
+                      youAreHereKey={data.you_are_here?.timeline_key}
+                      withinZone={data.you_are_here?.within_zone}
+                    />
+                  ))}
+                </div>
+                <div className="hidden sm:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
+                  <table className="min-w-[980px] w-full text-xs border-collapse table-fixed">
+                    <colgroup>
+                      <col className="w-[100px]" />
+                      <col className="w-[140px]" />
+                      <col className="w-[130px]" />
+                      <col className="w-[360px]" />
+                      <col className="w-[110px]" />
+                      <col className="w-[72px]" />
+                    </colgroup>
                     <thead>
                       <tr className="text-slate-500 border-b border-slate-600">
                         <th className="text-left py-2 pr-2">Timeline</th>
@@ -845,7 +1014,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                               </div>
                             )}
                           </td>
-                          <td className="py-2 pr-2 text-slate-400 max-w-[min(100vw,260px)] sm:max-w-[320px] text-[11px] leading-snug">
+                          <td className="py-2 pr-2 text-slate-400 text-[11px] leading-snug align-top break-words">
                             {row.priority_note && (
                               <span className="block text-amber-200/90 text-[10px] mb-1">{row.priority_note}</span>
                             )}
@@ -856,7 +1025,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                               </span>
                             )}
                             {row.allocation_note && (
-                              <span className="block text-slate-600 mt-1 text-[10px] leading-snug">{row.allocation_note}</span>
+                              <span className="block text-slate-500 mt-1 text-[10px] leading-snug">{row.allocation_note}</span>
                             )}
                           </td>
                           <td className={clsx("py-2 pr-2 align-top", conv ? horizonRoleColor(row.conviction) : "")}>
@@ -883,8 +1052,13 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-amber-400 mb-2">
                   <TrendingDown className="h-4 w-4" /> Sell roadmap
                 </h4>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
+                <div className="sm:hidden space-y-3">
+                  {sellFiltered.map((row) => (
+                    <SellRoadmapMobileCard key={row.timeline_key} row={row} activeTimelineKey={activeTimelineKey} />
+                  ))}
+                </div>
+                <div className="hidden sm:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
+                  <table className="min-w-[880px] w-full text-xs border-collapse">
                     <thead>
                       <tr className="text-slate-500 border-b border-slate-600">
                         <th className="text-left py-2 pr-2">Timeline</th>
@@ -916,7 +1090,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                           <td className="py-2 pr-2 font-mono text-slate-300">
                             {formatZone(row.price_zone_low, row.price_zone_high)}
                           </td>
-                          <td className="py-2 pr-2 text-slate-400 max-w-[160px] truncate" title={row.condition}>
+                          <td className="py-2 pr-2 text-slate-400 min-w-[200px] max-w-[320px] text-[11px] leading-snug break-words" title={row.condition}>
                             {row.condition}
                           </td>
                           <td className="py-2 pr-2 text-slate-500 font-mono text-[10px]">
