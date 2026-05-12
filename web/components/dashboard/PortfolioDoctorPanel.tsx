@@ -45,7 +45,7 @@ interface PriorityActions {
 interface PortfolioRiskMetrics {
   var_cvar?: {
     var_95_10day_pct?: number;
-  };
+  } | null;
   correlation_matrix?: Record<string, Record<string, number>>;
 }
 
