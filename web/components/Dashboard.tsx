@@ -852,6 +852,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   totalValue={selectedReport?.total_value}
                   holdingCount={selectedReport?.per_holding?.length}
                   sectorExposure={selectedReport?.sector_allocation}
+                  holdings={selectedReport?.per_holding}
                   onTickerClick={setSelectedTicker}
                 />
               </ToggleSection>
