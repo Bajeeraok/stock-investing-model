@@ -1,0 +1,249 @@
+"use client";
+import React from "react";
+
+interface CalibrationBucket {
+  label: string;
+  predicted_avg: number;
+  actual_win_rate: number;
+  count: number;
+  avg_return_pct: number;
+}
+
+interface CalibrationData {
+  buckets: CalibrationBucket[];
+  total_observations: number;
+  is_well_calibrated: boolean;
+  calibration_error: number | null;
+  monotonic: boolean;
+  note: string;
+}
+
+interface PaperTradingSummary {
+  completed_n?: number;
+  win_rate_pct?: number | null;
+  avg_return_pct?: number | null;
+  avg_win_pct?: number | null;
+  avg_loss_pct?: number | null;
+  avg_excess_vs_spy_pct?: number | null;
+  buy_signals_summary?: {
+    completed_n?: number;
+    win_rate_pct?: number | null;
+  };
+}
+
+interface ForwardSummary {
+  [signal: string]: {
+    avg_return_20d_pct: number;
+    n_observations: number;
+    hit_rate_pct: number;
+  };
+}
+
+interface ModelHealth {
+  forward_hold_add_hit_rate_20d?: number | null;
+  forward_observations_20d?: number | null;
+  validation_direction_accuracy_pct?: number | null;
+  calibration_ok?: boolean | null;
+  calibration_score?: number | null;
+  walk_forward_ok?: boolean | null;
+}
+
+interface Props {
+  calibration?: CalibrationData | null;
+  paperTrading?: PaperTradingSummary | null;
+  forwardSummary?: ForwardSummary | null;
+  modelHealth?: ModelHealth | null;
+}
+
+function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2.5">
+      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-0.5">{label}</p>
+      <p className={`text-lg font-semibold ${color || "text-slate-100"}`}>{value}</p>
+      {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
+  if (!buckets.length) return null;
+  const maxRate = Math.max(...buckets.map((b) => Math.max(b.predicted_avg, b.actual_win_rate)), 100);
+
+  return (
+    <div className="mt-3">
+      <p className="text-[11px] text-slate-400 mb-2 font-medium">Reliability Diagram</p>
+      <div className="space-y-1.5">
+        {buckets.map((b) => (
+          <div key={b.label} className="flex items-center gap-2 text-[10px]">
+            <span className="w-14 text-slate-400 text-right shrink-0">{b.label}</span>
+            <div className="flex-1 flex flex-col gap-0.5">
+              <div className="flex items-center gap-1">
+                <div
+                  className="h-2.5 rounded-sm bg-slate-600/80"
+                  style={{ width: `${(b.predicted_avg / maxRate) * 100}%` }}
+                  title={`Predicted: ${b.predicted_avg}%`}
+                />
+                <span className="text-slate-500">{b.predicted_avg}%</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div
+                  className={`h-2.5 rounded-sm ${
+                    b.actual_win_rate >= b.predicted_avg - 10
+                      ? "bg-emerald-500/70"
+                      : "bg-red-500/70"
+                  }`}
+                  style={{ width: `${(b.actual_win_rate / maxRate) * 100}%` }}
+                  title={`Actual: ${b.actual_win_rate}%`}
+                />
+                <span className="text-slate-400">{b.actual_win_rate}%</span>
+              </div>
+            </div>
+            <span className="w-8 text-slate-500 text-right shrink-0">n={b.count}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-4 mt-2 text-[9px] text-slate-500">
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-2 rounded-sm bg-slate-600/80" /> Predicted
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-3 h-2 rounded-sm bg-emerald-500/70" /> Actual win rate
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function TrackRecordPanel({ calibration, paperTrading, forwardSummary, modelHealth }: Props) {
+  const hasCalibration = calibration && calibration.buckets && calibration.buckets.length > 0;
+  const hasPaper = paperTrading && paperTrading.completed_n != null && paperTrading.completed_n > 0;
+  const hasForward = forwardSummary && Object.keys(forwardSummary).length > 0;
+
+  const winRate = paperTrading?.win_rate_pct;
+  const avgReturn = paperTrading?.avg_return_pct;
+  const dirAccuracy = modelHealth?.validation_direction_accuracy_pct;
+  const fwdHitRate = modelHealth?.forward_hold_add_hit_rate_20d;
+
+  if (!hasCalibration && !hasPaper && !hasForward && !dirAccuracy && !fwdHitRate) {
+    return (
+      <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 text-center">
+        <p className="text-sm text-slate-400">
+          No track record data yet. Run the model daily and log paper trades to build history.
+        </p>
+        <p className="text-xs text-slate-500 mt-1">
+          Forward tracking, paper trades, and EOD snapshots all contribute to the reliability diagram.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Key metrics strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {winRate != null && (
+          <StatCard
+            label="Paper trade win rate"
+            value={`${winRate.toFixed(1)}%`}
+            sub={`${paperTrading!.completed_n} trades`}
+            color={winRate >= 55 ? "text-emerald-400" : winRate >= 45 ? "text-yellow-400" : "text-red-400"}
+          />
+        )}
+        {avgReturn != null && (
+          <StatCard
+            label="Avg return per trade"
+            value={`${avgReturn >= 0 ? "+" : ""}${avgReturn.toFixed(2)}%`}
+            color={avgReturn >= 0 ? "text-emerald-400" : "text-red-400"}
+          />
+        )}
+        {dirAccuracy != null && (
+          <StatCard
+            label="Direction accuracy"
+            value={`${dirAccuracy.toFixed(1)}%`}
+            sub="Model validation"
+            color={dirAccuracy >= 55 ? "text-emerald-400" : dirAccuracy >= 50 ? "text-yellow-400" : "text-red-400"}
+          />
+        )}
+        {fwdHitRate != null && (
+          <StatCard
+            label="HOLD/ADD 20d hit rate"
+            value={`${fwdHitRate.toFixed(1)}%`}
+            sub={`${modelHealth?.forward_observations_20d ?? 0} obs`}
+            color={fwdHitRate >= 55 ? "text-emerald-400" : "text-yellow-400"}
+          />
+        )}
+      </div>
+
+      {/* Signal breakdown from forward tracking */}
+      {hasForward && (
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1.5 font-medium">Signal performance (20-day forward)</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px] text-left border-collapse">
+              <thead>
+                <tr className="text-slate-500 border-b border-slate-700">
+                  <th className="py-1.5 pr-3 font-medium">Signal</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">Avg return</th>
+                  <th className="py-1.5 pr-3 font-medium text-right">Hit rate</th>
+                  <th className="py-1.5 font-medium text-right">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(forwardSummary!).map(([signal, data]) => (
+                  <tr key={signal} className="border-b border-slate-700/50">
+                    <td className="py-1.5 pr-3 text-slate-300 font-medium">{signal}</td>
+                    <td className={`py-1.5 pr-3 text-right ${data.avg_return_20d_pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {data.avg_return_20d_pct >= 0 ? "+" : ""}{data.avg_return_20d_pct.toFixed(2)}%
+                    </td>
+                    <td className="py-1.5 pr-3 text-right text-slate-300">{data.hit_rate_pct.toFixed(1)}%</td>
+                    <td className="py-1.5 text-right text-slate-500">{data.n_observations}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Paper trading breakdown */}
+      {hasPaper && (
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1.5 font-medium">Paper trade breakdown</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <StatCard label="Avg win" value={paperTrading!.avg_win_pct != null ? `+${paperTrading!.avg_win_pct.toFixed(2)}%` : "---"} color="text-emerald-400" />
+            <StatCard label="Avg loss" value={paperTrading!.avg_loss_pct != null ? `${paperTrading!.avg_loss_pct.toFixed(2)}%` : "---"} color="text-red-400" />
+            <StatCard label="Excess vs SPY" value={paperTrading!.avg_excess_vs_spy_pct != null ? `${paperTrading!.avg_excess_vs_spy_pct >= 0 ? "+" : ""}${paperTrading!.avg_excess_vs_spy_pct.toFixed(2)}%` : "---"} />
+            {paperTrading!.buy_signals_summary?.completed_n != null && (
+              <StatCard label="BUY signal win rate" value={paperTrading!.buy_signals_summary.win_rate_pct != null ? `${paperTrading!.buy_signals_summary.win_rate_pct.toFixed(1)}%` : "---"} sub={`${paperTrading!.buy_signals_summary.completed_n} trades`} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Confidence calibration */}
+      {hasCalibration && (
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-[11px] text-slate-400 font-medium">Confidence calibration</p>
+            {calibration!.is_well_calibrated ? (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">CALIBRATED</span>
+            ) : (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30">NEEDS REVIEW</span>
+            )}
+          </div>
+          {calibration!.note && (
+            <p className="text-[10px] text-slate-500 mb-1">{calibration!.note}</p>
+          )}
+          {calibration!.calibration_error != null && (
+            <p className="text-[10px] text-slate-500">
+              Mean calibration error: {calibration!.calibration_error}pp
+              {calibration!.monotonic ? " · Monotonic ✓" : " · Non-monotonic ✗"}
+              {` · ${calibration!.total_observations} observations`}
+            </p>
+          )}
+          <CalibrationChart buckets={calibration!.buckets} />
+        </div>
+      )}
+    </div>
+  );
+}

@@ -273,5 +273,158 @@ def near_bottom_score(
     details["price"]        = round(price, 2)
     details["ticker"]       = ticker
     details["total_score"]  = score
+    details["mode"]         = "bottom_reversal"
+
+    # Blend with bullish trend score when the stock isn't in a reversal setup.
+    # If near_bottom fires strongly (>= 50), keep it dominant.
+    # Otherwise, compute a bullish trend continuation score and take the max.
+    if score < 50:
+        trend_score, trend_signals, trend_details = _bullish_trend_score(df, ticker)
+        if trend_score > score:
+            for s in trend_signals:
+                if s not in signals:
+                    signals.append(s)
+            details["trend_details"] = trend_details
+            details["bottom_score"] = score
+            details["trend_score"] = trend_score
+            details["mode"] = "trend_continuation"
+            score = round(float(np.clip(trend_score, 0, 100)), 1)
+            details["total_score"] = score
+
+    return score, signals, details
+
+
+def _bullish_trend_score(
+    df: pd.DataFrame,
+    ticker: str = "",
+) -> tuple[float, list[str], dict]:
+    """
+    Bullish trend continuation score (0-100).
+
+    Complements near_bottom_score for stocks in uptrends. Components:
+      1. Above MA50 + MA50 > MA200 (golden cross)     (20 pts)
+      2. Price within 5% of 52w high (breakout zone)   (20 pts)
+      3. RSI in 50-70 "strong trend" zone              (15 pts)
+      4. MACD histogram positive + expanding            (15 pts)
+      5. Volume confirmation (rising on up days)        (15 pts)
+      6. Orderly trend (low pullback depth from highs)  (15 pts)
+    """
+    if df is None or df.empty or "close" not in df.columns:
+        return 0.0, [], {"error": "no data"}
+
+    close = df["close"].dropna()
+    high_col = df["high"].dropna() if "high" in df.columns else close
+    volume = df["volume"].dropna() if "volume" in df.columns else None
+
+    if len(close) < 50:
+        return 0.0, [], {"error": "insufficient bars"}
+
+    score = 0.0
+    signals: list[str] = []
+    details: dict = {}
+    price = float(close.iloc[-1])
+
+    # 1. MA structure: above MA50 + golden cross (20 pts)
+    ma50 = float(close.iloc[-50:].mean())
+    ma200 = float(close.iloc[-min(200, len(close)):].mean()) if len(close) >= 200 else None
+    details["ma50"] = round(ma50, 2)
+    details["ma200"] = round(ma200, 2) if ma200 else None
+
+    above_ma50 = price > ma50
+    golden = ma200 is not None and ma50 > ma200
+
+    if above_ma50 and golden:
+        score += 20
+        signals.append(f"Above MA50 (${ma50:.2f}) + golden cross (MA50 > MA200)")
+    elif above_ma50:
+        score += 12
+        signals.append(f"Above MA50 (${ma50:.2f})")
+    elif golden:
+        score += 5
+
+    # 2. 52-week high proximity / breakout (20 pts)
+    hi_window = min(252, len(high_col))
+    hi_52w = float(high_col.iloc[-hi_window:].max())
+    dist_from_high = (hi_52w - price) / hi_52w if hi_52w > 0 else 1.0
+    details["dist_from_52w_high_pct"] = round(dist_from_high * 100, 2)
+
+    if price >= hi_52w:
+        score += 20
+        signals.append("New 52-week high \u2014 breakout territory")
+    elif dist_from_high <= 0.03:
+        score += 18
+        signals.append(f"Within 3% of 52-week high (${hi_52w:.2f})")
+    elif dist_from_high <= 0.07:
+        score += 12
+        signals.append(f"Within 7% of 52-week high")
+    elif dist_from_high <= 0.15:
+        score += 5
+
+    # 3. RSI in strong trend zone (15 pts)
+    rsi_series = _rsi(close, 14)
+    rsi_now = float(rsi_series.iloc[-1]) if pd.notna(rsi_series.iloc[-1]) else 50.0
+    details["rsi"] = round(rsi_now, 1)
+
+    if 55 <= rsi_now <= 70:
+        score += 15
+        signals.append(f"RSI {rsi_now:.0f} in strong trend zone (55\u201370)")
+    elif 50 <= rsi_now < 55:
+        score += 10
+        signals.append(f"RSI {rsi_now:.0f} above midline")
+    elif 70 < rsi_now <= 80:
+        score += 8
+        signals.append(f"RSI {rsi_now:.0f} overbought but in momentum range")
+
+    # 4. MACD histogram positive + expanding (15 pts)
+    if len(close) >= 35:
+        hist = _macd_histogram(close)
+        if len(hist) >= 4 and pd.notna(hist.iloc[-1]):
+            h_now = float(hist.iloc[-1])
+            h_3ago = float(hist.iloc[-4]) if pd.notna(hist.iloc[-4]) else h_now
+            details["macd_hist"] = round(h_now, 5)
+            if h_now > 0 and h_now > h_3ago:
+                score += 15
+                signals.append("MACD histogram positive + expanding (bullish momentum)")
+            elif h_now > 0:
+                score += 8
+                signals.append("MACD histogram positive (trend intact)")
+
+    # 5. Volume confirmation: above average on recent up days (15 pts)
+    if volume is not None and len(volume) >= 23 and len(close) >= 23:
+        avg_vol = float(volume.iloc[-20:].mean())
+        recent_changes = close.diff().iloc[-10:]
+        recent_vols = volume.iloc[-10:]
+        up_days_vol = []
+        for i in range(len(recent_changes)):
+            if pd.notna(recent_changes.iloc[i]) and recent_changes.iloc[i] > 0:
+                up_days_vol.append(float(recent_vols.iloc[i]))
+        if up_days_vol and avg_vol > 0:
+            avg_up_vol = sum(up_days_vol) / len(up_days_vol)
+            vol_ratio = avg_up_vol / avg_vol
+            details["up_day_volume_ratio"] = round(vol_ratio, 2)
+            if vol_ratio >= 1.3:
+                score += 15
+                signals.append(f"Volume confirms trend (up-day vol {vol_ratio:.1f}x average)")
+            elif vol_ratio >= 1.0:
+                score += 8
+
+    # 6. Orderly trend: shallow pullbacks from recent highs (15 pts)
+    if len(close) >= 20:
+        recent_high = float(close.iloc[-20:].max())
+        max_drawdown = (recent_high - price) / recent_high if recent_high > 0 else 0
+        details["recent_drawdown_pct"] = round(max_drawdown * 100, 2)
+        if max_drawdown <= 0.02:
+            score += 15
+            signals.append("Tight consolidation near highs (< 2% pullback)")
+        elif max_drawdown <= 0.05:
+            score += 12
+            signals.append("Orderly pullback from highs (< 5%)")
+        elif max_drawdown <= 0.08:
+            score += 5
+
+    score = round(float(np.clip(score, 0, 100)), 1)
+    details["total_score"] = score
+    details["ticker"] = ticker
+    details["price"] = round(price, 2)
 
     return score, signals, details

@@ -80,3 +80,56 @@ def test_tension_off_without_fair_value():
         )
         is None
     )
+
+
+def test_momentum_target_present_when_tension_fires():
+    p = _momentum_valuation_tension_payload(
+        current_price=127.0,
+        fair_value=81.0,
+        high_52w=130.57,
+        regime_bull_pct=100.0,
+        short_ml=38.0,
+        medium_ml=44.0,
+        long_ml=50.0,
+        atr_14=3.5,
+    )
+    assert p is not None
+    assert p["momentum_target"] is not None
+    assert p["momentum_target"] > 127.0
+    assert p["momentum_stop"] is not None
+    assert p["momentum_stop"] < 127.0
+    assert p["momentum_upside_pct"] > 0
+    assert p["momentum_risk_pct"] > 0
+
+
+def test_momentum_target_uses_analyst_ceiling():
+    p = _momentum_valuation_tension_payload(
+        current_price=127.0,
+        fair_value=81.0,
+        high_52w=130.57,
+        regime_bull_pct=100.0,
+        short_ml=38.0,
+        medium_ml=44.0,
+        long_ml=50.0,
+        atr_14=3.5,
+        analyst_target_high=135.0,
+    )
+    assert p is not None
+    assert p["momentum_target"] <= 135.0
+    assert "momentum_target_method" in p
+
+
+def test_catalyst_flag_included():
+    p = _momentum_valuation_tension_payload(
+        current_price=127.0,
+        fair_value=81.0,
+        high_52w=130.57,
+        regime_bull_pct=100.0,
+        short_ml=38.0,
+        medium_ml=44.0,
+        long_ml=50.0,
+        catalyst_active=True,
+    )
+    assert p is not None
+    assert p["catalyst_active"] is True
+    assert "catalyst" in p["note_line"].lower()

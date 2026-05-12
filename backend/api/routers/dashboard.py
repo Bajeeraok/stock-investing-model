@@ -674,6 +674,15 @@ async def get_dashboard(
             ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)}
             return ("forward_tracking", ft)
 
+    def _task_confidence_calibration():
+        try:
+            from signals.confidence_calibration import build_calibration_report, calibration_report_to_dict
+            report = build_calibration_report(data_root)
+            return ("confidence_calibration", calibration_report_to_dict(report))
+        except Exception as e:
+            logger.debug("Confidence calibration failed: %s", e)
+            return ("confidence_calibration", {"buckets": [], "note": str(e)})
+
     def _task_regime_validation():
         """
         Full market-level regime validation (Issues 1-6).
@@ -805,6 +814,7 @@ async def get_dashboard(
         ("forward_tracking", _task_forward_tracking),
         ("paper_trading_async", _task_paper_trading_async),
         ("regime_validation", _task_regime_validation),
+        ("confidence_calibration", _task_confidence_calibration),
     ]
     parallel_results: dict = {}
     t_parallel = time.perf_counter()
@@ -836,6 +846,7 @@ async def get_dashboard(
     model_validation = parallel_results.get("model_validation", {"records": [], "summary": {}})
     forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
     regime_validation = parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"})
+    confidence_calibration = parallel_results.get("confidence_calibration", {"buckets": [], "note": "Not computed"})
     paper_async = parallel_results.get("paper_trading_async")
     if paper_async:
         paper_trading["sync_targets"] = paper_async.get("sync_targets")
@@ -955,6 +966,74 @@ async def get_dashboard(
                 )
     except Exception as e:
         logger.debug("portfolio_risk_metrics: %s", e)
+
+    # ── Portfolio Doctor v2: health score, MCTR, stress tests, earnings cal, priority queue ──
+    portfolio_doctor_v2: dict = {}
+    try:
+        if holdings and portfolios_out:
+            first_report = next(iter(portfolios_out.values()), None)
+            if first_report:
+                _pd_ph = first_report.get("per_holding") or []
+                _pd_tv = first_report.get("total_value") or 0
+
+                # Health score
+                from portfolio.health_score import compute_health_score
+                health = compute_health_score(
+                    _pd_ph, _pd_tv,
+                    correlation_matrix=portfolio_risk_metrics.get("correlation_matrix"),
+                    var_cvar=portfolio_risk_metrics.get("var_cvar"),
+                    sector_allocation=first_report.get("sector_allocation"),
+                    stress_scenarios=None,
+                )
+
+                # MCTR
+                from portfolio.mctr import compute_mctr
+                mctr = compute_mctr(_pd_ph, _pd_tv)
+
+                # Stress tests
+                from portfolio.stress_test import compute_stress_tests
+                sector_map_for_stress = {}
+                for sa in (first_report.get("sector_allocation") or []):
+                    pass
+                stress = compute_stress_tests(_pd_ph, _pd_tv)
+
+                # Update health with stress data
+                if stress:
+                    health_with_stress = compute_health_score(
+                        _pd_ph, _pd_tv,
+                        correlation_matrix=portfolio_risk_metrics.get("correlation_matrix"),
+                        var_cvar=portfolio_risk_metrics.get("var_cvar"),
+                        sector_allocation=first_report.get("sector_allocation"),
+                        stress_scenarios=stress,
+                    )
+                    health = health_with_stress
+
+                # Earnings calendar
+                from portfolio.priority_actions import build_earnings_calendar_portfolio
+                earnings_cal = build_earnings_calendar_portfolio(_pd_ph, _pd_tv, config)
+
+                # Priority actions
+                from portfolio.priority_actions import build_priority_actions
+                first_rec = next(iter(portfolio_doctor_recommendations.values()), None) or {}
+                priority = build_priority_actions(
+                    _pd_ph, _pd_tv,
+                    trim_list=first_rec.get("trim"),
+                    add_list=first_rec.get("add"),
+                    correlation_alerts=first_report.get("correlation_alerts"),
+                    earnings_calendar=earnings_cal.get("items"),
+                    mctr=mctr,
+                )
+
+                portfolio_doctor_v2 = {
+                    "health": health,
+                    "mctr": mctr,
+                    "stress_tests": stress,
+                    "earnings_calendar": earnings_cal,
+                    "priority_actions": priority,
+                    "portfolio_beta": mctr.get("portfolio_beta") if mctr else None,
+                }
+    except Exception as e:
+        logger.debug("portfolio_doctor_v2: %s", e)
 
     # Macro analog: historical one-liner when VIX + real yield match current state
     macro_analog = None
@@ -1466,6 +1545,7 @@ async def get_dashboard(
         "macro_regime": macro_regime,
         "macro_regime_bundle": macro_regime_bundle,
         "portfolio_risk_metrics": portfolio_risk_metrics,
+        "portfolio_doctor_v2": portfolio_doctor_v2,
         "market_reversal_overlay": market_reversal_overlay,
         "market_regime": market_regime_data,
         "global_market_regime": next(
@@ -1479,6 +1559,7 @@ async def get_dashboard(
         "model_validation": model_validation,
         "forward_tracking": forward_tracking,
         "regime_validation": regime_validation,
+        "confidence_calibration": confidence_calibration,
         "paper_vs_backtest_drift": paper_vs_backtest_drift,
         "paper_trading": paper_trading,
         "pre_market": pre_market,

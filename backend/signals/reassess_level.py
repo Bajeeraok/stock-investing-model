@@ -50,7 +50,7 @@ def compute_reassess_level(
     week52_high: float | None = None,
     week52_low: float | None = None,
     ml_threshold: float = 0.25,
-    pattern_threshold: float = 60.0,
+    pattern_threshold: float = 50.0,
     regime_threshold: float = 0.40,
 ) -> ReassessLevel:
     conditions: list[str] = []

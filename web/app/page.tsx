@@ -565,6 +565,15 @@ export interface DashboardData {
   };
   /** Holdings-based correlation, VaR/CVaR, correlation-adjusted sizing (dashboard API) */
   portfolio_risk_metrics?: PortfolioRiskMetrics;
+  /** Portfolio Doctor v2: health score, MCTR, stress tests, earnings calendar, priority actions */
+  portfolio_doctor_v2?: {
+    health?: { score: number; sub_scores: Record<string, number>; biggest_drag?: string | null; improvement_note?: string | null };
+    mctr?: { positions: { ticker: string; value_pct: number; risk_pct: number; risk_ratio: number }[]; portfolio_vol_annual_pct?: number; portfolio_beta?: number | null; note?: string | null };
+    stress_tests?: { name: string; portfolio_impact_pct: number; spy_drawdown_pct: number; survivors?: string[] }[];
+    earnings_calendar?: { items: { ticker: string; earnings_date?: string; days_until: number; portfolio_pct: number }[]; total_at_risk_pct: number; count: number; note?: string | null };
+    priority_actions?: { this_week: { ticker: string; action: string; reason: string; tags?: string[]; urgency?: string }[]; this_month: { ticker: string; action: string; reason: string; tags?: string[]; urgency?: string }[]; total_actions: number };
+    portfolio_beta?: number | null;
+  };
   /** Methodology bullets for the Known limits panel (config or API defaults) */
   known_limits?: string[];
   /** FRED+VIX macro + optional SPY HMM fusion; coaching_note when views diverge */

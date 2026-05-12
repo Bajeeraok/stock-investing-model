@@ -65,6 +65,12 @@ export interface OneAnswer {
     detail: string;
     premium_vs_fair_value_pct?: number;
     regime_bull_pct?: number;
+    momentum_target?: number;
+    momentum_target_method?: string;
+    momentum_stop?: number;
+    momentum_upside_pct?: number;
+    momentum_risk_pct?: number;
+    catalyst_active?: boolean;
   } | null;
   /** Strong non-bull HMM vs price at highs — regime is macro-heavy, not necessarily name weakness. */
   ath_macro_regime_disconnect?: {
@@ -1142,7 +1148,39 @@ export function InvestorDecisionSummarySection({
             "p",
             { className: "text-[11px] text-cyan-100/90 leading-snug" },
             one_answer.momentum_valuation_tension.detail
-          )
+          ),
+          one_answer.momentum_valuation_tension.momentum_target != null &&
+            React.createElement(
+              "div",
+              { className: "mt-2 pt-2 border-t border-cyan-500/20 grid grid-cols-2 gap-x-4 gap-y-1" },
+              React.createElement(
+                "div",
+                { className: "text-[10px] text-cyan-300/80" },
+                "Momentum target"
+              ),
+              React.createElement(
+                "div",
+                { className: "text-[11px] font-medium text-cyan-100 text-right" },
+                `$${one_answer.momentum_valuation_tension.momentum_target.toFixed(2)} (+${one_answer.momentum_valuation_tension.momentum_upside_pct ?? 0}%)`
+              ),
+              React.createElement(
+                "div",
+                { className: "text-[10px] text-cyan-300/80" },
+                "Momentum stop"
+              ),
+              React.createElement(
+                "div",
+                { className: "text-[11px] font-medium text-cyan-100 text-right" },
+                `$${(one_answer.momentum_valuation_tension.momentum_stop ?? 0).toFixed(2)} (-${one_answer.momentum_valuation_tension.momentum_risk_pct ?? 0}%)`
+              ),
+              React.createElement(
+                "div",
+                { className: "text-[10px] text-cyan-300/80 col-span-2 mt-1 italic" },
+                one_answer.momentum_valuation_tension.momentum_target_method === "analyst_consensus_high"
+                  ? "Based on analyst consensus high"
+                  : "Based on ATR breakout extension"
+              )
+            )
         ),
       one_answer.ath_macro_regime_disconnect?.active &&
         React.createElement(

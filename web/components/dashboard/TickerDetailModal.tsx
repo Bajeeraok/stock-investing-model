@@ -238,6 +238,25 @@ export interface TickerDetail {
   dividend_yield_explanation?: string | null;
   dividend_yield_error?: string | null;
   sanity_errors?: string[];
+  catalyst?: {
+    active: boolean;
+    top_event_type: string;
+    top_impact: number;
+    headline_summary: string;
+    override_note: string;
+    hours_since_catalyst: number;
+    event_count: number;
+  } | null;
+  post_earnings_transition?: {
+    active: boolean;
+    beat_or_miss: string;
+    eps_surprise_pct: number | null;
+    earnings_date: string | null;
+    days_since: number | null;
+    price_reaction_pct: number | null;
+    transition_note: string;
+    signal_direction: string;
+  } | null;
   high_52w?: number | null;
   low_52w?: number | null;
   beta?: number | null;
@@ -434,6 +453,43 @@ export function TickerDetailModal({
 
         {detail && !loading && detail.investor_summary && (
           <RetailActionStatusBanner status={retailActionStatus} />
+        )}
+
+        {/* Catalyst badge — advisory banner when high-impact news detected */}
+        {detail && !loading && detail.catalyst?.active && (
+          <div className="border-b border-amber-500/30 bg-amber-950/80 px-4 py-2.5 sm:px-6 flex items-start gap-2">
+            <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40">
+              {detail.catalyst.top_event_type?.replace(/_/g, " ") ?? "CATALYST"}
+            </span>
+            <p className="text-xs text-amber-200/90 leading-relaxed">
+              {detail.catalyst.override_note}
+            </p>
+          </div>
+        )}
+
+        {/* Post-earnings transition banner */}
+        {detail && !loading && detail.post_earnings_transition?.active && (
+          <div className={`border-b px-4 py-2.5 sm:px-6 flex items-start gap-2 ${
+            detail.post_earnings_transition.signal_direction === "bullish"
+              ? "border-emerald-500/30 bg-emerald-950/80"
+              : detail.post_earnings_transition.signal_direction === "bearish"
+                ? "border-red-500/30 bg-red-950/80"
+                : "border-slate-600 bg-slate-800/80"
+          }`}>
+            <span className={`shrink-0 mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${
+              detail.post_earnings_transition.beat_or_miss === "beat"
+                ? "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40"
+                : detail.post_earnings_transition.beat_or_miss === "miss"
+                  ? "bg-red-500/20 text-red-300 ring-red-500/40"
+                  : "bg-slate-500/20 text-slate-300 ring-slate-500/40"
+            }`}>
+              {detail.post_earnings_transition.beat_or_miss === "beat" ? "EARNINGS BEAT" :
+               detail.post_earnings_transition.beat_or_miss === "miss" ? "EARNINGS MISS" : "EARNINGS INLINE"}
+            </span>
+            <p className="text-xs text-slate-200/90 leading-relaxed">
+              {detail.post_earnings_transition.transition_note}
+            </p>
+          </div>
         )}
 
         {/* Tab bar: Overview | Roadmaps | Details — keeps modal from feeling crowded */}

@@ -411,6 +411,29 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         response["high_52w"] = round(float(response["high_52w"]), 2)
     if response.get("low_52w") is not None:
         response["low_52w"] = round(float(response["low_52w"]), 2)
+
+    # Catalyst detection — advisory payload from news headlines
+    try:
+        catalyst = None
+        if conf_snapshot_for_request:
+            bd = conf_snapshot_for_request.get("breakdown") or {}
+            nlp = bd.get("nlp_sentiment") or bd.get("news") or {}
+            cat = nlp.get("catalyst")
+            if isinstance(cat, dict) and cat.get("active"):
+                catalyst = cat
+        response["catalyst"] = catalyst
+    except Exception:
+        response["catalyst"] = None
+
+    # Post-earnings transition signal
+    try:
+        pet = None
+        if conf_snapshot_for_request:
+            pet = (conf_snapshot_for_request.get("breakdown") or {}).get("post_earnings_transition")
+        response["post_earnings_transition"] = pet
+    except Exception:
+        response["post_earnings_transition"] = None
+
     return response
 
 
@@ -2394,10 +2417,16 @@ def _momentum_valuation_tension_payload(
     short_ml: float,
     medium_ml: float,
     long_ml: float,
+    atr_14: float | None = None,
+    analyst_target_high: float | None = None,
+    catalyst_active: bool = False,
 ) -> dict | None:
     """
     Value vs momentum: very bullish regime + near 52w highs + ML stepping up by horizon,
     but spot materially above model fair value. DCF-style FV can lag headline catalysts.
+
+    When triggered, also computes a momentum continuation target alongside the
+    fundamental fair value — based on ATR extension, 52w high breakout, and analyst ceiling.
     """
     if fair_value is None or fair_value <= 0 or current_price <= 0:
         return None
@@ -2422,7 +2451,41 @@ def _momentum_valuation_tension_payload(
     if not (rb >= 88.0 and premium >= 18.0 and near_hi and ml_edges_up):
         return None
 
-    headline = "Valuation stretched — momentum regime dominant"
+    # --- Momentum target computation ---
+    # Uses ATR-based extension, 52w high breakout, and analyst ceiling
+    momentum_target = None
+    momentum_target_method = None
+    momentum_stop = None
+
+    h52 = float(high_52w) if high_52w and high_52w > 0 else current_price
+    atr = float(atr_14) if atr_14 and atr_14 > 0 else current_price * 0.02
+
+    # Method 1: ATR extension (2x ATR above 52w high for breakout continuation)
+    atr_target = h52 + 2.0 * atr
+
+    # Method 2: Analyst consensus ceiling (if available and above current price)
+    analyst_ceiling = None
+    if analyst_target_high and analyst_target_high > current_price:
+        analyst_ceiling = float(analyst_target_high)
+
+    # Pick the more conservative of ATR and analyst targets
+    candidates = [atr_target]
+    if analyst_ceiling:
+        candidates.append(analyst_ceiling)
+
+    momentum_target = round(min(candidates), 2)
+    if analyst_ceiling and momentum_target == analyst_ceiling:
+        momentum_target_method = "analyst_consensus_high"
+    else:
+        momentum_target_method = "atr_breakout_extension"
+
+    # Momentum stop: 52w high becomes support (or 1 ATR below current)
+    momentum_stop = round(max(h52 * 0.97, current_price - 1.5 * atr), 2)
+
+    momentum_upside_pct = round((momentum_target / current_price - 1.0) * 100, 1) if momentum_target > 0 else 0
+    momentum_risk_pct = round((1.0 - momentum_stop / current_price) * 100, 1) if momentum_stop > 0 else 0
+
+    headline = "Valuation stretched \u2014 momentum regime dominant"
     detail = (
         f"Spot is about {premium:.0f}% above model fair value while HMM bull is ~{rb:.0f}% "
         "and price sits within ~5% of the 52-week high with ML estimates stepping up by horizon. "
@@ -2430,10 +2493,21 @@ def _momentum_valuation_tension_payload(
         "headline catalysts. Treat continuation as a live scenario until estimates rebase; if you "
         "participate, use smaller size and explicit risk controls."
     )
+
+    momentum_note = (
+        f"Momentum target: ${momentum_target:.2f} (+{momentum_upside_pct:.1f}%) based on "
+        f"{'analyst consensus high' if momentum_target_method == 'analyst_consensus_high' else 'ATR breakout extension'}. "
+        f"Momentum stop: ${momentum_stop:.2f} (-{momentum_risk_pct:.1f}%). "
+        "Standard valuation targets suspended while momentum regime is active"
+        f"{' and catalyst is present' if catalyst_active else ''}."
+    )
+
     note_line = (
         f"Momentum vs value: ~{premium:.0f}% above model FV with ~{rb:.0f}% bull regime, near 52w highs, "
-        "ML horizons rising — stretched vs fundamentals but tape favors momentum; catalyst continuation risk."
+        "ML horizons rising \u2014 stretched vs fundamentals but tape favors momentum; catalyst continuation risk. "
+        + momentum_note
     )
+
     return {
         "active": True,
         "headline": headline,
@@ -2441,6 +2515,12 @@ def _momentum_valuation_tension_payload(
         "note_line": note_line,
         "premium_vs_fair_value_pct": round(premium, 1),
         "regime_bull_pct": round(rb, 0),
+        "momentum_target": momentum_target,
+        "momentum_target_method": momentum_target_method,
+        "momentum_stop": momentum_stop,
+        "momentum_upside_pct": momentum_upside_pct,
+        "momentum_risk_pct": momentum_risk_pct,
+        "catalyst_active": catalyst_active,
     }
 
 
@@ -2601,6 +2681,11 @@ def _build_one_answer_roadmaps(
     h52w = _safe_float(response.get("high_52w"))
     rb_raw = investor_out.get("regime_bull_pct")
     rb_for_tension = float(rb_raw) if isinstance(rb_raw, (int, float)) else None
+    atr_for_tension = _safe_float(response.get("atr14"))
+    analyst_hi_for_tension = _safe_float(
+        (response.get("fair_value_vs_external") or {}).get("fmp_consensus_high_usd")
+    )
+    cat_active = isinstance(response.get("catalyst"), dict) and bool(response["catalyst"].get("active"))
     tension = _momentum_valuation_tension_payload(
         current_price=current_price,
         fair_value=fv_only,
@@ -2609,6 +2694,9 @@ def _build_one_answer_roadmaps(
         short_ml=st_ml,
         medium_ml=mt_ml,
         long_ml=lt_ml,
+        atr_14=atr_for_tension,
+        analyst_target_high=analyst_hi_for_tension,
+        catalyst_active=cat_active,
     )
     ath_macro = _ath_vs_macro_regime_disconnect_payload(
         current_price=current_price,
@@ -2630,6 +2718,16 @@ def _build_one_answer_roadmaps(
         if isinstance(nl2, str) and nl2.strip():
             prefix_sig.append(nl2.strip())
     sig_notes = prefix_sig + sig_notes
+
+    # Catalyst detection note (advisory — from response["catalyst"] if present)
+    cat = response.get("catalyst")
+    if isinstance(cat, dict) and cat.get("active") and cat.get("override_note"):
+        sig_notes.insert(0, cat["override_note"])
+
+    # Post-earnings transition note
+    pet = response.get("post_earnings_transition")
+    if isinstance(pet, dict) and pet.get("active") and pet.get("transition_note"):
+        sig_notes.insert(0, pet["transition_note"])
 
     # Single-message narrative: "bottom line + why" so users don't have to reconcile layers manually.
     if dual_mode == "pre_flip_watch":

@@ -52,3 +52,5 @@ export { TaxAwareExitPanel, type TaxAwareExitsData, type TaxAwareExitItem } from
 export { AlertsPanel, type ScanAlert } from "./AlertsPanel";
 export { RetailBriefingPanel } from "./RetailBriefingPanel";
 export { RoadmapsPanel } from "./RoadmapsPanel";
+export { default as TrackRecordPanel } from "./TrackRecordPanel";
+export { default as PortfolioDoctorPanel, type PortfolioDoctorV2Data } from "./PortfolioDoctorPanel";

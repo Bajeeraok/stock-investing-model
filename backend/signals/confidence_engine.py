@@ -428,6 +428,27 @@ class ConfidenceEngine:
                 "post_earnings_volume_ratio": round(float(post_earnings_volume_ratio), 2) if post_earnings_volume_ratio is not None else None,
             }
 
+            # Post-earnings transition signal (advisory)
+            try:
+                from signals.post_earnings_transition import compute_post_earnings_signal
+                pe_sig = compute_post_earnings_signal(ticker, config, earnings_context=earnings_context)
+                if pe_sig.active:
+                    details["post_earnings_transition"] = {
+                        "active": True,
+                        "beat_or_miss": pe_sig.beat_or_miss,
+                        "eps_surprise_pct": pe_sig.eps_surprise_pct,
+                        "actual_eps": pe_sig.actual_eps,
+                        "estimated_eps": pe_sig.estimated_eps,
+                        "earnings_date": pe_sig.earnings_date,
+                        "days_since": pe_sig.days_since,
+                        "price_reaction_pct": pe_sig.price_reaction_pct,
+                        "volume_ratio": pe_sig.volume_ratio,
+                        "transition_note": pe_sig.transition_note,
+                        "signal_direction": pe_sig.signal_direction,
+                    }
+            except Exception:
+                pass
+
             hmm = get_hmm_regime(
                 ticker,
                 close_s,
@@ -960,6 +981,8 @@ class ConfidenceEngine:
             "horizon_confidence": horizon_confidence,
             # Regime validation (inline, no I/O): consensus + divergence severity + weight adj
             "regime_validation": details.get("regime_validation"),
+            # Post-earnings transition signal (advisory — beat/miss + direction)
+            "post_earnings_transition": details.get("post_earnings_transition"),
         }
 
 
@@ -1331,6 +1354,8 @@ def _nlp_pack_sentiment_summary(
     }
     if fmp_request_error:
         out["fmp_request_error"] = fmp_request_error
+    if summary.get("catalyst"):
+        out["catalyst"] = summary["catalyst"]
     return out
 
 

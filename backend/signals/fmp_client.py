@@ -409,7 +409,24 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
             "sentiment_method": "none",
             "headline_count": 0,
             "headlines": [],
+            "catalyst": None,
         }
+
+    # Catalyst detection (advisory — does not alter sentiment scores)
+    try:
+        from signals.catalyst_detector import detect_catalysts
+        catalyst_payload = detect_catalysts(raw_items, ticker)
+        catalyst_dict = {
+            "active": catalyst_payload.active,
+            "top_event_type": catalyst_payload.top_event_type,
+            "top_impact": catalyst_payload.top_impact,
+            "headline_summary": catalyst_payload.headline_summary,
+            "override_note": catalyst_payload.override_note,
+            "hours_since_catalyst": catalyst_payload.hours_since_catalyst,
+            "event_count": len(catalyst_payload.events),
+        } if catalyst_payload.active else None
+    except Exception:
+        catalyst_dict = None
 
     # Per-article API sentiment when present
     fmp_scores: list[float] = []
@@ -440,6 +457,7 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
             "sentiment_method": "fmp_field",
             "headline_count": len(raw_items),
             "headlines": headlines,
+            "catalyst": catalyst_dict,
         }
 
     # Keyword lexicon on title + text
@@ -460,6 +478,7 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
             "sentiment_method": kw_method if kw_method == "keyword_commodity" else "keyword",
             "headline_count": n_h,
             "headlines": headlines,
+            "catalyst": catalyst_dict,
         }
 
     # Headlines only — no usable signal for this path; caller should try Alpha Vantage
@@ -470,6 +489,7 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
         "sentiment_method": "none",
         "headline_count": len(raw_items),
         "headlines": headlines,
+        "catalyst": catalyst_dict,
     }
 
 

@@ -61,6 +61,8 @@ import {
   AlertsPanel,
   RetailBriefingPanel,
   RoadmapsPanel,
+  TrackRecordPanel,
+  PortfolioDoctorPanel,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 
@@ -841,6 +843,18 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </select>
                 </div>
               )}
+              {/* Portfolio Doctor v2 — answers "what do I do this week?" first */}
+              <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen>
+                <PortfolioDoctorPanel
+                  data={data.portfolio_doctor_v2}
+                  portfolioRiskMetrics={data.portfolio_risk_metrics}
+                  portfolioBeta={data.portfolio_doctor_v2?.portfolio_beta}
+                  totalValue={selectedReport?.total_value}
+                  holdingCount={selectedReport?.per_holding?.length}
+                  sectorExposure={selectedReport?.sector_allocation}
+                  onTickerClick={setSelectedTicker}
+                />
+              </ToggleSection>
               <ToggleSection id="portfolio-summary" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <PortfolioSummary report={selectedReport} />
@@ -884,8 +898,8 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={setSelectedTicker} />
               </ToggleSection>
               <ToggleSection
-                id="portfolio-doctor"
-                title="Portfolio Doctor"
+                id="portfolio-doctor-legacy"
+                title="Trim / Add Recommendations"
                 icon={<Target />}
                 badge={
                   (mergedDoctorRec?.[selectedPortfolio]?.trim?.length ?? 0) +
@@ -1080,6 +1094,14 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   />
                 </ToggleSection>
               )}
+              <ToggleSection id="analysis-track-record" title="Track record" icon={<Target />} defaultOpen>
+                <TrackRecordPanel
+                  calibration={(data as any).confidence_calibration ?? null}
+                  paperTrading={data.paper_trading?.summary ?? null}
+                  forwardSummary={data.forward_tracking?.summary_by_signal ?? null}
+                  modelHealth={data.model_health ?? null}
+                />
+              </ToggleSection>
               {(data.paper_trading || data.paper_vs_backtest_drift) && (
                 <ToggleSection
                   id="analysis-paper"
