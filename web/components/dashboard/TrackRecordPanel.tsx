@@ -28,7 +28,7 @@ interface PaperTradingSummary {
   buy_signals_summary?: {
     completed_n?: number;
     win_rate_pct?: number | null;
-  };
+  } | null;
 }
 
 interface ForwardSummary {
