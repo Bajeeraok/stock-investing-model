@@ -29,7 +29,7 @@ export function ToggleSection({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-slate-800/50 hover:bg-slate-800/70 transition text-left group"
+        className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-slate-800 hover:bg-slate-700/80 transition text-left group"
       >
         <div className="flex items-center gap-3">
           <span

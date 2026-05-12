@@ -344,7 +344,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   return (
     <div className="min-h-screen">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur supports-[backdrop-filter]:bg-slate-950/70">
+      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950">
         <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <TrendingUp className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 text-emerald-500" />
@@ -470,7 +470,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
       </div>
 
       <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
-        <div className="rounded-xl border border-slate-800/80 bg-slate-900/30 backdrop-blur-sm">
+        <div className="rounded-xl border border-slate-800/80 bg-slate-900">
           {/* Overview tab */}
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -1045,12 +1045,12 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                       <table className="w-full text-sm text-left border-collapse min-w-[480px]">
                         <thead>
                           <tr className="text-slate-500 border-b border-slate-600">
-                            <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">Ticker</th>
-                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Close</th>
-                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">RSI</th>
-                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">MA</th>
-                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">MACD</th>
-                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Bias</th>
+                            <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 py-1.5 pr-2 font-medium bg-slate-800 border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">Ticker</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800">Close</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800">RSI</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800">MA</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800">MACD</th>
+                            <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800">Bias</th>
                           </tr>
                         </thead>
                         <tbody>

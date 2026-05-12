@@ -288,7 +288,7 @@ export function SignalsTable({
 
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
-      <div className="flex items-center justify-end gap-2 px-3 sm:px-4 py-2 bg-slate-800/50 border-b border-slate-700">
+      <div className="flex items-center justify-end gap-2 px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700">
         <span className="text-xs text-slate-400">Sort by:</span>
         <select
           value={sortBy}
@@ -380,67 +380,67 @@ export function SignalsTable({
         <table className="w-full min-w-[1240px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">
-              <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800/95 backdrop-blur-sm px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
+              <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800 px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
                 Ticker
               </th>
-              <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
+              <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800 border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
                 Close
               </th>
               <th
-                className="sticky top-0 z-[20] min-w-[7.5rem] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 text-left cursor-help"
+                className="sticky top-0 z-[20] min-w-[7.5rem] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 text-left cursor-help"
                 title={`Risk budget = ${riskSizing?.risk_pct ?? 1}% of portfolio if stop hits; notional position = budget ÷ (stop %).`}
               >
                 Risk (size)
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help whitespace-nowrap"
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help whitespace-nowrap"
                 title="Confluence Score (0–100): how much do Trend + RSI + MACD + Regime agree on direction? ≥65 = aligned bullish · 35–65 = mixed · ≤35 = bearish alignment. NOT a probability — click any ticker to see the 7-layer ML Confidence breakdown."
               >
                 Confluence
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 LIS
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 RSI
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Regime
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help text-left min-w-[7rem]"
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[7rem]"
                 title="7-layer confidence action — same model as the Roadmaps tab and ticker detail (not the old confluence-only tier)."
               >
                 Plan (7L)
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help whitespace-nowrap"
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help whitespace-nowrap"
                 title="Confluence + ML short-term tier (technical alignment). Can differ from Plan when ML is weak or regime gates apply."
               >
                 Tech+ML
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 cursor-help text-left"
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left"
                 title="Earnings caution window, days to report, and FMP-based earnings quality (EQ) when available"
               >
                 Earnings
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Positioning
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Buy / Sell / Support
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700 min-w-[11rem]"
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 min-w-[11rem]"
                 title="Horizon cues (ST/MT/LT) — aligned with Plan when plan says reduce/avoid."
               >
                 Horizons ST / MT / LT
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Vol / DD
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">
+              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Notes
               </th>
             </tr>

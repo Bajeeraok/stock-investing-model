@@ -500,10 +500,12 @@ function BuyRangeRetailCard({
   currentPrice,
   short,
   long,
+  overallVerdict,
 }: {
   currentPrice: number;
   short: HorizonSignalPayload;
   long: HorizonSignalPayload;
+  overallVerdict: "WAIT" | "WATCH" | "BUY" | "STRONG BUY";
 }): React.ReactElement | null {
   const ez = short?.entry_zone;
   if (!ez || !(ez.low > 0) || !(ez.high > 0)) return null;
@@ -549,6 +551,9 @@ function BuyRangeRetailCard({
   const maxBuyMos = long?.entry_tiers?.current_assessment?.min_price_to_buy;
   const rr = short?.risk_reward != null && Number(short.risk_reward) > 0 ? Number(short.risk_reward) : null;
   const rrRiskShare = rr != null ? 1 / (1 + rr) : null;
+  const insideBandButNotBuy =
+    statusLabel === "Inside buy zone" &&
+    (overallVerdict === "WAIT" || overallVerdict === "WATCH");
 
   return React.createElement(
     "section",
@@ -581,6 +586,12 @@ function BuyRangeRetailCard({
       ),
       React.createElement("span", { className: statusBadgeClass }, statusLabel)
     ),
+    insideBandButNotBuy &&
+      React.createElement(
+        "p",
+        { className: "text-[11px] text-amber-200/90 mb-3 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-950/50 leading-snug" },
+        `Price is inside the near-term band but the overall signal is ${overallVerdict} because regime and confidence gates haven\u2019t cleared \u2014 the band shows where you\u2019d buy if conditions improve, not a current buy signal.`
+      ),
     React.createElement(
       "div",
       { className: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3" },
@@ -754,6 +765,12 @@ function BuyRangeRetailCard({
                 "p",
                 { className: "text-[10px] text-amber-200/90 mt-1.5 leading-snug border-t border-amber-500/20 pt-1.5" },
                 "Near-term R:R is tight \u2014 this entry is designed for the medium/long horizon, not a 1-month trade. Size accordingly and use long-term tiers for conviction adds."
+              ),
+            rr >= 0.8 && (overallVerdict === "WAIT" || overallVerdict === "WATCH") &&
+              React.createElement(
+                "p",
+                { className: "text-[10px] text-amber-200/90 mt-1.5 leading-snug border-t border-amber-500/20 pt-1.5" },
+                `R:R of 1:${rr.toFixed(1)} looks reasonable, but ${overallVerdict} reflects regime/confidence gates that haven\u2019t cleared \u2014 R:R improves further if price pulls back to the entry zone low.`
               )
           )
       ),
@@ -931,11 +948,40 @@ export function InvestorDecisionSummarySection({
   const shortWaitOverallBuy =
     (String(short?.verdict || "").toUpperCase() === "WAIT" || String(short?.verdict || "").toUpperCase() === "WATCH") &&
     (overall_verdict === "BUY" || overall_verdict === "STRONG BUY");
+  const mlHighHmmBlocks: Array<{ label: string; ml: number; bullPct: number }> = (
+    [
+      ["Short", short] as const,
+      ["Medium", medium] as const,
+      ["Long", long] as const,
+    ] as const
+  )
+    .filter(([, h]) =>
+      h &&
+      String(h.verdict || "").toUpperCase() === "WAIT" &&
+      h.ml_prob >= 80 &&
+      regime_bull_pct != null &&
+      regime_bull_pct < 60
+    )
+    .map(([label, h]) => ({
+      label,
+      ml: h!.ml_prob,
+      bullPct: regime_bull_pct!,
+    }));
   const contextFlags: Array<{ severity: "warning" | "info"; message: string }> = [
     ...(shortWaitOverallBuy
       ? [{
           severity: "info" as const,
           message: "Long-term thesis is actionable even though the short-term setup is weak \u2014 the overall BUY is driven by medium/long horizon strength, not a 1-month trade signal.",
+        }]
+      : []),
+    ...mlHighHmmBlocks.map((m) => ({
+      severity: "info" as const,
+      message: `${m.label} ML is ${m.ml}% constructive but the regime gate requires HMM Bull \u2265 60% before activating \u2014 current Bull is ~${Math.round(m.bullPct)}%, so the signal is blocked. The ML read is stored; once regime clears, the verdict will upgrade automatically.`,
+    })),
+    ...((short?.ml_prob != null && short.ml_prob < 30 && regime_bull_pct != null && regime_bull_pct >= 80)
+      ? [{
+          severity: "info" as const,
+          message: `Near-term ML is only ${Math.round(short.ml_prob)}% despite ${Math.round(regime_bull_pct)}% bull regime \u2014 ML is trained on price-momentum patterns (RSI, chart structure), not news or regime. It\u2019s seeing conditions that historically precede consolidation before breakouts. Regime and fundamentals are the longer-term anchor; ML is the short-term timing layer.`,
         }]
       : []),
     ...(patternLow
@@ -1022,7 +1068,7 @@ export function InvestorDecisionSummarySection({
       "aria-label": "Investor Decision Summary",
       className: "bg-slate-800/55 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl shadow-black/20",
     },
-    React.createElement(BuyRangeRetailCard, { currentPrice, short, long }),
+    React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
     /* One Answer card (top) */
     one_answer && React.createElement(
       "div",

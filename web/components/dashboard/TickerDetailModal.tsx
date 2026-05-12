@@ -752,6 +752,31 @@ export function TickerDetailModal({
                     </tbody>
                   </table>
                   </div>
+                  {(() => {
+                    const bestPeriod = (["3m", "6m", "1m"] as const).find((p) => {
+                      const r = detail.returns[p];
+                      const s = detail.benchmark_spy[p];
+                      return r != null && s != null && Math.abs(r - s) >= 5;
+                    });
+                    if (!bestPeriod) return null;
+                    const r = detail.returns[bestPeriod]!;
+                    const s = detail.benchmark_spy[bestPeriod]!;
+                    const diff = r - s;
+                    const absDiff = Math.abs(diff);
+                    const word = diff < 0 ? "underperformed" : "outperformed";
+                    const actionStatus = detail.investor_summary?.overall_verdict;
+                    const confirmMsg =
+                      (diff < 0 && (actionStatus === "WAIT" || actionStatus === "WATCH"))
+                        ? " \u2014 regime signal confirmed by price action."
+                        : (diff > 0 && (actionStatus === "BUY" || actionStatus === "STRONG BUY"))
+                          ? " \u2014 price action supports the bullish signal."
+                          : ".";
+                    return (
+                      <p className={`text-[11px] mt-2 px-3 py-1.5 rounded border leading-snug ${diff < 0 ? "text-red-300/90 border-red-500/25 bg-red-950/30" : "text-emerald-300/90 border-emerald-500/25 bg-emerald-950/30"}`}>
+                        {detail.ticker} has {word} SPY by {absDiff.toFixed(1)}% over {bestPeriod}{confirmMsg}
+                      </p>
+                    );
+                  })()}
                 </div>
 
                 {(detail.peer_returns?.length ?? 0) > 0 && (
