@@ -33,9 +33,9 @@ interface PaperTradingSummary {
 
 interface ForwardSummary {
   [signal: string]: {
-    avg_return_20d_pct: number;
-    n_observations: number;
-    hit_rate_pct: number;
+    avg_return_20d_pct?: number;
+    n_observations?: number;
+    hit_rate_pct?: number;
   };
 }
 
@@ -192,11 +192,11 @@ export default function TrackRecordPanel({ calibration, paperTrading, forwardSum
                 {Object.entries(forwardSummary!).map(([signal, data]) => (
                   <tr key={signal} className="border-b border-slate-700/50">
                     <td className="py-1.5 pr-3 text-slate-300 font-medium">{signal}</td>
-                    <td className={`py-1.5 pr-3 text-right ${data.avg_return_20d_pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {data.avg_return_20d_pct >= 0 ? "+" : ""}{data.avg_return_20d_pct.toFixed(2)}%
+                    <td className={`py-1.5 pr-3 text-right ${(data.avg_return_20d_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {(data.avg_return_20d_pct ?? 0) >= 0 ? "+" : ""}{(data.avg_return_20d_pct ?? 0).toFixed(2)}%
                     </td>
-                    <td className="py-1.5 pr-3 text-right text-slate-300">{data.hit_rate_pct.toFixed(1)}%</td>
-                    <td className="py-1.5 text-right text-slate-500">{data.n_observations}</td>
+                    <td className="py-1.5 pr-3 text-right text-slate-300">{(data.hit_rate_pct ?? 0).toFixed(1)}%</td>
+                    <td className="py-1.5 text-right text-slate-500">{data.n_observations ?? 0}</td>
                   </tr>
                 ))}
               </tbody>
