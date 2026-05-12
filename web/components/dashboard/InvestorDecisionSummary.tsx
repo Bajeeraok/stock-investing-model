@@ -356,14 +356,135 @@ function HorizonCard({
     entryTiers &&
       onToggleTiers &&
       React.createElement(
-        "button",
-        {
-          type: "button",
-          onClick: onToggleTiers,
-          className: "mt-2 flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300",
-        },
-        tiersOpen ? React.createElement(ChevronDown, { className: "h-3 w-3" }) : React.createElement(ChevronRight, { className: "h-3 w-3" }),
-        tiersOpen ? " Hide" : "+ Entry Tiers"
+        React.Fragment,
+        null,
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: onToggleTiers,
+            className: "mt-2 flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300",
+          },
+          tiersOpen ? React.createElement(ChevronDown, { className: "h-3 w-3" }) : React.createElement(ChevronRight, { className: "h-3 w-3" }),
+          tiersOpen ? " Hide Entry Tiers" : "+ Entry Tiers"
+        ),
+        tiersOpen &&
+          entryTiers.tiers &&
+          React.createElement(
+            "div",
+            { className: "mt-2 rounded-lg border border-slate-700/70 bg-slate-900/30 overflow-hidden" },
+            /* Header row: assessment + MOS */
+            entryTiers.current_assessment &&
+              React.createElement(
+                "div",
+                { className: "px-3 py-2 border-b border-slate-700/50 flex items-center justify-between gap-2 bg-slate-800/40" },
+                React.createElement(
+                  "span",
+                  { className: "text-[11px] font-semibold text-slate-300" },
+                  "Long-term entry tiers"
+                ),
+                React.createElement(
+                  "div",
+                  { className: "flex items-center gap-2" },
+                  React.createElement(
+                    "span",
+                    {
+                      className:
+                        "text-[10px] px-1.5 py-0.5 rounded border font-medium " +
+                        (entryTiers.current_assessment.color === "emerald"
+                          ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                          : entryTiers.current_assessment.color === "amber"
+                            ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                            : "border-slate-600 bg-slate-700/30 text-slate-300"),
+                    },
+                    entryTiers.current_assessment.label
+                  ),
+                  entryTiers.current_assessment.margin_of_safety_pct != null &&
+                    React.createElement(
+                      "span",
+                      { className: "text-[10px] text-slate-500" },
+                      `MOS ${entryTiers.current_assessment.margin_of_safety_pct.toFixed(0)}%`
+                    )
+                )
+              ),
+            /* Tier cards */
+            React.createElement(
+              "div",
+              { className: "divide-y divide-slate-700/40" },
+              entryTiers.tiers.map((tier) =>
+                React.createElement(
+                  "div",
+                  {
+                    key: tier.id,
+                    className:
+                      "px-3 py-2.5 " +
+                      (tier.reachable ? "bg-emerald-500/[0.04]" : ""),
+                  },
+                  /* Row 1: label + conviction pill */
+                  React.createElement(
+                    "div",
+                    { className: "flex items-center justify-between gap-2 mb-1" },
+                    React.createElement(
+                      "span",
+                      { className: "text-[11px] font-semibold text-slate-200" },
+                      tier.label
+                    ),
+                    React.createElement(
+                      "span",
+                      {
+                        className:
+                          "text-[9px] px-1.5 py-0.5 rounded font-medium " +
+                          (tier.conviction === "High"
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : tier.conviction === "Medium"
+                              ? "bg-amber-500/10 text-amber-300"
+                              : "bg-slate-700/40 text-slate-400"),
+                      },
+                      tier.conviction
+                    )
+                  ),
+                  /* Row 2: price range (large mono) */
+                  React.createElement(
+                    "p",
+                    { className: "text-sm font-mono font-semibold text-slate-100" },
+                    `$${tier.low.toFixed(2)} – $${tier.high.toFixed(2)}`
+                  ),
+                  /* Row 3: stats row */
+                  React.createElement(
+                    "div",
+                    { className: "flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-[10px] text-slate-400" },
+                    React.createElement("span", null, `+${tier.upside_to_fv_pct.toFixed(0)}% to fair value`),
+                    tier.estimated_rr &&
+                      React.createElement("span", null, `R:R ${tier.estimated_rr}`),
+                    tier.drop_needed_pct != null &&
+                      React.createElement(
+                        "span",
+                        { className: tier.reachable ? "text-emerald-400" : "text-slate-500" },
+                        tier.reachable ? "Reachable now" : `${Math.abs(tier.drop_needed_pct).toFixed(0)}% drop needed`
+                      )
+                  ),
+                  /* Row 4: description */
+                  React.createElement(
+                    "p",
+                    { className: "text-[10px] text-slate-500 mt-1 leading-snug" },
+                    tier.description
+                  )
+                )
+              )
+            ),
+            /* Footer: structural floor */
+            entryTiers.structural_invalidation &&
+              React.createElement(
+                "div",
+                { className: "px-3 py-2 border-t border-slate-700/50 bg-slate-800/30" },
+                React.createElement(
+                  "p",
+                  { className: "text-[10px] text-slate-500 leading-snug" },
+                  React.createElement("span", { className: "font-medium text-slate-400" }, "Structural floor: "),
+                  `$${entryTiers.structural_invalidation.price.toFixed(2)} — ${entryTiers.structural_invalidation.note}`
+                )
+              )
+          )
       )
   );
 }
@@ -481,10 +602,30 @@ function BuyRangeRetailCard({
         ),
         ez.quality
           ? React.createElement(
-              "p",
-              { className: "text-[11px] text-slate-400 mt-1" },
-              React.createElement("span", { className: "text-slate-500" }, "Band quality: "),
-              ez.quality
+              "div",
+              { className: "mt-1" },
+              React.createElement(
+                "p",
+                { className: "text-[11px] text-slate-400" },
+                React.createElement("span", { className: "text-slate-500" }, "Band quality: "),
+                React.createElement(
+                  "span",
+                  { className: String(ez.quality).toLowerCase() === "stretched" ? "text-red-300/90" : String(ez.quality).toLowerCase() === "ideal" ? "text-emerald-300/90" : "" },
+                  ez.quality
+                )
+              ),
+              String(ez.quality).toLowerCase() === "stretched" &&
+                React.createElement(
+                  "p",
+                  { className: "text-[10px] text-amber-200/80 mt-0.5 leading-snug" },
+                  "\"Stretched\" means price is extended above its key support level (VWAP or MA50) \u2014 the band is still valid but the risk/reward is less favorable here. Waiting for a pullback toward the band low improves the entry; buying now isn\u2019t wrong for long-term conviction, just less optimal short-term."
+                ),
+              String(ez.quality).toLowerCase() === "waiting" &&
+                React.createElement(
+                  "p",
+                  { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
+                  "\"Waiting\" means conditions haven\u2019t aligned yet \u2014 check back after a pullback or regime shift."
+                )
             )
           : null
       ),
@@ -607,7 +748,13 @@ function BuyRangeRetailCard({
               "p",
               { className: "text-[10px] text-slate-500 mt-1 leading-snug" },
               "Bar width is proportional (1 unit risk vs modeled reward). From short-term horizon math."
-            )
+            ),
+            rr < 0.5 &&
+              React.createElement(
+                "p",
+                { className: "text-[10px] text-amber-200/90 mt-1.5 leading-snug border-t border-amber-500/20 pt-1.5" },
+                "Near-term R:R is tight \u2014 this entry is designed for the medium/long horizon, not a 1-month trade. Size accordingly and use long-term tiers for conviction adds."
+              )
           )
       ),
     (stStop != null || stress != null) &&
@@ -781,7 +928,16 @@ export function InvestorDecisionSummarySection({
   const etaNote = combinedNotes.find((n) => /trading days/i.test(n));
   const etaDaysMatch = etaNote?.match(/(\d+)\s*trading days/i);
   const etaDays = etaDaysMatch ? Number(etaDaysMatch[1]) : null;
+  const shortWaitOverallBuy =
+    (String(short?.verdict || "").toUpperCase() === "WAIT" || String(short?.verdict || "").toUpperCase() === "WATCH") &&
+    (overall_verdict === "BUY" || overall_verdict === "STRONG BUY");
   const contextFlags: Array<{ severity: "warning" | "info"; message: string }> = [
+    ...(shortWaitOverallBuy
+      ? [{
+          severity: "info" as const,
+          message: "Long-term thesis is actionable even though the short-term setup is weak \u2014 the overall BUY is driven by medium/long horizon strength, not a 1-month trade signal.",
+        }]
+      : []),
     ...(patternLow
       ? [{
           severity: "info" as const,
@@ -974,6 +1130,107 @@ export function InvestorDecisionSummarySection({
         ),
       React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
       one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline),
+      /* --- WHY THIS CALL (promoted) --- */
+      whyBullets.length > 0 &&
+        React.createElement(
+          "div",
+          { className: "mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5" },
+          React.createElement("p", { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1.5" }, "Why this call"),
+          React.createElement(
+            "ul",
+            { className: "space-y-1.5 text-[11px] text-slate-200 leading-snug" },
+            whyBullets.map((line, i) =>
+              React.createElement(
+                "li",
+                { key: i, className: "flex items-start gap-2" },
+                React.createElement("span", { className: "text-emerald-400 shrink-0 mt-0.5" }, "›"),
+                React.createElement("span", null, line)
+              )
+            )
+          )
+        ),
+      /* --- YOUR TRIGGER (promoted) --- */
+      one_answer.next_trigger &&
+        React.createElement(
+          "div",
+          { className: "mt-3 rounded-lg border border-sky-500/35 bg-sky-950/25 px-3 py-2.5" },
+          React.createElement(
+            "p",
+            { className: "text-[11px] text-sky-100 leading-snug" },
+            React.createElement("span", { className: "font-semibold text-sky-200" }, "Your trigger: "),
+            one_answer.next_trigger
+          )
+        ),
+      /* --- EXECUTION PLAN (promoted, numbered) --- */
+      executionBullets.length > 0 &&
+        React.createElement(
+          "div",
+          { className: "mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5" },
+          React.createElement("p", { className: "text-[10px] text-emerald-300/80 uppercase tracking-wide font-semibold mb-1.5" }, "Action plan"),
+          React.createElement(
+            "ol",
+            { className: "space-y-1.5 text-[11px] text-slate-200 leading-snug list-none" },
+            executionBullets.map((line, i) =>
+              React.createElement(
+                "li",
+                { key: i, className: "flex items-start gap-2" },
+                React.createElement("span", { className: "text-emerald-400 font-bold shrink-0 w-4 text-center" }, `${i + 1}`),
+                React.createElement("span", null, line)
+              )
+            )
+          )
+        ),
+      /* --- NEAR-TERM BUY STAGES PREVIEW (from trade_roadmap) --- */
+      (() => {
+        const stages = summary.trade_roadmap?.buy_roadmap;
+        if (!Array.isArray(stages) || stages.length === 0) return null;
+        const preview = stages.slice(0, 3).filter((s) => s.price_zone_low != null && s.price_zone_high != null);
+        if (preview.length === 0) return null;
+        return React.createElement(
+          "div",
+          { className: "mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5" },
+          React.createElement("p", { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-2" }, "Staged buy timeline"),
+          React.createElement(
+            "div",
+            { className: "space-y-1.5" },
+            preview.map((s) =>
+              React.createElement(
+                "div",
+                { key: s.timeline_key, className: "flex items-center gap-2 text-[11px]" },
+                React.createElement(
+                  "span",
+                  { className: "shrink-0 w-20 text-slate-400 font-medium" },
+                  s.label
+                ),
+                React.createElement(
+                  "span",
+                  {
+                    className:
+                      "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium " +
+                      (s.when_to_act.toLowerCase().includes("add") || s.when_to_act.toLowerCase().includes("start")
+                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                        : s.when_to_act.toLowerCase().includes("watch")
+                          ? "bg-amber-500/10 text-amber-300 border border-amber-500/30"
+                          : "bg-slate-700/40 text-slate-400 border border-slate-600/60"),
+                  },
+                  s.when_to_act
+                ),
+                React.createElement(
+                  "span",
+                  { className: "font-mono text-slate-300" },
+                  `$${Number(s.price_zone_low).toFixed(2)}–$${Number(s.price_zone_high).toFixed(2)}`
+                ),
+                s.position_pct > 0 &&
+                  React.createElement(
+                    "span",
+                    { className: "text-slate-500" },
+                    `${s.position_pct}%`
+                  )
+              )
+            )
+          )
+        );
+      })(),
       React.createElement(
         "div",
         { className: "mt-3 rounded-xl border border-slate-700/80 bg-slate-900/50 overflow-hidden divide-y divide-slate-700/60" },
@@ -1193,29 +1450,6 @@ export function InvestorDecisionSummarySection({
             : "Estimated time: uncertain — wait for gate progress above."
         )
       ),
-      whyBullets.length > 0 &&
-        React.createElement(
-          "ul",
-          { className: "mt-2 space-y-1 text-xs text-slate-400 leading-snug list-disc list-inside" },
-          whyBullets.map((line, i) =>
-            React.createElement("li", { key: i }, line)
-          )
-        ),
-      one_answer.next_trigger &&
-        React.createElement(
-          "p",
-          { className: "mt-2 text-xs text-sky-200/90 border-l-2 border-sky-500/40 pl-2 leading-snug" },
-          React.createElement("span", { className: "text-sky-100 font-medium" }, "Next trigger: "),
-          one_answer.next_trigger
-        ),
-      executionBullets.length > 0 &&
-        React.createElement(
-          "ul",
-          { className: "mt-2 space-y-1 text-xs text-slate-300 leading-snug list-disc list-inside" },
-          executionBullets.map((line, i) =>
-            React.createElement("li", { key: i }, line)
-          )
-        ),
       one_answer.hold_vs_trade &&
         React.createElement(
           "div",

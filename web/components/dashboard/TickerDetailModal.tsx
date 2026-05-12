@@ -140,7 +140,7 @@ function RetailActionStatusBanner({ status }: { status: RetailActionStatus | nul
   if (!status) {
     return (
       <div
-        className="border-b border-slate-700 bg-slate-800/40 px-4 py-3 sm:px-6"
+        className="border-b border-slate-700 bg-slate-800 px-4 py-3 sm:px-6"
         role="status"
         aria-live="polite"
       >
@@ -154,24 +154,24 @@ function RetailActionStatusBanner({ status }: { status: RetailActionStatus | nul
   const styles =
     status.light === "green"
       ? {
-          wrap: "border-emerald-600/50 bg-emerald-950/70",
+          wrap: "border-emerald-600/50 bg-emerald-950",
           accent: "text-emerald-300",
           icon: CheckCircle,
         }
       : status.light === "yellow"
         ? {
-            wrap: "border-amber-500/50 bg-amber-950/65",
+            wrap: "border-amber-500/50 bg-amber-950",
             accent: "text-amber-200",
             icon: Eye,
           }
         : status.light === "red"
           ? {
-              wrap: "border-red-500/55 bg-red-950/75",
+              wrap: "border-red-500/55 bg-red-950",
               accent: "text-red-100",
               icon: Ban,
             }
           : {
-              wrap: "border-slate-600 bg-slate-800/70",
+              wrap: "border-slate-600 bg-slate-800",
               accent: "text-slate-200",
               icon: Activity,
             };
@@ -402,18 +402,18 @@ export function TickerDetailModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overscroll-y-contain bg-black/75 backdrop-blur-md px-3 pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overscroll-y-contain bg-black/80 backdrop-blur-sm px-3 pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="bg-slate-900/95 border border-slate-700/90 rounded-2xl w-[min(96vw,1280px)] max-w-full max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] sm:max-h-[92vh] my-2 sm:my-0 overflow-y-auto overscroll-contain shadow-2xl shadow-black/40"
+        className="bg-slate-900 border border-slate-700/90 rounded-2xl w-[min(96vw,1280px)] max-w-full max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] sm:max-h-[92vh] my-2 sm:my-0 overflow-y-auto overscroll-contain shadow-2xl shadow-black/50"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ticker-detail-title"
       >
-        <div className="sticky top-0 bg-gradient-to-b from-slate-900 to-slate-900/95 border-b border-slate-700/80 px-5 sm:px-6 py-4 flex items-center justify-between z-20">
+        <div className="sticky top-0 bg-slate-900 border-b border-slate-700/80 px-5 sm:px-6 py-4 flex items-center justify-between z-20">
           <h2 id="ticker-detail-title" className="text-xl font-bold text-slate-100 flex items-center gap-2 flex-wrap">
             <TrendingUp className="h-6 w-6 text-emerald-500 shrink-0" />
             <span className="font-mono text-emerald-400">{ticker}</span>
@@ -438,7 +438,7 @@ export function TickerDetailModal({
 
         {/* Tab bar: Overview | Roadmaps | Details — keeps modal from feeling crowded */}
         {detail && !loading && (
-          <div className="border-b border-slate-700 bg-slate-900/90 sticky top-0 z-[15]">
+          <div className="border-b border-slate-700 bg-slate-900 sticky top-0 z-[15]">
             <div className="flex">
             {(
               [
@@ -525,7 +525,7 @@ export function TickerDetailModal({
               )}
 
               {/* ── Investor Decision Summary (horizon entry + tiers) ───── */}
-              {detail.investor_summary && (
+              {detail.investor_summary ? (
                 <InvestorDecisionSummarySection
                   summary={detail.investor_summary}
                   currentPrice={detail.current_price ?? 0}
@@ -535,6 +535,12 @@ export function TickerDetailModal({
                   ltEntryTiersOpen={ltEntryTiersOpen}
                   onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
                 />
+              ) : (
+                <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
+                  <AlertCircle className="h-8 w-8 text-slate-500 mx-auto mb-2" />
+                  <p className="text-sm text-slate-400">Signal data is still loading or unavailable for this ticker.</p>
+                  <p className="text-xs text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
+                </section>
               )}
 
               {/* CTA: jump to Roadmaps tab for full buy/sell tables */}

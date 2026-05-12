@@ -993,10 +993,36 @@ class PaperTradeLogger:
 
         return out
 
+    @staticmethod
+    def _coerce_numeric_fields(row: dict[str, Any]) -> dict[str, Any]:
+        """CSV roundtrip turns None → '' ; coerce back so JSON has null, not '0' in JS."""
+        _NUMERIC_KEYS = frozenset({
+            "ml_confidence", "entry_price", "effective_entry_price",
+            "entry_cost_pct", "exit_cost_pct",
+            "target_1", "hard_stop", "atr_14", "model_score", "kelly_pct",
+            "actual_price", "actual_price_net", "return_pct",
+            "mtm_price", "mtm_price_net", "mtm_return_pct",
+            "rolling_entry_price", "rolling_pnl", "rolling_return_pct",
+            "benchmark_return_pct", "excess_return_pct",
+        })
+        for k in _NUMERIC_KEYS:
+            v = row.get(k)
+            if v is None:
+                continue
+            if isinstance(v, str):
+                v = v.strip()
+                if v == "" or v.lower() == "none":
+                    row[k] = None
+                    continue
+            f = _safe_float(v)
+            row[k] = f
+        return row
+
     def get_recent(self, limit: int = 50) -> list[dict[str, Any]]:
         rows = self._read_all()
         for row in rows:
             self._ensure_trade_id(row)
+            self._coerce_numeric_fields(row)
         # newest last in file; return newest first
         out = list(reversed(rows))[:limit]
         return out

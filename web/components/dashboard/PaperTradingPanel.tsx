@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { clsx } from "clsx";
 import type { DashboardData } from "@/app/page";
 
@@ -28,12 +29,46 @@ function formatPnlHistory(history: MtmPoint[] | undefined, maxPoints = 6): { sho
   return { short, tooltip: lines.join("\n") };
 }
 
+type DateRange = "1W" | "1M" | "3M" | "ALL";
+const DATE_RANGES: { label: string; value: DateRange }[] = [
+  { label: "1 W", value: "1W" },
+  { label: "1 M", value: "1M" },
+  { label: "3 M", value: "3M" },
+  { label: "All", value: "ALL" },
+];
+
+function cutoffDate(range: DateRange): string | null {
+  if (range === "ALL") return null;
+  const d = new Date();
+  if (range === "1W") d.setDate(d.getDate() - 7);
+  else if (range === "1M") d.setMonth(d.getMonth() - 1);
+  else if (range === "3M") d.setMonth(d.getMonth() - 3);
+  return d.toISOString().slice(0, 10);
+}
+
 export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const pt = data.paper_trading;
   if (!pt) return null;
 
   const summary = pt.summary ?? null;
-  const recent = pt.recent ?? [];
+  const allRecent = pt.recent ?? [];
+  const [tickerFilter, setTickerFilter] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>("ALL");
+
+  const uniqueTickers = useMemo(
+    () => Array.from(new Set(allRecent.map((r: any) => (r.ticker || "").toUpperCase()))).sort(),
+    [allRecent],
+  );
+
+  const recent = useMemo(() => {
+    const cutoff = cutoffDate(dateRange);
+    const tf = tickerFilter.toUpperCase();
+    return allRecent.filter((r: any) => {
+      if (tf && (r.ticker || "").toUpperCase() !== tf) return false;
+      if (cutoff && (r.date || "") < cutoff) return false;
+      return true;
+    });
+  }, [allRecent, tickerFilter, dateRange]);
 
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-3">
@@ -51,6 +86,42 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           <div className="text-xs text-slate-500">
             Logged {pt.log.appended}/{pt.log.seen} signals for {pt.log.date}
           </div>
+        )}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={tickerFilter}
+          onChange={(e) => setTickerFilter(e.target.value)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All tickers</option>
+          {uniqueTickers.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <div className="flex rounded border border-slate-600 overflow-hidden">
+          {DATE_RANGES.map((dr) => (
+            <button
+              key={dr.value}
+              type="button"
+              onClick={() => setDateRange(dr.value)}
+              className={clsx(
+                "px-2.5 py-1 text-xs font-medium transition-colors",
+                dateRange === dr.value
+                  ? "bg-emerald-600/70 text-white"
+                  : "bg-slate-900 text-slate-400 hover:bg-slate-800",
+              )}
+            >
+              {dr.label}
+            </button>
+          ))}
+        </div>
+        {(tickerFilter || dateRange !== "ALL") && (
+          <span className="text-[10px] text-slate-500">
+            Showing {recent.length} / {allRecent.length} trades
+          </span>
         )}
       </div>
 
@@ -209,8 +280,8 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     )}
                   </td>
                   {(() => {
-                    const isFinal = !!r.outcome && r.return_pct != null;
-                    const val = isFinal ? Number(r.return_pct) : (r.mtm_return_pct != null ? Number(r.mtm_return_pct) : null);
+                    const isFinal = !!r.outcome && hasNumericValue(r.return_pct);
+                    const val = isFinal ? Number(r.return_pct) : (hasNumericValue(r.mtm_return_pct) ? Number(r.mtm_return_pct) : null);
                     return (
                       <td className={clsx("py-1.5 pr-2", (val || 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
                         {val != null ? fmtPct(val) : "—"}
@@ -218,7 +289,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     );
                   })()}
                   <td className={clsx("py-1.5 pr-2", (Number(r.benchmark_return_pct) || 0) >= 0 ? "text-slate-400" : "text-slate-500")}>
-                    {r.benchmark_return_pct != null ? fmtPct(Number(r.benchmark_return_pct)) : "—"}
+                    {hasNumericValue(r.benchmark_return_pct) ? fmtPct(Number(r.benchmark_return_pct)) : "—"}
                   </td>
                   <td
                     className={clsx(

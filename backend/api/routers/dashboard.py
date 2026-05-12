@@ -661,7 +661,15 @@ async def get_dashboard(
 
     def _task_forward_tracking():
         try:
-            return ("forward_tracking", get_forward_tracking(data_root=data_root, tickers=["SPY", "QQQ"], horizons=[5, 20, 60]))
+            ft_tickers = list(dict.fromkeys(
+                [t for t in (watchlist + portfolio_tickers) if t]
+            )) or ["SPY", "QQQ"]
+            return ("forward_tracking", get_forward_tracking(
+                data_root=data_root,
+                tickers=ft_tickers,
+                horizons=[5, 20, 60],
+                max_pairs_per_horizon=30,
+            ))
         except Exception as e:
             ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)}
             return ("forward_tracking", ft)

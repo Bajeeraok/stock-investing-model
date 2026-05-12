@@ -258,7 +258,7 @@ def get_forward_tracking(
             }
 
     return {
-        "records": records[-200:],  # Cap for response size
+        "records": records[-500:],  # Cap for response size (raised for full watchlist)
         "summary_by_horizon": summary_by_horizon,
         "summary_by_signal": summary_by_signal,
         "signal_source_counts": signal_source_counts,

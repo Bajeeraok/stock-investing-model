@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useMemo } from "react";
+import { clsx } from "clsx";
 import { RefreshCw } from "lucide-react";
 
 interface RecordRow {
@@ -31,13 +33,48 @@ function fmt(pct: number): string {
   return `${sign}${pct.toFixed(2)}%`;
 }
 
+type DateRange = "1W" | "1M" | "3M" | "ALL";
+const DATE_RANGES: { label: string; value: DateRange }[] = [
+  { label: "1 W", value: "1W" },
+  { label: "1 M", value: "1M" },
+  { label: "3 M", value: "3M" },
+  { label: "All", value: "ALL" },
+];
+
+function cutoffDate(range: DateRange): string | null {
+  if (range === "ALL") return null;
+  const d = new Date();
+  if (range === "1W") d.setDate(d.getDate() - 7);
+  else if (range === "1M") d.setMonth(d.getMonth() - 1);
+  else if (range === "3M") d.setMonth(d.getMonth() - 3);
+  return d.toISOString().slice(0, 10);
+}
+
 export function ForwardTracking({
-  records,
+  records: allRecords,
   summary_by_horizon,
   summary_by_signal,
   message,
 }: Props) {
-  if (!records?.length && message) {
+  const [tickerFilter, setTickerFilter] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>("ALL");
+
+  const uniqueTickers = useMemo(
+    () => Array.from(new Set((allRecords || []).map((r) => r.ticker))).sort(),
+    [allRecords],
+  );
+
+  const records = useMemo(() => {
+    const cutoff = cutoffDate(dateRange);
+    const tf = tickerFilter.toUpperCase();
+    return (allRecords || []).filter((r) => {
+      if (tf && r.ticker !== tf) return false;
+      if (cutoff && r.as_of_date < cutoff) return false;
+      return true;
+    });
+  }, [allRecords, tickerFilter, dateRange]);
+
+  if (!allRecords?.length && message) {
     return (
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
         <p className="text-sm font-medium text-slate-400 mb-1">Forward tracking</p>
@@ -46,7 +83,7 @@ export function ForwardTracking({
     );
   }
 
-  if (!records?.length) {
+  if (!allRecords?.length) {
     return null;
   }
 
@@ -60,9 +97,45 @@ export function ForwardTracking({
         <RefreshCw className="h-4 w-4 text-emerald-400 shrink-0" />
         <p className="text-sm font-medium text-slate-300">Forward tracking (what we said vs what happened)</p>
       </div>
-      <p className="text-xs text-slate-500 mb-3" title="Multi-horizon actual returns for SPY/QQQ based on EOD snapshots. Signal accuracy: when we said CONSIDER TRIM vs HOLD/ADD, avg 20d return.">
+      <p className="text-xs text-slate-500 mb-3" title="Multi-horizon actual returns for all portfolio/watchlist tickers based on EOD snapshots. Signal accuracy: when we said CONSIDER TRIM vs HOLD/ADD, avg 20d return.">
         Uses EOD snapshots. Avg return by horizon and by signal (score-based).
       </p>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <select
+          value={tickerFilter}
+          onChange={(e) => setTickerFilter(e.target.value)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All tickers</option>
+          {uniqueTickers.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <div className="flex rounded border border-slate-600 overflow-hidden">
+          {DATE_RANGES.map((dr) => (
+            <button
+              key={dr.value}
+              type="button"
+              onClick={() => setDateRange(dr.value)}
+              className={clsx(
+                "px-2.5 py-1 text-xs font-medium transition-colors",
+                dateRange === dr.value
+                  ? "bg-emerald-600/70 text-white"
+                  : "bg-slate-900 text-slate-400 hover:bg-slate-800",
+              )}
+            >
+              {dr.label}
+            </button>
+          ))}
+        </div>
+        {(tickerFilter || dateRange !== "ALL") && (
+          <span className="text-[10px] text-slate-500">
+            Showing {records.length} / {allRecords.length} records
+          </span>
+        )}
+      </div>
 
       {horizons.length > 0 && (
         <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300 mb-3">
@@ -111,7 +184,7 @@ export function ForwardTracking({
             </tr>
           </thead>
           <tbody>
-            {records.slice(0, 30).map((r, i) => (
+            {records.slice(0, 50).map((r, i) => (
               <tr key={`${r.as_of_date}-${r.ticker}-${r.horizon_days}-${i}`} className="group border-b border-slate-700/50 hover:bg-slate-800/30">
                 <td className="sticky left-0 z-[10] min-w-[5rem] w-24 py-1.5 pr-2 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.as_of_date}</td>
                 <td className="sticky left-24 z-[10] min-w-[4rem] w-16 py-1.5 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.ticker}</td>
