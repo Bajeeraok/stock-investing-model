@@ -32,11 +32,18 @@ def compute_mctr(
         def fetch_close(t: str, period: str) -> pd.Series | None:
             return fetch_ohlcv_safe(t, period)
 
-    holdings = [(h["ticker"], h.get("value", 0), h.get("pct", 0))
-                for h in per_holding if h.get("ticker") and h.get("value") and h.get("pct")]
+    raw = [(h["ticker"], h.get("value", 0), h.get("pct", 0))
+           for h in per_holding if h.get("ticker") and h.get("value") and h.get("pct")]
+
+    # Consolidate duplicate tickers (multi-account portfolios have same ticker multiple times)
+    consolidated: dict[str, tuple[float, float]] = {}
+    for t, v, p in raw:
+        prev_v, prev_p = consolidated.get(t, (0.0, 0.0))
+        consolidated[t] = (prev_v + v, prev_p + p)
+    holdings = [(t, v, p) for t, (v, p) in consolidated.items()]
 
     if len(holdings) < 2 or total_value <= 0:
-        return {"positions": [], "portfolio_vol": None, "note": "Need at least 2 positions"}
+        return {"positions": [], "portfolio_vol_annual_pct": None, "portfolio_beta": None, "note": "Need at least 2 positions"}
 
     tickers = [t for t, _, _ in holdings]
     weights = np.array([v / total_value for _, v, _ in holdings])
@@ -52,12 +59,12 @@ def compute_mctr(
             pass
 
     if len(rets_dict) < 2:
-        return {"positions": [], "portfolio_vol": None, "note": "Insufficient price history"}
+        return {"positions": [], "portfolio_vol_annual_pct": None, "portfolio_beta": None, "note": "Insufficient price history"}
 
     available = [t for t in tickers if t in rets_dict]
     df = pd.DataFrame({t: rets_dict[t] for t in available}).dropna()
     if len(df) < 30:
-        return {"positions": [], "portfolio_vol": None, "note": "Insufficient overlapping history"}
+        return {"positions": [], "portfolio_vol_annual_pct": None, "portfolio_beta": None, "note": "Insufficient overlapping history"}
 
     # Rebuild weights for available tickers only
     idx_map = {t: i for i, t in enumerate(tickers)}

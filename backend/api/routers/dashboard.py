@@ -1024,6 +1024,30 @@ async def get_dashboard(
                     mctr=mctr,
                 )
 
+                # Performance attribution
+                attribution = {}
+                try:
+                    from portfolio.attribution import compute_attribution
+                    attribution = compute_attribution(_pd_ph, _pd_tv)
+                except Exception as e:
+                    logger.debug("attribution: %s", e)
+
+                # Liquidity scores
+                liquidity = {}
+                try:
+                    from portfolio.liquidity import compute_liquidity_scores
+                    liquidity = compute_liquidity_scores(_pd_ph)
+                except Exception as e:
+                    logger.debug("liquidity: %s", e)
+
+                # Factor exposure
+                factor_exposure = {}
+                try:
+                    from portfolio.factor_exposure import compute_factor_exposure
+                    factor_exposure = compute_factor_exposure(_pd_ph, _pd_tv, config)
+                except Exception as e:
+                    logger.debug("factor_exposure: %s", e)
+
                 portfolio_doctor_v2 = {
                     "health": health,
                     "mctr": mctr,
@@ -1031,6 +1055,9 @@ async def get_dashboard(
                     "earnings_calendar": earnings_cal,
                     "priority_actions": priority,
                     "portfolio_beta": mctr.get("portfolio_beta") if mctr else None,
+                    "attribution": attribution,
+                    "liquidity": liquidity,
+                    "factor_exposure": factor_exposure,
                 }
     except Exception as e:
         logger.debug("portfolio_doctor_v2: %s", e)

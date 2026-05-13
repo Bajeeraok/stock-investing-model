@@ -592,6 +592,22 @@ export interface DashboardData {
       total_actions: number;
     };
     portfolio_beta?: number | null;
+    attribution?: {
+      periods?: Record<string, { ticker: string; weight_pct: number; return_pct: number | null; contribution_pct: number | null }[]>;
+      top_contributor?: { ticker: string; contribution_pct: number; period: string } | null;
+      top_detractor?: { ticker: string; contribution_pct: number; period: string } | null;
+    };
+    liquidity?: {
+      items?: { ticker: string; avg_daily_volume?: number | null; days_to_exit?: number | null; liquidity_score?: number | null; flag?: string | null; portfolio_pct?: number }[];
+      illiquid_count?: number;
+      note?: string | null;
+    };
+    factor_exposure?: {
+      portfolio_factors?: Record<string, number>;
+      per_holding?: { ticker: string; weight_pct: number; factors: Record<string, number> }[];
+      dominant_factor?: string | null;
+      note?: string | null;
+    };
   };
   /** Methodology bullets for the Known limits panel (config or API defaults) */
   known_limits?: string[];

@@ -11,6 +11,10 @@ export interface HoldingRow {
   action?: string | null;
   confidence?: number | null;
   score?: number | null;
+  /** Optional — from portfolio report for tax / account-aware UI */
+  account?: string | null;
+  gain_loss?: number | null;
+  purchase_date?: string | null;
 }
 
 export interface MCTRPosition {
@@ -206,10 +210,23 @@ export function usePortfolioWhatIf(
     [holdings],
   );
 
+  // Consolidate duplicate tickers (multi-account portfolios)
   const originalPcts = useMemo(() => {
     const m: Record<string, number> = {};
-    for (const h of validHoldings) m[h.ticker] = h.pct!;
+    for (const h of validHoldings) {
+      m[h.ticker] = (m[h.ticker] ?? 0) + (h.pct ?? 0);
+    }
     return m;
+  }, [validHoldings]);
+
+  // Unique tickers for correlation/factor computations
+  const uniqueTickers = useMemo(() => {
+    const seen: Record<string, boolean> = {};
+    return validHoldings.filter((h) => {
+      if (seen[h.ticker]) return false;
+      seen[h.ticker] = true;
+      return true;
+    }).map((h) => h.ticker);
   }, [validHoldings]);
 
   const [adjustments, setAdjustments] = useState<Record<string, number>>({});
@@ -232,20 +249,34 @@ export function usePortfolioWhatIf(
 
   // Recompute everything
   const result = useMemo(() => {
-    const tickers = validHoldings.map((h) => h.ticker);
-    const pcts = tickers.map((t) => adjustedPcts[t] ?? 0);
-    const regimes = validHoldings.map((h) => h.regime);
-    const signals = validHoldings.map((h) => h.action || h.suggestion || "");
+    // Use consolidated pcts for portfolio-level scoring
+    const consolidatedPcts = uniqueTickers.map((t) => adjustedPcts[t] ?? 0);
     const sectorPcts = sectorExposure.map((s) => s.pct);
 
-    // Sub-scores
-    const concentration = computeConcentrationScore(pcts, sectorPcts);
-    const correlation = computeCorrelationScore(pcts, tickers, corrMatrix);
-    const regime_alignment = computeRegimeAlignmentScore(pcts, regimes, signals);
+    // For regime alignment, pick best regime/signal per consolidated ticker
+    const consolidatedRegimes = uniqueTickers.map((t) => {
+      const h = validHoldings.find((hh) => hh.ticker === t);
+      return h?.regime ?? null;
+    });
+    const consolidatedSignals = uniqueTickers.map((t) => {
+      const h = validHoldings.find((hh) => hh.ticker === t);
+      return h?.action || h?.suggestion || "";
+    });
+
+    // Sub-scores (use consolidated data)
+    const concentration = computeConcentrationScore(consolidatedPcts, sectorPcts);
+    const correlation = computeCorrelationScore(consolidatedPcts, uniqueTickers, corrMatrix);
+    const regime_alignment = computeRegimeAlignmentScore(consolidatedPcts, consolidatedRegimes, consolidatedSignals);
     const drawdown_risk = originalSubScores?.drawdown_risk ?? 75;
     const tax_efficiency = originalSubScores?.tax_efficiency ?? 80;
 
-    const subScores: SubScores = { concentration, correlation, regime_alignment, drawdown_risk, tax_efficiency };
+    const subScores: SubScores = {
+      concentration: Math.round(concentration),
+      correlation: Math.round(correlation),
+      regime_alignment: Math.round(regime_alignment),
+      drawdown_risk: Math.round(drawdown_risk),
+      tax_efficiency: Math.round(tax_efficiency),
+    };
 
     // Weighted health score (same weights as backend)
     const weights = { concentration: 0.25, correlation: 0.20, regime_alignment: 0.25, drawdown_risk: 0.15, tax_efficiency: 0.15 };
@@ -267,24 +298,28 @@ export function usePortfolioWhatIf(
     const riskHhi = totalRisk > 0
       ? mctrRows.reduce((s, p) => s + (p.risk_pct / totalRisk) ** 2, 0)
       : 1;
-    const effectivePositions = riskHhi > 0 ? Math.round((1 / riskHhi) * 10) / 10 : tickers.length;
+    const effectivePositions = riskHhi > 0 ? Math.round((1 / riskHhi) * 10) / 10 : uniqueTickers.length;
 
     // Top sector (recalculate from adjusted weights would need per-holding sector — approximate)
     const topSectorName = sectorExposure[0]?.sector ?? "";
     const topSectorPct = sectorExposure[0]?.pct ?? 0;
 
-    // Build rows
-    const rows: WhatIfRow[] = validHoldings.map((h) => {
+    // Build deduplicated rows (one per ticker, consolidated from multi-account)
+    const seenTickers: Record<string, boolean> = {};
+    const rows: WhatIfRow[] = [];
+    for (const h of validHoldings) {
+      if (seenTickers[h.ticker]) continue;
+      seenTickers[h.ticker] = true;
       const mctrEntry = mctrRows.find((m) => m.ticker === h.ticker);
-      return {
+      rows.push({
         ticker: h.ticker,
         originalPct: originalPcts[h.ticker] ?? 0,
         adjustedPct: adjustedPcts[h.ticker] ?? 0,
         regime: h.regime,
         signal: h.action || h.suggestion || "",
         mctrPct: mctrEntry?.risk_pct ?? 0,
-      };
-    });
+      });
+    }
 
     return {
       rows,
@@ -298,7 +333,7 @@ export function usePortfolioWhatIf(
       setAdjustedPct,
       reset,
     };
-  }, [validHoldings, adjustedPcts, originalMctr, originalStress, originalSubScores, sectorExposure, corrMatrix, isDirty, originalPcts, setAdjustedPct, reset]);
+  }, [validHoldings, uniqueTickers, adjustedPcts, originalMctr, originalStress, originalSubScores, sectorExposure, corrMatrix, isDirty, originalPcts, setAdjustedPct, reset]);
 
   return result;
 }

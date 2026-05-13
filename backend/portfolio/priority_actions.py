@@ -33,26 +33,62 @@ def build_priority_actions(
     this_week: list[dict] = []
     this_month: list[dict] = []
 
+    # Helper: consolidate per_holding by ticker for multi-account awareness
+    _by_ticker: dict[str, list[dict]] = {}
+    for h in per_holding:
+        t = h.get("ticker")
+        if t:
+            _by_ticker.setdefault(t, []).append(h)
+
+    def _ticker_summary(ticker: str) -> tuple[float, float, int, str]:
+        """Returns (total_pct, total_value, account_count, account_note)."""
+        rows = _by_ticker.get(ticker, [])
+        total_pct = sum(h.get("pct", 0) for h in rows)
+        total_val = sum(h.get("value", 0) or 0 for h in rows)
+        n_accounts = len(rows)
+        note = f"across {n_accounts} accounts" if n_accounts > 1 else ""
+        return total_pct, total_val, n_accounts, note
+
     # --- Earnings risk: positions reporting in next 8 days ---
     if earnings_calendar:
         for ec in earnings_calendar:
             days = ec.get("days_until")
             ticker = ec.get("ticker")
             if days is not None and days <= 8 and ticker:
+                pct, val, n_accts, acct_note = _ticker_summary(ticker)
+                earnings_date = ec.get("earnings_date", "")
+
+                # Try to get ML prob and stop price from holding data
                 holding = next((h for h in per_holding if h.get("ticker") == ticker), None)
-                pct = holding.get("pct", 0) if holding else 0
-                action_text = f"Set {ticker} hard stop before earnings"
-                reason = (
-                    f"Earnings in ~{days} days. {ticker} is {pct:.1f}% of portfolio. "
-                    f"Stop protects unrealized gain if earnings disappoint."
-                )
+                ml_short = holding.get("ml_prob_short") if holding else None
+                stop_price = holding.get("stop") if holding else None
+
+                action_text = f"Set {ticker} hard stop"
+                if stop_price:
+                    action_text += f" at ${stop_price:,.2f}"
+                action_text += " before earnings"
+
+                parts = [f"Earnings in ~{days} days."]
+                parts.append(f"{ticker} is {pct:.1f}% of portfolio{' ' + acct_note if acct_note else ''}.")
+                if ml_short and ml_short < 40:
+                    parts.append(f"ML prob only {ml_short:.0f}% short-term.")
+                if val > 10000:
+                    parts.append(f"Stop protects ${val:,.0f}+ if earnings disappoint.")
+                else:
+                    parts.append("Stop protects unrealized gain if earnings disappoint.")
+
+                tags = ["Earnings risk"]
+                if earnings_date:
+                    tags.append(earnings_date)
+
                 this_week.append({
                     "ticker": ticker,
                     "action": action_text,
-                    "reason": reason,
-                    "tags": ["Earnings risk"],
+                    "reason": " ".join(parts),
+                    "tags": tags,
                     "urgency": "high",
                     "days_until_event": days,
+                    "dollars": round(val) if val else None,
                 })
 
     # --- Correlation-driven trims (effectively one position) ---
@@ -64,22 +100,41 @@ def build_priority_actions(
             tickers_in_pair = [t.strip() for t in pair.split("-")]
             if len(tickers_in_pair) == 2:
                 t1, t2 = tickers_in_pair
-                h1 = next((h for h in per_holding if h.get("ticker") == t1), None)
-                h2 = next((h for h in per_holding if h.get("ticker") == t2), None)
-                if h1 and h2:
-                    trim_ticker = t2 if (h1.get("pct") or 0) >= (h2.get("pct") or 0) else t1
+                pct1, val1, n1, note1 = _ticker_summary(t1)
+                pct2, val2, n2, note2 = _ticker_summary(t2)
+                if pct1 > 0 and pct2 > 0:
+                    trim_ticker = t2 if pct1 >= pct2 else t1
                     keep_ticker = t1 if trim_ticker == t2 else t2
-                    pct1 = h1.get("pct") or 0
-                    pct2 = h2.get("pct") or 0
+                    trim_val = val2 if trim_ticker == t2 else val1
+
+                    h_trim = next((h for h in per_holding if h.get("ticker") == trim_ticker), None)
+                    conf = h_trim.get("confidence") if h_trim else None
+
+                    action_text = f"Trim {trim_ticker}"
+                    if trim_val > 500:
+                        action_text += f" — ${trim_val:,.0f}"
+                    trim_accts = _ticker_summary(trim_ticker)[2]
+                    if trim_accts > 1:
+                        action_text += f" across accounts"
+
+                    reason_parts = [
+                        f"{corr_val} correlated with {keep_ticker} — you effectively hold one position, not two.",
+                    ]
+                    if conf is not None and conf < 40:
+                        reason_parts.append(f"Confidence {conf:.0f}%.")
+                    reason_parts.append(f"Combined {pct1 + pct2:.1f}% of portfolio.")
+
+                    tags = ["Urgent"]
+                    if trim_accts > 1:
+                        tags.append("Trim IRA first")
+
                     this_week.append({
                         "ticker": trim_ticker,
-                        "action": f"Trim {trim_ticker} — {corr_val} correlated with {keep_ticker}",
-                        "reason": (
-                            f"{corr_val} correlated with {keep_ticker} — you effectively hold one position, not two. "
-                            f"Combined {pct1 + pct2:.1f}% of portfolio."
-                        ),
-                        "tags": ["Urgent"],
+                        "action": action_text,
+                        "reason": " ".join(reason_parts),
+                        "tags": tags,
                         "urgency": "high",
+                        "dollars": round(trim_val) if trim_val else None,
                     })
 
     # --- Concentration trims ---
@@ -88,14 +143,44 @@ def build_priority_actions(
             pct = tr.get("current_pct", 0)
             conf = tr.get("confidence")
             ticker = tr.get("ticker")
+            if not ticker:
+                continue
+
+            t_pct, t_val, t_accts, t_note = _ticker_summary(ticker)
+            trim_dollars = tr.get("suggest_trim_dollars", 0)
+            h_row = next((h for h in per_holding if h.get("ticker") == ticker), None)
+            regime = (h_row.get("regime") or "").upper() if h_row else ""
+
             if pct > concentration_threshold_pct:
+                action_text = f"Reduce {ticker} to {concentration_threshold_pct:.0f}% max"
+                if trim_dollars:
+                    action_text += f" — trim ${trim_dollars:,.0f}"
+
+                reason_parts = []
+                if regime == "DOWN":
+                    reason_parts.append(f"{ticker} regime DOWN.")
+                if conf is not None and conf < 50:
+                    reason_parts.append(f"Confidence {conf:.0f}%.")
+                if tr.get("reason"):
+                    reason_parts.append(tr["reason"])
+                if t_accts > 1:
+                    reason_parts.append(f"Trim taxable {ticker} first — unrealized gain may be smaller.")
+
+                tags = []
+                if regime == "DOWN" or (conf and conf < 40):
+                    tags.append("Regime conflict")
+                else:
+                    tags.append("Concentration")
+                if t_accts > 1:
+                    tags.append("Taxable trim")
+
                 this_week.append({
                     "ticker": ticker,
-                    "action": f"Reduce {ticker} to {concentration_threshold_pct:.0f}% max — trim ${tr.get('suggest_trim_dollars', 0):,.0f}",
-                    "reason": tr.get("reason", ""),
-                    "tags": ["Regime conflict", "Taxable trim"] if conf and conf < 40 else ["Concentration"],
+                    "action": action_text,
+                    "reason": " ".join(reason_parts),
+                    "tags": tags,
                     "urgency": "high",
-                    "dollars": tr.get("suggest_trim_dollars"),
+                    "dollars": trim_dollars,
                 })
             elif conf is not None and conf < 35:
                 this_month.append({

@@ -34,21 +34,35 @@ def compute_health_score(
 
     All inputs come from existing portfolio doctor / risk model outputs.
     """
+    # Consolidate duplicate tickers (multi-account portfolios)
+    consolidated_map: dict[str, dict] = {}
+    for h in per_holding:
+        t = h.get("ticker")
+        if not t:
+            continue
+        if t in consolidated_map:
+            c = consolidated_map[t]
+            c["value"] = (c.get("value") or 0) + (h.get("value") or 0)
+            c["pct"] = (c.get("pct") or 0) + (h.get("pct") or 0)
+        else:
+            consolidated_map[t] = dict(h)
+    per_holding_c = list(consolidated_map.values())
+
     sub = {}
 
     # 1. Concentration score (HHI-based)
-    sub["concentration"] = _score_concentration(per_holding, total_value, sector_allocation)
+    sub["concentration"] = _score_concentration(per_holding_c, total_value, sector_allocation)
 
     # 2. Correlation score
-    sub["correlation"] = _score_correlation(per_holding, correlation_matrix)
+    sub["correlation"] = _score_correlation(per_holding_c, correlation_matrix)
 
     # 3. Regime alignment
-    sub["regime_alignment"] = _score_regime_alignment(per_holding, total_value)
+    sub["regime_alignment"] = _score_regime_alignment(per_holding_c, total_value)
 
     # 4. Drawdown risk
     sub["drawdown_risk"] = _score_drawdown_risk(var_cvar, stress_scenarios)
 
-    # 5. Tax efficiency
+    # 5. Tax efficiency (use original per_holding for account-level tax status)
     sub["tax_efficiency"] = _score_tax_efficiency(per_holding, tax_exits)
 
     # Weighted composite
@@ -69,11 +83,11 @@ def compute_health_score(
 
     drag_notes = []
     if sub[worst_key] < 70:
-        drag_notes.append(_drag_explanation(worst_key, sub[worst_key], per_holding, sector_allocation, correlation_matrix))
+        drag_notes.append(_drag_explanation(worst_key, sub[worst_key], per_holding_c, sector_allocation, correlation_matrix))
     if sub[second_worst_key] < 70:
-        drag_notes.append(_drag_explanation(second_worst_key, sub[second_worst_key], per_holding, sector_allocation, correlation_matrix))
+        drag_notes.append(_drag_explanation(second_worst_key, sub[second_worst_key], per_holding_c, sector_allocation, correlation_matrix))
 
-    improvement_note = _improvement_note(worst_key, second_worst_key, per_holding, sub)
+    improvement_note = _improvement_note(worst_key, second_worst_key, per_holding_c, sub)
 
     return {
         "score": int(composite),
@@ -245,14 +259,34 @@ def _drag_explanation(
         sorted_h = sorted([h for h in per_holding if h.get("pct")], key=lambda x: -(x["pct"] or 0))
         top_sector = ""
         if sector_allocation and sector_allocation:
-            top_sector = f"{sector_allocation[0]['sector']} sector at {sector_allocation[0]['pct']}%"
-        if sorted_h:
-            top = sorted_h[0]
-            parts = [f"{top['ticker']} at {top['pct']}%"]
-            if top_sector:
-                parts.append(top_sector)
-            return f"Concentration: {' and '.join(parts)} are reducing effective diversification."
-        return "High position concentration is reducing diversification."
+            top_s = sector_allocation[0]
+            top_sector = f"{top_s.get('sector', '')} sector at {top_s.get('pct', 0):.1f}%"
+
+        # Effective positions from HHI
+        pcts = [h["pct"] for h in sorted_h if h.get("pct") and h["pct"] > 0]
+        n = len(pcts)
+        eff_n = n
+        if pcts:
+            hhi = sum((p / 100) ** 2 for p in pcts)
+            eff_n = round(1 / hhi, 1) if hhi > 0 else n
+
+        parts = []
+        if top_sector:
+            parts.append(top_sector)
+        if sorted_h and len(sorted_h) >= 2:
+            corr_pairs = []
+            if correlation_matrix:
+                for i, t1 in enumerate(list(correlation_matrix.keys())):
+                    for t2 in list(correlation_matrix.keys())[i + 1:]:
+                        val = correlation_matrix.get(t1, {}).get(t2)
+                        if val is not None and float(val) > 0.85:
+                            corr_pairs.append(f"{t1}/{t2} {float(val):.0%}")
+            if corr_pairs:
+                parts.append(f"{corr_pairs[0]} overlap")
+        parts.append(
+            f"You have {n} positions but only {eff_n} independent bets"
+        )
+        return f"{' and '.join(parts[:2])} are reducing your effective diversification. {parts[-1]}." if len(parts) > 1 else parts[0] + "."
 
     if key == "correlation":
         high_pairs = []
@@ -262,9 +296,11 @@ def _drag_explanation(
                 for t2 in tickers[i + 1:]:
                     val = correlation_matrix.get(t1, {}).get(t2)
                     if val is not None and float(val) > 0.75:
-                        high_pairs.append(f"{t1}/{t2} {float(val):.0%}")
+                        high_pairs.append((f"{t1}/{t2}", float(val)))
+        high_pairs.sort(key=lambda x: -x[1])
         if high_pairs:
-            return f"Correlation: {', '.join(high_pairs[:3])} overlap reduces effective diversification."
+            pair_strs = [f"{p} {v:.0%}" for p, v in high_pairs[:3]]
+            return f"Correlation: {', '.join(pair_strs)} overlap reduces effective diversification."
         return "High correlation between holdings reduces effective diversification."
 
     if key == "regime_alignment":

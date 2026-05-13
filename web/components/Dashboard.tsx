@@ -849,6 +849,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   data={data.portfolio_doctor_v2}
                   portfolioRiskMetrics={data.portfolio_risk_metrics}
                   portfolioBeta={data.portfolio_doctor_v2?.portfolio_beta}
+                  taxAwareExits={data.tax_aware_exits}
                   totalValue={selectedReport?.total_value}
                   holdingCount={selectedReport?.per_holding?.length}
                   sectorExposure={selectedReport?.sector_allocation}
