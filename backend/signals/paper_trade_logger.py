@@ -886,6 +886,46 @@ class PaperTradeLogger:
         except Exception:
             return {}
 
+    def get_completed_equity_curve(self, max_points: int = 400) -> list[dict[str, Any]]:
+        """
+        Cumulative pseudo-equity curve from completed paper trades (chronological by exit/next_date).
+        Starts at index 100; each trade multiplies by (1 + return_pct/100). Used for public track-record chart.
+        """
+        rows = self._read_all()
+        completed = [
+            r
+            for r in rows
+            if r.get("outcome") in ("HIT", "MISS", "STOP_HIT") and _safe_float(r.get("return_pct")) is not None
+        ]
+        if not completed:
+            return []
+
+        def _exit_date(r: dict[str, Any]) -> str:
+            return str(r.get("next_date") or r.get("date") or "")
+
+        completed.sort(key=_exit_date)
+        curve: list[dict[str, Any]] = []
+        equity = 100.0
+        for i, r in enumerate(completed):
+            rp = _safe_float(r.get("return_pct"))
+            if rp is None:
+                continue
+            ret = float(rp)
+            equity *= 1.0 + ret / 100.0
+            curve.append(
+                {
+                    "date": _exit_date(r),
+                    "ticker": (str(r.get("ticker") or "")).upper(),
+                    "signal": str(r.get("signal") or ""),
+                    "outcome": str(r.get("outcome") or ""),
+                    "return_pct": round(ret, 2),
+                    "equity_index": round(equity, 4),
+                    "cumulative_return_pct": round(equity - 100.0, 2),
+                    "trade_n": i + 1,
+                }
+            )
+        return curve[-max_points:]
+
     def _stats_for_completed(self, completed: list[dict[str, Any]], benchmark: str = "SPY") -> dict[str, Any]:
         returns = [float(r["return_pct"]) for r in completed if _safe_float(r.get("return_pct")) is not None]
         hits: list[int] = []

@@ -3,7 +3,16 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import type { Signal } from "@/app/page";
 
-export function ScoreChart({ signals, onTickerClick }: { signals: Signal[]; onTickerClick?: (ticker: string) => void }) {
+export function ScoreChart({
+  signals,
+  onTickerClick,
+  embedded,
+}: {
+  signals: Signal[];
+  onTickerClick?: (ticker: string) => void;
+  /** When true, omit outer card chrome (for {@link import("./AnchorChartPanel").AnchorChartPanel}) */
+  embedded?: boolean;
+}) {
   const data = signals
     .filter((s) => s.composite_buy != null && !s.error)
     .sort((a, b) => (b.composite_buy ?? 0) - (a.composite_buy ?? 0))
@@ -15,9 +24,12 @@ export function ScoreChart({ signals, onTickerClick }: { signals: Signal[]; onTi
 
   if (data.length === 0) return null;
 
-  return (
-    <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">
-      <h3 className="text-sm font-medium text-slate-400 mb-4">Confidence by Ticker</h3>
+  const inner = (
+    <>
+      {!embedded && <h3 className="text-sm font-medium text-slate-400 mb-4">Confidence by Ticker</h3>}
+      {embedded && (
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Confidence by ticker</h4>
+      )}
       <div className="h-64">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
@@ -43,6 +55,12 @@ export function ScoreChart({ signals, onTickerClick }: { signals: Signal[]; onTi
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </div>
+    </>
   );
+
+  if (embedded) {
+    return <div className="min-w-0">{inner}</div>;
+  }
+
+  return <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-5">{inner}</div>;
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Calendar, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -33,6 +33,7 @@ import {
   WhatChanged,
   RegimeChart,
   ScoreChart,
+  AnchorChartPanel,
   TickerDetailModal,
   ToggleSection,
   BacktestStatus,
@@ -63,6 +64,7 @@ import {
   RoadmapsPanel,
   TrackRecordPanel,
   PortfolioDoctorPanel,
+  BrowserPushPanel,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 
@@ -466,12 +468,12 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
         {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
       </div>
 
-      {/* Tab bar */}
-      <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
+      {/* Tab bar — desktop / tablet */}
+      <div className="hidden md:block max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
         <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} />
       </div>
 
-      <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 overflow-x-hidden">
+      <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6 overflow-x-hidden">
         <div className="rounded-xl border border-slate-800/80 bg-slate-900">
           {/* Overview tab */}
           {activeTab === "overview" && (
@@ -584,10 +586,13 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
               </ToggleSection>
               <ToggleSection id="overview-score-regime" title="Confidence & Regime Charts" icon={<Activity />} defaultOpen>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <ScoreChart signals={scoreChartSignals} onTickerClick={setSelectedTicker} />
-                  <RegimeChart report={selectedReport} />
-                </div>
+                <AnchorChartPanel
+                  title="Portfolio tape"
+                  hint="One shared chart surface — click a bar to open the ticker hub. Regime mix is holdings-weighted."
+                >
+                  <ScoreChart signals={scoreChartSignals} onTickerClick={setSelectedTicker} embedded />
+                  <RegimeChart report={selectedReport} embedded />
+                </AnchorChartPanel>
               </ToggleSection>
             </div>
           )}
@@ -1102,7 +1107,11 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   paperTrading={data.paper_trading?.summary ?? null}
                   forwardSummary={data.forward_tracking?.summary_by_signal ?? null}
                   modelHealth={data.model_health ?? null}
+                  equityCurve={data.paper_trading?.equity_curve ?? null}
                 />
+              </ToggleSection>
+              <ToggleSection id="analysis-browser-push" title="Browser push" icon={<Bell />} defaultOpen={false}>
+                <BrowserPushPanel />
               </ToggleSection>
               {(data.paper_trading || data.paper_vs_backtest_drift) && (
                 <ToggleSection
@@ -1183,6 +1192,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
       {selectedTicker && (
         <TickerDetailModal ticker={selectedTicker} onClose={() => setSelectedTicker(null)} />
       )}
+
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="bottom" />
+      </div>
 
       <ChatCopilot data={dataForCopilot} />
     </div>

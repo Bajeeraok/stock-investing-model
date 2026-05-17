@@ -485,6 +485,17 @@ export interface DashboardData {
       benchmark_return_pct?: number | null;
       excess_return_pct?: number | null;
     }>;
+    /** Cumulative equity index from completed paper trades (for track record chart) */
+    equity_curve?: Array<{
+      date: string;
+      ticker?: string;
+      signal?: string;
+      outcome?: string;
+      return_pct?: number;
+      equity_index?: number;
+      cumulative_return_pct?: number;
+      trade_n?: number;
+    }>;
   };
   model_validation?: {
     records: {

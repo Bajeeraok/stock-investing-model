@@ -45,7 +45,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger.info("Backend: importing dashboard router...")
-from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2
+from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2, push
 from api import eod_scheduler
 
 logger.info("Backend: imports complete.")
@@ -92,6 +92,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])
 app.include_router(scanner.router, prefix="/api", tags=["scanner"])
 app.include_router(signal_diagnostics.router, prefix="/api", tags=["signal-diagnostics"])
+app.include_router(push.router, prefix="/api", tags=["push"])
 
 
 def _warm_dashboard_background():

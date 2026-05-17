@@ -1105,11 +1105,22 @@ export function InvestorDecisionSummarySection({
           {
             className:
               assessmentPct >= 0
-                ? "text-[11px] text-emerald-300 font-medium"
-                : "text-[11px] text-red-300 font-medium",
+                ? "text-[11px] text-emerald-300 font-medium cursor-help"
+                : "text-[11px] text-red-300 font-medium cursor-help",
+            title:
+              "Undervalued / overvalued here means current price vs this card’s model fair value only. The Details tab may still say REDUCE if regime, chart, or other layers argue for smaller size today.",
           },
           `${Math.abs(assessmentPct).toFixed(1)}% ${assessmentPct >= 0 ? "undervalued" : "overvalued"}`
         )
+      ),
+      React.createElement(
+        "p",
+        {
+          className: "text-[10px] text-slate-500 leading-snug mb-2 cursor-help",
+          title:
+            "Cheap vs fair value answers ‘margin of safety on the model anchor.’ Verdict and confidence answer ‘do we want full size right now?’ — both can disagree until the tape improves.",
+        },
+        "You can be undervalued on this line and still see WATCH or REDUCE elsewhere — that usually means value without timing yet, not a broken model.",
       ),
       confidenceNearlyThere &&
         React.createElement(

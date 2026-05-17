@@ -783,9 +783,11 @@ async def get_dashboard(
             recent = pt.get_recent(limit=40)
             recent = pt.enrich_trades_with_benchmark(recent, benchmark=bench_sym)
             mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
+            equity_curve = pt.get_completed_equity_curve(max_points=400)
             return ("paper_trading_async", {
                 "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
                 "fill": fill, "summary": summary, "recent": recent, "mtm_history": mtm_history,
+                "equity_curve": equity_curve,
             })
         except Exception as e:
             logger.debug("Paper trading summary failed: %s", e)
@@ -856,6 +858,7 @@ async def get_dashboard(
         paper_trading["summary"] = paper_async.get("summary")
         paper_trading["recent"] = paper_async.get("recent")
         paper_trading["mtm_history"] = paper_async.get("mtm_history") or paper_async.get("mtm_history_map")
+        paper_trading["equity_curve"] = paper_async.get("equity_curve") or []
     try:
         paper_trading["data_root"] = str(get_data_root())
         paper_trading["persistence_note"] = "Set env DATA_ROOT to a persistent path (e.g. volume) so paper trades and EOD survive restarts."

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
 
@@ -248,6 +248,10 @@ const DEFAULT_HORIZONS = {
   long_term: "~12–18 mo",
 };
 
+const SIGNALS_SORT_STORAGE_KEY = "thrive-signals-sort";
+
+export type SignalsSortKey = "ticker" | "score" | "regime" | "rsi";
+
 const POSITIONING_TOOLTIPS: Record<string, string> = {
   long: "Crowded long (CFTC): specs very long, reversal risk.",
   short: "Crowded short (CFTC): specs very short, reversal risk.",
@@ -269,53 +273,98 @@ export function SignalsTable({
   tickerActions?: Record<string, { action: string; one_liner: string }>;
 }) {
   const h = horizons || DEFAULT_HORIZONS;
-  const [sortBy, setSortBy] = useState<"ticker" | "score" | "regime" | "rsi">("score");
+  const [sortBy, setSortBy] = useState<SignalsSortKey>("score");
+  const [scoreRsiDir, setScoreRsiDir] = useState<"asc" | "desc">("desc");
+  const [openMobileTicker, setOpenMobileTicker] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_SORT_STORAGE_KEY) : null;
+      if (raw === "ticker" || raw === "score" || raw === "regime" || raw === "rsi") setSortBy(raw);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const applySort = (key: SignalsSortKey) => {
+    setSortBy((prev) => {
+      if (prev === key && (key === "score" || key === "rsi")) {
+        setScoreRsiDir((d) => (d === "desc" ? "asc" : "desc"));
+        return prev;
+      }
+      if (prev !== key && (key === "score" || key === "rsi")) {
+        setScoreRsiDir("desc");
+      }
+      if (prev !== key) {
+        try {
+          localStorage.setItem(SIGNALS_SORT_STORAGE_KEY, key);
+        } catch {
+          /* ignore */
+        }
+      }
+      return key;
+    });
+  };
+
+  const sortHint =
+    "Sort: click column headers on desktop. Confluence / RSI: click again to flip high→low.";
+
   const sorted = useMemo(() => {
     const arr = [...signals];
+    const dir = scoreRsiDir === "desc" ? 1 : -1;
     arr.sort((a, b) => {
       if (sortBy === "ticker") return (a.ticker ?? "").localeCompare(b.ticker ?? "");
-      // Sort by confluence_score when available, fall back to composite_buy
-      if (sortBy === "score") return (b.confluence_score ?? b.composite_buy ?? 0) - (a.confluence_score ?? a.composite_buy ?? 0);
+      if (sortBy === "score") {
+        return dir * ((b.confluence_score ?? b.composite_buy ?? 0) - (a.confluence_score ?? a.composite_buy ?? 0));
+      }
       if (sortBy === "regime") {
         const ord = { UP: 0, NEUTRAL: 1, DOWN: 2 };
         return (ord[a.regime as keyof typeof ord] ?? 1) - (ord[b.regime as keyof typeof ord] ?? 1);
       }
-      if (sortBy === "rsi") return (b.rsi ?? 0) - (a.rsi ?? 0);
+      if (sortBy === "rsi") return dir * ((b.rsi ?? 0) - (a.rsi ?? 0));
       return 0;
     });
     return arr;
-  }, [signals, sortBy]);
+  }, [signals, sortBy, scoreRsiDir]);
 
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
-      <div className="flex items-center justify-end gap-2 px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700">
-        <span className="text-xs text-slate-400">Sort by:</span>
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-          className="text-sm sm:text-xs bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
-        >
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700">
+        <p className="hidden md:block text-[11px] text-slate-500">{sortHint}</p>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-slate-400">Preset:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => applySort(e.target.value as SignalsSortKey)}
+            className="text-sm sm:text-xs bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
+            aria-label="Sort preset"
+          >
           <option value="score">Confluence</option>
           <option value="ticker">Ticker</option>
           <option value="regime">Regime</option>
           <option value="rsi">RSI</option>
         </select>
+        </div>
       </div>
 
       {/* Mobile: card list */}
       <div className="md:hidden divide-y divide-slate-700/50">
         {sorted.map((r) => (
-          <button
+          <div
             key={r.ticker}
-            type="button"
-            onClick={() => onTickerClick?.(r.ticker)}
             className={clsx(
-              "w-full text-left px-4 py-3 active:bg-slate-800/50 transition-colors",
-              r.story_change && "bg-amber-500/5"
+              "px-4 py-3",
+              r.story_change && "bg-amber-500/5",
             )}
           >
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="font-mono font-semibold text-emerald-400 text-base">{r.ticker}</span>
+              <button
+                type="button"
+                onClick={() => onTickerClick?.(r.ticker)}
+                className="font-mono font-semibold text-emerald-400 text-base hover:underline text-left touch-manipulation"
+              >
+                {r.ticker}
+              </button>
               <div className="flex flex-col items-end gap-0.5">
                 <div className="flex items-center gap-2">
                   {r.plan_action ? (
@@ -371,7 +420,50 @@ export function SignalsTable({
               <EarningsCell signal={r} />
             </div>
             {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
-          </button>
+            <button
+              type="button"
+              className="mt-2 w-full flex items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800/70 touch-manipulation"
+              aria-expanded={openMobileTicker === r.ticker}
+              onClick={() =>
+                setOpenMobileTicker((t) => (t === r.ticker ? null : r.ticker))
+              }
+            >
+              <span>Levels &amp; horizons ({h.short_term} / {h.medium_term} / {h.long_term})</span>
+              <span className="text-slate-500 tabular-nums">{openMobileTicker === r.ticker ? "−" : "+"}</span>
+            </button>
+            {openMobileTicker === r.ticker && (
+              <div className="mt-2 space-y-1.5 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-[11px] text-slate-300 leading-snug">
+                <div className="flex gap-1.5">
+                  <span className="text-slate-600 shrink-0 w-7">ST</span>
+                  <span className="min-w-0">{r.short_suggestion || "—"}</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <span className="text-slate-600 shrink-0 w-7">MT</span>
+                  <span className="min-w-0">{r.medium_suggestion || "—"}</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <span className="text-slate-600 shrink-0 w-7">LT</span>
+                  <span className="min-w-0">{r.long_suggestion || "—"}</span>
+                </div>
+                {(r.st_band || r.mt_band || r.lt_band) && (
+                  <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5" title="ST: stop–target. MT: vol band. LT: fair+consensus">
+                    {r.st_band && (
+                      <span className="block font-mono">${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)} ST band</span>
+                    )}
+                    {r.mt_band && (
+                      <span className="block font-mono">${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)} MT band</span>
+                    )}
+                    {r.lt_band && (
+                      <span className="block font-mono">
+                        ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)} LT
+                        {r.lt_band_low_confidence && " (low conf)"}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
@@ -380,8 +472,18 @@ export function SignalsTable({
         <table className="w-full min-w-[1240px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">
-              <th className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800 px-3 py-2.5 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
-                Ticker
+              <th
+                scope="col"
+                className="sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 bg-slate-800 p-0 font-medium border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]"
+              >
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition-colors"
+                  onClick={() => applySort("ticker")}
+                  aria-sort={sortBy === "ticker" ? "ascending" : "none"}
+                >
+                  Ticker
+                </button>
               </th>
               <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800 border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
                 Close
@@ -393,19 +495,47 @@ export function SignalsTable({
                 Risk (size)
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help whitespace-nowrap"
-                title="Confluence Score (0–100): how much do Trend + RSI + MACD + Regime agree on direction? ≥65 = aligned bullish · 35–65 = mixed · ≤35 = bearish alignment. NOT a probability — click any ticker to see the 7-layer ML Confidence breakdown."
+                scope="col"
+                className="sticky top-0 z-[20] px-0 py-0 font-medium bg-slate-800 border-b border-slate-700 whitespace-nowrap"
               >
-                Confluence
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 cursor-help transition-colors"
+                  title="Confluence Score (0–100): how much do Trend + RSI + MACD + Regime agree on direction? ≥65 = aligned bullish · 35–65 = mixed · ≤35 = bearish alignment. NOT a probability — click any ticker to see the 7-layer ML Confidence breakdown."
+                  onClick={() => applySort("score")}
+                  aria-sort={sortBy === "score" ? (scoreRsiDir === "desc" ? "descending" : "ascending") : "none"}
+                >
+                  Confluence{sortBy === "score" ? (scoreRsiDir === "desc" ? " ↓" : " ↑") : ""}
+                </button>
               </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 LIS
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
-                RSI
+              <th
+                scope="col"
+                className="sticky top-0 z-[20] p-0 font-medium bg-slate-800 border-b border-slate-700"
+              >
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition-colors"
+                  onClick={() => applySort("rsi")}
+                  aria-sort={sortBy === "rsi" ? (scoreRsiDir === "desc" ? "descending" : "ascending") : "none"}
+                >
+                  RSI{sortBy === "rsi" ? (scoreRsiDir === "desc" ? " ↓" : " ↑") : ""}
+                </button>
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
-                Regime
+              <th
+                scope="col"
+                className="sticky top-0 z-[20] p-0 font-medium bg-slate-800 border-b border-slate-700"
+              >
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/60 transition-colors"
+                  onClick={() => applySort("regime")}
+                  aria-sort={sortBy === "regime" ? "ascending" : "none"}
+                >
+                  Regime
+                </button>
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[7rem]"

@@ -236,6 +236,30 @@ const LAYER_META: Record<string, { name: string; icon: React.ElementType }> = {
   nlp_sentiment:     { name: "News Sentiment",    icon: Activity     },
 };
 
+/** Hover text: what each layer is (and is not) in plain English */
+const LAYER_PLAIN_ENGLISH: Partial<Record<string, string>> = {
+  regime_hmm:
+    "Bull / bear / transition from our regime model. A bearish read here is mostly “backdrop and tape,” not “this company just failed earnings.”",
+  pattern_technical:
+    "Chart trend and pattern quality. This can look good while regime or fundamentals still argue for smaller size or patience.",
+  lgbm_probability:
+    "Short-horizon odds from price history (momentum / similar past setups). Timing layer — not the same as fair value or a single headline.",
+  options_sentiment:
+    "Options skew and flow as one input. Usually confirmatory, not a stand-alone reason to buy or sell.",
+  insider_signal:
+    "Reported insider buying vs selling. Often a light weight unless there is a clear cluster of activity.",
+  fundamental_score:
+    "Growth, margins, and estimate trend blended into one score. “Weakening” means this layer is soft vs our bar — you can still be below fair value on price; cheap and cautious can coexist.",
+  nlp_sentiment:
+    "Tone of recent headlines. News can brighten or darken faster than the valuation line on Roadmaps.",
+};
+
+const PRIMARY_ACTION_SUMMARY_HINT =
+  "This line picks the layer that contributed the most to the fused score right now. It is not the same as “last quarter beat or miss,” and it can disagree with “cheap vs fair value” until regime and timing line up.";
+
+const RISK_OFF_ACTION_HINT =
+  "Plain English: “Weakening” points at the layer dragging the fused score — not a full company obituary. A good earnings print can still sit next to a softer multi-month fundamental trend or a defensive regime gate.";
+
 function toPct(v: number | null | undefined): number | null {
   if (v == null || Number.isNaN(v)) return null;
   // ML horizons are 0–1; some upstreams can already be 0–100.
@@ -490,7 +514,10 @@ function ConfidenceGauge({ value }: { value: number }) {
   const lArc  = angle > 180 ? 1 : 0;
 
   return (
-    <div className="flex flex-col items-center shrink-0">
+    <div
+      className="flex flex-col items-center shrink-0"
+      title="One 0–100 fuse of regime, chart, ML, options, insiders, fundamentals, and news. Different from the roadmap’s fair value line and from “did they beat EPS last week.”"
+    >
       <svg viewBox="0 0 100 58" className="w-28 h-14">
         <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
               fill="none" stroke="#1e293b" strokeWidth="9" strokeLinecap="round" />
@@ -532,7 +559,10 @@ function ActionBadge({ action, confidence }: { action: string; confidence: numbe
 
   return (
     <div className="space-y-1">
-      <span className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold", cfg.bg, cfg.text, cfg.border)}>
+      <span
+        className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold", cfg.bg, cfg.text, cfg.border)}
+        title="Verdict from the fused 7-layer engine (after gates and penalties). REDUCE / WATCH does not automatically mean the stock is “bad forever” — often it means wait for regime or levels to improve."
+      >
         <cfg.Icon size={12} />
         {action}
       </span>
@@ -611,7 +641,10 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           <Icon size={13} className={available ? "text-slate-400" : "text-slate-600"} />
-          <span className={clsx("text-xs font-medium truncate", available ? "text-slate-200" : "text-slate-500")}>
+          <span
+            className={clsx("text-xs font-medium truncate cursor-help", available ? "text-slate-200" : "text-slate-500")}
+            title={LAYER_PLAIN_ENGLISH[layerKey] ?? `Weight in fuse: ${wPct}%.`}
+          >
             {meta.name}
           </span>
           <span className="text-[11px] text-slate-500 shrink-0">({wPct}%)</span>
@@ -1265,6 +1298,12 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
   const playbook         = pf?.playbook ?? [];
   const pfFlags          = pf?.flags ?? [];
   const actionSummary    = generateActionSummary(data);
+  const actionUpper = (data.action || "").toUpperCase();
+  const showRiskOffHint =
+    actionUpper.includes("REDUCE") ||
+    actionUpper.includes("TRIM") ||
+    actionUpper.includes("AVOID") ||
+    actionUpper.includes("SELL");
   // Only show non-INCOHERENT coherence message since INCOHERENT is in disqualifiers
   const incoherent       = coherence?.level === "INCOHERENT";
 
@@ -1301,9 +1340,19 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             as the rule-based “technical composite” on the price card. The roadmap is a <span className="text-slate-400">conditional staged plan</span> (MA tiers, targets). Low model confidence means today’s fused read is cautious — not that a future add at a lower tier is impossible.
           </p>
           {actionSummary && (
-            <p className="text-sm text-slate-300 leading-snug max-w-[64ch]">
-              {actionSummary}
-            </p>
+            <div className="space-y-1">
+              <p
+                className="text-sm text-slate-300 leading-snug max-w-[64ch] cursor-help"
+                title={PRIMARY_ACTION_SUMMARY_HINT}
+              >
+                {actionSummary}
+              </p>
+              {showRiskOffHint && (
+                <p className="text-[10px] text-slate-500 leading-snug max-w-[68ch] pl-0.5">
+                  {RISK_OFF_ACTION_HINT}
+                </p>
+              )}
+            </div>
           )}
           {pf?.reassess_guidance?.display && (
             <p className="text-[11px] text-slate-400 leading-snug max-w-[68ch] border-l border-amber-500/30 pl-2.5">

@@ -4,14 +4,14 @@ import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, Fl
 import { clsx } from "clsx";
 
 const TABS = [
-  { id: "overview",    label: "Overview",    shortcut: "1", icon: LayoutDashboard },
-  { id: "signals",     label: "Signals",     shortcut: "2", icon: LineChart       },
-  { id: "roadmaps",    label: "Roadmaps",    shortcut: "8", icon: LayoutGrid      },
-  { id: "portfolio",   label: "Portfolio",   shortcut: "3", icon: Wallet          },
-  { id: "opportunities", label: "Opportunities", shortcut: "4", icon: Sparkles    },
-  { id: "markets",     label: "Markets",     shortcut: "5", icon: TrendingUp      },
-  { id: "analysis",    label: "Analysis",    shortcut: "6", icon: BarChart3       },
-  { id: "testsuite",   label: "Test Suite",  shortcut: "7", icon: FlaskConical    },
+  { id: "overview",    label: "Overview",    compactLabel: "Main",    shortcut: "1", icon: LayoutDashboard },
+  { id: "signals",     label: "Signals",     compactLabel: "Signals", shortcut: "2", icon: LineChart       },
+  { id: "roadmaps",    label: "Roadmaps",    compactLabel: "Roads",   shortcut: "8", icon: LayoutGrid      },
+  { id: "portfolio",   label: "Portfolio",   compactLabel: "Port",    shortcut: "3", icon: Wallet          },
+  { id: "opportunities", label: "Opportunities", compactLabel: "Opps", shortcut: "4", icon: Sparkles    },
+  { id: "markets",     label: "Markets",     compactLabel: "Mkt",     shortcut: "5", icon: TrendingUp      },
+  { id: "analysis",    label: "Analysis",    compactLabel: "Data",    shortcut: "6", icon: BarChart3       },
+  { id: "testsuite",   label: "Test Suite",  compactLabel: "Tests",   shortcut: "7", icon: FlaskConical    },
 ] as const;
 
 export type TabId = (typeof TABS)[number]["id"];
@@ -20,9 +20,51 @@ interface Props {
   active: TabId;
   onChange: (id: TabId) => void;
   badges?: Partial<Record<TabId, number>>;
+  /** Compact bottom bar (mobile) — icon-first, thumb-friendly */
+  variant?: "default" | "bottom";
 }
 
-export function DashboardTabs({ active, onChange, badges }: Props) {
+export function DashboardTabs({ active, onChange, badges, variant = "default" }: Props) {
+  if (variant === "bottom") {
+    return (
+      <nav
+        role="tablist"
+        aria-label="Dashboard sections"
+        className="flex gap-0.5 px-1 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] overflow-x-auto [-webkit-overflow-scrolling:touch] touch-manipulation bg-slate-950/95 border-t border-slate-800/90 backdrop-blur-md supports-[backdrop-filter]:bg-slate-950/80"
+      >
+        {TABS.map(({ id, label, compactLabel, icon: Icon }) => {
+          const isActive = active === id;
+          const badge = badges?.[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-label={label}
+              onClick={() => onChange(id)}
+              className={clsx(
+                "flex flex-col items-center justify-center gap-0.5 flex-1 min-w-[3.25rem] max-w-[5.5rem] py-2 rounded-lg text-[10px] font-medium transition-colors",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40",
+                isActive ? "text-emerald-300 bg-emerald-500/15" : "text-slate-500 hover:text-slate-200 hover:bg-slate-800/50",
+              )}
+            >
+              <span className="relative inline-flex">
+                <Icon className={clsx("h-5 w-5", isActive ? "text-emerald-400" : "text-slate-500")} strokeWidth={2} />
+                {badge != null && badge > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[0.95rem] h-3.5 px-0.5 rounded bg-emerald-600 text-[9px] font-bold text-white flex items-center justify-center leading-none">
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
+              </span>
+              <span className="truncate w-full text-center leading-tight px-0.5">{compactLabel}</span>
+            </button>
+          );
+        })}
+      </nav>
+    );
+  }
+
   return (
     <div
       role="tablist"
