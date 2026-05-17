@@ -1,5 +1,14 @@
 "use client";
 import React from "react";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
 
 interface CalibrationBucket {
   label: string;
@@ -48,11 +57,21 @@ interface ModelHealth {
   walk_forward_ok?: boolean | null;
 }
 
+interface EquityPoint {
+  date: string;
+  ticker?: string;
+  equity_index?: number;
+  cumulative_return_pct?: number;
+  trade_n?: number;
+}
+
 interface Props {
   calibration?: CalibrationData | null;
   paperTrading?: PaperTradingSummary | null;
   forwardSummary?: ForwardSummary | null;
   modelHealth?: ModelHealth | null;
+  /** Completed paper trades — cumulative equity index (starts 100) from dashboard API */
+  equityCurve?: EquityPoint[] | null;
 }
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
@@ -114,17 +133,24 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
   );
 }
 
-export default function TrackRecordPanel({ calibration, paperTrading, forwardSummary, modelHealth }: Props) {
+export default function TrackRecordPanel({
+  calibration,
+  paperTrading,
+  forwardSummary,
+  modelHealth,
+  equityCurve,
+}: Props) {
   const hasCalibration = calibration && calibration.buckets && calibration.buckets.length > 0;
   const hasPaper = paperTrading && paperTrading.completed_n != null && paperTrading.completed_n > 0;
   const hasForward = forwardSummary && Object.keys(forwardSummary).length > 0;
+  const hasEquity = equityCurve && equityCurve.length >= 2;
 
   const winRate = paperTrading?.win_rate_pct;
   const avgReturn = paperTrading?.avg_return_pct;
   const dirAccuracy = modelHealth?.validation_direction_accuracy_pct;
   const fwdHitRate = modelHealth?.forward_hold_add_hit_rate_20d;
 
-  if (!hasCalibration && !hasPaper && !hasForward && !dirAccuracy && !fwdHitRate) {
+  if (!hasCalibration && !hasPaper && !hasForward && !hasEquity && !dirAccuracy && !fwdHitRate) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 text-center">
         <p className="text-sm text-slate-400">
@@ -173,6 +199,41 @@ export default function TrackRecordPanel({ calibration, paperTrading, forwardSum
           />
         )}
       </div>
+
+      {/* Cumulative paper-trade equity (compounded by completed trade returns) */}
+      {hasEquity && (
+        <div>
+          <p className="text-[11px] text-slate-400 mb-1 font-medium">Paper trade equity curve</p>
+          <p className="text-[10px] text-slate-500 mb-2">
+            Index starts at 100; each completed trade updates by (1 + return%). Chronological by exit date.
+          </p>
+          <div className="h-[200px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={equityCurve!} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                  tickFormatter={(v) => (typeof v === "string" && v.length >= 10 ? v.slice(5) : String(v))}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  dataKey="equity_index"
+                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                  domain={["auto", "auto"]}
+                  width={42}
+                />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569", fontSize: 11 }}
+                  formatter={(value: number) => [value?.toFixed?.(2) ?? value, "Equity index"]}
+                  labelFormatter={(label) => `Exit ${label}`}
+                />
+                <Line type="monotone" dataKey="equity_index" stroke="#34d399" strokeWidth={2} dot={false} name="Equity" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Signal breakdown from forward tracking */}
       {hasForward && (

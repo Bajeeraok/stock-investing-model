@@ -162,6 +162,35 @@ def _first_eod_on_or_after(dates: list[str], target: str) -> str | None:
     return None
 
 
+def _provisional_entry_anchor_date(dates: list[str], signal_date: str) -> str | None:
+    """
+    Best EOD date for marks before next-session fill exists.
+    Never returns a date after the latest snapshot (avoids blocking MTM with a future effective_entry_date).
+    """
+    if not dates:
+        return None
+    latest = dates[-1]
+    anchor = _first_eod_on_or_after(dates, signal_date)
+    if anchor is None:
+        try:
+            sig_ts = pd.Timestamp(signal_date).normalize()
+        except Exception:
+            return latest
+        for d in reversed(dates):
+            try:
+                if pd.Timestamp(d).normalize() <= sig_ts:
+                    return d
+            except Exception:
+                continue
+        return latest
+    try:
+        if pd.Timestamp(anchor).normalize() > pd.Timestamp(latest).normalize():
+            return latest
+    except Exception:
+        pass
+    return anchor
+
+
 def _is_buy_side_signal(sig: str) -> bool:
     """STRONG BUY / BUY / HOLD/ADD — for actionable performance slice (excludes TRIM/REDUCE/WATCH/HOLD)."""
     s = (sig or "").upper()
@@ -378,16 +407,21 @@ class PaperTradeLogger:
         """
         Ensure row has an effective entry (fill model + entry cost).
         Returns (effective_entry_price, effective_entry_date).
-        """
-        eff = _safe_float(row.get("effective_entry_price"))
-        eff_date = str(row.get("effective_entry_date") or "").strip() or None
-        if eff is not None and eff > 0 and eff_date:
-            return eff, eff_date
 
+        next_session: use next business day's EOD close when available; until then anchor
+        marks to the latest on/after signal date (provisional) so MTM is not blank on weekends.
+        """
         mode = self._row_mode(row)
         signal_date = str(row.get("date") or "")
         entry_cost = self._row_cost_pct(row, "entry_cost_pct")
-        next_session_date: str | None = None
+        src = str(row.get("effective_entry_source") or "").strip()
+
+        eff = _safe_float(row.get("effective_entry_price"))
+        eff_date = str(row.get("effective_entry_date") or "").strip() or None
+        if eff is not None and eff > 0 and eff_date:
+            if mode != "next_session" or src == "next_session_close":
+                return eff, eff_date
+            # Provisional next_session row — retry when a newer EOD snapshot may exist.
 
         base_px = None
         base_date = None
@@ -396,7 +430,6 @@ class PaperTradeLogger:
         if mode == "next_session":
             try:
                 target_ts = pd.Timestamp(signal_date).normalize() + BDay(1)
-                next_session_date = target_ts.strftime("%Y-%m-%d")
             except Exception:
                 target_ts = None
             if target_ts is not None:
@@ -415,13 +448,12 @@ class PaperTradeLogger:
         if base_px is None:
             base_px = _safe_float(row.get("entry_price"))
             if base_px is not None and base_px > 0:
-                if mode == "next_session" and next_session_date:
-                    # Next-session mode with no next snapshot yet:
-                    # keep planned effective date so MTM doesn't start too early.
-                    base_date = next_session_date
+                if mode == "next_session":
+                    base_date = _provisional_entry_anchor_date(dates, signal_date) or signal_date
+                    base_src = "signal_entry_provisional"
                 else:
                     base_date = _first_eod_on_or_after(dates, signal_date) or signal_date
-                base_src = str(row.get("entry_price_source") or "signal_entry")
+                    base_src = str(row.get("entry_price_source") or "signal_entry")
 
         if base_px is None or base_px <= 0 or not base_date:
             return None, None
@@ -735,12 +767,6 @@ class PaperTradeLogger:
                 eff_entry, _eff_date = self._ensure_effective_entry(row, dates)
                 if eff_entry is None or eff_entry <= 0:
                     continue
-                # Do not MTM a trade before its effective entry date.
-                try:
-                    if _eff_date and pd.Timestamp(latest).normalize() < pd.Timestamp(_eff_date).normalize():
-                        continue
-                except Exception:
-                    pass
                 t = (row.get("ticker") or "").upper()
                 r_now = run_by_ticker.get(t)
                 px = _safe_float((r_now or {}).get("close"))
@@ -997,8 +1023,15 @@ class PaperTradeLogger:
         # Need enough rows for basic stats; cap at 5 for default (60) runs, allow 3 when caller passes min_completed=3 (e.g. paper vs forward drift).
         stats_floor = max(3, min(5, int(min_completed)))
         if len(completed) < stats_floor:
+            open_n = sum(1 for r in rows if not r.get("outcome"))
             out["status"] = f"Need more data: {len(completed)}/{min_completed} completed trades"
-            out["message"] = None
+            if open_n:
+                out["message"] = (
+                    f"{open_n} open — Return/Last mark update daily from EOD; "
+                    "final HIT/MISS after signal date + horizon_trading_days (default 20 business days)."
+                )
+            else:
+                out["message"] = None
             return out
 
         stats = self._stats_for_completed(completed, benchmark)

@@ -453,11 +453,39 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
             >
               {data.display_verdict}
             </span>
-            <span className="text-slate-400 text-sm">
-              Current: ${data.current_price.toFixed(2)}
-              {data.fair_value != null && ` | Fair value: $${data.fair_value.toFixed(2)}`}
-              {data.regime_label && ` | Regime: ${data.regime_label}`}
-            </span>
+            <div className="min-w-0">
+              <span className="text-slate-400 text-sm">
+                Current: ${data.current_price.toFixed(2)}
+                {data.fair_value != null && (
+                  <>
+                    {" "}
+                    <span
+                      className="cursor-help border-b border-dotted border-slate-500/60"
+                      title="Fair value is a model anchor (e.g. earnings × multiple). It answers ‘cheap vs expensive?’ — not ‘safe to buy today?’"
+                    >
+                      | Fair value: ${data.fair_value.toFixed(2)}
+                    </span>
+                  </>
+                )}
+                {data.regime_label && (
+                  <>
+                    {" "}
+                    <span
+                      className="cursor-help border-b border-dotted border-slate-500/60"
+                      title="Regime is risk-on vs risk-off from the model. A cautious regime can override ‘cheap’ until levels or breadth improve."
+                    >
+                      | Regime: {data.regime_label}
+                    </span>
+                  </>
+                )}
+              </span>
+              <p
+                className="text-[10px] text-slate-500 mt-1.5 max-w-xl leading-snug"
+                title="If both lines look good but the verdict is watch or reduce, treat it as timing and risk control — not a contradiction in the math."
+              >
+                Fair value ≈ “cheap vs expensive?” · Regime ≈ “risk-on or risk-off backdrop?” — they often disagree until the tape confirms.
+              </p>
+            </div>
           </div>
           {(data.score_interpretation_style || "").toUpperCase() === "MEAN_REVERTING" && (
             <p className="text-[11px] text-slate-500 mt-1.5 w-full">
@@ -520,7 +548,10 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 >
                   {data.display_verdict}
                 </span>
-                <span className="text-xs text-slate-400">
+                <span
+                  className="text-xs text-slate-400 cursor-help"
+                  title="FV = model fair value from fundamentals (e.g. EPS × P/E). This line is price vs that anchor — not the same as the 7-layer confidence gauge on Details."
+                >
                   ${data.current_price.toFixed(2)} · FV ${data.fair_value.toFixed(2)} · {data.regime_label}
                 </span>
                 <span className="text-[11px] text-slate-500 ml-auto">See Overview for full analysis</span>

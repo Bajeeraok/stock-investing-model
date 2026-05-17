@@ -276,7 +276,16 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                         {r.outcome}
                       </span>
                     ) : (
-                      <span className="text-slate-600">pending</span>
+                      <span
+                        className="text-slate-500 text-xs"
+                        title={
+                          r.effective_entry_source === "signal_entry_provisional"
+                            ? "Provisional entry — marks use latest EOD; upgrades to next-session close when that snapshot exists. Final outcome after horizon (default 20 business days)."
+                            : "Open — Return/Last mark from EOD; final HIT/MISS after horizon_trading_days (default 20 business days)."
+                        }
+                      >
+                        {r.effective_entry_source === "signal_entry_provisional" ? "pending · prov." : "pending"}
+                      </span>
                     )}
                   </td>
                   {(() => {

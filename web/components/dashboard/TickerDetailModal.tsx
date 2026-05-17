@@ -9,6 +9,7 @@ import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
+import { DataMetricCard } from "./DataMetricCard";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -196,9 +197,16 @@ function RetailActionStatusBanner({ status }: { status: RetailActionStatus | nul
           <p className={clsx("text-lg font-bold tracking-tight", styles.accent)}>{status.title}</p>
         </div>
       </div>
-      <p className="text-sm text-slate-200/95 leading-snug sm:flex-1 sm:min-w-0 border-t border-white/5 sm:border-0 sm:border-l sm:border-white/10 sm:pl-4 pt-2 sm:pt-0">
-        {status.subtitle}
-      </p>
+      <div className="text-sm text-slate-200/95 leading-snug sm:flex-1 sm:min-w-0 border-t border-white/5 sm:border-0 sm:border-l sm:border-white/10 sm:pl-4 pt-2 sm:pt-0 space-y-1.5">
+        <p>{status.subtitle}</p>
+        <p
+          className="text-[11px] text-slate-400 leading-snug cursor-help"
+          title="Fair value compares price to our model anchor. Regime is risk-on vs risk-off from the model. They are allowed to disagree: cheap can stay cheap until the tape improves."
+        >
+          Quick read: <span className="text-slate-300">Fair value</span> = price vs our estimate of worth.{" "}
+          <span className="text-slate-300">Regime / action</span> = whether the model wants full size right now. Yellow often means “good value, wait for better timing.”
+        </p>
+      </div>
     </div>
   );
 }
@@ -327,6 +335,7 @@ export function TickerDetailModal({
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(false);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
   const [modalTab, setModalTab] = useState<"overview" | "roadmaps" | "details">("overview");
+  const [catalystExpanded, setCatalystExpanded] = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -338,6 +347,7 @@ export function TickerDetailModal({
   useEffect(() => {
     if (!ticker) return;
     setModalTab("overview");
+    setCatalystExpanded(false);
     setLoading(true);
     setError(null);
     setConfidence(null);
@@ -455,15 +465,25 @@ export function TickerDetailModal({
           <RetailActionStatusBanner status={retailActionStatus} />
         )}
 
-        {/* Catalyst badge — advisory banner when high-impact news detected */}
+        {/* Catalyst — summary first, full note on expand */}
         {detail && !loading && detail.catalyst?.active && (
-          <div className="border-b border-amber-500/30 bg-amber-950/80 px-4 py-2.5 sm:px-6 flex items-start gap-2">
-            <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40">
-              {detail.catalyst.top_event_type?.replace(/_/g, " ") ?? "CATALYST"}
-            </span>
-            <p className="text-xs text-amber-200/90 leading-relaxed">
-              {detail.catalyst.override_note}
-            </p>
+          <div className="border-b border-amber-500/30 bg-amber-950/80 px-3 py-2 sm:px-6">
+            <button
+              type="button"
+              onClick={() => setCatalystExpanded((e) => !e)}
+              className="w-full flex items-start gap-2 text-left touch-manipulation"
+              aria-expanded={catalystExpanded}
+            >
+              <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40">
+                {detail.catalyst.top_event_type?.replace(/_/g, " ") ?? "CATALYST"}
+              </span>
+              <span className="text-xs text-amber-200/90 leading-relaxed flex-1 min-w-0">
+                {catalystExpanded
+                  ? detail.catalyst.override_note
+                  : `${(detail.catalyst.override_note || "").slice(0, 140)}${(detail.catalyst.override_note || "").length > 140 ? "…" : ""}`}
+              </span>
+              <span className="shrink-0 text-amber-400/80 text-[10px] font-semibold pt-0.5">{catalystExpanded ? "Hide" : "More"}</span>
+            </button>
           </div>
         )}
 
@@ -492,15 +512,51 @@ export function TickerDetailModal({
           </div>
         )}
 
-        {/* Tab bar: Overview | Roadmaps | Details — keeps modal from feeling crowded */}
+        {/* Ticker hub — quick read strip */}
+        {detail && !loading && (
+          <div className="border-b border-slate-700 bg-slate-900/90 px-3 sm:px-5 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Ticker hub</p>
+            <div className="flex gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch] pb-0.5">
+              <DataMetricCard
+                dense
+                className="shrink-0 min-w-[7rem]"
+                title="Last"
+                primary={detail.current_price != null ? `$${detail.current_price.toFixed(2)}` : "—"}
+                secondary={detail.sector ?? undefined}
+              />
+              <DataMetricCard
+                dense
+                className="shrink-0 min-w-[7.5rem]"
+                title="Plan"
+                primary={detail.investor_summary?.one_answer?.verdict ?? detail.investor_summary?.overall_verdict ?? "—"}
+                secondary={unified?.action ? `Pattern: ${unified.action}` : undefined}
+              />
+              <DataMetricCard
+                dense
+                className="shrink-0 min-w-[8rem]"
+                title="Next earnings"
+                primary={
+                  detail.earnings?.date
+                    ? detail.earnings.days_until > 0
+                      ? `T+${detail.earnings.days_until}d`
+                      : "Soon"
+                    : "—"
+                }
+                secondary={detail.earnings?.date ?? undefined}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Tab bar: hub sections */}
         {detail && !loading && (
           <div className="border-b border-slate-700 bg-slate-900 sticky top-0 z-[15]">
             <div className="flex">
             {(
               [
-                { id: "overview" as const, label: "Overview", icon: Target },
+                { id: "overview" as const, label: "One answer", icon: Target },
                 { id: "roadmaps" as const, label: "Roadmaps", icon: LayoutGrid },
-                { id: "details" as const, label: "Details", icon: Layers },
+                { id: "details" as const, label: "Deep dive", icon: Layers },
               ] as const
             ).map(({ id, label, icon: Icon }) => (
               <button
@@ -520,7 +576,7 @@ export function TickerDetailModal({
             ))}
             </div>
             <p className="text-center text-[11px] text-slate-500 px-2 py-1.5 border-t border-slate-800">
-              Overview: today&apos;s takeaway · Roadmaps: prices &amp; steps to follow · Details: background, models, and how the stock has performed
+              One answer: today&apos;s takeaway · Roadmaps: prices &amp; steps · Deep dive: models, thesis, and history
             </p>
           </div>
         )}

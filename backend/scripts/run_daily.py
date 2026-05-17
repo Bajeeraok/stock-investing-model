@@ -545,6 +545,39 @@ def save_last_run(results: list[dict], path: Path | None = None) -> None:
         json.dump(payload, f, indent=2)
 
 
+def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
+    """
+    Idempotent: archive today's last_run.json into data/eod/ + Redis when missing.
+    Keeps forward tracking and paper-trade outcome chains advancing after dashboard Refresh.
+    """
+    date_str = snapshot_date or _today_est()
+    eod_path = get_data_root() / "eod" / f"{date_str}.json"
+    try:
+        from signals.cache import get_eod_snapshot_redis
+
+        if eod_path.exists() or get_eod_snapshot_redis(date_str):
+            return {"ok": True, "skipped": True, "snapshot_date": date_str}
+    except Exception:
+        if eod_path.exists():
+            return {"ok": True, "skipped": True, "snapshot_date": date_str}
+    last_run_path = get_data_root() / "last_run.json"
+    if not last_run_path.exists():
+        return {"ok": False, "skipped": True, "snapshot_date": date_str, "reason": "no_last_run"}
+    with open(last_run_path, encoding="utf-8") as f:
+        payload = json.load(f)
+    run_results = payload.get("run_results") or []
+    if not run_results:
+        return {"ok": False, "skipped": True, "snapshot_date": date_str, "reason": "empty_run_results"}
+    path = save_eod_snapshot(run_results, date_str=date_str)
+    return {
+        "ok": True,
+        "skipped": False,
+        "snapshot_date": date_str,
+        "snapshot_path": str(path) if path else None,
+        "tickers_count": len(run_results),
+    }
+
+
 def save_eod_snapshot(
     results: list[dict],
     date_str: str | None = None,

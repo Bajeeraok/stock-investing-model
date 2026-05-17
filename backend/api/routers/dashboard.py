@@ -48,6 +48,7 @@ from scripts.run_daily import (
     run_eod_snapshot_only,
     run_signals,
     save_last_run,
+    maybe_save_eod_from_last_run,
 )
 from scripts.accuracy_price_targets import run_accuracy_and_save
 from signals.cross_asset import (
@@ -1380,6 +1381,16 @@ async def get_dashboard(
         logger.debug("horizon_levels sync: %s", e)
 
     save_last_run(results)  # Save AFTER building what_changed
+    try:
+        eod_auto = maybe_save_eod_from_last_run()
+        if eod_auto and not eod_auto.get("skipped"):
+            logger.info(
+                "[dashboard] auto EOD snapshot %s (%s tickers)",
+                eod_auto.get("snapshot_date"),
+                eod_auto.get("tickers_count"),
+            )
+    except Exception as e:
+        logger.debug("Auto EOD snapshot skipped: %s", e)
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 
     # Tier 1 risk features (position sizing, drawdown, exits, earnings, concentration)
