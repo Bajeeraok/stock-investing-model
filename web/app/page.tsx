@@ -465,6 +465,10 @@ export interface DashboardData {
       entry_price?: number | null;
       /** ohlcv_last_bar | fmp_batch | yfinance_latest */
       entry_price_source?: string | null;
+      effective_entry_date?: string | null;
+      effective_entry_price?: number | null;
+      /** signal_entry_provisional | next_session_close | signal_entry */
+      effective_entry_source?: string | null;
       target_1?: number | null;
       hard_stop?: number | null;
       atr_14?: number | null;

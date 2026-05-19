@@ -19,6 +19,7 @@ export { ThesisCheck } from "./ThesisCheck";
 export { WhatChanged } from "./WhatChanged";
 export { RegimeChart } from "./RegimeChart";
 export { ScoreChart } from "./ScoreChart";
+export { AnchorChartPanel } from "./AnchorChartPanel";
 export { BacktestStatus } from "./BacktestStatus";
 export { EconomicCalendarSection } from "./EconomicCalendarSection";
 export { GuidelinesBanner } from "./GuidelinesBanner";
