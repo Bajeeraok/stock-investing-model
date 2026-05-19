@@ -962,6 +962,7 @@ def _build_investor_summary(
         "fair_value": round(fair_value, 2),
         "overall_verdict": overall,
         "horizons": payload,
+        "rsi": round(rsi, 1),
         "pattern_score": round(pattern_score, 1) if pattern_score is not None else None,
         "regime_bull_pct": round(regime_bull_pct, 1),
         "regime_hmm_label": regime_hmm_label,

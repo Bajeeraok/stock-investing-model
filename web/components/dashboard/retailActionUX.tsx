@@ -1,0 +1,759 @@
+"use client";
+
+import React, { useMemo, useState } from "react";
+import { clsx } from "clsx";
+import { ChevronDown, ChevronRight, Lightbulb, Lock, Target, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import type { HorizonSignalPayload, InvestorDecisionSummary } from "./InvestorDecisionSummary";
+import { marketWeatherFromRegimeBull } from "./patternDecisionDriver";
+
+const ST_ML_GATE = 25;
+const REGIME_GATE = 60;
+const CONFIDENCE_GATE = 55;
+
+/** Core pre-flight gates shown in the global header (4-of-4 rule). */
+export const PRIMARY_TRADING_GATE_IDS = ["valuation", "regime", "momentum", "ml"] as const;
+
+export function filterPrimaryTradingGates(gates: TradingGateRow[]): TradingGateRow[] {
+  return gates.filter((g) => (PRIMARY_TRADING_GATE_IDS as readonly string[]).includes(g.id));
+}
+
+export type BehavioralBadge = {
+  emoji: string;
+  label: string;
+  tone: "red" | "amber" | "green" | "slate";
+  hint?: string;
+};
+
+export type TradingGateRow = {
+  id: string;
+  label: string;
+  detail: string;
+  pass: boolean;
+  icon: string;
+  blockerWeight: number;
+};
+
+export type GlobalActionHeaderProps = {
+  ticker: string;
+  companyName?: string | null;
+  sector?: string | null;
+  currentPrice?: number | null;
+  statusTitle: string;
+  statusLight: "red" | "yellow" | "green" | "neutral";
+  assessmentPct: number;
+  gates: TradingGateRow[];
+  /** When true, RSI-in-band copy can surface in the dynamic subtitle. */
+  insideBuyBand?: boolean;
+  rsi?: number | null;
+};
+
+// ─── Behavioral badges (horizon cards) ───────────────────────────────────────
+
+export function deriveShortTermBehavioralBadge(
+  horizon: HorizonSignalPayload,
+  regimeBullPct: number | null | undefined
+): BehavioralBadge {
+  const verdict = String(horizon.verdict || "").toUpperCase();
+  const quality = String(horizon.entry_zone?.quality || "").toLowerCase();
+  const ml = Number(horizon.ml_prob);
+  const rsiElevated =
+    quality.includes("stretch") ||
+    quality.includes("elevated") ||
+    /rsi\s*(6[0-9]|[7-9]\d|100)/i.test(horizon.rationale || "") ||
+    /rsi\s*elevated/i.test(horizon.entry_zone?.anchor || "");
+
+  if (verdict === "WAIT" || (verdict === "WATCH" && (rsiElevated || quality.includes("stretch")))) {
+    return { emoji: "🔴", label: "DO NOT CHASE", tone: "red", hint: "Wait for pullback — momentum is extended." };
+  }
+  if (
+    (verdict === "BUY" || verdict === "STRONG BUY") &&
+    ml >= ST_ML_GATE &&
+    (quality.includes("ideal") || quality.includes("acceptable") || quality.includes("in zone"))
+  ) {
+    return { emoji: "🟢", label: "TACTICAL ENTRY", tone: "green", hint: "Near-term add window is open — size to plan." };
+  }
+  if (verdict === "WATCH") {
+    return { emoji: "🟡", label: "WATCH — SET ALERTS", tone: "amber", hint: "Setup forming; not a full green light." };
+  }
+  if (regimeBullPct != null && regimeBullPct < 48 && ml >= ST_ML_GATE) {
+    return { emoji: "🟡", label: "ML OK — REGIME BLOCKED", tone: "amber", hint: "Chart likes it; macro gate has not cleared." };
+  }
+  return { emoji: "⚪", label: verdict || "WAIT", tone: "slate" };
+}
+
+export function deriveLongTermBehavioralBadge(
+  long: HorizonSignalPayload,
+  short: HorizonSignalPayload,
+  assessmentPct: number,
+  currentPrice: number
+): BehavioralBadge {
+  const tiers = long.entry_tiers?.tiers ?? [];
+  const inAnyTier = currentPrice > 0 && tiers.some((t) => currentPrice >= t.low && currentPrice <= t.high);
+  const t1 = tiers.find((t) => t.id === "T1") ?? tiers[0];
+  const aboveAllTiers = t1 != null && currentPrice > 0 && currentPrice > t1.high;
+
+  if (inAnyTier) {
+    const active = tiers.find((t) => currentPrice >= t.low && currentPrice <= t.high);
+    return {
+      emoji: "🟢",
+      label: `BUY THE TIER (${active?.id ?? "T1"})`,
+      tone: "green",
+      hint: "Inside a long-term accumulation band — scale per tier notes.",
+    };
+  }
+  const shortGuarded =
+    String(short.verdict || "").toUpperCase() === "WAIT" ||
+    String(short.verdict || "").toUpperCase() === "WATCH";
+  if (assessmentPct >= 5 && (shortGuarded || aboveAllTiers)) {
+    return {
+      emoji: "🟡",
+      label: "ACCUMULATION PAUSE",
+      tone: "amber",
+      hint: "Cheap long-term, but tape is hot — wait for a cleaner dip.",
+    };
+  }
+  const v = String(long.verdict || "").toUpperCase();
+  if (v === "BUY" || v === "STRONG BUY") {
+    return { emoji: "🟢", label: "CORE ACCUMULATION", tone: "green", hint: "Stage in on tier ladder — do not chase spikes." };
+  }
+  return { emoji: "🟡", label: "PATIENT ACCUMULATION", tone: "amber", hint: "Use tier ladder only on dips." };
+}
+
+export function BehavioralActionBadge({ badge }: { badge: BehavioralBadge }) {
+  const toneClass =
+    badge.tone === "green"
+      ? "border-emerald-500/55 bg-emerald-500/15 text-emerald-100"
+      : badge.tone === "amber"
+        ? "border-amber-500/50 bg-amber-500/12 text-amber-100"
+        : badge.tone === "red"
+          ? "border-red-500/55 bg-red-500/12 text-red-100"
+          : "border-slate-600 bg-slate-800/80 text-slate-200";
+
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-lg border",
+        toneClass
+      )}
+      title={badge.hint}
+    >
+      <span aria-hidden>{badge.emoji}</span>
+      {badge.label}
+    </span>
+  );
+}
+
+// ─── 1. Global action header (3-second rule) ─────────────────────────────────
+
+export function buildTradingGateRows(input: {
+  assessmentPct: number;
+  regimeBullPct: number | null | undefined;
+  patternScore: number | null | undefined;
+  shortMlProb: number | null | undefined;
+  rsi: number | null | undefined;
+  confidenceMid: number | null | undefined;
+}): TradingGateRow[] {
+  const weather = marketWeatherFromRegimeBull(input.regimeBullPct);
+  const regimeOk = input.regimeBullPct != null && input.regimeBullPct >= REGIME_GATE;
+  const rsi = input.rsi ?? 50;
+  const valuationOk = input.assessmentPct >= 5;
+  const momentumOk = rsi < 50 && (input.patternScore ?? 0) >= 45;
+  const mlOk = (input.shortMlProb ?? 0) >= ST_ML_GATE;
+  const confOk = (input.confidenceMid ?? 0) >= CONFIDENCE_GATE;
+
+  return [
+    {
+      id: "valuation",
+      label: "VALUATION",
+      detail: valuationOk
+        ? `Deeply undervalued (+${Math.abs(input.assessmentPct).toFixed(1)}% vs model fair value)`
+        : input.assessmentPct >= 0
+          ? `Modest discount (+${input.assessmentPct.toFixed(1)}% vs fair value)`
+          : `Rich vs fair value (${input.assessmentPct.toFixed(1)}%)`,
+      pass: valuationOk,
+      icon: valuationOk ? "✅" : "❌",
+      blockerWeight: valuationOk ? 0 : 30,
+    },
+    {
+      id: "regime",
+      label: "MARKET WEATHER",
+      detail: regimeOk
+        ? `${weather.headline} · HMM bull ${Math.round(input.regimeBullPct!)}%`
+        : `Stormy tape (HMM ${input.regimeBullPct != null ? Math.round(input.regimeBullPct) : "—"}% · need ${REGIME_GATE}%+)`,
+      pass: regimeOk,
+      icon: regimeOk ? "☀️" : weather.weather === "stormy" ? "🌧️" : "⛅",
+      blockerWeight: regimeOk ? 0 : 45,
+    },
+    {
+      id: "momentum",
+      label: "MOMENTUM CHOP",
+      detail: momentumOk
+        ? `RSI ${rsi.toFixed(0)} · pattern ${Math.round(input.patternScore ?? 0)}/100`
+        : rsi >= 50
+          ? `RSI is extended (${rsi.toFixed(0)}/100)`
+          : `Pattern weak (${Math.round(input.patternScore ?? 0)}/100)`,
+      pass: momentumOk,
+      icon: momentumOk ? "📉" : "📈",
+      blockerWeight: momentumOk ? 0 : rsi >= 50 ? 40 : 25,
+    },
+    {
+      id: "ml",
+      label: "ML PROBABILITY",
+      detail: mlOk
+        ? `Validated setup (${Math.round(input.shortMlProb ?? 0)}% vs ${ST_ML_GATE}% threshold)`
+        : `Weak short ML (${Math.round(input.shortMlProb ?? 0)}% · need ${ST_ML_GATE}%+)`,
+      pass: mlOk,
+      icon: "🤖",
+      blockerWeight: mlOk ? 0 : 20,
+    },
+    {
+      id: "confidence",
+      label: "CONFIDENCE",
+      detail:
+        input.confidenceMid != null
+          ? `${Math.round(input.confidenceMid)}% fused confidence (gate ${CONFIDENCE_GATE}%+)`
+          : "Confidence not available",
+      pass: confOk,
+      icon: "🎯",
+      blockerWeight: confOk ? 0 : 15,
+    },
+  ];
+}
+
+export function buildDynamicActionSubtitle(
+  gates: TradingGateRow[],
+  assessmentPct: number,
+  rsi: number | null | undefined,
+  insideBuyBand?: boolean
+): string {
+  const failed = gates.filter((g) => !g.pass).sort((a, b) => b.blockerWeight - a.blockerWeight);
+  const passed = gates.filter((g) => g.pass).length;
+  const total = gates.length;
+
+  if (failed.length === 0) {
+    return "All trading gates are green — confirm sizing on Roadmaps before adding risk.";
+  }
+
+  const top = failed[0];
+  if (top.id === "momentum" && rsi != null && rsi >= 50 && insideBuyBand) {
+    return `Price is inside the buy band, but short-term RSI (${rsi.toFixed(0)}) is too hot to chase today.`;
+  }
+  if (top.id === "regime") {
+    return assessmentPct >= 5
+      ? "Valuation is highly attractive, but market weather is stormy. Sit on your hands and wait for a cleaner dip."
+      : "Macro regime is risk-off — wait for bull tape before sizing new entries.";
+  }
+  if (top.id === "valuation") {
+    return "Little margin of safety vs model fair value — patience beats forcing a trade here.";
+  }
+  if (top.id === "ml") {
+    return "ML has not validated the near-term setup yet — let probability catch up before entry.";
+  }
+
+  return `${passed} of ${total} gates pass · top blocker: ${top.label.toLowerCase().replace(/_/g, " ")} (${top.detail}).`;
+}
+
+function statusEmoji(light: GlobalActionHeaderProps["statusLight"]): string {
+  if (light === "green") return "🟢";
+  if (light === "red") return "🔴";
+  return "⚠️";
+}
+
+export function GlobalActionHeader({
+  ticker,
+  companyName,
+  sector,
+  currentPrice,
+  statusTitle,
+  statusLight,
+  assessmentPct,
+  gates,
+  insideBuyBand = false,
+  rsi,
+}: GlobalActionHeaderProps) {
+  const primaryGates = filterPrimaryTradingGates(gates);
+  const displayGates = primaryGates.length > 0 ? primaryGates : gates;
+  const dynamicLine = buildDynamicActionSubtitle(displayGates, assessmentPct, rsi, insideBuyBand);
+
+  const accent =
+    statusLight === "green"
+      ? "from-emerald-950/90 via-slate-950 to-slate-950 border-emerald-500/40"
+      : statusLight === "red"
+        ? "from-red-950/90 via-slate-950 to-slate-950 border-red-500/40"
+        : "from-amber-950/90 via-slate-950 to-slate-950 border-amber-500/40";
+
+  return (
+    <header className={clsx("border-b bg-gradient-to-b", accent)}>
+      <div className="px-4 sm:px-6 pt-3 pb-2 border-b border-white/5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Now</p>
+          <p className="text-base sm:text-lg font-semibold text-slate-100">
+            <span className="font-mono text-emerald-400">{ticker}</span>
+            {companyName ? <span className="text-slate-300 font-normal"> · {companyName}</span> : null}
+          </p>
+        </div>
+        {currentPrice != null && currentPrice > 0 && (
+          <p className="text-lg font-mono font-bold text-slate-100 tabular-nums">${currentPrice.toFixed(2)}</p>
+        )}
+      </div>
+      {sector && (
+        <p className="px-4 sm:px-6 pb-2 text-[11px] uppercase tracking-wider text-slate-500">{sector}</p>
+      )}
+      <div className="px-4 sm:px-6 pb-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">Status</p>
+        <p className="text-xl sm:text-2xl font-black tracking-tight text-slate-50 flex items-center gap-2">
+          <span aria-hidden>{statusEmoji(statusLight)}</span>
+          {statusTitle}
+        </p>
+        <p className="mt-2 text-sm text-slate-200/95 leading-relaxed max-w-3xl border-l-2 border-amber-500/50 pl-3 italic">
+          &ldquo;{dynamicLine}&rdquo;
+        </p>
+      </div>
+      <div className="px-3 sm:px-5 pb-4">
+        <TradingGateStatus gates={displayGates} />
+      </div>
+    </header>
+  );
+}
+
+// ─── 3. Trading gate status (pre-flight) ───────────────────────────────────
+
+export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[]; className?: string }) {
+  const passCount = gates.filter((g) => g.pass).length;
+  const total = gates.length;
+  const locked = total - passCount;
+  const allGo = locked === 0;
+
+  return (
+    <section
+      className={clsx(
+        "rounded-xl border border-slate-600/80 bg-slate-950/80 overflow-hidden shadow-inner shadow-black/30",
+        className
+      )}
+      aria-label="Trading gate status"
+    >
+      <div className="px-3.5 py-2 border-b border-slate-700/70 bg-slate-900/80 flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-300">Trading gate status</p>
+        <span
+          className={clsx(
+            "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
+            allGo
+              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+              : "border-red-500/45 bg-red-500/10 text-red-200"
+          )}
+        >
+          {allGo ? "Go" : "No-Go"}
+        </span>
+      </div>
+      <ul className="divide-y divide-slate-800/90 font-mono text-[11px] sm:text-xs">
+        {gates.map((g) => (
+          <li
+            key={g.id}
+            className={clsx(
+              "px-3.5 py-2.5 flex items-start gap-3",
+              g.pass ? "bg-emerald-500/[0.03]" : "bg-red-500/[0.04]"
+            )}
+          >
+            <span className="shrink-0 w-5 text-center pt-0.5" aria-hidden>
+              {g.pass ? (
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 inline" />
+              ) : (
+                <XCircle className="h-4 w-4 text-red-400 inline" />
+              )}
+            </span>
+            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-[minmax(9rem,auto)_1fr_auto] gap-x-3 gap-y-0.5 items-baseline">
+              <span className="text-slate-400 font-semibold tracking-wide flex items-center gap-1.5">
+                <span>{g.icon}</span>
+                {g.label}
+              </span>
+              <span className="text-slate-300 truncate">{g.detail}</span>
+              <span
+                className={clsx(
+                  "font-bold uppercase text-[10px] sm:justify-self-end",
+                  g.pass ? "text-emerald-400" : "text-red-300"
+                )}
+              >
+                {g.pass ? "Pass" : "Fail"}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <div
+        className={clsx(
+          "px-3.5 py-2.5 border-t text-[11px] leading-snug flex items-start gap-2",
+          allGo ? "border-emerald-500/30 bg-emerald-950/40 text-emerald-100" : "border-amber-500/30 bg-amber-950/30 text-amber-100"
+        )}
+      >
+        <span className="shrink-0" aria-hidden>
+          👉
+        </span>
+        <span>
+          {allGo ? (
+            <strong className="text-emerald-300">ACTION:</strong>
+          ) : (
+            <strong className="text-amber-200">ACTION REQUIRED:</strong>
+          )}{" "}
+          {allGo
+            ? " Gates are open — still confirm stops and size on Roadmaps."
+            : ` ${locked} of ${total} gates are locked. Do not initiate new entries.`}
+        </span>
+      </div>
+    </section>
+  );
+}
+
+// Legacy export — delegates to new gate builder
+export type ReadinessRow = TradingGateRow & { condition: string; statusLabel: string; ready: boolean };
+
+export function buildTradeReadinessRows(input: Parameters<typeof buildTradingGateRows>[0]): ReadinessRow[] {
+  return buildTradingGateRows(input).map((g) => ({
+    ...g,
+    condition: g.label,
+    statusLabel: g.detail,
+    ready: g.pass,
+  }));
+}
+
+export function TradeReadinessChecklist({
+  rows,
+  className,
+}: {
+  rows: ReadinessRow[];
+  className?: string;
+  compact?: boolean;
+}) {
+  const gates: TradingGateRow[] = rows.map((r) => ({
+    id: r.id,
+    label: r.label || r.condition,
+    detail: r.detail || r.statusLabel,
+    pass: r.pass ?? r.ready,
+    icon: r.icon,
+    blockerWeight: r.blockerWeight ?? 0,
+  }));
+  return <TradingGateStatus gates={gates} className={className} />;
+}
+
+// ─── 2. Stop → target risk bar (short-term thermometer) ─────────────────────
+
+export function StopTargetRiskBar({
+  stopLoss,
+  target,
+  currentPrice,
+  className,
+}: {
+  stopLoss: number;
+  target: number;
+  currentPrice: number;
+  className?: string;
+}) {
+  const stop = Math.min(stopLoss, target, currentPrice);
+  const tgt = Math.max(stopLoss, target, currentPrice);
+  const span = tgt - stop;
+  if (!(span > 0)) return null;
+
+  const pct = Math.max(0, Math.min(100, ((currentPrice - stop) / span) * 100));
+  const riskPct = pct;
+  const rewardPct = 100 - pct;
+  const tightReward = rewardPct < 35;
+
+  return (
+    <div className={clsx("space-y-2", className)}>
+      <div className="flex justify-between text-[10px] font-mono text-slate-500">
+        <span className="text-red-300/90">Stop ${stopLoss.toFixed(2)}</span>
+        <span className="text-slate-400">Now ${currentPrice.toFixed(2)}</span>
+        <span className="text-emerald-300/90">Target ${target.toFixed(2)}</span>
+      </div>
+      <div className="relative h-4 rounded-full overflow-hidden border border-slate-700 bg-slate-900">
+        <div className="absolute inset-0 flex">
+          <div
+            className={clsx("h-full", tightReward ? "bg-gradient-to-r from-red-600 to-orange-500" : "bg-gradient-to-r from-red-600/90 to-amber-500/80")}
+            style={{ width: `${riskPct}%` }}
+            title="Downside to stop"
+          />
+          <div
+            className={clsx("h-full", tightReward ? "bg-emerald-600/35" : "bg-gradient-to-r from-emerald-600/70 to-emerald-400/80")}
+            style={{ width: `${rewardPct}%` }}
+            title="Upside to target"
+          />
+        </div>
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] z-10"
+          style={{ left: `calc(${pct}% - 1px)` }}
+          title={`Current price $${currentPrice.toFixed(2)}`}
+        />
+        <div
+          className="absolute top-1/2 z-20 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-slate-900 shadow-md"
+          style={{ left: `${pct}%` }}
+        />
+      </div>
+      <p className="text-[10px] text-slate-400 leading-snug">
+        {tightReward ? (
+          <>
+            <span className="text-red-300 font-semibold">Asymmetric risk:</span> large red zone (fall to stop) vs a small
+            green slice (room to target). Favor pullbacks or longer horizons.
+          </>
+        ) : (
+          <>
+            Bar spans stop → target. Marker = last price.{" "}
+            <span className="text-slate-500">Left = downside to stop · Right = upside to target.</span>
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** Simple R:R ratio bar (fallback when only ratio known). */
+export function RiskRewardThermometer({
+  riskReward,
+  className,
+}: {
+  riskReward: number;
+  className?: string;
+}) {
+  const rr = Math.max(0.01, riskReward);
+  const rewardShare = rr / (1 + rr);
+  const riskShare = 1 - rewardShare;
+  const tight = rr < 0.6;
+
+  return (
+    <div className={clsx("space-y-1.5", className)}>
+      <div className="flex justify-between text-[10px] font-mono text-slate-500">
+        <span className="text-red-300/90">Risk $1.00</span>
+        <span className="text-emerald-300/90">Reward ${rr.toFixed(2)}</span>
+      </div>
+      <div className="flex h-3 rounded-full overflow-hidden border border-slate-700/80 bg-slate-900">
+        <div className={clsx("h-full", tight ? "bg-red-500/85" : "bg-amber-500/75")} style={{ width: `${riskShare * 100}%` }} />
+        <div className={clsx("h-full flex-1", tight ? "bg-emerald-600/30" : "bg-emerald-500/65")} />
+      </div>
+      <p className="text-[10px] text-slate-400">
+        {tight ? (
+          <span className="text-red-300 font-medium">You risk ~$1.00 to make ~${rr.toFixed(2)}</span>
+        ) : (
+          <span>R:R 1 : {rr.toFixed(1)}</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+// ─── 4. Long-term tier ladder (fader) ──────────────────────────────────────────
+
+const TIER_RETAIL_COPY: Record<string, { zone: string; sizing: string; mode: string }> = {
+  T1: {
+    zone: "Nibble Zone",
+    sizing: "Start with a small ~5% tester position.",
+    mode: "Starter tranche",
+  },
+  T2: {
+    zone: "Core Accumulation Zone",
+    sizing: "Heavy up to your Tier 2 allocation on dips.",
+    mode: "Core historical value",
+  },
+  T3: {
+    zone: "Max Margin of Safety",
+    sizing: "Back-the-truck-up level — only on deep dislocations.",
+    mode: "Stress / tail sleeve",
+  },
+};
+
+export function tierPriceState(
+  tier: { low: number; high: number },
+  price: number
+): "active" | "above" | "below" {
+  if (price >= tier.low && price <= tier.high) return "active";
+  if (price > tier.high) return "above";
+  return "below";
+}
+
+export function pickCurrentTargetTierId(
+  tiers: { id: string; low: number; high: number }[],
+  price: number
+): string | null {
+  if (!tiers.length || !(price > 0)) return null;
+  const active = tiers.find((t) => price >= t.low && price <= t.high);
+  if (active) return active.id;
+  const sorted = [...tiers].sort((a, b) => a.low - b.low);
+  if (price > sorted[sorted.length - 1].high) return sorted[0].id;
+  if (price < sorted[0].low) return sorted[sorted.length - 1].id;
+  return sorted[0].id;
+}
+
+export function LongTermTierLadder({
+  entryTiers,
+  currentPrice,
+  modeLabel,
+}: {
+  entryTiers: NonNullable<HorizonSignalPayload["entry_tiers"]>;
+  currentPrice: number;
+  modeLabel?: string;
+}) {
+  const targetTierId = pickCurrentTargetTierId(entryTiers.tiers, currentPrice);
+  const sorted = [...entryTiers.tiers].sort((a, b) => b.low - a.low);
+
+  return (
+    <div className="mt-2 rounded-xl border border-violet-500/25 bg-gradient-to-b from-violet-950/30 to-slate-950/50 overflow-hidden">
+      <div className="px-3 py-2 border-b border-violet-500/20 bg-violet-950/40 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-200">
+          Long-term accumulation mode
+        </p>
+        <span className="text-[10px] font-semibold text-amber-200/90 uppercase">
+          {modeLabel ?? entryTiers.current_assessment?.label ?? "Watching"}
+        </span>
+      </div>
+      <ul className="p-2 space-y-1.5">
+        {sorted.map((tier) => {
+          const state = currentPrice > 0 ? tierPriceState(tier, currentPrice) : "above";
+          const isInside = state === "active";
+          const isAbove = state === "above";
+          const isTarget = tier.id === targetTierId;
+          const isHighlighted = isInside || (isTarget && isAbove);
+          const copy = TIER_RETAIL_COPY[tier.id] ?? {
+            zone: tier.label,
+            sizing: tier.description,
+            mode: "",
+          };
+          const irrelevant = isAbove && !isTarget;
+
+          return (
+            <li
+              key={tier.id}
+              className={clsx(
+                "rounded-lg border px-3 py-2.5 transition-all",
+                isHighlighted
+                  ? "border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30 opacity-100"
+                  : irrelevant
+                    ? "border-slate-800/80 bg-slate-900/20 opacity-35"
+                    : "border-slate-700/60 bg-slate-900/40 opacity-70"
+              )}
+            >
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 mt-0.5 text-base" aria-hidden>
+                  {isHighlighted ? (
+                    <Target className="h-4 w-4 text-emerald-400" />
+                  ) : (
+                    <Lock className="h-4 w-4 text-slate-500" />
+                  )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-200">{tier.label}</span>
+                    <span className="text-[10px] font-semibold text-emerald-300/90">{copy.zone}</span>
+                    {isHighlighted && (
+                      <span className="text-[9px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
+                        {isInside ? "Active accumulation" : "Target tier"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-mono text-slate-100 mt-0.5">
+                    ${tier.low.toFixed(2)} – ${tier.high.toFixed(2)}
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-1">{copy.sizing}</p>
+                  <p className="text-[10px] mt-1 text-slate-400">
+                    {isInside ? (
+                      <span className="text-emerald-300/95">
+                        Current price (${currentPrice.toFixed(2)}) is inside this band — scale here first.
+                      </span>
+                    ) : isTarget && isAbove ? (
+                      <span className="text-emerald-300/90">
+                        Current price (${currentPrice.toFixed(2)}) is gravitating toward this structural floor.
+                      </span>
+                    ) : isAbove && tier.drop_needed_pct != null ? (
+                      <span className="text-slate-500">
+                        🔒 Price is above zone — needs ~{Math.abs(tier.drop_needed_pct).toFixed(0)}% pullback
+                      </span>
+                    ) : state === "below" ? (
+                      <span className="text-slate-500">🔒 Price is below zone (not actionable yet)</span>
+                    ) : null}
+                  </p>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+export function EntryTierPanel(props: Parameters<typeof LongTermTierLadder>[0]) {
+  return <LongTermTierLadder {...props} />;
+}
+
+// ─── Plain English (collapsible detail) ──────────────────────────────────────
+
+export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentPrice: number) {
+  const fv = summary.fair_value;
+  const pct = currentPrice > 0 ? ((fv - currentPrice) / currentPrice) * 100 : 0;
+  const oa = summary.one_answer;
+  const short = summary.horizons.short;
+
+  const good =
+    pct >= 3
+      ? `The stock looks cheaper than our model fair value (~${Math.abs(pct).toFixed(0)}% discount).`
+      : `Fundamentals anchor near $${fv.toFixed(2)} — less margin of safety at today's price.`;
+
+  const badParts: string[] = [];
+  if (summary.regime_bull_pct != null && summary.regime_bull_pct < 48) badParts.push("stormy market weather");
+  if (String(short.entry_zone?.quality || "").toLowerCase().includes("stretch")) badParts.push("price is extended");
+  if (summary.pattern_score != null && summary.pattern_score < 45) badParts.push("weak chart structure");
+
+  const move =
+    oa?.bottom_line ||
+    oa?.action_today ||
+    (summary.overall_verdict === "WAIT" || summary.overall_verdict === "WATCH"
+      ? "DO NOT CHASE — wait for gates to turn green."
+      : "Stage in via tier ladder — nibble, then core.");
+
+  return {
+    good,
+    bad: badParts.length ? `Caution: ${badParts.join(", ")}.` : "No major red flags in the quick scan.",
+    move,
+  };
+}
+
+export function PlainEnglishTakeCard({
+  summary,
+  currentPrice,
+  defaultOpen = false,
+}: {
+  summary: InvestorDecisionSummary;
+  currentPrice: number;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const take = useMemo(() => buildPlainEnglishTake(summary, currentPrice), [summary, currentPrice]);
+
+  return (
+    <section className="rounded-xl border border-slate-700/80 bg-slate-900/40 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-left hover:bg-slate-800/50"
+      >
+        <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+          <Lightbulb className="h-3.5 w-3.5" />
+          More detail (plain English)
+        </span>
+        {open ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
+      </button>
+      {open && (
+        <ul className="px-3.5 pb-3.5 space-y-2 text-[12px] text-slate-200 leading-snug border-t border-slate-700/50">
+          <li>
+            <span className="text-emerald-300 font-semibold">Good: </span>
+            {take.good}
+          </li>
+          <li>
+            <span className="text-amber-300 font-semibold">Bad: </span>
+            {take.bad}
+          </li>
+          <li>
+            <span className="text-sky-300 font-semibold">Move: </span>
+            {take.move}
+          </li>
+        </ul>
+      )}
+    </section>
+  );
+}

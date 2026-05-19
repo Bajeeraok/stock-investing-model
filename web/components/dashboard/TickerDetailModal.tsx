@@ -8,6 +8,7 @@ import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown"
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
+import { GlobalActionHeader, buildTradingGateRows } from "./retailActionUX";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 
@@ -100,9 +101,9 @@ function computeRetailActionStatus(input: {
   if (discountPct >= 5 && regime != null && regime < 48 && pattern != null && pattern < 55) {
     return {
       light: "yellow",
-      title: "WATCH OR HOLD",
+      title: "DO NOT CHASE",
       subtitle:
-        "Valuation is attractive, but regime and chart still cautious — research mode; wait for clearer triggers.",
+        "Valuation is attractive, but regime and chart still cautious — sit on your hands until gates clear.",
     };
   }
 
@@ -110,7 +111,7 @@ function computeRetailActionStatus(input: {
     return {
       light: "yellow",
       title: "WATCH OR HOLD",
-      subtitle: "Cheap vs fair value, but market regime is not bullish yet — patience or smaller probes only.",
+      subtitle: "Cheap vs fair value, but stormy tape — wait for a cleaner dip before sizing.",
     };
   }
 
@@ -426,6 +427,45 @@ export function TickerDetailModal({
     });
   }, [detail, confidence]);
 
+  const tradingGates = useMemo(() => {
+    const inv = detail?.investor_summary;
+    if (!inv || !detail?.current_price) return [];
+    const assessmentPct =
+      inv.fair_value > 0 ? ((inv.fair_value - detail.current_price) / detail.current_price) * 100 : 0;
+    const band = inv.trade_roadmap?.tldr?.model_confidence_band?.match(/(\d+)\s*-\s*(\d+)/);
+    const confidenceMid =
+      band && band[1] && band[2]
+        ? (Number(band[1]) + Number(band[2])) / 2
+        : inv.model_confidence_pct ?? null;
+    return buildTradingGateRows({
+      assessmentPct,
+      regimeBullPct: inv.regime_bull_pct,
+      patternScore: inv.pattern_score,
+      shortMlProb: inv.horizons?.short?.ml_prob,
+      rsi: inv.rsi ?? null,
+      confidenceMid,
+    });
+  }, [detail]);
+
+  const assessmentPctForHeader = useMemo(() => {
+    const inv = detail?.investor_summary;
+    const cp = detail?.current_price;
+    if (!inv || !cp) return 0;
+    return ((inv.fair_value - cp) / cp) * 100;
+  }, [detail]);
+
+  const buyBandContext = useMemo(() => {
+    const inv = detail?.investor_summary;
+    const cp = detail?.current_price;
+    const ez = inv?.horizons?.short?.entry_zone;
+    if (!cp || !ez?.low || !ez?.high) {
+      return { insideBuyBand: false, rsi: inv?.rsi ?? null };
+    }
+    const low = Math.min(ez.low, ez.high);
+    const high = Math.max(ez.low, ez.high);
+    return { insideBuyBand: cp >= low && cp <= high, rsi: inv?.rsi ?? null };
+  }, [detail]);
+
   /** Portal + high z-index: avoids clipping under sticky dashboard header (also z-50) and parent overflow on mobile. */
   if (typeof window === "undefined") return null;
 
@@ -442,16 +482,9 @@ export function TickerDetailModal({
         aria-modal="true"
         aria-labelledby="ticker-detail-title"
       >
-        <div className="sticky top-0 bg-slate-900 border-b border-slate-700/80 px-5 sm:px-6 py-4 flex items-center justify-between z-20">
-          <h2 id="ticker-detail-title" className="text-xl font-bold text-slate-100 flex items-center gap-2 flex-wrap">
-            <TrendingUp className="h-6 w-6 text-emerald-500 shrink-0" />
-            <span className="font-mono text-emerald-400">{ticker}</span>
-            {detail?.company_name && (
-              <span className="text-base font-normal text-slate-300">· {detail.company_name}</span>
-            )}
-            {detail?.sector && (
-              <span className="text-base font-normal text-slate-400">· {detail.sector}</span>
-            )}
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700/80 px-4 sm:px-6 py-2.5 flex items-center justify-between z-20">
+          <h2 id="ticker-detail-title" className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            Ticker detail
           </h2>
           <button
             onClick={onClose}
@@ -461,8 +494,19 @@ export function TickerDetailModal({
           </button>
         </div>
 
-        {detail && !loading && detail.investor_summary && (
-          <RetailActionStatusBanner status={retailActionStatus} />
+        {detail && !loading && retailActionStatus && tradingGates.length > 0 && (
+          <GlobalActionHeader
+            ticker={detail.ticker}
+            companyName={detail.company_name}
+            sector={detail.sector}
+            currentPrice={detail.current_price}
+            statusTitle={retailActionStatus.title}
+            statusLight={retailActionStatus.light}
+            assessmentPct={assessmentPctForHeader}
+            gates={tradingGates}
+            insideBuyBand={buyBandContext.insideBuyBand}
+            rsi={buyBandContext.rsi}
+          />
         )}
 
         {/* Catalyst — summary first, full note on expand */}
