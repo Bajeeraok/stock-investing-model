@@ -1,5 +1,6 @@
 export { DashboardTabs, type TabId } from "./DashboardTabs";
 export { StoryAlerts } from "./StoryAlerts";
+export { TodaysMovesPanel } from "./TodaysMovesPanel";
 export { TickerDetailModal } from "./TickerDetailModal";
 export { AddTickerBar } from "./AddTickerBar";
 export { CryptoSection } from "./CryptoSection";
@@ -21,6 +22,9 @@ export { RegimeChart } from "./RegimeChart";
 export { ScoreChart } from "./ScoreChart";
 export { AnchorChartPanel } from "./AnchorChartPanel";
 export { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProjectionChart";
+export { PortfolioHeatMap } from "./PortfolioHeatMap";
+export { StreetVsModelBar } from "./StreetVsModelBar";
+export { PositionIntentChip } from "./PositionIntentChip";
 export { BacktestStatus } from "./BacktestStatus";
 export { EconomicCalendarSection } from "./EconomicCalendarSection";
 export { GuidelinesBanner } from "./GuidelinesBanner";

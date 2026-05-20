@@ -113,6 +113,22 @@ class TestLiquidity:
         )
         assert result["items"][0]["liquidity_score"] is None
 
+    def test_enrich_results_liquidity(self):
+        import pandas as pd
+        from portfolio.liquidity import enrich_results_liquidity
+
+        results = [{"ticker": "AAPL", "close": 100.0, "risk_sizing": {"shares": 50}}]
+
+        def mock_fetch(_t, _p):
+            vol = pd.Series([1_000_000.0] * 30)
+            close = pd.Series([100.0] * 30)
+            return close, vol
+
+        enrich_results_liquidity(results, fetch_close_volume=mock_fetch)
+        assert results[0]["liquidity_days_to_exit"] is not None
+        assert results[0]["liquidity_score"] is not None
+        assert results[0]["liquidity_days_to_exit"] < 1
+
 
 # ─── Factor Exposure ───
 class TestFactorExposure:

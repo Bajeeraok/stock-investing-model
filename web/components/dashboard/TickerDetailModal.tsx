@@ -11,6 +11,7 @@ import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./
 import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
+import { PositionIntentChip } from "./PositionIntentChip";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -597,6 +598,9 @@ export function TickerDetailModal({
                 secondary={detail.earnings?.date ?? undefined}
               />
             </div>
+            <div className="mt-2 max-w-md">
+              <PositionIntentChip ticker={ticker} compact />
+            </div>
           </div>
         )}
 
@@ -694,6 +698,8 @@ export function TickerDetailModal({
                   summary={detail.investor_summary}
                   currentPrice={detail.current_price ?? 0}
                   ma200={detail.ma200}
+                  ma20={detail.ma20}
+                  ma50={detail.ma50}
                   sector={detail.sector}
                   companyName={detail.company_name}
                   ltEntryTiersOpen={ltEntryTiersOpen}

@@ -795,6 +795,10 @@ export interface Signal {
   retail_status?: import("@/components/dashboard/retailActionUX").RetailActionPayload | null;
   rsi_status?: string | null;
   gate_cleared?: boolean | null;
+  /** ADV-based days to exit at 20% participation (risk-sized or $5k probe). */
+  liquidity_days_to_exit?: number | null;
+  liquidity_score?: number | null;
+  liquidity_flag?: string | null;
   error?: string;
 }
 

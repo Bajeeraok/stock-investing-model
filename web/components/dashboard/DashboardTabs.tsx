@@ -16,15 +16,20 @@ const TABS = [
 
 export type TabId = (typeof TABS)[number]["id"];
 
+const ADVANCED_TAB_IDS = new Set<TabId>(["analysis", "testsuite"]);
+
 interface Props {
   active: TabId;
   onChange: (id: TabId) => void;
   badges?: Partial<Record<TabId, number>>;
+  /** Hide Analysis + Test Suite unless power-user mode */
+  advancedMode?: boolean;
   /** Compact bottom bar (mobile) — icon-first, thumb-friendly */
   variant?: "default" | "bottom";
 }
 
-export function DashboardTabs({ active, onChange, badges, variant = "default" }: Props) {
+export function DashboardTabs({ active, onChange, badges, advancedMode = false, variant = "default" }: Props) {
+  const visibleTabs = TABS.filter((t) => advancedMode || !ADVANCED_TAB_IDS.has(t.id));
   if (variant === "bottom") {
     return (
       <nav
@@ -32,7 +37,7 @@ export function DashboardTabs({ active, onChange, badges, variant = "default" }:
         aria-label="Dashboard sections"
         className="flex gap-0.5 px-1 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] overflow-x-auto [-webkit-overflow-scrolling:touch] touch-manipulation bg-slate-950/95 border-t border-slate-800/90 backdrop-blur-md supports-[backdrop-filter]:bg-slate-950/80"
       >
-        {TABS.map(({ id, label, compactLabel, icon: Icon }) => {
+        {visibleTabs.map(({ id, label, compactLabel, icon: Icon }) => {
           const isActive = active === id;
           const badge = badges?.[id];
           return (
@@ -71,7 +76,7 @@ export function DashboardTabs({ active, onChange, badges, variant = "default" }:
       aria-label="Dashboard sections (1-8 to switch)"
       className="flex gap-0.5 p-1 rounded-xl bg-slate-900/80 border border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto [-webkit-overflow-scrolling:touch] min-h-[44px] touch-manipulation"
     >
-      {TABS.map(({ id, label, shortcut, icon: Icon }) => {
+      {visibleTabs.map(({ id, label, shortcut, icon: Icon }) => {
         const isActive = active === id;
         const badge = badges?.[id];
         return (

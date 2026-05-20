@@ -1386,6 +1386,13 @@ async def get_dashboard(
         logger.debug("enrich_results_earnings_quality: %s", e)
 
     try:
+        from portfolio.liquidity import enrich_results_liquidity
+
+        enrich_results_liquidity(results)
+    except Exception as e:
+        logger.debug("enrich_results_liquidity: %s", e)
+
+    try:
         from scanner.horizon_levels import sync_horizon_levels_from_signal_results
 
         _nhl = sync_horizon_levels_from_signal_results(get_data_root(), results)

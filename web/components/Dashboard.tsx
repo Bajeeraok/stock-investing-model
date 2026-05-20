@@ -20,12 +20,14 @@ import {
   DashboardTabs,
   type TabId,
   StoryAlerts,
+  TodaysMovesPanel,
   PortfolioSummary,
   PortfolioStressStrip,
   DataFreshnessBar,
   KnownLimitsPanel,
   ModelDisclaimer,
   SignalsTable,
+  PortfolioHeatMap,
   PortfolioHoldings,
   TrimCandidates,
   Opportunities,
@@ -166,6 +168,33 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   } | null>(null);
   const [oppLoading, setOppLoading] = useState(false);
   const [oppFetchErr, setOppFetchErr] = useState<string | null>(null);
+  const [advancedMode, setAdvancedMode] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("thrive-advanced-mode") === "1") setAdvancedMode(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!advancedMode && (activeTab === "analysis" || activeTab === "testsuite")) {
+      setActiveTabState("overview");
+    }
+  }, [advancedMode, activeTab]);
+
+  const toggleAdvancedMode = () => {
+    setAdvancedMode((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("thrive-advanced-mode", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   const setActiveTab = useCallback((id: TabId) => {
     setActiveTabState(id);
@@ -388,6 +417,20 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <span className="text-xs text-slate-600 hidden sm:inline" title="Report timestamp (EST)">As of: {formatEtDateTime(data.as_of_date)}</span>
             )}
             <button
+              type="button"
+              onClick={toggleAdvancedMode}
+              className={clsx(
+                "flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation",
+                advancedMode
+                  ? "border-violet-500/40 bg-violet-500/10 text-violet-200"
+                  : "border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+              )}
+              title="Show Analysis and Test Suite tabs"
+            >
+              <FlaskConical className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">{advancedMode ? "Advanced on" : "Advanced"}</span>
+            </button>
+            <button
               onClick={() => onRefresh(true)}
               disabled={loading}
               className={clsx(
@@ -467,6 +510,17 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
       {/* Compact alert strip - always visible */}
       <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
+        <TodaysMovesPanel
+          storyChanges={data.story_changes}
+          trimCandidates={selectedTrimCandidates.map((h) => ({
+            ticker: h.ticker,
+            label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
+          }))}
+          signals={lazySignals ?? data.signals ?? []}
+          macroHeadline={data.macro_analog?.one_liner ?? data.market_forecast?.headline ?? null}
+          onTickerClick={setSelectedTicker}
+          onViewAll={() => setActiveTab("signals")}
+        />
         {data.story_changes.length > 0 && <StoryAlerts items={data.story_changes} onTickerClick={setSelectedTicker} />}
         {(data.earnings_risk_count ?? 0) > 0 && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-2 flex items-center gap-2">
@@ -482,7 +536,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
       {/* Tab bar — desktop / tablet */}
       <div className="hidden md:block max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} />
+        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} advancedMode={advancedMode} />
       </div>
 
       <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6 overflow-x-hidden">
@@ -572,6 +626,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </select>
                 </div>
               )}
+              <PortfolioHeatMap
+                holdings={selectedReport?.per_holding ?? []}
+                onTickerClick={setSelectedTicker}
+              />
               <ToggleSection id="overview-portfolio" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <PortfolioSummary report={selectedReport} />
@@ -861,6 +919,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </select>
                 </div>
               )}
+              <PortfolioHeatMap
+                holdings={selectedReport?.per_holding ?? []}
+                onTickerClick={setSelectedTicker}
+              />
               {/* Portfolio Doctor v2 — answers "what do I do this week?" first */}
               <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen>
                 <PortfolioDoctorPanel
@@ -1207,7 +1269,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
       )}
 
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
-        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="bottom" />
+        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} advancedMode={advancedMode} variant="bottom" />
       </div>
 
       <ChatCopilot data={dataForCopilot} />

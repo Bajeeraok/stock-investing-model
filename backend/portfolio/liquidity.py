@@ -115,3 +115,95 @@ def compute_liquidity_scores(
         "illiquid_count": len(illiquid),
         "note": note,
     }
+
+
+def liquidity_metrics_for_ticker(
+    ticker: str,
+    shares: float,
+    *,
+    price: float | None = None,
+    fetch_close_volume=None,
+    lookback_days: int = 63,
+) -> dict[str, Any]:
+    """ADV-based days-to-exit for a single ticker + share count (watchlist / risk-sized row)."""
+    if not ticker or shares <= 0:
+        return {
+            "days_to_exit": None,
+            "liquidity_score": None,
+            "flag": None,
+            "avg_daily_volume": None,
+        }
+    if fetch_close_volume is None:
+        from signals.fetcher import fetch_ohlcv_with_volume
+        fetch_close_volume = lambda t, p: fetch_ohlcv_with_volume(t, p)
+
+    try:
+        close, volume = fetch_close_volume(ticker, "3m")
+        if volume is not None and len(volume) >= 20:
+            adv = float(volume.tail(lookback_days).mean())
+            if price is None and close is not None and not close.empty:
+                price = float(close.iloc[-1])
+        else:
+            adv = None
+    except Exception:
+        adv = None
+
+    if adv is None or adv <= 0:
+        return {
+            "days_to_exit": None,
+            "liquidity_score": None,
+            "flag": "No volume data",
+            "avg_daily_volume": None,
+        }
+
+    tradeable_per_day = adv * PARTICIPATION_RATE
+    days_to_exit = shares / tradeable_per_day if tradeable_per_day > 0 else 999.0
+
+    if days_to_exit < 0.5:
+        score = 1
+    elif days_to_exit < 1:
+        score = 2
+    elif days_to_exit < 3:
+        score = 3
+    elif days_to_exit < 7:
+        score = 4
+    else:
+        score = 5
+
+    flag = None
+    if days_to_exit > 5:
+        flag = f">{days_to_exit:.0f}d to exit"
+    elif days_to_exit > 2:
+        flag = f"{days_to_exit:.1f}d to exit"
+
+    return {
+        "days_to_exit": round(days_to_exit, 1),
+        "liquidity_score": score,
+        "flag": flag,
+        "avg_daily_volume": round(adv),
+        "avg_daily_dollar_volume": round(adv * price) if price else None,
+    }
+
+
+def enrich_results_liquidity(results: list[dict], *, fetch_close_volume=None) -> None:
+    """Attach liquidity_* fields to dashboard signal rows (in-place)."""
+    for r in results:
+        if r.get("error"):
+            continue
+        ticker = r.get("ticker")
+        rs = r.get("risk_sizing") or {}
+        shares = float(rs.get("shares") or 0)
+        close = r.get("close")
+        if shares <= 0 and close and close > 0:
+            # Nominal $5k probe when portfolio sizing unavailable
+            shares = max(1.0, round(5000.0 / float(close)))
+        metrics = liquidity_metrics_for_ticker(
+            ticker,
+            shares,
+            price=float(close) if close else None,
+            fetch_close_volume=fetch_close_volume,
+        )
+        r["liquidity_days_to_exit"] = metrics.get("days_to_exit")
+        r["liquidity_score"] = metrics.get("liquidity_score")
+        r["liquidity_flag"] = metrics.get("flag")
+        r["liquidity_adv"] = metrics.get("avg_daily_volume")

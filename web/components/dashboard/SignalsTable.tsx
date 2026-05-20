@@ -5,6 +5,9 @@ import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
 import {
   CompactSignalActionStrip,
+  buildSignalListGates,
+  filterPrimaryTradingGates,
+  TradingGateMiniPills,
   type SignalListContext,
 } from "./retailActionUX";
 
@@ -253,6 +256,55 @@ const DEFAULT_HORIZONS = {
 };
 
 const SIGNALS_SORT_STORAGE_KEY = "thrive-signals-sort";
+const SIGNALS_MODEL_DETAIL_KEY = "thrive-signals-model-detail";
+const SIGNALS_PRESET_KEY = "thrive-signals-preset";
+
+export type SignalsPresetId = "all" | "pullback_buys" | "trim_candidates" | "earnings_week";
+
+const SIGNAL_PRESETS: { id: SignalsPresetId; label: string; hint: string }[] = [
+  { id: "all", label: "All watchlist", hint: "Full watchlist" },
+  { id: "pullback_buys", label: "Pullback buys", hint: "UP regime · RSI < 50 · score ≥ 55" },
+  { id: "trim_candidates", label: "Trim candidates", hint: "Score < 40 or REDUCE/AVOID signal" },
+  { id: "earnings_week", label: "Earnings week", hint: "Report within 7 days or caution window" },
+];
+
+function matchesPreset(signal: Signal, preset: SignalsPresetId): boolean {
+  if (preset === "all") return true;
+  const score = signal.confluence_score ?? signal.composite_buy ?? 0;
+  const sig = (signal.signal ?? "").toUpperCase();
+  if (preset === "pullback_buys") {
+    return signal.regime === "UP" && (signal.rsi ?? 100) < 50 && score >= 55;
+  }
+  if (preset === "trim_candidates") {
+    return score < 40 || sig === "REDUCE" || sig === "AVOID" || sig === "SELL";
+  }
+  if (preset === "earnings_week") {
+    return Boolean(signal.earnings_caution) || (signal.earnings_days_until != null && signal.earnings_days_until <= 7);
+  }
+  return true;
+}
+
+function LiquidityCell({ signal: r }: { signal: Signal }) {
+  const days = r.liquidity_days_to_exit;
+  const score = r.liquidity_score;
+  if (days == null && score == null) {
+    return <span className="text-slate-600 text-xs">—</span>;
+  }
+  const color =
+    score != null && score >= 4
+      ? "text-amber-300"
+      : score != null && score <= 2
+        ? "text-emerald-300"
+        : "text-slate-300";
+  return (
+    <div className="text-xs space-y-0.5" title={r.liquidity_flag ?? "Days to exit at 20% of average daily volume"}>
+      <span className={clsx("font-medium tabular-nums", color)}>
+        {days != null ? `${days.toFixed(1)}d` : "—"}
+      </span>
+      {score != null && <span className="text-[10px] text-slate-500 block">LIS {score}/5</span>}
+    </div>
+  );
+}
 
 export type SignalsSortKey = "ticker" | "score" | "regime" | "rsi";
 
@@ -284,6 +336,49 @@ export function SignalsTable({
   const [sortBy, setSortBy] = useState<SignalsSortKey>("score");
   const [scoreRsiDir, setScoreRsiDir] = useState<"asc" | "desc">("desc");
   const [openMobileTicker, setOpenMobileTicker] = useState<string | null>(null);
+  const [showModelDetail, setShowModelDetail] = useState(false);
+  const [preset, setPreset] = useState<SignalsPresetId>("all");
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_PRESET_KEY) : null;
+      if (raw === "all" || raw === "pullback_buys" || raw === "trim_candidates" || raw === "earnings_week") {
+        setPreset(raw);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const applyPreset = (id: SignalsPresetId) => {
+    setPreset(id);
+    try {
+      localStorage.setItem(SIGNALS_PRESET_KEY, id);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_MODEL_DETAIL_KEY) : null;
+      if (raw === "1") setShowModelDetail(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleModelDetail = () => {
+    setShowModelDetail((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(SIGNALS_MODEL_DETAIL_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     try {
@@ -317,8 +412,13 @@ export function SignalsTable({
   const sortHint =
     "Sort: click column headers on desktop. Confluence / RSI: click again to flip high→low.";
 
+  const filtered = useMemo(
+    () => signals.filter((s) => matchesPreset(s, preset)),
+    [signals, preset]
+  );
+
   const sorted = useMemo(() => {
-    const arr = [...signals];
+    const arr = [...filtered];
     const dir = scoreRsiDir === "desc" ? 1 : -1;
     arr.sort((a, b) => {
       if (sortBy === "ticker") return (a.ticker ?? "").localeCompare(b.ticker ?? "");
@@ -333,14 +433,50 @@ export function SignalsTable({
       return 0;
     });
     return arr;
-  }, [signals, sortBy, scoreRsiDir]);
+  }, [filtered, sortBy, scoreRsiDir]);
 
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700">
-        <p className="hidden md:block text-[11px] text-slate-500">{sortHint}</p>
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="text-xs text-slate-400">Preset:</span>
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">View</span>
+          {SIGNAL_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              title={p.hint}
+              onClick={() => applyPreset(p.id)}
+              className={clsx(
+                "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                preset === p.id
+                  ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
+                  : "border-slate-600 text-slate-400 hover:text-slate-200"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+          <span className="text-[10px] text-slate-600 ml-1">
+            {sorted.length}/{signals.length}
+          </span>
+        </div>
+        <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate">
+          {showModelDetail ? sortHint : "Retail view — Now · Action is the official read."}
+        </p>
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <button
+            type="button"
+            onClick={toggleModelDetail}
+            className={clsx(
+              "text-xs px-2.5 py-1.5 sm:py-1 rounded border min-h-[44px] sm:min-h-0 touch-manipulation",
+              showModelDetail
+                ? "border-violet-500/40 bg-violet-500/10 text-violet-200"
+                : "border-slate-600 text-slate-400 hover:text-slate-200"
+            )}
+          >
+            {showModelDetail ? "Retail view" : "Model detail"}
+          </button>
+          <span className="text-xs text-slate-400">Sort:</span>
           <select
             value={sortBy}
             onChange={(e) => applySort(e.target.value as SignalsSortKey)}
@@ -419,7 +555,7 @@ export function SignalsTable({
               )}>
                 {r.regime ?? "-"}
               </span>
-              <span className="text-[9px] text-slate-600 uppercase tracking-wide">Tech+ML</span>
+              <span className="text-[9px] text-slate-600 uppercase tracking-wide">Confluence tier</span>
               <SignalBadge signal={r.signal} />
               {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
             </div>
@@ -486,7 +622,7 @@ export function SignalsTable({
 
       {/* Desktop: table with sticky header + sticky first column */}
       <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[1380px] text-sm border-collapse">
+        <table className={clsx("w-full text-sm border-collapse", showModelDetail ? "min-w-[1380px]" : "min-w-[820px]")}>
           <thead>
             <tr className="text-left text-base text-slate-400">
               <th
@@ -506,6 +642,32 @@ export function SignalsTable({
                 Close
               </th>
               <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[14rem]"
+                title="Official read — behavioral action + trading gate checklist (same as ticker One Answer tab)"
+              >
+                Now · Action
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[8rem]"
+                title="Valuation / regime / momentum / ML gate pills"
+              >
+                Gates
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[4.5rem]"
+                title="Days to exit at 20% of average daily volume (risk-sized shares or $5k probe)"
+              >
+                Liquidity
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left"
+                title="Earnings caution window, days to report, and FMP-based earnings quality (EQ) when available"
+              >
+                Earnings
+              </th>
+              {showModelDetail && (
+                <>
+              <th
                 className="sticky top-0 z-[20] min-w-[7.5rem] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 text-left cursor-help"
                 title={`Risk budget = ${riskSizing?.risk_pct ?? 1}% of portfolio if stop hits; notional position = budget ÷ (stop %).`}
               >
@@ -524,9 +686,6 @@ export function SignalsTable({
                 >
                   Confluence{sortBy === "score" ? (scoreRsiDir === "desc" ? " ↓" : " ↑") : ""}
                 </button>
-              </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
-                LIS
               </th>
               <th
                 scope="col"
@@ -555,28 +714,16 @@ export function SignalsTable({
                 </button>
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[15rem]"
-                title="Behavioral action + trading gate checklist (same engine as ticker detail modal)"
-              >
-                Now · Action
-              </th>
-              <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[7rem]"
-                title="7-layer confidence action — same model as the Roadmaps tab and ticker detail (not the old confluence-only tier)."
+                title="7-layer confidence action — same model as the Roadmaps tab (supporting detail, not the official Now read)."
               >
-                Plan (7L)
+                Model plan
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help whitespace-nowrap"
-                title="Confluence + ML short-term tier (technical alignment). Can differ from Plan when ML is weak or regime gates apply."
+                title="Confluence + ML short-term tier (supporting detail). Can differ from Now · Action when gates block."
               >
-                Tech+ML
-              </th>
-              <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left"
-                title="Earnings caution window, days to report, and FMP-based earnings quality (EQ) when available"
-              >
-                Earnings
+                Confluence tier
               </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Positioning
@@ -586,7 +733,7 @@ export function SignalsTable({
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 min-w-[11rem]"
-                title="Horizon cues (ST/MT/LT) — aligned with Plan when plan says reduce/avoid."
+                title="Horizon cues (ST/MT/LT)"
               >
                 Horizons ST / MT / LT
               </th>
@@ -596,6 +743,8 @@ export function SignalsTable({
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Notes
               </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -647,6 +796,25 @@ export function SignalsTable({
                 >
                   {r.close != null ? `$${r.close.toFixed(2)}` : "-"}
                 </td>
+                <td className="px-3 py-2.5 align-top">
+                  <CompactSignalActionStrip
+                    signal={r}
+                    listContext={gateContext}
+                    oneLiner={tickerActions?.[r.ticker]?.one_liner}
+                    variant="column"
+                  />
+                </td>
+                <td className="px-3 py-2.5 align-top">
+                  <TradingGateMiniPills gates={filterPrimaryTradingGates(buildSignalListGates(r, gateContext))} />
+                </td>
+                <td className="px-3 py-2.5 align-top">
+                  <LiquidityCell signal={r} />
+                </td>
+                <td className="px-3 py-2.5 align-top text-xs">
+                  <EarningsCell signal={r} />
+                </td>
+                {showModelDetail && (
+                  <>
                 <td
                   className="px-3 py-2.5 text-xs text-slate-300 align-top"
                   title={
@@ -677,9 +845,6 @@ export function SignalsTable({
                 <td className="px-3 py-2.5">
                   <ConfluenceCell signal={r} />
                 </td>
-                <td className="px-4 py-3 text-slate-500 text-sm" title="Liquidity score – placeholder for future">
-                  –
-                </td>
                 <td className="px-4 py-3 text-slate-300">{r.rsi != null ? r.rsi.toFixed(1) : "-"}</td>
                 <td className="px-3 py-2.5">
                   <span
@@ -693,22 +858,11 @@ export function SignalsTable({
                     {r.regime ?? "-"}
                   </span>
                 </td>
-                <td className="px-3 py-2.5 align-top">
-                  <CompactSignalActionStrip
-                    signal={r}
-                    listContext={gateContext}
-                    oneLiner={tickerActions?.[r.ticker]?.one_liner}
-                    variant="column"
-                  />
-                </td>
                 <td className="px-3 py-2.5 align-top max-w-[10.5rem]">
                   <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />
                 </td>
                 <td className="px-3 py-2.5 align-top">
                   <SignalBadge signal={r.signal} />
-                </td>
-                <td className="px-3 py-2.5 align-top text-xs">
-                  <EarningsCell signal={r} />
                 </td>
                 <td className="px-4 py-3 text-sm text-slate-400" title="COT positioning (GLD/SLV/USO)">
                   {cotByTicker?.[r.ticker] ?? "–"}
@@ -813,11 +967,13 @@ export function SignalsTable({
                           : "• Positioning: Crowded Short (CFTC) — specs very short, reversal risk."}
                       </span>
                       <span className="block text-amber-100/95 text-sm mt-1 font-medium" title="From CFTC Commitment of Traders report: speculative (non-commercial) % of open interest. ≥45% long or short = extreme.">
-                        What it means: Speculators’ net position in the related commodity is extreme (≥45% of open interest). Often a contrarian signal; consider not adding size.
+                        What it means: Speculators' net position in the related commodity is extreme (≥45% of open interest). Often a contrarian signal; consider not adding size.
                       </span>
                     </span>
                   )}
                 </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>

@@ -39,11 +39,13 @@ import {
   TradingGateStatus,
 } from "./retailActionUX";
 import { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProjectionChart";
+import { StreetVsModelBar } from "./StreetVsModelBar";
+import { PositionIntentChip } from "./PositionIntentChip";
 
 const STRENGTH_CONVICTION_HINT =
-  "Strength = this horizonâ€™s ML signal tier (how bullish the model read is for that specific window). " +
+  "Strength = this horizon's ML signal tier (how bullish the model read is for that specific window). " +
   "Conviction = how confident the fused stack is about acting on that horizon (timing / sizing). " +
-  "They can disagree: e.g. a statistically strong 3â€‘month window can still show Low conviction if regime or other layers want more proof.";
+  "They can disagree: e.g. a statistically strong 3-month window can still show Low conviction if regime or other layers want more proof.";
 
 function horizonVerdictPillClass(v: string | undefined): string {
   const u = String(v || "").toUpperCase();
@@ -86,14 +88,14 @@ export interface OneAnswer {
     momentum_risk_pct?: number;
     catalyst_active?: boolean;
   } | null;
-  /** Strong non-bull HMM vs price at highs â€” regime is macro-heavy, not necessarily name weakness. */
+  /** Strong non-bull HMM vs price at highs — regime is macro-heavy, not necessarily name weakness. */
   ath_macro_regime_disconnect?: {
     active: boolean;
     headline: string;
     detail: string;
     non_bull_pct?: number;
   } | null;
-  /** Retail: hold 5â€“10y vs take profits â€” education + tie-in to todayâ€™s signals */
+  /** Retail: hold 5–10y vs take profits — education + tie-in to today's signals */
   hold_vs_trade?: {
     title: string;
     long_term: string;
@@ -140,7 +142,7 @@ export interface FairValueVsExternal {
   fmp_consensus_low_usd?: number | null;
   fmp_consensus_high_usd?: number | null;
   fmp_consensus_median_usd?: number | null;
-  /** True when median was inferred as (low+high)/2 â€” label as range midpoint, not analyst median. */
+  /** True when median was inferred as (low+high)/2 — label as range midpoint, not analyst median. */
   fmp_median_is_range_midpoint?: boolean | null;
   pct_model_vs_fmp_median?: number | null;
   note?: string | null;
@@ -149,7 +151,7 @@ export interface FairValueVsExternal {
 export interface InvestorDecisionSummary {
   fair_value: number;
   overall_verdict: "WAIT" | "WATCH" | "BUY" | "STRONG BUY";
-  /** HMM label when provided by API (e.g. Bull / Non-bull) â€” optional display */
+  /** HMM label when provided by API (e.g. Bull / Non-bull) — optional display */
   regime_hmm_label?: string | null;
   regime_bull_pct?: number | null;
   model_confidence_pct?: number | null;
@@ -363,7 +365,7 @@ function HorizonCard({
           className: "cursor-help border-b border-dotted border-slate-500/50",
           title: STRENGTH_CONVICTION_HINT,
         },
-        `${horizon.signal} strength Â· ${horizon.conviction} conviction`
+        `${horizon.signal} strength · ${horizon.conviction} conviction`
       ),
       React.createElement(
         "span",
@@ -371,11 +373,11 @@ function HorizonCard({
         React.createElement(Info, { className: "h-3.5 w-3.5 text-slate-500 cursor-help" })
       )
     ),
-    React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `Entry: $${ez.low.toFixed(2)} â€“ $${ez.high.toFixed(2)}`),
+    React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `Entry: $${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
     React.createElement(
       "p",
       { className: "text-slate-500 text-xs", title: "ML probabilities can vary day-to-day as new price and volume data are included; large moves may reflect updated features rather than a change in thesis." },
-      `Target: +${horizon.target_pct.toFixed(0)}% Â· ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`
+      `Target: +${horizon.target_pct.toFixed(0)}% · ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`
     ),
     hasStop &&
       React.createElement(
@@ -383,11 +385,11 @@ function HorizonCard({
         {
           className: "text-slate-500 text-xs mt-0.5",
           title: structuralStop
-            ? horizon.stop_loss_framing || "52-week stress floor â€” not a day-to-day trailing stop"
+            ? horizon.stop_loss_framing || "52-week stress floor — not a day-to-day trailing stop"
             : undefined,
         },
         structuralStop
-          ? `Structural invalidation (52w stress floor): ~$${Number(horizon.stop_loss).toFixed(2)} â€” not a normal trailing stop`
+          ? `Structural invalidation (52w stress floor): ~$${Number(horizon.stop_loss).toFixed(2)} — not a normal trailing stop`
           : `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
       ),
     React.createElement(
@@ -461,7 +463,7 @@ function HorizonCard({
                   "p",
                   { className: "text-[10px] text-slate-500 leading-snug" },
                   React.createElement("span", { className: "font-medium text-slate-400" }, "Structural floor: "),
-                  `$${entryTiers.structural_invalidation.price.toFixed(2)} â€” ${entryTiers.structural_invalidation.note}`
+                  `$${entryTiers.structural_invalidation.price.toFixed(2)} — ${entryTiers.structural_invalidation.note}`
                 )
               )
           )
@@ -473,10 +475,10 @@ function HorizonCard({
 function anchorSnippet(anchor: string | undefined, max = 160): string {
   if (!anchor || !anchor.trim()) return "";
   const t = anchor.trim();
-  return t.length <= max ? t : `${t.slice(0, max).trim()}â€¦`;
+  return t.length <= max ? t : `${t.slice(0, max).trim()}…`;
 }
 
-/** Retail-focused buy band vs spot vs risk floors â€” uses short-term horizon entry_zone + stops from API. */
+/** Retail-focused buy band vs spot vs risk floors — uses short-term horizon entry_zone + stops from API. */
 function BuyRangeRetailCard({
   currentPrice,
   short,
@@ -499,7 +501,7 @@ function BuyRangeRetailCard({
     (long?.stop_loss != null && long.stop_loss > 0 ? long.stop_loss : null);
   const stress = stressRaw != null && stressRaw > 0 ? stressRaw : null;
 
-  let statusLabel = "â€”";
+  let statusLabel = "—";
   let statusBadgeClass =
     "text-[11px] px-2 py-0.5 rounded border font-semibold border-slate-500/40 bg-slate-600/20 text-slate-300";
   if (currentPrice > 0) {
@@ -560,7 +562,7 @@ function BuyRangeRetailCard({
           React.createElement(
             "p",
             { className: "text-[11px] text-slate-500 mt-0.5" },
-            "Near-term buy band vs todayâ€™s price â€” green range comes from the same support / VWAP logic as your stops."
+            "Near-term buy band vs today's price — green range comes from the same support / VWAP logic as your stops."
           )
         )
       ),
@@ -589,7 +591,7 @@ function BuyRangeRetailCard({
         React.createElement(
           "p",
           { className: "text-xl font-bold font-mono text-emerald-100 tracking-tight" },
-          `$${low.toFixed(2)} â€“ $${high.toFixed(2)}`
+          `$${low.toFixed(2)} – $${high.toFixed(2)}`
         ),
         ez.quality
           ? React.createElement(
@@ -634,7 +636,7 @@ function BuyRangeRetailCard({
         React.createElement(
           "p",
           { className: "text-xl font-bold font-mono text-slate-100 tracking-tight" },
-          currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : "â€”"
+          currentPrice > 0 ? `$${currentPrice.toFixed(2)}` : "—"
         ),
         React.createElement(
           "p",
@@ -702,7 +704,7 @@ function BuyRangeRetailCard({
             React.createElement(
               "p",
               { className: "text-[10px] text-slate-500 mt-1 leading-snug" },
-              "Rough ceiling from long-term margin-of-safety rule â€” stricter than the near-term band."
+              "Rough ceiling from long-term margin-of-safety rule — stricter than the near-term band."
             )
           ),
         (rr != null || (stStop != null && short.target > 0)) &&
@@ -759,7 +761,7 @@ function BuyRangeRetailCard({
             React.createElement(
               "p",
               { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
-              "Break here challenges the tactical setup â€” not where we aim to initiate."
+              "Break here challenges the tactical setup — not where we aim to initiate."
             )
           ),
         stress != null &&
@@ -780,7 +782,7 @@ function BuyRangeRetailCard({
               "p",
               { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
               long?.stop_loss_kind === "structural_invalidation"
-                ? "Tail-risk / thesis-break reference â€” not an entry zone."
+                ? "Tail-risk / thesis-break reference — not an entry zone."
                 : "Long-horizon floor reference."
             )
           )
@@ -807,10 +809,14 @@ export function InvestorDecisionSummarySection({
   onToggleLtTiers,
   priceHistory,
   ticker,
+  ma20,
+  ma50,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
   ma200?: number | null;
+  ma20?: number | null;
+  ma50?: number | null;
   sector?: string | null;
   companyName?: string | null;
   ltEntryTiersOpen: boolean;
@@ -860,14 +866,14 @@ export function InvestorDecisionSummarySection({
   const hasDivergence = verdicts.length >= 2 && new Set(verdicts).size > 1;
   const divergenceMessage =
     short?.verdict === "WATCH" && medium?.verdict === "BUY" && long?.verdict === "WATCH"
-      ? "Short and long are cautious; medium-term setup is stronger â€” consider entry on pullbacks."
+      ? "Short and long are cautious; medium-term setup is stronger — consider entry on pullbacks."
       : hasDivergence
-        ? "Horizons disagree â€” short/medium/long use different inputs (RSI, volume, ML). Prefer the horizon that matches your holding period."
+        ? "Horizons disagree — short/medium/long use different inputs (RSI, volume, ML). Prefer the horizon that matches your holding period."
         : null;
   const swingVsShortLift =
     String(short?.verdict || "").toUpperCase() === "WAIT" &&
     String(medium?.verdict || "").toUpperCase() === "WATCH";
-  // When pattern_score is 0, the card already shows "Confluence" fallback â€” avoid duplicate "Pattern score low (0/100)" block
+  // When pattern_score is 0, the card already shows "Confluence" fallback — avoid duplicate "Pattern score low (0/100)" block
   const patternLow = pattern_score != null && pattern_score > 0 && pattern_score < 50;
   const tldr = summary.trade_roadmap?.tldr ?? null;
   const dual = tldr?.dual_signal ?? null;
@@ -954,7 +960,7 @@ export function InvestorDecisionSummarySection({
     ...(patternLow
       ? [{
           severity: "info" as const,
-          message: `Pattern reads ${Math.round(Number(pattern_score))}/100 â€” expand â€œWhy this score?â€ below (often regime-weighted, not â€œbad companyâ€).`,
+          message: `Pattern reads ${Math.round(Number(pattern_score))}/100 — expand "Why this score?" below (often regime-weighted, not "bad company").`,
         }]
       : []),
     ...(hasDivergence && divergenceMessage
@@ -989,9 +995,9 @@ export function InvestorDecisionSummarySection({
   );
   const whyBullets = (Array.isArray(one_answer?.why_this_call) ? one_answer.why_this_call : []).slice(0, 2);
   const marketSummary = dual?.bridge_note || tldr?.strategy || "Regime context is mixed.";
-  const chartSummary = `Pattern ${Math.round(Number(pattern_score ?? 50))}/100 Â· Short ${short?.verdict || "N/A"} Â· ML ${Number(medium?.ml_prob ?? 0).toFixed(0)}%`;
+  const chartSummary = `Pattern ${Math.round(Number(pattern_score ?? 50))}/100 · Short ${short?.verdict || "N/A"} · ML ${Number(medium?.ml_prob ?? 0).toFixed(0)}%`;
   const flowSummary = `Confidence ${medium?.conviction || "mixed"} / ${long?.conviction || "mixed"}`;
-  const businessSummary = `Long verdict ${long?.verdict || "N/A"} Â· FV gap ${assessmentPct >= 0 ? "+" : ""}${assessmentPct.toFixed(1)}%`;
+  const businessSummary = `Long verdict ${long?.verdict || "N/A"} · FV gap ${assessmentPct >= 0 ? "+" : ""}${assessmentPct.toFixed(1)}%`;
   const gateRows: Array<{ label: string; value: number | null; target: number; unit: "%" | "pts" }> = [
     { label: "Regime", value: regime_bull_pct ?? null, target: 60, unit: "%" },
     { label: "Pattern", value: pattern_score ?? null, target: 60, unit: "pts" },
@@ -1060,6 +1066,75 @@ export function InvestorDecisionSummarySection({
             : " — sit on your hands until more gates clear.")
       )
     ),
+    ticker &&
+      React.createElement(
+        "div",
+        { className: "px-4 pt-2 pb-0 border-b border-slate-700/80" },
+        React.createElement(PositionIntentChip, { ticker })
+      ),
+    one_answer &&
+      React.createElement(
+        "div",
+        { className: "p-4 border-b border-slate-700/80 bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-900/40" },
+        React.createElement(
+          "div",
+          { className: "flex items-center justify-between gap-2 flex-wrap mb-2" },
+          React.createElement(
+            "h3",
+            { className: "flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wide" },
+            React.createElement(Zap, { className: "h-3.5 w-3.5 text-emerald-500" }),
+            " One answer"
+          ),
+          React.createElement(
+            "span",
+            {
+              className:
+                overall_verdict === "STRONG BUY" || overall_verdict === "BUY"
+                  ? "text-[11px] px-2 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-semibold"
+                  : overall_verdict === "WATCH"
+                    ? "text-[11px] px-2 py-0.5 rounded border border-teal-500/55 bg-teal-500/10 text-teal-200 font-semibold"
+                    : overall_verdict === "WAIT"
+                      ? "text-[11px] px-2 py-0.5 rounded border border-red-500/55 bg-red-500/10 text-red-200 font-semibold"
+                      : "text-[11px] px-2 py-0.5 rounded border border-slate-500/40 bg-slate-500/15 text-slate-300 font-semibold",
+            },
+            overall_verdict
+          )
+        ),
+        one_answer.bottom_line &&
+          React.createElement(
+            "p",
+            { className: "text-sm font-semibold text-emerald-200/95 leading-snug mb-2" },
+            one_answer.bottom_line
+          ),
+        React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
+        one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline)
+      ),
+    (short?.target || medium?.target || long?.target) &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-4 border-b border-slate-700/80" },
+        React.createElement(HorizonProjectionChart, {
+          ticker,
+          currentPrice,
+          priceHistory: priceHistory ?? [],
+          short,
+          medium,
+          long,
+          fairValue: fair_value,
+          ma20,
+          ma50,
+        })
+      ),
+    fve &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-4 border-b border-slate-700/80" },
+        React.createElement(StreetVsModelBar, {
+          modelFairValue: fair_value,
+          currentPrice,
+          external: fve,
+        })
+      ),
     React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700/80" },
@@ -1078,20 +1153,6 @@ export function InvestorDecisionSummarySection({
         rsi: rsi ?? null,
       })
     ),
-    (short?.target || medium?.target || long?.target) &&
-      React.createElement(
-        "div",
-        { className: "px-4 pb-4 border-b border-slate-700/80" },
-        React.createElement(HorizonProjectionChart, {
-          ticker,
-          currentPrice,
-          priceHistory: priceHistory ?? [],
-          short,
-          medium,
-          long,
-          fairValue: fair_value,
-        })
-      ),
     React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
     long?.entry_tiers?.tiers?.length
       ? React.createElement(
@@ -1124,31 +1185,13 @@ export function InvestorDecisionSummarySection({
         })
       )
     ),
-    /* One Answer card (top) */
+    /* One Answer — detail (headline shown above chart) */
     one_answer && React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700/80 bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-900/40" },
-      React.createElement("h3", { className: "flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2" },
-        React.createElement(Zap, { className: "h-3.5 w-3.5 text-emerald-500" }),
-        " One answer"
-      ),
       React.createElement(
         "div",
         { className: "flex items-center justify-between gap-2 flex-wrap mb-2" },
-        React.createElement(
-          "span",
-          {
-            className:
-              overall_verdict === "STRONG BUY" || overall_verdict === "BUY"
-                ? "text-[11px] px-2 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-semibold"
-                : overall_verdict === "WATCH"
-                  ? "text-[11px] px-2 py-0.5 rounded border border-teal-500/55 bg-teal-500/10 text-teal-200 font-semibold"
-                  : overall_verdict === "WAIT"
-                    ? "text-[11px] px-2 py-0.5 rounded border border-red-500/55 bg-red-500/10 text-red-200 font-semibold"
-                    : "text-[11px] px-2 py-0.5 rounded border border-slate-500/40 bg-slate-500/15 text-slate-300 font-semibold",
-          },
-          overall_verdict
-        ),
         React.createElement(
           "span",
           {
@@ -1157,7 +1200,7 @@ export function InvestorDecisionSummarySection({
                 ? "text-[11px] text-emerald-300 font-medium cursor-help"
                 : "text-[11px] text-red-300 font-medium cursor-help",
             title:
-              "Undervalued / overvalued here means current price vs this cardâ€™s model fair value only. The Details tab may still say REDUCE if regime, chart, or other layers argue for smaller size today.",
+              "Undervalued / overvalued here means current price vs this card's model fair value only. The Details tab may still say REDUCE if regime, chart, or other layers argue for smaller size today.",
           },
           `${Math.abs(assessmentPct).toFixed(1)}% ${assessmentPct >= 0 ? "undervalued" : "overvalued"}`
         )
@@ -1167,9 +1210,9 @@ export function InvestorDecisionSummarySection({
         {
           className: "text-[10px] text-slate-500 leading-snug mb-2 cursor-help",
           title:
-            "Cheap vs fair value answers â€˜margin of safety on the model anchor.â€™ Verdict and confidence answer â€˜do we want full size right now?â€™ â€” both can disagree until the tape improves.",
+            "Cheap vs fair value answers 'margin of safety on the model anchor.' Verdict and confidence answer 'do we want full size right now?' — both can disagree until the tape improves.",
         },
-        "You can be undervalued on this line and still see WATCH or REDUCE elsewhere â€” that usually means value without timing yet, not a broken model.",
+        "You can be undervalued on this line and still see WATCH or REDUCE elsewhere — that usually means value without timing yet, not a broken model.",
       ),
       confidenceNearlyThere &&
         React.createElement(
@@ -1183,12 +1226,12 @@ export function InvestorDecisionSummarySection({
             "p",
             { className: "text-[11px] font-semibold text-violet-200 mb-0.5 flex items-center gap-1.5" },
             React.createElement("span", { className: "inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" }),
-            "Nearly there â€” confidence gate"
+            "Nearly there — confidence gate"
           ),
           React.createElement(
             "p",
             { className: "text-[11px] text-violet-100/95 leading-snug" },
-            `Fused model confidence is ${Math.round(Number(confidenceBandMid))}% vs ${CONFIDENCE_GATE_TARGET}% used here â€” youâ€™re within about ${Math.ceil(Number(ptsToConfidenceGate))} point${Math.ceil(Number(ptsToConfidenceGate)) === 1 ? "" : "s"}. Fresh sessions often move this; worth a quick revisit.`
+            `Fused model confidence is ${Math.round(Number(confidenceBandMid))}% vs ${CONFIDENCE_GATE_TARGET}% used here — you're within about ${Math.ceil(Number(ptsToConfidenceGate))} point${Math.ceil(Number(ptsToConfidenceGate)) === 1 ? "" : "s"}. Fresh sessions often move this; worth a quick revisit.`
           )
         ),
       one_answer.momentum_valuation_tension?.active &&
@@ -1266,14 +1309,6 @@ export function InvestorDecisionSummarySection({
         { className: "text-[11px] text-slate-400 mb-1" },
         `${companyName || "This ticker"}${sector ? ` â€¢ ${sector}` : ""} â€¢ $${currentPrice.toFixed(2)} â€¢ Fair value $${fair_value.toFixed(2)}`
       ),
-      one_answer.bottom_line &&
-        React.createElement(
-          "p",
-          { className: "text-sm font-semibold text-emerald-200/95 leading-snug mb-2" },
-          one_answer.bottom_line
-        ),
-      React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
-      one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline),
       /* --- WHY THIS CALL (promoted) --- */
       whyBullets.length > 0 &&
         React.createElement(
@@ -1287,7 +1322,7 @@ export function InvestorDecisionSummarySection({
               React.createElement(
                 "li",
                 { key: i, className: "flex items-start gap-2" },
-                React.createElement("span", { className: "text-emerald-400 shrink-0 mt-0.5" }, "â€º"),
+                React.createElement("span", { className: "text-emerald-400 shrink-0 mt-0.5" }, "›"),
                 React.createElement("span", null, line)
               )
             )
@@ -1362,7 +1397,7 @@ export function InvestorDecisionSummarySection({
                 React.createElement(
                   "span",
                   { className: "font-mono text-slate-300" },
-                  `$${Number(s.price_zone_low).toFixed(2)}â€“$${Number(s.price_zone_high).toFixed(2)}`
+                  `$${Number(s.price_zone_low).toFixed(2)}–$${Number(s.price_zone_high).toFixed(2)}`
                 ),
                 s.position_pct > 0 &&
                   React.createElement(
@@ -1571,7 +1606,7 @@ export function InvestorDecisionSummarySection({
                     className:
                       "text-[10px] text-slate-500 mt-1.5 leading-snug border-t border-slate-700/50 pt-1.5",
                   },
-                  "Raw score measures chart structure â€” see ",
+                  "Raw score measures chart structure — see ",
                   React.createElement(
                     "span",
                     { className: "text-sky-300/90 font-medium" },
@@ -1634,7 +1669,7 @@ export function InvestorDecisionSummarySection({
             React.createElement(
               "div",
               { className: "px-3 pb-3 pt-0 space-y-2 text-xs text-slate-400 leading-relaxed border-t border-slate-700/50" },
-              React.createElement("p", { className: "text-slate-300 mt-2" }, React.createElement("span", { className: "font-medium text-slate-200" }, "Long-term (5â€“10+ yr): "), one_answer.hold_vs_trade.long_term),
+              React.createElement("p", { className: "text-slate-300 mt-2" }, React.createElement("span", { className: "font-medium text-slate-200" }, "Long-term (5–10+ yr): "), one_answer.hold_vs_trade.long_term),
               React.createElement("p", { className: "text-slate-300" }, React.createElement("span", { className: "font-medium text-slate-200" }, "Shorter-term / trading: "), one_answer.hold_vs_trade.short_term),
               React.createElement("p", { className: "text-sky-200/90 border-l-2 border-sky-500/50 pl-2" }, one_answer.hold_vs_trade.signal_bridge),
               React.createElement("p", { className: "text-slate-500 italic" }, one_answer.hold_vs_trade.disclaimer)
@@ -1657,7 +1692,7 @@ export function InvestorDecisionSummarySection({
         React.createElement(
           "p",
           { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-2" },
-          "Horizon verdicts â€” compare tickers at a glance"
+          "Horizon verdicts — compare tickers at a glance"
         ),
         React.createElement(
           "div",
@@ -1678,7 +1713,7 @@ export function InvestorDecisionSummarySection({
                   horizonVerdictPillClass(v),
               },
               React.createElement("span", { className: "text-slate-500 font-normal" }, `${label}:`),
-              v || "â€”"
+              v || "—"
             )
           )
         ),
@@ -1691,7 +1726,7 @@ export function InvestorDecisionSummarySection({
               role: "note",
             },
             React.createElement("span", { className: "font-semibold text-cyan-200" }, "Swing vs short-term: "),
-            "Medium is WATCH while Short is WAIT â€” the 3â€‘month ladder can still allow staged adds on pullbacks even when the 1â€‘month tape is guarded (e.g. growth vs a defensive where both horizons sit on WAIT). Match the row to your actual holding period."
+            "Medium is WATCH while Short is WAIT — the 3-month ladder can still allow staged adds on pullbacks even when the 1-month tape is guarded (e.g. growth vs a defensive where both horizons sit on WAIT). Match the row to your actual holding period."
           ),
         hasDivergence &&
           divergenceMessage &&
@@ -1760,15 +1795,15 @@ export function InvestorDecisionSummarySection({
           "Today: ", React.createElement("span", { className: "font-medium text-slate-200" }, trader_roadmap.action_today.replace(/_/g, " ")), "."
         ),
         trader_roadmap.short.entry_zone && React.createElement("p", { className: "text-slate-400" },
-          "Short (~1 mo): Entry $", trader_roadmap.short.entry_zone.low?.toFixed(2), "â€“$", trader_roadmap.short.entry_zone.high?.toFixed(2),
+          "Short (~1 mo): Entry $", trader_roadmap.short.entry_zone.low?.toFixed(2), "–$", trader_roadmap.short.entry_zone.high?.toFixed(2),
           trader_roadmap.short.target != null ? ` â†’ target $${trader_roadmap.short.target.toFixed(2)}` : "",
-          trader_roadmap.short.stop != null ? ` Â· stop $${trader_roadmap.short.stop.toFixed(2)}` : "",
+          trader_roadmap.short.stop != null ? ` · stop $${trader_roadmap.short.stop.toFixed(2)}` : "",
           ". ", trader_roadmap.short.trigger
         ),
         trader_roadmap.medium.entry_zone && React.createElement("p", { className: "text-slate-400" },
-          "Medium (3â€“6 mo): Entry $", trader_roadmap.medium.entry_zone.low?.toFixed(2), "â€“$", trader_roadmap.medium.entry_zone.high?.toFixed(2),
+          "Medium (3–6 mo): Entry $", trader_roadmap.medium.entry_zone.low?.toFixed(2), "–$", trader_roadmap.medium.entry_zone.high?.toFixed(2),
           trader_roadmap.medium.target != null ? ` â†’ target $${trader_roadmap.medium.target.toFixed(2)}` : "",
-          trader_roadmap.medium.stop != null ? ` Â· stop $${trader_roadmap.medium.stop.toFixed(2)}` : "",
+          trader_roadmap.medium.stop != null ? ` · stop $${trader_roadmap.medium.stop.toFixed(2)}` : "",
           ". ", trader_roadmap.medium.trigger
         )
       )
@@ -1800,8 +1835,8 @@ export function InvestorDecisionSummarySection({
           "Add: ",
           investor_roadmap.add_tiers
             .filter((t) => t.low != null && t.high != null)
-            .map((t) => `${t.label ?? t.id}: $${(t.low as number).toFixed(2)}â€“$${(t.high as number).toFixed(2)} (${t.allocation_pct ?? 0}%)`)
-            .join(" Â· ")
+            .map((t) => `${t.label ?? t.id}: $${(t.low as number).toFixed(2)}–$${(t.high as number).toFixed(2)} (${t.allocation_pct ?? 0}%)`)
+            .join(" · ")
         ),
         React.createElement("p", { className: "text-slate-400" },
           "Trim near $", investor_roadmap.trim_near.toFixed(2), ". ", investor_roadmap.hold_thesis

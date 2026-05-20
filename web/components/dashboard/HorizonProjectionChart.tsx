@@ -52,6 +52,24 @@ function chartStop(stop: number, current: number, kind: HorizonKey): number {
   return stop;
 }
 
+function addCalendarLabels(rows: ChartRow[], anchorDateStr: string): void {
+  const anchor = new Date(`${anchorDateStr}T12:00:00`);
+  if (Number.isNaN(anchor.getTime())) return;
+  for (const row of rows) {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() + row.day);
+    row.calendarLabel = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    if (row.day === 0) row.dateLabel = "Today";
+    else if (row.day > 0 && !row.dateLabel) row.dateLabel = row.calendarLabel;
+  }
+}
+
+function avgTail(values: number[], period: number): number | null {
+  if (values.length < period) return null;
+  const tail = values.slice(-period);
+  return tail.reduce((a, b) => a + b, 0) / tail.length;
+}
+
 function chartHigh(target: number, entryHigh: number, current: number): number {
   const candidates = [target, entryHigh, current].filter((n) => Number.isFinite(n) && n > 0);
   return Math.max(...candidates);
@@ -60,7 +78,10 @@ function chartHigh(target: number, entryHigh: number, current: number): number {
 type ChartRow = {
   day: number;
   dateLabel?: string;
+  calendarLabel?: string;
   price?: number | null;
+  ma20?: number | null;
+  ma50?: number | null;
   shortLow?: number;
   shortHigh?: number;
   shortMid?: number;
@@ -127,10 +148,13 @@ function buildChartRows(
 
   for (let i = 0; i < histLen; i++) {
     const day = i - histLen + 1;
+    const closesSoFar = hist.slice(0, i + 1).map((p) => p.close);
     rows.push({
       day,
       dateLabel: hist[i]?.date,
       price: hist[i]?.close ?? null,
+      ma20: avgTail(closesSoFar, 20),
+      ma50: avgTail(closesSoFar, 50),
     });
   }
 
@@ -163,6 +187,9 @@ function buildChartRows(
 
     rows.push(row);
   }
+
+  const anchorDate = hist[hist.length - 1]?.date ?? new Date().toISOString().slice(0, 10);
+  addCalendarLabels(rows, anchorDate);
 
   const tickDays = [
     -(histLen - 1),
@@ -199,7 +226,7 @@ function CustomTooltip({
     <div className="rounded-lg border border-slate-600 bg-slate-900/95 px-3 py-2 text-xs shadow-xl max-w-[220px]">
       <p className="text-slate-400 mb-1">
         {day < 0 ? `${Math.abs(day)}d ago` : day === 0 ? "Today" : `+${day}d`}
-        {row.dateLabel && day <= 0 ? ` · ${row.dateLabel}` : ""}
+        {row.dateLabel && day <= 0 ? ` · ${row.dateLabel}` : row.calendarLabel && day > 0 ? ` · ${row.calendarLabel}` : ""}
       </p>
       {row.price != null && (
         <p className="text-slate-100 font-medium">Price {fmtPrice(row.price)}</p>
@@ -227,6 +254,8 @@ export function HorizonProjectionChart({
   medium,
   long,
   fairValue,
+  ma20,
+  ma50,
 }: {
   ticker?: string;
   currentPrice: number;
@@ -235,12 +264,27 @@ export function HorizonProjectionChart({
   medium?: HorizonSignalPayload | null;
   long?: HorizonSignalPayload | null;
   fairValue?: number | null;
+  ma20?: number | null;
+  ma50?: number | null;
 }) {
   const [visible, setVisible] = useState<Record<HorizonKey, boolean>>({
     short: true,
     medium: true,
     long: true,
   });
+
+  const horizonMeta = (
+    [
+      { key: "short" as HorizonKey, h: short },
+      { key: "medium" as HorizonKey, h: medium },
+      { key: "long" as HorizonKey, h: long },
+    ] as const
+  ).filter((x) => x.h?.target);
+
+  const horizonDaySet = useMemo(
+    () => new Set(horizonMeta.map(({ h, key }) => parseHorizonDays(h!.duration, key))),
+    [horizonMeta]
+  );
 
   const { rows, tickDays } = useMemo(
     () => buildChartRows(currentPrice, priceHistory, short, medium, long),
@@ -272,16 +316,10 @@ export function HorizonProjectionChart({
 
   const hasHistory = priceHistory.length >= 5;
   const hasHorizons = short?.target || medium?.target || long?.target;
+  const showMa20 = ma20 != null && ma20 > 0;
+  const showMa50 = ma50 != null && ma50 > 0;
 
   if (!hasHorizons || currentPrice <= 0) return null;
-
-  const horizonMeta = (
-    [
-      { key: "short" as HorizonKey, h: short },
-      { key: "medium" as HorizonKey, h: medium },
-      { key: "long" as HorizonKey, h: long },
-    ] as const
-  ).filter((x) => x.h?.target);
 
   return (
     <div className="rounded-xl border border-slate-700/90 bg-slate-900/40 overflow-hidden">
@@ -333,7 +371,11 @@ export function HorizonProjectionChart({
                 ticks={tickDays}
                 tick={{ fill: "#94a3b8", fontSize: 10 }}
                 tickFormatter={(d: number) => {
-                  if (d === 0) return "Today";
+                  const row = rows.find((r) => r.day === d);
+                  if (d === 0) return row?.calendarLabel ? `Today` : "Today";
+                  if (row?.calendarLabel && (d === tickDays[0] || d === tickDays[tickDays.length - 1] || horizonDaySet.has(d))) {
+                    return row.calendarLabel;
+                  }
                   if (d < 0) return `${Math.abs(d)}d`;
                   return `+${d}d`;
                 }}
@@ -345,7 +387,32 @@ export function HorizonProjectionChart({
                 width={52}
               />
               <Tooltip content={<CustomTooltip />} />
-              <ReferenceLine x={0} stroke="#fbbf24" strokeDasharray="4 4" label={{ value: "Now", fill: "#fbbf24", fontSize: 10, position: "insideTopRight" }} />
+              <ReferenceLine x={0} stroke="#fbbf24" strokeWidth={2} label={{ value: "Now", fill: "#fbbf24", fontSize: 11, position: "insideTopRight" }} />
+
+              {(showMa20 || rows.some((r) => r.ma20 != null)) && (
+                <Line
+                  type="monotone"
+                  dataKey="ma20"
+                  stroke="#f59e0b"
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              )}
+              {(showMa50 || rows.some((r) => r.ma50 != null)) && (
+                <Line
+                  type="monotone"
+                  dataKey="ma50"
+                  stroke="#8b5cf6"
+                  strokeWidth={1}
+                  strokeDasharray="5 2"
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              )}
 
               {visible.long && (
                 <>
