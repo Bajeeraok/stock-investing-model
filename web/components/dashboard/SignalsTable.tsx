@@ -3,6 +3,10 @@
 import { useState, useMemo, useEffect } from "react";
 import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
+import {
+  CompactSignalActionStrip,
+  type SignalListContext,
+} from "./retailActionUX";
 
 // ── Signal badge — all 6 tiers ────────────────────────────────────────────────
 const RETAIL_ACTION_STYLE: Record<string, { bg: string; text: string }> = {
@@ -264,6 +268,7 @@ export function SignalsTable({
   riskSizing,
   cotByTicker,
   tickerActions,
+  listContext,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
@@ -271,7 +276,10 @@ export function SignalsTable({
   riskSizing?: { risk_pct: number; stop_pct: number };
   cotByTicker?: Record<string, string>;
   tickerActions?: Record<string, { action: string; one_liner: string }>;
+  /** Shared macro/HMM context for per-row trading gates on the list view. */
+  listContext?: SignalListContext;
 }) {
+  const gateContext: SignalListContext = listContext ?? {};
   const h = horizons || DEFAULT_HORIZONS;
   const [sortBy, setSortBy] = useState<SignalsSortKey>("score");
   const [scoreRsiDir, setScoreRsiDir] = useState<"asc" | "desc">("desc");
@@ -420,6 +428,15 @@ export function SignalsTable({
               <EarningsCell signal={r} />
             </div>
             {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
+            <div className="mt-2">
+              <CompactSignalActionStrip
+                signal={r}
+                listContext={gateContext}
+                oneLiner={tickerActions?.[r.ticker]?.one_liner}
+                variant="card"
+                onOpenDetail={() => onTickerClick?.(r.ticker)}
+              />
+            </div>
             <button
               type="button"
               className="mt-2 w-full flex items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800/70 touch-manipulation"
@@ -469,7 +486,7 @@ export function SignalsTable({
 
       {/* Desktop: table with sticky header + sticky first column */}
       <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full min-w-[1240px] text-sm border-collapse">
+        <table className="w-full min-w-[1380px] text-sm border-collapse">
           <thead>
             <tr className="text-left text-base text-slate-400">
               <th
@@ -536,6 +553,12 @@ export function SignalsTable({
                 >
                   Regime
                 </button>
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[15rem]"
+                title="Behavioral action + trading gate checklist (same engine as ticker detail modal)"
+              >
+                Now · Action
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[7rem]"
@@ -669,6 +692,14 @@ export function SignalsTable({
                   >
                     {r.regime ?? "-"}
                   </span>
+                </td>
+                <td className="px-3 py-2.5 align-top">
+                  <CompactSignalActionStrip
+                    signal={r}
+                    listContext={gateContext}
+                    oneLiner={tickerActions?.[r.ticker]?.one_liner}
+                    variant="column"
+                  />
                 </td>
                 <td className="px-3 py-2.5 align-top max-w-[10.5rem]">
                   <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />

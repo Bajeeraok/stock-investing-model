@@ -8,7 +8,7 @@ import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown"
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
-import { GlobalActionHeader, buildTradingGateRows } from "./retailActionUX";
+import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 
@@ -236,6 +236,7 @@ export interface TickerDetail {
   sector_etf_name: string;
   peers: string[];
   current_price: number | null;
+  price_history?: { date: string; close: number }[];
   returns: Record<string, number>;
   benchmark_spy: Record<string, number>;
   benchmark_industry: Record<string, number>;
@@ -333,7 +334,7 @@ export function TickerDetailModal({
   const [loading, setLoading]              = useState(true);
   const [error, setError]                  = useState<string | null>(null);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
-  const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(false);
+  const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
   const [modalTab, setModalTab] = useState<"overview" | "roadmaps" | "details">("overview");
   const [catalystExpanded, setCatalystExpanded] = useState(false);
@@ -429,23 +430,30 @@ export function TickerDetailModal({
 
   const tradingGates = useMemo(() => {
     const inv = detail?.investor_summary;
-    if (!inv || !detail?.current_price) return [];
-    const assessmentPct =
-      inv.fair_value > 0 ? ((inv.fair_value - detail.current_price) / detail.current_price) * 100 : 0;
-    const band = inv.trade_roadmap?.tldr?.model_confidence_band?.match(/(\d+)\s*-\s*(\d+)/);
-    const confidenceMid =
-      band && band[1] && band[2]
-        ? (Number(band[1]) + Number(band[2])) / 2
-        : inv.model_confidence_pct ?? null;
-    return buildTradingGateRows({
-      assessmentPct,
-      regimeBullPct: inv.regime_bull_pct,
-      patternScore: inv.pattern_score,
-      shortMlProb: inv.horizons?.short?.ml_prob,
-      rsi: inv.rsi ?? null,
-      confidenceMid,
-    });
+    const cp = detail?.current_price;
+    if (!inv || cp == null || !(cp > 0)) return [];
+    return buildGatesFromInvestorSummary(inv, cp);
   }, [detail]);
+
+  const headerActionStatus = useMemo((): RetailActionStatus => {
+    const ra = detail?.investor_summary?.retail_action;
+    if (ra?.action_title && ra?.action_light) {
+      return {
+        light: ra.action_light as RetailActionLight,
+        title: ra.action_title,
+        subtitle: ra.dynamic_subtitle ?? "",
+      };
+    }
+    if (retailActionStatus) return retailActionStatus;
+    const v = String(detail?.investor_summary?.overall_verdict || "WATCH").toUpperCase();
+    if (v === "STRONG BUY" || v === "BUY") {
+      return { light: "green", title: "TACTICAL ENTRY", subtitle: "Horizons align — confirm gates and sizing." };
+    }
+    if (v === "WAIT") {
+      return { light: "red", title: "DO NOT CHASE", subtitle: "Gates are blocking new entries — see checklist below." };
+    }
+    return { light: "yellow", title: "WATCH OR HOLD", subtitle: "Mixed setup — wait for locked gates to clear." };
+  }, [retailActionStatus, detail?.investor_summary?.retail_action, detail?.investor_summary?.overall_verdict]);
 
   const assessmentPctForHeader = useMemo(() => {
     const inv = detail?.investor_summary;
@@ -494,14 +502,14 @@ export function TickerDetailModal({
           </button>
         </div>
 
-        {detail && !loading && retailActionStatus && tradingGates.length > 0 && (
+        {detail && !loading && detail.investor_summary && tradingGates.length > 0 && (
           <GlobalActionHeader
             ticker={detail.ticker}
             companyName={detail.company_name}
             sector={detail.sector}
             currentPrice={detail.current_price}
-            statusTitle={retailActionStatus.title}
-            statusLight={retailActionStatus.light}
+            statusTitle={headerActionStatus.title}
+            statusLight={headerActionStatus.light}
             assessmentPct={assessmentPctForHeader}
             gates={tradingGates}
             insideBuyBand={buyBandContext.insideBuyBand}
@@ -690,6 +698,8 @@ export function TickerDetailModal({
                   companyName={detail.company_name}
                   ltEntryTiersOpen={ltEntryTiersOpen}
                   onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                  priceHistory={detail.price_history}
+                  ticker={detail.ticker}
                 />
               ) : (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">

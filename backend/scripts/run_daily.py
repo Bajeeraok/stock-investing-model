@@ -497,6 +497,12 @@ def run_signals(
             "ohlcv_last_date": ohlcv_last_date,
         }
         add_target_bands(row)
+        try:
+            from signals.retail_action_payload import enrich_dashboard_signal_row
+
+            enrich_dashboard_signal_row(row)
+        except Exception:
+            pass
         results.append(row)
     return results
 

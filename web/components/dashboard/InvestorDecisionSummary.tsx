@@ -27,13 +27,18 @@ import {
 } from "./patternDecisionDriver";
 import {
   BehavioralActionBadge,
+  buildGatesFromInvestorSummary,
   deriveLongTermBehavioralBadge,
   deriveShortTermBehavioralBadge,
+  filterPrimaryTradingGates,
+  HorizonActionBadgeRow,
   LongTermTierLadder,
   PlainEnglishTakeCard,
   RiskRewardThermometer,
   StopTargetRiskBar,
+  TradingGateStatus,
 } from "./retailActionUX";
+import { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProjectionChart";
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = this horizonâ€™s ML signal tier (how bullish the model read is for that specific window). " +
@@ -160,6 +165,8 @@ export interface InvestorDecisionSummary {
   fair_value_vs_external?: FairValueVsExternal | null;
   /** Short-term pattern score (0-100); when low, show signal-deterioration banner. */
   pattern_score?: number | null;
+  /** Backend-enriched gates, rsi_status, gate_cleared (source of truth for UI styling). */
+  retail_action?: import("./retailActionUX").RetailActionPayload | null;
   /** One Answer + Trader / Investor roadmaps (retail design). */
   one_answer?: OneAnswer | null;
   trader_roadmap?: TraderRoadmap | null;
@@ -259,34 +266,38 @@ function HorizonCard({
   entryTiers,
   tiersOpen,
   onToggleTiers,
+  showTierLadder = true,
   currentPrice,
   regimeBullPct,
   assessmentPct,
   shortHorizon,
+  rsi,
 }: {
   horizon: HorizonSignalPayload;
   horizonKind: "short" | "medium" | "long";
   entryTiers?: HorizonSignalPayload["entry_tiers"];
   tiersOpen?: boolean;
   onToggleTiers?: () => void;
+  showTierLadder?: boolean;
   currentPrice: number;
   regimeBullPct?: number | null;
   assessmentPct: number;
   shortHorizon?: HorizonSignalPayload;
+  rsi?: number | null;
 }) {
   const behavioralBadge =
     horizonKind === "short"
-      ? deriveShortTermBehavioralBadge(horizon, regimeBullPct)
+      ? deriveShortTermBehavioralBadge(horizon, regimeBullPct, rsi)
       : horizonKind === "long" && shortHorizon
         ? deriveLongTermBehavioralBadge(horizon, shortHorizon, assessmentPct, currentPrice)
         : null;
   const showMediumBadge = horizonKind === "medium";
   const mediumBadgeLabel =
     horizon.verdict === "BUY" || horizon.verdict === "STRONG BUY"
-      ? { emoji: "ðŸŸ¢", label: "SWING ADD ZONE", tone: "green" as const }
+      ? { emoji: "🟢", label: "SWING ADD ZONE", tone: "green" as const }
       : horizon.verdict === "WATCH"
-        ? { emoji: "ðŸŸ¡", label: "STAGE ON PULLBACK", tone: "amber" as const }
-        : { emoji: "ðŸ”´", label: "WAIT â€” NO ADD", tone: "red" as const };
+        ? { emoji: "🟡", label: "STAGE ON PULLBACK", tone: "amber" as const }
+        : { emoji: "🔴", label: "WAIT — NO ADD", tone: "red" as const };
   const [showCaveats, setShowCaveats] = useState(false);
   const ez = horizon.entry_zone;
   const verdictClass =
@@ -417,6 +428,7 @@ function HorizonCard({
           )
       ),
     entryTiers &&
+      showTierLadder &&
       onToggleTiers &&
       React.createElement(
         React.Fragment,
@@ -793,6 +805,8 @@ export function InvestorDecisionSummarySection({
   companyName,
   ltEntryTiersOpen,
   onToggleLtTiers,
+  priceHistory,
+  ticker,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -801,6 +815,8 @@ export function InvestorDecisionSummarySection({
   companyName?: string | null;
   ltEntryTiersOpen: boolean;
   onToggleLtTiers: () => void;
+  priceHistory?: PriceHistoryPoint[];
+  ticker?: string;
 }) {
   const {
     fair_value,
@@ -1017,7 +1033,12 @@ export function InvestorDecisionSummarySection({
     regimeBullPct: regime_bull_pct,
     assessmentPct,
     shortHorizon: short,
+    rsi: rsi ?? null,
   };
+
+  const tradingGates = buildGatesFromInvestorSummary(summary, currentPrice);
+  const primaryTradingGates = filterPrimaryTradingGates(tradingGates);
+  const passedPrimary = primaryTradingGates.filter((g) => g.pass).length;
 
   return React.createElement(
     "div",
@@ -1026,11 +1047,82 @@ export function InvestorDecisionSummarySection({
       "aria-label": "Investor Decision Summary",
       className: "bg-slate-800/55 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl shadow-black/20",
     },
-    React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
+    React.createElement(
+      "div",
+      { className: "p-4 border-b border-violet-500/25 bg-gradient-to-b from-violet-950/40 to-slate-900/60 space-y-3" },
+      React.createElement(TradingGateStatus, { gates: primaryTradingGates }),
+      React.createElement(
+        "p",
+        { className: "text-[11px] text-amber-100/90 leading-snug px-1" },
+        `Investor takeaway: ${passedPrimary} of ${primaryTradingGates.length} checks are green` +
+          (passedPrimary >= 3
+            ? " — review sizing on Roadmaps before adding."
+            : " — sit on your hands until more gates clear.")
+      )
+    ),
     React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700/80" },
-      React.createElement(PlainEnglishTakeCard, { summary, currentPrice })
+      React.createElement(PlainEnglishTakeCard, { summary, currentPrice, prominent: true })
+    ),
+    React.createElement(
+      "div",
+      { className: "p-4 border-b border-slate-700/80" },
+      React.createElement(HorizonActionBadgeRow, {
+        short,
+        medium,
+        long,
+        currentPrice,
+        regimeBullPct: regime_bull_pct,
+        assessmentPct,
+        rsi: rsi ?? null,
+      })
+    ),
+    (short?.target || medium?.target || long?.target) &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-4 border-b border-slate-700/80" },
+        React.createElement(HorizonProjectionChart, {
+          ticker,
+          currentPrice,
+          priceHistory: priceHistory ?? [],
+          short,
+          medium,
+          long,
+          fairValue: fair_value,
+        })
+      ),
+    React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
+    long?.entry_tiers?.tiers?.length
+      ? React.createElement(
+          "div",
+          { className: "px-4 pb-4 border-b border-slate-700/80" },
+          React.createElement(LongTermTierLadder, {
+            entryTiers: long.entry_tiers,
+            currentPrice,
+            modeLabel: long.entry_tiers.current_assessment?.label,
+          })
+        )
+      : null,
+    React.createElement(
+      "div",
+      { className: "p-4 border-b border-slate-700/80 bg-slate-900/30" },
+      React.createElement("p", { className: "text-xs text-slate-400 uppercase tracking-wide mb-3" }, "Horizon detail"),
+      React.createElement(
+        "div",
+        { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
+        React.createElement(HorizonCard, { horizon: short, horizonKind: "short", ...horizonCardShared }),
+        React.createElement(HorizonCard, { horizon: medium, horizonKind: "medium", ...horizonCardShared }),
+        React.createElement(HorizonCard, {
+          horizon: long,
+          horizonKind: "long",
+          ...horizonCardShared,
+          entryTiers: long.entry_tiers,
+          showTierLadder: false,
+          tiersOpen: ltEntryTiersOpen,
+          onToggleTiers: onToggleLtTiers,
+        })
+      )
     ),
     /* One Answer card (top) */
     one_answer && React.createElement(
@@ -1623,21 +1715,7 @@ export function InvestorDecisionSummarySection({
             "Why ML % differs by horizon: "
           ),
           mlHorizonGapExplainer
-        ),
-      React.createElement(
-        "div",
-        { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
-        React.createElement(HorizonCard, { horizon: short, horizonKind: "short", ...horizonCardShared }),
-        React.createElement(HorizonCard, { horizon: medium, horizonKind: "medium", ...horizonCardShared }),
-        React.createElement(HorizonCard, {
-          horizon: long,
-          horizonKind: "long",
-          ...horizonCardShared,
-          entryTiers: long.entry_tiers,
-          tiersOpen: ltEntryTiersOpen,
-          onToggleTiers: onToggleLtTiers,
-        })
-      )
+        )
     ),
     contextFlags.length > 0 &&
       React.createElement(

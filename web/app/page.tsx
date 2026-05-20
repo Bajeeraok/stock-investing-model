@@ -791,6 +791,10 @@ export interface Signal {
   /** 7-layer model action — aligned with Roadmaps / ticker detail */
   plan_action?: string | null;
   plan_confidence?: number | null;
+  /** Backend retail tokens for list-view gates (from FastAPI). */
+  retail_status?: import("@/components/dashboard/retailActionUX").RetailActionPayload | null;
+  rsi_status?: string | null;
+  gate_cleared?: boolean | null;
   error?: string;
 }
 

@@ -67,6 +67,7 @@ import {
   BrowserPushPanel,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
+import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
 
 const AUTO_REFRESH_MIN = 30;
 
@@ -301,6 +302,17 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
       best_2026: mergedBest2026,
     }),
     [data, effectiveSignals, mergedOpportunities, mergedBest2026]
+  );
+
+  const signalListContext = useMemo(
+    () => ({
+      regimeBullPct: deriveRegimeBullPctFromDashboard({
+        globalMarketRegime: data.global_market_regime,
+        macroRegime: data.macro_regime,
+        hmmBearPct: data.macro_regime_bundle?.hmm_bear_pct_used ?? null,
+      }),
+    }),
+    [data.global_market_regime, data.macro_regime, data.macro_regime_bundle?.hmm_bear_pct_used]
   );
 
   const signalCountForBadge =
@@ -810,6 +822,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               riskSizing={data.config?.risk_sizing}
               cotByTicker={data.cot_by_ticker}
               tickerActions={data.retail_briefing?.ticker_actions}
+              listContext={signalListContext}
             />
           )}
             </div>

@@ -189,6 +189,22 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     # Current price = last bar of the same close series used for bands (index ETFs: Ticker.history path in fetcher)
     current_price = float(close_ticker.iloc[-1]) if close_ticker is not None and not close_ticker.empty else None
 
+    def _serialize_price_history(series: pd.Series | None, bars: int = 126) -> list[dict]:
+        """Compact OHLCV tail for TipRanks-style projection chart (date + close only)."""
+        if series is None or series.empty:
+            return []
+        tail = series.iloc[-bars:]
+        out: list[dict] = []
+        for ts, val in tail.items():
+            try:
+                d = ts.strftime("%Y-%m-%d") if hasattr(ts, "strftime") else str(ts)[:10]
+                out.append({"date": d, "close": round(float(val), 2)})
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    price_history = _serialize_price_history(close_ticker, 126)
+
     # Volume vs 20d avg, drawdown 52w
     volume_ratio = None
     volume_unusual = False
@@ -371,6 +387,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "sector_etf_name": sector_info.get("sector_etf_name", sector_etf),
         "peers": peers,
         "current_price": current_price,
+        "price_history": price_history,
         "returns": ret_ticker or {},
         "benchmark_spy": ret_spy or {},
         "benchmark_industry": ret_sector or {},
@@ -1091,6 +1108,13 @@ def _build_investor_summary(
                     horizon_label=label,
                 )
         merge_ml_prob_for_ticker(data_root, ticker, st_ml_prob)
+    except Exception:
+        pass
+
+    try:
+        from signals.retail_action_payload import enrich_investor_summary_retail_action
+
+        enrich_investor_summary_retail_action(out, current_price)
     except Exception:
         pass
 

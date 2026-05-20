@@ -2,9 +2,10 @@
 
 import React, { useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { ChevronDown, ChevronRight, Lightbulb, Lock, Target, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { ChevronDown, ChevronRight, Lightbulb, Lock, Target, AlertTriangle } from "lucide-react";
 import type { HorizonSignalPayload, InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { marketWeatherFromRegimeBull } from "./patternDecisionDriver";
+import { retailStatusClasses, retailStatusRowClasses } from "@/lib/retailStatusStyles";
 
 const ST_ML_GATE = 25;
 const REGIME_GATE = 60;
@@ -31,7 +32,61 @@ export type TradingGateRow = {
   pass: boolean;
   icon: string;
   blockerWeight: number;
+  /** Backend token: cleared | blocked | bull | stormy | hot */
+  visualStatus?: string;
+  gateCleared?: boolean;
+  rsiStatus?: string;
+  regimeWeatherStatus?: string;
 };
+
+/** API retail_action / retail_status block from FastAPI. */
+export type RetailActionPayload = {
+  gate_cleared?: boolean;
+  gates_locked_count?: number;
+  go_no_go?: "go" | "no_go";
+  rsi_status?: string;
+  regime_weather_status?: string;
+  rr_status?: string;
+  rr_ratio?: number;
+  inside_buy_band?: boolean;
+  assessment_pct?: number;
+  action_title?: string;
+  action_light?: "green" | "yellow" | "red";
+  dynamic_subtitle?: string;
+  gates?: Array<{
+    id: string;
+    label: string;
+    detail: string;
+    pass: boolean;
+    gate_cleared?: boolean;
+    visual_status?: string;
+    icon?: string;
+    blocker_weight?: number;
+    rsi_status?: string;
+    regime_weather_status?: string;
+  }>;
+  primary_gate_ids?: string[];
+};
+
+export function mapApiGateToRow(g: NonNullable<RetailActionPayload["gates"]>[number]): TradingGateRow {
+  return {
+    id: g.id,
+    label: g.label,
+    detail: g.detail,
+    pass: g.pass,
+    icon: g.icon ?? (g.pass ? "✅" : "❌"),
+    blockerWeight: g.blocker_weight ?? 0,
+    visualStatus: g.visual_status,
+    gateCleared: g.gate_cleared ?? g.pass,
+    rsiStatus: g.rsi_status,
+    regimeWeatherStatus: g.regime_weather_status,
+  };
+}
+
+export function gatesFromRetailActionPayload(payload: RetailActionPayload | null | undefined): TradingGateRow[] | null {
+  if (!payload?.gates?.length) return null;
+  return payload.gates.map(mapApiGateToRow);
+}
 
 export type GlobalActionHeaderProps = {
   ticker: string;
@@ -51,18 +106,20 @@ export type GlobalActionHeaderProps = {
 
 export function deriveShortTermBehavioralBadge(
   horizon: HorizonSignalPayload,
-  regimeBullPct: number | null | undefined
+  regimeBullPct: number | null | undefined,
+  rsi?: number | null
 ): BehavioralBadge {
   const verdict = String(horizon.verdict || "").toUpperCase();
   const quality = String(horizon.entry_zone?.quality || "").toLowerCase();
   const ml = Number(horizon.ml_prob);
   const rsiElevated =
+    (rsi != null && rsi >= 50) ||
     quality.includes("stretch") ||
     quality.includes("elevated") ||
     /rsi\s*(6[0-9]|[7-9]\d|100)/i.test(horizon.rationale || "") ||
     /rsi\s*elevated/i.test(horizon.entry_zone?.anchor || "");
 
-  if (verdict === "WAIT" || (verdict === "WATCH" && (rsiElevated || quality.includes("stretch")))) {
+  if (verdict === "WAIT" || (verdict === "WATCH" && rsiElevated)) {
     return { emoji: "🔴", label: "DO NOT CHASE", tone: "red", hint: "Wait for pullback — momentum is extended." };
   }
   if (
@@ -166,10 +223,10 @@ export function buildTradingGateRows(input: {
       id: "valuation",
       label: "VALUATION",
       detail: valuationOk
-        ? `Deeply undervalued (+${Math.abs(input.assessmentPct).toFixed(1)}% vs model fair value)`
+        ? `Deeply Undervalued (+${Math.abs(input.assessmentPct).toFixed(1)}% Fair Value)`
         : input.assessmentPct >= 0
-          ? `Modest discount (+${input.assessmentPct.toFixed(1)}% vs fair value)`
-          : `Rich vs fair value (${input.assessmentPct.toFixed(1)}%)`,
+          ? `Modest discount (+${input.assessmentPct.toFixed(1)}% Fair Value)`
+          : `Rich vs Fair Value (${input.assessmentPct.toFixed(1)}%)`,
       pass: valuationOk,
       icon: valuationOk ? "✅" : "❌",
       blockerWeight: valuationOk ? 0 : 30,
@@ -179,9 +236,9 @@ export function buildTradingGateRows(input: {
       label: "MARKET WEATHER",
       detail: regimeOk
         ? `${weather.headline} · HMM bull ${Math.round(input.regimeBullPct!)}%`
-        : `Stormy tape (HMM ${input.regimeBullPct != null ? Math.round(input.regimeBullPct) : "—"}% · need ${REGIME_GATE}%+)`,
+        : `Stormy Tape (HMM Regime Non-Bull · ${input.regimeBullPct != null ? Math.round(input.regimeBullPct) : "—"}%)`,
       pass: regimeOk,
-      icon: regimeOk ? "☀️" : weather.weather === "stormy" ? "🌧️" : "⛅",
+      icon: regimeOk ? "☀️" : weather.weather === "stormy" ? "⚡" : "🌧️",
       blockerWeight: regimeOk ? 0 : 45,
     },
     {
@@ -218,6 +275,45 @@ export function buildTradingGateRows(input: {
       blockerWeight: confOk ? 0 : 15,
     },
   ];
+}
+
+/** Build pre-flight gates from investor summary (ticker detail + One Answer tab). */
+export function buildGatesFromInvestorSummary(
+  inv: {
+    fair_value: number;
+    regime_bull_pct?: number | null;
+    pattern_score?: number | null;
+    rsi?: number | null;
+    model_confidence_pct?: number | null;
+    trade_roadmap?: {
+      tldr?: { model_confidence_band?: string | null; model_confidence_pct?: number | null } | null;
+    } | null;
+    horizons?: { short?: { ml_prob?: number | null } | null };
+    retail_action?: RetailActionPayload | null;
+  },
+  currentPrice: number
+): TradingGateRow[] {
+  const fromApi = gatesFromRetailActionPayload(inv.retail_action);
+  if (fromApi) return fromApi;
+
+  const assessmentPct =
+    currentPrice > 0 && inv.fair_value > 0
+      ? ((inv.fair_value - currentPrice) / currentPrice) * 100
+      : 0;
+  const band = inv.trade_roadmap?.tldr?.model_confidence_band?.match(/(\d+)\s*-\s*(\d+)/);
+  const confidenceMid =
+    band && band[1] && band[2]
+      ? (Number(band[1]) + Number(band[2])) / 2
+      : inv.model_confidence_pct ?? inv.trade_roadmap?.tldr?.model_confidence_pct ?? null;
+
+  return buildTradingGateRows({
+    assessmentPct,
+    regimeBullPct: inv.regime_bull_pct,
+    patternScore: inv.pattern_score,
+    shortMlProb: inv.horizons?.short?.ml_prob ?? null,
+    rsi: inv.rsi ?? null,
+    confidenceMid,
+  });
 }
 
 export function buildDynamicActionSubtitle(
@@ -332,11 +428,18 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
       )}
       aria-label="Trading gate status"
     >
-      <div className="px-3.5 py-2 border-b border-slate-700/70 bg-slate-900/80 flex items-center justify-between">
-        <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-300">Trading gate status</p>
+      <div className="px-3.5 py-2 border-b border-slate-700/70 bg-slate-900/80 flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-300">
+            Trading gate status
+          </p>
+          <p className="text-[10px] text-slate-500 mt-0.5 normal-case tracking-normal font-normal">
+            If / then — what must be true before you add size
+          </p>
+        </div>
         <span
           className={clsx(
-            "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
+            "text-[10px] font-bold uppercase px-2.5 py-1 rounded border tracking-wide",
             allGo
               ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
               : "border-red-500/45 bg-red-500/10 text-red-200"
@@ -345,39 +448,47 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
           {allGo ? "Go" : "No-Go"}
         </span>
       </div>
-      <ul className="divide-y divide-slate-800/90 font-mono text-[11px] sm:text-xs">
-        {gates.map((g) => (
+      <ul className="divide-y divide-slate-800/90 text-[11px] sm:text-xs">
+        {gates.map((g) => {
+          const visual = g.visualStatus ?? (g.pass ? "cleared" : g.pass === false ? "blocked" : "neutral");
+          return (
           <li
             key={g.id}
             className={clsx(
-              "px-3.5 py-2.5 flex items-start gap-3",
-              g.pass ? "bg-emerald-500/[0.03]" : "bg-red-500/[0.04]"
+              "px-3.5 py-3 border-l-2",
+              retailStatusRowClasses(visual, g.pass),
+              g.pass ? "border-l-emerald-600/60" : "border-l-orange-600/70"
             )}
           >
-            <span className="shrink-0 w-5 text-center pt-0.5" aria-hidden>
-              {g.pass ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-400 inline" />
-              ) : (
-                <XCircle className="h-4 w-4 text-red-400 inline" />
-              )}
-            </span>
-            <div className="min-w-0 flex-1 grid grid-cols-1 sm:grid-cols-[minmax(9rem,auto)_1fr_auto] gap-x-3 gap-y-0.5 items-baseline">
-              <span className="text-slate-400 font-semibold tracking-wide flex items-center gap-1.5">
-                <span>{g.icon}</span>
-                {g.label}
+            <div className="flex items-start gap-2 sm:gap-3">
+              <span className="shrink-0 font-mono text-sm pt-0.5" aria-hidden>
+                {g.pass ? "✅" : "❌"}
               </span>
-              <span className="text-slate-300 truncate">{g.detail}</span>
-              <span
-                className={clsx(
-                  "font-bold uppercase text-[10px] sm:justify-self-end",
-                  g.pass ? "text-emerald-400" : "text-red-300"
-                )}
-              >
-                {g.pass ? "Pass" : "Fail"}
-              </span>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="flex items-baseline gap-2 min-w-0">
+                  <span className={clsx("shrink-0 font-bold uppercase tracking-wide flex items-center gap-1.5", retailStatusClasses(visual, "text"))}>
+                    <span aria-hidden>{g.icon}</span>
+                    {g.label}
+                  </span>
+                  <span
+                    className="hidden sm:block flex-1 border-b border-dotted border-slate-600/80 min-w-[1.5rem] translate-y-[-3px]"
+                    aria-hidden
+                  />
+                  <span
+                    className={clsx(
+                      "shrink-0 font-bold uppercase text-[10px] px-2 py-0.5 rounded border",
+                      retailStatusClasses(g.pass ? "cleared" : "blocked")
+                    )}
+                  >
+                    {g.pass ? "Pass" : "Fail"}
+                  </span>
+                </div>
+                <p className="text-slate-300 leading-snug pl-0 sm:pl-0">{g.detail}</p>
+              </div>
             </div>
           </li>
-        ))}
+          );
+        })}
       </ul>
       <div
         className={clsx(
@@ -400,6 +511,221 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
         </span>
       </div>
     </section>
+  );
+}
+
+// ─── Dashboard list view (signals table) ───────────────────────────────────
+
+export type SignalListInput = {
+  ticker: string;
+  close: number | null;
+  rsi: number | null;
+  confluence_score?: number | null;
+  composite_buy?: number | null;
+  ml_short_prob?: number | null;
+  plan_action?: string | null;
+  plan_confidence?: number | null;
+  signal?: string | null;
+  st_band?: { low: number; high: number } | null;
+  lt_band?: { low: number; high: number } | null;
+  retail_status?: RetailActionPayload | null;
+  rsi_status?: string | null;
+  gate_cleared?: boolean | null;
+};
+
+export type SignalListContext = {
+  regimeBullPct?: number | null;
+};
+
+export function deriveRegimeBullPctFromDashboard(ctx: {
+  globalMarketRegime?: string | null;
+  macroRegime?: string | null;
+  hmmBearPct?: number | null;
+}): number | null {
+  if (ctx.hmmBearPct != null && !Number.isNaN(ctx.hmmBearPct)) {
+    return Math.max(0, Math.min(100, 100 - ctx.hmmBearPct));
+  }
+  const g = ctx.globalMarketRegime?.toUpperCase();
+  if (g === "BULL") return 68;
+  if (g === "BEAR") return 32;
+  if (g === "NEUTRAL") return 50;
+  if (ctx.macroRegime === "Risk-On") return 62;
+  if (ctx.macroRegime === "Risk-Off") return 38;
+  return 50;
+}
+
+export function deriveAssessmentPctFromSignal(
+  close: number | null | undefined,
+  ltBand?: { low: number; high: number } | null
+): number {
+  if (close == null || !(close > 0) || !ltBand) return 0;
+  const fv = (ltBand.low + ltBand.high) / 2;
+  return ((fv - close) / close) * 100;
+}
+
+export function signalInsideStBand(signal: SignalListInput): boolean {
+  const close = signal.close;
+  const band = signal.st_band;
+  if (close == null || !band) return false;
+  const low = Math.min(band.low, band.high);
+  const high = Math.max(band.low, band.high);
+  return close >= low && close <= high;
+}
+
+export function buildSignalListGates(signal: SignalListInput, listContext: SignalListContext): TradingGateRow[] {
+  const fromApi = gatesFromRetailActionPayload(signal.retail_status);
+  if (fromApi) return fromApi;
+
+  return buildTradingGateRows({
+    assessmentPct: deriveAssessmentPctFromSignal(signal.close, signal.lt_band),
+    regimeBullPct: listContext.regimeBullPct,
+    patternScore: signal.confluence_score ?? signal.composite_buy,
+    shortMlProb: signal.ml_short_prob != null ? signal.ml_short_prob * 100 : null,
+    rsi: signal.rsi,
+    confidenceMid: signal.plan_confidence != null ? signal.plan_confidence * 100 : null,
+  });
+}
+
+export function deriveListActionStatus(signal: SignalListInput): {
+  title: string;
+  light: GlobalActionHeaderProps["statusLight"];
+} {
+  const pa = String(signal.plan_action || signal.signal || "HOLD").toUpperCase();
+  if (pa.includes("STRONG BUY") || (pa.includes("BUY") && !pa.includes("WATCH") && !pa.includes("AVOID"))) {
+    return { title: "TACTICAL ENTRY", light: "green" };
+  }
+  if (pa.includes("AVOID") || pa.includes("REDUCE") || pa.includes("SELL")) {
+    return { title: "DO NOT CHASE", light: "red" };
+  }
+  if (pa.includes("WAIT")) {
+    return { title: "DO NOT CHASE", light: "red" };
+  }
+  return { title: "WATCH OR HOLD", light: "yellow" };
+}
+
+const GATE_MINI_LABEL: Record<string, string> = {
+  valuation: "Val",
+  regime: "Wx",
+  momentum: "Mom",
+  ml: "ML",
+};
+
+export function TradingGateMiniPills({ gates, className }: { gates: TradingGateRow[]; className?: string }) {
+  const primary = filterPrimaryTradingGates(gates);
+  const locked = primary.filter((g) => !g.pass).length;
+  const allGo = locked === 0;
+
+  return (
+    <div className={clsx("flex flex-wrap items-center gap-1", className)}>
+      {primary.map((g) => {
+        const visual = g.visualStatus ?? (g.pass ? "cleared" : "blocked");
+        return (
+        <span
+          key={g.id}
+          title={`${g.label}: ${g.detail} · ${g.pass ? "Pass" : "Fail"}`}
+          className={clsx(
+            "inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tabular-nums",
+            retailStatusClasses(visual)
+          )}
+        >
+          <span aria-hidden>{g.pass ? "✓" : "✕"}</span>
+          {GATE_MINI_LABEL[g.id] ?? g.label.slice(0, 3)}
+        </span>
+        );
+      })}
+      <span
+        className={clsx(
+          "text-[9px] font-semibold uppercase",
+          allGo ? "text-emerald-400" : "text-amber-300"
+        )}
+      >
+        {allGo ? "Go" : `${locked}/4 locked`}
+      </span>
+    </div>
+  );
+}
+
+function listStatusEmoji(light: GlobalActionHeaderProps["statusLight"]): string {
+  if (light === "green") return "🟢";
+  if (light === "red") return "🔴";
+  return "⚠️";
+}
+
+export function CompactSignalActionStrip({
+  signal,
+  listContext,
+  oneLiner,
+  variant = "card",
+  onOpenDetail,
+}: {
+  signal: SignalListInput;
+  listContext: SignalListContext;
+  oneLiner?: string | null;
+  variant?: "card" | "column";
+  onOpenDetail?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const gates = useMemo(() => buildSignalListGates(signal, listContext), [signal, listContext]);
+  const primaryGates = useMemo(() => filterPrimaryTradingGates(gates), [gates]);
+  const status = deriveListActionStatus(signal);
+  const assessmentPct = deriveAssessmentPctFromSignal(signal.close, signal.lt_band);
+  const insideBuyBand = signalInsideStBand(signal);
+  const subtitle =
+    oneLiner?.trim() ||
+    signal.retail_status?.dynamic_subtitle ||
+    buildDynamicActionSubtitle(primaryGates, assessmentPct, signal.rsi, insideBuyBand);
+  const displayStatus = signal.retail_status?.action_title
+    ? {
+        title: signal.retail_status.action_title,
+        light: (signal.retail_status.action_light ?? status.light) as GlobalActionHeaderProps["statusLight"],
+      }
+    : status;
+
+  const wrapClass =
+    variant === "card"
+      ? "rounded-lg border border-slate-700/80 bg-gradient-to-br from-slate-950/90 to-slate-900/50 px-3 py-2.5"
+      : "min-w-[14rem] max-w-[18rem]";
+
+  return (
+    <div className={wrapClass}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Now</p>
+          <p className="text-sm font-black text-slate-100 flex items-center gap-1.5 leading-tight">
+            <span aria-hidden>{listStatusEmoji(displayStatus.light)}</span>
+            <span className="truncate">{displayStatus.title}</span>
+          </p>
+        </div>
+        {variant === "card" && onOpenDetail && (
+          <button
+            type="button"
+            onClick={onOpenDetail}
+            className="shrink-0 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 uppercase"
+          >
+            Detail
+          </button>
+        )}
+      </div>
+      <p className="mt-1.5 text-[11px] text-slate-300/95 leading-snug line-clamp-2 italic">&ldquo;{subtitle}&rdquo;</p>
+      <div className="mt-2">
+        <TradingGateMiniPills gates={gates} />
+      </div>
+      {variant === "card" && (
+        <button
+          type="button"
+          onClick={() => setExpanded((o) => !o)}
+          className="mt-2 text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1"
+        >
+          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          {expanded ? "Hide gate checklist" : "Show gate checklist"}
+        </button>
+      )}
+      {expanded && variant === "card" && (
+        <div className="mt-2">
+          <TradingGateStatus gates={primaryGates} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -684,6 +1010,30 @@ export function EntryTierPanel(props: Parameters<typeof LongTermTierLadder>[0]) 
 // ─── Plain English (collapsible detail) ──────────────────────────────────────
 
 export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentPrice: number) {
+  const ra = summary.retail_action;
+  if (ra?.dynamic_subtitle) {
+    const pct =
+      ra.assessment_pct ??
+      (currentPrice > 0 && summary.fair_value > 0
+        ? ((summary.fair_value - currentPrice) / currentPrice) * 100
+        : 0);
+    const good =
+      pct >= 5
+        ? `The stock looks cheaper than our model fair value (~${Math.abs(pct).toFixed(0)}% discount).`
+        : `Fundamentals anchor near $${summary.fair_value.toFixed(2)} — less margin of safety at today's price.`;
+    const bad =
+      ra.regime_weather_status === "stormy"
+        ? "The broader market tape is stormy (non-bull HMM regime)."
+        : ra.rsi_status === "hot"
+          ? "Short-term momentum is extended — today's move may be hard to chase."
+          : "Some timing gates have not cleared yet.";
+    return {
+      good,
+      bad,
+      move: ra.dynamic_subtitle,
+    };
+  }
+
   const fv = summary.fair_value;
   const pct = currentPrice > 0 ? ((fv - currentPrice) / currentPrice) * 100 : 0;
   const oa = summary.one_answer;
@@ -717,13 +1067,44 @@ export function PlainEnglishTakeCard({
   summary,
   currentPrice,
   defaultOpen = false,
+  prominent = false,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
   defaultOpen?: boolean;
+  /** Always-visible Quick Take block (top of One Answer). */
+  prominent?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(defaultOpen || prominent);
   const take = useMemo(() => buildPlainEnglishTake(summary, currentPrice), [summary, currentPrice]);
+
+  if (prominent) {
+    return (
+      <section className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-slate-950/80 to-slate-900/60 overflow-hidden">
+        <div className="px-4 py-3 border-b border-amber-500/20">
+          <p className="flex items-center gap-2 text-sm font-semibold text-amber-100">
+            <Lightbulb className="h-4 w-4 text-amber-300" />
+            The Quick Take
+          </p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Plain English — no jargon</p>
+        </div>
+        <ul className="px-4 py-3 space-y-2.5 text-sm text-slate-200 leading-relaxed">
+          <li>
+            <span className="text-emerald-300 font-semibold">The Good: </span>
+            {take.good}
+          </li>
+          <li>
+            <span className="text-amber-300 font-semibold">The Bad: </span>
+            {take.bad}
+          </li>
+          <li>
+            <span className="text-sky-300 font-semibold">The Move: </span>
+            {take.move}
+          </li>
+        </ul>
+      </section>
+    );
+  }
 
   return (
     <section className="rounded-xl border border-slate-700/80 bg-slate-900/40 overflow-hidden">
@@ -754,6 +1135,58 @@ export function PlainEnglishTakeCard({
           </li>
         </ul>
       )}
+    </section>
+  );
+}
+
+/** Stoplight badges for all three horizons — visible without scrolling to horizon cards. */
+export function HorizonActionBadgeRow({
+  short,
+  medium,
+  long,
+  currentPrice,
+  regimeBullPct,
+  assessmentPct,
+  rsi,
+}: {
+  short: HorizonSignalPayload;
+  medium: HorizonSignalPayload;
+  long: HorizonSignalPayload;
+  currentPrice: number;
+  regimeBullPct?: number | null;
+  assessmentPct: number;
+  rsi?: number | null;
+}) {
+  const shortBadge = deriveShortTermBehavioralBadge(short, regimeBullPct, rsi);
+  const longBadge = deriveLongTermBehavioralBadge(long, short, assessmentPct, currentPrice);
+  const mediumBadge: BehavioralBadge =
+    medium.verdict === "BUY" || medium.verdict === "STRONG BUY"
+      ? { emoji: "🟢", label: "SWING ADD ZONE", tone: "green" }
+      : medium.verdict === "WATCH"
+        ? { emoji: "🟡", label: "STAGE ON PULLBACK", tone: "amber" }
+        : { emoji: "🔴", label: "WAIT — NO ADD", tone: "red" };
+
+  const cols = [
+    { label: "Short-term", badge: shortBadge },
+    { label: "Medium-term", badge: mediumBadge },
+    { label: "Long-term", badge: longBadge },
+  ];
+
+  return (
+    <section className="rounded-xl border border-slate-600/80 bg-slate-950/60 overflow-hidden">
+      <div className="px-3 py-2 border-b border-slate-700/70 bg-slate-900/80">
+        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-300">
+          Stoplight actions by timeframe
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-800/90">
+        {cols.map(({ label, badge }) => (
+          <div key={label} className="px-3 py-3 space-y-2">
+            <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">{label}</p>
+            <BehavioralActionBadge badge={badge} />
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

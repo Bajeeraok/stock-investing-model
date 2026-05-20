@@ -1203,6 +1203,19 @@ async def get_dashboard(
                 if isinstance(v, str) and "ADD" in v.upper():
                     r[k] = "HOLD"
 
+    # Retail status tokens for frontend (gates, rsi_status, gate_cleared) — after plan_action/confidence
+    try:
+        from signals.retail_action_payload import enrich_dashboard_signal_row
+
+        _hmm_bear = macro_regime_bundle.get("hmm_bear_pct_used") if isinstance(macro_regime_bundle, dict) else None
+        _regime_bull_global = (100.0 - float(_hmm_bear)) if _hmm_bear is not None else None
+        for r in results:
+            if r.get("error"):
+                continue
+            enrich_dashboard_signal_row(r, regime_bull_pct=_regime_bull_global)
+    except Exception as e:
+        logger.debug("retail_status enrich: %s", e)
+
     # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
     t0 = time.perf_counter()
     portfolio_doctor_recommendations = {}
