@@ -1,20 +1,18 @@
 """
 Dashboard API - exposes all model features as JSON.
-Uses ThreadPoolExecutor to load independent sections in parallel and reduce timeout risk.
 
-Caching: full payload in Redis (TTL DASHBOARD_CACHE_TTL_SECONDS, default 10 min). HTTP GET /dashboard returns
-trimmed JSON (`signal_scores` + empty `signals`) when cache write succeeds; full rows via GET /dashboard/signals-panel.
-Query refresh=true bypasses cache read. Optional: WARM_DASHBOARD_URL + warm_dashboard_cache.py / startup hook.
+Performance (2026-05):
+  - GET /api/dashboard/shell — instant read from Redis (never runs full compute on navigation)
+  - GET /api/dashboard?refresh=true — manual full recompute (Refresh button)
+  - Stale-while-revalidate: serves dashboard:last snapshot + background job on cache miss
+  - GET /api/dashboard/status — poll while background refresh runs
 
-Lazy-loaded on frontend (fetched when user opens tab/panel):
-  - Signals table: /api/dashboard/signals-panel when main payload defers full `signals`.
-  - Pre-market: PreMarketPanel fetches /api/pre-market on mount (Markets tab).
-  - Accuracy: AccuracyPriceTargets fetches /api/accuracy on mount (Analysis tab).
-  - Backtest: BacktestStatus fetches /api/backtest on mount (Analysis tab).
-  - Alerts: AlertsPanel fetches /api/scanner/alerts on mount (Overview > Alerts).
-  - Ticker detail: TickerDetailModal fetches /api/ticker, /api/confidence, etc. when user opens a ticker.
-  - Chat: /api/chat on user message. Test suite: /api/test-suite on run.
-Pre-market is skipped in the parallel block below so the initial dashboard is faster; the UI loads it when Markets tab is shown.
+Lazy-loaded on frontend (tab open):
+  - Signals: GET /api/dashboard/signals-panel
+  - Opportunities + doctor adds: GET /api/dashboard/opportunities-bundle (when opportunities_bundle_enabled)
+  - Analysis (paper, insider, forward tracking, validation): GET /api/dashboard/analysis-bundle
+  - Pre-market: PreMarketPanel → GET /api/pre-market (Markets tab)
+  - Accuracy / Backtest: on mount in Analysis tab
 """
 from __future__ import annotations
 
@@ -88,11 +86,6 @@ try:
 except ImportError:
     generate_tier1_payload = None
 
-try:
-    from best_picks import get_best_picks_2026
-except ImportError:
-    get_best_picks_2026 = None
-
 router = APIRouter()
 
 # Retail copy: data / methodology limits (override via config known_limits: list)
@@ -124,6 +117,47 @@ def _build_signal_scores(results: list[Any] | None) -> list[dict]:
     return out
 
 
+def _opportunities_bundle_enabled(config: dict) -> bool:
+    """When false: skip lazy opportunity scan; Portfolio Doctor add ideas disabled."""
+    v = config.get("opportunities_bundle_enabled", True)
+    if isinstance(v, str):
+        return v.strip().lower() not in ("0", "false", "no", "off")
+    return bool(v)
+
+
+def _empty_opportunities_bundle(*, enabled: bool = False) -> dict:
+    return {
+        "enabled": enabled,
+        "opportunities": [],
+        "portfolio_doctor_recommendations": {},
+    }
+
+
+def _doctor_recommendations_for_portfolios(
+    config: dict,
+    portfolios_out: dict,
+    results: list,
+    opportunities: list,
+    confidence_by_ticker: dict,
+) -> dict:
+    doctor_cfg = dict(config.get("portfolio_doctor") or {})
+    doctor_cfg["model_rules"] = config.get("model_rules") or {}
+    doctor_cfg["cash_deploy_min_score"] = config.get("cash_deploy_min_score", 70)
+    out: dict = {}
+    for pname, rep in portfolios_out.items():
+        try:
+            out[pname] = allocation_recommendations(
+                report=rep,
+                results=results,
+                opportunities=opportunities,
+                doctor_cfg=doctor_cfg,
+                confidence_by_ticker=confidence_by_ticker,
+            )
+        except Exception as e:
+            logger.debug("portfolio_doctor %s: %s", pname, e)
+    return out
+
+
 def _holdings_from_config(config: dict) -> list:
     """Same holdings list as main dashboard (multi-account + fallback)."""
     holdings: list = []
@@ -146,9 +180,13 @@ def _holdings_from_config(config: dict) -> list:
 
 def compute_opportunities_bundle() -> dict | None:
     """
-    Run opportunity scan + best 2026 + Portfolio Doctor adds using the last cached dashboard (signals + portfolios).
+    Run opportunity scan + Portfolio Doctor adds using the last cached dashboard (signals + portfolios).
     Called from GET /api/dashboard/opportunities-bundle (lazy load, Option A).
     """
+    config = _load_config()
+    if not _opportunities_bundle_enabled(config):
+        return _empty_opportunities_bundle(enabled=False)
+
     try:
         from signals.cache import get_cached_dashboard
 
@@ -159,7 +197,6 @@ def compute_opportunities_bundle() -> dict | None:
         logger.debug("opportunities-bundle: cache read failed: %s", e)
         return None
 
-    config = _load_config()
     results = list(cached["signals"])
     portfolios_out = cached.get("portfolios")
     if not isinstance(portfolios_out, dict) or not portfolios_out:
@@ -193,17 +230,9 @@ def compute_opportunities_bundle() -> dict | None:
         logger.warning("opportunities-bundle scan: %s", e)
         opportunities = []
 
-    best_2026: list = []
-    try:
-        if get_best_picks_2026:
-            best_2026 = get_best_picks_2026(config, max_results=20) or []
-    except Exception as e:
-        logger.debug("opportunities-bundle best_2026: %s", e)
-
     logger.info(
-        "[opportunities-bundle] scan DONE (%d opps, %d best2026, %.0f ms)",
+        "[opportunities-bundle] scan DONE (%d opps, %.0f ms)",
         len(opportunities),
-        len(best_2026),
         (time.perf_counter() - t0) * 1000,
     )
 
@@ -223,7 +252,6 @@ def compute_opportunities_bundle() -> dict | None:
     add_candidate_tickers = list(
         dict.fromkeys(
             [o.get("ticker") for o in opportunities if o.get("ticker") and o.get("ticker") not in portfolio_tickers_set]
-            + [b.get("ticker") for b in best_2026 if b.get("ticker") and b.get("ticker") not in portfolio_tickers_set]
         )
     )
     t0c = time.perf_counter()
@@ -242,29 +270,255 @@ def compute_opportunities_bundle() -> dict | None:
             (time.perf_counter() - t0c) * 1000,
         )
 
-    doctor_cfg = dict(config.get("portfolio_doctor") or {})
-    doctor_cfg["model_rules"] = config.get("model_rules") or {}
-    doctor_cfg["cash_deploy_min_score"] = config.get("cash_deploy_min_score", 70)
-
-    portfolio_doctor_recommendations: dict = {}
-    for pname, rep in portfolios_out.items():
-        try:
-            portfolio_doctor_recommendations[pname] = allocation_recommendations(
-                report=rep,
-                results=results,
-                opportunities=opportunities,
-                best_2026=best_2026,
-                doctor_cfg=doctor_cfg,
-                confidence_by_ticker=confidence_by_ticker,
-            )
-        except Exception as e:
-            logger.debug("opportunities-bundle doctor %s: %s", pname, e)
+    portfolio_doctor_recommendations = _doctor_recommendations_for_portfolios(
+        config, portfolios_out, results, opportunities, confidence_by_ticker
+    )
 
     return {
+        "enabled": True,
         "opportunities": opportunities,
-        "best_2026": best_2026,
         "portfolio_doctor_recommendations": portfolio_doctor_recommendations,
     }
+
+
+def compute_analysis_bundle() -> dict | None:
+    """
+    Lazy Analysis tab: insider, forward tracking, paper trading summary, model validation, etc.
+    Uses cached dashboard signals; merges results back into Redis when computed.
+    """
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot, merge_dashboard_cache_updates
+        from api.dashboard_shell import build_analysis_bundle, empty_analysis_bundle
+
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+        if not cached or not isinstance(cached.get("signals"), list):
+            return None
+        if cached.get("analysis_deferred") is False:
+            return build_analysis_bundle(cached)
+    except Exception as e:
+        logger.debug("analysis-bundle: cache read failed: %s", e)
+        return None
+
+    config = _load_config()
+    data_root = get_data_root()
+    results = list(cached["signals"])
+    holdings = _holdings_from_config(config)
+    watchlist = config.get("watchlist", [])
+    portfolio_tickers = [h.get("ticker") if isinstance(h, dict) else h for h in holdings]
+    watchlist_tickers_for_insider = list(dict.fromkeys([r.get("ticker") for r in results if r.get("ticker")]))[:15]
+    paper_trading: dict = dict(cached.get("paper_trading") or {})
+
+    t0 = time.perf_counter()
+    parallel_results: dict = {}
+
+    def _task_insider():
+        try:
+            from signals.edgar_insider import run_insider_flow
+            from signals.cache import cached_edgar_insider_flow
+            if watchlist_tickers_for_insider:
+                out = cached_edgar_insider_flow(
+                    watchlist_tickers_for_insider,
+                    lambda: run_insider_flow(watchlist_tickers_for_insider, max_form4_per_ticker=2, days_lookback=90),
+                )
+                return ("insider_flow", out if isinstance(out, dict) else {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": "No data"})
+            return ("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
+        except Exception as e:
+            return ("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": str(e)})
+
+    def _task_fmp_plan():
+        try:
+            return ("fmp_plan_status", run_fmp_plan_check(config))
+        except Exception:
+            return ("fmp_plan_status", {"has_key": False, "available": [], "unavailable": []})
+
+    def _task_model_validation():
+        try:
+            recs, summary = get_validation_records(data_root=data_root, max_records=60, tickers=["SPY", "QQQ"])
+            return ("model_validation", {"records": recs, "summary": summary})
+        except Exception:
+            return ("model_validation", {"records": [], "summary": {}})
+
+    def _task_forward_tracking():
+        try:
+            ft_tickers = list(dict.fromkeys([t for t in (watchlist + portfolio_tickers) if t])) or ["SPY", "QQQ"]
+            return ("forward_tracking", get_forward_tracking(
+                data_root=data_root, tickers=ft_tickers, horizons=[5, 20, 60], max_pairs_per_horizon=30,
+            ))
+        except Exception as e:
+            return ("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)})
+
+    def _task_paper_trading_async():
+        try:
+            from signals.paper_trade_logger import PaperTradeLogger
+            pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
+            min_done = int(pt_cfg.get("min_completed_for_summary", 60))
+            min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
+            bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
+            pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
+            pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
+            sync = pt.sync_targets_stops_from_results(results)
+            mtm = pt.mark_to_market()
+            mtm_history_log = pt.append_mtm_history()
+            fill = pt.fill_outcomes()
+            summary = pt.get_performance_summary(min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym)
+            recent = pt.enrich_trades_with_benchmark(pt.get_recent(limit=40), benchmark=bench_sym)
+            mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
+            equity_curve = pt.get_completed_equity_curve(max_points=400)
+            return ("paper_trading_async", {
+                "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
+                "fill": fill, "summary": summary, "recent": recent, "mtm_history": mtm_history,
+                "equity_curve": equity_curve,
+            })
+        except Exception as e:
+            logger.debug("analysis-bundle paper trading: %s", e)
+            return ("paper_trading_async", None)
+
+    def _task_regime_validation():
+        try:
+            from signals.regime_consensus import compute_regime_consensus
+            from signals.regime_persistence import compute_regime_persistence
+            from signals.regime_validation import build_regime_validation
+            from signals.regime import get_regime
+
+            market_regime_data = cached.get("market_regime") if isinstance(cached.get("market_regime"), dict) else {}
+            macro_regime = cached.get("macro_regime")
+            spy_row = next(
+                (r for r in results if isinstance(r, dict) and str(r.get("ticker") or "").upper() == "SPY"),
+                None,
+            )
+            hmm_bull_prob = None
+            hmm_data_spy = None
+            if spy_row:
+                conf = spy_row.get("confidence") or {}
+                if isinstance(conf, dict):
+                    hmm_data_spy = conf.get("hmm")
+                    if isinstance(hmm_data_spy, dict):
+                        try:
+                            hmm_bull_prob = float(hmm_data_spy.get("bull_probability") or 0)
+                        except (TypeError, ValueError):
+                            pass
+            ma_regime = None
+            if isinstance(hmm_data_spy, dict):
+                ma_regime = hmm_data_spy.get("ma_regime") or hmm_data_spy.get("resolved_regime")
+            if not ma_regime:
+                ma_regime = next(
+                    (r.get("_global_market_regime") for r in results if isinstance(r, dict) and r.get("_global_market_regime")),
+                    None,
+                )
+            composite_regime = None
+            try:
+                spy_score = float((spy_row or {}).get("composite_buy") or 50)
+                composite_regime = get_regime(spy_score)
+            except Exception:
+                pass
+            tech_leadership = market_regime_data.get("tech_leadership")
+            consensus = compute_regime_consensus(
+                hmm_bull_prob=hmm_bull_prob,
+                ma_regime=ma_regime,
+                composite_regime=composite_regime,
+                macro_regime=macro_regime,
+                tech_leadership=tech_leadership,
+            )
+            persistence = compute_regime_persistence(
+                current_regime=consensus["consensus_direction"],
+                data_root=data_root,
+            )
+            validation = build_regime_validation(
+                consensus=consensus,
+                persistence=persistence,
+                hmm_data=hmm_data_spy,
+                data_root=data_root,
+            )
+            return ("regime_validation", validation)
+        except Exception as exc:
+            return ("regime_validation", {"validated": None, "summary": str(exc), "error": True})
+
+    def _task_confidence_calibration():
+        try:
+            from signals.confidence_calibration import build_calibration_report, calibration_report_to_dict
+            report = build_calibration_report(data_root)
+            return ("confidence_calibration", calibration_report_to_dict(report))
+        except Exception as e:
+            return ("confidence_calibration", {"buckets": [], "note": str(e)})
+
+    specs = [
+        _task_insider, _task_fmp_plan, _task_model_validation, _task_forward_tracking,
+        _task_paper_trading_async, _task_regime_validation, _task_confidence_calibration,
+    ]
+    with ThreadPoolExecutor(max_workers=min(7, len(specs))) as ex:
+        futures = [ex.submit(fn) for fn in specs]
+        for fut in as_completed(futures):
+            try:
+                key, value = fut.result()
+                parallel_results[key] = value
+            except Exception as e:
+                logger.debug("analysis-bundle task failed: %s", e)
+
+    forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
+    paper_async = parallel_results.get("paper_trading_async")
+    if paper_async:
+        paper_trading["sync_targets"] = paper_async.get("sync_targets")
+        paper_trading["mtm"] = paper_async.get("mtm")
+        paper_trading["mtm_history_log"] = paper_async.get("mtm_history_log")
+        paper_trading["fill"] = paper_async.get("fill")
+        paper_trading["summary"] = paper_async.get("summary")
+        paper_trading["recent"] = paper_async.get("recent")
+        paper_trading["mtm_history"] = paper_async.get("mtm_history")
+        paper_trading["equity_curve"] = paper_async.get("equity_curve") or []
+
+    paper_vs_backtest_drift = None
+    try:
+        from signals.paper_vs_backtest_drift import build_paper_vs_backtest_drift
+        paper_vs_backtest_drift = build_paper_vs_backtest_drift(forward_tracking, data_root)
+    except Exception as e:
+        logger.debug("analysis-bundle drift: %s", e)
+
+    next_day_outlook = cached.get("next_day_outlook") or []
+    indicator_validation = []
+    try:
+        indicator_validation = validate_indicators_vs_external(next_day_outlook)
+    except Exception as e:
+        logger.debug("analysis-bundle indicator_validation: %s", e)
+
+    indicator_comparisons = []
+    try:
+        compare_tickers = ["SPY", "QQQ", "GLD", "SLV"]
+        our_by_ticker = {
+            r["ticker"]: {
+                "close": r.get("close"),
+                "rsi": r.get("rsi"),
+                "ma20": r.get("ma20"),
+                "ma50": r.get("ma50"),
+                "macd_hist": r.get("macd_hist"),
+            }
+            for r in results
+            if not r.get("error") and r.get("ticker") in compare_tickers
+        }
+        indicator_comparisons = run_indicator_comparison(
+            config, our_by_ticker, next_day_outlook, tickers=compare_tickers
+        )
+    except Exception as e:
+        logger.debug("analysis-bundle indicator_comparisons: %s", e)
+
+    bundle = {
+        "model_validation": parallel_results.get("model_validation", {"records": [], "summary": {}}),
+        "forward_tracking": forward_tracking,
+        "regime_validation": parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"}),
+        "confidence_calibration": parallel_results.get("confidence_calibration", {"buckets": [], "note": "Not computed"}),
+        "paper_trading": paper_trading,
+        "paper_vs_backtest_drift": paper_vs_backtest_drift,
+        "insider_flow": parallel_results.get("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None}),
+        "indicator_validation": indicator_validation,
+        "indicator_comparisons": indicator_comparisons,
+        "fmp_plan_status": parallel_results.get("fmp_plan_status", {}),
+        "analysis_deferred": False,
+    }
+    logger.info("[analysis-bundle] DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
+    try:
+        merge_dashboard_cache_updates(bundle)
+    except Exception as e:
+        logger.debug("analysis-bundle cache merge failed: %s", e)
+    return bundle if bundle else empty_analysis_bundle()
 
 
 def _dashboard_response_for_client(full: dict, *, include_full_signals: bool) -> dict:
@@ -287,21 +541,74 @@ def _dashboard_response_for_client(full: dict, *, include_full_signals: bool) ->
 
 @router.get("/dashboard")
 async def get_dashboard(
-    refresh: bool = Query(False, description="Bypass Redis cache read; recompute full dashboard and refresh cache."),
+    refresh: bool = Query(False, description="Bypass cache; recompute full dashboard (manual Refresh)."),
 ):
-    """Full dashboard data - runs signals, portfolio, opportunities. May take 1–2 min. Redis cache when available."""
-    if not refresh:
-        try:
-            from signals.cache import get_cached_dashboard
-            cached = get_cached_dashboard()
-            if cached is not None:
-                logger.info("[dashboard] serving from Redis cache (trimmed client payload)")
-                return _dashboard_response_for_client(cached, include_full_signals=False)
-        except Exception as e:
-            logger.debug("[dashboard] cache check skipped: %s", e)
-    else:
-        logger.info("[dashboard] refresh=true: bypassing Redis cache read")
+    """Serve cached snapshot instantly; stale-while-revalidate + background refresh on miss."""
+    from api.dashboard_job import get_refresh_status, is_refresh_running, trigger_background_refresh
+    from api.dashboard_shell import build_shell_from_full
+    from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
+    if refresh:
+        logger.info("[dashboard] refresh=true: synchronous full compute")
+        from starlette.concurrency import run_in_threadpool
+        out = await run_in_threadpool(_compute_full_dashboard_sync)
+        shell = build_shell_from_full(out, include_full_signals=False)
+        shell["stale"] = False
+        shell["refresh_status"] = "done"
+        return shell
+
+    try:
+        cached = get_cached_dashboard()
+        if cached is not None:
+            logger.info("[dashboard] serving fresh Redis cache (shell payload)")
+            shell = build_shell_from_full(cached, include_full_signals=False)
+            shell["stale"] = False
+            shell["refresh_status"] = get_refresh_status().get("status", "idle")
+            return shell
+    except Exception as e:
+        logger.debug("[dashboard] cache check skipped: %s", e)
+
+    stale = None
+    try:
+        stale = get_last_dashboard_snapshot()
+    except Exception as e:
+        logger.debug("[dashboard] last snapshot read failed: %s", e)
+
+    if stale is not None:
+        logger.info("[dashboard] serving stale snapshot; triggering background refresh")
+        trigger_background_refresh(_compute_full_dashboard_sync)
+        shell = build_shell_from_full(stale, include_full_signals=False)
+        shell["stale"] = True
+        shell["refresh_status"] = "running" if is_refresh_running() else get_refresh_status().get("status", "idle")
+        return shell
+
+    if not is_refresh_running():
+        trigger_background_refresh(_compute_full_dashboard_sync)
+    raise HTTPException(
+        status_code=503,
+        detail="Dashboard warming up — first compute in progress. Retry in 30–60s or use Refresh.",
+    )
+
+
+@router.get("/dashboard/shell")
+async def get_dashboard_shell():
+    """Instant read-only shell — never runs full compute. Same as GET /dashboard without refresh."""
+    return await get_dashboard(refresh=False)
+
+
+@router.get("/dashboard/status")
+async def get_dashboard_status():
+    """Background refresh job status for stale-while-revalidate polling."""
+    from api.dashboard_job import get_refresh_status
+    from signals.cache import get_cached_dashboard
+
+    status = get_refresh_status()
+    status["cache_fresh"] = get_cached_dashboard() is not None
+    return status
+
+
+def _compute_full_dashboard_sync() -> dict:
+    """Full pipeline (signals, portfolio, macro). Used by refresh + background job."""
     dashboard_start = time.perf_counter()
     logger.info("[dashboard] START loading dashboard")
     t0 = time.perf_counter()
@@ -804,13 +1111,16 @@ async def get_dashboard(
             logger.info("[dashboard] section: %s failed after %.0f ms: %s", name, (time.perf_counter() - t0) * 1000, e)
             raise
 
-    parallel_task_specs = [
+    parallel_task_specs_core = [
         ("crypto_signals", _task_crypto),
         ("cross_asset", _task_cross_asset),
         ("economic_calendar", _task_economic_calendar),
         ("real_yield", _task_real_yield),
         ("cot_extremes", _task_cot),
         ("eod_redis", _task_eod_redis),
+    ]
+    # Analysis-tab sections: lazy via GET /api/dashboard/analysis-bundle
+    parallel_task_specs_deferred = [
         ("insider_flow", _task_insider),
         ("fmp_plan_status", _task_fmp_plan),
         ("model_validation", _task_model_validation),
@@ -819,6 +1129,7 @@ async def get_dashboard(
         ("regime_validation", _task_regime_validation),
         ("confidence_calibration", _task_confidence_calibration),
     ]
+    parallel_task_specs = parallel_task_specs_core
     parallel_results: dict = {}
     t_parallel = time.perf_counter()
     logger.info("[dashboard] section: parallel load (%d tasks)...", len(parallel_task_specs))
@@ -845,7 +1156,6 @@ async def get_dashboard(
     redis_status_out = eod_redis[1] if isinstance(eod_redis, tuple) and len(eod_redis) > 1 else {"configured": False, "connected": False}
     insider_flow = parallel_results.get("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
     fmp_plan_status = parallel_results.get("fmp_plan_status", {})
-    best_2026: list = []  # lazy: GET /api/dashboard/opportunities-bundle
     model_validation = parallel_results.get("model_validation", {"records": [], "summary": {}})
     forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
     regime_validation = parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"})
@@ -1140,43 +1450,11 @@ async def get_dashboard(
 
     # (model_validation, forward_tracking, paper_trading sync, pre_market, pre_market_full, eod_snapshots, redis_status, insider_flow, fmp_plan_status loaded in parallel above)
 
-    # Opportunities + best_2026: lazy-loaded via GET /api/dashboard/opportunities-bundle (Option A).
-
+    # Opportunities scan: lazy via GET /api/dashboard/opportunities-bundle when enabled.
+    opp_bundle_on = _opportunities_bundle_enabled(config)
     opportunities: list = []
 
-    # 7-layer confidence for remaining watchlist tickers — same engine as roadmaps / ticker detail
-    dash_cfg = config.get("dashboard") or {}
-    conf_watch_cap = int(dash_cfg.get("confidence_watchlist_max", 40))
-    watchlist_for_conf = [
-        r["ticker"] for r in results
-        if not r.get("error") and r.get("ticker") and r["ticker"] not in confidence_by_ticker
-    ][:conf_watch_cap]
-    if watchlist_for_conf:
-        t0_conf_wl = time.perf_counter()
-
-        def _confidence_watch(ticker: str):
-            try:
-                conf = run_confidence(ticker, config=config)
-                return (ticker, conf) if conf.get("confidence") is not None else (ticker, None)
-            except Exception as e:
-                logger.debug("Confidence watchlist %s: %s", ticker, e)
-                return (ticker, None)
-
-        try:
-            with ThreadPoolExecutor(max_workers=8) as ex:
-                futures = [ex.submit(_confidence_watch, t) for t in watchlist_for_conf]
-                for fut in as_completed(futures):
-                    ticker, conf = fut.result()
-                    if conf is not None:
-                        confidence_by_ticker[ticker] = conf
-            logger.info(
-                "[dashboard] confidence for %d watchlist tickers (parallel, %.0f ms)",
-                len(watchlist_for_conf),
-                (time.perf_counter() - t0_conf_wl) * 1000,
-            )
-        except Exception as e:
-            logger.debug("Watchlist confidence batch failed: %s", e)
-
+    # Watchlist 7-layer confidence: lazy (roadmaps / ticker detail / opportunities-bundle). Holdings only above.
     for r in results:
         if r.get("error"):
             continue
@@ -1216,26 +1494,17 @@ async def get_dashboard(
     except Exception as e:
         logger.debug("retail_status enrich: %s", e)
 
-    # Portfolio Doctor: allocation recommendations (trim/add with $ and prices) per portfolio
-    t0 = time.perf_counter()
-    portfolio_doctor_recommendations = {}
-    doctor_cfg = dict(config.get("portfolio_doctor") or {})
-    doctor_cfg["model_rules"] = config.get("model_rules") or {}
-    doctor_cfg["cash_deploy_min_score"] = config.get("cash_deploy_min_score", 70)
-    for pname, rep in portfolios_out.items():
-        try:
-            rec = allocation_recommendations(
-                report=rep,
-                results=results,
-                opportunities=opportunities,
-                best_2026=best_2026,
-                doctor_cfg=doctor_cfg,
-                confidence_by_ticker=confidence_by_ticker,
-            )
-            portfolio_doctor_recommendations[pname] = rec
-        except Exception as e:
-            logger.debug("Portfolio Doctor for %s: %s", pname, e)
-    logger.info("[dashboard] section: portfolio_doctor DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
+    # Portfolio Doctor trim/add $ recommendations.
+    if opp_bundle_on:
+        portfolio_doctor_recommendations: dict = {}
+        opportunities_deferred = True
+        logger.info("[dashboard] portfolio_doctor recommendations deferred (opportunities-bundle)")
+    else:
+        portfolio_doctor_recommendations = _doctor_recommendations_for_portfolios(
+            config, portfolios_out, results, [], confidence_by_ticker
+        )
+        opportunities_deferred = False
+        logger.info("[dashboard] portfolio_doctor trim-only (opportunities bundle disabled)")
 
     # Performance vs benchmark (portfolio vs SPY/QQQ over 1m, 3m, 6m, 1y)
     performance_vs_benchmark = {"periods": [], "as_of": None, "message": None}
@@ -1630,7 +1899,6 @@ async def get_dashboard(
         "insider_flow": insider_flow,
         "cot_by_ticker": cot_by_ticker,
         "fmp_plan_status": fmp_plan_status,
-        "best_2026": best_2026,
         "story_changes": story_changes,
         "portfolio": report,
         "portfolios": portfolios_out,
@@ -1640,7 +1908,10 @@ async def get_dashboard(
         "tax_aware_exits": tax_aware_exits_out,
         "trim_candidates": trim_candidates,
         "opportunities": opportunities,
-        "opportunities_deferred": True,
+        "opportunities_bundle_enabled": opp_bundle_on,
+        "opportunities_deferred": opportunities_deferred,
+        "analysis_deferred": True,
+        "signal_scores": _build_signal_scores(results),
         "thesis_check": thesis_check,
         "what_changed": what_changed_list,
         "earnings_risk_count": earnings_risk_count,
@@ -1672,12 +1943,13 @@ async def get_dashboard(
     except Exception as e:
         logger.debug("[dashboard] cache set skipped: %s", e)
     logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
-    return _dashboard_response_for_client(out, include_full_signals=not cache_ok)
+    return out
+
 
 
 @router.get("/dashboard/opportunities-bundle")
 async def get_dashboard_opportunities_bundle():
-    """Lazy load: opportunity scan, best 2026 picks, Portfolio Doctor add-side (uses cached dashboard signals)."""
+    """Lazy load: opportunity scan + Portfolio Doctor add-side (uses cached dashboard signals)."""
     try:
         out = compute_opportunities_bundle()
     except Exception as e:
@@ -1688,7 +1960,22 @@ async def get_dashboard_opportunities_bundle():
             status_code=503,
             detail="Dashboard cache unavailable. Load the dashboard once or click Refresh, then try again.",
         )
-    # numpy/pandas scalars from scanners → JSON-safe
+    return jsonable_encoder(out)
+
+
+@router.get("/dashboard/analysis-bundle")
+async def get_dashboard_analysis_bundle():
+    """Lazy load: Analysis tab sections (paper trading, forward tracking, insider, validation)."""
+    try:
+        out = compute_analysis_bundle()
+    except Exception as e:
+        logger.exception("analysis-bundle compute failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    if out is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Dashboard cache unavailable. Load the dashboard or click Refresh, then open Analysis.",
+        )
     return jsonable_encoder(out)
 
 
@@ -1914,6 +2201,39 @@ def _premarket_file_is_from_today(data: dict) -> bool:
         return file_date == today
     except Exception:
         return False  # If we can't parse, treat as stale
+
+
+@router.get("/after-hours/snapshot")
+async def get_after_hours_snapshot(refresh: bool = Query(False)):
+    """
+    After-hours earnings marks (portfolio ∪ watchlist names reporting today).
+    refresh=true runs a live pass; default reads file / dashboard cache.
+    """
+    if refresh:
+        try:
+            from signals.after_hours_earnings import run_after_hours_earnings_snapshot
+
+            out = run_after_hours_earnings_snapshot(slot="manual")
+            return jsonable_encoder(out)
+        except Exception as e:
+            logger.exception("after-hours refresh failed: %s", e)
+            raise HTTPException(status_code=500, detail=str(e)) from e
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+        from signals.after_hours_earnings import load_after_hours_snapshot
+
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+        if cached and isinstance(cached.get("after_hours_earnings"), dict):
+            return jsonable_encoder(cached["after_hours_earnings"])
+        file_snap = load_after_hours_snapshot()
+        if file_snap:
+            return jsonable_encoder(file_snap)
+    except Exception as e:
+        logger.debug("after-hours read: %s", e)
+    raise HTTPException(
+        status_code=503,
+        detail="No after-hours snapshot yet. Runs at 4:30 PM and 6:00 PM ET on earnings days (portfolio ∪ watchlist).",
+    )
 
 
 @router.get("/pre-market")

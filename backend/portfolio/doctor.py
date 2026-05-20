@@ -330,14 +330,13 @@ def allocation_recommendations(
     report: dict,
     results: list[dict],
     opportunities: list[dict],
-    best_2026: list[dict],
     doctor_cfg: dict | None = None,
     confidence_by_ticker: dict | None = None,
 ) -> dict:
     """
     Portfolio Doctor: trim/add recommendations with $ and % amounts and suggested prices.
     Uses risk_appetite, goal, and optional target $ over time to tune aggressiveness.
-    Add candidates come from opportunities + best_2026 (deduped by ticker).
+    Add candidates come from opportunities (deduped by ticker).
     When confidence_by_ticker is provided (7-layer run_confidence), uses calibrated
     confidence for trim/add thresholds and ranking instead of technical score.
     """
@@ -465,7 +464,7 @@ def allocation_recommendations(
         })
     trim_list.sort(key=lambda x: ((x.get("confidence") if x.get("confidence") is not None else x["score"] or 0), -x["current_value"]))
 
-    # ---- ADD: merge opportunities + best_2026 (dedupe by ticker, prefer higher confidence/score) ----
+    # ---- ADD: merge opportunities (dedupe by ticker, prefer higher confidence/score) ----
     portfolio_tickers = {h["ticker"] for h in per_holding}
     add_candidates = []
     seen = set()
@@ -487,27 +486,6 @@ def allocation_recommendations(
             "regime": o.get("regime") or "",
             "close": o.get("close"),
             "source": "opportunities",
-            "confidence": round(conf_val * 100, 1) if conf_val is not None else None,
-            "action": conf_data.get("action") if conf_data else None,
-        })
-    for b in best_2026:
-        t = b.get("ticker")
-        if not t or t in portfolio_tickers or t in seen:
-            continue
-        score = b.get("score")
-        conf_data = conf_map.get(t)
-        conf_val = conf_data.get("confidence") if conf_data and isinstance(conf_data, dict) else None
-        use_conf = conf_val is not None and conf_val >= add_min_conf
-        use_score = score is not None and score >= add_min_score
-        if not use_conf and not use_score:
-            continue
-        seen.add(t)
-        add_candidates.append({
-            "ticker": t,
-            "score": float(score) if score is not None else None,
-            "regime": b.get("regime") or "",
-            "close": b.get("close"),
-            "source": "best_2026",
             "confidence": round(conf_val * 100, 1) if conf_val is not None else None,
             "action": conf_data.get("action") if conf_data else None,
         })

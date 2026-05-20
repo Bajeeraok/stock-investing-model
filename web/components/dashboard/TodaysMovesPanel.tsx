@@ -1,11 +1,17 @@
 "use client";
 
-import { ArrowRight, Calendar, Scissors, Zap } from "lucide-react";
+import { ArrowRight, Calendar, Moon, Scissors, Zap } from "lucide-react";
 import type { Signal } from "@/app/page";
+
+export type AfterHoursMove = {
+  ticker: string;
+  change_pct?: number | null;
+  post_earnings?: { transition_note?: string | null; beat_or_miss?: string | null };
+};
 
 export type TodayMove = {
   id: string;
-  kind: "story" | "trim" | "earnings" | "macro";
+  kind: "story" | "trim" | "earnings" | "macro" | "after_hours";
   ticker?: string;
   title: string;
   detail: string;
@@ -15,11 +21,25 @@ function buildTodayMoves(input: {
   storyChanges: Signal[];
   trimCandidates: { ticker: string; label: string }[];
   earningsSignals: Signal[];
+  afterHours?: AfterHoursMove[];
   macroHeadline?: string | null;
   max?: number;
 }): TodayMove[] {
   const max = input.max ?? 3;
   const moves: TodayMove[] = [];
+
+  for (const ah of (input.afterHours ?? []).slice(0, 2)) {
+    const pct = ah.change_pct;
+    const pctStr = pct != null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% AH` : "AH move";
+    const note = ah.post_earnings?.transition_note || ah.post_earnings?.beat_or_miss;
+    moves.push({
+      id: `ah-${ah.ticker}`,
+      kind: "after_hours",
+      ticker: ah.ticker,
+      title: `${ah.ticker} — ${pctStr}`,
+      detail: note ? String(note) : "Earnings today — mark vs prior close (score updates on next full refresh)",
+    });
+  }
 
   for (const s of input.storyChanges.slice(0, 2)) {
     if (!s.story_change) continue;
@@ -75,6 +95,7 @@ const KIND_STYLE: Record<TodayMove["kind"], { icon: typeof Zap; border: string; 
   story: { icon: Zap, border: "border-amber-500/35", text: "text-amber-300" },
   trim: { icon: Scissors, border: "border-red-500/35", text: "text-red-300" },
   earnings: { icon: Calendar, border: "border-violet-500/35", text: "text-violet-300" },
+  after_hours: { icon: Moon, border: "border-indigo-500/35", text: "text-indigo-300" },
   macro: { icon: ArrowRight, border: "border-sky-500/35", text: "text-sky-300" },
 };
 
@@ -82,6 +103,7 @@ export function TodaysMovesPanel({
   storyChanges,
   trimCandidates,
   signals,
+  afterHours,
   macroHeadline,
   onTickerClick,
   onViewAll,
@@ -89,6 +111,7 @@ export function TodaysMovesPanel({
   storyChanges: Signal[];
   trimCandidates: { ticker: string; label: string }[];
   signals: Signal[];
+  afterHours?: AfterHoursMove[];
   macroHeadline?: string | null;
   onTickerClick?: (ticker: string) => void;
   onViewAll?: () => void;
@@ -101,6 +124,7 @@ export function TodaysMovesPanel({
     storyChanges,
     trimCandidates,
     earningsSignals,
+    afterHours,
     macroHeadline,
     max: 3,
   });

@@ -1,0 +1,10 @@
+{
+  "as_of_utc": "2026-05-20T03:10:16Z",
+  "session_date_et": "2026-05-19",
+  "slot": "test",
+  "skipped": true,
+  "tickers_scheduled": [],
+  "items": [],
+  "disclaimer": "After-hours mark vs last regular-session close from the prior dashboard run. Composite score and indicators are unchanged until the next full refresh.",
+  "skip_reason": "no_earnings_today"
+}

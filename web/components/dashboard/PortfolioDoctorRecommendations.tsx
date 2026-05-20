@@ -92,7 +92,7 @@ export function PortfolioDoctorRecommendations({
 
       {/* Add */}
       <div>
-        <h4 className="text-sm font-medium text-emerald-400 mb-2">Suggested adds (from Opportunities & Best 2026)</h4>
+        <h4 className="text-sm font-medium text-emerald-400 mb-2">Suggested adds (from daily opportunity scan)</h4>
         {add.length === 0 ? (
           <p className="text-slate-500 text-sm">No add suggestions; consider rebalancing or adding cash.</p>
         ) : (

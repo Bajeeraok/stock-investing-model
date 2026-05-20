@@ -2,7 +2,7 @@
 Redis cache layer for non–signal-critical data.
 
 Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
-  - dashboard: full dashboard JSON – TTL via DASHBOARD_CACHE_TTL_SECONDS (default 600s / 10 min);
+  - dashboard: full dashboard JSON – TTL via DASHBOARD_CACHE_TTL_SECONDS (default 2700s / 45 min);
     avoids re-run on retry/refresh; warm scripts can pre-populate
   - backtest, next_day_backtest (24h)
   - economic_calendar (6h)
@@ -43,14 +43,14 @@ TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
 
 
 def _dashboard_ttl_seconds() -> int:
-    """Full dashboard JSON in Redis; default 10 min. Env DASHBOARD_CACHE_TTL_SECONDS (60–3600)."""
+    """Full dashboard JSON in Redis; default 45 min. Env DASHBOARD_CACHE_TTL_SECONDS (60–3600)."""
     raw = (os.environ.get("DASHBOARD_CACHE_TTL_SECONDS") or "").strip()
     if raw:
         try:
             return max(60, min(3600, int(raw)))
         except ValueError:
             pass
-    return 10 * 60  # 10 min – balances intraday freshness vs API load
+    return 45 * 60  # 45 min – aligns with 30 min UI auto-refresh + warm cron
 
 
 TTL_THRIVE_PHASE2 = 15 * 60  # 15 min – intraday + FMP + composite gate (UI-friendly)
@@ -411,13 +411,34 @@ def get_cached_dashboard() -> dict | None:
     return None
 
 
+def get_last_dashboard_snapshot() -> dict | None:
+    """Last good dashboard JSON (7d TTL) for stale-while-revalidate when fresh cache expired."""
+    key = cache_key("dashboard", "last")
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict) and hit.get("config") is not None:
+        return hit
+    return None
+
+
 def set_cached_dashboard(payload: dict) -> bool:
-    """Store full dashboard payload in Redis. TTL from _dashboard_ttl_seconds()."""
+    """Store full dashboard payload in Redis. TTL from _dashboard_ttl_seconds(). Also keeps 7d last snapshot."""
     key = cache_key("dashboard", "default")
-    return set_cached(key, payload, _dashboard_ttl_seconds())
+    ok = set_cached(key, payload, _dashboard_ttl_seconds())
+    last_key = cache_key("dashboard", "last")
+    set_cached(last_key, payload, 7 * 24 * 3600)
+    return ok
 
 
-# ─── EOD snapshots (persistent; no TTL) ─────────────────────────────────────
+def merge_dashboard_cache_updates(updates: dict) -> bool:
+    """Merge keys into the latest dashboard snapshot (fresh or last)."""
+    payload = get_cached_dashboard() or get_last_dashboard_snapshot()
+    if not payload or not isinstance(payload, dict):
+        return False
+    merged = dict(payload)
+    merged.update(updates)
+    return set_cached_dashboard(merged)
+
+
 # Store in Redis so EOD survives restarts when no persistent volume (Railway/Docker).
 # Read path: Redis first, then file. Write path: both Redis and file when possible.
 

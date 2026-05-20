@@ -1,7 +1,7 @@
 """
-Populate Redis dashboard cache by calling GET /api/dashboard (same work as a user load).
+Populate Redis dashboard cache by calling GET /api/dashboard?refresh=true (full compute, same as manual Refresh).
 
-Usage (cron / Railway scheduled job):
+Usage (cron / Railway scheduled job every 25 min):
   cd backend && set WARM_DASHBOARD_URL=https://your-api/api/dashboard && python scripts/warm_dashboard_cache.py
 
 Local:
@@ -19,6 +19,8 @@ if ROOT not in sys.path:
 
 def main() -> int:
     url = (os.environ.get("WARM_DASHBOARD_URL") or "http://127.0.0.1:8002/api/dashboard").strip()
+    if "refresh=" not in url:
+        url = f"{url}{'&' if '?' in url else '?'}refresh=true"
     try:
         import requests
     except ImportError:

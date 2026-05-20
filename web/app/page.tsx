@@ -3,18 +3,27 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 import type { PaperVsBacktestDriftPayload } from "@/components/dashboard/PaperVsBacktestDrift";
+import { loadCachedDashboard, mergeDashboardData, saveCachedDashboard } from "@/lib/dashboardCache";
 
 // Use relative /api/* so Next.js rewrites proxy to backend (BACKEND_API_URL). No NEXT_PUBLIC needed for Railway.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-const AUTO_REFRESH_MARKET_MIN = 30;
+const AUTO_REFRESH_MARKET_MIN = (() => {
+  const raw = process.env.NEXT_PUBLIC_AUTO_REFRESH_MARKET_MIN;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!Number.isNaN(n) && n >= 5 && n <= 120) return n;
+  }
+  return 30;
+})();
 // Off-hours auto-refresh is disabled to reduce API usage (FMP calls) and noise.
-// You can still manually refresh anytime.
 const AUTO_REFRESH_OFF_HOURS_MIN = 0;
 const DASHBOARD_FETCH_DEBOUNCE_MS = 2000;
 /** Min ms between dashboard fetches (avoids loop + duplicate from Strict Mode). */
 const DASHBOARD_MIN_INTERVAL_MS = 30_000;
 /** Auto-retry once after this delay when 502/503/timeout (shared-use robustness). */
 const AUTO_RETRY_DELAY_MS = 8000;
+/** Poll while backend recomputes after stale snapshot. */
+const STALE_POLL_MS = 5000;
 
 // Module-level guards so they survive Strict Mode unmount/remount and prevent duplicate requests
 let dashboardFetchInProgress = false;
@@ -42,23 +51,34 @@ function isUSMarketHours(): boolean {
 }
 
 export default function Home() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<DashboardData | null>(() =>
+    typeof window !== "undefined" ? loadCachedDashboard() : null
+  );
+  const [loading, setLoading] = useState(() => !loadCachedDashboard());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [stale, setStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [retrying, setRetrying] = useState(false);
 
   const lastFetchRef = useRef<number>(0);
+  const stalePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const applyDashboardJson = useCallback((json: DashboardData, fromNetwork = true) => {
+    setData((prev) => (prev ? mergeDashboardData(prev, json) : json));
+    if (fromNetwork) {
+      saveCachedDashboard(json);
+      setLastRefreshedAt(new Date());
+    }
+    setStale(Boolean(json.stale));
+  }, []);
 
   const refresh = useCallback(async (isAutoRetry = false, forceRefresh = false) => {
     const now = Date.now();
-    // Per-call debounce (same as before); manual force refresh bypasses debounce + min interval
     if (!forceRefresh && now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
     lastFetchRef.current = now;
 
-    // Single-flight: don't start another fetch while one is in progress (avoids Strict Mode double-mount)
     if (dashboardFetchInProgress) return;
-    // Min interval between fetches after we've started one (avoids loop; uses module-level so it survives remount)
     if (
       !forceRefresh &&
       lastDashboardFetchStart !== 0 &&
@@ -69,30 +89,33 @@ export default function Home() {
 
     dashboardFetchInProgress = true;
     lastDashboardFetchStart = now;
-    setLoading(true);
+    const hasCached = !!loadCachedDashboard();
+    if (!hasCached && !data) setLoading(true);
+    else setIsRefreshing(true);
     if (!isAutoRetry) setError(null);
     try {
-      const base = API_BASE ? `${API_BASE}/api/dashboard` : "/api/dashboard";
-      const url = forceRefresh ? `${base}${base.includes("?") ? "&" : "?"}refresh=true` : base;
+      const shellBase = API_BASE ? `${API_BASE}/api/dashboard/shell` : "/api/dashboard/shell";
+      const refreshUrl = API_BASE ? `${API_BASE}/api/dashboard?refresh=true` : "/api/dashboard?refresh=true";
+      const url = forceRefresh ? refreshUrl : shellBase;
       const res = await fetch(url);
       if (!res.ok) {
         let errMsg = res.status === 503
-          ? "Service temporarily unavailable (503)"
+          ? "Dashboard warming up — retry in a moment."
           : res.status === 502
             ? "Backend didn't respond in time (502). The app will retry automatically."
             : `HTTP ${res.status}`;
         try {
           const errBody = await res.json();
-          if (errBody && typeof errBody.error === "string") errMsg = errBody.error;
+          if (errBody && typeof errBody.detail === "string") errMsg = errBody.detail;
+          else if (errBody && typeof errBody.error === "string") errMsg = errBody.error;
         } catch {
-          // ignore JSON parse for error body
+          // ignore
         }
         throw new Error(errMsg);
       }
-      const json = await res.json();
-      setData(json);
-      setLastRefreshedAt(new Date());
-      retryCountRef.current = 0; // allow auto-retry again on future 502
+      const json = (await res.json()) as DashboardData;
+      applyDashboardJson(json);
+      retryCountRef.current = 0;
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Failed to load";
       const msg =
@@ -100,13 +123,14 @@ export default function Home() {
           ? "Connection failed or timed out. Retrying automatically…"
           : raw;
       console.error("[Dashboard] Fetch error:", raw, e);
-      setError(msg);
-      lastDashboardFetchStart = 0; // allow immediate retry from error screen
+      if (!loadCachedDashboard() && !data) setError(msg);
+      lastDashboardFetchStart = 0;
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
       dashboardFetchInProgress = false;
     }
-  }, []);
+  }, [applyDashboardJson, data]);
 
   // Auto-retry once after 502/503/timeout (robustness for shared links / cold start)
   const retryCountRef = useRef(0);
@@ -146,14 +170,39 @@ export default function Home() {
     return () => clearInterval(id);
   }, [data, error, refresh]);
 
+  // Poll when serving stale snapshot until cache is fresh
+  useEffect(() => {
+    if (!stale || error) {
+      if (stalePollRef.current) {
+        clearInterval(stalePollRef.current);
+        stalePollRef.current = null;
+      }
+      return;
+    }
+    const poll = async () => {
+      try {
+        const statusUrl = API_BASE ? `${API_BASE}/api/dashboard/status` : "/api/dashboard/status";
+        const st = await fetch(statusUrl).then((r) => r.json());
+        if (st?.cache_fresh || st?.status === "done") {
+          void refresh(false, false);
+        }
+      } catch {
+        // ignore poll errors
+      }
+    };
+    stalePollRef.current = setInterval(poll, STALE_POLL_MS);
+    return () => {
+      if (stalePollRef.current) clearInterval(stalePollRef.current);
+    };
+  }, [stale, error, refresh]);
+
   if (loading && !data && !retrying) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center max-w-sm">
           <div className="animate-spin rounded-full h-16 w-16 border-4 border-emerald-500 border-t-transparent mx-auto mb-4" />
-          <p className="text-slate-400">Running analysis… First load can take 2–3 minutes.</p>
-          <p className="text-slate-500 text-sm mt-1">Fetching signals, portfolio, opportunities...</p>
-          <p className="text-slate-600 text-xs mt-2">If you shared this link, the app will keep trying — no need to refresh.</p>
+          <p className="text-slate-400">Loading dashboard…</p>
+          <p className="text-slate-500 text-sm mt-1">First visit may take a minute if cache is cold.</p>
         </div>
       </div>
     );
@@ -207,7 +256,9 @@ export default function Home() {
         onRefresh={(force?: boolean) => {
           void refresh(false, !!force);
         }}
-        loading={loading}
+        loading={loading || isRefreshing}
+        isRefreshing={isRefreshing}
+        stale={stale}
         lastRefreshedAt={lastRefreshedAt}
       />
     </Suspense>
@@ -222,15 +273,6 @@ export interface CryptoSignal {
   signal: string | null;
   rsi: number | null;
   error?: string;
-}
-
-export interface Best2026Pick {
-  ticker: string;
-  score: number | null;
-  regime: string | null;
-  confidence: number;
-  reason: string;
-  close?: number | null;
 }
 
 export interface EconomicCalendarEvent {
@@ -357,13 +399,41 @@ export interface DashboardData {
   >;
   /** When true, full per-ticker rows load via GET /api/dashboard/signals-panel (Redis). */
   signals_deferred?: boolean;
-  /** When true, opportunities + best 2026 + doctor adds load via GET /api/dashboard/opportunities-bundle. */
+  /** When true, opportunities + doctor adds load via GET /api/dashboard/opportunities-bundle. */
   opportunities_deferred?: boolean;
+  /** When false, skip opportunity scan and hide Daily Opportunities in UI. */
+  opportunities_bundle_enabled?: boolean;
+  /** When true, Analysis tab sections load via GET /api/dashboard/analysis-bundle. */
+  analysis_deferred?: boolean;
+  /** Snapshot is older than fresh Redis cache; background refresh may be running. */
+  stale?: boolean;
+  refresh_status?: string;
+  /** After-hours marks for tickers reporting earnings today (4:30 PM / 6 PM ET job). */
+  after_hours_earnings?: {
+    as_of_utc?: string;
+    session_date_et?: string;
+    slot?: string;
+    skipped?: boolean;
+    skip_reason?: string;
+    items?: Array<{
+      ticker: string;
+      earnings_date?: string;
+      previous_close?: number | null;
+      mark_price?: number | null;
+      change_pct?: number | null;
+      price_source?: string;
+      post_earnings?: {
+        beat_or_miss?: string | null;
+        transition_note?: string | null;
+        signal_direction?: string | null;
+      };
+    }>;
+    disclaimer?: string;
+  };
   /** Top-level watchlist from API (config.watchlist). */
   watchlist?: string[];
   crypto?: CryptoSignal[];
   cross_asset?: CrossAssetItem[];
-  best_2026?: Best2026Pick[];
   story_changes: Signal[];
   portfolio: PortfolioReport;
   portfolios?: Record<string, PortfolioReport>;
@@ -522,6 +592,15 @@ export interface DashboardData {
       range_hit_rate_pct: number | null;
       range_n: number;
     };
+  };
+  regime_validation?: {
+    validated?: unknown;
+    summary?: string;
+    error?: boolean;
+  };
+  confidence_calibration?: {
+    buckets?: unknown[];
+    note?: string;
   };
   pre_market?: {
     es_pct?: number | null;

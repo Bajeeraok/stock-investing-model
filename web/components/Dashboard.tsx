@@ -7,14 +7,12 @@ import type {
   DashboardData,
   Signal,
   Opportunity,
-  Best2026Pick,
   PortfolioDoctorRecommendation,
 } from "@/app/page";
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
 import { clsx } from "clsx";
 import {
   AddTickerBar,
-  Best2026Section,
   CryptoSection,
   CrossAssetSection,
   DashboardTabs,
@@ -129,16 +127,18 @@ interface Props {
   /** Pass `true` to bypass Redis-backed cache read on the server (full recompute). */
   onRefresh: (forceRefresh?: boolean) => void | Promise<void>;
   loading: boolean;
+  isRefreshing?: boolean;
+  stale?: boolean;
   lastRefreshedAt?: Date | null;
 }
 
-const TAB_IDS: TabId[] = ["overview", "signals", "roadmaps", "portfolio", "opportunities", "markets", "analysis", "testsuite"];
+const TAB_IDS: TabId[] = ["overview", "signals", "roadmaps", "portfolio", "opportunities", "markets", "analysis"];
 
 function isValidTab(t: string): t is TabId {
   return TAB_IDS.includes(t as TabId);
 }
 
-export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) {
+export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stale = false, lastRefreshedAt }: Props) {
   const router = useRouter();
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [refreshAgo, setRefreshAgo] = useState("");
@@ -163,11 +163,13 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [oppBundle, setOppBundle] = useState<{
     opportunities: Opportunity[];
-    best_2026: Best2026Pick[];
     portfolio_doctor_recommendations: Record<string, PortfolioDoctorRecommendation>;
   } | null>(null);
   const [oppLoading, setOppLoading] = useState(false);
   const [oppFetchErr, setOppFetchErr] = useState<string | null>(null);
+  const [analysisBundle, setAnalysisBundle] = useState<Partial<DashboardData> | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisFetchErr, setAnalysisFetchErr] = useState<string | null>(null);
   const [advancedMode, setAdvancedMode] = useState(false);
 
   useEffect(() => {
@@ -179,7 +181,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   }, []);
 
   useEffect(() => {
-    if (!advancedMode && (activeTab === "analysis" || activeTab === "testsuite")) {
+    if (!advancedMode && activeTab === "analysis") {
       setActiveTabState("overview");
     }
   }, [advancedMode, activeTab]);
@@ -212,7 +214,8 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem("thrive-tab") : null;
-    const tab = (saved && isValidTab(saved)) ? saved : "overview";
+    const savedTab = saved === "testsuite" ? "analysis" : saved;
+    const tab = (savedTab && isValidTab(savedTab)) ? savedTab : "overview";
     setActiveTabState(tab);
     // Clear tab from URL on load if present (e.g. shared link with ?tab=)
     if (typeof window !== "undefined" && window.location.search) {
@@ -232,7 +235,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
     setSignalsFetchErr(null);
     setOppBundle(null);
     setOppFetchErr(null);
-  }, [data.as_of_date, data.signals_deferred, data.opportunities_deferred]);
+    setAnalysisBundle(null);
+    setAnalysisFetchErr(null);
+  }, [data.as_of_date, data.signals_deferred, data.opportunities_deferred, data.analysis_deferred]);
 
   useEffect(() => {
     if (!data.signals_deferred) return;
@@ -268,6 +273,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
   }, [data.signals_deferred, data.as_of_date, activeTab, lazySignals]);
 
   useEffect(() => {
+    if (data.opportunities_bundle_enabled === false) return;
     if (data.opportunities_deferred !== true) return;
     if (oppBundle !== null) return;
     if (activeTab !== "opportunities" && activeTab !== "portfolio") return;
@@ -290,7 +296,6 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
         if (cancelled || !j || typeof j !== "object") return;
         setOppBundle({
           opportunities: Array.isArray(j.opportunities) ? j.opportunities : [],
-          best_2026: Array.isArray(j.best_2026) ? j.best_2026 : [],
           portfolio_doctor_recommendations:
             j.portfolio_doctor_recommendations && typeof j.portfolio_doctor_recommendations === "object"
               ? j.portfolio_doctor_recommendations
@@ -306,7 +311,40 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
     return () => {
       cancelled = true;
     };
-  }, [data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
+  }, [data.opportunities_bundle_enabled, data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
+
+  useEffect(() => {
+    if (data.analysis_deferred !== true) return;
+    if (analysisBundle !== null) return;
+    if (activeTab !== "analysis" && activeTab !== "markets") return;
+    let cancelled = false;
+    setAnalysisLoading(true);
+    setAnalysisFetchErr(null);
+    const url = API_BASE ? `${API_BASE}/api/dashboard/analysis-bundle` : "/api/dashboard/analysis-bundle";
+    fetch(url)
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(
+            r.status === 503
+              ? "Analysis data unavailable — refresh the dashboard, then open Analysis again."
+              : `HTTP ${r.status}`
+          );
+        }
+        return r.json();
+      })
+      .then((j) => {
+        if (!cancelled && j && typeof j === "object") setAnalysisBundle(j as Partial<DashboardData>);
+      })
+      .catch((e) => {
+        if (!cancelled) setAnalysisFetchErr(e instanceof Error ? e.message : "Failed to load analysis");
+      })
+      .finally(() => {
+        if (!cancelled) setAnalysisLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data.analysis_deferred, data.as_of_date, activeTab, analysisBundle]);
 
   const effectiveSignals = useMemo(() => {
     if (!data.signals_deferred) return data.signals ?? [];
@@ -319,18 +357,57 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
     return (data.signal_scores ?? []) as Signal[];
   }, [data.signals_deferred, data.signals, data.signal_scores, lazySignals]);
 
-  const mergedOpportunities = oppBundle?.opportunities ?? data.opportunities ?? [];
-  const mergedBest2026 = oppBundle?.best_2026 ?? data.best_2026 ?? [];
+  const oppBundleEnabled = data.opportunities_bundle_enabled !== false;
+  const mergedOpportunities = oppBundleEnabled ? (oppBundle?.opportunities ?? data.opportunities ?? []) : [];
   const mergedDoctorRec = oppBundle?.portfolio_doctor_recommendations ?? data.portfolio_doctor_recommendations;
+
+  const insiderFlow = analysisBundle?.insider_flow ?? data.insider_flow;
+  const forwardTracking = analysisBundle?.forward_tracking ?? data.forward_tracking;
+  const paperTrading = analysisBundle?.paper_trading ?? data.paper_trading;
+  const paperVsBacktestDrift = analysisBundle?.paper_vs_backtest_drift ?? data.paper_vs_backtest_drift;
+  const modelValidation = analysisBundle?.model_validation ?? data.model_validation;
+  const regimeValidation = analysisBundle?.regime_validation ?? data.regime_validation;
+  const confidenceCalibration = analysisBundle?.confidence_calibration ?? data.confidence_calibration;
+  const indicatorValidation = analysisBundle?.indicator_validation ?? data.indicator_validation;
+  const indicatorComparisons = analysisBundle?.indicator_comparisons ?? data.indicator_comparisons;
+  const fmpPlanStatus = analysisBundle?.fmp_plan_status ?? data.fmp_plan_status;
+
+  const analysisPanelData = useMemo(
+    (): DashboardData => ({
+      ...data,
+      insider_flow: insiderFlow,
+      forward_tracking: forwardTracking,
+      paper_trading: paperTrading,
+      paper_vs_backtest_drift: paperVsBacktestDrift,
+      model_validation: modelValidation,
+      regime_validation: regimeValidation,
+      confidence_calibration: confidenceCalibration,
+      indicator_validation: indicatorValidation,
+      indicator_comparisons: indicatorComparisons,
+      fmp_plan_status: fmpPlanStatus,
+    }),
+    [
+      data,
+      insiderFlow,
+      forwardTracking,
+      paperTrading,
+      paperVsBacktestDrift,
+      modelValidation,
+      regimeValidation,
+      confidenceCalibration,
+      indicatorValidation,
+      indicatorComparisons,
+      fmpPlanStatus,
+    ]
+  );
 
   const dataForCopilot = useMemo(
     () => ({
       ...data,
       signals: effectiveSignals,
       opportunities: mergedOpportunities,
-      best_2026: mergedBest2026,
     }),
-    [data, effectiveSignals, mergedOpportunities, mergedBest2026]
+    [data, effectiveSignals, mergedOpportunities]
   );
 
   const signalListContext = useMemo(
@@ -360,7 +437,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
       if (e.target && (e.target as HTMLElement).closest("input, textarea, select")) return;
       const keyToTab: Partial<Record<string, TabId>> = {
         "1": "overview", "2": "signals", "3": "portfolio", "4": "opportunities",
-        "5": "markets", "6": "analysis", "7": "testsuite", "8": "roadmaps",
+        "5": "markets", "6": "analysis", "7": "roadmaps",
       };
       const id = e.key in keyToTab ? keyToTab[e.key] : null;
       if (id) {
@@ -510,6 +587,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
 
       {/* Compact alert strip - always visible */}
       <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
+        {(stale || isRefreshing) && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100 text-sm flex items-center gap-2">
+            <RefreshCw className={clsx("h-4 w-4 shrink-0", isRefreshing && "animate-spin")} />
+            <span>
+              {isRefreshing
+                ? "Refreshing dashboard in background…"
+                : "Showing last saved snapshot — updating in background."}
+            </span>
+          </div>
+        )}
         <TodaysMovesPanel
           storyChanges={data.story_changes}
           trimCandidates={selectedTrimCandidates.map((h) => ({
@@ -517,6 +604,15 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
             label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
           }))}
           signals={lazySignals ?? data.signals ?? []}
+          afterHours={
+            data.after_hours_earnings?.skipped
+              ? undefined
+              : data.after_hours_earnings?.items?.map((i) => ({
+                  ticker: i.ticker,
+                  change_pct: i.change_pct,
+                  post_earnings: i.post_earnings,
+                }))
+          }
           macroHeadline={data.macro_analog?.one_liner ?? data.market_forecast?.headline ?? null}
           onTickerClick={setSelectedTicker}
           onViewAll={() => setActiveTab("signals")}
@@ -561,11 +657,11 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </div>
               <ModelHealthStrip
                 model_health={data.model_health}
-                summary_by_signal={data.forward_tracking?.summary_by_signal}
-                summary_by_horizon={data.forward_tracking?.summary_by_horizon}
-                message={data.forward_tracking?.message}
+                summary_by_signal={forwardTracking?.summary_by_signal}
+                summary_by_horizon={forwardTracking?.summary_by_horizon}
+                message={forwardTracking?.message}
               />
-              {data.fmp_plan_status && <FMPPlanStatus status={data.fmp_plan_status} />}
+              {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
               <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen={false}>
                 <AlertsPanel onTickerClick={setSelectedTicker} />
               </ToggleSection>
@@ -990,10 +1086,10 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 defaultOpen={false}
               >
                 <div className="space-y-6">
-                  {data.opportunities_deferred === true && oppLoading && (
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
                     <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
                   )}
-                  {data.opportunities_deferred === true && oppFetchErr && (
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
                     <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
                   )}
                   <div>
@@ -1024,30 +1120,27 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Opportunities tab */}
           {activeTab === "opportunities" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {data.opportunities_deferred === true && oppLoading && (
+              {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
                 <div className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-slate-400 text-sm">
-                  Loading daily opportunities and Best 2026…
+                  Loading daily opportunities…
                 </div>
               )}
-              {data.opportunities_deferred === true && oppFetchErr && (
+              {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">{oppFetchErr}</div>
               )}
-              <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
-                {mergedOpportunities.length ? (
-                  <Opportunities items={mergedOpportunities} onTickerClick={setSelectedTicker} />
-                ) : (
-                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
-                    <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
-                    <p className="text-slate-400 font-medium">
-                      {data.opportunities_deferred === true && oppLoading ? "Loading…" : "No opportunities today"}
-                    </p>
-                    <p className="text-slate-500 text-sm mt-1">Tickers with score ≥ 70 and UP regime will appear here.</p>
-                  </div>
-                )}
-              </ToggleSection>
-              {mergedBest2026.length ? (
-                <ToggleSection id="opps-best-2026" title="Best 2026 picks" icon={<Target />} badge={mergedBest2026.length} defaultOpen>
-                  <Best2026Section items={mergedBest2026} onTickerClick={setSelectedTicker} />
+              {oppBundleEnabled ? (
+                <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
+                  {mergedOpportunities.length ? (
+                    <Opportunities items={mergedOpportunities} onTickerClick={setSelectedTicker} />
+                  ) : (
+                    <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
+                      <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
+                      <p className="text-slate-400 font-medium">
+                        {data.opportunities_deferred === true && oppLoading ? "Loading…" : "No opportunities today"}
+                      </p>
+                      <p className="text-slate-500 text-sm mt-1">Tickers with score ≥ 70 and UP regime will appear here.</p>
+                    </div>
+                  )}
                 </ToggleSection>
               ) : null}
               {data.thesis_check.length > 0 && (
@@ -1064,10 +1157,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 id="opps-insider-flow"
                 title="Insider & Institutional Flow"
                 icon={<TrendingUp />}
-                badge={data.insider_flow?.insider_buys?.length ?? 0}
+                badge={insiderFlow?.insider_buys?.length ?? 0}
                 defaultOpen
               >
-                <InsiderFlowTracker data={data.insider_flow} />
+                {data.analysis_deferred === true && analysisLoading && (
+                  <p className="text-slate-500 text-sm py-4">Loading insider flow…</p>
+                )}
+                {data.analysis_deferred === true && analysisFetchErr && (
+                  <p className="text-amber-200 text-sm py-2">{analysisFetchErr}</p>
+                )}
+                <InsiderFlowTracker data={insiderFlow} />
               </ToggleSection>
             </div>
           )}
@@ -1080,9 +1179,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               </ToggleSection>
               <ModelHealthStrip
                 model_health={data.model_health}
-                summary_by_signal={data.forward_tracking?.summary_by_signal}
-                summary_by_horizon={data.forward_tracking?.summary_by_horizon}
-                message={data.forward_tracking?.message}
+                summary_by_signal={forwardTracking?.summary_by_signal}
+                summary_by_horizon={forwardTracking?.summary_by_horizon}
+                message={forwardTracking?.message}
               />
               <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen={false}>
                 <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
@@ -1112,7 +1211,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                 </div>
               </div>
               {(!data.crypto?.length && !data.cross_asset?.length) && (
-                <p className="text-slate-500 text-sm">No market data. Check Opportunities tab for Best 2026 picks.</p>
+                <p className="text-slate-500 text-sm">No market data available for crypto or cross-asset panels.</p>
               )}
             </div>
           )}
@@ -1120,6 +1219,16 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
           {/* Analysis tab */}
           {activeTab === "analysis" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {data.analysis_deferred === true && analysisLoading && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3 text-slate-400 text-sm animate-pulse">
+                  Loading analysis sections…
+                </div>
+              )}
+              {data.analysis_deferred === true && analysisFetchErr && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+                  {analysisFetchErr}
+                </div>
+              )}
               <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen={false}>
                 <EodAndSystemPanel
                   eodSnapshots={data.eod_snapshots ?? []}
@@ -1133,8 +1242,8 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
               <ToggleSection id="analysis-price-target" title="Price target accuracy" icon={<Target />} defaultOpen={false}>
                 <AccuracyPriceTargetsWithBoundary />
               </ToggleSection>
-              {data.indicator_comparisons && data.indicator_comparisons.length > 0 && (
-                <ToggleSection id="analysis-indicator" title="Indicator comparison" icon={<Activity />} badge={data.indicator_comparisons.length} defaultOpen>
+              {indicatorComparisons && indicatorComparisons.length > 0 && (
+                <ToggleSection id="analysis-indicator" title="Indicator comparison" icon={<Activity />} badge={indicatorComparisons.length} defaultOpen>
                   <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
                     <p className="text-sm text-slate-500 mb-2">Close, RSI, MA, MACD vs external APIs.</p>
                     <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
@@ -1150,7 +1259,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                           </tr>
                         </thead>
                         <tbody>
-                          {data.indicator_comparisons.map((c) => (
+                          {indicatorComparisons.map((c) => (
                             <tr key={c.ticker} className="group border-b border-slate-700/50 hover:bg-slate-800/30">
                               <td className="sticky left-0 z-[10] min-w-[4.5rem] w-24 py-2 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{c.ticker}</td>
                               <td className="py-2 pr-2 text-slate-400">{c.close.comparisons.length > 0 ? `${c.close.comparisons.map((x) => `${x.source}: ${x.margin_pct != null ? `${x.margin_pct.toFixed(2)}%` : "—"}`).join("; ")}` : "—"}</td>
@@ -1166,62 +1275,62 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </div>
                 </ToggleSection>
               )}
-              {(data.forward_tracking?.records?.length ?? 0) > 0 && (
-                <ToggleSection id="analysis-forward" title="Forward tracking" icon={<RefreshCw />} badge={data.forward_tracking?.records?.length ?? 0} defaultOpen>
+              {(forwardTracking?.records?.length ?? 0) > 0 && (
+                <ToggleSection id="analysis-forward" title="Forward tracking" icon={<RefreshCw />} badge={forwardTracking?.records?.length ?? 0} defaultOpen>
                   <ForwardTracking
-                    records={data.forward_tracking!.records}
-                    summary_by_horizon={data.forward_tracking!.summary_by_horizon ?? {}}
-                    summary_by_signal={data.forward_tracking!.summary_by_signal ?? {}}
-                    message={data.forward_tracking?.message}
+                    records={forwardTracking!.records}
+                    summary_by_horizon={forwardTracking!.summary_by_horizon ?? {}}
+                    summary_by_signal={forwardTracking!.summary_by_signal ?? {}}
+                    message={forwardTracking?.message}
                   />
                 </ToggleSection>
               )}
               <ToggleSection id="analysis-track-record" title="Track record" icon={<Target />} defaultOpen>
                 <TrackRecordPanel
-                  calibration={(data as any).confidence_calibration ?? null}
-                  paperTrading={data.paper_trading?.summary ?? null}
-                  forwardSummary={data.forward_tracking?.summary_by_signal ?? null}
+                  calibration={(confidenceCalibration ?? null) as Parameters<typeof TrackRecordPanel>[0]["calibration"]}
+                  paperTrading={paperTrading?.summary ?? null}
+                  forwardSummary={forwardTracking?.summary_by_signal ?? null}
                   modelHealth={data.model_health ?? null}
-                  equityCurve={data.paper_trading?.equity_curve ?? null}
+                  equityCurve={paperTrading?.equity_curve ?? null}
                 />
               </ToggleSection>
               <ToggleSection id="analysis-browser-push" title="Browser push" icon={<Bell />} defaultOpen={false}>
                 <BrowserPushPanel />
               </ToggleSection>
-              {(data.paper_trading || data.paper_vs_backtest_drift) && (
+              {(paperTrading || paperVsBacktestDrift) && (
                 <ToggleSection
                   id="analysis-paper"
                   title="Paper trading"
                   icon={<FlaskConical />}
-                  badge={data.paper_trading?.summary?.completed ?? undefined}
+                  badge={paperTrading?.summary?.completed ?? undefined}
                   defaultOpen={false}
                 >
-                  {data.paper_vs_backtest_drift && (
-                    <PaperVsBacktestDrift drift={data.paper_vs_backtest_drift} />
+                  {paperVsBacktestDrift && (
+                    <PaperVsBacktestDrift drift={paperVsBacktestDrift} />
                   )}
-                  {data.paper_trading && <PaperTradingPanel data={data} />}
+                  {paperTrading && <PaperTradingPanel data={analysisPanelData} />}
                 </ToggleSection>
               )}
-              {data.forward_tracking?.message && !data.forward_tracking?.records?.length && (
+              {forwardTracking?.message && !forwardTracking?.records?.length && (
                 <ToggleSection id="analysis-forward-msg" title="Forward tracking" icon={<RefreshCw />} defaultOpen>
                   <ForwardTracking
                     records={[]}
                     summary_by_horizon={{}}
                     summary_by_signal={{}}
-                    message={data.forward_tracking.message}
+                    message={forwardTracking.message}
                   />
                 </ToggleSection>
               )}
-              {data.model_validation && (data.model_validation.records?.length ?? 0) > 0 && (
-                <ToggleSection id="analysis-model" title="Model validation" icon={<Activity />} badge={data.model_validation?.records?.length ?? 0} defaultOpen>
+              {modelValidation && (modelValidation.records?.length ?? 0) > 0 && (
+                <ToggleSection id="analysis-model" title="Model validation" icon={<Activity />} badge={modelValidation?.records?.length ?? 0} defaultOpen>
                   <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
-                    {data.model_validation.summary && (
+                    {modelValidation.summary && (
                       <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300 mb-2">
-                        {data.model_validation.summary.direction_accuracy_pct != null && (
-                          <span>Direction: <strong className="text-emerald-400">{data.model_validation.summary.direction_accuracy_pct}%</strong></span>
+                        {modelValidation.summary.direction_accuracy_pct != null && (
+                          <span>Direction: <strong className="text-emerald-400">{modelValidation.summary.direction_accuracy_pct}%</strong></span>
                         )}
-                        {data.model_validation.summary.range_hit_rate_pct != null && (
-                          <span>Range: <strong className="text-emerald-400">{data.model_validation.summary.range_hit_rate_pct}%</strong></span>
+                        {modelValidation.summary.range_hit_rate_pct != null && (
+                          <span>Range: <strong className="text-emerald-400">{modelValidation.summary.range_hit_rate_pct}%</strong></span>
                         )}
                       </div>
                     )}
@@ -1237,7 +1346,7 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                           </tr>
                         </thead>
                         <tbody>
-                          {(data.model_validation.records ?? []).slice(0, 20).map((r) => (
+                          {(modelValidation.records ?? []).slice(0, 20).map((r) => (
                             <tr key={`${r.as_of_date}-${r.ticker}`} className="border-b border-slate-700/50">
                               <td className="py-2 pr-2 text-slate-400">{r.as_of_date}</td>
                               <td className="py-2 pr-2 font-medium text-slate-300">{r.ticker}</td>
@@ -1252,13 +1361,9 @@ export function Dashboard({ data, onRefresh, loading, lastRefreshedAt }: Props) 
                   </div>
                 </ToggleSection>
               )}
-            </div>
-          )}
-
-          {/* ── Test Suite tab ── */}
-          {activeTab === "testsuite" && (
-            <div className="p-4 sm:p-6">
-              <SignalTestSuite />
+              <ToggleSection id="analysis-test-suite" title="Signal test suite" icon={<FlaskConical />} defaultOpen={false}>
+                <SignalTestSuite />
+              </ToggleSection>
             </div>
           )}
         </div>

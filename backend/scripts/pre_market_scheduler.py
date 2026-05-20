@@ -34,6 +34,39 @@ except ImportError:
 OUTPUT_FILE = ROOT / "data" / "pre_market_latest.json"
 
 
+def _output_path() -> Path:
+    try:
+        from config_loader import get_data_root
+
+        return get_data_root() / "pre_market_latest.json"
+    except Exception:
+        return OUTPUT_FILE
+
+
+def run_premarket_snapshot(*, force: bool = False) -> dict | None:
+    """
+    Run pre-market engine and write JSON under DATA_ROOT.
+    Returns payload dict, or None if skipped (outside pre-market window).
+    """
+    from datetime import datetime
+
+    now = datetime.now(EST) if EST else datetime.utcnow()
+    hour, minute = (now.hour, now.minute) if EST else (now.hour, now.minute)
+    is_premarket = (hour >= 4 and hour < 9) or (hour == 9 and minute < 30)
+    is_weekday = now.weekday() < 5
+
+    if not force and (not is_weekday or not is_premarket):
+        return None
+
+    engine = PreMarketEngine()
+    report = engine.run(verbose=False)
+    data = report_to_dict(report)
+    out_path = _output_path()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(data, indent=2))
+    return data
+
+
 def _category_from_name(name: str) -> str:
     name_lower = name.lower()
     if "futures" in name_lower or "s&p" in name_lower or "nasdaq" in name_lower:
@@ -109,31 +142,30 @@ def main() -> None:
     parser.add_argument("--force", action="store_true", help="Run outside pre-market hours")
     args = parser.parse_args()
 
-    from datetime import datetime
-    now = datetime.now(EST) if EST else datetime.utcnow()
-    hour, minute = (now.hour, now.minute) if EST else (now.hour, now.minute)
-    is_premarket = (hour >= 4 and hour < 9) or (hour == 9 and minute < 30)
-    is_weekday = now.weekday() < 5
+    if not args.json and not args.force:
+        from datetime import datetime
 
-    if not args.force and (not is_weekday or not is_premarket):
-        if not args.json:
-            print(f"Skipping: not pre-market hours. Use --force to override.")
-        sys.exit(0)
+        now = datetime.now(EST) if EST else datetime.utcnow()
+        hour, minute = (now.hour, now.minute) if EST else (now.hour, now.minute)
+        is_premarket = (hour >= 4 and hour < 9) or (hour == 9 and minute < 30)
+        is_weekday = now.weekday() < 5
+        if not is_weekday or not is_premarket:
+            print("Skipping: not pre-market hours. Use --force to override.")
+            sys.exit(0)
 
     if not args.json:
         print("Running pre-market engine...")
 
-    engine = PreMarketEngine()
-    report = engine.run(verbose=not args.json)
-    data = report_to_dict(report)
+    data = run_premarket_snapshot(force=args.force)
+    if data is None:
+        sys.exit(0)
 
     if args.json:
         print(json.dumps(data, indent=2))
         return
 
-    OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_FILE.write_text(json.dumps(data, indent=2))
-    print(f"Saved to {OUTPUT_FILE}")
+    out_path = _output_path()
+    print(f"Saved to {out_path}")
     print(f"  Bias: {data['bias']}  Score: {data['composite_score']:+.3f}  Signals: {len(data['signals'])}")
 
 

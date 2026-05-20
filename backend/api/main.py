@@ -101,6 +101,8 @@ def _warm_dashboard_background():
     url = (os.getenv("WARM_DASHBOARD_URL") or "").strip()
     if not url:
         return
+    if "refresh=" not in url:
+        url = f"{url}{'&' if '?' in url else '?'}refresh=true"
     time.sleep(max(1.0, delay_s))
     try:
         import requests
@@ -125,12 +127,24 @@ def startup():
         eod_scheduler.start()
     except Exception as e:
         logger.warning("EOD scheduler failed to start: %s", e)
+    try:
+        from api import market_scheduler
+
+        market_scheduler.start()
+    except Exception as e:
+        logger.warning("Market scheduler failed to start: %s", e)
 
 
 @app.on_event("shutdown")
 def shutdown():
     try:
         eod_scheduler.shutdown()
+    except Exception:
+        pass
+    try:
+        from api import market_scheduler
+
+        market_scheduler.shutdown()
     except Exception:
         pass
     try:

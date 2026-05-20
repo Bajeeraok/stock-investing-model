@@ -1,28 +1,27 @@
 "use client";
 
-import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, FlaskConical, LayoutGrid } from "lucide-react";
+import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, LayoutGrid } from "lucide-react";
 import { clsx } from "clsx";
 
 const TABS = [
   { id: "overview",    label: "Overview",    compactLabel: "Main",    shortcut: "1", icon: LayoutDashboard },
   { id: "signals",     label: "Signals",     compactLabel: "Signals", shortcut: "2", icon: LineChart       },
-  { id: "roadmaps",    label: "Roadmaps",    compactLabel: "Roads",   shortcut: "8", icon: LayoutGrid      },
+  { id: "roadmaps",    label: "Roadmaps",    compactLabel: "Roads",   shortcut: "7", icon: LayoutGrid      },
   { id: "portfolio",   label: "Portfolio",   compactLabel: "Port",    shortcut: "3", icon: Wallet          },
   { id: "opportunities", label: "Opportunities", compactLabel: "Opps", shortcut: "4", icon: Sparkles    },
   { id: "markets",     label: "Markets",     compactLabel: "Mkt",     shortcut: "5", icon: TrendingUp      },
   { id: "analysis",    label: "Analysis",    compactLabel: "Data",    shortcut: "6", icon: BarChart3       },
-  { id: "testsuite",   label: "Test Suite",  compactLabel: "Tests",   shortcut: "7", icon: FlaskConical    },
 ] as const;
 
 export type TabId = (typeof TABS)[number]["id"];
 
-const ADVANCED_TAB_IDS = new Set<TabId>(["analysis", "testsuite"]);
+const ADVANCED_TAB_IDS = new Set<TabId>(["analysis"]);
 
 interface Props {
   active: TabId;
   onChange: (id: TabId) => void;
   badges?: Partial<Record<TabId, number>>;
-  /** Hide Analysis + Test Suite unless power-user mode */
+  /** Hide Analysis unless power-user mode */
   advancedMode?: boolean;
   /** Compact bottom bar (mobile) — icon-first, thumb-friendly */
   variant?: "default" | "bottom";
@@ -73,7 +72,7 @@ export function DashboardTabs({ active, onChange, badges, advancedMode = false, 
   return (
     <div
       role="tablist"
-      aria-label="Dashboard sections (1-8 to switch)"
+      aria-label="Dashboard sections (1-7 to switch)"
       className="flex gap-0.5 p-1 rounded-xl bg-slate-900/80 border border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto [-webkit-overflow-scrolling:touch] min-h-[44px] touch-manipulation"
     >
       {visibleTabs.map(({ id, label, shortcut, icon: Icon }) => {

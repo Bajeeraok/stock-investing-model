@@ -437,8 +437,10 @@ alerts:
 #     chat_id: YOUR_CHAT_ID
 
 # Opportunity scan: identify tickers with long-term growth potential (daily)
-# Set run_opportunity_scan: false to skip (faster run)
+# Set run_opportunity_scan: false to skip in run_daily.py only.
+# opportunities_bundle_enabled: false skips lazy UI scan + hides Daily Opportunities section.
 run_opportunity_scan: true
+opportunities_bundle_enabled: false
 opportunity_universe: []   # Empty = use built-in list (~55 liquid S&P leaders)
 # Or add your own: [AAPL, MSFT, ...]; combine with watchlist for discovery
 opportunity_criteria:

@@ -5,7 +5,6 @@ export { TickerDetailModal } from "./TickerDetailModal";
 export { AddTickerBar } from "./AddTickerBar";
 export { CryptoSection } from "./CryptoSection";
 export { CrossAssetSection } from "./CrossAssetSection";
-export { Best2026Section } from "./Best2026Section";
 export { ToggleSection } from "./ToggleSection";
 export { PortfolioSummary } from "./PortfolioSummary";
 export { PortfolioStressStrip, type PortfolioStressPayload } from "./PortfolioStressStrip";
