@@ -240,6 +240,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   }, [data.as_of_date, data.signals_deferred, data.opportunities_deferred, data.analysis_deferred]);
 
   useEffect(() => {
+    if (data.warming) return;
     if (!data.signals_deferred) return;
     if (activeTab !== "signals") return;
     if (lazySignals !== null) return;
@@ -259,7 +260,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         return r.json();
       })
       .then((j) => {
-        if (!cancelled && Array.isArray(j.signals)) setLazySignals(j.signals);
+        if (cancelled || !j || typeof j !== "object") return;
+        if (j.warming) return;
+        if (Array.isArray(j.signals)) setLazySignals(j.signals);
       })
       .catch((e) => {
         if (!cancelled) setSignalsFetchErr(e instanceof Error ? e.message : "Failed to load signals");
@@ -270,9 +273,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.signals_deferred, data.as_of_date, activeTab, lazySignals]);
+  }, [data.warming, data.signals_deferred, data.as_of_date, activeTab, lazySignals]);
 
   useEffect(() => {
+    if (data.warming) return;
     if (data.opportunities_bundle_enabled === false) return;
     if (data.opportunities_deferred !== true) return;
     if (oppBundle !== null) return;
@@ -294,6 +298,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       })
       .then((j) => {
         if (cancelled || !j || typeof j !== "object") return;
+        if (j.warming) return;
         setOppBundle({
           opportunities: Array.isArray(j.opportunities) ? j.opportunities : [],
           portfolio_doctor_recommendations:
@@ -311,9 +316,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.opportunities_bundle_enabled, data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
+  }, [data.warming, data.opportunities_bundle_enabled, data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
 
   useEffect(() => {
+    if (data.warming) return;
     if (data.analysis_deferred !== true) return;
     if (analysisBundle !== null) return;
     if (activeTab !== "analysis" && activeTab !== "markets") return;
@@ -333,7 +339,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         return r.json();
       })
       .then((j) => {
-        if (!cancelled && j && typeof j === "object") setAnalysisBundle(j as Partial<DashboardData>);
+        if (cancelled || !j || typeof j !== "object") return;
+        if (j.warming) return;
+        setAnalysisBundle(j as Partial<DashboardData>);
       })
       .catch((e) => {
         if (!cancelled) setAnalysisFetchErr(e instanceof Error ? e.message : "Failed to load analysis");
@@ -344,7 +352,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.analysis_deferred, data.as_of_date, activeTab, analysisBundle]);
+  }, [data.warming, data.analysis_deferred, data.as_of_date, activeTab, analysisBundle]);
 
   const effectiveSignals = useMemo(() => {
     if (!data.signals_deferred) return data.signals ?? [];
@@ -587,13 +595,15 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
       {/* Compact alert strip - always visible */}
       <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
-        {(stale || isRefreshing) && (
+        {(stale || isRefreshing || data.warming) && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100 text-sm flex items-center gap-2">
             <RefreshCw className={clsx("h-4 w-4 shrink-0", isRefreshing && "animate-spin")} />
             <span>
-              {isRefreshing
-                ? "Refreshing dashboard in background…"
-                : "Showing last saved snapshot — updating in background."}
+              {data.warming
+                ? "First load in progress — usually 1–3 minutes. Data will appear automatically."
+                : isRefreshing
+                  ? "Refreshing dashboard in background…"
+                  : "Showing last saved snapshot — updating in background."}
             </span>
           </div>
         )}
@@ -958,9 +968,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           </p>
             </div>
           </ToggleSection>
-          {data.signals_deferred && signalsLoading && (
+          {(data.warming || (data.signals_deferred && signalsLoading)) && (
             <div className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-400 text-sm">
-              Loading full signals table…
+              {data.warming ? "Waiting for first dashboard load…" : "Loading full signals table…"}
             </div>
           )}
           {data.signals_deferred && signalsFetchErr && (
@@ -986,6 +996,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {activeTab === "roadmaps" && (
             <div className="p-4 sm:p-6 space-y-4">
               <RoadmapsPanel
+                warming={Boolean(data.warming)}
                 tickers={
                   data.watchlist ??
                   data.signal_scores?.map((s) => s.ticker).filter(Boolean) ??

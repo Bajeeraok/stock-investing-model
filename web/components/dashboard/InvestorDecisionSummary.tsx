@@ -394,7 +394,7 @@ function HorizonCard({
       ),
     React.createElement(
       "p",
-      { className: "text-slate-400 text-[11px] mt-1.5 leading-snug" },
+      { className: "text-slate-400 text-sm mt-1.5 leading-snug" },
       React.createElement("span", { className: "text-slate-500 font-medium" }, "Act when: "),
       triggerLine
     ),
@@ -407,7 +407,7 @@ function HorizonCard({
           {
             type: "button",
             onClick: () => setShowCaveats((s) => !s),
-            className: "mt-2 text-[11px] text-amber-300/90 flex items-center gap-1 hover:text-amber-200",
+            className: "mt-2 text-sm text-amber-300/90 flex items-center gap-1 hover:text-amber-200",
           },
           React.createElement(AlertTriangle, { className: "h-3 w-3 shrink-0" }),
           `${warnings.length + (hasRationale ? 1 : 0)} caveat${warnings.length + (hasRationale ? 1 : 0) > 1 ? "s" : ""}`,
@@ -418,11 +418,11 @@ function HorizonCard({
             "div",
             { className: "mt-2 space-y-1 border-t border-slate-700/50 pt-2" },
             hasRationale &&
-              React.createElement("p", { className: "text-[11px] text-slate-300 leading-snug" }, horizon.rationale),
+              React.createElement("p", { className: "text-sm text-slate-300 leading-snug" }, horizon.rationale),
             warnings.map((w, i) =>
               React.createElement(
                 "div",
-                { key: i, className: "flex items-start gap-1.5 text-[11px] text-amber-300/90" },
+                { key: i, className: "flex items-start gap-1.5 text-sm text-amber-300/90" },
                 React.createElement(AlertTriangle, { className: "h-3 w-3 shrink-0 mt-0.5" }),
                 React.createElement("span", null, w)
               )
@@ -461,7 +461,7 @@ function HorizonCard({
                 { className: "mt-1 px-3 py-2 rounded-lg border border-slate-700/50 bg-slate-800/30" },
                 React.createElement(
                   "p",
-                  { className: "text-[10px] text-slate-500 leading-snug" },
+                  { className: "text-xs text-slate-500 leading-snug" },
                   React.createElement("span", { className: "font-medium text-slate-400" }, "Structural floor: "),
                   `$${entryTiers.structural_invalidation.price.toFixed(2)} — ${entryTiers.structural_invalidation.note}`
                 )
@@ -503,20 +503,20 @@ function BuyRangeRetailCard({
 
   let statusLabel = "—";
   let statusBadgeClass =
-    "text-[11px] px-2 py-0.5 rounded border font-semibold border-slate-500/40 bg-slate-600/20 text-slate-300";
+    "text-sm px-2 py-0.5 rounded border font-semibold border-slate-500/40 bg-slate-600/20 text-slate-300";
   if (currentPrice > 0) {
     if (currentPrice >= low && currentPrice <= high) {
       statusLabel = "Inside buy zone";
       statusBadgeClass =
-        "text-[11px] px-2 py-0.5 rounded border font-semibold border-emerald-500/45 bg-emerald-500/15 text-emerald-300";
+        "text-sm px-2 py-0.5 rounded border font-semibold border-emerald-500/45 bg-emerald-500/15 text-emerald-300";
     } else if (currentPrice > high) {
       statusLabel = "Wait for pullback";
       statusBadgeClass =
-        "text-[11px] px-2 py-0.5 rounded border font-semibold border-amber-500/45 bg-amber-500/15 text-amber-200";
+        "text-sm px-2 py-0.5 rounded border font-semibold border-amber-500/45 bg-amber-500/15 text-amber-200";
     } else {
       statusLabel = "Below modeled band";
       statusBadgeClass =
-        "text-[11px] px-2 py-0.5 rounded border font-semibold border-sky-500/40 bg-sky-500/10 text-sky-200";
+        "text-sm px-2 py-0.5 rounded border font-semibold border-sky-500/40 bg-sky-500/10 text-sky-200";
     }
   }
 
@@ -561,7 +561,7 @@ function BuyRangeRetailCard({
           ),
           React.createElement(
             "p",
-            { className: "text-[11px] text-slate-500 mt-0.5" },
+            { className: "text-sm text-slate-500 mt-0.5" },
             "Near-term buy band vs today's price — green range comes from the same support / VWAP logic as your stops."
           )
         )
@@ -571,7 +571,7 @@ function BuyRangeRetailCard({
     insideBandButNotBuy &&
       React.createElement(
         "p",
-        { className: "text-[11px] text-amber-200/90 mb-3 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-950/50 leading-snug" },
+        { className: "text-sm text-amber-200/90 mb-3 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-950/50 leading-snug" },
         `Price is inside the near-term band but the overall signal is ${overallVerdict} because regime and confidence gates haven\u2019t cleared \u2014 the band shows where you\u2019d buy if conditions improve, not a current buy signal.`
       ),
     React.createElement(
@@ -585,7 +585,7 @@ function BuyRangeRetailCard({
         },
         React.createElement(
           "p",
-          { className: "text-[11px] text-emerald-200/80 uppercase tracking-wide font-semibold mb-1" },
+          { className: "text-sm text-emerald-200/80 uppercase tracking-wide font-semibold mb-1" },
           "Optimal entry (near-term)"
         ),
         React.createElement(
@@ -599,7 +599,7 @@ function BuyRangeRetailCard({
               { className: "mt-1" },
               React.createElement(
                 "p",
-                { className: "text-[11px] text-slate-400" },
+                { className: "text-sm text-slate-400" },
                 React.createElement("span", { className: "text-slate-500" }, "Band quality: "),
                 React.createElement(
                   "span",
@@ -610,13 +610,13 @@ function BuyRangeRetailCard({
               String(ez.quality).toLowerCase() === "stretched" &&
                 React.createElement(
                   "p",
-                  { className: "text-[10px] text-amber-200/80 mt-0.5 leading-snug" },
+                  { className: "text-xs text-amber-200/80 mt-0.5 leading-snug" },
                   "\"Stretched\" means price is extended above its key support level (VWAP or MA50) \u2014 the band is still valid but the risk/reward is less favorable here. Waiting for a pullback toward the band low improves the entry; buying now isn\u2019t wrong for long-term conviction, just less optimal short-term."
                 ),
               String(ez.quality).toLowerCase() === "waiting" &&
                 React.createElement(
                   "p",
-                  { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
+                  { className: "text-xs text-slate-500 mt-0.5 leading-snug" },
                   "\"Waiting\" means conditions haven\u2019t aligned yet \u2014 check back after a pullback or regime shift."
                 )
             )
@@ -630,7 +630,7 @@ function BuyRangeRetailCard({
         },
         React.createElement(
           "p",
-          { className: "text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-1" },
+          { className: "text-sm text-slate-400 uppercase tracking-wide font-semibold mb-1" },
           "Current price"
         ),
         React.createElement(
@@ -651,7 +651,7 @@ function BuyRangeRetailCard({
       { className: "mb-3" },
       React.createElement(
         "p",
-        { className: "text-[10px] text-slate-500 mb-1 flex justify-between font-mono gap-2" },
+        { className: "text-xs text-slate-500 mb-1 flex justify-between font-mono gap-2" },
         React.createElement("span", null, `$${low.toFixed(2)} band low`),
         React.createElement("span", null, `$${high.toFixed(2)} band high`)
       ),
@@ -675,7 +675,7 @@ function BuyRangeRetailCard({
       ),
       React.createElement(
         "p",
-        { className: "text-[10px] text-slate-500 mt-1 text-center" },
+        { className: "text-xs text-slate-500 mt-1 text-center" },
         "Dot = last price vs modeled buy band (not a forecast)."
       )
     ),
@@ -693,7 +693,7 @@ function BuyRangeRetailCard({
             },
             React.createElement(
               "p",
-              { className: "text-[11px] text-cyan-200/85 uppercase tracking-wide font-semibold mb-1" },
+              { className: "text-sm text-cyan-200/85 uppercase tracking-wide font-semibold mb-1" },
               "Max buy price (full MOS)"
             ),
             React.createElement(
@@ -703,7 +703,7 @@ function BuyRangeRetailCard({
             ),
             React.createElement(
               "p",
-              { className: "text-[10px] text-slate-500 mt-1 leading-snug" },
+              { className: "text-xs text-slate-500 mt-1 leading-snug" },
               "Rough ceiling from long-term margin-of-safety rule — stricter than the near-term band."
             )
           ),
@@ -716,7 +716,7 @@ function BuyRangeRetailCard({
             },
             React.createElement(
               "p",
-              { className: "text-[11px] text-slate-400 uppercase tracking-wide font-semibold mb-2" },
+              { className: "text-sm text-slate-400 uppercase tracking-wide font-semibold mb-2" },
               "Short-term risk thermometer"
             ),
             stStop != null && short.target > stStop && currentPrice > 0
@@ -732,7 +732,7 @@ function BuyRangeRetailCard({
               rr < 0.5 &&
               React.createElement(
                 "p",
-                { className: "text-[10px] text-amber-200/90 mt-1.5 leading-snug border-t border-amber-500/20 pt-1.5" },
+                { className: "text-xs text-amber-200/90 mt-1.5 leading-snug border-t border-amber-500/20 pt-1.5" },
                 "Asymmetric risk: large downside slice vs thin upside to target \u2014 wait for pullback or use long-term tiers."
               )
           )
@@ -750,7 +750,7 @@ function BuyRangeRetailCard({
             null,
             React.createElement(
               "p",
-              { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold" },
+              { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold" },
               "Risk reference (short-term stop)"
             ),
             React.createElement(
@@ -760,7 +760,7 @@ function BuyRangeRetailCard({
             ),
             React.createElement(
               "p",
-              { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
+              { className: "text-xs text-slate-500 mt-0.5 leading-snug" },
               "Break here challenges the tactical setup — not where we aim to initiate."
             )
           ),
@@ -770,7 +770,7 @@ function BuyRangeRetailCard({
             null,
             React.createElement(
               "p",
-              { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold" },
+              { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold" },
               "Stress / structural floor"
             ),
             React.createElement(
@@ -780,7 +780,7 @@ function BuyRangeRetailCard({
             ),
             React.createElement(
               "p",
-              { className: "text-[10px] text-slate-500 mt-0.5 leading-snug" },
+              { className: "text-xs text-slate-500 mt-0.5 leading-snug" },
               long?.stop_loss_kind === "structural_invalidation"
                 ? "Tail-risk / thesis-break reference — not an entry zone."
                 : "Long-horizon floor reference."
@@ -791,7 +791,7 @@ function BuyRangeRetailCard({
       React.createElement(
         "p",
         {
-          className: "text-[11px] text-slate-400 leading-snug border-t border-slate-700/60 pt-2 mt-1",
+          className: "text-sm text-slate-400 leading-snug border-t border-slate-700/60 pt-2 mt-1",
           title: ez.anchor,
         },
         React.createElement("span", { className: "text-slate-500" }, "Why this band: "),
@@ -1059,7 +1059,7 @@ export function InvestorDecisionSummarySection({
       React.createElement(TradingGateStatus, { gates: primaryTradingGates }),
       React.createElement(
         "p",
-        { className: "text-[11px] text-amber-100/90 leading-snug px-1" },
+        { className: "text-sm text-amber-100/90 leading-snug px-1" },
         `Investor takeaway: ${passedPrimary} of ${primaryTradingGates.length} checks are green` +
           (passedPrimary >= 3
             ? " — review sizing on Roadmaps before adding."
@@ -1090,12 +1090,12 @@ export function InvestorDecisionSummarySection({
             {
               className:
                 overall_verdict === "STRONG BUY" || overall_verdict === "BUY"
-                  ? "text-[11px] px-2 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-semibold"
+                  ? "text-sm px-2 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-semibold"
                   : overall_verdict === "WATCH"
-                    ? "text-[11px] px-2 py-0.5 rounded border border-teal-500/55 bg-teal-500/10 text-teal-200 font-semibold"
+                    ? "text-sm px-2 py-0.5 rounded border border-teal-500/55 bg-teal-500/10 text-teal-200 font-semibold"
                     : overall_verdict === "WAIT"
-                      ? "text-[11px] px-2 py-0.5 rounded border border-red-500/55 bg-red-500/10 text-red-200 font-semibold"
-                      : "text-[11px] px-2 py-0.5 rounded border border-slate-500/40 bg-slate-500/15 text-slate-300 font-semibold",
+                      ? "text-sm px-2 py-0.5 rounded border border-red-500/55 bg-red-500/10 text-red-200 font-semibold"
+                      : "text-sm px-2 py-0.5 rounded border border-slate-500/40 bg-slate-500/15 text-slate-300 font-semibold",
             },
             overall_verdict
           )
@@ -1168,7 +1168,7 @@ export function InvestorDecisionSummarySection({
     React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700/80 bg-slate-900/30" },
-      React.createElement("p", { className: "text-xs text-slate-400 uppercase tracking-wide mb-3" }, "Horizon detail"),
+      React.createElement("p", { className: "text-sm text-slate-400 uppercase tracking-wide mb-3" }, "Horizon detail"),
       React.createElement(
         "div",
         { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
@@ -1197,8 +1197,8 @@ export function InvestorDecisionSummarySection({
           {
             className:
               assessmentPct >= 0
-                ? "text-[11px] text-emerald-300 font-medium cursor-help"
-                : "text-[11px] text-red-300 font-medium cursor-help",
+                ? "text-sm text-emerald-300 font-medium cursor-help"
+                : "text-sm text-red-300 font-medium cursor-help",
             title:
               "Undervalued / overvalued here means current price vs this card's model fair value only. The Details tab may still say REDUCE if regime, chart, or other layers argue for smaller size today.",
           },
@@ -1208,7 +1208,7 @@ export function InvestorDecisionSummarySection({
       React.createElement(
         "p",
         {
-          className: "text-[10px] text-slate-500 leading-snug mb-2 cursor-help",
+          className: "text-xs text-slate-500 leading-snug mb-2 cursor-help",
           title:
             "Cheap vs fair value answers 'margin of safety on the model anchor.' Verdict and confidence answer 'do we want full size right now?' — both can disagree until the tape improves.",
         },
@@ -1224,13 +1224,13 @@ export function InvestorDecisionSummarySection({
           },
           React.createElement(
             "p",
-            { className: "text-[11px] font-semibold text-violet-200 mb-0.5 flex items-center gap-1.5" },
+            { className: "text-sm font-semibold text-violet-200 mb-0.5 flex items-center gap-1.5" },
             React.createElement("span", { className: "inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" }),
             "Nearly there — confidence gate"
           ),
           React.createElement(
             "p",
-            { className: "text-[11px] text-violet-100/95 leading-snug" },
+            { className: "text-sm text-violet-100/95 leading-snug" },
             `Fused model confidence is ${Math.round(Number(confidenceBandMid))}% vs ${CONFIDENCE_GATE_TARGET}% used here — you're within about ${Math.ceil(Number(ptsToConfidenceGate))} point${Math.ceil(Number(ptsToConfidenceGate)) === 1 ? "" : "s"}. Fresh sessions often move this; worth a quick revisit.`
           )
         ),
@@ -1244,12 +1244,12 @@ export function InvestorDecisionSummarySection({
           },
           React.createElement(
             "p",
-            { className: "text-[11px] font-semibold text-cyan-200 mb-1" },
+            { className: "text-sm font-semibold text-cyan-200 mb-1" },
             one_answer.momentum_valuation_tension.headline
           ),
           React.createElement(
             "p",
-            { className: "text-[11px] text-cyan-100/90 leading-snug" },
+            { className: "text-sm text-cyan-100/90 leading-snug" },
             one_answer.momentum_valuation_tension.detail
           ),
           one_answer.momentum_valuation_tension.momentum_target != null &&
@@ -1258,27 +1258,27 @@ export function InvestorDecisionSummarySection({
               { className: "mt-2 pt-2 border-t border-cyan-500/20 grid grid-cols-2 gap-x-4 gap-y-1" },
               React.createElement(
                 "div",
-                { className: "text-[10px] text-cyan-300/80" },
+                { className: "text-xs text-cyan-300/80" },
                 "Momentum target"
               ),
               React.createElement(
                 "div",
-                { className: "text-[11px] font-medium text-cyan-100 text-right" },
+                { className: "text-sm font-medium text-cyan-100 text-right" },
                 `$${one_answer.momentum_valuation_tension.momentum_target.toFixed(2)} (+${one_answer.momentum_valuation_tension.momentum_upside_pct ?? 0}%)`
               ),
               React.createElement(
                 "div",
-                { className: "text-[10px] text-cyan-300/80" },
+                { className: "text-xs text-cyan-300/80" },
                 "Momentum stop"
               ),
               React.createElement(
                 "div",
-                { className: "text-[11px] font-medium text-cyan-100 text-right" },
+                { className: "text-sm font-medium text-cyan-100 text-right" },
                 `$${(one_answer.momentum_valuation_tension.momentum_stop ?? 0).toFixed(2)} (-${one_answer.momentum_valuation_tension.momentum_risk_pct ?? 0}%)`
               ),
               React.createElement(
                 "div",
-                { className: "text-[10px] text-cyan-300/80 col-span-2 mt-1 italic" },
+                { className: "text-xs text-cyan-300/80 col-span-2 mt-1 italic" },
                 one_answer.momentum_valuation_tension.momentum_target_method === "analyst_consensus_high"
                   ? "Based on analyst consensus high"
                   : "Based on ATR breakout extension"
@@ -1295,18 +1295,18 @@ export function InvestorDecisionSummarySection({
           },
           React.createElement(
             "p",
-            { className: "text-[11px] font-semibold text-amber-200 mb-1" },
+            { className: "text-sm font-semibold text-amber-200 mb-1" },
             one_answer.ath_macro_regime_disconnect.headline
           ),
           React.createElement(
             "p",
-            { className: "text-[11px] text-amber-100/90 leading-snug" },
+            { className: "text-sm text-amber-100/90 leading-snug" },
             one_answer.ath_macro_regime_disconnect.detail
           )
         ),
       React.createElement(
         "p",
-        { className: "text-[11px] text-slate-400 mb-1" },
+        { className: "text-sm text-slate-400 mb-1" },
         `${companyName || "This ticker"}${sector ? ` â€¢ ${sector}` : ""} â€¢ $${currentPrice.toFixed(2)} â€¢ Fair value $${fair_value.toFixed(2)}`
       ),
       /* --- WHY THIS CALL (promoted) --- */
@@ -1314,10 +1314,10 @@ export function InvestorDecisionSummarySection({
         React.createElement(
           "div",
           { className: "mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5" },
-          React.createElement("p", { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-1.5" }, "Why this call"),
+          React.createElement("p", { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1.5" }, "Why this call"),
           React.createElement(
             "ul",
-            { className: "space-y-1.5 text-[11px] text-slate-200 leading-snug" },
+            { className: "space-y-1.5 text-sm text-slate-200 leading-snug" },
             whyBullets.map((line, i) =>
               React.createElement(
                 "li",
@@ -1335,7 +1335,7 @@ export function InvestorDecisionSummarySection({
           { className: "mt-3 rounded-lg border border-sky-500/35 bg-sky-950/25 px-3 py-2.5" },
           React.createElement(
             "p",
-            { className: "text-[11px] text-sky-100 leading-snug" },
+            { className: "text-sm text-sky-100 leading-snug" },
             React.createElement("span", { className: "font-semibold text-sky-200" }, "Your trigger: "),
             one_answer.next_trigger
           )
@@ -1345,10 +1345,10 @@ export function InvestorDecisionSummarySection({
         React.createElement(
           "div",
           { className: "mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5" },
-          React.createElement("p", { className: "text-[10px] text-emerald-300/80 uppercase tracking-wide font-semibold mb-1.5" }, "Action plan"),
+          React.createElement("p", { className: "text-xs text-emerald-300/80 uppercase tracking-wide font-semibold mb-1.5" }, "Action plan"),
           React.createElement(
             "ol",
-            { className: "space-y-1.5 text-[11px] text-slate-200 leading-snug list-none" },
+            { className: "space-y-1.5 text-sm text-slate-200 leading-snug list-none" },
             executionBullets.map((line, i) =>
               React.createElement(
                 "li",
@@ -1368,14 +1368,14 @@ export function InvestorDecisionSummarySection({
         return React.createElement(
           "div",
           { className: "mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5" },
-          React.createElement("p", { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-2" }, "Staged buy timeline"),
+          React.createElement("p", { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2" }, "Staged buy timeline"),
           React.createElement(
             "div",
             { className: "space-y-1.5" },
             preview.map((s) =>
               React.createElement(
                 "div",
-                { key: s.timeline_key, className: "flex items-center gap-2 text-[11px]" },
+                { key: s.timeline_key, className: "flex items-center gap-2 text-sm" },
                 React.createElement(
                   "span",
                   { className: "shrink-0 w-20 text-slate-400 font-medium" },
@@ -1385,7 +1385,7 @@ export function InvestorDecisionSummarySection({
                   "span",
                   {
                     className:
-                      "shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium " +
+                      "shrink-0 px-1.5 py-0.5 rounded text-xs font-medium " +
                       (s.when_to_act.toLowerCase().includes("add") || s.when_to_act.toLowerCase().includes("start")
                         ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                         : s.when_to_act.toLowerCase().includes("watch")
@@ -1427,16 +1427,16 @@ export function InvestorDecisionSummarySection({
               "span",
               { className: "text-xs text-slate-200 flex items-center gap-2" },
               "Market structure",
-              React.createElement("span", { className: `text-[10px] px-1.5 py-0.5 rounded border ${statusTone(marketStatus)}` }, marketStatus)
+              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(marketStatus)}` }, marketStatus)
             ),
-            React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5 truncate" }, marketSummary)
+            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, marketSummary)
           ),
           evidenceOpen.market ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
         ),
         evidenceOpen.market &&
           React.createElement(
             "p",
-            { className: "px-3.5 pb-2.5 text-[11px] text-slate-300 bg-slate-950/40 leading-snug" },
+            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
             marketSummary
           ),
         React.createElement(
@@ -1453,16 +1453,16 @@ export function InvestorDecisionSummarySection({
               "span",
               { className: "text-xs text-slate-200 flex items-center gap-2" },
               "Chart & momentum",
-              React.createElement("span", { className: `text-[10px] px-1.5 py-0.5 rounded border ${statusTone(chartStatus)}` }, chartStatus)
+              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(chartStatus)}` }, chartStatus)
             ),
-            React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5 truncate" }, chartSummary)
+            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, chartSummary)
           ),
           evidenceOpen.chart ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
         ),
         evidenceOpen.chart &&
           React.createElement(
             "p",
-            { className: "px-3.5 pb-2.5 text-[11px] text-slate-300 bg-slate-950/40 leading-snug" },
+            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
             chartSummary
           ),
         React.createElement(
@@ -1479,16 +1479,16 @@ export function InvestorDecisionSummarySection({
               "span",
               { className: "text-xs text-slate-200 flex items-center gap-2" },
               "Smart money",
-              React.createElement("span", { className: `text-[10px] px-1.5 py-0.5 rounded border ${statusTone(flowStatus)}` }, flowStatus)
+              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(flowStatus)}` }, flowStatus)
             ),
-            React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5 truncate" }, flowSummary)
+            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, flowSummary)
           ),
           evidenceOpen.flow ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
         ),
         evidenceOpen.flow &&
           React.createElement(
             "p",
-            { className: "px-3.5 pb-2.5 text-[11px] text-slate-300 bg-slate-950/40 leading-snug" },
+            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
             `${flowSummary}. Keep sizing staged while transition risk remains.`
           ),
         React.createElement(
@@ -1505,16 +1505,16 @@ export function InvestorDecisionSummarySection({
               "span",
               { className: "text-xs text-slate-200 flex items-center gap-2" },
               "Business & news",
-              React.createElement("span", { className: `text-[10px] px-1.5 py-0.5 rounded border ${statusTone(businessStatus)}` }, businessStatus)
+              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(businessStatus)}` }, businessStatus)
             ),
-            React.createElement("p", { className: "text-[10px] text-slate-500 mt-0.5 truncate" }, businessSummary)
+            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, businessSummary)
           ),
           evidenceOpen.business ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
         ),
         evidenceOpen.business &&
           React.createElement(
             "p",
-            { className: "px-3.5 pb-2.5 text-[11px] text-slate-300 bg-slate-950/40 leading-snug" },
+            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
             businessSummary
           )
       ),
@@ -1526,7 +1526,7 @@ export function InvestorDecisionSummarySection({
           {
             type: "button",
             onClick: () => setGatesDetailOpen((o) => !o),
-            className: "w-full text-left text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1",
+            className: "w-full text-left text-sm text-slate-400 hover:text-slate-200 flex items-center gap-1",
           },
           gatesDetailOpen ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5" }),
           gatesDetailOpen ? "Hide detailed gate bars" : "Show detailed gate bars (Regime / Pattern / Confidence)"
@@ -1535,7 +1535,7 @@ export function InvestorDecisionSummarySection({
           React.createElement(
             "div",
             { className: "rounded-xl border border-slate-700/80 bg-slate-900/35 px-3.5 py-3 space-y-3" },
-            React.createElement("p", { className: "text-[11px] text-slate-400 uppercase tracking-wide font-semibold" }, "What would change this"),
+            React.createElement("p", { className: "text-sm text-slate-400 uppercase tracking-wide font-semibold" }, "What would change this"),
             React.createElement(
               "div",
               { className: "space-y-2" },
@@ -1561,7 +1561,7 @@ export function InvestorDecisionSummarySection({
               },
               React.createElement(
                 "div",
-                { className: "flex items-center justify-between text-[11px] gap-2" },
+                { className: "flex items-center justify-between text-sm gap-2" },
                 React.createElement(
                   "span",
                   { className: "text-slate-300 font-medium flex items-center gap-1.5 min-w-0" },
@@ -1573,7 +1573,7 @@ export function InvestorDecisionSummarySection({
                         React.createElement("span", null, g.label),
                         React.createElement(
                           "span",
-                          { className: "text-[10px] font-normal text-slate-500 leading-tight" },
+                          { className: "text-xs font-normal text-slate-500 leading-tight" },
                           regimeWeather.headline
                         )
                       )
@@ -1588,7 +1588,7 @@ export function InvestorDecisionSummarySection({
               isRegime &&
                 React.createElement(
                   "p",
-                  { className: "text-[10px] text-slate-500 mt-1 leading-snug pl-5" },
+                  { className: "text-xs text-slate-500 mt-1 leading-snug pl-5" },
                   regimeWeather.detail
                 ),
               React.createElement(
@@ -1604,7 +1604,7 @@ export function InvestorDecisionSummarySection({
                   "p",
                   {
                     className:
-                      "text-[10px] text-slate-500 mt-1.5 leading-snug border-t border-slate-700/50 pt-1.5",
+                      "text-xs text-slate-500 mt-1.5 leading-snug border-t border-slate-700/50 pt-1.5",
                   },
                   "Raw score measures chart structure — see ",
                   React.createElement(
@@ -1626,18 +1626,18 @@ export function InvestorDecisionSummarySection({
           },
           React.createElement(
             "p",
-            { className: "text-[10px] text-sky-200/85 uppercase tracking-wide font-semibold mb-1" },
+            { className: "text-xs text-sky-200/85 uppercase tracking-wide font-semibold mb-1" },
             "Why this score?"
           ),
           React.createElement(
             "p",
-            { className: "text-[11px] text-sky-50/95 leading-snug" },
+            { className: "text-sm text-sky-50/95 leading-snug" },
             patternDecisionOneLiner
           )
         ),
         React.createElement(
           "p",
-          { className: "text-[11px] text-slate-400 mt-2 leading-snug" },
+          { className: "text-sm text-slate-400 mt-2 leading-snug" },
           etaDays != null
             ? `Estimated time: about ${etaDays} trading days if regime confirms.`
             : "Estimated time: uncertain — wait for gate progress above."
@@ -1691,7 +1691,7 @@ export function InvestorDecisionSummarySection({
         },
         React.createElement(
           "p",
-          { className: "text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-2" },
+          { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2" },
           "Horizon verdicts — compare tickers at a glance"
         ),
         React.createElement(
@@ -1709,7 +1709,7 @@ export function InvestorDecisionSummarySection({
               {
                 key: label,
                 className:
-                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-semibold " +
+                  "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-sm font-semibold " +
                   horizonVerdictPillClass(v),
               },
               React.createElement("span", { className: "text-slate-500 font-normal" }, `${label}:`),
@@ -1722,7 +1722,7 @@ export function InvestorDecisionSummarySection({
             "p",
             {
               className:
-                "mt-2 text-[11px] text-cyan-100/95 leading-snug border-t border-cyan-500/25 pt-2",
+                "mt-2 text-sm text-cyan-100/95 leading-snug border-t border-cyan-500/25 pt-2",
               role: "note",
             },
             React.createElement("span", { className: "font-semibold text-cyan-200" }, "Swing vs short-term: "),
@@ -1732,7 +1732,7 @@ export function InvestorDecisionSummarySection({
           divergenceMessage &&
           React.createElement(
             "p",
-            { className: "mt-2 text-[11px] text-amber-200/90 leading-snug border-t border-amber-500/20 pt-2" },
+            { className: "mt-2 text-sm text-amber-200/90 leading-snug border-t border-amber-500/20 pt-2" },
             divergenceMessage
           )
       ),
@@ -1741,7 +1741,7 @@ export function InvestorDecisionSummarySection({
           "p",
           {
             className:
-              "text-[11px] text-slate-300 leading-snug mb-3 rounded-lg border border-slate-600/70 bg-slate-950/50 px-3 py-2",
+              "text-sm text-slate-300 leading-snug mb-3 rounded-lg border border-slate-600/70 bg-slate-950/50 px-3 py-2",
             role: "note",
           },
           React.createElement(
@@ -1866,7 +1866,7 @@ export function InvestorDecisionSummarySection({
               fve.fmp_consensus_low_usd != null) &&
             React.createElement(
               "div",
-              { className: "rounded-lg border border-slate-600/50 bg-slate-900/40 px-3 py-2 text-[11px] leading-relaxed text-slate-400 space-y-1" },
+              { className: "rounded-lg border border-slate-600/50 bg-slate-900/40 px-3 py-2 text-sm leading-relaxed text-slate-400 space-y-1" },
               React.createElement("p", { className: "text-slate-500 font-medium" }, "External target checks"),
               fve.yahoo_12m_mean_usd != null &&
                 React.createElement("p", null, `Yahoo 12m mean: $${fve.yahoo_12m_mean_usd.toFixed(2)}`),
@@ -1919,7 +1919,7 @@ export function InvestorDecisionSummarySection({
           long.entry_tiers &&
             React.createElement(
               "p",
-              { className: "text-[11px] text-slate-500" },
+              { className: "text-sm text-slate-500" },
               "Long-tier allocations and detailed caveats are available from the long-term card's + Entry Tiers control."
             )
         )

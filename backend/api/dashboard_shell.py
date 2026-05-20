@@ -57,6 +57,7 @@ SHELL_KEYS: tuple[str, ...] = (
     "after_hours_earnings",
     "stale",
     "refresh_status",
+    "warming",
 )
 
 # Loaded when user opens Analysis tab.
@@ -106,6 +107,88 @@ def build_shell_from_full(full: dict, *, include_full_signals: bool = False) -> 
         out["signals"] = []
         out["signals_deferred"] = True
     return out
+
+
+def _opp_bundle_enabled(config: dict) -> bool:
+    v = config.get("opportunities_bundle_enabled", True)
+    if isinstance(v, str):
+        return v.strip().lower() not in ("0", "false", "no", "off")
+    return bool(v)
+
+
+def build_warming_shell(config: dict | None = None) -> dict:
+    """Minimal shell while first background compute runs (no Redis cache yet). HTTP 200, stale poll."""
+    config = config or {}
+    opp_on = _opp_bundle_enabled(config)
+    empty_portfolio: dict[str, Any] = {
+        "per_holding": [],
+        "total_value": 0,
+        "avg_score": 0,
+        "regime_counts": {"UP": 0, "NEUTRAL": 0, "DOWN": 0},
+        "largest_position": None,
+        "concentration_alert": [],
+        "cash_deployment": [],
+    }
+    return {
+        "as_of_date": None,
+        "data_freshness": {
+            "status": "warming",
+            "message": "First dashboard compute in progress (usually 1–3 minutes).",
+        },
+        "signal_scores": [],
+        "signals": [],
+        "signals_deferred": True,
+        "opportunities_deferred": opp_on,
+        "opportunities_bundle_enabled": opp_on,
+        "analysis_deferred": True,
+        "watchlist": list(config.get("watchlist") or []),
+        "story_changes": [],
+        "portfolio": empty_portfolio,
+        "portfolios": {},
+        "portfolio_names": ["All"],
+        "trim_candidates": [],
+        "opportunities": [],
+        "portfolio_doctor_recommendations": {},
+        "thesis_check": [],
+        "what_changed": [],
+        "earnings_risk_count": 0,
+        "retail_briefing": None,
+        "morning_newsletter": None,
+        "market_regime": None,
+        "global_market_regime": None,
+        "macro_regime": None,
+        "macro_regime_bundle": None,
+        "market_reversal_overlay": None,
+        "next_day_outlook": None,
+        "typical_move": None,
+        "guidelines": [],
+        "cross_asset": [],
+        "economic_calendar": [],
+        "market_scenarios": [],
+        "macro_analog": None,
+        "market_forecast": None,
+        "portfolio_stress": None,
+        "portfolio_risk_metrics": None,
+        "portfolio_doctor_v2": None,
+        "performance_vs_benchmark": {"periods": [], "as_of": None, "message": "Warming up…"},
+        "tax_aware_exits": None,
+        "known_limits": [],
+        "config": {
+            "watchlist": config.get("watchlist", []),
+            "score": config.get("score", {}),
+            "regime": config.get("regime", {}),
+        },
+        "crypto": [],
+        "cot_by_ticker": {},
+        "redis_status": {"configured": False, "connected": False},
+        "eod_snapshots": [],
+        "eod_snapshot_latest_date": None,
+        "model_health": None,
+        "after_hours_earnings": None,
+        "stale": True,
+        "warming": True,
+        "refresh_status": "running",
+    }
 
 
 def build_analysis_bundle(full: dict) -> dict:

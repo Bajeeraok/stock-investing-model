@@ -19,9 +19,11 @@ interface Props {
   /** Tickers to load (e.g. watchlist or signals). */
   tickers: string[];
   onTickerClick: (ticker: string) => void;
+  /** Skip fetch while dashboard background compute is running. */
+  warming?: boolean;
 }
 
-export function RoadmapsPanel({ tickers, onTickerClick }: Props) {
+export function RoadmapsPanel({ tickers, onTickerClick, warming = false }: Props) {
   const [items, setItems] = useState<RoadmapItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function RoadmapsPanel({ tickers, onTickerClick }: Props) {
   const toFetch = tickers.slice(0, MAX_TICKERS).filter(Boolean);
 
   useEffect(() => {
+    if (warming) return;
     if (toFetch.length === 0) {
       setItems([]);
       return;
@@ -42,7 +45,16 @@ export function RoadmapsPanel({ tickers, onTickerClick }: Props) {
       .then((data) => setItems(data.roadmaps || []))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [toFetch.join(",")]);
+  }, [toFetch.join(","), warming]);
+
+  if (warming) {
+    return (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-8 text-center text-amber-200/90">
+        <LayoutGrid className="h-10 w-10 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">Dashboard still warming — roadmaps load after the first compute finishes.</p>
+      </div>
+    );
+  }
 
   if (toFetch.length === 0) {
     return (

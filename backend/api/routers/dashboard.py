@@ -133,6 +133,16 @@ def _empty_opportunities_bundle(*, enabled: bool = False) -> dict:
     }
 
 
+def _is_dashboard_warming() -> bool:
+    """True when first/full compute is running and no Redis dashboard payload exists yet."""
+    from api.dashboard_job import is_refresh_running
+    from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+    if get_cached_dashboard() or get_last_dashboard_snapshot():
+        return False
+    return is_refresh_running()
+
+
 def _doctor_recommendations_for_portfolios(
     config: dict,
     portfolios_out: dict,
@@ -545,7 +555,7 @@ async def get_dashboard(
 ):
     """Serve cached snapshot instantly; stale-while-revalidate + background refresh on miss."""
     from api.dashboard_job import get_refresh_status, is_refresh_running, trigger_background_refresh
-    from api.dashboard_shell import build_shell_from_full
+    from api.dashboard_shell import build_shell_from_full, build_warming_shell
     from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
     if refresh:
@@ -582,12 +592,19 @@ async def get_dashboard(
         shell["refresh_status"] = "running" if is_refresh_running() else get_refresh_status().get("status", "idle")
         return shell
 
+    job_status = get_refresh_status()
+    if job_status.get("status") == "error":
+        raise HTTPException(
+            status_code=503,
+            detail=f"Dashboard compute failed: {job_status.get('error') or 'unknown error'}. Use Refresh to retry.",
+        )
+
     if not is_refresh_running():
         trigger_background_refresh(_compute_full_dashboard_sync)
-    raise HTTPException(
-        status_code=503,
-        detail="Dashboard warming up — first compute in progress. Retry in 30–60s or use Refresh.",
-    )
+    logger.info("[dashboard] serving warming shell (no cache yet; compute in progress)")
+    shell = build_warming_shell(_load_config())
+    shell["refresh_status"] = "running" if is_refresh_running() else job_status.get("status", "running")
+    return shell
 
 
 @router.get("/dashboard/shell")
@@ -1956,9 +1973,13 @@ async def get_dashboard_opportunities_bundle():
         logger.exception("opportunities-bundle compute failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
     if out is None:
+        if _is_dashboard_warming():
+            warm = _empty_opportunities_bundle(enabled=False)
+            warm["warming"] = True
+            return jsonable_encoder(warm)
         raise HTTPException(
             status_code=503,
-            detail="Dashboard cache unavailable. Load the dashboard once or click Refresh, then try again.",
+            detail="Dashboard cache unavailable. Load the dashboard or click Refresh, then try again.",
         )
     return jsonable_encoder(out)
 
@@ -1972,6 +1993,12 @@ async def get_dashboard_analysis_bundle():
         logger.exception("analysis-bundle compute failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
     if out is None:
+        if _is_dashboard_warming():
+            from api.dashboard_shell import empty_analysis_bundle
+
+            warm = empty_analysis_bundle()
+            warm["warming"] = True
+            return jsonable_encoder(warm)
         raise HTTPException(
             status_code=503,
             detail="Dashboard cache unavailable. Load the dashboard or click Refresh, then open Analysis.",
@@ -1983,9 +2010,12 @@ async def get_dashboard_analysis_bundle():
 async def get_dashboard_signals_panel():
     """Full per-ticker signal rows from the last dashboard run (Redis). Used when main GET /dashboard omits heavy `signals`."""
     try:
-        from signals.cache import get_cached_dashboard
-        cached = get_cached_dashboard()
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
         if cached is None:
+            if _is_dashboard_warming():
+                return {"signals": [], "warming": True}
             raise HTTPException(
                 status_code=503,
                 detail="Dashboard cache unavailable. Load the dashboard once or click Refresh, then open Signals again.",
@@ -2327,24 +2357,36 @@ async def get_roadmaps(tickers: str = ""):
     Returns: { roadmaps: [ { ticker, one_answer, trade_roadmap } ] }.
     Each ticker uses full get_ticker_detail; we strip to one_answer + trade_roadmap only.
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from api.ticker_detail import get_ticker_detail as _get
+
     config = _load_config()
     raw = [t.strip().upper() for t in tickers.split(",") if t.strip()][:12]
     if not raw:
         return {"roadmaps": [], "message": "Provide ?tickers=NVDA,GLD,SPY"}
-    out = []
-    for t in raw:
+
+    def _one(t: str) -> dict:
         try:
             detail = _get(t, config)
             inv = detail.get("investor_summary") or {}
-            out.append({
+            return {
                 "ticker": t,
                 "one_answer": inv.get("one_answer"),
                 "trade_roadmap": inv.get("trade_roadmap"),
-            })
+            }
         except Exception as e:
             logger.warning("Roadmap skip %s: %s", t, e)
-            out.append({"ticker": t, "one_answer": None, "trade_roadmap": None})
+            return {"ticker": t, "one_answer": None, "trade_roadmap": None}
+
+    by_ticker: dict[str, dict] = {}
+    workers = min(4, len(raw))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_one, t): t for t in raw}
+        for fut in as_completed(futures):
+            t = futures[fut]
+            by_ticker[t] = fut.result()
+    out = [by_ticker[t] for t in raw if t in by_ticker]
     return {"roadmaps": out}
 
 

@@ -332,7 +332,7 @@ export function HorizonProjectionChart({
                 <span className="text-slate-500 font-normal ml-1.5">· {ticker}</span>
               ) : null}
             </h3>
-            <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+            <p className="text-sm text-slate-500 mt-1 leading-snug">
               Trailing price (left) → today → forward ST / MT / LT channels (high · avg · low).
               {!hasHistory ? " History limited — bands anchored at current price." : null}
             </p>
@@ -343,7 +343,7 @@ export function HorizonProjectionChart({
                 key={key}
                 type="button"
                 onClick={() => setVisible((v) => ({ ...v, [key]: !v[key] }))}
-                className={`text-[10px] px-2 py-1 rounded-full border transition-opacity ${
+                className={`text-xs px-2 py-1 rounded-full border transition-opacity ${
                   visible[key] ? "opacity-100" : "opacity-40"
                 }`}
                 style={{
@@ -499,7 +499,7 @@ export function HorizonProjectionChart({
           </ResponsiveContainer>
         </div>
 
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
           {horizonMeta.map(({ key, h }) => (
             <div
               key={key}

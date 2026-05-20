@@ -51,10 +51,9 @@ function isUSMarketHours(): boolean {
 }
 
 export default function Home() {
-  const [data, setData] = useState<DashboardData | null>(() =>
-    typeof window !== "undefined" ? loadCachedDashboard() : null
-  );
-  const [loading, setLoading] = useState(() => !loadCachedDashboard());
+  // SSR + first client paint must match; hydrate localStorage cache in useEffect only.
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stale, setStale] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +62,15 @@ export default function Home() {
 
   const lastFetchRef = useRef<number>(0);
   const stalePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const cached = loadCachedDashboard();
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      setStale(Boolean(cached.stale));
+    }
+  }, []);
 
   const applyDashboardJson = useCallback((json: DashboardData, fromNetwork = true) => {
     setData((prev) => (prev ? mergeDashboardData(prev, json) : json));
@@ -170,9 +178,13 @@ export default function Home() {
     return () => clearInterval(id);
   }, [data, error, refresh]);
 
-  // Poll when serving stale snapshot until cache is fresh
+  // Poll when serving stale snapshot (or first-load warming) until cache is fresh
   useEffect(() => {
-    if (!stale || error) {
+    const shouldPoll =
+      stale ||
+      data?.warming === true ||
+      data?.refresh_status === "running";
+    if (!shouldPoll || error) {
       if (stalePollRef.current) {
         clearInterval(stalePollRef.current);
         stalePollRef.current = null;
@@ -194,7 +206,7 @@ export default function Home() {
     return () => {
       if (stalePollRef.current) clearInterval(stalePollRef.current);
     };
-  }, [stale, error, refresh]);
+  }, [stale, data?.warming, data?.refresh_status, error, refresh]);
 
   if (loading && !data && !retrying) {
     return (
@@ -407,6 +419,8 @@ export interface DashboardData {
   analysis_deferred?: boolean;
   /** Snapshot is older than fresh Redis cache; background refresh may be running. */
   stale?: boolean;
+  /** First cold start: empty shell while background compute runs. */
+  warming?: boolean;
   refresh_status?: string;
   /** After-hours marks for tickers reporting earnings today (4:30 PM / 6 PM ET job). */
   after_hours_earnings?: {

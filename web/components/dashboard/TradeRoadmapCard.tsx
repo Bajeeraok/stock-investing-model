@@ -249,7 +249,7 @@ function BuyRoadmapMobileCard({
   return (
     <div
       className={clsx(
-        "rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-xs space-y-2 shadow-sm",
+        "rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-sm space-y-2 shadow-sm",
         cue.rowBg,
         hl && "ring-1 ring-amber-500/35"
       )}
@@ -272,9 +272,9 @@ function BuyRoadmapMobileCard({
         {row.when_to_act}
       </p>
       <div>
-        <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Price zone</p>
+        <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Price zone</p>
         {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
-          <div className="space-y-1 font-mono text-[11px] text-slate-300">
+          <div className="space-y-1 font-mono text-sm text-slate-300">
             {row.price_zone_lines.map((z, zi) => (
               <div key={zi}>
                 <span className="text-slate-500 font-sans">{z.label}: </span>
@@ -286,17 +286,17 @@ function BuyRoadmapMobileCard({
           <p className="font-mono text-slate-300">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
         )}
         {sameBandAsPrior && (
-          <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+          <p className="text-xs text-slate-500 mt-1 leading-tight">
             Same band as prior row — horizon role / tranche step up over time.
           </p>
         )}
       </div>
       {(rr?.risk_reward != null || row.priority_note) && (
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Risk / reward</p>
-          {row.priority_note && <p className="text-[10px] text-amber-200/90 mb-1">{row.priority_note}</p>}
+          <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Risk / reward</p>
+          {row.priority_note && <p className="text-xs text-amber-200/90 mb-1">{row.priority_note}</p>}
           {rr?.risk_reward != null && (
-            <p className="text-[11px] text-slate-400 leading-snug">
+            <p className="text-sm text-slate-400 leading-snug">
               R:R ~{rr.risk_reward}× · upside ~{rr.upside_to_model_fv_pct ?? "—"}% / downside ~{rr.downside_to_ref_stop_pct ?? "—"}%
               {rr.ref_stop_kind && <span className="text-slate-500"> ({String(rr.ref_stop_kind).replace(/_/g, " ")})</span>}
             </p>
@@ -304,19 +304,19 @@ function BuyRoadmapMobileCard({
         </div>
       )}
       {conv && (
-        <p className="text-[11px]">
+        <p className="text-sm">
           <span className="text-slate-500">Horizon role: </span>
           <span className={horizonRoleColor(row.conviction)}>{conv}</span>
         </p>
       )}
       <details className="group border-t border-slate-700/60 pt-2">
-        <summary className="cursor-pointer text-cyan-300/90 text-[11px] font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+        <summary className="cursor-pointer text-cyan-300/90 text-sm font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
           Condition & tranche detail (T1/T2/T3 text)
         </summary>
-        <div className="mt-2 space-y-2 text-[11px] text-slate-400 leading-relaxed pl-1">
+        <div className="mt-2 space-y-2 text-sm text-slate-400 leading-relaxed pl-1">
           <p className="text-slate-300">{row.condition}</p>
-          {row.allocation_note && <p className="text-slate-500 font-mono text-[10px] leading-snug">{row.allocation_note}</p>}
+          {row.allocation_note && <p className="text-slate-500 font-mono text-xs leading-snug">{row.allocation_note}</p>}
         </div>
       </details>
     </div>
@@ -333,10 +333,10 @@ function SellRoadmapMobileCard({
   const cue = sellStageCue(row.when_to_sell);
   const hl = activeTimelineKey === row.timeline_key;
   return (
-    <div className={clsx("rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-xs space-y-2", cue.rowBg, hl && "ring-1 ring-amber-500/35")}>
+    <div className={clsx("rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-sm space-y-2", cue.rowBg, hl && "ring-1 ring-amber-500/35")}>
       <div className="flex items-start justify-between gap-2">
         <p className="font-semibold text-slate-200">{row.label}</p>
-        <span className="text-[10px] text-slate-500 font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
+        <span className="text-xs text-slate-500 font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
       </div>
       <p className="text-slate-200 leading-snug">
         <span className="mr-1" aria-hidden>
@@ -347,11 +347,11 @@ function SellRoadmapMobileCard({
       <p className="font-mono text-slate-300">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
       <p className="text-amber-200/90 font-medium">{row.action}</p>
       <details className="group border-t border-slate-700/60 pt-2">
-        <summary className="cursor-pointer text-cyan-300/90 text-[11px] font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+        <summary className="cursor-pointer text-cyan-300/90 text-sm font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
           Condition & reason
         </summary>
-        <div className="mt-2 space-y-2 text-[11px] text-slate-400 leading-relaxed pl-1">
+        <div className="mt-2 space-y-2 text-sm text-slate-400 leading-relaxed pl-1">
           <p>{row.condition}</p>
           {row.reason && <p className="text-slate-500">{row.reason}</p>}
         </div>
@@ -480,7 +480,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 )}
               </span>
               <p
-                className="text-[10px] text-slate-500 mt-1.5 max-w-xl leading-snug"
+                className="text-xs text-slate-500 mt-1.5 max-w-xl leading-snug"
                 title="If both lines look good but the verdict is watch or reduce, treat it as timing and risk control — not a contradiction in the math."
               >
                 Fair value ≈ “cheap vs expensive?” · Regime ≈ “risk-on or risk-off backdrop?” — they often disagree until the tape confirms.
@@ -488,7 +488,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
             </div>
           </div>
           {(data.score_interpretation_style || "").toUpperCase() === "MEAN_REVERTING" && (
-            <p className="text-[11px] text-slate-500 mt-1.5 w-full">
+            <p className="text-sm text-slate-500 mt-1.5 w-full">
               Score labels use mean-reversion bucket mapping (score.interpretation).
               {data.score_interpretation_meta?.reason === "force_mean_reverting" && (
                 <> The model uses conservative signal interpretation for this ticker (mean-reversion buckets).</>
@@ -554,20 +554,20 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 >
                   ${data.current_price.toFixed(2)} · FV ${data.fair_value.toFixed(2)} · {data.regime_label}
                 </span>
-                <span className="text-[11px] text-slate-500 ml-auto">See Overview for full analysis</span>
+                <span className="text-sm text-slate-500 ml-auto">See Overview for full analysis</span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowRoadmapAnalysis((s) => !s)}
-                className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                className="text-sm text-slate-400 hover:text-slate-200 flex items-center gap-1"
               >
                 {showRoadmapAnalysis ? "Hide expanded analysis" : "Show expanded analysis"}
                 {showRoadmapAnalysis ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
               {showRoadmapAnalysis && data.tldr && (
                 <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2">
-                  <p className="text-[10px] text-emerald-200/80 uppercase tracking-wide font-medium">TL;DR</p>
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-xs text-emerald-200/80 uppercase tracking-wide font-medium">TL;DR</p>
+                  <p className="text-sm text-slate-400 mt-1">
                     Action
                   </p>
                   <p className="text-sm text-emerald-200/95 font-semibold">
@@ -575,14 +575,14 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   </p>
                   {nextTrigger && (
                     <>
-                      <p className="text-[11px] text-slate-400 mt-2">Next trigger</p>
+                      <p className="text-sm text-slate-400 mt-2">Next trigger</p>
                       <p className="text-xs text-sky-200/90 border-l-2 border-sky-500/50 pl-2 mt-0.5">{nextTrigger}</p>
                     </>
                   )}
                   {(whyLines.length > 0) && (
                     <>
-                      <p className="text-[11px] text-slate-400 mt-2">Why this call</p>
-                      <ul className="mt-1 space-y-1 text-[11px] text-slate-300 list-disc list-inside">
+                      <p className="text-sm text-slate-400 mt-2">Why this call</p>
+                      <ul className="mt-1 space-y-1 text-sm text-slate-300 list-disc list-inside">
                         {whyLines.map((n, i) => (
                           <li key={i}>{n}</li>
                         ))}
@@ -593,68 +593,68 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, market: !s.market }))}
-                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between"
                     >
                       <span>Market structure</span>
                       {evidenceOpen.market ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
                     </button>
                     {evidenceOpen.market && (
-                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
                         {data.market_regime_layer?.label || data.tldr.bias}
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, chart: !s.chart }))}
-                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
                     >
                       <span>Chart and momentum</span>
                       {evidenceOpen.chart ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
                     </button>
                     {evidenceOpen.chart && (
-                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
                         {data.you_are_here?.note || "Use current roadmap row and key level for timing."}
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, flow: !s.flow }))}
-                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
                     >
                       <span>Smart money</span>
                       {evidenceOpen.flow ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
                     </button>
                     {evidenceOpen.flow && (
-                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
                         {data.tldr.model_confidence_band ? `Confidence band ${data.tldr.model_confidence_band}.` : "Model confidence context is mixed; stage entries."}
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, business: !s.business }))}
-                      className="w-full px-2.5 py-1.5 text-left text-[11px] text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
                     >
                       <span>Business and news</span>
                       {evidenceOpen.business ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
                     </button>
                     {evidenceOpen.business && (
-                      <p className="px-2.5 pb-2 text-[11px] text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
                         {data.probabilistic_framing || "Review scenario mix and roadmap tiers before sizing."}
                       </p>
                     )}
                   </div>
                   <div className="mt-2 rounded border border-slate-700/70 bg-slate-900/30 px-2.5 py-2">
-                    <p className="text-[11px] text-slate-400">What would change this?</p>
-                    <p className="text-[11px] text-slate-300 font-mono mt-1">
+                    <p className="text-sm text-slate-400">What would change this?</p>
+                    <p className="text-sm text-slate-300 font-mono mt-1">
                       Key level: ${data.tldr.key_level.toFixed(2)}
                     </p>
                     {data.tldr.model_confidence_band && (
-                      <p className="text-[11px] text-slate-300 font-mono">
+                      <p className="text-sm text-slate-300 font-mono">
                         Confidence: {data.tldr.model_confidence_band}
                       </p>
                     )}
                     {data.scenario_outlook && (
-                      <p className="text-[11px] text-slate-400 mt-1">
+                      <p className="text-sm text-slate-400 mt-1">
                         Bull {data.scenario_outlook.bull_pct}% | Base {data.scenario_outlook.base_pct}% | Bear {data.scenario_outlook.bear_pct}%
                       </p>
                     )}
@@ -680,27 +680,27 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     </p>
                   )}
                   {data.tldr.model_confidence_pct != null && (
-                    <p className="text-[11px] text-slate-500 mt-1">Model confidence (fused): {data.tldr.model_confidence_pct}%</p>
+                    <p className="text-sm text-slate-500 mt-1">Model confidence (fused): {data.tldr.model_confidence_pct}%</p>
                   )}
                   {data.tldr.model_confidence_band && (
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-sm text-slate-500">
                       Confidence band: {data.tldr.model_confidence_band}
                     </p>
                   )}
                   {data.tldr.model_confidence_band_note && (
-                    <p className="text-[10px] text-slate-600 leading-snug mt-0.5">{data.tldr.model_confidence_band_note}</p>
+                    <p className="text-xs text-slate-600 leading-snug mt-0.5">{data.tldr.model_confidence_band_note}</p>
                   )}
                   {data.tldr.dual_signal && (
-                    <p className="text-[11px] text-sky-200/90 mt-1">
+                    <p className="text-sm text-sky-200/90 mt-1">
                       Structural: <strong>{data.tldr.dual_signal.structural || "N/A"}</strong> · Tactical:{" "}
                       <strong>{data.tldr.dual_signal.tactical || "N/A"}</strong>
                     </p>
                   )}
                   {data.tldr.dual_signal?.bridge_note && (
-                    <p className="text-[11px] text-sky-300/90 mt-0.5">{data.tldr.dual_signal.bridge_note}</p>
+                    <p className="text-sm text-sky-300/90 mt-0.5">{data.tldr.dual_signal.bridge_note}</p>
                   )}
                   {(data.tldr.reconciliation_notes?.length ?? 0) > 0 && (
-                    <ul className="mt-2 space-y-1 text-[11px] text-slate-300 list-disc list-inside">
+                    <ul className="mt-2 space-y-1 text-sm text-slate-300 list-disc list-inside">
                       {(data.tldr.reconciliation_notes ?? []).map((n, i) => (
                         <li key={i}>{n}</li>
                       ))}
@@ -719,7 +719,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 </p>
               )}
               {showRoadmapAnalysis && data.probabilistic_framing && (
-                <p className="text-[10px] text-slate-500 leading-snug">{data.probabilistic_framing}</p>
+                <p className="text-xs text-slate-500 leading-snug">{data.probabilistic_framing}</p>
               )}
             </div>
           )}
@@ -810,7 +810,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 </ul>
               )}
               {data.trader_summary.horizon_note && (
-                <p className="text-[11px] text-slate-500 mt-2 leading-snug border-t border-slate-600/40 pt-2">
+                <p className="text-sm text-slate-500 mt-2 leading-snug border-t border-slate-600/40 pt-2">
                   {data.trader_summary.horizon_note}
                 </p>
               )}
@@ -818,7 +818,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <p className="text-xs text-slate-500 mt-1.5 border-t border-slate-600/50 pt-1.5">{tickerNote(ticker)}</p>
               )}
               {(data.consistency_notes?.length ?? 0) > 0 && (
-                <ul className="text-[11px] text-slate-500 mt-2 space-y-1 border-t border-slate-600/40 pt-2 list-disc list-inside">
+                <ul className="text-sm text-slate-500 mt-2 space-y-1 border-t border-slate-600/40 pt-2 list-disc list-inside">
                   {(data.consistency_notes ?? []).map((n, i) => (
                     <li key={i} className="leading-snug">
                       {n}
@@ -839,7 +839,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   <Newspaper className="h-3.5 w-3.5 shrink-0 text-cyan-200/90 mt-0.5" aria-hidden />
                   <span className="flex-1 min-w-0">
                     <span className="text-xs text-cyan-200/90 font-medium block">Headlines (news sentiment layer)</span>
-                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                    <span className="text-sm text-slate-500 block mt-0.5">
                       {data.news_sentiment_layer.sentiment_label && (
                         <span className="text-slate-400">{data.news_sentiment_layer.sentiment_label}</span>
                       )}
@@ -872,22 +872,22 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 {newsExpanded && (
                   <div className="px-3 pb-2.5 pt-0 border-t border-cyan-500/15">
                     {data.news_sentiment_layer.pipeline_note && (
-                      <p className="text-[11px] text-slate-500 mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
+                      <p className="text-sm text-slate-500 mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
                     )}
                     {(data.news_sentiment_layer.fmp_key_configured != null ||
                       data.news_sentiment_layer.alpha_vantage_key_configured != null) && (
-                      <p className="text-[11px] text-slate-500 mb-2 font-mono">
+                      <p className="text-sm text-slate-500 mb-2 font-mono">
                         Keys loaded on server: FMP{" "}
                         {data.news_sentiment_layer.fmp_key_configured ? "yes" : "no"} · Alpha Vantage{" "}
                         {data.news_sentiment_layer.alpha_vantage_key_configured ? "yes" : "no"}
                       </p>
                     )}
                     {data.news_sentiment_layer.fmp_request_error && (
-                      <p className="text-[11px] text-amber-200/85 mb-2 leading-snug font-mono">
+                      <p className="text-sm text-amber-200/85 mb-2 leading-snug font-mono">
                         FMP news: {data.news_sentiment_layer.fmp_request_error}
                       </p>
                     )}
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400 mb-2 font-mono">
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-slate-400 mb-2 font-mono">
                       {data.news_sentiment_layer.score_0_1 != null && (
                         <span>
                           Layer score:{" "}
@@ -907,7 +907,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                       )}
                     </div>
                     {data.news_sentiment_layer.message && (
-                      <p className="text-[11px] text-amber-200/80 mb-2">{data.news_sentiment_layer.message}</p>
+                      <p className="text-sm text-amber-200/80 mb-2">{data.news_sentiment_layer.message}</p>
                     )}
                     {data.news_sentiment_layer.summary_label && (
                       <p className="text-xs text-slate-400 mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
@@ -934,8 +934,8 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 </p>
                 {data.action_glossary && Object.keys(data.action_glossary).length > 0 && (
                   <details className="mt-2 border-t border-slate-600/40 pt-2">
-                    <summary className="cursor-pointer text-slate-300 text-[11px]">Action phrases (glossary)</summary>
-                    <ul className="mt-1.5 space-y-1 text-[10px] list-disc list-inside text-slate-500">
+                    <summary className="cursor-pointer text-slate-300 text-sm">Action phrases (glossary)</summary>
+                    <ul className="mt-1.5 space-y-1 text-xs list-disc list-inside text-slate-500">
                       {Object.entries(data.action_glossary).map(([k, v]) => (
                         <li key={k}>
                           <span className="text-slate-400">{k}:</span> {v}
@@ -953,7 +953,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-emerald-400 mb-2">
                   <TrendingUp className="h-4 w-4" /> Buy roadmap
                 </h4>
-                <p className="text-[10px] text-slate-500 mb-2 sm:hidden">
+                <p className="text-xs text-slate-500 mb-2 sm:hidden">
                   On small screens use the cards below; swipe the desktop table on larger screens for all columns.
                 </p>
                 <div className="sm:hidden space-y-3">
@@ -969,7 +969,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   ))}
                 </div>
                 <div className="hidden sm:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
-                  <table className="min-w-[980px] w-full text-xs border-collapse table-fixed">
+                  <table className="min-w-[980px] w-full text-sm border-collapse table-fixed">
                     <colgroup>
                       <col className="w-[100px]" />
                       <col className="w-[140px]" />
@@ -1026,7 +1026,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                           </td>
                           <td className="py-2 pr-2 font-mono text-slate-300 align-top">
                             {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
-                              <div className="space-y-1 text-[10px] leading-snug">
+                              <div className="space-y-1 text-xs leading-snug">
                                 {row.price_zone_lines.map((z, zi) => (
                                   <div key={zi}>
                                     <span className="text-slate-500 font-sans">{z.label}: </span>
@@ -1045,18 +1045,18 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                               </div>
                             )}
                           </td>
-                          <td className="py-2 pr-2 text-slate-400 text-[11px] leading-snug align-top break-words">
+                          <td className="py-2 pr-2 text-slate-400 text-sm leading-snug align-top break-words">
                             {row.priority_note && (
-                              <span className="block text-amber-200/90 text-[10px] mb-1">{row.priority_note}</span>
+                              <span className="block text-amber-200/90 text-xs mb-1">{row.priority_note}</span>
                             )}
                             {row.condition}
                             {row.risk_reward_context?.risk_reward != null && (
-                              <span className="block text-slate-500 mt-1 text-[10px]">
+                              <span className="block text-slate-500 mt-1 text-xs">
                                 R:R (vs model FV / ref stop): ~{row.risk_reward_context.risk_reward}× · upside ~{row.risk_reward_context.upside_to_model_fv_pct ?? "—"}% / downside ~{row.risk_reward_context.downside_to_ref_stop_pct ?? "—"}% (ref {row.risk_reward_context.ref_stop_kind})
                               </span>
                             )}
                             {row.allocation_note && (
-                              <span className="block text-slate-500 mt-1 text-[10px] leading-snug">{row.allocation_note}</span>
+                              <span className="block text-slate-500 mt-1 text-xs leading-snug">{row.allocation_note}</span>
                             )}
                           </td>
                           <td className={clsx("py-2 pr-2 align-top", conv ? horizonRoleColor(row.conviction) : "")}>
@@ -1068,7 +1068,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     </tbody>
                   </table>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2 leading-snug max-w-3xl">
+                <p className="text-xs text-slate-500 mt-2 leading-snug max-w-3xl">
                   <strong className="text-slate-400">How to read this:</strong> Horizon role describes the scenario for that
                   row (not “bigger % = higher conviction”). Tranche % is the slice of your planned position for that leg of
                   the staged entry ladder—risk-budget style—not a sort order by the role labels. Repeating dollar bands across
@@ -1089,7 +1089,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   ))}
                 </div>
                 <div className="hidden sm:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
-                  <table className="min-w-[880px] w-full text-xs border-collapse">
+                  <table className="min-w-[880px] w-full text-sm border-collapse">
                     <thead>
                       <tr className="text-slate-500 border-b border-slate-600">
                         <th className="text-left py-2 pr-2">Timeline</th>
@@ -1121,10 +1121,10 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                           <td className="py-2 pr-2 font-mono text-slate-300">
                             {formatZone(row.price_zone_low, row.price_zone_high)}
                           </td>
-                          <td className="py-2 pr-2 text-slate-400 min-w-[200px] max-w-[320px] text-[11px] leading-snug break-words" title={row.condition}>
+                          <td className="py-2 pr-2 text-slate-400 min-w-[200px] max-w-[320px] text-sm leading-snug break-words" title={row.condition}>
                             {row.condition}
                           </td>
-                          <td className="py-2 pr-2 text-slate-500 font-mono text-[10px]">
+                          <td className="py-2 pr-2 text-slate-500 font-mono text-xs">
                             {row.exit_category?.replace(/_/g, " ") ?? "—"}
                           </td>
                           <td className="py-2 pr-2 text-amber-200/90">{row.action}</td>
@@ -1134,7 +1134,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     </tbody>
                   </table>
                 </div>
-                <p className="text-[10px] text-slate-500 mt-2 leading-snug max-w-3xl">
+                <p className="text-xs text-slate-500 mt-2 leading-snug max-w-3xl">
                   <strong className="text-slate-400">Overlapping trim windows:</strong> Short-term and longer trims can share
                   price ranges when targets align. Earlier rows are the first tranche to consider; later rows size what is
                   left — not a separate trigger that only fires if you skipped an earlier leg.

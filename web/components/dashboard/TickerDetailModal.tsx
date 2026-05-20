@@ -195,14 +195,14 @@ function RetailActionStatusBanner({ status }: { status: RetailActionStatus | nul
           <Icon className={clsx("h-5 w-5", styles.accent)} aria-hidden />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Action status</p>
+          <p className="text-sm uppercase tracking-wider text-slate-400 font-semibold">Action status</p>
           <p className={clsx("text-lg font-bold tracking-tight", styles.accent)}>{status.title}</p>
         </div>
       </div>
       <div className="text-sm text-slate-200/95 leading-snug sm:flex-1 sm:min-w-0 border-t border-white/5 sm:border-0 sm:border-l sm:border-white/10 sm:pl-4 pt-2 sm:pt-0 space-y-1.5">
         <p>{status.subtitle}</p>
         <p
-          className="text-[11px] text-slate-400 leading-snug cursor-help"
+          className="text-sm text-slate-400 leading-snug cursor-help"
           title="Fair value compares price to our model anchor. Regime is risk-on vs risk-off from the model. They are allowed to disagree: cheap can stay cheap until the tape improves."
         >
           Quick read: <span className="text-slate-300">Fair value</span> = price vs our estimate of worth.{" "}
@@ -527,7 +527,7 @@ export function TickerDetailModal({
               className="w-full flex items-start gap-2 text-left touch-manipulation"
               aria-expanded={catalystExpanded}
             >
-              <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40">
+              <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/40">
                 {detail.catalyst.top_event_type?.replace(/_/g, " ") ?? "CATALYST"}
               </span>
               <span className="text-xs text-amber-200/90 leading-relaxed flex-1 min-w-0">
@@ -535,7 +535,7 @@ export function TickerDetailModal({
                   ? detail.catalyst.override_note
                   : `${(detail.catalyst.override_note || "").slice(0, 140)}${(detail.catalyst.override_note || "").length > 140 ? "…" : ""}`}
               </span>
-              <span className="shrink-0 text-amber-400/80 text-[10px] font-semibold pt-0.5">{catalystExpanded ? "Hide" : "More"}</span>
+              <span className="shrink-0 text-amber-400/80 text-xs font-semibold pt-0.5">{catalystExpanded ? "Hide" : "More"}</span>
             </button>
           </div>
         )}
@@ -549,7 +549,7 @@ export function TickerDetailModal({
                 ? "border-red-500/30 bg-red-950/80"
                 : "border-slate-600 bg-slate-800/80"
           }`}>
-            <span className={`shrink-0 mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ${
+            <span className={`shrink-0 mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wider ring-1 ${
               detail.post_earnings_transition.beat_or_miss === "beat"
                 ? "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40"
                 : detail.post_earnings_transition.beat_or_miss === "miss"
@@ -568,7 +568,7 @@ export function TickerDetailModal({
         {/* Ticker hub — quick read strip */}
         {detail && !loading && (
           <div className="border-b border-slate-700 bg-slate-900/90 px-3 sm:px-5 py-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Ticker hub</p>
+            <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Ticker hub</p>
             <div className="flex gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch] pb-0.5">
               <DataMetricCard
                 dense
@@ -631,7 +631,7 @@ export function TickerDetailModal({
               </button>
             ))}
             </div>
-            <p className="text-center text-[11px] text-slate-500 px-2 py-1.5 border-t border-slate-800">
+            <p className="text-center text-sm text-slate-500 px-2 py-1.5 border-t border-slate-800">
               One answer: today&apos;s takeaway · Roadmaps: prices &amp; steps · Deep dive: models, thesis, and history
             </p>
           </div>
@@ -666,7 +666,7 @@ export function TickerDetailModal({
                   {detail.cross_asset.badges.map((b) => (
                     <span
                       key={b}
-                      className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-300"
+                      className="text-sm px-2 py-0.5 rounded-md bg-slate-800 border border-slate-600 text-slate-300"
                       title="How this stock has tended to move with gold, the U.S. dollar, and the fear gauge (VIX) over the last ~60 trading days"
                     >
                       {b}
@@ -684,7 +684,7 @@ export function TickerDetailModal({
                   <Zap className="h-5 w-5 text-amber-300 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-amber-100">Possible change in market mood</p>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
+                    <p className="text-sm text-slate-400 mt-0.5">
                       Our read suggests the backdrop for stocks may be shifting. Open Details for the full breakdown.
                     </p>
                   </div>
@@ -944,7 +944,7 @@ export function TickerDetailModal({
                           ? " \u2014 price action supports the bullish signal."
                           : ".";
                     return (
-                      <p className={`text-[11px] mt-2 px-3 py-1.5 rounded border leading-snug ${diff < 0 ? "text-red-300/90 border-red-500/25 bg-red-950/30" : "text-emerald-300/90 border-emerald-500/25 bg-emerald-950/30"}`}>
+                      <p className={`text-sm mt-2 px-3 py-1.5 rounded border leading-snug ${diff < 0 ? "text-red-300/90 border-red-500/25 bg-red-950/30" : "text-emerald-300/90 border-emerald-500/25 bg-emerald-950/30"}`}>
                         {detail.ticker} has {word} SPY by {absDiff.toFixed(1)}% over {bestPeriod}{confirmMsg}
                       </p>
                     );
@@ -1013,7 +1013,7 @@ export function TickerDetailModal({
                         {playbookStage3.action}
                       </p>
                       {regimeShift && (
-                        <p className="text-[11px] text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
+                        <p className="text-sm text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
                           Chance the market backdrop changes meaningfully in about {regimeShift.days_estimate}:{" "}
                           <span className="font-mono font-semibold text-amber-300/95">
                             {regimeShift.shift_probability.toFixed(0)}%
@@ -1025,7 +1025,7 @@ export function TickerDetailModal({
                         </p>
                       )}
                       {!regimeShift && (
-                        <p className="text-[11px] text-slate-500 pt-1">
+                        <p className="text-sm text-slate-500 pt-1">
                           Full scenario list is in the confidence card below under the playbook section.
                         </p>
                       )}
@@ -1039,7 +1039,7 @@ export function TickerDetailModal({
                 <section className="space-y-2">
                   <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2">
                     <p className="text-xs font-semibold text-slate-200 uppercase tracking-wide">7-Layer model signal</p>
-                    <p className="text-[11px] text-slate-400">Regime + ML + options + fundamentals fused.</p>
+                    <p className="text-sm text-slate-400">Regime + ML + options + fundamentals fused.</p>
                   </div>
                   <ConfidenceBreakdownSafe data={confidence} />
                 </section>
@@ -1055,11 +1055,11 @@ export function TickerDetailModal({
                 <section className="space-y-2">
                   <div className="rounded-lg border border-slate-700/70 bg-slate-900/20 px-3 py-2">
                     <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
-                    <p className="text-[11px] text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
+                    <p className="text-sm text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
                   </div>
                   {hasVerdictConflict && (
                     <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                      <p className="text-[11px] text-amber-200 leading-snug">
+                      <p className="text-sm text-amber-200 leading-snug">
                         Overview says <span className="font-semibold">{overviewVerdict}</span> (fused multi-layer model),
                         while Technical Pattern says <span className="font-semibold">{patternVerdict}</span> (chart-only).
                         This is expected when structural thesis and tactical timing diverge.
@@ -1292,7 +1292,7 @@ export function TickerDetailModal({
                     {hasPriceReasoning && (
                       <div className={clsx("space-y-2 text-sm", showHorizonSignals && "border-b border-slate-700/50 pb-3 mb-3")}>
                         <p className="text-xs text-slate-500">From chart rules (not the full confidence model)</p>
-                        <p className="text-[11px] text-slate-500 leading-snug">
+                        <p className="text-sm text-slate-500 leading-snug">
                           These add/trim zones follow momentum and average-price rules. Prefer the <span className="text-slate-400">confidence section</span> above for the main buy/sell read—they can disagree on purpose.
                         </p>
                         {detail.price_reasoning!.buy && (
