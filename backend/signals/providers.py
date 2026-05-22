@@ -261,7 +261,9 @@ def _get_earnings_yfinance(ticker: str) -> dict | None:
     return None
 
 
-# Sector -> SPDR ETF for industry benchmark
+# Sector -> SPDR ETF for industry benchmark (see ticker_metadata.SECTOR_ETF_MAP for full map)
+from signals.ticker_metadata import resolve_equity_sector, TICKER_SECTOR_FALLBACK
+
 _SECTOR_ETF = {
     "technology": "XLK",
     "financial services": "XLF",
@@ -289,20 +291,9 @@ def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
     Returns {sector, industry, sector_etf, sector_etf_name}.
     """
     sym = (ticker or "").upper().split("-")[0]
-    _FALLBACK = {
-        "SPY": ("Market", "S&P 500 Index ETF", "SPY", "SPY (Market)"),
-        "QQQ": ("Technology", "Nasdaq 100 Index ETF", "QQQ", "QQQ (Technology)"),
-        "IWM": ("Small Caps", "Russell 2000 Index ETF", "IWM", "IWM (Small Caps)"),
-        "DIA": ("Market", "Dow Jones Index ETF", "DIA", "DIA (Market)"),
-        "GLD": ("Commodities", "Gold ETF", "GLD", "GLD (Commodities)"),
-        "SLV": ("Commodities", "Silver ETF", "SLV", "SLV (Commodities)"),
-        "AVGO": ("Technology", "Semiconductors", "XLK", "XLK (Technology)"),
-        # FMP/yfinance sometimes omit sector; explicit routing for large caps used in watchlists
-        "BLK": ("Financials", "Asset Management", "XLF", "XLF (Financials)"),
-    }
-    if sym in _FALLBACK:
-        sector, industry, sector_etf, sector_etf_name = _FALLBACK[sym]
-        return {"sector": sector, "industry": industry, "sector_etf": sector_etf, "sector_etf_name": sector_etf_name}
+    if sym in TICKER_SECTOR_FALLBACK or sym.replace(".", "-") in TICKER_SECTOR_FALLBACK:
+        resolved = resolve_equity_sector(ticker)
+        return resolved
     if sym in _ETFS:
         return {"sector": "Market", "industry": "ETF", "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
 
@@ -313,26 +304,15 @@ def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
             from signals.fmp_client import fetch_profile
             profile, err = fetch_profile(config, ticker)
             if not err and profile and isinstance(profile, dict):
-                sector = (profile.get("sector") or "").strip().lower()
+                sector = (profile.get("sector") or "").strip()
                 industry = (profile.get("industry") or "").strip() or None
-                sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
-                sec_title = sector.replace("-", " ").title() if sector else ""
-                if not sector or sec_title.lower() in ("unknown", ""):
-                    fb = _FALLBACK.get(sym)
-                    if fb:
-                        sector, industry, sector_etf, sector_etf_name = fb
-                        return {
-                            "sector": sector,
-                            "industry": industry,
-                            "sector_etf": sector_etf,
-                            "sector_etf_name": sector_etf_name,
-                        }
-                return {
-                    "sector": sec_title or "Unknown",
-                    "industry": industry,
-                    "sector_etf": sector_etf,
-                    "sector_etf_name": f"{sector_etf} ({sector.replace('-', ' ').title()})" if sector else "SPY (Market)",
-                }
+                resolved = resolve_equity_sector(ticker, sector=sector, industry=industry)
+                if resolved["sector"] != "Unknown":
+                    return resolved
+                fb = TICKER_SECTOR_FALLBACK.get(sym)
+                if fb:
+                    return resolve_equity_sector(ticker, sector=fb.get("sector"), industry=fb.get("industry"))
+                return resolved
         except Exception:
             pass
 
@@ -341,32 +321,23 @@ def get_sector_and_industry(ticker: str, config: dict | None = None) -> dict:
     try:
         t = yf.Ticker(ticker)
         info = t.info or {}
-        sector = (info.get("sector") or "").strip().lower()
-        industry = (info.get("industry") or "").strip()
-        if not sector:
-            try:
-                from signals.pre_flight.asset_classifier import ASSET_REGISTRY  # type: ignore
-                meta = ASSET_REGISTRY.get(sym)
-                if meta and getattr(meta, "sector", None):
-                    return {
-                        "sector": str(meta.sector),
-                        "industry": industry or None,
-                        "sector_etf": "SPY",
-                        "sector_etf_name": "SPY (Market)",
-                    }
-            except Exception:
-                pass
-            fb = _FALLBACK.get(sym)
-            if fb:
-                s, ind, se, sen = fb
-                return {"sector": s, "industry": ind, "sector_etf": se, "sector_etf_name": sen}
-        sector_etf = _SECTOR_ETF.get(sector, "SPY") if sector else "SPY"
-        return {
-            "sector": sector.replace("-", " ").title() if sector else "Unknown",
-            "industry": industry or None,
-            "sector_etf": sector_etf,
-            "sector_etf_name": f"{sector_etf} ({sector.replace('-', ' ').title()})" if sector else "SPY (Market)",
-        }
+        sector = (info.get("sector") or "").strip()
+        industry = (info.get("industry") or "").strip() or None
+        resolved = resolve_equity_sector(ticker, sector=sector, industry=industry)
+        if resolved["sector"] != "Unknown":
+            return resolved
+        try:
+            from signals.pre_flight.asset_classifier import ASSET_REGISTRY  # type: ignore
+
+            meta = ASSET_REGISTRY.get(sym)
+            if meta and getattr(meta, "sector", None):
+                return resolve_equity_sector(ticker, sector=str(meta.sector), industry=industry)
+        except Exception:
+            pass
+        fb = TICKER_SECTOR_FALLBACK.get(sym)
+        if fb:
+            return resolve_equity_sector(ticker, sector=fb.get("sector"), industry=fb.get("industry"))
+        return resolved
     except Exception:
         return {"sector": "Unknown", "industry": None, "sector_etf": "SPY", "sector_etf_name": "SPY (Market)"}
 

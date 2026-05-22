@@ -1268,6 +1268,7 @@ def _compute_full_dashboard_sync() -> dict:
         if pr_cfg.get("enabled", True) and holdings:
             from signals.portfolio_risk_model import (
                 compute_correlation_matrix,
+                compute_portfolio_beta_metrics,
                 compute_var_cvar,
                 correlation_adjusted_sizing,
             )
@@ -1278,6 +1279,20 @@ def _compute_full_dashboard_sync() -> dict:
                 if t:
                     raw_tickers.append(str(t).upper().split("-")[0])
             tickers_pr = list(dict.fromkeys(raw_tickers))[: int(pr_cfg.get("max_tickers", 20))]
+
+            first_report = next(iter(portfolios_out.values()), None) if portfolios_out else None
+            per_holding_ph = (first_report or {}).get("per_holding") or []
+            sector_alloc = (first_report or {}).get("sector_allocation") or []
+
+            if per_holding_ph:
+                try:
+                    portfolio_risk_metrics["beta"] = compute_portfolio_beta_metrics(
+                        per_holding_ph,
+                        sector_allocation=sector_alloc,
+                    )
+                except Exception as be:
+                    logger.debug("portfolio beta metrics: %s", be)
+
             if len(tickers_pr) >= 2:
                 n = len(tickers_pr)
                 eq_w = {t: 1.0 / n for t in tickers_pr}
@@ -1679,6 +1694,13 @@ def _compute_full_dashboard_sync() -> dict:
         logger.debug("enrich_results_liquidity: %s", e)
 
     try:
+        from signals.catalyst_batch import enrich_results_catalysts
+
+        enrich_results_catalysts(config, results)
+    except Exception as e:
+        logger.debug("enrich_results_catalysts: %s", e)
+
+    try:
         from scanner.horizon_levels import sync_horizon_levels_from_signal_results
 
         _nhl = sync_horizon_levels_from_signal_results(get_data_root(), results)
@@ -1838,6 +1860,8 @@ def _compute_full_dashboard_sync() -> dict:
             _pm_path = data_root / "pre_market_latest.json"
             if _pm_path.exists():
                 _pm_report = _json.loads(_pm_path.read_text())
+                if isinstance(_pm_report, dict):
+                    _pm_report = _premarket_with_catalysts(_pm_report)
         except Exception:
             pass
         morning_newsletter = build_morning_newsletter(
@@ -1912,6 +1936,7 @@ def _compute_full_dashboard_sync() -> dict:
         "pre_market": pre_market,
         "pre_market_full": pre_market_full,
         "eod_snapshots": eod_snapshots,
+        "data_root": str(data_root),
         "redis_status": redis_status_out,
         "insider_flow": insider_flow,
         "cot_by_ticker": cot_by_ticker,
@@ -1953,6 +1978,19 @@ def _compute_full_dashboard_sync() -> dict:
         },
     }
     out.update(tier1_payload)
+    try:
+        from behavior.push_digest import maybe_broadcast_retail_push
+
+        trim_ts = [h["ticker"] for h in trim_candidates if h.get("ticker")]
+        push_out = maybe_broadcast_retail_push(
+            config,
+            story_changes=story_changes,
+            trim_tickers=trim_ts,
+        )
+        if push_out.get("sent"):
+            logger.info("[dashboard] web push digest sent (%s)", push_out.get("fingerprint"))
+    except Exception as e:
+        logger.debug("[dashboard] web push digest skipped: %s", e)
     cache_ok = False
     try:
         from signals.cache import set_cached_dashboard
@@ -2117,13 +2155,70 @@ async def get_config():
     return _load_config()
 
 
+@router.get("/behavior/cooldown/{ticker}")
+async def get_trim_cooldown(ticker: str):
+    """Check whether re-add is blocked after a logged trim."""
+    from behavior.trade_discipline import check_add_allowed
+
+    config = _load_config()
+    return check_add_allowed(ticker.upper(), config)
+
+
+@router.post("/behavior/trim-cooldown")
+async def post_trim_cooldown(body: dict):
+    """Log a trim and start re-add cooldown (default 14 days from config.behavior)."""
+    from behavior.trade_discipline import record_trim_cooldown
+
+    ticker = (body.get("ticker") or "").strip().upper()
+    if not ticker:
+        raise HTTPException(status_code=400, detail="ticker required")
+    config = _load_config()
+    return record_trim_cooldown(ticker, config, note=body.get("note"))
+
+
+@router.get("/behavior/journal")
+async def get_trade_journal(limit: int = Query(30, ge=1, le=100)):
+    from behavior.trade_discipline import list_journal
+
+    return {"entries": list_journal(limit)}
+
+
+@router.post("/behavior/journal")
+async def post_trade_journal(body: dict):
+    from behavior.trade_discipline import append_journal
+
+    ticker = (body.get("ticker") or "").strip().upper()
+    note = (body.get("note") or "").strip()
+    action = (body.get("action") or "add").strip().lower()
+    if not ticker or not note:
+        raise HTTPException(status_code=400, detail="ticker and note required")
+    config = _load_config()
+    return append_journal(ticker, action, note, config)
+
+
 @router.post("/tickers")
 async def add_ticker_api(body: dict):
     """Add ticker to watchlist (persists in user_overrides, no config edit needed)."""
+    from behavior.trade_discipline import append_journal, check_add_allowed
+
     ticker = body.get("ticker", "").strip().upper()
     if not ticker:
         raise HTTPException(status_code=400, detail="ticker required")
+    config = _load_config()
+    journal_note = (body.get("journal_note") or body.get("note") or "").strip()
+    thesis_override = bool(body.get("thesis_override"))
+    cd = check_add_allowed(ticker, config, thesis_override=thesis_override)
+    if not cd.get("allowed"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"{ticker} on trim cooldown ({cd.get('days_left')} days left). Log a thesis update to override.",
+                "cooldown": cd,
+            },
+        )
     if _add_ticker(ticker):
+        if journal_note:
+            append_journal(ticker, "add", journal_note, config)
         return {"ok": True, "ticker": ticker}
     return {"ok": False, "ticker": ticker, "message": "Already in watchlist"}
 
@@ -2266,6 +2361,17 @@ async def get_after_hours_snapshot(refresh: bool = Query(False)):
     )
 
 
+def _premarket_with_catalysts(data: dict) -> dict:
+    """Attach P0 market catalyst board (calendar, tensions, FOMC stats) to pre-market payload."""
+    try:
+        from signals.market_catalysts import attach_catalysts_to_premarket
+
+        return attach_catalysts_to_premarket(data, _load_config())
+    except Exception as e:
+        logger.debug("premarket catalysts attach failed: %s", e)
+        return data
+
+
 @router.get("/pre-market")
 async def get_pre_market():
     """
@@ -2294,7 +2400,7 @@ async def get_pre_market():
     # ── Case 1: fresh file from today ──────────────────────────────────────
     if cached and _premarket_file_is_from_today(cached):
         cached.pop("stale", None)  # Clean up stale flag if somehow present
-        return cached
+        return _premarket_with_catalysts(cached)
 
     # ── Case 2: in pre-market hours → run engine live ─────────────────────
     if _is_premarket_hours_et():
@@ -2307,7 +2413,7 @@ async def get_pre_market():
             pre_market_file.parent.mkdir(parents=True, exist_ok=True)
             with open(pre_market_file, "w") as f:
                 json.dump(data, f, indent=2)
-            return data
+            return _premarket_with_catalysts(data)
         except Exception as e:
             logger.exception("Pre-market engine failed: %s", e)
             # Fall through to serve stale cache if available
@@ -2328,7 +2434,7 @@ async def get_pre_market():
             date_str = "a previous day"
         cached["stale"] = True
         cached["stale_message"] = f"Showing pre-market data from {date_str} — refreshes at 4:00 AM ET on trading days"
-        return cached
+        return _premarket_with_catalysts(cached)
 
     # ── Case 4: no data at all ─────────────────────────────────────────────
     raise HTTPException(

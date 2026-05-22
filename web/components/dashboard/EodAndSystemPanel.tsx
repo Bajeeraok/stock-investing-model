@@ -27,6 +27,8 @@ export interface RedisStatus {
 interface EodAndSystemPanelProps {
   eodSnapshots: EodSnapshotItem[];
   redisStatus: RedisStatus | undefined;
+  /** Backend-resolved DATA_ROOT (from env or default /app/data) */
+  dataRoot?: string | null;
   onRefresh?: () => void;
 }
 
@@ -49,7 +51,7 @@ function formatRunDateEt(runDate: string | null | undefined): string {
   );
 }
 
-export function EodAndSystemPanel({ eodSnapshots, redisStatus, onRefresh }: EodAndSystemPanelProps) {
+export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefresh }: EodAndSystemPanelProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -129,7 +131,24 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, onRefresh }: EodA
           EOD snapshot files ({eodSnapshots.length})
         </p>
         <p className="text-xs text-slate-500 mb-2">
-          Stored in <code className="bg-slate-800 px-1 rounded">data/eod/</code> (same path locally and on Railway).
+          Files under{" "}
+          <code className="bg-slate-800 px-1 rounded">
+            {dataRoot ? `${dataRoot.replace(/\/$/, "")}/eod/` : "DATA_ROOT/eod/"}
+          </code>
+          {dataRoot === "/data" && (
+            <span className="text-slate-400">
+              {" "}
+              — OK if a Railway volume is mounted at <code className="bg-slate-800 px-1 rounded">/data</code>.
+              Without a volume, remove <code className="bg-slate-800 px-1 rounded">DATA_ROOT</code> (defaults to{" "}
+              <code className="bg-slate-800 px-1 rounded">/app/data</code>); EOD still persists in Redis when connected.
+            </span>
+          )}
+          {dataRoot && dataRoot !== "/data" && (
+            <span className="text-slate-400">
+              {" "}
+              (<code className="bg-slate-800 px-1 rounded">DATA_ROOT</code> env or default)
+            </span>
+          )}
         </p>
         {eodSnapshots.length === 0 ? (
           <p className="text-sm text-slate-500">No EOD snapshots yet. Run EOD or upload below.</p>

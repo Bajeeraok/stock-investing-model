@@ -906,6 +906,47 @@ export function pickCurrentTargetTierId(
   return sorted[0].id;
 }
 
+/** Long-term horizon card entry band — matches tier ladder + backend entry_zone. */
+export function resolveLongHorizonEntryZone(
+  horizon: Pick<HorizonSignalPayload, "entry_zone">,
+  entryTiers: NonNullable<HorizonSignalPayload["entry_tiers"]> | undefined,
+  currentPrice: number
+): { low: number; high: number; tierId: string | null; tierLabel: string | null; inside: boolean } {
+  const fallback = horizon.entry_zone;
+  const tiers = entryTiers?.tiers ?? [];
+  if (!tiers.length || !(currentPrice > 0)) {
+    return {
+      low: fallback.low,
+      high: fallback.high,
+      tierId: null,
+      tierLabel: null,
+      inside: currentPrice >= fallback.low && currentPrice <= fallback.high,
+    };
+  }
+  const insideTier = tiers.find((t) => currentPrice >= t.low && currentPrice <= t.high);
+  const tierId =
+    entryTiers?.active_tier_id ??
+    insideTier?.id ??
+    pickCurrentTargetTierId(tiers, currentPrice);
+  const tier = tiers.find((t) => t.id === tierId) ?? insideTier;
+  if (tier) {
+    return {
+      low: tier.low,
+      high: tier.high,
+      tierId: tier.id,
+      tierLabel: tier.label,
+      inside: currentPrice >= tier.low && currentPrice <= tier.high,
+    };
+  }
+  return {
+    low: fallback.low,
+    high: fallback.high,
+    tierId: null,
+    tierLabel: null,
+    inside: currentPrice >= fallback.low && currentPrice <= fallback.high,
+  };
+}
+
 export function LongTermTierLadder({
   entryTiers,
   currentPrice,

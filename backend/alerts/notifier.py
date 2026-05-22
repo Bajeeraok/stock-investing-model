@@ -65,7 +65,10 @@ def send_retail_digest(
     if len(body) < 20:
         return False
     telegram_ok = _send_telegram(alerts_cfg, body)
+    push_ok = _send_web_push(alerts_cfg, body, sc, trim_t)
     if telegram_ok:
+        return True
+    if push_ok:
         return True
     return _send_email(alerts_cfg, body, subject="Stock Model: Daily Digest")
 
@@ -94,10 +97,37 @@ def send_alert_digest(story_changes: list[dict], config: dict, full_report: str 
 
     # Try Telegram first, then email
     telegram_ok = _send_telegram(alerts_cfg, body)
+    push_ok = _send_web_push(alerts_cfg, body, story_changes, [])
     if telegram_ok:
+        return True
+    if push_ok:
         return True
     email_ok = _send_email(alerts_cfg, body)
     return email_ok
+
+
+def _send_web_push(
+    cfg: dict,
+    body: str,
+    story_changes: list[dict] | None = None,
+    trim_tickers: list[str] | None = None,
+) -> bool:
+    """Browser push via VAPID subscriptions (optional)."""
+    if cfg.get("web_push_enabled") is False:
+        return False
+    try:
+        from behavior.push_digest import build_push_title, maybe_broadcast_retail_push
+
+        sc = story_changes or []
+        trim_t = trim_tickers or []
+        title = build_push_title(sc, trim_t)
+        first_line = body.split("\n", 1)[0][:200] if body else title
+        from api.routers.push import broadcast_web_push
+
+        result = broadcast_web_push(title, first_line, url="/")
+        return int(result.get("sent") or 0) > 0
+    except Exception:
+        return False
 
 
 def _send_telegram(cfg: dict, body: str) -> bool:

@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle, Globe, Activity, ChevronDown, ChevronRight } from "lucide-react";
 import { clsx } from "clsx";
+import { MarketCatalystBoardPanel, type MarketCatalystBoard } from "./MarketCatalystBoard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -37,6 +38,7 @@ export interface PreMarketData {
   rotation_risk_premarket?: "High" | "Medium" | "Low";
   stale?: boolean;
   stale_message?: string;
+  market_catalysts?: MarketCatalystBoard | null;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -312,6 +314,7 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
         {data && (
           <>
             <CompositeGauge score={data.composite_score} bias={data.bias} confidence={data.confidence} />
+            {data.market_catalysts && <MarketCatalystBoardPanel board={data.market_catalysts} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
                 <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><TrendingUp className="h-3 w-3" /> Bullish Drivers</p>

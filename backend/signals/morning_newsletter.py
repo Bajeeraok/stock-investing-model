@@ -125,6 +125,19 @@ def build_morning_newsletter(
             pm_items.append(f"⚠ {risk}")
         sections.append({"title": "Pre-market", "items": pm_items})
 
+    # —— Catalyst board (P0) ——
+    mc = pm.get("market_catalysts") if isinstance(pm.get("market_catalysts"), dict) else {}
+    if mc.get("summary_line"):
+        cat_items: list[str] = [str(mc["summary_line"])]
+        for ev in (mc.get("scheduled_today") or [])[:2]:
+            if isinstance(ev, dict) and ev.get("name"):
+                time_s = f"{ev['time_et']} ET · " if ev.get("time_et") else ""
+                cat_items.append(f"{time_s}{ev['name']} ({ev.get('event_type', 'Macro')})")
+        for t in (mc.get("tensions") or [])[:2]:
+            if isinstance(t, dict) and t.get("message"):
+                cat_items.append(f"⚠ {t['message']}")
+        sections.append({"title": "Market catalysts", "items": cat_items[:5]})
+
     # —— Key levels (SPY / QQQ from results) ——
     key_levels: list[str] = []
     if results:

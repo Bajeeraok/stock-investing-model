@@ -249,6 +249,17 @@ export interface TickerDetail {
   dividend_yield_explanation?: string | null;
   dividend_yield_error?: string | null;
   sanity_errors?: string[];
+  listing_profile?: {
+    young_listing?: boolean;
+    extreme_52w_range?: boolean;
+    listing_bars?: number;
+    raw_52w_low?: number;
+    effective_52w_low?: number;
+    raw_ma200?: number;
+    effective_ma200?: number;
+    warnings?: string[];
+    listing_event?: { event?: string; note?: string; parent?: string };
+  } | null;
   catalyst?: {
     active: boolean;
     top_event_type: string;
@@ -1396,11 +1407,24 @@ export function TickerDetailModal({
               )}
 
               {/* Sanity errors badge */}
-              {detail.sanity_errors && detail.sanity_errors.length > 0 && (
+              {(detail.listing_profile?.warnings?.length || (detail.sanity_errors && detail.sanity_errors.length > 0)) && (
                 <section className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
                   <h3 className="flex items-center gap-2 text-base font-semibold text-amber-400 mb-2">Data quality</h3>
-                  <p className="text-sm text-slate-300">Some numbers looked odd and were flagged: {detail.sanity_errors.join(", ")}</p>
-                  <p className="text-xs text-slate-500 mt-1">Examples: dividend yield outside a normal band; price outside its 52-week range; an extreme drawdown; or bear/base/bull levels that don&apos;t line up.</p>
+                  {detail.listing_profile?.warnings?.length ? (
+                    <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside">
+                      {detail.listing_profile.warnings.map((w, i) => (
+                        <li key={i}>{w}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {detail.sanity_errors && detail.sanity_errors.length > 0 && (
+                    <p className="text-sm text-slate-300 mt-2">
+                      Additional flags: {detail.sanity_errors.filter((e) => !detail.listing_profile?.warnings?.includes(e)).join(", ") || detail.sanity_errors.join(", ")}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-500 mt-2">
+                    Spin-offs and recent listings can distort MA200 and 52-week lows — tiers and structural stops use adjusted levels when flagged.
+                  </p>
                 </section>
               )}
 

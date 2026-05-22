@@ -344,6 +344,36 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     extra = _get_extra_info(ticker, config)
     high_52w = extra.get("high_52w") if extra.get("high_52w") is not None else (round(range_high, 2) if range_high is not None else None)
     low_52w = extra.get("low_52w") if extra.get("low_52w") is not None else (round(range_low, 2) if range_low is not None else None)
+
+    listing_profile: dict = {}
+    try:
+        from signals.price_series_profile import analyze_price_series, apply_profile_to_levels, trim_to_listing_date
+
+        if close_ticker is not None and not close_ticker.empty and current_price:
+            close_trimmed = trim_to_listing_date(ticker, close_ticker)
+            if len(close_trimmed) >= 20:
+                price_history = _serialize_price_history(close_trimmed, 126)
+            listing_profile = analyze_price_series(close_trimmed if len(close_trimmed) >= 20 else close_ticker, current_price, ticker=ticker)
+            if listing_profile.get("ok"):
+                eff_ma200, eff_ma50, eff_lo = apply_profile_to_levels(
+                    listing_profile,
+                    ma200=signal_data.get("ma200"),
+                    ma50=signal_data.get("ma50"),
+                    low_52w=low_52w,
+                )
+                if eff_ma200 is not None and signal_data:
+                    signal_data["ma200"] = round(float(eff_ma200), 2)
+                if eff_ma50 is not None and signal_data:
+                    signal_data["ma50"] = round(float(eff_ma50), 2)
+                if eff_lo is not None:
+                    low_52w = round(float(eff_lo), 2)
+                    range_low = low_52w
+                for w in listing_profile.get("warnings") or []:
+                    if w and str(w) not in sanity_errors:
+                        sanity_errors.append(str(w))
+    except Exception:
+        listing_profile = {}
+
     if extra.get("dividend_yield_error"):
         sanity_errors.append("yield")
     dividend_explanation = (
@@ -404,6 +434,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "low_52w": round(low_52w, 2) if low_52w is not None else None,
         "dividend_yield_explanation": dividend_explanation,
         "sanity_errors": sanity_errors,
+        "listing_profile": listing_profile or None,
         "long_horizon_risk": lhr or fmp_data.get("long_horizon_risk"),
         **extra,
         **signal_data,
@@ -691,7 +722,7 @@ def _build_investor_summary(
         # Sanity: known high-PE growth names (e.g. NVDA 35–40x TTM) — if source returns
         # suspiciously low TTM PE (e.g. 17.3 from split/adjustment error), recompute from
         # current price / trailingEps so fair value and fundamentals are not built on bad inputs.
-        _HIGH_PE_GROWTH = frozenset({"NVDA", "AVGO", "META", "AMD", "TSLA", "CRM", "NOW", "SNOW", "PLTR", "NET", "DDOG", "MDB", "CRWD", "PANW"})
+        _HIGH_PE_GROWTH = frozenset({"NVDA", "AVGO", "META", "AMD", "TSLA", "CRM", "NOW", "SNOW", "PLTR", "NET", "DDOG", "MDB", "CRWD", "PANW", "SNDK", "MU", "AMAT", "LRCX"})
         if (
             ticker.upper() in _HIGH_PE_GROWTH
             and current_price
@@ -1137,9 +1168,33 @@ def _roadmap_core_zone_3_to_6(
     low_52w: float | None,
 ) -> tuple[float | None, float | None, str, str]:
     """
-    When spot is below the MA200 (Tier 1) band, do not show a 'core' zone entirely above spot
-    (implies buying higher toward MA200). Prefer MOS tier or a dip band at/under spot.
+    Core accumulation zone for 3–6 mo buy row — must match long-term tier ladder.
+    When spot is inside Tier 2 or Tier 1, use that band (not always MA200/T1).
     """
+    if (
+        t2_lo is not None
+        and t2_hi is not None
+        and t2_lo <= current_price <= t2_hi
+    ):
+        return (
+            round(t2_lo, 2),
+            round(t2_hi, 2),
+            "Core position (Tier 2 MOS)",
+            "Inside Tier 2 accumulation band — same zone as long-term ladder",
+        )
+    if (
+        t1_lo is not None
+        and t1_hi is not None
+        and t1_lo <= current_price <= t1_hi
+    ):
+        return (
+            round(t1_lo, 2),
+            round(t1_hi, 2),
+            "Core position (Tier 1 MA200)",
+            "Inside Tier 1 MA200 band — starter accumulation",
+        )
+
+    # When spot is below the MA200 (Tier 1) band, do not show a 'core' zone entirely above spot.
     core_lo = round(t1_lo, 2) if t1_lo else (round(ma200 * 0.95, 2) if ma200 else None)
     core_hi = round(t1_hi, 2) if t1_hi else (round(ma200 * 1.05, 2) if ma200 else None)
     when = "Core position"

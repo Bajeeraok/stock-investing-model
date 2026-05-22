@@ -371,6 +371,28 @@ export interface BacktestResult {
 
 /** Backend `portfolio_risk_metrics` — optional fields when data is insufficient */
 export interface PortfolioRiskMetrics {
+  beta?: {
+    benchmark?: string;
+    portfolio_beta?: number | null;
+    coverage_pct?: number;
+    headline?: string;
+    band?: string;
+    band_tone?: string;
+    lookback_days?: number;
+    error?: string;
+    holdings?: Array<{
+      ticker: string;
+      beta?: number | null;
+      weight_pct: number;
+      sector?: string;
+      contribution?: number;
+    }>;
+    sectors?: Array<{
+      sector: string;
+      beta?: number | null;
+      weight_pct: number;
+    }>;
+  } | null;
   correlation_matrix?: Record<string, Record<string, number>>;
   correlation_error?: string | null;
   var_cvar?: {
@@ -758,6 +780,8 @@ export interface DashboardData {
   };
   earnings_impacts?: import("@/components/dashboard/index").EarningsImpactData[];
   concentration?: import("@/components/dashboard/index").ConcentrationData;
+  /** Resolved DATA_ROOT on the backend (e.g. /data or /app/data) */
+  data_root?: string | null;
   /** EOD snapshot files in data/eod/ (date, size_bytes, run_date) */
   eod_snapshots?: { date: string; size_bytes: number; run_date?: string | null }[];
   /** Redis: configured (REDIS_URL set) and connected (ping ok) */
@@ -892,6 +916,15 @@ export interface Signal {
   liquidity_days_to_exit?: number | null;
   liquidity_score?: number | null;
   liquidity_flag?: string | null;
+  /** FMP news catalyst (48h) when detected on dashboard enrich */
+  catalyst?: {
+    active?: boolean;
+    top_event_type?: string | null;
+    top_impact?: number | null;
+    headline_summary?: string | null;
+    override_note?: string | null;
+    hours_since_catalyst?: number | null;
+  } | null;
   error?: string;
 }
 

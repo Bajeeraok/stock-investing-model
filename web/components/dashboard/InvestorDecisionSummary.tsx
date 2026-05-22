@@ -7,6 +7,7 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   AlertTriangle,
   Info,
   Zap,
@@ -34,6 +35,7 @@ import {
   HorizonActionBadgeRow,
   LongTermTierLadder,
   PlainEnglishTakeCard,
+  resolveLongHorizonEntryZone,
   RiskRewardThermometer,
   StopTargetRiskBar,
   TradingGateStatus,
@@ -203,6 +205,8 @@ export interface HorizonSignalPayload {
   /** Explains wide long-term level vs a normal stop */
   stop_loss_framing?: string | null;
   entry_tiers?: {
+    active_tier_id?: string | null;
+    target_tier_id?: string | null;
     current_assessment: {
       verdict: string;
       label: string;
@@ -301,7 +305,17 @@ function HorizonCard({
         ? { emoji: "🟡", label: "STAGE ON PULLBACK", tone: "amber" as const }
         : { emoji: "🔴", label: "WAIT — NO ADD", tone: "red" as const };
   const [showCaveats, setShowCaveats] = useState(false);
-  const ez = horizon.entry_zone;
+  const ezResolved =
+    horizonKind === "long" && entryTiers
+      ? resolveLongHorizonEntryZone(horizon, entryTiers, currentPrice)
+      : null;
+  const ez = ezResolved
+    ? { ...horizon.entry_zone, low: ezResolved.low, high: ezResolved.high }
+    : horizon.entry_zone;
+  const entryTierPrefix =
+    ezResolved?.tierId && horizonKind === "long"
+      ? `Entry (${ezResolved.tierId}): `
+      : "Entry: ";
   const verdictClass =
     horizon.verdict === "BUY" || horizon.verdict === "STRONG BUY"
       ? "text-emerald-400"
@@ -373,7 +387,7 @@ function HorizonCard({
         React.createElement(Info, { className: "h-3.5 w-3.5 text-slate-500 cursor-help" })
       )
     ),
-    React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `Entry: $${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
+    React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `${entryTierPrefix}$${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
     React.createElement(
       "p",
       { className: "text-slate-500 text-xs", title: "ML probabilities can vary day-to-day as new price and volume data are included; large moves may reflect updated features rather than a change in thesis." },
@@ -411,7 +425,9 @@ function HorizonCard({
           },
           React.createElement(AlertTriangle, { className: "h-3 w-3 shrink-0" }),
           `${warnings.length + (hasRationale ? 1 : 0)} caveat${warnings.length + (hasRationale ? 1 : 0) > 1 ? "s" : ""}`,
-          showCaveats ? " â–²" : " â–¼"
+          showCaveats
+            ? React.createElement(ChevronUp, { className: "h-3 w-3 shrink-0" })
+            : React.createElement(ChevronDown, { className: "h-3 w-3 shrink-0" })
         ),
         showCaveats &&
           React.createElement(

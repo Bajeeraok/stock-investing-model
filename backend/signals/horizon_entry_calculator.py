@@ -264,6 +264,60 @@ def _ml_to_signal(prob: float) -> str:
     return "Strong"
 
 
+def resolve_active_tier(tiers: list[EntryTier], price: float) -> EntryTier | None:
+    """Tier band containing current price (T2 preferred over T1 over T3 if overlapping)."""
+    if not tiers or price <= 0:
+        return None
+    for tid in ("T2", "T1", "T3"):
+        t = next((x for x in tiers if x.id == tid), None)
+        if t is not None and t.low <= price <= t.high:
+            return t
+    return None
+
+
+def resolve_target_tier_id(tiers: list[EntryTier], price: float) -> str | None:
+    """Next accumulation tier for display when price is not inside any band."""
+    active = resolve_active_tier(tiers, price)
+    if active:
+        return active.id
+    if not tiers or price <= 0:
+        return None
+    sorted_by_low = sorted(tiers, key=lambda t: t.low)
+    if price > sorted_by_low[-1].high:
+        return sorted_by_low[0].id
+    if price < sorted_by_low[0].low:
+        return sorted_by_low[-1].id
+    for t in reversed(sorted_by_low):
+        if price > t.high:
+            return t.id
+    return sorted_by_low[0].id
+
+
+def entry_zone_from_tier(tier: EntryTier, *, inside: bool) -> EntryZone:
+    """Build horizon card entry_zone from a tier row."""
+    if inside:
+        quality, color = "In Zone", tier.color
+        anchor = "{} (${:.2f}–${:.2f}) — active accumulation band".format(
+            tier.label.split("—")[0].strip() if "—" in tier.label else tier.label,
+            tier.low,
+            tier.high,
+        )
+    else:
+        quality, color = "Waiting", tier.color
+        anchor = "{} — target pullback band (${:.2f}–${:.2f})".format(
+            tier.label.split("—")[0].strip() if "—" in tier.label else tier.label,
+            tier.low,
+            tier.high,
+        )
+    return EntryZone(
+        low=tier.low,
+        high=tier.high,
+        anchor=anchor,
+        quality=quality,
+        quality_color=color,
+    )
+
+
 def _short_term_effective_support(support_level: float, current_price: float) -> float:
     """Raise deep historical lows so the 1m zone stays in plausible pullback range, not 52w crash levels."""
     if current_price <= 0:
@@ -944,13 +998,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         _r(inp.week52_low * LT_TIER3_HIGH_MULT),
         "~5x+", "Stress", "#64748b")
 
-    # ── Entry zone for HorizonSignal (T1 as primary display) ─────────────
-    entry_zone = EntryZone(
-        low=tier1.low, high=tier1.high,
-        anchor="MA200 zone (${:.2f}) — Tier 1 entry".format(inp.ma200),
-        quality="In Zone" if not tier1.reachable else "Waiting",
-        quality_color="#f5a623",
-    )
+    # ── Entry zone for HorizonSignal — sync with active / target tier ───────
+    all_tiers = [tier1, tier2, tier3]
+    active_tier = resolve_active_tier(all_tiers, p)
+    target_tid = resolve_target_tier_id(all_tiers, p)
+    display_tier = active_tier or next((t for t in all_tiers if t.id == target_tid), tier1)
+    entry_zone = entry_zone_from_tier(display_tier, inside=active_tier is not None)
     entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
     ez_lo, ez_hi, zone_compressed = _compress_entry_zone_for_display(
         band_key="long",
@@ -1013,7 +1066,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         )
 
     # ── Verdict ──────────────────────────────────────────────────────────
-    if assess_verdict == "BUY" and inp.ml_prob >= 40 and inp.regime_bull_pct >= 50:
+    if active_tier and assess_verdict in ("BUY", "PARTIAL"):
+        if inp.regime_bull_pct >= 50 and inp.ml_prob >= 25:
+            verdict, conviction = "BUY", ("High" if assess_verdict == "BUY" else "Medium")
+        else:
+            verdict, conviction = "WATCH", "Medium"
+    elif assess_verdict == "BUY" and inp.ml_prob >= 40 and inp.regime_bull_pct >= 50:
         verdict, conviction = "BUY", "High"
     elif assess_verdict in ("BUY", "PARTIAL") and inp.ml_prob >= 25:
         verdict, conviction = "WATCH", "Medium"
@@ -1045,11 +1103,25 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             100 - inp.regime_bull_pct))
     rationale = " ".join(parts) or "Conditions approaching entry. Monitor tier levels closely."
 
-    trigger = (
-        "Price enters Tier 1 zone (${low}–${high}) near MA200 "
-        "AND HMM Bull >= 60% "
-        "AND ML prob > 25%"
-    ).format(low=tier1.low, high=tier1.high)
+    if active_tier:
+        trigger = (
+            "Price is in {label} (${low}–${high}) — scale per tier plan; "
+            "full size when HMM Bull >= 60% and ML prob > 25%"
+        ).format(
+            label=display_tier.label.split("—")[0].strip() if "—" in display_tier.label else display_tier.id,
+            low=display_tier.low,
+            high=display_tier.high,
+        )
+    else:
+        trigger = (
+            "Price enters {label} (${low}–${high}) "
+            "AND HMM Bull >= 60% "
+            "AND ML prob > 25%"
+        ).format(
+            label=display_tier.label.split("—")[0].strip() if "—" in display_tier.label else display_tier.id,
+            low=display_tier.low,
+            high=display_tier.high,
+        )
 
     from signals.tranche_heuristic import compute_long_horizon_tier_percentages
 
@@ -1091,6 +1163,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         stop_loss_kind="structural_invalidation",
         stop_loss_framing=inv_note,
         entry_tiers={
+            "active_tier_id": active_tier.id if active_tier else None,
+            "target_tier_id": target_tid,
             "current_assessment": {
                 "verdict":              assess_verdict,
                 "label":               assess_label,

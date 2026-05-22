@@ -123,12 +123,11 @@ def compute_mctr(
 
         if spy_ret is not None:
             port_ret = pd.Series((df.values * w).sum(axis=1), index=df.index)
-            aligned = pd.DataFrame({"port": port_ret, "spy": spy_ret}).dropna()
-            if len(aligned) > 30:
-                cov_ps = np.cov(aligned["port"], aligned["spy"])
-                var_spy = cov_ps[1, 1]
-                if var_spy > 0:
-                    portfolio_beta = round(float(cov_ps[0, 1] / var_spy), 2)
+            from signals.beta_utils import compute_beta_from_returns
+
+            portfolio_beta = compute_beta_from_returns(port_ret, spy_ret)
+            if portfolio_beta is not None:
+                portfolio_beta = round(portfolio_beta, 2)
     except Exception:
         pass
 

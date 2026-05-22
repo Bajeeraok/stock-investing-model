@@ -123,6 +123,20 @@ function sanitizeEarningsFlag(s: string): string {
   return s.length > 80 ? `${s.slice(0, 77)}…` : s;
 }
 
+function CatalystBadge({ catalyst }: { catalyst?: Signal["catalyst"] }) {
+  if (!catalyst?.active) return null;
+  const label = (catalyst.top_event_type || "CATALYST").replace(/_/g, " ");
+  const tip = catalyst.headline_summary || catalyst.override_note || "High-impact news catalyst (48h)";
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/40"
+      title={tip}
+    >
+      {label}
+    </span>
+  );
+}
+
 // ── Mini signal-dot helper ────────────────────────────────────────────────────
 // Shows 3 compact dots (Trend / RSI / MACD) below the confluence number so the
 // user can instantly see WHICH signals are aligned without opening the modal.
@@ -509,6 +523,7 @@ export function SignalsTable({
               >
                 {r.ticker}
               </button>
+              <CatalystBadge catalyst={r.catalyst} />
               <div className="flex flex-col items-end gap-0.5">
                 <div className="flex items-center gap-2">
                   {r.plan_action ? (
@@ -773,6 +788,7 @@ export function SignalsTable({
                     >
                       {r.ticker}
                     </button>
+                    <CatalystBadge catalyst={r.catalyst} />
                     {!r.plan_action && tickerActions?.[r.ticker] && (
                       <span
                         className={clsx(

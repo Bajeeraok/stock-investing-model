@@ -33,6 +33,7 @@ export { AccuracyPriceTargets, AccuracyPriceTargetsWithBoundary } from "./Accura
 export { PortfolioDoctorRecommendations } from "./PortfolioDoctorRecommendations";
 export { PortfolioRiskMetricsPanel } from "./PortfolioRiskMetricsPanel";
 export { MarketReversalBanner } from "./MarketReversalBanner";
+export { MarketCatalystBoardPanel, type MarketCatalystBoard } from "./MarketCatalystBoard";
 export { PaperTradingPanel } from "./PaperTradingPanel";
 export { PaperVsBacktestDrift, type PaperVsBacktestDriftPayload } from "./PaperVsBacktestDrift";
 export { MarketScenarios } from "./MarketScenarios";
@@ -58,5 +59,6 @@ export { AlertsPanel, type ScanAlert } from "./AlertsPanel";
 export { RetailBriefingPanel } from "./RetailBriefingPanel";
 export { RoadmapsPanel } from "./RoadmapsPanel";
 export { default as TrackRecordPanel } from "./TrackRecordPanel";
+export { CalibrationCurvePanel } from "./CalibrationCurvePanel";
 export { default as BrowserPushPanel } from "./BrowserPushPanel";
 export { default as PortfolioDoctorPanel, type PortfolioDoctorV2Data } from "./PortfolioDoctorPanel";

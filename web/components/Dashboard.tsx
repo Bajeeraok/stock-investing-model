@@ -13,6 +13,7 @@ import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
 import { clsx } from "clsx";
 import {
   AddTickerBar,
+  CalibrationCurvePanel,
   CryptoSection,
   CrossAssetSection,
   DashboardTabs,
@@ -1244,6 +1245,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 <EodAndSystemPanel
                   eodSnapshots={data.eod_snapshots ?? []}
                   redisStatus={data.redis_status}
+                  dataRoot={data.data_root}
                   onRefresh={onRefresh}
                 />
               </ToggleSection>
@@ -1296,7 +1298,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   />
                 </ToggleSection>
               )}
-              <ToggleSection id="analysis-track-record" title="Track record" icon={<Target />} defaultOpen>
+              <ToggleSection id="analysis-calibration" title="Calibration curve" icon={<Activity />} defaultOpen>
+                <CalibrationCurvePanel
+                  calibration={(confidenceCalibration ?? null) as Parameters<typeof CalibrationCurvePanel>[0]["calibration"]}
+                />
+              </ToggleSection>
+              <ToggleSection id="analysis-track-record" title="Track record" icon={<Target />} defaultOpen={false}>
                 <TrackRecordPanel
                   calibration={(confidenceCalibration ?? null) as Parameters<typeof TrackRecordPanel>[0]["calibration"]}
                   paperTrading={paperTrading?.summary ?? null}

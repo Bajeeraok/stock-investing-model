@@ -15,6 +15,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from signals.beta_utils import compute_beta
+
 # ---------------------------------------------------------------------------
 # Known-ticker fast path (avoids fetching SPY/GLD just to classify common names)
 # ---------------------------------------------------------------------------
@@ -180,20 +182,8 @@ def _classify_from_stats(beta: float | None, corr_gld: float | None) -> str:
 
 
 def _compute_beta(asset: pd.Series, benchmark: pd.Series | None) -> float | None:
-    """1-year beta of asset vs benchmark using daily returns."""
-    if benchmark is None or len(asset) < 63 or len(benchmark) < 63:
-        return None
-    aligned = pd.concat(
-        [asset.rename("asset"), benchmark.rename("bm")], axis=1
-    ).dropna()
-    if len(aligned) < 63:
-        return None
-    rets = aligned.pct_change().dropna().tail(252)
-    if len(rets) < 30:
-        return None
-    cov = rets["asset"].cov(rets["bm"])
-    var = rets["bm"].var()
-    return float(cov / var) if var != 0 else None
+    """Backward-compatible wrapper — see signals.beta_utils.compute_beta."""
+    return compute_beta(asset, benchmark)
 
 
 def _compute_correlation(asset: pd.Series, reference: pd.Series | None) -> float | None:
