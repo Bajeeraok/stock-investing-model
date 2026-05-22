@@ -435,6 +435,54 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const oppCountForBadge = mergedOpportunities.length;
 
+  /** Portfolio holdings first, then watchlist-only — matches backend signal_universe. */
+  const roadmapTickers = useMemo(() => {
+    const universe = data.signal_universe ?? data.watchlist ?? [];
+    const holdingTickers = (selectedReport?.per_holding ?? data.portfolio?.per_holding ?? [])
+      .map((h) => h.ticker)
+      .filter(Boolean) as string[];
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const t of holdingTickers) {
+      const u = String(t).toUpperCase();
+      if (!seen.has(u)) {
+        ordered.push(u);
+        seen.add(u);
+      }
+    }
+    for (const t of universe) {
+      const u = String(t).toUpperCase();
+      if (!seen.has(u)) {
+        ordered.push(u);
+        seen.add(u);
+      }
+    }
+    return ordered;
+  }, [
+    data.signal_universe,
+    data.watchlist,
+    selectedReport?.per_holding,
+    data.portfolio?.per_holding,
+  ]);
+
+  const portfolioTickerList = useMemo(
+    () =>
+      (selectedReport?.per_holding ?? data.portfolio?.per_holding ?? [])
+        .map((h) => h.ticker)
+        .filter(Boolean) as string[],
+    [selectedReport?.per_holding, data.portfolio?.per_holding],
+  );
+
+  const watchlistTickerList = useMemo(() => data.watchlist ?? [], [data.watchlist]);
+
+  const signalsByTicker = useMemo(() => {
+    const m = new Map<string, (typeof effectiveSignals)[number]>();
+    for (const s of effectiveSignals) {
+      if (s.ticker) m.set(String(s.ticker).toUpperCase(), s);
+    }
+    return m;
+  }, [effectiveSignals]);
+
   const tabBadges: Partial<Record<TabId, number>> = {
     signals: signalCountForBadge,
     portfolio: selectedReport?.per_holding?.length ?? 0,
@@ -988,6 +1036,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               cotByTicker={data.cot_by_ticker}
               tickerActions={data.retail_briefing?.ticker_actions}
               listContext={signalListContext}
+              portfolioTickers={portfolioTickerList}
+              watchlistTickers={watchlistTickerList}
             />
           )}
             </div>
@@ -998,13 +1048,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             <div className="p-4 sm:p-6 space-y-4">
               <RoadmapsPanel
                 warming={Boolean(data.warming)}
-                tickers={
-                  data.watchlist ??
-                  data.signal_scores?.map((s) => s.ticker).filter(Boolean) ??
-                  data.signals?.map((s) => s.ticker) ??
-                  []
-                }
+                tickers={roadmapTickers}
                 onTickerClick={setSelectedTicker}
+                portfolioTickers={portfolioTickerList}
+                watchlistTickers={watchlistTickerList}
+                signalsByTicker={signalsByTicker}
               />
             </div>
           )}

@@ -153,3 +153,39 @@ def add_uploaded_portfolio(name: str, holdings: list[dict]) -> None:
 
 def get_additional_tickers() -> list[str]:
     return _load_overrides().get("additional_tickers") or []
+
+
+def portfolio_tickers_from_config(config: dict) -> list[str]:
+    """Unique tickers from all portfolios (config + uploaded), uppercase."""
+    out: list[str] = []
+    portfolios = config.get("portfolios") or {}
+    if isinstance(portfolios, dict):
+        for account_holdings in portfolios.values():
+            if not isinstance(account_holdings, list):
+                continue
+            for h in account_holdings:
+                t = h.get("ticker") if isinstance(h, dict) else h
+                if t:
+                    out.append(str(t).upper())
+    legacy = config.get("portfolio") or []
+    if isinstance(legacy, list):
+        for h in legacy:
+            t = h.get("ticker") if isinstance(h, dict) else h
+            if t:
+                out.append(str(t).upper())
+    return list(dict.fromkeys(out))
+
+
+def get_signal_universe(config: dict) -> list[str]:
+    """
+    Tickers that receive daily signals, roadmaps, and EOD rows: watchlist first,
+    then any portfolio holdings not already on the watchlist.
+    """
+    watchlist = [str(t).upper() for t in (config.get("watchlist") or []) if t]
+    seen = set(watchlist)
+    merged = list(watchlist)
+    for t in portfolio_tickers_from_config(config):
+        if t not in seen:
+            merged.append(t)
+            seen.add(t)
+    return merged

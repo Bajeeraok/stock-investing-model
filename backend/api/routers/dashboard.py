@@ -40,7 +40,14 @@ from behavior.what_changed import what_changed
 from opportunity.scanner import run_opportunity_scan
 from portfolio.doctor import portfolio_report, allocation_recommendations
 from portfolio.performance import compute_performance_vs_benchmark
-from config_loader import add_ticker as _add_ticker, add_uploaded_portfolio, get_data_root, load_config, remove_ticker as _remove_ticker
+from config_loader import (
+    add_ticker as _add_ticker,
+    add_uploaded_portfolio,
+    get_data_root,
+    get_signal_universe,
+    load_config,
+    remove_ticker as _remove_ticker,
+)
 from scripts.run_daily import (
     load_last_run,
     run_eod_snapshot_only,
@@ -639,9 +646,10 @@ def _compute_full_dashboard_sync() -> dict:
 
     # Consolidate tickers for single FMP batch quote (signals + portfolio + opportunity universe) to stay under API limit
     watchlist = config.get("watchlist", [])
+    signal_universe = get_signal_universe(config)
     portfolio_tickers = [h.get("ticker") if isinstance(h, dict) else h for h in holdings]
     opportunity_universe = config.get("opportunity_universe") or []
-    all_quote_tickers = list(dict.fromkeys([t for t in watchlist + portfolio_tickers + opportunity_universe if t]))
+    all_quote_tickers = list(dict.fromkeys([t for t in signal_universe + portfolio_tickers + opportunity_universe if t]))
     prices_by_ticker = None
     prices_from_fmp_batch = False
     has_fmp_key = bool(get_fmp_api_key(config))
@@ -711,7 +719,7 @@ def _compute_full_dashboard_sync() -> dict:
         logger.debug("Forward tracking for hit-rate gate: %s", e)
 
     t0 = time.perf_counter()
-    logger.info("[dashboard] section: run_signals (watchlist + indicators)...")
+    logger.info("[dashboard] section: run_signals (watchlist + portfolio, %d tickers)...", len(get_signal_universe(config)))
     results = run_signals(
         config,
         prices_by_ticker=prices_by_ticker,
@@ -1953,6 +1961,8 @@ def _compute_full_dashboard_sync() -> dict:
         "opportunities_bundle_enabled": opp_bundle_on,
         "opportunities_deferred": opportunities_deferred,
         "analysis_deferred": True,
+        "watchlist": watchlist,
+        "signal_universe": signal_universe,
         "signal_scores": _build_signal_scores(results),
         "thesis_check": thesis_check,
         "what_changed": what_changed_list,

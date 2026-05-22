@@ -14,6 +14,17 @@ Single living backlog for retail-investor robustness. Implement in small batches
 - [x] **Portfolio risk in Doctor** — `portfolio_risk_metrics` (VaR/CVaR, top pair correlations, correlation-adjusted weights) in Portfolio Doctor (`PortfolioRiskMetricsPanel`, 2026-03-30)
 - [x] **Earnings caution + quality in UI** — `run_daily` caution window + extra score cut; dashboard `enrich_results_earnings_quality`; Signals table Earnings column (2026-03-30)
 
+## Performance (dashboard load)
+
+- [x] **Shell-first load** — `GET /api/dashboard/shell` serves Redis snapshot instantly; no full compute on navigation
+- [x] **Stale-while-revalidate** — 7d `dashboard:last` snapshot + background refresh job + `GET /api/dashboard/status` polling
+- [x] **localStorage SWR** — `web/lib/dashboardCache.ts` instant paint on repeat visits
+- [x] **Lazy tabs** — signals-panel, opportunities-bundle (best 2026 + opps), analysis-bundle (paper/insider/forward)
+- [x] **Deferred main pipeline** — watchlist confidence batch, doctor add recs, analysis parallel tasks off dashboard start
+- [x] **Cache TTL 45 min** — default `DASHBOARD_CACHE_TTL_SECONDS=2700`; warm cron documented in `env.example`
+- [x] **Market scheduler** — `MARKET_SCHEDULER_ON=1`: pre-market 4:00–9:15 ET + dashboard warm 8:30 & every 25m 9:30–15:45 (`api/market_scheduler.py`)
+- [x] **After-hours earnings** — 4:30 PM & 6 PM ET on earnings days only; `after_hours_earnings` on Overview (`signals/after_hours_earnings.py`)
+
 ## Trust & clarity
 
 - [ ] Per-field **as-of** when APIs expose it (FMP filing date, last earnings)
@@ -27,15 +38,15 @@ Single living backlog for retail-investor robustness. Implement in small batches
 
 - [ ] **Factor/sector caps** beyond raw concentration (e.g. max tech %)
 - [ ] **Liquidity score** — ADV-based days-to-exit at 20% of daily volume, 1–5 scale, flag >5 days; fill existing SignalsTable placeholder column; add summary to PortfolioSummary
-- [ ] **Portfolio beta** — extract `_compute_beta()` to shared util, compute per-holding + sector + portfolio-weighted beta; display in PortfolioRiskMetricsPanel ("Your portfolio moves 1.4x the market")
+- [x] **Portfolio beta** — extract `_compute_beta()` to shared util, compute per-holding + sector + portfolio-weighted beta; display in PortfolioRiskMetricsPanel ("Your portfolio moves 1.4x the market") — 2026-05-19
 - [ ] **Enhanced VaR** — add 99% confidence level, dollar amounts, and component VaR decomposition (per-holding contribution to total VaR); extend existing `compute_var_cvar()` + PortfolioRiskMetricsPanel
 - [ ] **MCTR (Marginal Contribution to Risk)** — per-holding risk contribution from covariance decomposition; "NVDA contributes 34% of portfolio risk despite being 17% of value"; new MCTRPanel with sorted risk bars in Tier1RiskFeatures
 - [ ] **Named historical stress scenarios** — beta-adjusted per-holding impacts for 2008 crash, COVID Mar 2020, 2022 rate hike, dot-com bust; sector ETF proxy when ticker didn't exist; per-holding survivors; new NamedScenarioPanel
 
 ## Behavioral
 
-- [ ] **Cooldown** after trim/stop (block re-add N days unless thesis update)
-- [ ] **One-line journal** prompt on “Add” from dashboard
+- [x] **Cooldown** after trim/stop (block re-add N days unless thesis update) — 2026-05-19
+- [x] **One-line journal** prompt on “Add” from dashboard — 2026-05-19
 
 ## Evaluation
 
@@ -109,10 +120,10 @@ North star: *Open any ticker and within 5 seconds know Go or wait, where price n
 
 ### P2 — stickiness & trust
 
-- [ ] **Cooldown + journal** on trim/add (see Behavioral section)
-- [ ] **Calibration curve** on Analysis tab
-- [ ] **Catalyst badge** on signals list
-- [ ] **Push digest** wired to gates / regime flips
+- [x] **Cooldown + journal** on trim/add (see Behavioral section) — 2026-05-19
+- [x] **Calibration curve** on Analysis tab — 2026-05-19
+- [x] **Catalyst badge** on signals list — 2026-05-19
+- [x] **Push digest** wired to gates / regime flips — 2026-05-19
 
 ### Do not copy
 
@@ -120,6 +131,73 @@ North star: *Open any ticker and within 5 seconds know Go or wait, where price n
 - Webull indicator wall on main screen
 - Unusual Whales options flow as default (equity-first product)
 - Auto-trade or one-tap buy
+
+---
+
+## Market catalyst board & model track record (2026-05)
+
+North star: *Before the open — what could move the whole market, and does pre-market agree with our regime?*
+
+Implement in order: **P0 → P1 → P2 → P3**. Do not start P2 until P0/P1 ship.
+
+### Ops / Railway (recommendations — apply on production)
+
+| Item | Recommendation | Status |
+|------|----------------|--------|
+| **`DATA_ROOT`** | Remove `DATA_ROOT=/data` unless a **Railway Volume is mounted at `/data`**. No volume → omit env (defaults to `/app/data`). | User action on Railway |
+| **`REDIS_URL`** | Keep connected — EOD snapshots persist across deploys even without a volume. | ✓ on thrive-alpha |
+| **`EOD_SCHEDULER_CRON`** | Use in-process APScheduler on API: `0 20 * * 1-5`, `EOD_SCHEDULER_TZ=America/New_York`. **Not** `config.yaml` `eod_schedule_time` alone (that only applies to standalone `scheduler_eod.py`). | Verify in Railway vars |
+| **`scheduler_eod.py`** | Separate always-on process; only if not using `EOD_SCHEDULER_CRON`. | Optional |
+| **Paper trades file** | `paper_trades.csv` under `DATA_ROOT` — lost on redeploy without volume; forward tracking still OK via Redis EOD. | Known limit |
+| **EOD panel path** | Analysis → EOD snapshots shows resolved `{DATA_ROOT}/eod/` | [x] 2026-05-21 |
+| **`MARKET_SCHEDULER_ON=1`** | Pre-market 4:00–9:15 ET + dashboard warm; does **not** replace 8pm EOD cron. | Optional |
+
+### Model track record visibility (parallel backlog)
+
+- [ ] **Always show Analysis sections** — Paper trading + forward tracking with empty-state (not hidden until bundle loads).
+- [ ] **Preload analysis bundle on Overview** — Model health strip shows ADD 20d hit rate without visiting Markets first.
+- [ ] **Advanced mode** — Analysis tab hidden until toggle; document in onboarding copy.
+
+### P0 — Pre-market catalyst board ✅
+
+Glue calendar + pre-market engine + regime tension + FOMC historical stats.
+
+- [x] **`build_market_catalysts()`** — `signals/market_catalysts.py` — 2026-05-21
+- [x] **`GET /api/pre-market`** — `market_catalysts` on every response via `_premarket_with_catalysts()` — 2026-05-21
+- [x] **`MarketCatalystBoardPanel`** — Under pre-market gauge in `PreMarketPanel` (Markets tab) — 2026-05-21
+- [x] **Tests** — `backend/tests/test_market_catalysts.py` — 2026-05-21
+- [x] **Morning newsletter** — “Market catalysts” section when pre-market file includes board — 2026-05-21
+
+**P0 payload:** `scheduled_today`, `live_tape`, `tensions`, `flip_narratives`, `summary_line`, FOMC `scenario` stats where available.
+
+### P1 — Event-day flip stats (next)
+
+Historical behavior in similar setups — **not** release forecasts.
+
+- [ ] **`data/market_flip_stats.json`** — Monthly refresh script; gap fade, event-day tables
+- [ ] **Gap fade rate** — ES pre-market gap sign vs SPY same-day close sign (backtest)
+- [ ] **CPI / NFP date tables** — Extend `event_scenarios.py` beyond FOMC-only (`get_event_reaction_stats`)
+- [ ] **Pre-market vs close contradiction** — Join `pre_market_latest.json` history to EOD pairs
+- [ ] **UI** — Show on catalyst board: “Gap faded X% on past CPI days (n=…)”
+
+### P2 — Trading-hours extensions (after P1)
+
+- [ ] **Release markers** — 8:30 / 2:00 ET on board (“released” / “pending”)
+- [ ] **Since open / since CPI** — SPY move from open and from release timestamp
+- [ ] **Intraday refresh** — Optional 1–5 min polling; needs Premium Polygon/FMP or similar
+- [ ] **Push digest hook** — “CPI in 30m; pre-market bull; gap-fade history 61%”
+
+### P3 — Unified market state (optional)
+
+- [ ] **`MarketStatePanel` on Overview** — Drivers + catalysts + pre-market + next-day outlook in one card
+- [ ] **`GET /api/market-state`** — Optional dedicated endpoint
+
+### Signals / roadmaps ↔ portfolio sync
+
+- [x] **`get_signal_universe()`** — `config_loader`: watchlist + portfolio-only holdings — 2026-05-22
+- [x] **`run_signals`** uses signal universe (dashboard + daily EOD) — 2026-05-22
+- [x] **API `signal_universe`** — Top-level dashboard field for Roadmaps tab — 2026-05-22
+- [x] **Roadmaps tab** — Portfolio holdings first, then watchlist; cap 24 cards with truncation note — 2026-05-22
 
 ---
 

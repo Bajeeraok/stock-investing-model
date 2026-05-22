@@ -30,7 +30,7 @@ def _today_est() -> str:
     return datetime.now(EST).strftime("%Y-%m-%d")
 
 import yaml
-from config_loader import get_data_root, load_config
+from config_loader import get_data_root, get_signal_universe, load_config
 from alerts.notifier import send_retail_digest
 from behavior.thesis import load_theses, get_nudge
 from behavior.what_changed import what_changed
@@ -87,7 +87,7 @@ def run_signals(
     vix: optional VIX level for score multiplier; if None, fetches ^VIX.
     hit_rate_context: optional {add_hit_rate_pct: float} from forward_tracking for hit-rate gate.
     """
-    watchlist = config.get("watchlist", [])
+    watchlist = get_signal_universe(config)
     period = config.get("data", {}).get("period", "5y")
     score_cfg = config.get("score", {})
     regime_cfg = config.get("regime", {})

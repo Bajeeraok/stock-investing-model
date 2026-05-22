@@ -10,6 +10,21 @@ import {
   TradingGateMiniPills,
   type SignalListContext,
 } from "./retailActionUX";
+import { TickerFilterBar } from "./TickerFilterBar";
+import {
+  filterTickersBySource,
+  loadTickerSourceFilter,
+  saveTickerSourceFilter,
+  type TickerSourceFilter,
+} from "@/lib/tickerSourceFilter";
+import {
+  loadSignalsPreset,
+  matchesSignalPreset,
+  saveSignalsPreset,
+  type SignalsPresetId,
+} from "@/lib/signalPresets";
+
+export type { SignalsPresetId } from "@/lib/signalPresets";
 
 // ── Signal badge — all 6 tiers ────────────────────────────────────────────────
 const RETAIL_ACTION_STYLE: Record<string, { bg: string; text: string }> = {
@@ -271,32 +286,6 @@ const DEFAULT_HORIZONS = {
 
 const SIGNALS_SORT_STORAGE_KEY = "thrive-signals-sort";
 const SIGNALS_MODEL_DETAIL_KEY = "thrive-signals-model-detail";
-const SIGNALS_PRESET_KEY = "thrive-signals-preset";
-
-export type SignalsPresetId = "all" | "pullback_buys" | "trim_candidates" | "earnings_week";
-
-const SIGNAL_PRESETS: { id: SignalsPresetId; label: string; hint: string }[] = [
-  { id: "all", label: "All watchlist", hint: "Full watchlist" },
-  { id: "pullback_buys", label: "Pullback buys", hint: "UP regime · RSI < 50 · score ≥ 55" },
-  { id: "trim_candidates", label: "Trim candidates", hint: "Score < 40 or REDUCE/AVOID signal" },
-  { id: "earnings_week", label: "Earnings week", hint: "Report within 7 days or caution window" },
-];
-
-function matchesPreset(signal: Signal, preset: SignalsPresetId): boolean {
-  if (preset === "all") return true;
-  const score = signal.confluence_score ?? signal.composite_buy ?? 0;
-  const sig = (signal.signal ?? "").toUpperCase();
-  if (preset === "pullback_buys") {
-    return signal.regime === "UP" && (signal.rsi ?? 100) < 50 && score >= 55;
-  }
-  if (preset === "trim_candidates") {
-    return score < 40 || sig === "REDUCE" || sig === "AVOID" || sig === "SELL";
-  }
-  if (preset === "earnings_week") {
-    return Boolean(signal.earnings_caution) || (signal.earnings_days_until != null && signal.earnings_days_until <= 7);
-  }
-  return true;
-}
 
 function LiquidityCell({ signal: r }: { signal: Signal }) {
   const days = r.liquidity_days_to_exit;
@@ -335,6 +324,8 @@ export function SignalsTable({
   cotByTicker,
   tickerActions,
   listContext,
+  portfolioTickers,
+  watchlistTickers,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
@@ -344,6 +335,8 @@ export function SignalsTable({
   tickerActions?: Record<string, { action: string; one_liner: string }>;
   /** Shared macro/HMM context for per-row trading gates on the list view. */
   listContext?: SignalListContext;
+  portfolioTickers?: string[];
+  watchlistTickers?: string[];
 }) {
   const gateContext: SignalListContext = listContext ?? {};
   const h = horizons || DEFAULT_HORIZONS;
@@ -352,25 +345,21 @@ export function SignalsTable({
   const [openMobileTicker, setOpenMobileTicker] = useState<string | null>(null);
   const [showModelDetail, setShowModelDetail] = useState(false);
   const [preset, setPreset] = useState<SignalsPresetId>("all");
+  const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
 
   useEffect(() => {
-    try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_PRESET_KEY) : null;
-      if (raw === "all" || raw === "pullback_buys" || raw === "trim_candidates" || raw === "earnings_week") {
-        setPreset(raw);
-      }
-    } catch {
-      /* ignore */
-    }
+    setPreset(loadSignalsPreset());
+    setSourceFilter(loadTickerSourceFilter());
   }, []);
 
   const applyPreset = (id: SignalsPresetId) => {
     setPreset(id);
-    try {
-      localStorage.setItem(SIGNALS_PRESET_KEY, id);
-    } catch {
-      /* ignore */
-    }
+    saveSignalsPreset(id);
+  };
+
+  const applySourceFilter = (id: TickerSourceFilter) => {
+    setSourceFilter(id);
+    saveTickerSourceFilter(id);
   };
 
   useEffect(() => {
@@ -426,10 +415,20 @@ export function SignalsTable({
   const sortHint =
     "Sort: click column headers on desktop. Confluence / RSI: click again to flip high→low.";
 
-  const filtered = useMemo(
-    () => signals.filter((s) => matchesPreset(s, preset)),
-    [signals, preset]
-  );
+  const filtered = useMemo(() => {
+    const portfolioSet = new Set((portfolioTickers ?? []).map((t) => t.toUpperCase()));
+    const watchlistSet = new Set((watchlistTickers ?? []).map((t) => t.toUpperCase()));
+    const bySource = filterTickersBySource(
+      signals.map((s) => s.ticker).filter(Boolean) as string[],
+      sourceFilter,
+      portfolioSet,
+      watchlistSet,
+    );
+    const allowed = new Set(bySource.map((t) => t.toUpperCase()));
+    return signals.filter(
+      (s) => allowed.has(String(s.ticker).toUpperCase()) && matchesSignalPreset(s, preset),
+    );
+  }, [signals, preset, sourceFilter, portfolioTickers, watchlistTickers]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -451,30 +450,20 @@ export function SignalsTable({
 
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700">
-        <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">View</span>
-          {SIGNAL_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              title={p.hint}
-              onClick={() => applyPreset(p.id)}
-              className={clsx(
-                "text-[11px] px-2 py-1 rounded-full border shrink-0",
-                preset === p.id
-                  ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
-                  : "border-slate-600 text-slate-400 hover:text-slate-200"
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-          <span className="text-[10px] text-slate-600 ml-1">
-            {sorted.length}/{signals.length}
-          </span>
-        </div>
-        <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate">
+      <div className="px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700 space-y-2">
+        <TickerFilterBar
+          source={sourceFilter}
+          onSourceChange={applySourceFilter}
+          preset={preset}
+          onPresetChange={applyPreset}
+          tickers={signals.map((s) => s.ticker).filter(Boolean) as string[]}
+          portfolioTickers={portfolioTickers}
+          watchlistTickers={watchlistTickers}
+          shownCount={sorted.length}
+          totalCount={signals.length}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate flex-1">
           {showModelDetail ? sortHint : "Retail view — Now · Action is the official read."}
         </p>
         <div className="flex items-center gap-2 ml-auto flex-wrap">
@@ -502,6 +491,7 @@ export function SignalsTable({
           <option value="regime">Regime</option>
           <option value="rsi">RSI</option>
         </select>
+        </div>
         </div>
       </div>
 

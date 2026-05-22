@@ -468,6 +468,8 @@ export interface DashboardData {
   };
   /** Top-level watchlist from API (config.watchlist). */
   watchlist?: string[];
+  /** Watchlist ∪ portfolio holdings — tickers with signals / roadmaps. */
+  signal_universe?: string[];
   crypto?: CryptoSignal[];
   cross_asset?: CrossAssetItem[];
   story_changes: Signal[];
