@@ -1,16 +1,14 @@
 """
 Market scenarios (what-if): historical event reaction stats for upcoming events.
-Uses 12–13y of history to compute typical next-day move around FOMC, CPI, etc.
+Uses 12–13y of history to compute typical next-day move around FOMC, CPI, NFP, etc.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 # FOMC meeting dates (sample 2012–2024, 8 per year) for historical reaction stats.
-# Source: Federal Reserve meeting calendar. Expand as needed.
 FOMC_DATES = [
     "2012-01-25", "2012-03-13", "2012-04-25", "2012-06-20", "2012-08-01", "2012-09-13", "2012-10-24", "2012-12-12",
     "2013-01-30", "2013-03-20", "2013-05-01", "2013-06-19", "2013-07-31", "2013-09-18", "2013-10-30", "2013-12-18",
@@ -27,7 +25,6 @@ FOMC_DATES = [
     "2024-01-31", "2024-03-20", "2024-05-01", "2024-06-12", "2024-07-31", "2024-09-18", "2024-11-07", "2024-12-18",
 ]
 
-# Map calendar event name/keywords to event type for lookup
 EVENT_TYPE_KEYWORDS = {
     "FOMC": ["fomc", "fed", "federal reserve", "interest rate", "monetary policy"],
     "CPI": ["cpi", "inflation", "consumer price"],
@@ -37,7 +34,6 @@ EVENT_TYPE_KEYWORDS = {
 
 
 def _classify_event(name: str) -> str | None:
-    """Classify event by name into FOMC, CPI, NFP, GDP, or None."""
     if not name:
         return None
     n = name.lower()
@@ -53,66 +49,55 @@ def get_event_reaction_stats(
     period: str = "13y",
 ) -> dict | None:
     """
-    Compute historical next-day reaction stats for event_type (e.g. FOMC).
-    Returns { avg_return_pct, std_pct, pct_positive, n_events, rationale } or None.
+    Historical reaction stats for FOMC, CPI, NFP (and GDP when dated).
+    Prefers precomputed market_flip_stats.json; falls back to live computation.
     """
-    if event_type != "FOMC":
-        # Only FOMC has built-in dates for now; CPI/NFP could be added via FRED or similar
+    et = (event_type or "").upper()
+    if et not in ("FOMC", "CPI", "NFP", "GDP"):
         return None
-    import numpy as np
-    from signals.fetcher import fetch_ohlcv_safe
-    import pandas as pd
 
-    close = fetch_ohlcv_safe(symbol, period)
-    if close is None or len(close) < 100:
-        return None
-    close = close.sort_index()
-    idx = close.index
+    try:
+        from signals.market_flip_stats import load_market_flip_stats, stats_for_event_type
 
-    returns_1d = []
-    for d_str in FOMC_DATES:
-        try:
-            d_target = pd.Timestamp(d_str).date()
-        except Exception:
-            continue
-        try:
-            # Match by date; idx.date is array of dates for DatetimeIndex
-            mask = np.array([(x.date() if hasattr(x, "date") else x) >= d_target for x in idx])
-            on_or_after = idx[mask]
-        except Exception:
-            continue
-        if len(on_or_after) == 0:
-            continue
-        event_day = on_or_after[0]
-        try:
-            event_close = float(close.loc[event_day])
-        except Exception:
-            continue
-        # Next trading day
-        later = idx[idx > event_day]
-        if len(later) == 0:
-            continue
-        next_day = later[0]
-        try:
-            next_close = float(close.loc[next_day])
-        except Exception:
-            continue
-        if event_close and event_close > 0:
-            ret_pct = 100 * (next_close - event_close) / event_close
-            returns_1d.append(ret_pct)
-    if len(returns_1d) < 5:
+        cached = load_market_flip_stats()
+        pre = stats_for_event_type(et, cached)
+        if pre and pre.get("n_events", 0) >= 5:
+            return {
+                "avg_return_pct": pre.get("avg_return_pct"),
+                "avg_same_day_pct": pre.get("avg_same_day_pct"),
+                "std_pct": pre.get("std_pct"),
+                "pct_positive": pre.get("pct_positive"),
+                "n_events": pre.get("n_events"),
+                "pct_gap_fade": pre.get("pct_gap_fade"),
+                "gap_fade": pre.get("gap_fade"),
+                "rationale": pre.get("rationale"),
+            }
+    except Exception as e:
+        logger.debug("get_event_reaction_stats cache: %s", e)
+
+    try:
+        from signals.market_flip_stats import compute_event_day_stats, event_dates_for_type, _fetch_ohlc_frame
+
+        dates = event_dates_for_type(et)
+        if not dates:
+            return None
+        spy = _fetch_ohlc_frame(symbol, period)
+        stats = compute_event_day_stats(et, dates, spy)
+        if not stats:
+            return None
+        return {
+            "avg_return_pct": stats.get("avg_return_pct"),
+            "avg_same_day_pct": stats.get("avg_same_day_pct"),
+            "std_pct": stats.get("std_pct"),
+            "pct_positive": stats.get("pct_positive"),
+            "n_events": stats.get("n_events"),
+            "pct_gap_fade": stats.get("pct_gap_fade"),
+            "gap_fade": stats.get("gap_fade"),
+            "rationale": stats.get("rationale"),
+        }
+    except Exception as e:
+        logger.debug("get_event_reaction_stats compute: %s", e)
         return None
-    arr = np.array(returns_1d)
-    avg = float(np.mean(arr))
-    std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
-    pct_pos = 100 * np.mean(arr > 0)
-    return {
-        "avg_return_pct": round(avg, 2),
-        "std_pct": round(std, 2),
-        "pct_positive": round(pct_pos, 1),
-        "n_events": len(returns_1d),
-        "rationale": f"Based on {len(returns_1d)} {event_type} events ({period}); SPY next-day avg {avg:+.2f}%, σ={std:.2f}%.",
-    }
 
 
 def get_upcoming_event_scenarios(
@@ -120,11 +105,6 @@ def get_upcoming_event_scenarios(
     period_long: str = "13y",
     symbol: str = "SPY",
 ) -> list[dict]:
-    """
-    For each upcoming calendar event, attach historical reaction stats (if available).
-    calendar_events: [{ date, name, event?, ... }] from economic calendar.
-    Returns list of { date, name, event_type, scenario } where scenario has avg_return_pct, std_pct, pct_positive, n_events, rationale.
-    """
     out = []
     seen = set()
     for ev in (calendar_events or [])[:20]:

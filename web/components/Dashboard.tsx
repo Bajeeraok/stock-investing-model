@@ -10,6 +10,7 @@ import type {
   PortfolioDoctorRecommendation,
 } from "@/app/page";
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
+import { formatSnapshotAge, formatSnapshotEt } from "@/lib/snapshotFreshness";
 import { clsx } from "clsx";
 import {
   AddTickerBar,
@@ -63,6 +64,7 @@ import {
   AlertsPanel,
   RetailBriefingPanel,
   RoadmapsPanel,
+  MarketStatePanel,
   TrackRecordPanel,
   PortfolioDoctorPanel,
   BrowserPushPanel,
@@ -520,6 +522,15 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => clearInterval(id);
   }, [lastRefreshedAt]);
 
+  const snapshotIso = data.data_freshness?.snapshot_updated_at ?? data.as_of_date ?? null;
+  const [snapshotAge, setSnapshotAge] = useState(() => formatSnapshotAge(snapshotIso));
+  useEffect(() => {
+    const tick = () => setSnapshotAge(formatSnapshotAge(snapshotIso));
+    tick();
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [snapshotIso]);
+
   return (
     <div className="min-h-screen">
       {/* Header */}
@@ -541,14 +552,22 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             </button>
             {lastRefreshedAt && (
               <span
-                className="text-xs sm:text-sm text-slate-500 hidden sm:inline"
-                title={`Last refresh: ${formatLastRefresh(lastRefreshedAt)}`}
+                className="text-xs sm:text-sm text-slate-500 hidden md:inline"
+                title={`Browser fetched: ${formatLastRefresh(lastRefreshedAt)}`}
               >
-                {refreshAgo || formatLastRefresh(lastRefreshedAt)}
+                Fetched {refreshAgo || formatLastRefresh(lastRefreshedAt)}
               </span>
             )}
-            {data.as_of_date && (
-              <span className="text-xs text-slate-600 hidden sm:inline" title="Report timestamp (EST)">As of: {formatEtDateTime(data.as_of_date)}</span>
+            {snapshotIso && (
+              <span
+                className={clsx(
+                  "text-xs hidden sm:inline font-mono",
+                  data.data_freshness?.serving_stale || stale ? "text-amber-400" : "text-slate-500",
+                )}
+                title={`Server snapshot saved ${formatSnapshotEt(snapshotIso)}`}
+              >
+                Snapshot {snapshotAge || formatSnapshotAge(snapshotIso)}
+              </span>
             )}
             <button
               type="button"
@@ -656,6 +675,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             </span>
           </div>
         )}
+        {data.data_freshness && !data.warming && (
+          <DataFreshnessBar data={data.data_freshness} compact />
+        )}
         <TodaysMovesPanel
           storyChanges={data.story_changes}
           trimCandidates={selectedTrimCandidates.map((h) => ({
@@ -700,6 +722,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {data.retail_briefing && <RetailBriefingPanel data={data} onTickerClick={setSelectedTicker} />}
+              <MarketStatePanel />
               <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-4 py-3 space-y-1">
                 <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-sky-400/90">
                   <Info className="h-4 w-4 shrink-0" aria-hidden />

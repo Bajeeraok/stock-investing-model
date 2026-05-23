@@ -12,6 +12,7 @@ from typing import Any
 
 from signals.band_context import _HIGH_IMPACT, _parse_event_date
 from signals.event_scenarios import EVENT_TYPE_KEYWORDS, get_event_reaction_stats
+from signals.market_flip_stats import EVENT_RELEASE_TIMES_ET, load_market_flip_stats, stats_for_event_type
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,128 @@ def _regime_side(regime: str | None) -> str:
     return "neutral"
 
 
-def _events_for_today(calendar_events: list[dict] | None, today: _dt.date) -> list[dict]:
+def _now_et() -> _dt.datetime:
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    return _dt.datetime.now(ZoneInfo("America/New_York"))
+
+
+def _parse_time_et(time_str: str | None) -> tuple[int, int] | None:
+    if not time_str:
+        return None
+    try:
+        parts = str(time_str).strip()[:5].split(":")
+        return int(parts[0]), int(parts[1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _release_status(time_et: str | None, event_type: str, now: _dt.datetime | None = None) -> dict[str, Any]:
+    """P2: pending vs released marker for 8:30 / 14:00 ET releases."""
+    now = now or _now_et()
+    default_time = EVENT_RELEASE_TIMES_ET.get(event_type.upper(), "08:30")
+    tm = _parse_time_et(time_et) or _parse_time_et(default_time) or (8, 30)
+    release_dt = now.replace(hour=tm[0], minute=tm[1], second=0, microsecond=0)
+    released = now >= release_dt
+    mins = int((release_dt - now).total_seconds() / 60) if not released else 0
+    return {
+        "time_et": f"{tm[0]:02d}:{tm[1]:02d}",
+        "status": "released" if released else "pending",
+        "minutes_until": max(0, mins) if not released else None,
+        "minutes_since": int((now - release_dt).total_seconds() / 60) if released else None,
+    }
+
+
+def _scenario_for_event(event_type: str, flip_stats: dict | None) -> dict | None:
+    pre = stats_for_event_type(event_type, flip_stats)
+    if pre:
+        return {
+            "avg_return_pct": pre.get("avg_return_pct"),
+            "avg_same_day_pct": pre.get("avg_same_day_pct"),
+            "std_pct": pre.get("std_pct"),
+            "pct_positive": pre.get("pct_positive"),
+            "n_events": pre.get("n_events"),
+            "pct_gap_fade": pre.get("pct_gap_fade"),
+            "gap_fade": pre.get("gap_fade"),
+            "rationale": pre.get("rationale"),
+        }
+    return get_event_reaction_stats(event_type, symbol="SPY")
+
+
+def _intraday_context(scheduled_today: list[dict], now: _dt.datetime | None = None) -> dict[str, Any] | None:
+    """P2: SPY since open and since first released macro event today."""
+    now = now or _now_et()
+    if now.weekday() >= 5:
+        return None
+    try:
+        import yfinance as yf
+    except ImportError:
+        return None
+    try:
+        spy = yf.Ticker("SPY")
+        hist = spy.history(period="1d", interval="5m", prepost=False)
+        if hist is None or hist.empty:
+            return None
+        hist = hist.sort_index()
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # type: ignore
+        et = ZoneInfo("America/New_York")
+        idx_et = hist.index.tz_convert(et) if hist.index.tz else hist.index.tz_localize("UTC").tz_convert(et)
+        open_bar = None
+        for i, ts in enumerate(idx_et):
+            if ts.hour == 9 and ts.minute >= 30:
+                open_bar = float(hist.iloc[i]["Open"])
+                break
+        if open_bar is None and len(hist) > 0:
+            open_bar = float(hist.iloc[0]["Open"])
+        last = float(hist.iloc[-1]["Close"])
+        if not open_bar or open_bar <= 0:
+            return None
+        since_open_pct = round(100 * (last - open_bar) / open_bar, 2)
+        since_release: dict[str, Any] | None = None
+        for ev in scheduled_today:
+            rel = ev.get("release") or {}
+            if rel.get("status") != "released":
+                continue
+            tm = _parse_time_et(rel.get("time_et") or ev.get("time_et"))
+            if not tm:
+                continue
+            release_ts = now.replace(hour=tm[0], minute=tm[1], second=0, microsecond=0)
+            mask = idx_et >= release_ts
+            after = hist[mask]
+            if after.empty:
+                continue
+            ref = float(after.iloc[0]["Open"])
+            if ref > 0:
+                since_release = {
+                    "event_type": ev.get("event_type"),
+                    "name": ev.get("name"),
+                    "pct_since_release": round(100 * (last - ref) / ref, 2),
+                    "release_time_et": rel.get("time_et"),
+                }
+                break
+        return {
+            "spy_last": round(last, 2),
+            "spy_open": round(open_bar, 2),
+            "since_open_pct": since_open_pct,
+            "since_release": since_release,
+            "as_of_et": now.strftime("%H:%M"),
+        }
+    except Exception as e:
+        logger.debug("intraday_context: %s", e)
+        return None
+
+
+def _events_for_today(
+    calendar_events: list[dict] | None,
+    today: _dt.date,
+    flip_stats: dict | None = None,
+    now: _dt.datetime | None = None,
+) -> list[dict]:
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for ev in calendar_events or []:
@@ -95,20 +217,27 @@ def _events_for_today(calendar_events: list[dict] | None, today: _dt.date) -> li
             continue
         seen.add(key)
         event_type = _classify_event(name)
-        scenario = None
-        if event_type == "FOMC":
-            scenario = get_event_reaction_stats(event_type, symbol="SPY")
+        scenario = _scenario_for_event(event_type, flip_stats) if event_type != "Other" else None
         time_raw = ev.get("time") or ev.get("date") or ""
         time_et = None
         if isinstance(time_raw, str) and len(time_raw) > 10:
             time_et = time_raw[11:16] if "T" in time_raw else time_raw[11:19][:5]
+        if not time_et and event_type in EVENT_RELEASE_TIMES_ET:
+            time_et = EVENT_RELEASE_TIMES_ET[event_type]
+        release = _release_status(time_et, event_type, now=now)
+        gap_line = None
+        if scenario and scenario.get("pct_gap_fade") is not None:
+            n = scenario.get("n_events") or scenario.get("gap_fade", {}).get("n_events")
+            gap_line = f"Gap faded {scenario['pct_gap_fade']}% on past {event_type} days (n={n})"
         out.append({
             "date": d.isoformat(),
-            "time_et": time_et,
+            "time_et": time_et or release.get("time_et"),
             "name": name[:120],
             "event_type": event_type,
             "impact": "High",
             "scenario": scenario,
+            "release": release,
+            "gap_fade_line": gap_line,
         })
     out.sort(key=lambda x: (x.get("time_et") or "99:99", x["name"]))
     return out
@@ -265,17 +394,31 @@ def build_market_catalysts(
     macro_regime: str | None = None,
     *,
     today: _dt.date | None = None,
+    config: dict | None = None,
 ) -> dict[str, Any]:
     """
     Build P0 catalyst board payload for pre-market UI.
 
     Returns scheduled_today, live_tape, tensions, flip_narratives, summary_line.
     """
-    today = today or _dt.date.today()
-    scheduled = _events_for_today(economic_calendar, today)
+    today = today or _now_et().date()
+    now = _now_et()
+    flip_stats = load_market_flip_stats()
+    scheduled = _events_for_today(economic_calendar, today, flip_stats, now=now)
     live = _live_tape_drivers(premarket)
     tensions = _tension_flags(premarket, spy_regime, macro_regime, next_day_outlook, scheduled)
     flips = _flip_narratives(scheduled)
+    intraday = _intraday_context(scheduled, now=now)
+
+    ms_cfg = (config or {}).get("market_state") or {}
+    is_premarket = now.weekday() < 5 and ((now.hour >= 4 and now.hour < 9) or (now.hour == 9 and now.minute < 30))
+    is_rth = now.weekday() < 5 and ((now.hour == 9 and now.minute >= 30) or (10 <= now.hour < 16))
+    polling = {
+        "premarket_poll_ms": int(ms_cfg.get("premarket_poll_ms") or 300000),
+        "intraday_poll_ms": int(ms_cfg.get("intraday_poll_ms") or 300000) if is_rth else 0,
+        "is_premarket_et": is_premarket,
+        "is_rth_et": is_rth,
+    }
 
     composite = None
     bias = None
@@ -297,6 +440,7 @@ def build_market_catalysts(
 
     return {
         "as_of_date": today.isoformat(),
+        "as_of_et": now.isoformat(),
         "summary_line": summary,
         "premarket_bias": bias,
         "premarket_composite": composite,
@@ -306,6 +450,10 @@ def build_market_catalysts(
         "live_tape": live,
         "tensions": tensions,
         "flip_narratives": flips,
+        "intraday": intraday,
+        "polling": polling,
+        "premarket_vs_close": flip_stats.get("premarket_vs_close") if flip_stats else None,
+        "digest_line": build_catalyst_digest_line(scheduled, premarket, flip_stats),
         "disclaimer": "Historical stats and setup flags only — not a forecast of release outcomes.",
     }
 
@@ -376,7 +524,52 @@ def attach_catalysts_to_premarket(premarket: dict, config: dict | None = None) -
         next_day_outlook=next_day,
         spy_regime=spy_regime,
         macro_regime=macro_regime,
+        config=config,
     )
     out = dict(premarket)
     out["market_catalysts"] = catalysts
+    out["polling"] = catalysts.get("polling")
+    _maybe_catalyst_push(config, catalysts)
     return out
+
+
+def build_catalyst_digest_line(
+    scheduled_today: list[dict],
+    premarket: dict | None,
+    flip_stats: dict | None,
+) -> str | None:
+    """P2 push hook: e.g. CPI in 30m; pre-market bull; gap-fade history 61%."""
+    if not scheduled_today:
+        return None
+    ev = scheduled_today[0]
+    rel = ev.get("release") or {}
+    parts: list[str] = []
+    if rel.get("status") == "pending" and rel.get("minutes_until") is not None:
+        parts.append(f"{ev.get('event_type')} in {rel['minutes_until']}m")
+    elif rel.get("status") == "released":
+        parts.append(f"{ev.get('event_type')} released")
+    bias = (premarket or {}).get("bias")
+    if bias:
+        parts.append(f"pre-market {str(bias).lower()}")
+    gf = ev.get("scenario", {}).get("pct_gap_fade") if isinstance(ev.get("scenario"), dict) else None
+    if gf is None and flip_stats:
+        st = stats_for_event_type(str(ev.get("event_type")), flip_stats)
+        gf = st.get("pct_gap_fade") if st else None
+    if gf is not None:
+        parts.append(f"gap-fade history {gf}%")
+    return "; ".join(parts) if parts else None
+
+
+def _maybe_catalyst_push(config: dict, catalysts: dict) -> None:
+    alerts = (config.get("alerts") or {}) if config else {}
+    if alerts.get("catalyst_push_enabled") is False:
+        return
+    line = catalysts.get("digest_line")
+    if not line:
+        return
+    try:
+        from behavior.push_digest import maybe_broadcast_catalyst_push
+
+        maybe_broadcast_catalyst_push(config, line)
+    except Exception as e:
+        logger.debug("catalyst push: %s", e)

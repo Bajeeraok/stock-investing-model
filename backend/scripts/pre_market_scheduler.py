@@ -43,6 +43,28 @@ def _output_path() -> Path:
         return OUTPUT_FILE
 
 
+def archive_premarket_snapshot(data: dict) -> None:
+    """Archive daily pre-market snapshot for flip-stats join (P1)."""
+    try:
+        from datetime import datetime
+
+        ts = data.get("timestamp", "")
+        if not ts:
+            return
+        if EST:
+            file_dt = datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(EST)
+            date_str = file_dt.date().isoformat()
+        else:
+            date_str = ts[:10]
+        from config_loader import get_data_root
+
+        hist_dir = get_data_root() / "pre_market_history"
+        hist_dir.mkdir(parents=True, exist_ok=True)
+        (hist_dir / f"{date_str}.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def run_premarket_snapshot(*, force: bool = False) -> dict | None:
     """
     Run pre-market engine and write JSON under DATA_ROOT.
@@ -64,6 +86,7 @@ def run_premarket_snapshot(*, force: bool = False) -> dict | None:
     out_path = _output_path()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(data, indent=2))
+    archive_premarket_snapshot(data)
     return data
 
 

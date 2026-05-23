@@ -1,14 +1,24 @@
 "use client";
 
-import { Calendar, AlertTriangle, Zap, Target } from "lucide-react";
+import { Calendar, AlertTriangle, Zap, Target, Clock } from "lucide-react";
 import { clsx } from "clsx";
 
 export interface MarketCatalystScenario {
   avg_return_pct?: number;
+  avg_same_day_pct?: number;
   std_pct?: number;
   pct_positive?: number;
+  pct_gap_fade?: number;
   n_events?: number;
   rationale?: string;
+  gap_fade?: { pct_gap_fade?: number; n_events?: number; rationale?: string };
+}
+
+export interface MarketCatalystRelease {
+  time_et?: string;
+  status?: "pending" | "released";
+  minutes_until?: number | null;
+  minutes_since?: number | null;
 }
 
 export interface MarketCatalystScheduled {
@@ -18,6 +28,8 @@ export interface MarketCatalystScheduled {
   event_type: string;
   impact: string;
   scenario?: MarketCatalystScenario | null;
+  release?: MarketCatalystRelease | null;
+  gap_fade_line?: string | null;
 }
 
 export interface MarketCatalystTension {
@@ -33,13 +45,36 @@ export interface MarketCatalystFlip {
   scenario?: MarketCatalystScenario | null;
 }
 
+export interface MarketCatalystIntraday {
+  spy_last?: number;
+  spy_open?: number;
+  since_open_pct?: number;
+  as_of_et?: string;
+  since_release?: {
+    event_type?: string;
+    name?: string;
+    pct_since_release?: number;
+    release_time_et?: string;
+  } | null;
+}
+
 export interface MarketCatalystBoard {
   as_of_date?: string;
+  as_of_et?: string;
   summary_line?: string;
   scheduled_today?: MarketCatalystScheduled[];
   live_tape?: { name: string; raw_value: string; direction: string; score: number; category?: string }[];
   tensions?: MarketCatalystTension[];
   flip_narratives?: MarketCatalystFlip[];
+  intraday?: MarketCatalystIntraday | null;
+  polling?: {
+    premarket_poll_ms?: number;
+    intraday_poll_ms?: number;
+    is_premarket_et?: boolean;
+    is_rth_et?: boolean;
+  };
+  premarket_vs_close?: { pct_contradict?: number; n_days?: number; rationale?: string } | null;
+  digest_line?: string | null;
   disclaimer?: string;
   premarket_bias?: string;
   spy_regime?: string | null;
@@ -52,16 +87,37 @@ function levelClass(level: string) {
   return "text-slate-400 border-slate-700 bg-slate-800/30";
 }
 
-export function MarketCatalystBoardPanel({ board }: { board: MarketCatalystBoard | null | undefined }) {
+function ReleaseBadge({ release }: { release?: MarketCatalystRelease | null }) {
+  if (!release?.status) return null;
+  const pending = release.status === "pending";
+  return (
+    <span
+      className={clsx(
+        "text-[10px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wide",
+        pending ? "border-amber-500/40 text-amber-300 bg-amber-500/10" : "border-emerald-500/30 text-emerald-300 bg-emerald-500/10",
+      )}
+    >
+      {pending ? `pending · ${release.minutes_until ?? "?"}m` : "released"}
+    </span>
+  );
+}
+
+export function MarketCatalystBoardPanel({
+  board,
+  compact = false,
+}: {
+  board: MarketCatalystBoard | null | undefined;
+  compact?: boolean;
+}) {
   if (!board) return null;
 
   const scheduled = board.scheduled_today ?? [];
   const live = board.live_tape ?? [];
   const tensions = board.tensions ?? [];
-  const flips = board.flip_narratives ?? [];
+  const flips = compact ? [] : board.flip_narratives ?? [];
 
   return (
-    <div className="rounded-lg border border-violet-500/25 bg-violet-950/20 p-4 space-y-4">
+    <div className={clsx("rounded-lg border border-violet-500/25 bg-violet-950/20 p-4 space-y-4", compact && "p-3 space-y-3")}>
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
           <Target className="h-3.5 w-3.5" />
@@ -75,6 +131,12 @@ export function MarketCatalystBoardPanel({ board }: { board: MarketCatalystBoard
             {board.macro_regime && <>Macro: {board.macro_regime}</>}
           </p>
         )}
+        {board.premarket_vs_close?.pct_contradict != null && (
+          <p className="text-xs text-slate-500 mt-1">
+            Pre-market vs close: contradicted {board.premarket_vs_close.pct_contradict}% of days (n=
+            {board.premarket_vs_close.n_days})
+          </p>
+        )}
       </div>
 
       {scheduled.length > 0 && (
@@ -86,15 +148,34 @@ export function MarketCatalystBoardPanel({ board }: { board: MarketCatalystBoard
             {scheduled.map((ev) => (
               <li key={`${ev.date}-${ev.name}`} className="rounded border border-slate-700/60 bg-slate-900/40 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                  {ev.time_et && <span className="font-mono text-violet-300">{ev.time_et} ET</span>}
+                  {(ev.time_et || ev.release?.time_et) && (
+                    <span className="font-mono text-violet-300 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {ev.time_et || ev.release?.time_et} ET
+                    </span>
+                  )}
+                  <ReleaseBadge release={ev.release} />
                   <span className="text-slate-200">{ev.name}</span>
                   <span className="text-xs text-slate-500">{ev.event_type}</span>
                   <span className="text-xs text-amber-400/90">{ev.impact}</span>
                 </div>
+                {ev.gap_fade_line && (
+                  <p className="text-xs text-violet-300/90 mt-1 font-medium">{ev.gap_fade_line}</p>
+                )}
+                {ev.scenario && !ev.gap_fade_line && ev.scenario.pct_gap_fade != null && (
+                  <p className="text-xs text-violet-300/90 mt-1">
+                    Gap faded {ev.scenario.pct_gap_fade}% on past {ev.event_type} days (n={ev.scenario.n_events})
+                  </p>
+                )}
                 {ev.scenario && (
                   <p className="text-xs text-slate-500 mt-1">
                     Hist. SPY next-day: avg {ev.scenario.avg_return_pct != null && ev.scenario.avg_return_pct >= 0 ? "+" : ""}
-                    {ev.scenario.avg_return_pct}% · {ev.scenario.pct_positive}% positive (n={ev.scenario.n_events})
+                    {ev.scenario.avg_return_pct}%
+                    {ev.scenario.avg_same_day_pct != null && (
+                      <> · same-day {ev.scenario.avg_same_day_pct >= 0 ? "+" : ""}{ev.scenario.avg_same_day_pct}%</>
+                    )}
+                    {" · "}
+                    {ev.scenario.pct_positive}% positive (n={ev.scenario.n_events})
                   </p>
                 )}
               </li>

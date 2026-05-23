@@ -562,7 +562,7 @@ async def get_dashboard(
 ):
     """Serve cached snapshot instantly; stale-while-revalidate + background refresh on miss."""
     from api.dashboard_job import get_refresh_status, is_refresh_running, trigger_background_refresh
-    from api.dashboard_shell import build_shell_from_full, build_warming_shell
+    from api.dashboard_shell import build_shell_from_full, build_warming_shell, enrich_shell_snapshot_meta
     from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
     if refresh:
@@ -572,7 +572,10 @@ async def get_dashboard(
         shell = build_shell_from_full(out, include_full_signals=False)
         shell["stale"] = False
         shell["refresh_status"] = "done"
-        return shell
+        df = shell.get("data_freshness") or {}
+        if isinstance(df, dict):
+            df["snapshot_source"] = "live"
+        return enrich_shell_snapshot_meta(shell)
 
     try:
         cached = get_cached_dashboard()
@@ -581,7 +584,10 @@ async def get_dashboard(
             shell = build_shell_from_full(cached, include_full_signals=False)
             shell["stale"] = False
             shell["refresh_status"] = get_refresh_status().get("status", "idle")
-            return shell
+            df = shell.get("data_freshness") or {}
+            if isinstance(df, dict):
+                df["snapshot_source"] = "cache"
+            return enrich_shell_snapshot_meta(shell)
     except Exception as e:
         logger.debug("[dashboard] cache check skipped: %s", e)
 
@@ -597,7 +603,10 @@ async def get_dashboard(
         shell = build_shell_from_full(stale, include_full_signals=False)
         shell["stale"] = True
         shell["refresh_status"] = "running" if is_refresh_running() else get_refresh_status().get("status", "idle")
-        return shell
+        df = shell.get("data_freshness") or {}
+        if isinstance(df, dict):
+            df["snapshot_source"] = "last_snapshot"
+        return enrich_shell_snapshot_meta(shell)
 
     job_status = get_refresh_status()
     if job_status.get("status") == "error":
@@ -611,7 +620,7 @@ async def get_dashboard(
     logger.info("[dashboard] serving warming shell (no cache yet; compute in progress)")
     shell = build_warming_shell(_load_config())
     shell["refresh_status"] = "running" if is_refresh_running() else job_status.get("status", "running")
-    return shell
+    return enrich_shell_snapshot_meta(shell)
 
 
 @router.get("/dashboard/shell")
@@ -1795,14 +1804,19 @@ def _compute_full_dashboard_sync() -> dict:
             ohlcv_dates.append(str(r["ohlcv_last_date"])[:10])
     price_last_bar_date = max(ohlcv_dates) if ohlcv_dates else None
     eod_latest_date = None
+    eod_saved_at = None
     if eod_snapshots and isinstance(eod_snapshots, list) and len(eod_snapshots) > 0:
         e0 = eod_snapshots[0]
         if isinstance(e0, dict):
             eod_latest_date = e0.get("date")
+            eod_saved_at = e0.get("run_date") or e0.get("saved_at")
 
     data_freshness = {
         "as_of_utc": as_of_utc,
         "as_of_et": as_of_et,
+        "snapshot_updated_at": as_of_date,
+        "snapshot_updated_et": as_of_et,
+        "eod_snapshot_saved_at": eod_saved_at,
         "prices": "Daily adjusted close from the data pipeline (typically prior session close vs. run time).",
         "fundamentals": "FMP / estimates can lag filings; not point-in-time perfect for backtests.",
         "macro": "FRED / cross-asset as of last observation before this run.",
@@ -2383,7 +2397,7 @@ def _premarket_with_catalysts(data: dict) -> dict:
 
 
 @router.get("/pre-market")
-async def get_pre_market():
+async def get_pre_market(refresh: bool = Query(False)):
     """
     Pre-market signal engine (6 categories, 15 sources).
 
@@ -2407,9 +2421,13 @@ async def get_pre_market():
         logger.debug("Pre-market file read failed: %s", e)
         cached = None
 
+    # ── Explicit refresh: re-attach catalysts + intraday (P2) without re-running engine ──
+    if refresh and cached:
+        return _premarket_with_catalysts(cached)
+
     # ── Case 1: fresh file from today ──────────────────────────────────────
     if cached and _premarket_file_is_from_today(cached):
-        cached.pop("stale", None)  # Clean up stale flag if somehow present
+        cached.pop("stale", None)
         return _premarket_with_catalysts(cached)
 
     # ── Case 2: in pre-market hours → run engine live ─────────────────────
@@ -2423,6 +2441,12 @@ async def get_pre_market():
             pre_market_file.parent.mkdir(parents=True, exist_ok=True)
             with open(pre_market_file, "w") as f:
                 json.dump(data, f, indent=2)
+            try:
+                from scripts.pre_market_scheduler import archive_premarket_snapshot
+
+                archive_premarket_snapshot(data)
+            except Exception:
+                pass
             return _premarket_with_catalysts(data)
         except Exception as e:
             logger.exception("Pre-market engine failed: %s", e)
@@ -2452,6 +2476,21 @@ async def get_pre_market():
         detail="Pre-market data is only generated before the open (4:00–9:30 AM ET, weekdays). "
                "Run scripts/pre_market_scheduler.py during that window, or use the last cached snapshot.",
     )
+
+
+@router.get("/market-state")
+async def get_market_state():
+    """
+    P3: Unified market state — macro, pre-market + catalysts, next-day outlook, typical move, intraday.
+    Used by Overview MarketStatePanel; optional lazy load separate from full dashboard bundle.
+    """
+    try:
+        from signals.market_state import build_market_state
+
+        return jsonable_encoder(build_market_state(_load_config()))
+    except Exception as e:
+        logger.exception("market-state failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/ticker/{ticker}")

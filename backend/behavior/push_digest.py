@@ -120,3 +120,46 @@ def maybe_broadcast_retail_push(
         _save_state(state)
 
     return {"ok": True, "fingerprint": fp, **result}
+
+
+def _catalyst_fingerprint(line: str) -> str:
+    return hashlib.sha256(f"catalyst:{line}".encode("utf-8")).hexdigest()[:16]
+
+
+def maybe_broadcast_catalyst_push(
+    config: dict,
+    digest_line: str,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """
+    P2: Push digest hook for macro catalyst countdown + gap-fade history.
+    Example: "CPI in 30m; pre-market bull; gap-fade history 61%"
+    """
+    alerts_cfg = (config.get("alerts") or {}) if config else {}
+    if alerts_cfg.get("web_push_enabled") is False:
+        return {"skipped": True, "reason": "web_push_disabled"}
+    if not digest_line or not str(digest_line).strip():
+        return {"skipped": True, "reason": "empty_catalyst_line"}
+
+    fp = _catalyst_fingerprint(digest_line.strip())
+    state = _load_state()
+    if not force and state.get("last_catalyst_fingerprint") == fp:
+        return {"skipped": True, "reason": "duplicate_catalyst", "fingerprint": fp}
+
+    title = "Thrive Alpha: market catalyst"
+    body = digest_line.strip()[:900]
+    try:
+        from api.routers.push import broadcast_web_push
+
+        result = broadcast_web_push(title, body, url="/")
+    except Exception as e:
+        logger.warning("catalyst web push failed: %s", e)
+        return {"skipped": True, "reason": str(e)}
+
+    if result.get("sent", 0) > 0 or result.get("total", 0) == 0:
+        state["last_catalyst_fingerprint"] = fp
+        state["last_catalyst_line"] = body
+        _save_state(state)
+
+    return {"ok": True, "fingerprint": fp, **result}

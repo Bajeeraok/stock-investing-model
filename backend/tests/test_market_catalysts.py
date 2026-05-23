@@ -20,6 +20,28 @@ def test_scheduled_today_filters_us_high_impact():
     )
     assert len(out["scheduled_today"]) == 1
     assert out["scheduled_today"][0]["event_type"] == "CPI"
+    assert out["scheduled_today"][0].get("release") is not None
+    assert out["scheduled_today"][0].get("gap_fade_line")
+
+
+def test_release_status_pending_before_830():
+    from signals.market_catalysts import _release_status
+    from zoneinfo import ZoneInfo
+
+    now = dt.datetime(2026, 5, 21, 8, 0, tzinfo=ZoneInfo("America/New_York"))
+    rel = _release_status("08:30", "CPI", now=now)
+    assert rel["status"] == "pending"
+    assert rel["minutes_until"] == 30
+
+
+def test_build_includes_polling_and_digest():
+    out = build_market_catalysts(
+        premarket={"composite_score": 0.1, "bias": "SLIGHT BULL", "signals": []},
+        economic_calendar=[{"date": "2026-05-21", "name": "Consumer Price Index", "country": "US"}],
+        today=dt.date(2026, 5, 21),
+    )
+    assert out.get("polling") is not None
+    assert "premarket_poll_ms" in out["polling"]
 
 
 def test_tension_pm_bull_regime_bear():

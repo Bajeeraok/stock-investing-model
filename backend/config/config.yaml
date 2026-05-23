@@ -415,6 +415,8 @@ alerts:
   # Daily digest: retail = story changes OR trim candidates OR earnings-week holdings; story_only = stories only
   digest_mode: retail
   web_push_enabled: true
+  # P2: macro catalyst countdown push (CPI in 30m; gap-fade history 61%)
+  catalyst_push_enabled: true
   # Scanner (Level-2): IV rank / flow / premium-selling surfacing — off by default; use band alerts below.
   enable_options_alerts: false
   # Separate process: alerts/worker.py Tradier IV snapshots + IV_EXTREME events (optional)
@@ -436,6 +438,11 @@ alerts:
 #   telegram:
 #     bot_token: YOUR_BOT_TOKEN
 #     chat_id: YOUR_CHAT_ID
+
+# P2/P3: unified market state panel + intraday catalyst polling (ET-aware)
+market_state:
+  premarket_poll_ms: 300000    # 5 min during 4:00–9:30 ET
+  intraday_poll_ms: 300000     # 5 min during RTH when macro releases today
 
 # Opportunity scan: identify tickers with long-term growth potential (daily)
 # Set run_opportunity_scan: false to skip in run_daily.py only.

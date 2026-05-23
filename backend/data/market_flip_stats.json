@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "built_at": "2026-01-01T00:00:00Z",
+  "period": "13y",
+  "symbol": "SPY",
+  "note": "Seed file — run scripts/build_market_flip_stats.py monthly for live stats",
+  "release_times_et": {
+    "CPI": "08:30",
+    "NFP": "08:30",
+    "GDP": "08:30",
+    "FOMC": "14:00"
+  },
+  "events": {
+    "FOMC": {
+      "event_type": "FOMC",
+      "avg_return_pct": 0.12,
+      "avg_same_day_pct": -0.05,
+      "std_pct": 0.85,
+      "pct_positive": 52.0,
+      "n_events": 96,
+      "pct_gap_fade": 58.0,
+      "gap_fade": {
+        "pct_gap_fade": 58.0,
+        "pct_gap_hold": 42.0,
+        "n_events": 90,
+        "rationale": "Gap faded 58% of fomc days (n=90) — run build script for live numbers."
+      },
+      "rationale": "Based on 96 FOMC events; SPY next-day avg +0.12%, σ=0.85%."
+    },
+    "CPI": {
+      "event_type": "CPI",
+      "avg_return_pct": 0.08,
+      "avg_same_day_pct": 0.15,
+      "std_pct": 0.72,
+      "pct_positive": 51.0,
+      "n_events": 120,
+      "pct_gap_fade": 61.0,
+      "gap_fade": {
+        "pct_gap_fade": 61.0,
+        "pct_gap_hold": 39.0,
+        "n_events": 115,
+        "rationale": "Gap faded 61% of cpi days (n=115) — run build script for live numbers."
+      },
+      "rationale": "Based on 120 CPI events; SPY next-day avg +0.08%, σ=0.72%."
+    },
+    "NFP": {
+      "event_type": "NFP",
+      "avg_return_pct": 0.05,
+      "avg_same_day_pct": 0.12,
+      "std_pct": 0.68,
+      "pct_positive": 50.5,
+      "n_events": 120,
+      "pct_gap_fade": 59.0,
+      "gap_fade": {
+        "pct_gap_fade": 59.0,
+        "pct_gap_hold": 41.0,
+        "n_events": 118,
+        "rationale": "Gap faded 59% of nfp days (n=118) — run build script for live numbers."
+      },
+      "rationale": "Based on 120 NFP events; SPY next-day avg +0.05%, σ=0.68%."
+    }
+  },
+  "gap_fade_all_macro": {
+    "pct_gap_fade": 60.0,
+    "n_events": 300,
+    "rationale": "Aggregate macro event gap-fade — refresh via build script."
+  },
+  "premarket_vs_close": null
+}

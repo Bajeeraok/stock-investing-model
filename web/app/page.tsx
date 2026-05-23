@@ -681,6 +681,14 @@ export interface DashboardData {
   data_freshness?: {
     as_of_utc: string;
     as_of_et?: string;
+    snapshot_updated_at?: string | null;
+    snapshot_updated_et?: string | null;
+    eod_snapshot_saved_at?: string | null;
+    serving_stale?: boolean;
+    snapshot_source?: string;
+    refresh_status?: string;
+    status?: string;
+    message?: string;
     prices?: string;
     fundamentals?: string;
     macro?: string;

@@ -199,6 +199,27 @@ def build_analysis_bundle(full: dict) -> dict:
     return {k: full.get(k) for k in ANALYSIS_BUNDLE_KEYS if k in full}
 
 
+def enrich_shell_snapshot_meta(shell: dict) -> dict:
+    """Attach snapshot source / stale flags into data_freshness for client staleness UI."""
+    if not isinstance(shell, dict):
+        return shell
+    df = dict(shell.get("data_freshness") or {})
+    as_of = shell.get("as_of_date")
+    if as_of and not df.get("snapshot_updated_at"):
+        df["snapshot_updated_at"] = as_of
+    if as_of and not df.get("snapshot_updated_et"):
+        df["snapshot_updated_et"] = df.get("as_of_et")
+    if shell.get("stale"):
+        df["serving_stale"] = True
+    if shell.get("warming"):
+        df.setdefault("status", "warming")
+    refresh = shell.get("refresh_status")
+    if refresh:
+        df["refresh_status"] = refresh
+    shell["data_freshness"] = df
+    return shell
+
+
 def empty_analysis_bundle() -> dict:
     return {
         "model_validation": {"records": [], "summary": {}},

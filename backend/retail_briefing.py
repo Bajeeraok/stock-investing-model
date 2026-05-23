@@ -12,7 +12,7 @@ from typing import Any
 REGIME_PLAIN_ENGLISH = {
     "Risk-On": "Favor small adds on pullbacks. Don't chase; use your levels.",
     "Neutral": "Hold core; skip big new buys until the trend is clearer.",
-    "Risk-Off": "Tighten stops, trim size, no new YOLOs. Preserve capital.",
+    "Risk-Off": "Tighten stops and trim extended positions. Raise cash slowly — don't panic sell core holdings.",
 }
 
 # Approx % of portfolio at risk if all stops hit (simplified: risk_per_position = value * stop_pct/100)
