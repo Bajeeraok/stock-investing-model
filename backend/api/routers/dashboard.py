@@ -1872,11 +1872,10 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("Retail briefing failed: %s", e)
 
+    _pm_report: dict | None = None
     morning_newsletter = None
     try:
         from signals.morning_newsletter import build_morning_newsletter
-        # Load pre_market_latest.json written by the scheduler (best-effort)
-        _pm_report: dict | None = None
         try:
             import json as _json
             _pm_path = data_root / "pre_market_latest.json"
@@ -1921,6 +1920,32 @@ def _compute_full_dashboard_sync() -> dict:
     else:
         known_limits_list = list(DEFAULT_KNOWN_LIMITS)
 
+    retail_market_decisions = None
+    try:
+        from signals.market_flip_stats import load_market_flip_stats
+        from signals.retail_market_decisions import build_retail_market_decisions
+
+        _pm_catalysts = None
+        try:
+            if _pm_report and isinstance(_pm_report, dict):
+                _pm_catalysts = _pm_report.get("market_catalysts")
+        except Exception:
+            pass
+        retail_market_decisions = build_retail_market_decisions(
+            config=config,
+            macro_regime=macro_regime,
+            macro_regime_bundle=macro_regime_bundle,
+            market_regime=market_regime_data,
+            market_catalysts=_pm_catalysts,
+            portfolio_doctor_v2=portfolio_doctor_v2,
+            retail_briefing=retail_briefing,
+            per_holding=report.get("per_holding") if isinstance(report, dict) else None,
+            avg_portfolio_score=report.get("avg_score") if isinstance(report, dict) else None,
+            flip_stats=load_market_flip_stats(),
+        )
+    except Exception as e:
+        logger.debug("retail_market_decisions: %s", e)
+
     out = {
         "as_of_date": as_of_date,
         "data_freshness": data_freshness,
@@ -1928,6 +1953,7 @@ def _compute_full_dashboard_sync() -> dict:
         "known_limits": known_limits_list,
         "signals": results,
         "retail_briefing": retail_briefing,
+        "retail_market_decisions": retail_market_decisions,
         "crypto": crypto_signals,
         "cross_asset": cross_asset,
         "economic_calendar": economic_calendar,

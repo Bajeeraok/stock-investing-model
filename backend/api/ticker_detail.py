@@ -34,6 +34,29 @@ _METAL_ETF_52W_SANITY = frozenset(
 )
 
 
+def _ticker_in_portfolio(ticker: str, config: dict) -> bool:
+    """True if ticker appears in any configured portfolio holdings."""
+    sym = (ticker or "").upper()
+    if not sym:
+        return False
+    portfolios = config.get("portfolios") or {}
+    if isinstance(portfolios, dict):
+        for holdings in portfolios.values():
+            if not isinstance(holdings, list):
+                continue
+            for h in holdings:
+                ht = (h.get("ticker") if isinstance(h, dict) else str(h)) or ""
+                if str(ht).upper() == sym:
+                    return True
+    legacy = config.get("portfolio") or []
+    if isinstance(legacy, list):
+        for h in legacy:
+            ht = (h.get("ticker") if isinstance(h, dict) else str(h)) or ""
+            if str(ht).upper() == sym:
+                return True
+    return False
+
+
 def _returns_over_periods(close: pd.Series, periods_days: dict) -> dict:
     """Compute % return from last date over each period. {label: pct_return}."""
     if close is None or close.empty or pd is None:
@@ -481,6 +504,43 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         response["post_earnings_transition"] = pet
     except Exception:
         response["post_earnings_transition"] = None
+
+    try:
+        from signals.ticker_market_context import build_ticker_market_context
+
+        market_decisions = None
+        try:
+            from signals.cache import get_cached_dashboard
+
+            cached = get_cached_dashboard()
+            if isinstance(cached, dict):
+                market_decisions = cached.get("retail_market_decisions")
+        except Exception:
+            pass
+        if market_decisions is None:
+            try:
+                from signals.retail_market_decisions import build_retail_market_decisions
+
+                market_decisions = build_retail_market_decisions(
+                    config=config,
+                    include_p1=True,
+                )
+            except Exception:
+                market_decisions = None
+
+        response["market_context"] = build_ticker_market_context(
+            ticker,
+            sector=response.get("sector"),
+            score=signal_data.get("score") if signal_data else response.get("score"),
+            regime=signal_data.get("regime") if signal_data else response.get("regime"),
+            rsi=signal_data.get("rsi") if signal_data else response.get("rsi"),
+            earnings=response.get("earnings"),
+            is_holding=_ticker_in_portfolio(ticker, config),
+            market_decisions=market_decisions,
+            investor_summary=response.get("investor_summary"),
+        )
+    except Exception:
+        response["market_context"] = None
 
     return response
 

@@ -677,6 +677,8 @@ export interface DashboardData {
     horizons?: { short_term: string; medium_term: string; long_term: string };
   };
   as_of_date?: string;
+  /** Retail decision framework — five questions, matrix, IF/THEN */
+  retail_market_decisions?: import("@/components/dashboard/RetailMarketDecisionsPanel").RetailMarketDecisions | null;
   /** As-of timestamp + data limitation copy for retail trust */
   data_freshness?: {
     as_of_utc: string;

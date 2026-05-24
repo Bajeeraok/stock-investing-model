@@ -10,7 +10,7 @@ import type {
   PortfolioDoctorRecommendation,
 } from "@/app/page";
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
-import { formatSnapshotAge, formatSnapshotEt } from "@/lib/snapshotFreshness";
+import { formatSnapshotAge, formatSnapshotEt } from "@/lib/dashboardCache";
 import { clsx } from "clsx";
 import {
   AddTickerBar,
@@ -65,6 +65,7 @@ import {
   RetailBriefingPanel,
   RoadmapsPanel,
   MarketStatePanel,
+  RetailMarketDecisionsPanel,
   TrackRecordPanel,
   PortfolioDoctorPanel,
   BrowserPushPanel,
@@ -722,6 +723,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {data.retail_briefing && <RetailBriefingPanel data={data} onTickerClick={setSelectedTicker} />}
+              {data.retail_market_decisions && (
+                <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
+              )}
               <MarketStatePanel />
               <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-4 py-3 space-y-1">
                 <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-sky-400/90">
@@ -1257,6 +1261,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {/* Markets tab */}
           {activeTab === "markets" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {data.retail_market_decisions && (
+                <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
+              )}
               <ToggleSection id="markets-newsletter" title="Morning newsletter" icon={<Mail className="h-5 w-5" />} defaultOpen>
                 <MorningNewsletter data={data.morning_newsletter ?? undefined} />
               </ToggleSection>

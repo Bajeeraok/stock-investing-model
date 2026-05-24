@@ -35,6 +35,7 @@ export { PortfolioRiskMetricsPanel } from "./PortfolioRiskMetricsPanel";
 export { MarketReversalBanner } from "./MarketReversalBanner";
 export { MarketCatalystBoardPanel, type MarketCatalystBoard } from "./MarketCatalystBoard";
 export { MarketStatePanel, type MarketStatePayload } from "./MarketStatePanel";
+export { RetailMarketDecisionsPanel, type RetailMarketDecisions } from "./RetailMarketDecisionsPanel";
 export { PaperTradingPanel } from "./PaperTradingPanel";
 export { PaperVsBacktestDrift, type PaperVsBacktestDriftPayload } from "./PaperVsBacktestDrift";
 export { MarketScenarios } from "./MarketScenarios";

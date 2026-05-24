@@ -9,6 +9,7 @@ import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
+import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
@@ -323,6 +324,7 @@ export interface TickerDetail {
   };
   /** Rolling correlation vs GLD / UUP / VIX — macro sensitivity badges */
   cross_asset?: { badges: string[]; correlations?: Record<string, number | null> } | null;
+  market_context?: TickerMarketContext | null;
   investor_summary?: InvestorDecisionSummary | null;
   /** PE/EPS/FMP data are latest vendor snapshot — not point-in-time historical fundamentals. */
   fundamentals_snapshot?: {
@@ -725,6 +727,8 @@ export function TickerDetailModal({
                   <p className="text-xs text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
                 </section>
               )}
+
+              {detail.market_context && <TickerMarketContextCard data={detail.market_context} />}
 
               {/* CTA: jump to Roadmaps tab for full buy/sell tables */}
               {detail.investor_summary?.trade_roadmap && (

@@ -53,6 +53,13 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
 
     macro_regime = None
     global_regime = None
+    macro_regime_bundle = None
+    market_regime = None
+    portfolio_doctor_v2 = None
+    retail_briefing = None
+    avg_portfolio_score = None
+    per_holding: list[dict] = []
+    dash: dict | None = None
     next_day: list[dict] = []
     typical_move: dict | None = None
 
@@ -63,8 +70,15 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
         if isinstance(dash, dict):
             macro_regime = dash.get("macro_regime")
             global_regime = dash.get("global_market_regime")
+            macro_regime_bundle = dash.get("macro_regime_bundle")
+            market_regime = dash.get("market_regime")
+            portfolio_doctor_v2 = dash.get("portfolio_doctor_v2")
+            retail_briefing = dash.get("retail_briefing")
             next_day = dash.get("next_day_outlook") or []
             typical_move = dash.get("typical_move")
+            port = dash.get("portfolio") or {}
+            per_holding = port.get("per_holding") or []
+            avg_portfolio_score = port.get("avg_score")
     except Exception as e:
         logger.debug("market_state dashboard cache: %s", e)
 
@@ -94,6 +108,25 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
     except Exception:
         pass
 
+    retail_decisions = None
+    try:
+        from signals.retail_market_decisions import build_retail_market_decisions
+
+        retail_decisions = build_retail_market_decisions(
+            config=config,
+            macro_regime=macro_regime,
+            macro_regime_bundle=macro_regime_bundle,
+            market_regime=market_regime,
+            market_catalysts=catalysts,
+            portfolio_doctor_v2=portfolio_doctor_v2,
+            retail_briefing=retail_briefing,
+            per_holding=per_holding,
+            avg_portfolio_score=avg_portfolio_score,
+            flip_stats=flip_stats,
+        )
+    except Exception as e:
+        logger.debug("retail_market_decisions: %s", e)
+
     ms_cfg = (config.get("market_state") or {}) if config else {}
     polling_ms = int(ms_cfg.get("intraday_poll_ms") or 300000)
 
@@ -103,41 +136,13 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
     is_premarket = is_weekday and ((hour >= 4 and hour < 9) or (hour == 9 and minute < 30))
     is_rth = is_weekday and ((hour == 9 and minute >= 30) or (10 <= hour < 16) or (hour == 16 and minute == 0))
 
-    flip_stats = None
-    try:
-        from signals.market_flip_stats import load_market_flip_stats
-
-        flip_stats = load_market_flip_stats()
-    except Exception:
-        pass
-
-    retail_decisions = None
-    try:
-        from signals.retail_market_decisions import build_retail_market_decisions
-
-        avg_score = None
-        ph = (premarket or {}).get("portfolio") if isinstance(premarket, dict) else None
-        if not ph and isinstance(dash, dict):
-            ph = (dash.get("portfolio") or {}).get("per_holding")
-        report_ph = per_holding if "per_holding" in dir() else None
-        retail_decisions = build_retail_market_decisions(
-            macro_regime=macro_regime,
-            macro_regime_bundle=macro_bundle if "macro_bundle" in dir() else None,
-            market_regime=market_regime if "market_regime" in dir() else None,
-            market_catalysts=catalysts,
-            portfolio_doctor_v2=portfolio_doctor if "portfolio_doctor" in dir() else None,
-            retail_briefing=retail_briefing if "retail_briefing" in dir() else None,
-            flip_stats=flip_stats,
-        )
-    except Exception as e:
-        logger.debug("retail_market_decisions: %s", e)
-
     return {
         "as_of_et": now.isoformat(),
         "macro_regime": macro_regime,
         "global_market_regime": global_regime,
         "premarket": premarket,
         "market_catalysts": catalysts,
+        "retail_market_decisions": retail_decisions,
         "next_day_outlook": next_day,
         "typical_move": typical_move,
         "market_flip_stats": flip_stats,

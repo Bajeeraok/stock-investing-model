@@ -440,8 +440,57 @@ def _portfolio_risk_block(
     }
 
 
+def _breadth_panel(market_regime: dict | None, breadth: dict) -> dict[str, Any]:
+    """Participation proxy until constituent % above MA50/200 is available."""
+    mr = market_regime or {}
+    rsp_trend = mr.get("rsp_spy_trend") or "Flat"
+    return {
+        "proxy": "RSP/SPY equal-weight vs cap-weight",
+        "market_breadth": breadth.get("market_breadth"),
+        "rsp_spy_trend": rsp_trend,
+        "participation_narrow": breadth.get("participation_narrow"),
+        "plain_english": breadth.get("plain_english"),
+        "data_note": "Full % above MA50/200 requires constituent feed — using RS proxy today.",
+    }
+
+
+def _personal_earnings_calendar(portfolio_doctor: dict | None) -> dict[str, Any] | None:
+    pd = portfolio_doctor or {}
+    earnings = pd.get("earnings_calendar") or {}
+    items = earnings.get("items") or []
+    if not items:
+        return None
+    rules: list[dict[str, Any]] = []
+    for item in items[:8]:
+        t = item.get("ticker")
+        d = item.get("days_until")
+        if t is None or d is None:
+            continue
+        try:
+            di = int(d)
+        except (TypeError, ValueError):
+            continue
+        if di < 0 or di > 14:
+            continue
+        rule = f"{t} in {di}d"
+        if di <= 1:
+            action = "Trim 15–20% before close prior day if holding."
+        elif di <= 5:
+            action = "Reduce size into report; no new buys."
+        else:
+            action = "On calendar — plan trim if extended."
+        rules.append({"ticker": t, "days_until": di, "action": action})
+    if not rules:
+        return None
+    return {
+        "items": rules,
+        "plain_english": f"{len(rules)} portfolio holding(s) report in next 2 weeks — earnings dominate risk.",
+    }
+
+
 def build_retail_market_decisions(
     *,
+    config: dict | None = None,
     macro_regime: str | None = None,
     macro_regime_bundle: dict | None = None,
     market_regime: dict | None = None,
@@ -451,9 +500,11 @@ def build_retail_market_decisions(
     per_holding: list[dict] | None = None,
     avg_portfolio_score: float | None = None,
     flip_stats: dict | None = None,
+    include_p1: bool = True,
 ) -> dict[str, Any]:
     """
     Single retail decision payload: temperature, 3×3 matrix, IF/THEN, five questions.
+    P1 adds crowd positioning, earnings pulse, triggers, sector rotation, breadth panel.
     """
     vix = None
     if macro_regime_bundle:
@@ -469,13 +520,43 @@ def build_retail_market_decisions(
     portfolio_risk = _portfolio_risk_block(portfolio_doctor_v2, retail_briefing, per_holding)
     questions = _five_questions(temperature, matrix, breadth, credit, portfolio_risk, market_catalysts)
 
-    return {
+    out: dict[str, Any] = {
         "five_questions": questions,
         "market_temperature": temperature,
         "strategy_matrix": matrix,
         "if_then_scenarios": scenarios,
         "breadth_check": breadth,
+        "breadth_panel": _breadth_panel(market_regime, breadth),
         "credit_pulse": credit,
         "portfolio_risk": portfolio_risk,
         "disclaimer": "Decision support only — conditional guidance, not a guarantee. Confirm with your plan.",
     }
+
+    if include_p1:
+        try:
+            from signals.sentiment_positioning import get_crowd_positioning
+
+            out["crowd_positioning"] = get_crowd_positioning(config)
+        except Exception:
+            out["crowd_positioning"] = None
+        try:
+            from signals.earnings_season_pulse import get_earnings_season_pulse
+
+            out["earnings_season_pulse"] = get_earnings_season_pulse(config)
+        except Exception:
+            out["earnings_season_pulse"] = None
+        try:
+            from signals.trigger_levels import build_trigger_levels
+
+            out["trigger_levels"] = build_trigger_levels()
+        except Exception:
+            out["trigger_levels"] = None
+        try:
+            from signals.sector_rotation_tilt import build_sector_rotation_tilt
+
+            out["sector_rotation"] = build_sector_rotation_tilt()
+        except Exception:
+            out["sector_rotation"] = None
+        out["personal_earnings_calendar"] = _personal_earnings_calendar(portfolio_doctor_v2)
+
+    return out

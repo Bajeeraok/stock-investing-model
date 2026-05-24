@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Info, Clock } from "lucide-react";
 import { clsx } from "clsx";
-import { formatSnapshotAge, formatSnapshotEt, snapshotAgeTone } from "@/lib/snapshotFreshness";
+import { formatSnapshotAge, formatSnapshotEt, snapshotAgeTone } from "@/lib/dashboardCache";
 
 export type DataFreshness = {
   as_of_utc: string;

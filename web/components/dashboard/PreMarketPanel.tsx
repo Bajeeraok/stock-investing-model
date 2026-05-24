@@ -36,6 +36,12 @@ export interface PreMarketData {
   minutes_to_open: number;
   message?: string;
   rotation_risk_premarket?: "High" | "Medium" | "Low";
+  polling?: {
+    premarket_poll_ms?: number;
+    intraday_poll_ms?: number;
+    is_premarket_et?: boolean;
+    is_rth_et?: boolean;
+  };
   stale?: boolean;
   stale_message?: string;
   market_catalysts?: MarketCatalystBoard | null;
@@ -192,11 +198,12 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
   const [error, setError] = useState<string | "unavailable" | null>(null);
   const [lastFetch, setLastFetch] = useState<Date | null>(null);
 
-  const fetchData = useCallback(async (silent = false) => {
+  const fetchData = useCallback(async (silent = false, refresh = false) => {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const url = API_BASE ? `${API_BASE}${apiEndpoint}` : apiEndpoint;
+      const base = API_BASE ? `${API_BASE}${apiEndpoint}` : apiEndpoint;
+      const url = refresh ? `${base}${base.includes("?") ? "&" : "?"}refresh=true` : base;
       const res = await fetch(url);
       if (res.status === 503) {
         // Expected outside pre-market hours when no cached file exists — not a hard error
@@ -223,24 +230,23 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
   }, []);
 
   useEffect(() => {
-    // During pre-market: refresh every 5 min (prices moving fast)
-    // Outside pre-market: refresh every 30 min (stale check + scheduler may have run)
+    const polling = data?.polling ?? data?.market_catalysts?.polling;
     const getInterval = () => {
-      const now = new Date();
-      const h = now.getHours(), m = now.getMinutes();
-      const isPreMarket = (h >= 4 && h < 9) || (h === 9 && m < 30);
-      return isPreMarket ? 5 * 60 * 1000 : 30 * 60 * 1000;
+      if (polling?.is_rth_et && polling.intraday_poll_ms) return polling.intraday_poll_ms;
+      if (polling?.is_premarket_et && polling.premarket_poll_ms) return polling.premarket_poll_ms;
+      return 30 * 60 * 1000;
     };
+    const useRefresh = Boolean(polling?.is_rth_et);
     let timeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
       timeout = setTimeout(() => {
-        fetchData(true);
+        fetchData(true, useRefresh);
         schedule();
       }, getInterval());
     };
     schedule();
     return () => clearTimeout(timeout);
-  }, [fetchData]);
+  }, [fetchData, data?.polling, data?.market_catalysts?.polling]);
 
   const grouped = data ? Object.entries(
     data.signals.reduce<Record<string, PreMarketSignal[]>>((acc, sig) => {

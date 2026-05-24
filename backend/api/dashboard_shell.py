@@ -28,6 +28,7 @@ SHELL_KEYS: tuple[str, ...] = (
     "what_changed",
     "earnings_risk_count",
     "retail_briefing",
+    "retail_market_decisions",
     "morning_newsletter",
     "market_regime",
     "global_market_regime",
