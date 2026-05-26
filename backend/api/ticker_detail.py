@@ -545,6 +545,18 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     inv = response.get("investor_summary")
     if isinstance(inv, dict):
         try:
+            from signals.retail_action_payload import enrich_investor_summary_retail_action
+
+            ctx = response.get("market_context") if isinstance(response.get("market_context"), dict) else {}
+            enrich_investor_summary_retail_action(
+                inv,
+                response.get("current_price"),
+                ticker=ticker,
+                market_regime_bull_pct=ctx.get("hmm_bull_pct"),
+            )
+        except Exception:
+            pass
+        try:
             from signals.horizon_playbooks import build_horizon_playbooks
 
             playbooks = build_horizon_playbooks(
@@ -708,6 +720,8 @@ def _build_investor_summary(
     regime_bull_pct = 50.0
     pattern_score = 50.0
     regime_hmm_label: str | None = None
+    regime_transition_pct: float | None = None
+    regime_transition_days_estimate: int | None = None
     model_confidence_pct_summary: int | None = None
     if response.get("score_breakdown") and response["score_breakdown"].get("composite") is not None:
         pattern_score = float(response["score_breakdown"]["composite"])
@@ -729,6 +743,19 @@ def _build_investor_summary(
             lt_ml_prob = float(mh.get("long", {}).get("prob") or 0.25) * 100.0
             hmm = conf_snapshot.get("hmm") or {}
             regime_bull_pct = float(hmm.get("bull_probability") or 0.5) * 100.0
+            try:
+                regime_transition_pct = round(float(hmm.get("transition_probability") or 0) * 100.0, 1)
+            except (TypeError, ValueError):
+                regime_transition_pct = None
+            pf = conf_snapshot.get("pre_flight") or {}
+            rt = pf.get("regime_transition") if isinstance(pf.get("regime_transition"), dict) else {}
+            tb = pf.get("transition_bonus") if isinstance(pf.get("transition_bonus"), dict) else {}
+            regime_transition_days_estimate = rt.get("days_estimate") or tb.get("days_to_confirm")
+            if regime_transition_days_estimate is not None:
+                try:
+                    regime_transition_days_estimate = int(round(float(regime_transition_days_estimate)))
+                except (TypeError, ValueError):
+                    regime_transition_days_estimate = None
             if conf_snapshot.get("confidence") is not None:
                 model_confidence_pct_summary = int(round(float(conf_snapshot["confidence"]) * 100))
             b = conf_snapshot.get("breakdown") or {}
@@ -1092,6 +1119,8 @@ def _build_investor_summary(
         "pattern_score": round(pattern_score, 1) if pattern_score is not None else None,
         "regime_bull_pct": round(regime_bull_pct, 1),
         "regime_hmm_label": regime_hmm_label,
+        "regime_transition_pct": regime_transition_pct,
+        "regime_transition_days_estimate": regime_transition_days_estimate,
         "model_confidence_pct": model_confidence_pct_summary,
     }
 
@@ -1223,7 +1252,7 @@ def _build_investor_summary(
     try:
         from signals.retail_action_payload import enrich_investor_summary_retail_action
 
-        enrich_investor_summary_retail_action(out, current_price)
+        enrich_investor_summary_retail_action(out, current_price, ticker=ticker)
     except Exception:
         pass
 

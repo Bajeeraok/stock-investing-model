@@ -9,6 +9,7 @@ export type RetailVisualStatus =
   | "bull"
   | "stormy"
   | "hot"
+  | "marginal"
   | "neutral"
   | "balanced"
   | "tight"
@@ -79,6 +80,12 @@ export const RETAIL_STATUS_STYLES: Record<string, RetailStatusStyle> = {
     bg: "bg-sky-950/40",
     text: "text-sky-400",
     border: "border-sky-800",
+  },
+  marginal: {
+    bg: "bg-amber-950/35",
+    text: "text-amber-300",
+    border: "border-amber-700/60",
+    badge: "bg-amber-500/15 text-amber-200 border-amber-500/45",
   },
 };
 

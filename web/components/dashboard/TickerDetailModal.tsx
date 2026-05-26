@@ -9,10 +9,13 @@ import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
+import { HorizonPlaybooksPanel } from "./HorizonPlaybooksPanel";
+import type { HorizonPlaybooksBundle } from "./HorizonPlaybookCard";
 import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
+import { getPositionIntent, type PositionIntent } from "@/lib/positionIntent";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -352,6 +355,11 @@ export function TickerDetailModal({
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
   const [modalTab, setModalTab] = useState<"overview" | "roadmaps" | "details">("overview");
   const [catalystExpanded, setCatalystExpanded] = useState(false);
+  const [positionIntent, setPositionIntent] = useState<PositionIntent | null>(null);
+
+  useEffect(() => {
+    setPositionIntent(getPositionIntent(ticker));
+  }, [ticker]);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -528,6 +536,30 @@ export function TickerDetailModal({
             gates={tradingGates}
             insideBuyBand={buyBandContext.insideBuyBand}
             rsi={buyBandContext.rsi}
+            coherentStory={detail.investor_summary.retail_action?.coherent_story}
+            nextTrigger={detail.investor_summary.retail_action?.next_trigger}
+          />
+        )}
+
+        {detail && !loading && detail.investor_summary?.horizon_playbooks && (
+          <HorizonPlaybooksPanel
+            ticker={detail.ticker}
+            playbooks={detail.investor_summary.horizon_playbooks as HorizonPlaybooksBundle}
+            intent={positionIntent}
+            onIntentChange={setPositionIntent}
+          />
+        )}
+
+        {detail && !loading && !detail.investor_summary?.horizon_playbooks && detail.investor_summary?.swing_setup?.active && (
+          <HorizonPlaybooksPanel
+            ticker={detail.ticker}
+            playbooks={{
+              default_primary: "short",
+              intent_map: { trade: "short", invest: "long", unset: "short" },
+              swing: detail.investor_summary.swing_setup,
+            }}
+            intent={positionIntent}
+            onIntentChange={setPositionIntent}
           />
         )}
 
@@ -612,7 +644,7 @@ export function TickerDetailModal({
               />
             </div>
             <div className="mt-2 max-w-md">
-              <PositionIntentChip ticker={ticker} compact />
+              <PositionIntentChip ticker={ticker} compact intent={positionIntent} onChange={setPositionIntent} />
             </div>
           </div>
         )}
@@ -719,6 +751,7 @@ export function TickerDetailModal({
                   onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
                   priceHistory={detail.price_history}
                   ticker={detail.ticker}
+                  hideTradingGates={Boolean(detail.investor_summary && tradingGates.length > 0)}
                 />
               ) : (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">

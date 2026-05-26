@@ -52,3 +52,12 @@ export function intentGateHint(intent: PositionIntent | null): string {
 export function intentLabel(intent: PositionIntent): string {
   return intent === "trade" ? "Trade" : "Invest";
 }
+
+export type PrimaryHorizon = "short" | "medium" | "long";
+
+/** P3: intent chip drives which playbook tab opens first. */
+export function primaryHorizonFromIntent(intent: PositionIntent | null): PrimaryHorizon {
+  if (intent === "invest") return "long";
+  if (intent === "trade") return "short";
+  return "short";
+}
