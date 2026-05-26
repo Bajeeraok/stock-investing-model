@@ -210,6 +210,13 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
           </div>
         )}
 
+        {data.hold_vs_trade?.answer && (
+          <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-3 py-2">
+            <p className="text-xs font-medium text-sky-300/90">{data.hold_vs_trade.headline ?? "Hold vs take profits?"}</p>
+            <p className="text-sm text-slate-300 mt-1 leading-snug">{data.hold_vs_trade.answer}</p>
+          </div>
+        )}
+
         {/* Five questions */}
         {questions.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

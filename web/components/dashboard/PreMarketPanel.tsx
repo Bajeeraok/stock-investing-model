@@ -23,6 +23,12 @@ export interface PreMarketSignal {
   note?: string;
 }
 
+export interface PreMarketMoverDetail {
+  ticker: string;
+  pct: number;
+  why?: string;
+}
+
 export interface PreMarketData {
   timestamp: string;
   composite_score: number;
@@ -36,6 +42,9 @@ export interface PreMarketData {
   minutes_to_open: number;
   message?: string;
   rotation_risk_premarket?: "High" | "Medium" | "Low";
+  /** Enriched by market-state API: movers with one-line catalyst context */
+  tech_movers_detail?: PreMarketMoverDetail[];
+  es_pct?: number;
   polling?: {
     premarket_poll_ms?: number;
     intraday_poll_ms?: number;

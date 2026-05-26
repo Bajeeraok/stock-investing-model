@@ -21,12 +21,17 @@ type TypicalRow = {
   high_vol_pct?: number | null;
 };
 
+/** `/api/market-state` enriches base pre-market payload with mover catalyst lines. */
+type MarketStatePremarket = PreMarketData & {
+  tech_movers_detail?: Array<{ ticker: string; pct: number; why?: string }>;
+};
+
 export interface MarketStatePayload {
   as_of_et?: string;
   macro_regime?: string | null;
   global_market_regime?: string | null;
   retail_market_decisions?: import("./RetailMarketDecisionsPanel").RetailMarketDecisions | null;
-  premarket?: PreMarketData | null;
+  premarket?: MarketStatePremarket | null;
   market_catalysts?: MarketCatalystBoard | null;
   next_day_outlook?: OutlookRow[];
   next_day_summary?: string | null;

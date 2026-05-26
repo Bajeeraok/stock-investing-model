@@ -43,7 +43,13 @@ export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";
 export { ForwardTracking } from "./ForwardTracking";
 export { ModelHealthStrip, type ModelHealthData } from "./ModelHealthStrip";
 export { MorningNewsletter, type MorningNewsletterData } from "./MorningNewsletter";
-export { PreMarketPanel, PreMarketStrip, type PreMarketData, type PreMarketSignal } from "./PreMarketPanel";
+export {
+  PreMarketPanel,
+  PreMarketStrip,
+  type PreMarketData,
+  type PreMarketMoverDetail,
+  type PreMarketSignal,
+} from "./PreMarketPanel";
 export {
   RiskDashboard,
   type PositionSizingData,
