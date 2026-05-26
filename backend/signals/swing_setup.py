@@ -62,10 +62,24 @@ def build_swing_setup(
     if target2 is not None and target1 is not None and target2 <= target1:
         target2 = round(target1 * 1.06, 2)
 
-    if el is None or eh is None or stop is None or target1 is None or current_price is None:
+    cp = _safe_float(current_price)
+    if stop is None or target1 is None or cp is None:
         return None
 
-    cp = float(current_price)
+    # Fallback band when spot is extended above ST entry (WATCH) — still show wait/trade plan
+    if el is None or eh is None:
+        tr = investor_out.get("trader_roadmap") or {}
+        tr_short = tr.get("short") or {}
+        tr_ez = tr_short.get("entry_zone") or {}
+        el = _safe_float(tr_ez.get("low"))
+        eh = _safe_float(tr_ez.get("high"))
+    if (el is None or eh is None) and stop < cp:
+        el = round(stop, 2)
+        eh = round(min(cp * 0.995, (stop + cp) / 2.0), 2)
+    if el is None or eh is None:
+        return None
+
+    cp = float(cp)
     retail = investor_out.get("retail_action") or {}
     gates = retail.get("gates") or []
     primary_ids = retail.get("primary_gate_ids") or ["valuation", "regime", "momentum", "ml"]

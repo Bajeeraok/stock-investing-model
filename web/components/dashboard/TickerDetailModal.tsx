@@ -496,6 +496,23 @@ export function TickerDetailModal({
     return { insideBuyBand: cp >= low && cp <= high, rsi: inv?.rsi ?? null };
   }, [detail]);
 
+  const horizonPlaybooksBundle = useMemo((): HorizonPlaybooksBundle | null => {
+    const inv = detail?.investor_summary;
+    if (!inv) return null;
+    const bundle = inv.horizon_playbooks as HorizonPlaybooksBundle | null | undefined;
+    if (bundle && (bundle.swing?.active || bundle.medium?.active || bundle.long?.active)) {
+      return bundle;
+    }
+    if (inv.swing_setup?.active) {
+      return {
+        default_primary: "short",
+        intent_map: { trade: "short", invest: "long", unset: "short" },
+        swing: inv.swing_setup,
+      };
+    }
+    return null;
+  }, [detail]);
+
   /** Portal + high z-index: avoids clipping under sticky dashboard header (also z-50) and parent overflow on mobile. */
   if (typeof window === "undefined") return null;
 
@@ -541,23 +558,10 @@ export function TickerDetailModal({
           />
         )}
 
-        {detail && !loading && detail.investor_summary?.horizon_playbooks && (
+        {detail && !loading && horizonPlaybooksBundle && (
           <HorizonPlaybooksPanel
             ticker={detail.ticker}
-            playbooks={detail.investor_summary.horizon_playbooks as HorizonPlaybooksBundle}
-            intent={positionIntent}
-            onIntentChange={setPositionIntent}
-          />
-        )}
-
-        {detail && !loading && !detail.investor_summary?.horizon_playbooks && detail.investor_summary?.swing_setup?.active && (
-          <HorizonPlaybooksPanel
-            ticker={detail.ticker}
-            playbooks={{
-              default_primary: "short",
-              intent_map: { trade: "short", invest: "long", unset: "short" },
-              swing: detail.investor_summary.swing_setup,
-            }}
+            playbooks={horizonPlaybooksBundle}
             intent={positionIntent}
             onIntentChange={setPositionIntent}
           />
