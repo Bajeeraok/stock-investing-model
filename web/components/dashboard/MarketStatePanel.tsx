@@ -51,7 +51,7 @@ function pollIntervalMs(polling: MarketStatePayload["polling"]): number {
   return 30 * 60 * 1000;
 }
 
-export function MarketStatePanel() {
+export function MarketStatePanel({ compactHeader = false }: { compactHeader?: boolean }) {
   const [state, setState] = useState<MarketStatePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,9 +111,9 @@ export function MarketStatePanel() {
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <Globe className="h-4 w-4 text-violet-400 shrink-0" />
           <span className="text-sm font-semibold text-slate-200">Market state</span>
-          {unified?.coexistence_note ? (
+          {!compactHeader && unified?.coexistence_note ? (
             <span className="text-[11px] text-slate-500 leading-snug max-w-xl">{unified.coexistence_note}</span>
-          ) : (
+          ) : !compactHeader ? (
             (state.macro_regime || state.global_market_regime || unified?.regime_label) && (
               <span className="text-xs text-slate-500">
                 {state.macro_regime && <>Macro overlay (ST): {state.macro_regime}</>}
@@ -129,7 +129,9 @@ export function MarketStatePanel() {
                 )}
               </span>
             )
-          )}
+          ) : compactHeader ? (
+            <span className="text-[11px] text-slate-600">Session tape — pre-market, catalysts, next-day levels</span>
+          ) : null}
         </div>
         <button
           type="button"

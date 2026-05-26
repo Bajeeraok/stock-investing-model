@@ -66,6 +66,14 @@ export interface RetailMarketDecisions {
   crowd_positioning?: {
     fear_greed?: { score?: number; rating?: string; source?: string } | null;
     aaii?: { bull_pct?: number; bear_pct?: number; note?: string } | null;
+    spy_put_call?: {
+      ratio?: number;
+      pc_oi_ratio?: number;
+      plain_english?: string;
+      source?: string;
+      signal?: string;
+    } | null;
+    contrarian?: { plain_english?: string; signal?: string } | null;
     plain_english?: string;
   } | null;
   earnings_season_pulse?: {
@@ -121,10 +129,25 @@ function ActionChip({ action }: { action?: string }) {
   );
 }
 
-export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisions | null | undefined }) {
+export function RetailMarketDecisionsPanel({
+  data,
+  macroBackdrop,
+}: {
+  data: RetailMarketDecisions | null | undefined;
+  /** Yields, calendar, seasonality — detail only; headline lives in unified hero above. */
+  macroBackdrop?: {
+    bullets?: string[];
+    disclaimer?: string;
+  } | null;
+}) {
   const [contextExpanded, setContextExpanded] = useState(false);
+  const [macroExpanded, setMacroExpanded] = useState(false);
 
   if (!data) return null;
+
+  const macroBullets = (macroBackdrop?.bullets ?? []).filter(
+    (b) => !b.startsWith("Unified read:") && !b.startsWith("Long-term SPY regime:"),
+  );
 
   const ctx = data.market_context;
   const temp = data.market_temperature;
@@ -396,7 +419,18 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
               )}
               {crowd?.fear_greed?.score != null && (
                 <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2 text-slate-300">
-                  Fear & Greed {crowd.fear_greed.score} — {crowd.plain_english}
+                  <span className="text-violet-300/90 font-medium">Sentiment: </span>
+                  Fear & Greed {crowd.fear_greed.score}
+                  {crowd.fear_greed.rating ? ` (${crowd.fear_greed.rating})` : ""}
+                  {crowd.contrarian?.plain_english && (
+                    <span className="text-slate-400"> — {crowd.contrarian.plain_english}</span>
+                  )}
+                </div>
+              )}
+              {crowd?.spy_put_call?.ratio != null && (
+                <div className="rounded-lg border border-violet-500/20 bg-violet-950/10 px-3 py-2 text-slate-300">
+                  <span className="text-violet-300/90 font-medium">Positioning: </span>
+                  {crowd.spy_put_call.plain_english ?? `Put/Call ${crowd.spy_put_call.ratio}`}
                 </div>
               )}
               {earningsPulse?.phase && (
@@ -421,7 +455,7 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
                     {breadth.data_note && <span className="block text-[10px] text-slate-600 mt-1">{breadth.data_note}</span>}
                   </div>
                 )}
-                {crowd?.plain_english && (
+                {crowd && (crowd.fear_greed?.score != null || crowd.spy_put_call?.ratio != null) && (
                   <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2">
                     <p className="text-xs font-medium text-slate-400 flex items-center gap-1">
                       <Users className="h-3.5 w-3.5" /> Crowd positioning
@@ -431,8 +465,24 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
                         Fear & Greed {crowd.fear_greed.score} ({crowd.fear_greed.rating})
                       </p>
                     )}
-                    <p className="text-xs text-slate-400 mt-0.5">{crowd.plain_english}</p>
+                    {crowd.spy_put_call?.ratio != null && (
+                      <p className="text-sm text-slate-200 mt-1">
+                        SPY P/C {crowd.spy_put_call.ratio}
+                        {crowd.spy_put_call.pc_oi_ratio != null && (
+                          <span className="text-slate-500"> · OI P/C {crowd.spy_put_call.pc_oi_ratio}</span>
+                        )}
+                      </p>
+                    )}
+                    {crowd.spy_put_call?.plain_english && (
+                      <p className="text-xs text-slate-400 mt-0.5">{crowd.spy_put_call.plain_english}</p>
+                    )}
+                    {crowd.contrarian?.plain_english && (
+                      <p className="text-xs text-slate-400 mt-0.5">{crowd.contrarian.plain_english}</p>
+                    )}
                     {crowd.aaii?.note && <p className="text-[10px] text-slate-500 mt-1">{crowd.aaii.note}</p>}
+                    {crowd.spy_put_call?.source && (
+                      <p className="text-[10px] text-slate-600 mt-1">{crowd.spy_put_call.source}</p>
+                    )}
                   </div>
                 )}
                 {earningsPulse?.plain_english && (
@@ -477,6 +527,31 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
                   </div>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {macroBullets.length > 0 && (
+          <div className="border-t border-slate-700/50 pt-3">
+            <button
+              type="button"
+              onClick={() => setMacroExpanded((o) => !o)}
+              className="text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-300 flex items-center gap-1"
+            >
+              Macro backdrop detail
+              <span className="text-[10px] font-normal normal-case text-slate-600">
+                ({macroBullets.length} items — yields, calendar, seasonality)
+              </span>
+            </button>
+            {macroExpanded && (
+              <ul className="mt-2 list-disc list-inside text-xs text-slate-400 space-y-1 max-w-3xl">
+                {macroBullets.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            )}
+            {macroExpanded && macroBackdrop?.disclaimer && (
+              <p className="text-[10px] text-slate-600 leading-snug mt-2">{macroBackdrop.disclaimer}</p>
             )}
           </div>
         )}

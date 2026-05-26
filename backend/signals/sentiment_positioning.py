@@ -16,6 +16,105 @@ CACHE_KEY = "sentiment:fear_greed"
 TTL_SECONDS = 6 * 3600
 
 
+CNN_FNG_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
+CACHE_KEY = "sentiment:fear_greed"
+SPY_PC_CACHE_KEY = "sentiment:spy_put_call"
+TTL_SECONDS = 6 * 3600
+SPY_PC_TTL_SECONDS = 3600
+
+
+def _put_call_from_config(config: dict | None) -> dict[str, Any] | None:
+    cfg = ((config or {}).get("retail") or {}).get("sentiment") or {}
+    raw = cfg.get("put_call_ratio")
+    if raw is None:
+        return None
+    try:
+        ratio = round(float(raw), 3)
+    except (TypeError, ValueError):
+        return None
+    read = _positioning_read(ratio)
+    return {
+        "ratio": ratio,
+        "pc_oi_ratio": None,
+        "source": "config override (update from CBOE or broker aggregate)",
+        **read,
+    }
+
+
+def _positioning_read(ratio: float) -> dict[str, str]:
+    """Retail plain-English for equity put/call ratio (volume-based)."""
+    if ratio >= 1.2:
+        return {
+            "signal": "ELEVATED_FEAR",
+            "plain_english": (
+                f"Put/Call {ratio:.2f} — elevated hedging; often contrarian buy zone if bull regime intact."
+            ),
+        }
+    if ratio >= 0.8:
+        return {
+            "signal": "MODERATE_HEDGE",
+            "plain_english": (
+                f"Put/Call {ratio:.2f} — moderate hedging, not extreme fear."
+            ),
+        }
+    if ratio >= 0.65:
+        return {
+            "signal": "NEUTRAL",
+            "plain_english": (
+                f"Put/Call {ratio:.2f} — near balanced; positioning not a major tailwind or headwind."
+            ),
+        }
+    return {
+        "signal": "COMPLACENCY",
+        "plain_english": (
+            f"Put/Call {ratio:.2f} — call-heavy; crowd less hedged — trim extended winners if greedy."
+        ),
+    }
+
+
+def _fetch_spy_put_call_yfinance() -> dict[str, Any] | None:
+    """Nearest-expiry SPY option volume P/C — free proxy for market positioning."""
+    try:
+        from signals.options_signals import fetch_options_signals
+
+        opts = fetch_options_signals("SPY")
+        if opts.get("error"):
+            logger.debug("SPY put/call: %s", opts.get("error"))
+            return None
+        ratio = opts.get("pc_ratio")
+        if ratio is None:
+            return None
+        ratio_f = round(float(ratio), 3)
+        read = _positioning_read(ratio_f)
+        out: dict[str, Any] = {
+            "ratio": ratio_f,
+            "pc_oi_ratio": opts.get("pc_oi_ratio"),
+            "source": "SPY options (yfinance, nearest expiry)",
+            **read,
+        }
+        if opts.get("options_label"):
+            out["options_label"] = opts["options_label"]
+        return out
+    except Exception as e:
+        logger.debug("SPY put/call fetch failed: %s", e)
+        return None
+
+
+def _spy_put_call_positioning(config: dict | None) -> dict[str, Any] | None:
+    manual = _put_call_from_config(config)
+    if manual:
+        return manual
+    from signals.cache import get_cached, set_cached
+
+    cached = get_cached(SPY_PC_CACHE_KEY)
+    if isinstance(cached, dict) and cached.get("ratio") is not None:
+        return cached
+    live = _fetch_spy_put_call_yfinance()
+    if live:
+        set_cached(SPY_PC_CACHE_KEY, live, SPY_PC_TTL_SECONDS)
+    return live
+
+
 def _fetch_cnn_fear_greed() -> dict[str, Any] | None:
     try:
         import urllib.request
@@ -126,7 +225,7 @@ def _aaii_from_config(config: dict | None) -> dict[str, Any] | None:
 
 
 def get_crowd_positioning(config: dict | None = None) -> dict[str, Any]:
-    """Fear & Greed index + optional AAII config overrides."""
+    """Fear & Greed index, SPY put/call positioning, optional AAII config overrides."""
     from signals.cache import get_cached, set_cached
 
     cached = get_cached(CACHE_KEY)
@@ -140,10 +239,18 @@ def get_crowd_positioning(config: dict | None = None) -> dict[str, Any]:
     rating = fng.get("rating") if fng else None
     contrarian = _contrarian_read(score, rating)
     aaii = _aaii_from_config(config)
+    spy_put_call = _spy_put_call_positioning(config)
+
+    positioning_parts: list[str] = []
+    if spy_put_call and spy_put_call.get("plain_english"):
+        positioning_parts.append(spy_put_call["plain_english"])
+    if contrarian.get("plain_english"):
+        positioning_parts.append(contrarian["plain_english"])
 
     return {
         "fear_greed": fng,
         "aaii": aaii,
+        "spy_put_call": spy_put_call,
         "contrarian": contrarian,
-        "plain_english": contrarian.get("plain_english"),
+        "plain_english": " ".join(positioning_parts) if positioning_parts else contrarian.get("plain_english"),
     }

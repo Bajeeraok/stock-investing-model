@@ -237,17 +237,26 @@ def build_market_forecast_brief(
     reconciled = _headline_from_quadrant(quadrant, macro_regime)
     if reconciled:
         bias, headline = reconciled
+    # When unified retail context is present, skip duplicate regime copy in bullets.
     if market_context and market_context.get("primary_message"):
         ctx_line = market_context["primary_message"]
         if market_context.get("explanation"):
             ctx_line += f" — {market_context['explanation']}"
-        bullets.insert(0, f"Unified read: {ctx_line}")
-    if global_market_regime and quadrant:
+        if not reconciled:
+            bullets.insert(0, f"Unified read: {ctx_line}")
+    if global_market_regime and quadrant and not reconciled:
         bullets.insert(
             1 if bullets else 0,
             f"Long-term SPY regime: {str(global_market_regime).replace('_', ' ')} "
             f"(reconciled with short-term {macro_regime or 'sentiment'} overlay).",
         )
+
+    if market_context:
+        bullets = [
+            b for b in bullets
+            if not b.startswith("Unified read:")
+            and not b.startswith("Long-term SPY regime:")
+        ]
 
     if not bullets:
         bullets.append(

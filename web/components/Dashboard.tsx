@@ -712,7 +712,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   post_earnings: i.post_earnings,
                 }))
           }
-          macroHeadline={data.macro_analog?.one_liner ?? data.market_forecast?.headline ?? null}
+          macroHeadline={
+            data.retail_market_decisions?.market_context?.primary_message
+            ?? data.macro_analog?.one_liner
+            ?? data.market_forecast?.headline
+            ?? null
+          }
           onTickerClick={setSelectedTicker}
           onViewAll={() => setActiveTab("signals")}
         />
@@ -747,7 +752,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 />
               )}
               {data.retail_market_decisions && (
-                <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
+                <RetailMarketDecisionsPanel
+                  data={data.retail_market_decisions}
+                  macroBackdrop={
+                    data.market_forecast
+                      ? { bullets: data.market_forecast.bullets, disclaimer: data.market_forecast.disclaimer }
+                      : null
+                  }
+                />
               )}
               {overviewAlertCount != null && overviewAlertCount > 0 && (
                 <ToggleSection
@@ -760,7 +772,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <AlertsPanel onTickerClick={setSelectedTicker} />
                 </ToggleSection>
               )}
-              <MarketStatePanel />
+              <MarketStatePanel compactHeader={Boolean(data.retail_market_decisions?.market_context)} />
               <ModelHealthStrip
                 model_health={data.model_health}
                 summary_by_signal={forwardTracking?.summary_by_signal}
@@ -789,20 +801,15 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   )}
                 </div>
               )}
-              {data.market_forecast && (
+              {!data.retail_market_decisions?.market_context && data.market_forecast && (
                 <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-4 py-3 space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">Market analysis — near-term backdrop</h3>
-                  {marketQuadrant && (
-                    <p className="text-[11px] text-slate-500">
-                      Aligned with unified context above ({String(marketQuadrant).replace(/_/g, " ")}).
-                    </p>
-                  )}
                   <p
                     className={clsx(
                       "text-sm font-medium",
-                      data.market_forecast.bias === "cautious" && marketQuadrant !== "best_buy_zone" && "text-amber-200",
-                      (data.market_forecast.bias === "constructive" || marketQuadrant === "best_buy_zone") && "text-emerald-200",
-                      data.market_forecast.bias === "neutral" && marketQuadrant !== "best_buy_zone" && "text-slate-200",
+                      data.market_forecast.bias === "cautious" && "text-amber-200",
+                      data.market_forecast.bias === "constructive" && "text-emerald-200",
+                      data.market_forecast.bias === "neutral" && "text-slate-200",
                     )}
                   >
                     {data.market_forecast.headline}
