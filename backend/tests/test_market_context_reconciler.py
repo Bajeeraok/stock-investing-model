@@ -17,6 +17,20 @@ def test_risk_off_bull_is_best_buy_not_reduce():
     assert ctx["grid"]["short"] == "BUY"
     assert ctx["grid"]["medium"] == "BUY"
     assert ctx["is_contradictory"] is False
+    assert "not a contradiction" in (ctx.get("coexistence_note") or "").lower() or "fear" in (ctx.get("coexistence_note") or "").lower()
+
+
+def test_retail_risk_off_warm_uses_cool_overlay():
+    from signals.retail_market_decisions import build_retail_market_decisions
+
+    out = build_retail_market_decisions(
+        macro_regime="Risk-Off",
+        global_market_regime="STRONG_BULL",
+        macro_regime_bundle={"factors": {"vix": 16.7}, "hmm_bear_pct_used": 13},
+        include_p1=False,
+    )
+    assert out["market_temperature"]["level"] == "cool"
+    assert out["strategy_matrix"]["grid"]["short"] == "BUY"
 
 
 def test_hot_bull_is_trim_not_buy():

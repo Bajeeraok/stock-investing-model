@@ -54,6 +54,13 @@ def _market_temperature(
     macro_overlay = None
     if "risk-off" in mr:
         macro_overlay = "Macro overlay: Risk-Off (yields/VIX/credit caution) — see unified context below."
+        # Fear overlay on tape — not the same as bear regime (reconciler handles ST/MT/LT actions).
+        if level in ("warm", "warm_hot") and vx is not None and vx < 22:
+            label, level = "COOL", "cool"
+            interp = (
+                "Short-term fear/caution (macro Risk-Off) while longer-term bull regime may stay intact. "
+                "Often a better dip-buying zone — see unified market context above."
+            )
     elif "risk-on" in mr:
         macro_overlay = "Macro overlay: Risk-On — tailwind for risk assets if regime agrees."
 

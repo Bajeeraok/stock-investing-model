@@ -44,7 +44,14 @@ export interface ScanAlert {
   signals?: Record<string, unknown>;
 }
 
-export function AlertsPanel({ onTickerClick }: { onTickerClick?: (ticker: string) => void }) {
+export function AlertsPanel({
+  onTickerClick,
+  onLoaded,
+}: {
+  onTickerClick?: (ticker: string) => void;
+  /** Called after first fetch with alert count (for conditional Overview section). */
+  onLoaded?: (count: number) => void;
+}) {
   const [alerts, setAlerts] = useState<ScanAlert[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +66,9 @@ export function AlertsPanel({ onTickerClick }: { onTickerClick?: (ticker: string
       const res = await fetch(base("/api/scanner/alerts?limit=80"));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as ScanAlert[];
-      setAlerts(Array.isArray(json) ? json : []);
+      const list = Array.isArray(json) ? json : [];
+      setAlerts(list);
+      onLoaded?.(list.length);
       setLastAt(new Date());
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed";

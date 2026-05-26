@@ -25,6 +25,7 @@ export interface MarketStatePayload {
   as_of_et?: string;
   macro_regime?: string | null;
   global_market_regime?: string | null;
+  retail_market_decisions?: import("./RetailMarketDecisionsPanel").RetailMarketDecisions | null;
   premarket?: PreMarketData | null;
   market_catalysts?: MarketCatalystBoard | null;
   next_day_outlook?: OutlookRow[];
@@ -93,23 +94,29 @@ export function MarketStatePanel() {
 
   if (!state) return null;
 
-  const premarket = state.premarket as PreMarketData | null | undefined;
+  const premarket = state.premarket;
   const catalysts = state.market_catalysts;
   const intraday = catalysts?.intraday;
+  const unified = state.retail_market_decisions?.market_context;
+  const techMoversDetail = premarket?.tech_movers_detail;
 
   return (
     <div className="rounded-xl border border-violet-500/25 bg-violet-950/15 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-violet-500/20 bg-slate-900/40">
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
           <Globe className="h-4 w-4 text-violet-400 shrink-0" />
           <span className="text-sm font-semibold text-slate-200">Market state</span>
-          {(state.macro_regime || state.global_market_regime) && (
-            <span className="text-xs text-slate-500">
-              {state.macro_regime && <>Macro overlay: {state.macro_regime}</>}
-              {state.global_market_regime && (
-                <> · SPY regime: <span className="text-emerald-400/90">{state.global_market_regime.replace(/_/g, " ")}</span></>
-              )}
-            </span>
+          {unified?.coexistence_note ? (
+            <span className="text-[11px] text-slate-500 leading-snug max-w-xl">{unified.coexistence_note}</span>
+          ) : (
+            (state.macro_regime || state.global_market_regime) && (
+              <span className="text-xs text-slate-500">
+                {state.macro_regime && <>Macro overlay: {state.macro_regime}</>}
+                {state.global_market_regime && (
+                  <> · SPY regime (LT): <span className="text-emerald-400/90">{state.global_market_regime.replace(/_/g, " ")}</span></>
+                )}
+              </span>
+            )
           )}
         </div>
         <button
@@ -125,14 +132,11 @@ export function MarketStatePanel() {
       <div className="p-4 space-y-4">
         {premarket && <PreMarketStrip data={premarket} />}
 
-        {Array.isArray((premarket as { tech_movers_detail?: { ticker: string; pct: number; why?: string }[] })?.tech_movers_detail) &&
-          (premarket as { tech_movers_detail: { ticker: string; pct: number; why?: string }[] }).tech_movers_detail.length > 0 && (
+        {Array.isArray(techMoversDetail) && techMoversDetail.length > 0 && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Pre-market movers (why)</p>
             <ul className="space-y-1 text-xs">
-              {(premarket as { tech_movers_detail: { ticker: string; pct: number; why?: string }[] }).tech_movers_detail
-                .slice(0, 6)
-                .map((m) => (
+              {techMoversDetail.slice(0, 6).map((m) => (
                   <li key={m.ticker} className="text-slate-300">
                     <span className={m.pct >= 0 ? "text-emerald-400" : "text-red-400"}>
                       {m.ticker} {m.pct >= 0 ? "+" : ""}

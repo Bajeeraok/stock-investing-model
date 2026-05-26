@@ -169,6 +169,13 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
     except Exception:
         pass
 
+    try:
+        from config_loader import get_data_root
+
+        _dr = get_data_root()
+    except Exception:
+        _dr = None
+
     retail_decisions = None
     try:
         from signals.retail_market_decisions import build_retail_market_decisions
@@ -187,7 +194,7 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
             flip_stats=flip_stats,
             cross_asset=dash.get("cross_asset") if isinstance(dash, dict) else None,
             premarket=premarket,
-            data_root=None,
+            data_root=_dr,
         )
     except Exception as e:
         logger.debug("retail_market_decisions: %s", e)

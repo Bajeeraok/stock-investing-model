@@ -162,6 +162,23 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
   const [activeTab, setActiveTabState] = useState<TabId>("overview");
+  const [overviewAlertCount, setOverviewAlertCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const url = API_BASE ? `${API_BASE}/api/scanner/alerts?limit=80` : "/api/scanner/alerts?limit=80";
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((j) => {
+        if (!cancelled) setOverviewAlertCount(Array.isArray(j) ? j.length : 0);
+      })
+      .catch(() => {
+        if (!cancelled) setOverviewAlertCount(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
   const [lazySignals, setLazySignals] = useState<Signal[] | null>(null);
   const [signalsFetchErr, setSignalsFetchErr] = useState<string | null>(null);
   const [signalsLoading, setSignalsLoading] = useState(false);
@@ -726,18 +743,18 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {data.retail_market_decisions && (
                 <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
               )}
+              {overviewAlertCount != null && overviewAlertCount > 0 && (
+                <ToggleSection
+                  id="overview-alerts"
+                  title="Alerts"
+                  icon={<AlertTriangle />}
+                  badge={overviewAlertCount}
+                  defaultOpen
+                >
+                  <AlertsPanel onTickerClick={setSelectedTicker} />
+                </ToggleSection>
+              )}
               <MarketStatePanel />
-              <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-4 py-3 space-y-1">
-                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-sky-400/90">
-                  <Info className="h-4 w-4 shrink-0" aria-hidden />
-                  {data.retail_market_decisions?.hold_vs_trade?.headline ?? "Hold vs take profits"}
-                </h3>
-                <p className="text-sm text-slate-300 leading-snug">
-                  {data.retail_market_decisions?.hold_vs_trade?.answer ??
-                    data.morning_newsletter?.hold_vs_trade_teaser ??
-                    "Long-term: hold quality if thesis + regime support. Short-term: use sell roadmap stops/targets."}
-                </p>
-              </div>
               <ModelHealthStrip
                 model_health={data.model_health}
                 summary_by_signal={forwardTracking?.summary_by_signal}
@@ -745,9 +762,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 message={forwardTracking?.message}
               />
               {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
-              <ToggleSection id="overview-alerts" title="Alerts" icon={<AlertTriangle />} defaultOpen={false}>
-                <AlertsPanel onTickerClick={setSelectedTicker} />
-              </ToggleSection>
               {(data.macro_regime || data.macro_analog) && (
                 <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                   {data.macro_regime && (
@@ -869,9 +883,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
           <ToggleSection id="signals-context" title="Context & rules" icon={<HelpCircle className="h-5 w-5" />} defaultOpen={false}>
             <div className="space-y-3">
-          {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && (
+          {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && marketQuadrant !== "best_buy_zone" && (
             <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
               <strong>Do nothing guidance:</strong> When macro is Risk-Off or rotation risk is High, consider reducing new buys, stepping down tech adds, and protecting gains. Do not chase; wait for clarity.
+            </div>
+          )}
+          {marketQuadrant === "best_buy_zone" && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-4 py-3 text-emerald-200 text-sm">
+              <strong>Fear in a bull market:</strong> Short-term Risk-Off/fear can coexist with a strong bull regime — unified context above says accumulate dips, not blanket REDUCE.
             </div>
           )}
           <div
@@ -887,22 +906,23 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               className={clsx(
                 "text-sm font-medium mb-2 px-3 py-2 rounded-lg border inline-flex items-center gap-2 flex-wrap",
                 data.macro_regime === "Risk-On" && "text-emerald-400 border-emerald-500/30 bg-emerald-500/5",
-                data.macro_regime === "Risk-Off" && "text-red-400 border-red-500/30 bg-red-500/5",
+                data.macro_regime === "Risk-Off" && marketQuadrant === "best_buy_zone" && "text-sky-300 border-sky-500/30 bg-sky-950/20",
+                data.macro_regime === "Risk-Off" && marketQuadrant !== "best_buy_zone" && "text-red-400 border-red-500/30 bg-red-500/5",
                 data.macro_regime === "Neutral" && "text-slate-400 border-slate-600 bg-slate-800/50",
                 !data.macro_regime && "text-slate-400 border-slate-600 bg-slate-800/50"
               )}
-              title="Macro: VIX/real yields. Market: SPY vs MA200 (BULL/BEAR/NEUTRAL). Affects position sizing."
+              title="Macro overlay (short-term) vs SPY regime (long-term) — see What should I do today? for unified read."
             >
               <span className="inline-flex items-center gap-1.5 flex-wrap">
-                {data.macro_regime && <>Macro regime: {data.macro_regime}</>}
+                {data.macro_regime && <>Macro overlay (ST): {data.macro_regime}</>}
                 {data.macro_regime && data.global_market_regime && " · "}
                 {data.global_market_regime && (
                   <span className={clsx(
-                    data.global_market_regime === "BULL" && "text-emerald-400",
-                    data.global_market_regime === "BEAR" && "text-red-400",
+                    String(data.global_market_regime).includes("BULL") && "text-emerald-400",
+                    String(data.global_market_regime).includes("BEAR") && "text-red-400",
                     data.global_market_regime === "NEUTRAL" && "text-slate-400"
                   )}>
-                    SPY regime: {data.global_market_regime}
+                    SPY regime (LT): {String(data.global_market_regime).replace(/_/g, " ")}
                   </span>
                 )}
                 <HelpCircle className="h-3.5 w-3.5 text-slate-500 cursor-help shrink-0" aria-label="Macro regime explanation" />
