@@ -2021,52 +2021,16 @@ def _compute_full_dashboard_sync() -> dict:
         logger.debug("Retail briefing failed: %s", e)
 
     _pm_report: dict | None = None
-    morning_newsletter = None
     try:
-        from signals.morning_newsletter import build_morning_newsletter
-        try:
-            import json as _json
-            _pm_path = data_root / "pre_market_latest.json"
-            if _pm_path.exists():
-                _pm_report = _json.loads(_pm_path.read_text())
-                if isinstance(_pm_report, dict):
-                    _pm_report = _premarket_with_catalysts(_pm_report)
-        except Exception:
-            pass
-        morning_newsletter = build_morning_newsletter(
-            as_of_date=as_of_date,
-            macro_regime=macro_regime,
-            macro_analog=macro_analog,
-            market_regime=market_regime_data,
-            retail_briefing=retail_briefing,
-            earnings_risk_count=earnings_risk_count or 0,
-            forward_tracking=forward_tracking,
-            results=results,
-            model_rules=config.get("model_rules"),
-            trim_candidates=trim_candidates,
-            regime_validation=regime_validation,
-            premarket_report=_pm_report,
-        )
-    except Exception as e:
-        logger.debug("Morning newsletter failed: %s", e)
+        import json as _json
 
-    model_health: dict = {}
-    try:
-        model_health = build_model_health(
-            data_root,
-            config,
-            forward_tracking,
-            eod_snapshots,
-            model_validation=model_validation,
-        )
-    except Exception as e:
-        logger.debug("model_health failed: %s", e)
-
-    raw_kl = config.get("known_limits")
-    if isinstance(raw_kl, list) and len(raw_kl) > 0:
-        known_limits_list = [str(x).strip() for x in raw_kl if str(x).strip()]
-    else:
-        known_limits_list = list(DEFAULT_KNOWN_LIMITS)
+        _pm_path = data_root / "pre_market_latest.json"
+        if _pm_path.exists():
+            _pm_report = _json.loads(_pm_path.read_text())
+            if isinstance(_pm_report, dict):
+                _pm_report = _premarket_with_catalysts(_pm_report)
+    except Exception:
+        pass
 
     retail_market_decisions = None
     try:
@@ -2101,6 +2065,49 @@ def _compute_full_dashboard_sync() -> dict:
         )
     except Exception as e:
         logger.debug("retail_market_decisions: %s", e)
+
+    morning_newsletter = None
+    try:
+        from signals.morning_newsletter import build_morning_newsletter
+
+        _rmd = retail_market_decisions if isinstance(retail_market_decisions, dict) else {}
+        morning_newsletter = build_morning_newsletter(
+            as_of_date=as_of_date,
+            macro_regime=macro_regime,
+            macro_analog=macro_analog,
+            market_regime=market_regime_data,
+            retail_briefing=retail_briefing,
+            earnings_risk_count=earnings_risk_count or 0,
+            forward_tracking=forward_tracking,
+            results=results,
+            model_rules=config.get("model_rules"),
+            trim_candidates=trim_candidates,
+            regime_validation=regime_validation,
+            premarket_report=_pm_report,
+            market_context=_rmd.get("market_context"),
+            hold_vs_trade=_rmd.get("hold_vs_trade"),
+            trigger_levels=_rmd.get("trigger_levels"),
+        )
+    except Exception as e:
+        logger.debug("Morning newsletter failed: %s", e)
+
+    model_health: dict = {}
+    try:
+        model_health = build_model_health(
+            data_root,
+            config,
+            forward_tracking,
+            eod_snapshots,
+            model_validation=model_validation,
+        )
+    except Exception as e:
+        logger.debug("model_health failed: %s", e)
+
+    raw_kl = config.get("known_limits")
+    if isinstance(raw_kl, list) and len(raw_kl) > 0:
+        known_limits_list = [str(x).strip() for x in raw_kl if str(x).strip()]
+    else:
+        known_limits_list = list(DEFAULT_KNOWN_LIMITS)
 
     if retail_market_decisions:
         try:

@@ -349,6 +349,14 @@ export function buildDynamicActionSubtitle(
   return `${passed} of ${total} gates pass · top blocker: ${top.label.toLowerCase().replace(/_/g, " ")} (${top.detail}).`;
 }
 
+function setupQualityLabel(passed: number, total: number): string {
+  if (total <= 0) return "UNKNOWN";
+  if (passed >= total) return "HIGH";
+  if (passed >= total - 1) return "MEDIUM-HIGH";
+  if (passed >= total - 2) return "MIXED";
+  return "LOW";
+}
+
 function statusEmoji(light: GlobalActionHeaderProps["statusLight"]): string {
   if (light === "green") return "🟢";
   if (light === "red") return "🔴";
@@ -369,6 +377,8 @@ export function GlobalActionHeader({
 }: GlobalActionHeaderProps) {
   const primaryGates = filterPrimaryTradingGates(gates);
   const displayGates = primaryGates.length > 0 ? primaryGates : gates;
+  const passCount = displayGates.filter((g) => g.pass).length;
+  const gateTotal = displayGates.length;
   const dynamicLine = buildDynamicActionSubtitle(displayGates, assessmentPct, rsi, insideBuyBand);
 
   const accent =
@@ -407,6 +417,14 @@ export function GlobalActionHeader({
       </div>
       <div className="px-3 sm:px-5 pb-4">
         <TradingGateStatus gates={displayGates} />
+        {gateTotal > 0 && (
+          <p className="mt-2 px-1 text-xs text-slate-500">
+            Setup quality:{" "}
+            <span className="text-slate-200 font-semibold tabular-nums">
+              {passCount} of {gateTotal} · {setupQualityLabel(passCount, gateTotal)}
+            </span>
+          </p>
+        )}
       </div>
     </header>
   );

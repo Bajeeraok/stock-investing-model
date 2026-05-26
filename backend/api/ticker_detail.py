@@ -542,6 +542,22 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     except Exception:
         response["market_context"] = None
 
+    inv = response.get("investor_summary")
+    if isinstance(inv, dict):
+        try:
+            from signals.swing_setup import build_swing_setup
+
+            inv["swing_setup"] = build_swing_setup(
+                ticker=ticker,
+                investor_out=inv,
+                current_price=response.get("current_price"),
+                response=response,
+                market_context=response.get("market_context"),
+                config=config,
+            )
+        except Exception:
+            pass
+
     return response
 
 

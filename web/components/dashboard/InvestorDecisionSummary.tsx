@@ -171,6 +171,8 @@ export interface InvestorDecisionSummary {
   pattern_score?: number | null;
   /** Backend-enriched gates, rsi_status, gate_cleared (source of truth for UI styling). */
   retail_action?: import("./retailActionUX").RetailActionPayload | null;
+  /** Composed swing play sheet — levels from horizons.short. */
+  swing_setup?: import("./SwingSetupCard").SwingSetupPayload | null;
   /** One Answer + Trader / Investor roadmaps (retail design). */
   one_answer?: OneAnswer | null;
   trader_roadmap?: TraderRoadmap | null;
@@ -827,6 +829,7 @@ export function InvestorDecisionSummarySection({
   ticker,
   ma20,
   ma50,
+  hideTradingGates = false,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -839,6 +842,8 @@ export function InvestorDecisionSummarySection({
   onToggleLtTiers: () => void;
   priceHistory?: PriceHistoryPoint[];
   ticker?: string;
+  /** When GlobalActionHeader already shows gates, skip duplicate block. */
+  hideTradingGates?: boolean;
 }) {
   const {
     fair_value,
@@ -1069,19 +1074,34 @@ export function InvestorDecisionSummarySection({
       "aria-label": "Investor Decision Summary",
       className: "bg-slate-800/55 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl shadow-black/20",
     },
-    React.createElement(
-      "div",
-      { className: "p-4 border-b border-violet-500/25 bg-gradient-to-b from-violet-950/40 to-slate-900/60 space-y-3" },
-      React.createElement(TradingGateStatus, { gates: primaryTradingGates }),
+    !hideTradingGates &&
       React.createElement(
-        "p",
-        { className: "text-sm text-amber-100/90 leading-snug px-1" },
-        `Investor takeaway: ${passedPrimary} of ${primaryTradingGates.length} checks are green` +
-          (passedPrimary >= 3
-            ? " — review sizing on Roadmaps before adding."
-            : " — sit on your hands until more gates clear.")
-      )
-    ),
+        "div",
+        { className: "p-4 border-b border-violet-500/25 bg-gradient-to-b from-violet-950/40 to-slate-900/60 space-y-3" },
+        React.createElement(TradingGateStatus, { gates: primaryTradingGates }),
+        React.createElement(
+          "p",
+          { className: "text-sm text-amber-100/90 leading-snug px-1" },
+          `Investor takeaway: ${passedPrimary} of ${primaryTradingGates.length} checks are green` +
+            (passedPrimary >= 3
+              ? " — review sizing on Roadmaps before adding."
+              : " — sit on your hands until more gates clear.")
+        )
+      ),
+    hideTradingGates &&
+      primaryTradingGates.length > 0 &&
+      React.createElement(
+        "div",
+        { className: "px-4 pt-3 pb-1 border-b border-slate-700/60" },
+        React.createElement(
+          "p",
+          { className: "text-sm text-amber-100/90 leading-snug" },
+          `Investor takeaway: ${passedPrimary} of ${primaryTradingGates.length} checks are green` +
+            (passedPrimary >= 3
+              ? " — review sizing on Roadmaps before adding."
+              : " — sit on your hands until more gates clear.")
+        )
+      ),
     ticker &&
       React.createElement(
         "div",
