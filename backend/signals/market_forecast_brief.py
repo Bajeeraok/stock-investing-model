@@ -78,6 +78,44 @@ def _seasonal_note(month: int) -> str | None:
     return None
 
 
+def _headline_from_quadrant(quadrant: str | None, macro_regime: str | None) -> tuple[str, str] | None:
+    """Override raw macro bias when retail reconciler has already unified the read."""
+    if not quadrant:
+        return None
+    macro_st = f" Macro overlay (ST): {macro_regime}." if macro_regime else ""
+    if quadrant == "best_buy_zone":
+        return (
+            "constructive",
+            "Near-term equity bias: selective dip-buying — fear in an intact bull regime; "
+            f"size small with stops, don't chase opens.{macro_st}",
+        )
+    if quadrant == "hold_and_trim":
+        return (
+            "cautious",
+            "Near-term equity bias: trim extended winners — sentiment hot in a bull tape; "
+            f"hold core compounders.{macro_st}",
+        )
+    if quadrant == "falling_knife":
+        return (
+            "cautious",
+            "Near-term equity bias: defensive — falling knife regime; wait for stabilization before adds."
+            + macro_st,
+        )
+    if quadrant == "dead_cat_bounce":
+        return (
+            "cautious",
+            "Near-term equity bias: defensive — bear-market bounce; reduce risk, don't treat strength as trend."
+            + macro_st,
+        )
+    if quadrant == "bear_market_rally":
+        return (
+            "cautious",
+            "Near-term equity bias: cautious — bear regime rally; hold quality only, avoid aggressive adds."
+            + macro_st,
+        )
+    return None
+
+
 def build_market_forecast_brief(
     config: dict | None,
     macro_regime: str | None,
@@ -85,6 +123,9 @@ def build_market_forecast_brief(
     vix: float | None,
     cross_asset: list[dict],
     economic_calendar: list[dict],
+    *,
+    market_context: dict | None = None,
+    global_market_regime: str | None = None,
 ) -> dict[str, Any] | None:
     """
     Returns a small structured brief for UI, or None if nothing to say.
@@ -191,6 +232,22 @@ def build_market_forecast_brief(
         "neutral": "Near-term equity bias: mixed — use your staged entry rules; macro is not one-sided.",
         "constructive": "Near-term equity bias: constructive — but still size to risk; shocks are always possible.",
     }.get(bias, "Near-term equity bias: mixed.")
+
+    quadrant = (market_context or {}).get("quadrant")
+    reconciled = _headline_from_quadrant(quadrant, macro_regime)
+    if reconciled:
+        bias, headline = reconciled
+    if market_context and market_context.get("primary_message"):
+        ctx_line = market_context["primary_message"]
+        if market_context.get("explanation"):
+            ctx_line += f" — {market_context['explanation']}"
+        bullets.insert(0, f"Unified read: {ctx_line}")
+    if global_market_regime and quadrant:
+        bullets.insert(
+            1 if bullets else 0,
+            f"Long-term SPY regime: {str(global_market_regime).replace('_', ' ')} "
+            f"(reconciled with short-term {macro_regime or 'sentiment'} overlay).",
+        )
 
     if not bullets:
         bullets.append(

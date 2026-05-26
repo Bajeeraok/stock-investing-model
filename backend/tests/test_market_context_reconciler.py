@@ -17,7 +17,8 @@ def test_risk_off_bull_is_best_buy_not_reduce():
     assert ctx["grid"]["short"] == "BUY"
     assert ctx["grid"]["medium"] == "BUY"
     assert ctx["is_contradictory"] is False
-    assert "not a contradiction" in (ctx.get("coexistence_note") or "").lower() or "fear" in (ctx.get("coexistence_note") or "").lower()
+    assert "not a contradiction" in (ctx.get("coexistence_note") or "").lower()
+    assert "macro overlay (st only)" in (ctx.get("coexistence_note") or "").lower()
 
 
 def test_retail_risk_off_warm_uses_cool_overlay():

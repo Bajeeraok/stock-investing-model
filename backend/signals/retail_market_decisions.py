@@ -363,6 +363,120 @@ def _if_then_scenarios(catalysts: dict | None, flip_stats: dict | None = None) -
     return scenarios
 
 
+def _sell_guidance(
+    st_action: str | None,
+    *,
+    portfolio_risk: dict | None = None,
+    portfolio_doctor_v2: dict | None = None,
+    per_holding: list[dict] | None = None,
+) -> str:
+    lines = ["No blanket sell today.", "", "Trim if:"]
+    trim_rules = [
+        "Any position up >20% from entry",
+        "Any position below your stop level",
+    ]
+    earnings_trim: list[str] = []
+    pd = portfolio_doctor_v2 or {}
+    for item in (pd.get("earnings_calendar") or {}).get("items") or []:
+        try:
+            days = int(item.get("days_until", 99))
+        except (TypeError, ValueError):
+            continue
+        if days <= 2:
+            t = item.get("ticker")
+            if t:
+                earnings_trim.append(str(t))
+    if earnings_trim:
+        names = ", ".join(earnings_trim[:3])
+        trim_rules.append(f"Earnings in next 48hrs ({names}) AND position up >10%")
+    else:
+        trim_rules.append("Earnings in next 48hrs AND position up >10%")
+
+    for rule in trim_rules:
+        lines.append(f"→ {rule}")
+
+    weak = [
+        h.get("ticker")
+        for h in (per_holding or [])
+        if h.get("ticker") and (h.get("score") is not None and float(h.get("score")) < 35)
+    ]
+    if weak:
+        lines.append(f"→ Weak scores (<35): {', '.join(str(t) for t in weak[:3])} — review thesis")
+
+    lines.extend(["", "Hold everything else."])
+    if st_action == _ACTION_REDUCE:
+        lines[0] = "Selective trim day — no panic selling."
+    elif st_action == _ACTION_WAIT:
+        lines[0] = "No new buys today — hold unless stops hit."
+    if portfolio_risk and (portfolio_risk.get("score") or 10) >= 7:
+        lines.append("Portfolio risk elevated — prioritize largest earnings names this week.")
+    return "\n".join(lines)
+
+
+def _holdings_alignment_answer(
+    *,
+    retail_briefing: dict | None,
+    portfolio_doctor_v2: dict | None,
+    per_holding: list[dict] | None,
+    sector_rotation: dict | None,
+    breadth: dict,
+) -> str:
+    conc = (retail_briefing or {}).get("concentration") or {}
+    conc_pct = conc.get("concentration_pct")
+    top = conc.get("top_positions") or []
+    pd = portfolio_doctor_v2 or {}
+    sector_alloc = pd.get("sector_allocation") or []
+
+    tech_pct = None
+    tech_sector = None
+    for row in sector_alloc:
+        sec = str(row.get("sector") or "")
+        if "tech" in sec.lower() or sec.lower() in ("information technology", "technology"):
+            tech_pct = float(row.get("pct") or 0)
+            tech_sector = sec
+            break
+
+    weak = [
+        h.get("ticker")
+        for h in (per_holding or [])
+        if h.get("ticker") and (h.get("score") is not None and float(h.get("score")) < 40)
+    ]
+
+    if tech_pct is not None and tech_pct > 50:
+        return (
+            f"Your {tech_sector or 'tech'} concentration: {tech_pct:.0f}%. "
+            "Recommended max: 50%. Consider: trim 1 extended tech position or add a diversifier (e.g. XLP, XLV)."
+        )
+
+    if conc_pct and conc_pct > 45 and top:
+        names = ", ".join(f"{x.get('ticker')} ({x.get('pct', 0):.0f}%)" for x in top[:3] if x.get("ticker"))
+        msg = f"Top 3 = {conc_pct:.0f}% ({names}). Consider trimming one extended name or adding a diversifier."
+        if weak:
+            msg += f" Weak scores: {', '.join(str(t) for t in weak[:3])}."
+        return msg
+
+    if sector_rotation and sector_rotation.get("rotate_away"):
+        away = ", ".join(sector_rotation["rotate_away"][:2])
+        return f"Rotation lagging in {away} — check if you're overweight there vs leading sectors."
+
+    if breadth.get("signal") == "NARROW":
+        return (
+            "Breadth narrow — mega-cap leaders vs rest. "
+            "Ensure you're not in lagging small names; portfolio may trail SPY even in up tapes."
+        )
+
+    if weak:
+        return (
+            f"Concentration OK, but weak scores: {', '.join(str(t) for t in weak[:4])}. "
+            "Review thesis — trim laggards before adding new names."
+        )
+
+    if conc_pct and conc_pct <= 45:
+        return "Portfolio looks balanced — no concentration alerts. Hold quality names aligned with the matrix."
+
+    return "Portfolio looks balanced — no concentration alerts. Hold quality names aligned with the matrix."
+
+
 def _five_questions(
     context: dict | None,
     matrix: dict,
@@ -376,6 +490,7 @@ def _five_questions(
     sector_rotation: dict | None = None,
     per_holding: list[dict] | None = None,
     retail_briefing: dict | None = None,
+    portfolio_doctor_v2: dict | None = None,
 ) -> list[dict[str, str]]:
     st = matrix.get("short_term", {})
     mt = matrix.get("medium_term", {})
@@ -396,13 +511,12 @@ def _five_questions(
             "Scale in if held — don't chase green opens."
         )
 
-    sell_answer = "No blanket sell — trim only extended winners or broken stops."
-    if st.get("action") == _ACTION_REDUCE:
-        sell_answer = "Trim positions up >15% from entry by 20–25%; tighten stops on recent adds."
-    elif st.get("action") == _ACTION_WAIT:
-        sell_answer = "No new buys; consider trimming weakest scores if stops hit."
-    if portfolio_risk and (portfolio_risk.get("score") or 10) >= 7:
-        sell_answer += " Portfolio risk elevated — prioritize largest earnings names this week."
+    sell_answer = _sell_guidance(
+        st.get("action"),
+        portfolio_risk=portfolio_risk,
+        portfolio_doctor_v2=portfolio_doctor_v2,
+        per_holding=per_holding,
+    )
 
     crash_answer = "No crash signal — credit and breadth not in danger zone."
     if credit.get("signal") in ("WARNING", "DANGER"):
@@ -415,18 +529,13 @@ def _five_questions(
     elif temperature.get("level") == "cold" and temperature.get("vix") and temperature["vix"] >= 28:
         crash_answer = "VIX elevated — spike risk, but often marks better entries for long-term holders if regime stays bull."
 
-    conc = (retail_briefing or {}).get("concentration") or {}
-    conc_pct = conc.get("concentration_pct")
-    top = conc.get("top_positions") or []
-    holdings_answer = "Review Portfolio tab for weak scores and concentration."
-    if conc_pct and conc_pct > 45 and top:
-        names = ", ".join(f"{x.get('ticker')} ({x.get('pct', 0):.0f}%)" for x in top[:3] if x.get("ticker"))
-        holdings_answer = f"Top 3 = {conc_pct:.0f}% ({names}). Consider trimming one extended name or adding a diversifier."
-    elif sector_rotation and sector_rotation.get("rotate_away"):
-        away = ", ".join(sector_rotation["rotate_away"][:2])
-        holdings_answer = f"Rotation lagging in {away} — check if you're overweight there vs leading sectors."
-    elif breadth.get("signal") == "NARROW":
-        holdings_answer = "Breadth narrow — mega-cap leaders vs rest; ensure you're not in lagging small names."
+    holdings_answer = _holdings_alignment_answer(
+        retail_briefing=retail_briefing,
+        portfolio_doctor_v2=portfolio_doctor_v2,
+        per_holding=per_holding,
+        sector_rotation=sector_rotation,
+        breadth=breadth,
+    )
 
     hold_answer = "Core thesis: months–years. Tactical adds: days–weeks with stops."
     if mt.get("action") == _ACTION_BUY:
@@ -462,30 +571,36 @@ def _morning_checklist(context: dict | None, trigger_levels: dict | None, portfo
     return items[:6]
 
 
-def _hold_vs_trade_answer(context: dict | None) -> dict[str, str]:
+def _hold_vs_trade_answer(context: dict | None) -> dict[str, Any]:
     q = (context or {}).get("quadrant")
     if q == "best_buy_zone":
         return {
-            "headline": "Trim-and-rebuy vs hold 5–10 years?",
-            "answer": (
-                "Core thesis names: hold through fear if thesis intact. "
-                "Tactical trades: buy dips with stops; trim only if up >20% or thesis breaks."
-            ),
+            "headline": "Long-term hold vs tactical trim?",
+            "answer": "Core thesis names vs swing trades — different rules apply in a fear-in-bull setup.",
+            "bullets": [
+                "Core thesis names (5–10 yr): hold through fear if thesis intact — this is often the best add zone.",
+                "Tactical trades: buy dips with stops; trim only if up >20% or thesis breaks.",
+                "Don't panic-sell quality compounders because macro overlay says Risk-Off short term.",
+            ],
         }
     if q == "hold_and_trim":
         return {
-            "headline": "Trim-and-rebuy vs hold 5–10 years?",
-            "answer": (
-                "Hold long-term core. Trim 20% of extended tactical positions now; "
-                "re-add on 3–5% pullbacks — don't sell quality compounders for short-term greed."
-            ),
+            "headline": "Long-term hold vs tactical trim?",
+            "answer": "Sentiment extended in a bull tape — protect gains on trades, keep compounders.",
+            "bullets": [
+                "Hold long-term core compounders — don't sell quality for short-term greed.",
+                "Trim 20% of extended tactical positions now.",
+                "Re-add on 3–5% pullbacks with defined stops.",
+            ],
         }
     return {
-        "headline": "Trim-and-rebuy vs hold 5–10 years?",
-        "answer": (
-            "Long-term: hold quality if thesis + regime support. "
-            "Short-term: use sell roadmap stops/targets — tactics differ from 5–10 year plan."
-        ),
+        "headline": "Long-term hold vs tactical trim?",
+        "answer": "Match your time horizon to the action — long-term plan vs short-term tactics differ.",
+        "bullets": [
+            "Long-term (5–10+ yr): hold quality if thesis + regime support intact.",
+            "Short-term / trading: use sell roadmap stops and targets.",
+            "Trim tactical positions on rules; don't apply trade stops to compounders blindly.",
+        ],
     }
 
 
@@ -668,6 +783,7 @@ def build_retail_market_decisions(
         sector_rotation=sector_rotation,
         per_holding=per_holding,
         retail_briefing=retail_briefing,
+        portfolio_doctor_v2=portfolio_doctor_v2,
     )
 
     overnight_delta = None

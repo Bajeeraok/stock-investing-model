@@ -21,7 +21,7 @@ export interface RetailMarketDecisions {
   market_context?: MarketContextBlock;
   morning_checklist?: { time: string; task: string }[];
   overnight_delta?: { summary?: string; lines?: { text: string }[] };
-  hold_vs_trade?: { headline?: string; answer?: string };
+  hold_vs_trade?: { headline?: string; answer?: string; bullets?: string[] };
   five_questions?: { question: string; answer: string }[];
   market_temperature?: {
     level?: string;
@@ -84,6 +84,12 @@ export interface RetailMarketDecisions {
     rotate_toward?: string[];
     rotate_away?: string[];
   } | null;
+  credit_pulse?: {
+    signal?: string;
+    hy_spread_pct?: number;
+    plain_english?: string;
+    yield_curve_note?: string;
+  } | null;
   personal_earnings_calendar?: {
     plain_english?: string;
     items?: { ticker: string; days_until: number; action: string }[];
@@ -131,10 +137,11 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
   const earningsPulse = data.earnings_season_pulse;
   const triggers = data.trigger_levels;
   const rotation = data.sector_rotation;
+  const credit = data.credit_pulse;
   const personalEarnings = data.personal_earnings_calendar;
   const checklist = data.morning_checklist ?? [];
   const overnight = data.overnight_delta;
-  const hasContextPillars = Boolean(crowd || earningsPulse || triggers || rotation || breadth || personalEarnings);
+  const hasContextPillars = Boolean(crowd || earningsPulse || triggers || rotation || breadth || credit || personalEarnings);
 
   return (
     <div className="rounded-xl border border-emerald-500/20 bg-slate-900/60 overflow-hidden space-y-0">
@@ -210,22 +217,37 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
           </div>
         )}
 
-        {data.hold_vs_trade?.answer && (
-          <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-3 py-2">
-            <p className="text-xs font-medium text-sky-300/90">{data.hold_vs_trade.headline ?? "Hold vs take profits?"}</p>
-            <p className="text-sm text-slate-300 mt-1 leading-snug">{data.hold_vs_trade.answer}</p>
+        {/* Five questions */}
+        {questions.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Your five questions</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {questions.map((q) => (
+                <div key={q.question} className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
+                  <p className="text-xs font-medium text-slate-400">{q.question}</p>
+                  <p className="text-sm text-slate-200 mt-0.5 leading-snug whitespace-pre-line">{q.answer}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Five questions */}
-        {questions.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {questions.map((q) => (
-              <div key={q.question} className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
-                <p className="text-xs font-medium text-slate-400">{q.question}</p>
-                <p className="text-sm text-slate-200 mt-0.5 leading-snug">{q.answer}</p>
-              </div>
-            ))}
+        {data.hold_vs_trade?.answer && (
+          <div className="rounded-lg border border-sky-500/30 bg-sky-950/25 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-sky-300/90 mb-1">
+              {data.hold_vs_trade.headline ?? "Long-term hold vs tactical trim?"}
+            </p>
+            <p className="text-sm text-slate-300 leading-snug">{data.hold_vs_trade.answer}</p>
+            {(data.hold_vs_trade.bullets ?? []).length > 0 && (
+              <ul className="mt-2 space-y-1.5 text-sm text-slate-300">
+                {data.hold_vs_trade.bullets!.map((b) => (
+                  <li key={b} className="flex gap-2">
+                    <span className="text-sky-400 shrink-0">→</span>
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
 
@@ -346,6 +368,21 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
               <RotateCw className="h-3.5 w-3.5" /> Context pillars
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {breadth?.plain_english && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/10 px-3 py-2 text-slate-300">
+                  <span className="text-emerald-400/90 font-medium">Breadth: </span>
+                  {breadth.plain_english}
+                </div>
+              )}
+              {credit?.plain_english && (
+                <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2 text-slate-300">
+                  <span className="text-slate-200 font-medium">Credit: </span>
+                  {credit.hy_spread_pct != null && (
+                    <span className="text-slate-400">HY spread {credit.hy_spread_pct}% — </span>
+                  )}
+                  {credit.plain_english}
+                </div>
+              )}
               {triggers?.headline && (
                 <div className="rounded-lg border border-sky-500/20 bg-sky-950/15 px-3 py-2 text-slate-300">
                   <Target className="h-3.5 w-3.5 inline mr-1 text-sky-400" />

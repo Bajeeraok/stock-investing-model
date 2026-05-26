@@ -7,6 +7,7 @@ import { clsx } from "clsx";
 interface Props {
   data: Pick<DashboardData, "retail_briefing"> | null;
   onTickerClick?: (ticker: string) => void;
+  marketQuadrant?: string | null;
 }
 
 const ACTION_STYLE: Record<string, { bg: string; text: string }> = {
@@ -16,7 +17,7 @@ const ACTION_STYLE: Record<string, { bg: string; text: string }> = {
   HOLD: { bg: "bg-slate-500/20", text: "text-slate-300" },
 };
 
-export function RetailBriefingPanel({ data, onTickerClick }: Props) {
+export function RetailBriefingPanel({ data, onTickerClick, marketQuadrant }: Props) {
   const rb = data?.retail_briefing;
   if (!rb) return null;
 
@@ -44,10 +45,18 @@ export function RetailBriefingPanel({ data, onTickerClick }: Props) {
             {summary}
           </p>
         )}
-        {regimeSentence && (
+        {regimeSentence && marketQuadrant !== "best_buy_zone" && (
           <div className="flex items-start gap-2 rounded-lg border border-slate-600/60 bg-slate-800/30 px-3 py-2">
             <Info className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
             <p className="text-sm text-slate-300">{regimeSentence}</p>
+          </div>
+        )}
+        {marketQuadrant === "best_buy_zone" && (
+          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/25 bg-emerald-950/15 px-3 py-2">
+            <Info className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-emerald-200/90">
+              Short-term macro may read Risk-Off — unified context below says accumulate quality dips, not blanket trim.
+            </p>
           </div>
         )}
 

@@ -2102,6 +2102,25 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("retail_market_decisions: %s", e)
 
+    if retail_market_decisions:
+        try:
+            _global_regime = next(
+                (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
+                None,
+            )
+            market_forecast = build_market_forecast_brief(
+                config,
+                macro_regime=macro_regime,
+                real_yield=real_yield,
+                vix=vix_val,
+                cross_asset=cross_asset,
+                economic_calendar=economic_calendar,
+                market_context=(retail_market_decisions or {}).get("market_context"),
+                global_market_regime=_global_regime,
+            )
+        except Exception as e:
+            logger.debug("Market forecast reconcile: %s", e)
+
     out = {
         "as_of_date": as_of_date,
         "data_freshness": data_freshness,

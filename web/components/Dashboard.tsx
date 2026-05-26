@@ -739,7 +739,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {/* Overview tab */}
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {data.retail_briefing && <RetailBriefingPanel data={data} onTickerClick={setSelectedTicker} />}
+              {data.retail_briefing && (
+                <RetailBriefingPanel
+                  data={data}
+                  onTickerClick={setSelectedTicker}
+                  marketQuadrant={marketQuadrant}
+                />
+              )}
               {data.retail_market_decisions && (
                 <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
               )}
@@ -762,11 +768,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 message={forwardTracking?.message}
               />
               {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
-              {(data.macro_regime || data.macro_analog) && (
+              {!data.retail_market_decisions?.market_context && (data.macro_regime || data.macro_analog) && (
                 <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
                   {data.macro_regime && (
                     <span className={clsx("text-sm font-medium", data.macro_regime === "Risk-On" && "text-emerald-400", data.macro_regime === "Risk-Off" && "text-red-400", data.macro_regime === "Neutral" && "text-slate-400")}>
-                      Macro: {data.macro_regime}
+                      Macro overlay (ST): {data.macro_regime}
                     </span>
                   )}
                   {data.macro_analog?.one_liner && (
@@ -786,12 +792,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {data.market_forecast && (
                 <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-4 py-3 space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">Market analysis — near-term backdrop</h3>
+                  {marketQuadrant && (
+                    <p className="text-[11px] text-slate-500">
+                      Aligned with unified context above ({String(marketQuadrant).replace(/_/g, " ")}).
+                    </p>
+                  )}
                   <p
                     className={clsx(
                       "text-sm font-medium",
-                      data.market_forecast.bias === "cautious" && "text-amber-200",
-                      data.market_forecast.bias === "constructive" && "text-emerald-200",
-                      data.market_forecast.bias === "neutral" && "text-slate-200",
+                      data.market_forecast.bias === "cautious" && marketQuadrant !== "best_buy_zone" && "text-amber-200",
+                      (data.market_forecast.bias === "constructive" || marketQuadrant === "best_buy_zone") && "text-emerald-200",
+                      data.market_forecast.bias === "neutral" && marketQuadrant !== "best_buy_zone" && "text-slate-200",
                     )}
                   >
                     {data.market_forecast.headline}

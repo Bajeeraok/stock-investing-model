@@ -18,6 +18,24 @@ def test_five_questions_present():
     assert out.get("market_context")
     assert out["market_context"]["quadrant"] == "best_buy_zone"
     assert out["strategy_matrix"]["grid"]["short"] == "BUY"
+    sell_q = next(q for q in out["five_questions"] if "sell" in q["question"].lower())
+    assert "No blanket sell today" in sell_q["answer"]
+    assert ">20%" in sell_q["answer"]
+    assert out["hold_vs_trade"].get("bullets")
+
+
+def test_holdings_answer_inline():
+    out = build_retail_market_decisions(
+        portfolio_doctor_v2={
+            "sector_allocation": [{"sector": "Technology", "pct": 67.0}],
+        },
+        retail_briefing={"concentration": {"concentration_pct": 55, "top_positions": []}},
+        include_p1=False,
+    )
+    holdings_q = next(q for q in out["five_questions"] if "right stuff" in q["question"].lower())
+    assert "67" in holdings_q["answer"]
+    assert "50%" in holdings_q["answer"]
+    assert "Portfolio tab" not in holdings_q["answer"]
 
 
 def test_cpi_if_then_scenarios():

@@ -32,6 +32,21 @@ def _regime_bucket(global_market_regime: str | None, macro_regime: str | None) -
     return "neutral"
 
 
+def _regime_display_label(
+    global_market_regime: str | None,
+    macro_regime_bundle: dict | None,
+) -> str:
+    """Long-term regime label — SPY MA stack first, then HMM combined, never macro overlay."""
+    g = (global_market_regime or "").strip()
+    if g:
+        return g.replace("_", " ")
+    bundle = macro_regime_bundle or {}
+    combined = bundle.get("combined_regime")
+    if combined:
+        return str(combined).replace("_", " ")
+    return "NEUTRAL"
+
+
 def _hmm_bull_pct(global_market_regime: str | None, macro_regime_bundle: dict | None) -> float | None:
     bundle = macro_regime_bundle or {}
     bear = bundle.get("hmm_bear_pct_used")
@@ -243,16 +258,20 @@ def reconcile_market_context(
     pb = _playbook(quadrant, vix=vix, hmm_bull=hmm_bull, credit=credit)
 
     temp_label = (temperature or {}).get("label") or "WARM"
-    regime_display = (global_market_regime or macro_regime or "NEUTRAL").replace("_", " ")
+    regime_display = _regime_display_label(global_market_regime, macro_regime_bundle)
 
     coexistence = (
-        f"Short-term: {temp_label} (sentiment/fear) · Long-term regime: {regime_display}. "
-        "These measure different timeframes — not a contradiction."
+        f"Short-term sentiment: {temp_label} · Long-term SPY regime: {regime_display}"
     )
+    if hmm_bull is not None:
+        coexistence += f" (~{hmm_bull}% bull model read)"
+    coexistence += ". These measure different timeframes — not a contradiction."
+    if macro_regime:
+        coexistence += f" Macro overlay (ST only): {macro_regime}."
     if quadrant == "best_buy_zone":
         coexistence += " Fear in a bull market = historically the best dip-buying setup."
     elif "risk-off" in (macro_regime or "").lower() and regime_bucket == "bull":
-        coexistence += " Macro Risk-Off reflects yields/credit caution; SPY regime can still be bull — reconcile both."
+        coexistence += " Short-term Risk-Off (yields/VIX) within intact bull regime — see unified matrix above."
 
     scheduled = (market_catalysts or {}).get("scheduled_today") or []
     if scheduled and pb["short_action"] == _ACTION_BUY:

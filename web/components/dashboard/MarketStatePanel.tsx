@@ -114,11 +114,18 @@ export function MarketStatePanel() {
           {unified?.coexistence_note ? (
             <span className="text-[11px] text-slate-500 leading-snug max-w-xl">{unified.coexistence_note}</span>
           ) : (
-            (state.macro_regime || state.global_market_regime) && (
+            (state.macro_regime || state.global_market_regime || unified?.regime_label) && (
               <span className="text-xs text-slate-500">
-                {state.macro_regime && <>Macro overlay: {state.macro_regime}</>}
-                {state.global_market_regime && (
-                  <> · SPY regime (LT): <span className="text-emerald-400/90">{state.global_market_regime.replace(/_/g, " ")}</span></>
+                {state.macro_regime && <>Macro overlay (ST): {state.macro_regime}</>}
+                {(unified?.regime_label || state.global_market_regime) && (
+                  <>
+                    {state.macro_regime && " · "}
+                    SPY regime (LT):{" "}
+                    <span className="text-emerald-400/90">
+                      {(unified?.regime_label || String(state.global_market_regime).replace(/_/g, " "))}
+                      {unified?.hmm_bull_pct != null && ` (~${unified.hmm_bull_pct}% bull)`}
+                    </span>
+                  </>
                 )}
               </span>
             )
