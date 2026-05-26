@@ -5,13 +5,17 @@ import { Info, Mail } from "lucide-react";
 export interface MorningNewsletterData {
   headline: string;
   date: string;
-  /** Regime → today → risk (compressed UX) */
+  /** Human-readable ET timestamp for display */
+  date_display?: string;
+  /** Reconciled quadrant when available — aligns with hero panel */
+  quadrant?: string | null;
+  /** Regime → portfolio → key level (compressed UX) */
   three_line_brief?: string[];
   sections: Array<{ title: string; items: string[] }>;
   action_items: string[];
-  /** Same theme as ticker detail One answer — where to read more */
+  /** Inline hold vs trim guidance — self-contained in morning brief */
   hold_vs_trade_teaser?: string;
-  hold_vs_trade_more?: string;
+  hold_vs_trade_more?: string | null;
 }
 
 interface Props {
@@ -52,11 +56,13 @@ export function MorningNewsletter({ data }: Props) {
           <section className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-3 py-2.5 space-y-1">
             <h3 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-sky-400/90">
               <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Hold vs trim (retail)
+              Hold or trim?
             </h3>
-            {data.hold_vs_trade_teaser && <p className="text-sm text-slate-300 leading-snug">{data.hold_vs_trade_teaser}</p>}
+            {data.hold_vs_trade_teaser && (
+              <p className="text-sm text-slate-300 leading-snug whitespace-pre-line">{data.hold_vs_trade_teaser}</p>
+            )}
             {data.hold_vs_trade_more && (
-              <p className="text-xs text-slate-500 leading-snug">{data.hold_vs_trade_more}</p>
+              <p className="text-xs text-slate-500 leading-snug whitespace-pre-line">{data.hold_vs_trade_more}</p>
             )}
           </section>
         )}

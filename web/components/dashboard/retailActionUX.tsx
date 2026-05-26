@@ -53,6 +53,14 @@ export type RetailActionPayload = {
   action_title?: string;
   action_light?: "green" | "yellow" | "red";
   dynamic_subtitle?: string;
+  coherent_story?: string;
+  next_trigger?: {
+    headline: string;
+    detail: string;
+    estimated_days?: number | null;
+  } | null;
+  stock_regime_bull_pct?: number | null;
+  market_regime_bull_pct?: number | null;
   gates?: Array<{
     id: string;
     label: string;
@@ -64,6 +72,7 @@ export type RetailActionPayload = {
     blocker_weight?: number;
     rsi_status?: string;
     regime_weather_status?: string;
+    marginal_pass?: boolean;
   }>;
   primary_gate_ids?: string[];
 };
@@ -100,6 +109,8 @@ export type GlobalActionHeaderProps = {
   /** When true, RSI-in-band copy can surface in the dynamic subtitle. */
   insideBuyBand?: boolean;
   rsi?: number | null;
+  coherentStory?: string | null;
+  nextTrigger?: RetailActionPayload["next_trigger"];
 };
 
 // ─── Behavioral badges (horizon cards) ───────────────────────────────────────
@@ -374,6 +385,8 @@ export function GlobalActionHeader({
   gates,
   insideBuyBand = false,
   rsi,
+  coherentStory,
+  nextTrigger,
 }: GlobalActionHeaderProps) {
   const primaryGates = filterPrimaryTradingGates(gates);
   const displayGates = primaryGates.length > 0 ? primaryGates : gates;
@@ -414,6 +427,18 @@ export function GlobalActionHeader({
         <p className="mt-2 text-sm text-slate-200/95 leading-relaxed max-w-3xl border-l-2 border-amber-500/50 pl-3 italic">
           &ldquo;{dynamicLine}&rdquo;
         </p>
+        {coherentStory && (
+          <p className="mt-3 text-sm text-slate-300/95 leading-relaxed max-w-3xl border-l-2 border-sky-500/40 pl-3">
+            {coherentStory}
+          </p>
+        )}
+        {nextTrigger && (
+          <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/25 px-3 py-2.5 max-w-3xl">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
+            <p className="text-sm font-semibold text-emerald-100 mt-0.5">{nextTrigger.headline}</p>
+            <p className="text-xs text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
+          </div>
+        )}
       </div>
       <div className="px-3 sm:px-5 pb-4">
         <TradingGateStatus gates={displayGates} />
@@ -469,18 +494,19 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
       <ul className="divide-y divide-slate-800/90 text-sm">
         {gates.map((g) => {
           const visual = g.visualStatus ?? (g.pass ? "cleared" : g.pass === false ? "blocked" : "neutral");
+          const isMarginal = visual === "marginal" && g.pass;
           return (
           <li
             key={g.id}
             className={clsx(
               "px-3.5 py-3 border-l-2",
               retailStatusRowClasses(visual, g.pass),
-              g.pass ? "border-l-emerald-600/60" : "border-l-orange-600/70"
+              g.pass && !isMarginal ? "border-l-emerald-600/60" : isMarginal ? "border-l-amber-600/60" : "border-l-orange-600/70"
             )}
           >
             <div className="flex items-start gap-2 sm:gap-3">
               <span className="shrink-0 font-mono text-sm pt-0.5" aria-hidden>
-                {g.pass ? "✅" : "❌"}
+                {isMarginal ? "⚠️" : g.pass ? "✅" : "❌"}
               </span>
               <div className="min-w-0 flex-1 space-y-1.5">
                 <div className="flex items-baseline gap-2 min-w-0">
@@ -495,10 +521,12 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
                   <span
                     className={clsx(
                       "shrink-0 font-bold uppercase text-xs px-2 py-0.5 rounded border",
-                      retailStatusClasses(g.pass ? "cleared" : "blocked")
+                      isMarginal
+                        ? retailStatusClasses("marginal")
+                        : retailStatusClasses(g.pass ? "cleared" : "blocked")
                     )}
                   >
-                    {g.pass ? "Pass" : "Fail"}
+                    {isMarginal ? "Marginal" : g.pass ? "Pass" : "Fail"}
                   </span>
                 </div>
                 <p className="text-slate-300 leading-snug pl-0 sm:pl-0">{g.detail}</p>

@@ -14,23 +14,34 @@ export function PositionIntentChip({
   ticker,
   compact,
   onChange,
+  intent: intentProp,
 }: {
   ticker: string;
   compact?: boolean;
   onChange?: (intent: PositionIntent | null) => void;
+  intent?: PositionIntent | null;
 }) {
-  const [intent, setIntent] = useState<PositionIntent | null>(null);
+  const [intentLocal, setIntentLocal] = useState<PositionIntent | null>(null);
+  const intent = intentProp !== undefined ? intentProp : intentLocal;
 
   useEffect(() => {
-    setIntent(getPositionIntent(ticker));
-  }, [ticker]);
+    if (intentProp === undefined) {
+      setIntentLocal(getPositionIntent(ticker));
+    }
+  }, [ticker, intentProp]);
+
+  const applyIntent = (next: PositionIntent | null) => {
+    setPositionIntent(ticker, next);
+    if (intentProp === undefined) {
+      setIntentLocal(next);
+    }
+    onChange?.(next);
+  };
 
   const cycle = () => {
     const next: PositionIntent | null =
       intent === null ? "trade" : intent === "trade" ? "invest" : null;
-    setPositionIntent(ticker, next);
-    setIntent(next);
-    onChange?.(next);
+    applyIntent(next);
   };
 
   if (compact) {
@@ -62,9 +73,7 @@ export function PositionIntentChip({
               type="button"
               onClick={() => {
                 const next = intent === id ? null : id;
-                setPositionIntent(ticker, next);
-                setIntent(next);
-                onChange?.(next);
+                applyIntent(next);
               }}
               className={clsx(
                 "text-[10px] px-2.5 py-1 rounded-full border font-medium",

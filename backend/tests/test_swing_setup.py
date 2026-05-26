@@ -22,7 +22,12 @@ def _base_investor_out(*, regime_bull: float = 65.0, rsi: float = 44.0, ml_prob:
                 "risk_reward": 1.4,
             },
             "medium": {
+                "ml_prob": ml_prob,
+                "verdict": "BUY",
+                "entry_zone": {"low": 95.0, "high": 100.0},
+                "stop_loss": 88.0,
                 "target": 118.0,
+                "risk_reward": 1.2,
             },
         },
     }

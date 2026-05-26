@@ -545,9 +545,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     inv = response.get("investor_summary")
     if isinstance(inv, dict):
         try:
-            from signals.swing_setup import build_swing_setup
+            from signals.horizon_playbooks import build_horizon_playbooks
 
-            inv["swing_setup"] = build_swing_setup(
+            playbooks = build_horizon_playbooks(
                 ticker=ticker,
                 investor_out=inv,
                 current_price=response.get("current_price"),
@@ -555,6 +555,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 market_context=response.get("market_context"),
                 config=config,
             )
+            inv["horizon_playbooks"] = playbooks
+            inv["swing_setup"] = playbooks.get("swing")
         except Exception:
             pass
 

@@ -172,7 +172,9 @@ export interface InvestorDecisionSummary {
   /** Backend-enriched gates, rsi_status, gate_cleared (source of truth for UI styling). */
   retail_action?: import("./retailActionUX").RetailActionPayload | null;
   /** Composed swing play sheet — levels from horizons.short. */
-  swing_setup?: import("./SwingSetupCard").SwingSetupPayload | null;
+  swing_setup?: import("./HorizonPlaybookCard").HorizonPlaybookPayload | null;
+  /** All horizon playbooks: swing, position build, thesis & tiers. */
+  horizon_playbooks?: import("./HorizonPlaybookCard").HorizonPlaybooksBundle | null;
   /** One Answer + Trader / Investor roadmaps (retail design). */
   one_answer?: OneAnswer | null;
   trader_roadmap?: TraderRoadmap | null;

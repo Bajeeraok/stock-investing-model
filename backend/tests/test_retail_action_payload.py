@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from signals.retail_action_payload import (
     build_retail_action_payload,
+    build_trading_gates,
     enrich_dashboard_signal_row,
     regime_weather_status,
     rsi_status,
@@ -47,6 +48,95 @@ def test_build_retail_action_payload_gates_locked():
     assert len(primary) == 4
     assert primary[0]["visual_status"] in ("cleared", "blocked", "bull", "stormy", "hot")
     assert "dynamic_subtitle" in p
+
+
+def test_regime_gate_stock_vs_market_context():
+    gates = build_trading_gates(
+        assessment_pct=20.0,
+        regime_bull_pct=1.0,
+        pattern_score=55.0,
+        short_ml_prob=46.0,
+        rsi=58.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+        ticker="GOOGL",
+        regime_hmm_label="Transition",
+        regime_transition_pct=99.0,
+        market_regime_bull_pct=95.0,
+    )
+    regime = next(g for g in gates if g["id"] == "regime")
+    assert "GOOGL" in regime["detail"]
+    assert "95" in regime["detail"]
+    assert "lagging" in regime["detail"].lower()
+
+
+def test_momentum_rsi_58_above_neutral_not_extended():
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=70.0,
+        pattern_score=40.0,
+        short_ml_prob=30.0,
+        rsi=58.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+    )
+    mom = next(g for g in gates if g["id"] == "momentum")
+    assert "above neutral" in mom["detail"].lower()
+    assert "extended" not in mom["detail"].lower()
+
+
+def test_ml_marginal_pass_at_46_pct():
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=70.0,
+        pattern_score=55.0,
+        short_ml_prob=46.0,
+        rsi=45.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+    )
+    ml = next(g for g in gates if g["id"] == "ml")
+    assert ml["pass"] is True
+    assert ml["visual_status"] == "marginal"
+    assert "marginal" in ml["detail"].lower()
+
+
+def test_coherent_story_and_next_trigger():
+    from signals.retail_action_payload import build_coherent_setup_story, build_next_trigger
+
+    gates = build_trading_gates(
+        assessment_pct=20.9,
+        regime_bull_pct=1.0,
+        pattern_score=55.0,
+        short_ml_prob=46.0,
+        rsi=58.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+        ticker="GOOGL",
+        regime_transition_pct=99.0,
+        market_regime_bull_pct=95.0,
+    )
+    story = build_coherent_setup_story(
+        ticker="GOOGL",
+        assessment_pct=20.9,
+        stock_bull_pct=1.0,
+        market_bull_pct=95.0,
+        rsi=58.0,
+        short_ml_prob=46.0,
+        gates=gates,
+        regime_transition_days=7,
+    )
+    assert "cheap" in story.lower() or "fair value" in story.lower()
+    assert "Market Weather" in story or "entry trigger" in story.lower()
+    trig = build_next_trigger(
+        ticker="GOOGL",
+        gates=gates,
+        stock_bull_pct=1.0,
+        market_bull_pct=95.0,
+        regime_transition_days=7,
+    )
+    assert trig is not None
+    assert "Market Weather" in trig["headline"]
 
 
 def test_enrich_dashboard_signal_row():
