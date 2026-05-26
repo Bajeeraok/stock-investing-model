@@ -730,15 +730,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <div className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-4 py-3 space-y-1">
                 <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-sky-400/90">
                   <Info className="h-4 w-4 shrink-0" aria-hidden />
-                  Hold vs take profits
+                  {data.retail_market_decisions?.hold_vs_trade?.headline ?? "Hold vs take profits"}
                 </h3>
                 <p className="text-sm text-slate-300 leading-snug">
-                  {data.morning_newsletter?.hold_vs_trade_teaser ??
-                    "Unsure trim-and-rebuy vs hold 5–10 years? Tactics (targets, sell roadmap) differ from long-term strategy (tiers, fair value) — open any ticker for the full framework."}
-                </p>
-                <p className="text-xs text-slate-500 leading-snug">
-                  {data.morning_newsletter?.hold_vs_trade_more ??
-                    "Signals → pick a ticker → One answer → expand “Hold for years vs take profits”."}
+                  {data.retail_market_decisions?.hold_vs_trade?.answer ??
+                    data.morning_newsletter?.hold_vs_trade_teaser ??
+                    "Long-term: hold quality if thesis + regime support. Short-term: use sell roadmap stops/targets."}
                 </p>
               </div>
               <ModelHealthStrip

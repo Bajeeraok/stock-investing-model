@@ -28,6 +28,7 @@ export interface MarketStatePayload {
   premarket?: PreMarketData | null;
   market_catalysts?: MarketCatalystBoard | null;
   next_day_outlook?: OutlookRow[];
+  next_day_summary?: string | null;
   typical_move?: TypicalRow[];
   polling?: {
     premarket_poll_ms?: number;
@@ -104,8 +105,10 @@ export function MarketStatePanel() {
           <span className="text-sm font-semibold text-slate-200">Market state</span>
           {(state.macro_regime || state.global_market_regime) && (
             <span className="text-xs text-slate-500">
-              {state.macro_regime && <>Macro: {state.macro_regime}</>}
-              {state.global_market_regime && <> · {state.global_market_regime}</>}
+              {state.macro_regime && <>Macro overlay: {state.macro_regime}</>}
+              {state.global_market_regime && (
+                <> · SPY regime: <span className="text-emerald-400/90">{state.global_market_regime.replace(/_/g, " ")}</span></>
+              )}
             </span>
           )}
         </div>
@@ -121,6 +124,26 @@ export function MarketStatePanel() {
 
       <div className="p-4 space-y-4">
         {premarket && <PreMarketStrip data={premarket} />}
+
+        {Array.isArray((premarket as { tech_movers_detail?: { ticker: string; pct: number; why?: string }[] })?.tech_movers_detail) &&
+          (premarket as { tech_movers_detail: { ticker: string; pct: number; why?: string }[] }).tech_movers_detail.length > 0 && (
+          <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
+            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Pre-market movers (why)</p>
+            <ul className="space-y-1 text-xs">
+              {(premarket as { tech_movers_detail: { ticker: string; pct: number; why?: string }[] }).tech_movers_detail
+                .slice(0, 6)
+                .map((m) => (
+                  <li key={m.ticker} className="text-slate-300">
+                    <span className={m.pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                      {m.ticker} {m.pct >= 0 ? "+" : ""}
+                      {m.pct}%
+                    </span>
+                    {m.why && <span className="text-slate-500"> — {m.why}</span>}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
 
         {intraday && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -152,18 +175,27 @@ export function MarketStatePanel() {
         {(state.next_day_outlook?.length ?? 0) > 0 && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Next-day outlook</p>
+            {state.next_day_summary && (
+              <p className="text-sm text-slate-300 mb-2">{state.next_day_summary}</p>
+            )}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               {state.next_day_outlook!.map((o) => (
                 <span key={o.ticker}>
                   <span className="text-slate-300">{o.ticker}</span>{" "}
-                  <span
-                    className={
-                      o.bias === "Bullish" ? "text-emerald-400" : o.bias === "Bearish" ? "text-red-400" : "text-slate-400"
-                    }
-                  >
-                    {o.bias}
-                  </span>
-                  {o.pct_green != null && <span className="text-slate-500 text-xs"> ({o.pct_green}% green)</span>}
+                  {(o as { edge_strength?: string }).edge_strength === "none" ? (
+                    <span className="text-slate-500">No edge</span>
+                  ) : (
+                    <span
+                      className={
+                        o.bias === "Bullish" ? "text-emerald-400" : o.bias === "Bearish" ? "text-red-400" : "text-slate-400"
+                      }
+                    >
+                      {o.bias}
+                    </span>
+                  )}
+                  {o.pct_green != null && (o as { edge_strength?: string }).edge_strength !== "none" && (
+                    <span className="text-slate-500 text-xs"> ({o.pct_green}% green)</span>
+                  )}
                 </span>
               ))}
             </div>
@@ -173,11 +205,14 @@ export function MarketStatePanel() {
         {(state.typical_move?.length ?? 0) > 0 && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
             <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Typical 1-day range</p>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
+            <div className="space-y-1 text-sm text-slate-300">
               {state.typical_move!.map((m) => (
-                <span key={m.ticker}>
+                <div key={m.ticker}>
                   {m.ticker}: ±{m.typical_pct_1d}%
-                </span>
+                  {(m as { range_note?: string }).range_note && (
+                    <span className="block text-xs text-amber-300/80">{(m as { range_note?: string }).range_note}</span>
+                  )}
+                </div>
               ))}
             </div>
           </div>

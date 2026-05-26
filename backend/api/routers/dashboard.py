@@ -93,6 +93,137 @@ try:
 except ImportError:
     generate_tier1_payload = None
 
+
+def _tier1_lightweight_fallback(
+    report: dict,
+    results: list[dict],
+    *,
+    portfolio_value: float,
+) -> dict[str, Any]:
+    """
+    Portfolio-only risk payload when Tier 1 yfinance path fails or is unavailable.
+    Ensures Risk Management tab is not empty when holdings exist.
+    """
+    per_holding = [h for h in (report.get("per_holding") or []) if isinstance(h, dict) and h.get("ticker")]
+    if not per_holding or portfolio_value <= 0:
+        return {}
+
+    results_by_ticker = {r["ticker"]: r for r in results if isinstance(r, dict) and r.get("ticker") and not r.get("error")}
+
+    position_sizing: list[dict] = []
+    drawdown_sim: list[dict] = []
+    earnings_impacts: list[dict] = []
+    import re as _re
+
+    for h in per_holding:
+        ticker = str(h["ticker"]).upper()
+        value = float(h.get("value") or 0)
+        if value <= 0:
+            continue
+        sig = results_by_ticker.get(ticker) or {}
+        rs = sig.get("risk_sizing") or {}
+        price = float(sig.get("close") or h.get("price") or 0)
+        stop_pct = float(rs.get("stop_pct") or 10)
+        stop_price = round(price * (1 - stop_pct / 100), 2) if price > 0 else None
+        position_sizing.append({
+            "ticker": ticker,
+            "recommended_dollars": rs.get("size_dollars") or round(portfolio_value * 0.01, 0),
+            "recommended_shares": rs.get("shares") or (max(1, int(value / price)) if price > 0 else 0),
+            "max_position_dollars": round(portfolio_value * 0.08, 0),
+            "current_pct": round(100 * value / portfolio_value, 1),
+            "target_pct": min(10.0, round(100 * value / portfolio_value, 1)),
+            "risk_per_trade_dollars": rs.get("risk_budget_dollars") or round(portfolio_value * 0.01, 0),
+            "stop_loss_price": stop_price,
+            "take_profit_price": round(price * 1.08, 2) if price > 0 else None,
+            "kelly_fraction": 0.0,
+            "adjusted_fraction": 0.0,
+            "sizing_rationale": "Config-based risk sizing (1% risk preset) — full Tier 1 engine unavailable.",
+            "warning": None,
+        })
+        drawdown_sim.append({
+            "ticker": ticker,
+            "current_price": price,
+            "position_value": round(value, 0),
+            "scenarios": [
+                {
+                    "label": "-10%",
+                    "price_target": round(price * 0.90, 2) if price > 0 else 0,
+                    "pct_change": -10.0,
+                    "portfolio_impact_dollars": round(-value * 0.10, 0),
+                    "portfolio_impact_pct": round(-10 * value / portfolio_value, 2),
+                    "probability": 0.35,
+                    "description": "Moderate pullback scenario (estimated).",
+                },
+                {
+                    "label": "-20%",
+                    "price_target": round(price * 0.80, 2) if price > 0 else 0,
+                    "pct_change": -20.0,
+                    "portfolio_impact_dollars": round(-value * 0.20, 0),
+                    "portfolio_impact_pct": round(-20 * value / portfolio_value, 2),
+                    "probability": 0.15,
+                    "description": "Stress scenario (estimated).",
+                },
+            ],
+            "max_loss_dollars": round(value * 0.25, 0),
+            "max_loss_pct": round(-25 * value / portfolio_value / 100, 3),
+            "breakeven_price": float(h.get("cost_basis") or price or 0),
+            "atr_14": round(price * 0.02, 2) if price > 0 else 0,
+            "historical_max_drawdown_pct": -20.0,
+        })
+        note = sig.get("earnings_note") or ""
+        m = _re.search(r"Earnings in (\d+) days", note)
+        if m:
+            days = int(m.group(1))
+            earnings_impacts.append({
+                "ticker": ticker,
+                "next_earnings_date": "",
+                "days_to_earnings": days,
+                "expected_move_pct": 6.0,
+                "historical_avg_move": 5.0,
+                "beat_rate_pct": 50.0,
+                "position_recommendation": "TRIM" if days <= 2 else "REDUCE" if days <= 7 else "WATCH",
+                "suggested_action": "Trim 15–20% before close prior day" if days <= 2 else "Reduce size into report",
+                "iv_percentile": 50.0,
+                "last_4_quarters": [],
+                "risk_rating": "HIGH" if days <= 3 else "MEDIUM" if days <= 14 else "LOW",
+            })
+
+    weights = [float(h.get("value") or 0) / portfolio_value for h in per_holding if float(h.get("value") or 0) > 0]
+    hhi = sum(w * w for w in weights) if weights else 0.0
+    top3_pct = sum(sorted(weights, reverse=True)[:3]) * 100 if weights else 0.0
+    holdings_out = [
+        {"ticker": str(h["ticker"]).upper(), "value": float(h.get("value") or 0), "sector": h.get("sector")}
+        for h in per_holding if float(h.get("value") or 0) > 0
+    ]
+    recs: list[str] = []
+    if top3_pct > 50:
+        recs.append(f"Top 3 holdings = {top3_pct:.0f}% — consider trimming largest if thesis weakens.")
+    if hhi > 0.18:
+        recs.append("Portfolio is concentrated — add a diversifier or rebalance.")
+
+    concentration = {
+        "holdings": holdings_out,
+        "effective_positions": max(1, int(round(1 / hhi))) if hhi > 0 else len(holdings_out),
+        "herfindahl_index": round(hhi, 4),
+        "correlation_alerts": [],
+        "sector_weights": {},
+        "top_risk_contributors": [h["ticker"] for h in sorted(holdings_out, key=lambda x: x["value"], reverse=True)[:3]],
+        "diversification_score": max(0, min(100, round(100 * (1 - hhi)))),
+        "recommendations": recs,
+        "is_concentrated": top3_pct > 50 or hhi > 0.20,
+    }
+
+    return {
+        "position_sizing": position_sizing,
+        "drawdown_sim": drawdown_sim,
+        "exit_levels": [],
+        "exit_levels_by_horizon": {"short": [], "medium": [], "long": []},
+        "earnings_impacts": earnings_impacts,
+        "concentration": concentration,
+        "tier1_fallback": True,
+    }
+
+
 router = APIRouter()
 
 # Retail copy: data / methodology limits (override via config known_limits: list)
@@ -1790,6 +1921,23 @@ def _compute_full_dashboard_sync() -> dict:
         except Exception as e:
             logger.warning("[dashboard] Tier 1 risk engine failed: %s", e)
 
+    if not tier1_payload.get("position_sizing") and report.get("per_holding") and report.get("total_value"):
+        try:
+            tier1_payload = _tier1_lightweight_fallback(
+                report,
+                results,
+                portfolio_value=float(report.get("total_value") or 0),
+            )
+            if tier1_payload:
+                logger.info(
+                    "[dashboard] Tier 1 lightweight fallback: sizing=%d drawdown=%d earnings=%d",
+                    len(tier1_payload.get("position_sizing", [])),
+                    len(tier1_payload.get("drawdown_sim", [])),
+                    len(tier1_payload.get("earnings_impacts", [])),
+                )
+        except Exception as e:
+            logger.debug("[dashboard] Tier 1 fallback failed: %s", e)
+
     from datetime import datetime as _dt
     from zoneinfo import ZoneInfo
 
@@ -1931,9 +2079,14 @@ def _compute_full_dashboard_sync() -> dict:
                 _pm_catalysts = _pm_report.get("market_catalysts")
         except Exception:
             pass
+        _global_regime = next(
+            (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
+            None,
+        )
         retail_market_decisions = build_retail_market_decisions(
             config=config,
             macro_regime=macro_regime,
+            global_market_regime=_global_regime,
             macro_regime_bundle=macro_regime_bundle,
             market_regime=market_regime_data,
             market_catalysts=_pm_catalysts,
@@ -1942,6 +2095,9 @@ def _compute_full_dashboard_sync() -> dict:
             per_holding=report.get("per_holding") if isinstance(report, dict) else None,
             avg_portfolio_score=report.get("avg_score") if isinstance(report, dict) else None,
             flip_stats=load_market_flip_stats(),
+            cross_asset=cross_asset,
+            premarket=_pm_report if isinstance(_pm_report, dict) else None,
+            data_root=data_root,
         )
     except Exception as e:
         logger.debug("retail_market_decisions: %s", e)
@@ -2042,6 +2198,12 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("[dashboard] web push digest skipped: %s", e)
     cache_ok = False
+    try:
+        from signals.overnight_delta import save_overnight_baseline, snapshot_for_baseline
+
+        save_overnight_baseline(data_root, snapshot_for_baseline(cross_asset, macro_regime_bundle))
+    except Exception as e:
+        logger.debug("[dashboard] overnight baseline: %s", e)
     try:
         from signals.cache import set_cached_dashboard
         cache_ok = bool(set_cached_dashboard(out))

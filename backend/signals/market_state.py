@@ -88,7 +88,7 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
             from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_backtest
 
             cache = {"SPY": cached_next_day_backtest("SPY", lambda: run_next_day_backtest("SPY", period="5y"))}
-            next_day = next_day_outlook_for_symbols(["SPY", "QQQ"], cache)
+            next_day = next_day_outlook_for_symbols(["SPY", "QQQ", "GLD", "SLV"], cache)
         except Exception as e:
             logger.debug("market_state next_day: %s", e)
 
@@ -99,6 +99,67 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
             typical_move = typical_move_for_symbols(["SPY", "QQQ", "GLD", "SLV"])
         except Exception as e:
             logger.debug("market_state typical_move: %s", e)
+
+    next_day_summary = None
+    if next_day:
+        notes = [r.get("display_note") for r in next_day if r.get("display_note")]
+        weak = sum(1 for r in next_day if r.get("edge_strength") == "none")
+        if weak >= max(2, len(next_day) // 2):
+            next_day_summary = notes[0] if notes else "Next-day edge is minimal across benchmarks — tape-driven session."
+        elif all((r.get("bias") or "Neutral") == "Neutral" for r in next_day):
+            next_day_summary = "All benchmarks neutral — coin-flip setup; use trigger levels instead of directional bets."
+
+    if isinstance(typical_move, dict):
+        typical_list = typical_move.get("symbols") or typical_move.get("items") or []
+    elif isinstance(typical_move, list):
+        typical_list = typical_move
+    else:
+        typical_list = []
+
+    es_pct = (premarket or {}).get("es_pct") if isinstance(premarket, dict) else None
+    if typical_list and es_pct is not None:
+        for row in typical_list:
+            if not isinstance(row, dict):
+                continue
+            if (row.get("ticker") or "").upper() == "SPY":
+                typ = row.get("typical_pct_1d") or row.get("typical_pct")
+                if typ and typ > 0:
+                    used = round(min(100.0, abs(float(es_pct)) / float(typ) * 100), 0)
+                    row["range_used_pct"] = used
+                    row["premarket_pct"] = es_pct
+                    if used >= 40:
+                        row["range_note"] = f"Pre-market used ~{used:.0f}% of typical daily range — less room to run today."
+                    break
+
+    if premarket and isinstance(premarket, dict):
+        try:
+            signals_by_ticker = {}
+            if isinstance(dash, dict):
+                for s in dash.get("signals") or []:
+                    if isinstance(s, dict) and s.get("ticker"):
+                        signals_by_ticker[str(s["ticker"]).upper()] = s
+            for bucket in ("tech_movers",):
+                movers = premarket.get(bucket) or []
+                enriched = []
+                for m in movers:
+                    if not isinstance(m, dict):
+                        continue
+                    t = str(m.get("ticker", "")).upper()
+                    why = None
+                    sig = signals_by_ticker.get(t) or {}
+                    if sig.get("earnings_note"):
+                        why = sig["earnings_note"]
+                    elif sig.get("regime") == "DOWN":
+                        why = "Weak trend/score — profit-taking or macro pressure."
+                    elif (m.get("pct") or 0) < -1:
+                        why = "Pre-market sell pressure — check news; may be dip if bull regime intact."
+                    elif (m.get("pct") or 0) > 1:
+                        why = "Pre-market bid — momentum continuation risk if extended."
+                    enriched.append({**m, "why": why})
+                if enriched:
+                    premarket = {**premarket, f"{bucket}_detail": enriched}
+        except Exception as e:
+            logger.debug("market_state premarket enrich: %s", e)
 
     flip_stats = None
     try:
@@ -115,6 +176,7 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
         retail_decisions = build_retail_market_decisions(
             config=config,
             macro_regime=macro_regime,
+            global_market_regime=global_regime,
             macro_regime_bundle=macro_regime_bundle,
             market_regime=market_regime,
             market_catalysts=catalysts,
@@ -123,6 +185,9 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
             per_holding=per_holding,
             avg_portfolio_score=avg_portfolio_score,
             flip_stats=flip_stats,
+            cross_asset=dash.get("cross_asset") if isinstance(dash, dict) else None,
+            premarket=premarket,
+            data_root=None,
         )
     except Exception as e:
         logger.debug("retail_market_decisions: %s", e)
@@ -144,6 +209,7 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
         "market_catalysts": catalysts,
         "retail_market_decisions": retail_decisions,
         "next_day_outlook": next_day,
+        "next_day_summary": next_day_summary,
         "typical_move": typical_move,
         "market_flip_stats": flip_stats,
         "polling": {

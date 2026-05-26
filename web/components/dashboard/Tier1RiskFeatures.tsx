@@ -804,8 +804,11 @@ export function RiskDashboard({
     return (
       <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
         <Shield className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
-        <p className="text-slate-400 font-medium">Risk features not yet configured</p>
-        <p className="text-slate-500 text-sm mt-1">Run the Tier 1 Python engine to generate risk data for your portfolio.</p>
+        <p className="text-slate-400 font-medium">No risk data for this portfolio yet</p>
+        <p className="text-slate-500 text-sm mt-1">
+          Add holdings with quantities in config, then click <span className="text-emerald-400">Refresh</span> to compute
+          position sizing, drawdown scenarios, and concentration.
+        </p>
       </div>
     );
   }

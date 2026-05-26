@@ -7,16 +7,17 @@ from signals.ticker_market_context import build_ticker_market_context
 
 def test_five_questions_present():
     out = build_retail_market_decisions(
-        macro_regime="Risk-On",
-        macro_regime_bundle={"factors": {"vix": 17.0, "hy_oas_bp": 320}},
+        macro_regime="Risk-Off",
+        global_market_regime="STRONG_BULL",
+        macro_regime_bundle={"factors": {"vix": 16.7, "hy_oas_bp": 320}, "hmm_bear_pct_used": 13},
         market_regime={"market_breadth": "Strong", "participation_narrow": False},
         avg_portfolio_score=62,
         include_p1=False,
     )
     assert len(out["five_questions"]) == 5
-    assert out["market_temperature"]["label"]
-    assert out["strategy_matrix"]["grid"]["short"] in ("BUY", "HOLD", "REDUCE")
-    assert out.get("breadth_panel")
+    assert out.get("market_context")
+    assert out["market_context"]["quadrant"] == "best_buy_zone"
+    assert out["strategy_matrix"]["grid"]["short"] == "BUY"
 
 
 def test_cpi_if_then_scenarios():

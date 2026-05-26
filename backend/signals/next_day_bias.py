@@ -172,12 +172,25 @@ def get_next_day_bias(
 
     typical_range = round(1.3 * std_ret, 2) if std_ret else None  # ~80% band
 
+    edge_strength = "none"
+    display_note = None
+    if pct_green is not None:
+        if 47 <= pct_green <= 53:
+            edge_strength = "none"
+            display_note = "Next-day edge is minimal — no strong directional signal. Follow levels, not predictions."
+        elif pct_green >= 58 or pct_green <= 42:
+            edge_strength = "moderate"
+        else:
+            edge_strength = "weak"
+
     return {
         "bias": bias,
         "pct_green": pct_green,
         "avg_return_pct": avg_ret,
         "typical_range_pct": typical_range,
         "state_key": state_key,
+        "edge_strength": edge_strength,
+        "display_note": display_note,
     }
 
 

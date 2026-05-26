@@ -4,7 +4,24 @@ import { clsx } from "clsx";
 import { useState } from "react";
 import { Thermometer, Grid3X3, GitBranch, HelpCircle, Shield, TrendingUp, Users, Calendar, Target, RotateCw } from "lucide-react";
 
+export interface MarketContextBlock {
+  quadrant?: string;
+  primary_message?: string;
+  explanation?: string;
+  historical_analog?: string;
+  coexistence_note?: string;
+  temperature_label?: string;
+  regime_label?: string;
+  hmm_bull_pct?: number;
+  bull_case_trigger?: string;
+  bear_case_trigger?: string;
+}
+
 export interface RetailMarketDecisions {
+  market_context?: MarketContextBlock;
+  morning_checklist?: { time: string; task: string }[];
+  overnight_delta?: { summary?: string; lines?: { text: string }[] };
+  hold_vs_trade?: { headline?: string; answer?: string };
   five_questions?: { question: string; answer: string }[];
   market_temperature?: {
     level?: string;
@@ -12,6 +29,8 @@ export interface RetailMarketDecisions {
     vix?: number | null;
     drivers?: string[];
     interpretation?: string;
+    macro_overlay?: string | null;
+    timeframe_note?: string;
   };
   strategy_matrix?: {
     short_term?: { horizon?: string; stance?: string; action?: string; bullets?: string[] };
@@ -84,6 +103,7 @@ const ACTION_STYLE: Record<string, string> = {
   BUY: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
   HOLD: "bg-slate-500/20 text-slate-300 border-slate-600",
   REDUCE: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+  WAIT: "bg-violet-500/20 text-violet-300 border-violet-500/40",
 };
 
 function ActionChip({ action }: { action?: string }) {
@@ -96,10 +116,11 @@ function ActionChip({ action }: { action?: string }) {
 }
 
 export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisions | null | undefined }) {
-  const [contextOpen, setContextOpen] = useState(false);
+  const [contextExpanded, setContextExpanded] = useState(false);
 
   if (!data) return null;
 
+  const ctx = data.market_context;
   const temp = data.market_temperature;
   const matrix = data.strategy_matrix;
   const scenarios = data.if_then_scenarios ?? [];
@@ -111,6 +132,8 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
   const triggers = data.trigger_levels;
   const rotation = data.sector_rotation;
   const personalEarnings = data.personal_earnings_calendar;
+  const checklist = data.morning_checklist ?? [];
+  const overnight = data.overnight_delta;
   const hasContextPillars = Boolean(crowd || earningsPulse || triggers || rotation || breadth || personalEarnings);
 
   return (
@@ -120,10 +143,73 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
           <HelpCircle className="h-5 w-5 text-emerald-400" />
           What should I do today?
         </h2>
-        <p className="text-xs text-slate-500 mt-1">Decisions first — context below. Not financial advice.</p>
+        <p className="text-xs text-slate-500 mt-1">One unified read — short-term fear vs long-term regime reconciled below.</p>
       </div>
 
       <div className="p-4 space-y-5">
+        {/* Unified market context — hero */}
+        {ctx?.primary_message && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-4 space-y-2">
+            <p className="text-sm font-semibold text-emerald-200">{ctx.primary_message}</p>
+            {ctx.explanation && <p className="text-sm text-slate-300 leading-snug">{ctx.explanation}</p>}
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {ctx.temperature_label && (
+                <span className="px-2 py-0.5 rounded border border-sky-500/30 text-sky-300">
+                  Short-term: {ctx.temperature_label}
+                </span>
+              )}
+              {ctx.regime_label && (
+                <span className="px-2 py-0.5 rounded border border-emerald-500/30 text-emerald-300">
+                  Regime: {ctx.regime_label}
+                  {ctx.hmm_bull_pct != null && ` (~${ctx.hmm_bull_pct}% bull)`}
+                </span>
+              )}
+            </div>
+            {ctx.coexistence_note && <p className="text-xs text-slate-400">{ctx.coexistence_note}</p>}
+            {ctx.historical_analog && (
+              <p className="text-[11px] text-slate-500">Historical analog: {ctx.historical_analog}</p>
+            )}
+            {(ctx.bull_case_trigger || ctx.bear_case_trigger) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-[11px]">
+                {ctx.bull_case_trigger && (
+                  <p className="text-emerald-300/80">Bull case: {ctx.bull_case_trigger}</p>
+                )}
+                {ctx.bear_case_trigger && (
+                  <p className="text-amber-300/80">Bear case: {ctx.bear_case_trigger}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {overnight?.summary && (
+          <div className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">What changed overnight</p>
+            <p className="text-sm text-slate-200">{overnight.summary}</p>
+            {(overnight.lines ?? []).length > 0 && (
+              <ul className="mt-1 space-y-0.5 text-xs text-slate-500">
+                {overnight.lines!.map((l) => (
+                  <li key={l.text}>{l.text}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {checklist.length > 0 && (
+          <div className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Today&apos;s checklist</p>
+            <ul className="space-y-1.5">
+              {checklist.map((c, i) => (
+                <li key={i} className="text-sm text-slate-300 flex gap-2">
+                  <span className="text-slate-500 shrink-0 text-xs font-mono min-w-[5.5rem]">{c.time}</span>
+                  <span>{c.task}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Five questions */}
         {questions.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -141,12 +227,17 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
           <div className={clsx("rounded-lg border p-4", TEMP_STYLE[temp.level ?? "warm"] ?? TEMP_STYLE.warm)}>
             <div className="flex items-center gap-2 mb-2">
               <Thermometer className="h-4 w-4 shrink-0" />
-              <span className="text-sm font-semibold uppercase tracking-wide">Market temperature: {temp.label}</span>
+              <span className="text-sm font-semibold uppercase tracking-wide">
+                Sentiment temperature: {temp.label}
+                <span className="text-[10px] font-normal normal-case text-slate-400 ml-2">(days–weeks)</span>
+              </span>
             </div>
             {temp.drivers && temp.drivers.length > 0 && (
               <p className="text-xs opacity-80 mb-2">{temp.drivers.join(" · ")}</p>
             )}
             <p className="text-sm leading-relaxed">{temp.interpretation}</p>
+            {temp.macro_overlay && <p className="text-xs text-amber-200/80 mt-2">{temp.macro_overlay}</p>}
+            {temp.timeframe_note && <p className="text-[10px] text-slate-500 mt-1">{temp.timeframe_note}</p>}
           </div>
         )}
 
@@ -243,17 +334,42 @@ export function RetailMarketDecisionsPanel({ data }: { data: RetailMarketDecisio
         )}
 
         {hasContextPillars && (
-          <div className="border-t border-slate-700/50 pt-4">
+          <div className="border-t border-slate-700/50 pt-4 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
+              <RotateCw className="h-3.5 w-3.5" /> Context pillars
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {triggers?.headline && (
+                <div className="rounded-lg border border-sky-500/20 bg-sky-950/15 px-3 py-2 text-slate-300">
+                  <Target className="h-3.5 w-3.5 inline mr-1 text-sky-400" />
+                  {triggers.headline}
+                </div>
+              )}
+              {rotation?.plain_english && (
+                <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2 text-slate-400">
+                  {rotation.plain_english}
+                </div>
+              )}
+              {crowd?.fear_greed?.score != null && (
+                <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2 text-slate-300">
+                  Fear & Greed {crowd.fear_greed.score} — {crowd.plain_english}
+                </div>
+              )}
+              {earningsPulse?.phase && (
+                <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2 text-slate-400">
+                  Earnings {earningsPulse.phase}: {earningsPulse.plain_english}
+                </div>
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => setContextOpen((o) => !o)}
-              className="text-xs font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200 flex items-center gap-1"
+              onClick={() => setContextExpanded((o) => !o)}
+              className="text-xs text-slate-500 hover:text-slate-300"
             >
-              <RotateCw className="h-3.5 w-3.5" />
-              {contextOpen ? "Hide" : "Show"} context pillars (sentiment · earnings · triggers)
+              {contextExpanded ? "Hide" : "Show"} full pillar detail
             </button>
-            {contextOpen && (
-              <div className="mt-3 space-y-3">
+            {contextExpanded && (
+              <div className="mt-2 space-y-3">
                 {breadth?.plain_english && (
                   <div className="rounded-lg border border-slate-700/50 bg-slate-800/25 px-3 py-2 text-xs text-slate-400">
                     <span className="text-slate-300 font-medium">Breadth: </span>

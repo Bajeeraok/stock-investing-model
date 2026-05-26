@@ -11,6 +11,7 @@ from typing import Any
 _ACTION_BUY = "BUY"
 _ACTION_HOLD = "HOLD"
 _ACTION_REDUCE = "REDUCE"
+_ACTION_WAIT = "WAIT"
 
 
 def _matrix_action(score: float | None, regime: str | None, *, cautious: bool = False) -> str:
@@ -48,10 +49,13 @@ def _market_temperature(
         elif vx <= 16:
             label, level = "WARM-HOT", "warm_hot"
     mr = (macro_regime or "").lower()
-    if "risk-off" in mr or "bear" in mr:
-        label, level = "COLD", "cold"
-    elif "risk-on" in mr and vx is not None and vx < 18:
-        label, level = "WARM-HOT", "warm_hot"
+    # Macro Risk-Off/On is a separate overlay — do NOT force temperature cold/hot from it.
+    # Reconciler combines temperature (short-term) with global regime (long-term).
+    macro_overlay = None
+    if "risk-off" in mr:
+        macro_overlay = "Macro overlay: Risk-Off (yields/VIX/credit caution) — see unified context below."
+    elif "risk-on" in mr:
+        macro_overlay = "Macro overlay: Risk-On — tailwind for risk assets if regime agrees."
 
     if level in ("cold", "cool"):
         interp = (
@@ -85,6 +89,8 @@ def _market_temperature(
         "vix": vx,
         "drivers": drivers,
         "interpretation": interp,
+        "macro_overlay": macro_overlay,
+        "timeframe_note": "Short-term sentiment (days–weeks) — not the same as bull/bear regime.",
         "buy_zone": level in ("cold", "cool"),
         "reduce_zone": level in ("hot", "warm_hot"),
     }
@@ -351,38 +357,75 @@ def _if_then_scenarios(catalysts: dict | None, flip_stats: dict | None = None) -
 
 
 def _five_questions(
-    temperature: dict,
+    context: dict | None,
     matrix: dict,
+    temperature: dict,
     breadth: dict,
     credit: dict,
     portfolio_risk: dict | None,
     catalysts: dict | None,
+    *,
+    trigger_levels: dict | None = None,
+    sector_rotation: dict | None = None,
+    per_holding: list[dict] | None = None,
+    retail_briefing: dict | None = None,
 ) -> list[dict[str, str]]:
     st = matrix.get("short_term", {})
     mt = matrix.get("medium_term", {})
     scheduled = (catalysts or {}).get("scheduled_today") or []
 
-    buy_answer = "Not aggressively this week." if st.get("action") != _ACTION_BUY else "Selectively — small adds on pullbacks only."
+    spy_trig = ((trigger_levels or {}).get("levels") or {}).get("SPY") or {}
+    primary = spy_trig.get("primary_trigger")
+    last_close = spy_trig.get("last_close")
+
+    buy_answer = (context or {}).get("short_term", {}).get("bullets", [""])[0] if context else ""
+    if not buy_answer:
+        buy_answer = "Selectively — small adds on pullbacks only." if st.get("action") == _ACTION_BUY else "Wait for a clearer edge."
     if scheduled:
         buy_answer = f"Wait until after today's {scheduled[0].get('event_type', 'macro')} release, then reassess."
+    elif primary and last_close and st.get("action") in (_ACTION_BUY, _ACTION_HOLD):
+        buy_answer = (
+            f"Wait for pullback toward SPY ${primary:.0f} support (last ${last_close:.0f}). "
+            "Scale in if held — don't chase green opens."
+        )
 
-    sell_answer = "No blanket sell." if st.get("action") != _ACTION_REDUCE else "Trim extended names and tighten stops."
+    sell_answer = "No blanket sell — trim only extended winners or broken stops."
+    if st.get("action") == _ACTION_REDUCE:
+        sell_answer = "Trim positions up >15% from entry by 20–25%; tighten stops on recent adds."
+    elif st.get("action") == _ACTION_WAIT:
+        sell_answer = "No new buys; consider trimming weakest scores if stops hit."
     if portfolio_risk and (portfolio_risk.get("score") or 10) >= 7:
-        sell_answer = "Consider trimming ahead of earnings on your largest positions."
+        sell_answer += " Portfolio risk elevated — prioritize largest earnings names this week."
 
     crash_answer = "No crash signal — credit and breadth not in danger zone."
     if credit.get("signal") in ("WARNING", "DANGER"):
         crash_answer = "Credit stress rising — not a crash call, but reduce risk and raise cash slowly."
+    elif (context or {}).get("quadrant") == "best_buy_zone":
+        crash_answer = (
+            "High fear in a bull regime — volatility yes, crash unlikely unless credit breaks. "
+            "Often a better entry zone for patient holders."
+        )
     elif temperature.get("level") == "cold" and temperature.get("vix") and temperature["vix"] >= 28:
-        crash_answer = "High fear (VIX elevated) — volatility spike possible, but often marks better entries for long-term holders."
+        crash_answer = "VIX elevated — spike risk, but often marks better entries for long-term holders if regime stays bull."
 
-    holdings_answer = "Mixed — check your Portfolio tab for weak scores and concentration."
-    if breadth.get("signal") == "NARROW":
-        holdings_answer = "You may be in the right sectors but breadth is narrow — mega-cap leaders vs rest; review if you're overweight lagging names."
+    conc = (retail_briefing or {}).get("concentration") or {}
+    conc_pct = conc.get("concentration_pct")
+    top = conc.get("top_positions") or []
+    holdings_answer = "Review Portfolio tab for weak scores and concentration."
+    if conc_pct and conc_pct > 45 and top:
+        names = ", ".join(f"{x.get('ticker')} ({x.get('pct', 0):.0f}%)" for x in top[:3] if x.get("ticker"))
+        holdings_answer = f"Top 3 = {conc_pct:.0f}% ({names}). Consider trimming one extended name or adding a diversifier."
+    elif sector_rotation and sector_rotation.get("rotate_away"):
+        away = ", ".join(sector_rotation["rotate_away"][:2])
+        holdings_answer = f"Rotation lagging in {away} — check if you're overweight there vs leading sectors."
+    elif breadth.get("signal") == "NARROW":
+        holdings_answer = "Breadth narrow — mega-cap leaders vs rest; ensure you're not in lagging small names."
 
-    hold_answer = "Short term: days–weeks (trade the setup). Medium: months (core thesis). Long: years (ignore daily noise)."
+    hold_answer = "Core thesis: months–years. Tactical adds: days–weeks with stops."
     if mt.get("action") == _ACTION_BUY:
-        hold_answer = "Core positions: months to years. Tactical adds: days to weeks with stops."
+        hold_answer = "Core: hold months–years. Tactical: add on dips over days–weeks with defined stops."
+    if (context or {}).get("quadrant") == "best_buy_zone":
+        hold_answer = "Long-term bull intact — hold core through fear; add tactically on weakness."
 
     return [
         {"question": "Should I buy more this week?", "answer": buy_answer},
@@ -391,6 +434,52 @@ def _five_questions(
         {"question": "Am I in the right stuff?", "answer": holdings_answer},
         {"question": "How long should I hold this?", "answer": hold_answer},
     ]
+
+
+def _morning_checklist(context: dict | None, trigger_levels: dict | None, portfolio_risk: dict | None) -> list[dict[str, str]]:
+    items: list[dict[str, str]] = [
+        {"time": "Before open", "task": "Review earnings in next 48h — trim 15–20% if up >10% gain."},
+        {"time": "9:30–10:00 ET", "task": "Don't hero-trade the open — let direction confirm."},
+    ]
+    spy = ((trigger_levels or {}).get("levels") or {}).get("SPY") or {}
+    trig = spy.get("primary_trigger")
+    if trig:
+        items.append({"time": "If SPY holds", "task": f"Above ${trig:.0f} — selective adds OK per matrix."})
+        items.append({"time": "If SPY breaks", "task": f"Below ${trig:.0f} — pause new entries; tighten stops."})
+    items.append({"time": "End of day", "task": "Update stops on any position up >8% from entry."})
+    if portfolio_risk and (portfolio_risk.get("adjustments") or []):
+        adj = portfolio_risk["adjustments"][0]
+        items.insert(1, {"time": "Priority", "task": adj})
+    if (context or {}).get("quadrant") == "best_buy_zone":
+        items.insert(0, {"time": "Setup", "task": "Fear in bull market — prioritize watchlist entries at support, not chase."})
+    return items[:6]
+
+
+def _hold_vs_trade_answer(context: dict | None) -> dict[str, str]:
+    q = (context or {}).get("quadrant")
+    if q == "best_buy_zone":
+        return {
+            "headline": "Trim-and-rebuy vs hold 5–10 years?",
+            "answer": (
+                "Core thesis names: hold through fear if thesis intact. "
+                "Tactical trades: buy dips with stops; trim only if up >20% or thesis breaks."
+            ),
+        }
+    if q == "hold_and_trim":
+        return {
+            "headline": "Trim-and-rebuy vs hold 5–10 years?",
+            "answer": (
+                "Hold long-term core. Trim 20% of extended tactical positions now; "
+                "re-add on 3–5% pullbacks — don't sell quality compounders for short-term greed."
+            ),
+        }
+    return {
+        "headline": "Trim-and-rebuy vs hold 5–10 years?",
+        "answer": (
+            "Long-term: hold quality if thesis + regime support. "
+            "Short-term: use sell roadmap stops/targets — tactics differ from 5–10 year plan."
+        ),
+    }
 
 
 def _portfolio_risk_block(
@@ -492,6 +581,7 @@ def build_retail_market_decisions(
     *,
     config: dict | None = None,
     macro_regime: str | None = None,
+    global_market_regime: str | None = None,
     macro_regime_bundle: dict | None = None,
     market_regime: dict | None = None,
     market_catalysts: dict | None = None,
@@ -500,11 +590,13 @@ def build_retail_market_decisions(
     per_holding: list[dict] | None = None,
     avg_portfolio_score: float | None = None,
     flip_stats: dict | None = None,
+    cross_asset: list | None = None,
+    premarket: dict | None = None,
+    data_root=None,
     include_p1: bool = True,
 ) -> dict[str, Any]:
     """
-    Single retail decision payload: temperature, 3×3 matrix, IF/THEN, five questions.
-    P1 adds crowd positioning, earnings pulse, triggers, sector rotation, breadth panel.
+    Single retail decision payload: temperature, reconciled context, matrix, IF/THEN, five questions.
     """
     vix = None
     if macro_regime_bundle:
@@ -513,15 +605,82 @@ def build_retail_market_decisions(
     temperature = _market_temperature(vix, macro_regime, macro_regime_bundle)
     breadth = _breadth_check(market_regime)
     credit = _credit_pulse(macro_regime_bundle)
-    matrix = _strategy_matrix(
-        temperature, breadth, credit, macro_regime, avg_portfolio_score, market_catalysts
+
+    trigger_levels = None
+    sector_rotation = None
+    crowd = None
+    if include_p1:
+        try:
+            from signals.trigger_levels import build_trigger_levels
+
+            trigger_levels = build_trigger_levels()
+        except Exception:
+            pass
+        try:
+            from signals.sector_rotation_tilt import build_sector_rotation_tilt
+
+            sector_rotation = build_sector_rotation_tilt()
+        except Exception:
+            pass
+        try:
+            from signals.sentiment_positioning import get_crowd_positioning
+
+            crowd = get_crowd_positioning(config)
+            fg = (crowd.get("fear_greed") or {}).get("score")
+            if fg is not None and fg <= 30 and temperature.get("level") not in ("cold", "cool"):
+                temperature = dict(temperature)
+                temperature["label"] = "COLD"
+                temperature["level"] = "cold"
+                temperature["buy_zone"] = True
+        except Exception:
+            pass
+
+    from signals.market_context_reconciler import reconcile_market_context, matrix_from_context
+
+    market_context = reconcile_market_context(
+        temperature=temperature,
+        macro_regime=macro_regime,
+        global_market_regime=global_market_regime,
+        macro_regime_bundle=macro_regime_bundle,
+        credit=credit,
+        breadth=breadth,
+        market_catalysts=market_catalysts,
     )
+    matrix = matrix_from_context(market_context)
     scenarios = _if_then_scenarios(market_catalysts, flip_stats)
     portfolio_risk = _portfolio_risk_block(portfolio_doctor_v2, retail_briefing, per_holding)
-    questions = _five_questions(temperature, matrix, breadth, credit, portfolio_risk, market_catalysts)
+    questions = _five_questions(
+        market_context,
+        matrix,
+        temperature,
+        breadth,
+        credit,
+        portfolio_risk,
+        market_catalysts,
+        trigger_levels=trigger_levels,
+        sector_rotation=sector_rotation,
+        per_holding=per_holding,
+        retail_briefing=retail_briefing,
+    )
+
+    overnight_delta = None
+    if data_root is not None:
+        try:
+            from pathlib import Path
+            from signals.overnight_delta import build_overnight_delta
+
+            overnight_delta = build_overnight_delta(
+                data_root=Path(data_root) if not isinstance(data_root, Path) else data_root,
+                cross_asset=cross_asset,
+                macro_regime_bundle=macro_regime_bundle,
+                premarket=premarket,
+            )
+        except Exception:
+            pass
 
     out: dict[str, Any] = {
         "five_questions": questions,
+        "market_context": market_context,
         "market_temperature": temperature,
         "strategy_matrix": matrix,
         "if_then_scenarios": scenarios,
@@ -529,34 +688,22 @@ def build_retail_market_decisions(
         "breadth_panel": _breadth_panel(market_regime, breadth),
         "credit_pulse": credit,
         "portfolio_risk": portfolio_risk,
+        "morning_checklist": _morning_checklist(market_context, trigger_levels, portfolio_risk),
+        "hold_vs_trade": _hold_vs_trade_answer(market_context),
+        "overnight_delta": overnight_delta,
         "disclaimer": "Decision support only — conditional guidance, not a guarantee. Confirm with your plan.",
     }
 
     if include_p1:
-        try:
-            from signals.sentiment_positioning import get_crowd_positioning
-
-            out["crowd_positioning"] = get_crowd_positioning(config)
-        except Exception:
-            out["crowd_positioning"] = None
+        out["crowd_positioning"] = crowd
         try:
             from signals.earnings_season_pulse import get_earnings_season_pulse
 
             out["earnings_season_pulse"] = get_earnings_season_pulse(config)
         except Exception:
             out["earnings_season_pulse"] = None
-        try:
-            from signals.trigger_levels import build_trigger_levels
-
-            out["trigger_levels"] = build_trigger_levels()
-        except Exception:
-            out["trigger_levels"] = None
-        try:
-            from signals.sector_rotation_tilt import build_sector_rotation_tilt
-
-            out["sector_rotation"] = build_sector_rotation_tilt()
-        except Exception:
-            out["sector_rotation"] = None
+        out["trigger_levels"] = trigger_levels
+        out["sector_rotation"] = sector_rotation
         out["personal_earnings_calendar"] = _personal_earnings_calendar(portfolio_doctor_v2)
 
     return out
