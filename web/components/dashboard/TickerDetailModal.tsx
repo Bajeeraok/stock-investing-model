@@ -756,6 +756,7 @@ export function TickerDetailModal({
                   priceHistory={detail.price_history}
                   ticker={detail.ticker}
                   hideTradingGates={Boolean(detail.investor_summary && tradingGates.length > 0)}
+                  compactOverview={Boolean(horizonPlaybooksBundle && tradingGates.length > 0)}
                 />
               ) : (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">

@@ -78,6 +78,7 @@ def run_signals(
     prices_by_ticker: dict[str, float] | None = None,
     vix: float | None = None,
     hit_rate_context: dict | None = None,
+    tickers: list[str] | None = None,
 ) -> list[dict]:
     """
     Run signals for watchlist. When fmp_api_key is set, historical OHLCV uses FMP adjClose
@@ -86,8 +87,11 @@ def run_signals(
     splice into OHLCV). Without a key, uses yfinance. Falls back to yfinance if FMP fails.
     vix: optional VIX level for score multiplier; if None, fetches ^VIX.
     hit_rate_context: optional {add_hit_rate_pct: float} from forward_tracking for hit-rate gate.
+    tickers: optional override list; default is get_eod_signal_universe(config).
     """
-    watchlist = get_signal_universe(config)
+    from config_loader import get_eod_signal_universe
+
+    watchlist = [str(t).upper() for t in tickers] if tickers else get_eod_signal_universe(config)
     period = config.get("data", {}).get("period", "5y")
     score_cfg = config.get("score", {})
     regime_cfg = config.get("regime", {})
@@ -348,11 +352,23 @@ def run_signals(
                 drawdown_52w = round(100 * (float(close.iloc[-1]) - high_52w) / high_52w, 1)
         # Proper daily ATR(14) using True Range (requires high/low/close).
         # Falls back to prior proxy only if OHLC is unavailable.
+        bar_high = None
+        bar_low = None
         try:
             from signals.fetcher import fetch_ohlcv_dataframe
             from signals.volatility import atr14_from_ohlcv_df
             ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
             atr_14 = atr14_from_ohlcv_df(ohlcv_df)
+            if ohlcv_df is not None and len(ohlcv_df) > 0:
+                last = ohlcv_df.iloc[-1]
+                if "High" in ohlcv_df.columns:
+                    bar_high = round(float(last["High"]), 2)
+                elif "high" in ohlcv_df.columns:
+                    bar_high = round(float(last["high"]), 2)
+                if "Low" in ohlcv_df.columns:
+                    bar_low = round(float(last["Low"]), 2)
+                elif "low" in ohlcv_df.columns:
+                    bar_low = round(float(last["low"]), 2)
         except Exception:
             atr_14 = None
         if atr_14 is None and len(close) >= 15:
@@ -434,6 +450,8 @@ def run_signals(
             "ticker": ticker,
             "close": sig["close"],
             "price": sig["close"],
+            "high": bar_high,
+            "low": bar_low,
             "daily_move_pct": daily_move_pct,
             "trend_score": sig["trend_score"],
             "rsi": sig["rsi"],
@@ -524,6 +542,8 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             "ma50": r.get("ma50"),
             "macd_hist": r.get("macd_hist"),
             "close": r.get("close"),
+            "high": r.get("high"),
+            "low": r.get("low"),
             "short_suggestion": r.get("short_suggestion"),
             "medium_suggestion": r.get("medium_suggestion"),
             "long_suggestion": r.get("long_suggestion"),
@@ -535,6 +555,25 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
                 row["mt_band"] = r["mt_band"]
             row["support_level"] = r.get("support_level")
             row["suggested_buy_price"] = r.get("suggested_buy_price")
+        if r.get("lt_band") is not None:
+            row["lt_band"] = r.get("lt_band")
+        if r.get("gate_cleared") is not None:
+            row["gate_cleared"] = r.get("gate_cleared")
+        rs = r.get("retail_status") if isinstance(r.get("retail_status"), dict) else {}
+        if rs.get("go_no_go"):
+            row["go_no_go"] = rs.get("go_no_go")
+        try:
+            from signals.tracking_gate import gate_snapshot_from_row
+
+            snap = gate_snapshot_from_row(r)
+            if snap.get("gates_passed") is not None:
+                row["gates_passed"] = snap["gates_passed"]
+            if snap.get("gates_total") is not None:
+                row["gates_total"] = snap["gates_total"]
+            if row.get("go_no_go") is None and snap.get("go_no_go"):
+                row["go_no_go"] = snap["go_no_go"]
+        except Exception:
+            pass
         run_results.append(row)
     return {
         "run_date": datetime.now().isoformat(),
@@ -671,18 +710,40 @@ def prune_old_eod_snapshots(retention_days: int) -> int:
     return deleted
 
 
-def run_eod_snapshot_only(config: dict | None = None, snapshot_date: str | None = None) -> dict:
+def run_eod_snapshot_only(
+    config: dict | None = None,
+    snapshot_date: str | None = None,
+    tickers: list[str] | None = None,
+) -> dict:
     """
     Run signals and save EOD snapshot only (no console report, no alerts).
     Used by API ad-hoc trigger and by the Python scheduler.
     snapshot_date: optional YYYY-MM-DD (e.g. 2026-02-17); if None, uses today EST.
+    tickers: optional override; default is get_eod_signal_universe(config).
     Returns dict with snapshot_path (str), snapshot_date (str), tickers_count (int), pruned (int), error (str or None).
     """
     if config is None:
         config = load_config()
-    result = {"snapshot_path": None, "snapshot_date": None, "tickers_count": 0, "pruned": 0, "error": None}
+    result = {
+        "snapshot_path": None,
+        "snapshot_date": None,
+        "tickers_count": 0,
+        "pruned": 0,
+        "error": None,
+        "universe": None,
+        "universe_count": 0,
+    }
     try:
-        results = run_signals(config)
+        results = run_signals(config, tickers=tickers)
+        if tickers is not None:
+            result["universe"] = "custom"
+            result["universe_count"] = len(tickers)
+        else:
+            from config_loader import get_eod_signal_universe
+
+            uni = get_eod_signal_universe(config)
+            result["universe"] = "eod"
+            result["universe_count"] = len(uni)
         result["tickers_count"] = len([r for r in results if not r.get("error")])
         next_day_outlook_eod = None
         typical_move_eod = None
@@ -719,6 +780,20 @@ def run_eod_snapshot_only(config: dict | None = None, snapshot_date: str | None 
         retention = config.get("eod_retention_days", 0)
         if retention > 0:
             result["pruned"] = prune_old_eod_snapshots(retention)
+        try:
+            from signals.signal_audit_store import persist_daily_signal_logs
+
+            log_result = persist_daily_signal_logs(
+                results,
+                config,
+                date_str=date_str,
+                run_source="run_daily",
+                data_root=get_data_root(),
+            )
+            result["signal_audit"] = log_result.get("signal_audit")
+            result["paper_trades"] = log_result.get("paper_trades")
+        except Exception as e:
+            result["signal_audit"] = {"error": str(e)}
     except Exception as e:
         result["error"] = str(e)
     return result
@@ -995,6 +1070,28 @@ def main() -> None:
         pruned = prune_old_eod_snapshots(retention)
         if pruned:
             print(f"Pruned {pruned} old EOD snapshot(s) (keeping last {retention} days).")
+
+    try:
+        from signals.signal_audit_store import persist_daily_signal_logs
+
+        log_result = persist_daily_signal_logs(
+            results,
+            config,
+            run_source="run_daily",
+            data_root=get_data_root(),
+        )
+        sa = log_result.get("signal_audit") or {}
+        if sa.get("enabled"):
+            print(
+                f"Signal audit: {sa.get('appended', 0)} new rows, "
+                f"{sa.get('skipped_duplicate', 0)} duplicates, "
+                f"{sa.get('missing_from_run', 0)} cohort tickers missing from run "
+                f"(cohort {sa.get('cohort_size', '?')})."
+            )
+            if sa.get("pilot", {}).get("db_path"):
+                print(f"  Audit DB: {sa['pilot']['db_path']}")
+    except Exception as e:
+        print(f"Signal audit log skipped: {e}")
 
     # Price-target accuracy report (same results) for dashboard GET /api/accuracy
     try:

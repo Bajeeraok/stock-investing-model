@@ -70,30 +70,26 @@ def _load_paper_trades(data_root: Path) -> list[dict]:
 
 
 def _load_eod_snapshots(data_root: Path) -> list[dict]:
-    """Load recent EOD snapshots for confidence + outcome pairing."""
+    """Load recent EOD snapshots for confidence + outcome pairing (Redis first, then files)."""
     eod_dir = data_root / "eod"
-    if not eod_dir.is_dir():
-        return []
     records: list[dict] = []
     try:
-        files = sorted(eod_dir.glob("*.json"), reverse=True)[:90]
-        for fp in files:
-            try:
-                with open(fp, encoding="utf-8") as f:
-                    snap = json.load(f)
-                if isinstance(snap, dict) and snap.get("tickers"):
-                    date = fp.stem
-                    for ticker_data in snap["tickers"]:
-                        if not isinstance(ticker_data, dict):
-                            continue
-                        records.append({
-                            "date": date,
-                            **ticker_data,
-                        })
-            except Exception:
+        from signals.forward_tracking import _list_eod_dates, _load_snapshot
+
+        dates = _list_eod_dates(eod_dir)
+        for date in sorted(dates, reverse=True)[:90]:
+            snap = _load_snapshot(eod_dir, date)
+            if not snap or not isinstance(snap, dict):
                 continue
-    except Exception:
-        pass
+            run_results = snap.get("run_results") or []
+            if not isinstance(run_results, list):
+                continue
+            for row in run_results:
+                if not isinstance(row, dict) or not row.get("ticker"):
+                    continue
+                records.append({"date": date, **row})
+    except Exception as e:
+        logger.debug("EOD snapshot load for calibration: %s", e)
     return records
 
 

@@ -1333,11 +1333,94 @@ def build_all_horizons_payload(
         horizon_confidence_pct=lt_confidence_pct,
     ))
 
-    return {
+    payload = {
         "short":  asdict(short),
         "medium": asdict(medium),
         "long":   asdict(long_term),
     }
+    _harmonize_horizon_stop_framing(
+        payload,
+        current_price=current_price,
+        ma50=ma50,
+        ma200=ma200,
+    )
+    return payload
+
+
+def _harmonize_horizon_stop_framing(
+    payload: dict[str, Any],
+    *,
+    current_price: float,
+    ma50: float,
+    ma200: float,
+) -> None:
+    """
+    Attach explicit stop anchors so swing/build/thesis levels cannot be read as MA200
+    when they are MA50/ATR-based. Clarify Tier 2 partial vs full-MOS ceiling.
+    """
+    short = payload.get("short") or {}
+    medium = payload.get("medium") or {}
+    long_h = payload.get("long") or {}
+    if not short or not medium or not long_h:
+        return
+
+    t1_lo = _r(ma200 * (1 - LT_MA200_BAND_PCT / 100))
+    t1_hi = _r(ma200 * (1 + LT_MA200_BAND_PCT / 100))
+    ref = {
+        "ma50": _r(ma50),
+        "ma200": _r(ma200),
+        "tier1_band": {"low": t1_lo, "high": t1_hi},
+    }
+
+    ez = short.get("entry_zone") or {}
+    el, eh = ez.get("low"), ez.get("high")
+    st_stop = short.get("stop_loss")
+    if st_stop and el and eh:
+        short["stop_loss_kind"] = "swing_atr"
+        short["stop_loss_framing"] = (
+            "Swing stop ${:.2f} — ATR below near-term entry (${:.2f}–${:.2f}), not MA200. "
+            "Tier 1 MA200 zone is ${:.2f}–${:.2f} (MA200 ${:.2f})."
+        ).format(float(st_stop), float(el), float(eh), t1_lo, t1_hi, ma200)
+
+    mt_stop = medium.get("stop_loss")
+    if mt_stop and ma50 > 0:
+        medium["stop_loss_kind"] = "build_ma50"
+        medium["stop_loss_framing"] = (
+            "Build stop ${:.2f} — MA50×{:.2f} (MA50 ${:.2f}), pauses 1–3mo tranches. "
+            "Not Tier 1 MA200 (${:.2f}–${:.2f})."
+        ).format(
+            float(mt_stop),
+            1 - MT_STOP_BELOW_MA50_PCT / 100,
+            ma50,
+            t1_lo,
+            t1_hi,
+        )
+
+    et = long_h.get("entry_tiers") or {}
+    ca = dict(et.get("current_assessment") or {})
+    min_buy = ca.get("min_price_to_buy")
+    active_id = et.get("active_tier_id")
+    ca["reference_levels"] = ref
+    if min_buy and current_price > float(min_buy):
+        ca["above_full_mos_ceiling"] = True
+        if active_id == "T2":
+            ca["position_mode"] = "partial_only"
+            msg = (
+                "Inside Tier 2 band but above full-MOS ceiling ${:.2f} — "
+                "partial position only; max buy price is for full allocation, not this tier."
+            ).format(float(min_buy))
+            warnings = list(long_h.get("warnings") or [])
+            if msg not in warnings:
+                warnings.append(msg)
+                long_h["warnings"] = warnings
+    elif active_id == "T2":
+        ca["position_mode"] = "partial_only"
+    et["current_assessment"] = ca
+    et["reference_levels"] = ref
+    long_h["entry_tiers"] = et
+    payload["short"] = short
+    payload["medium"] = medium
+    payload["long"] = long_h
 
 
 # ══════════════════════════════════════════════════════════════════════════════

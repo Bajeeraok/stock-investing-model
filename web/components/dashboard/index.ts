@@ -41,6 +41,7 @@ export { PaperVsBacktestDrift, type PaperVsBacktestDriftPayload } from "./PaperV
 export { MarketScenarios } from "./MarketScenarios";
 export { PerformanceVsBenchmark } from "./PerformanceVsBenchmark";
 export { ForwardTracking } from "./ForwardTracking";
+export { ModelAuditPanel, type ModelAuditPayload } from "./ModelAuditPanel";
 export { ModelHealthStrip, type ModelHealthData } from "./ModelHealthStrip";
 export { MorningNewsletter, type MorningNewsletterData } from "./MorningNewsletter";
 export {

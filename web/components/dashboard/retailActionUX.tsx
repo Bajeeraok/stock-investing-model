@@ -393,6 +393,9 @@ export function GlobalActionHeader({
   const passCount = displayGates.filter((g) => g.pass).length;
   const gateTotal = displayGates.length;
   const dynamicLine = buildDynamicActionSubtitle(displayGates, assessmentPct, rsi, insideBuyBand);
+  const storyLine = coherentStory?.trim() || dynamicLine;
+
+  const marginalCount = displayGates.filter((g) => g.visualStatus === "marginal").length;
 
   const accent =
     statusLight === "green"
@@ -424,19 +427,16 @@ export function GlobalActionHeader({
           <span aria-hidden>{statusEmoji(statusLight)}</span>
           {statusTitle}
         </p>
-        <p className="mt-2 text-sm text-slate-200/95 leading-relaxed max-w-3xl border-l-2 border-amber-500/50 pl-3 italic">
-          &ldquo;{dynamicLine}&rdquo;
+        <p className="mt-2 text-sm text-slate-200/95 leading-relaxed max-w-3xl border-l-2 border-sky-500/40 pl-3">
+          {storyLine}
         </p>
-        {coherentStory && (
-          <p className="mt-3 text-sm text-slate-300/95 leading-relaxed max-w-3xl border-l-2 border-sky-500/40 pl-3">
-            {coherentStory}
-          </p>
-        )}
         {nextTrigger && (
           <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/25 px-3 py-2.5 max-w-3xl">
             <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
             <p className="text-sm font-semibold text-emerald-100 mt-0.5">{nextTrigger.headline}</p>
-            <p className="text-xs text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
+            {nextTrigger.detail ? (
+              <p className="text-xs text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
+            ) : null}
           </div>
         )}
       </div>
@@ -444,9 +444,12 @@ export function GlobalActionHeader({
         <TradingGateStatus gates={displayGates} />
         {gateTotal > 0 && (
           <p className="mt-2 px-1 text-xs text-slate-500">
-            Setup quality:{" "}
+            Gates:{" "}
             <span className="text-slate-200 font-semibold tabular-nums">
-              {passCount} of {gateTotal} · {setupQualityLabel(passCount, gateTotal)}
+              {passCount} of {gateTotal} pass
+              {marginalCount > 0 ? ` (${marginalCount} marginal)` : ""}
+              {" · "}
+              {setupQualityLabel(passCount, gateTotal)}
             </span>
           </p>
         )}
@@ -553,7 +556,7 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
           )}{" "}
           {allGo
             ? " Gates are open — still confirm stops and size on Roadmaps."
-            : ` ${locked} of ${total} gates are locked. Do not initiate new entries.`}
+            : ` ${locked} gate${locked === 1 ? "" : "s"} still locked (${passCount}/${total} pass). Do not initiate new entries.`}
         </span>
       </div>
     </section>
@@ -892,24 +895,29 @@ export function StopHierarchyPanel({
   medium,
   long,
   currentPrice,
+  stockRegimeBullPct,
+  marketRegimeBullPct,
   className,
 }: {
   short: HorizonSignalPayload;
   medium: HorizonSignalPayload;
   long: HorizonSignalPayload;
   currentPrice: number;
+  stockRegimeBullPct?: number | null;
+  marketRegimeBullPct?: number | null;
   className?: string;
 }) {
   const thesisStop =
     long.entry_tiers?.structural_invalidation?.price ??
     (long.stop_loss_kind === "structural_invalidation" && long.stop_loss > 0 ? long.stop_loss : null);
 
-  const rows: { label: string; context: string; price: number; tone: string }[] = [];
+  const rows: { label: string; context: string; detail?: string | null; price: number; tone: string }[] = [];
   if (short.stop_loss != null && short.stop_loss > 0) {
     const pct = stopRiskPct(short.stop_loss, currentPrice, short.stop_loss_pct);
     rows.push({
       label: "Swing stop",
-      context: pct != null ? `${pct.toFixed(0)}% risk` : "days–weeks",
+      context: pct != null ? `${pct.toFixed(0)}% risk · days–weeks` : "days–weeks",
+      detail: short.stop_loss_framing,
       price: short.stop_loss,
       tone: "text-amber-200/95",
     });
@@ -917,7 +925,8 @@ export function StopHierarchyPanel({
   if (medium.stop_loss != null && medium.stop_loss > 0) {
     rows.push({
       label: "Build stop",
-      context: "pause tranches",
+      context: "pause tranches · 1–3 mo",
+      detail: medium.stop_loss_framing,
       price: medium.stop_loss,
       tone: "text-orange-200/90",
     });
@@ -925,13 +934,20 @@ export function StopHierarchyPanel({
   if (thesisStop != null && thesisStop > 0) {
     rows.push({
       label: "Thesis stop",
-      context: "exit thesis",
+      context: "exit thesis · years",
+      detail: long.stop_loss_framing || long.entry_tiers?.structural_invalidation?.note,
       price: thesisStop,
       tone: "text-red-300/90",
     });
   }
 
   if (rows.length === 0) return null;
+
+  const hmmDiverge =
+    stockRegimeBullPct != null &&
+    marketRegimeBullPct != null &&
+    marketRegimeBullPct >= 60 &&
+    stockRegimeBullPct < 42;
 
   return (
     <section
@@ -944,19 +960,29 @@ export function StopHierarchyPanel({
       <p className="text-xs uppercase tracking-wide font-semibold text-slate-400 mb-2">
         Stop hierarchy — match the stop to your horizon
       </p>
-      <ul className="space-y-2">
+      <ul className="space-y-2.5">
         {rows.map((row) => (
-          <li key={row.label} className="flex items-baseline justify-between gap-3 text-sm">
-            <div className="min-w-0">
-              <span className="font-medium text-slate-200">{row.label}</span>
-              <span className="text-slate-500"> · {row.context}</span>
+          <li key={row.label}>
+            <div className="flex items-baseline justify-between gap-3 text-sm">
+              <div className="min-w-0">
+                <span className="font-medium text-slate-200">{row.label}</span>
+                <span className="text-slate-500"> · {row.context}</span>
+              </div>
+              <span className={clsx("font-mono tabular-nums shrink-0", row.tone)}>
+                ${row.price.toFixed(2)}
+              </span>
             </div>
-            <span className={clsx("font-mono tabular-nums shrink-0", row.tone)}>
-              ${row.price.toFixed(2)}
-            </span>
+            {row.detail && (
+              <p className="text-xs text-slate-500 mt-0.5 leading-snug pl-0.5">{row.detail}</p>
+            )}
           </li>
         ))}
       </ul>
+      {hmmDiverge && (
+        <p className="text-xs text-sky-300/85 mt-3 pt-2 border-t border-slate-700/70 leading-snug">
+          HMM: market ~{Math.round(marketRegimeBullPct!)}% bull vs this name ~{Math.round(stockRegimeBullPct!)}% — can mean the stock is lagging a strong tape (not necessarily a model bug). Use stock HMM for this ticker; market HMM for backdrop only.
+        </p>
+      )}
     </section>
   );
 }
@@ -1314,6 +1340,27 @@ export function PlainEnglishTakeCard({
         </ul>
       )}
     </section>
+  );
+}
+
+/** One-line explainer when short/medium/long verdicts disagree at the same price. */
+export function HorizonDivergenceNote({
+  short,
+  long,
+}: {
+  short: HorizonSignalPayload;
+  long: HorizonSignalPayload;
+}) {
+  const st = String(short.verdict || "").toUpperCase();
+  const lt = String(long.verdict || "").toUpperCase();
+  const stBlock = st === "WAIT" || st === "REDUCE";
+  const ltAdd = lt === "BUY" || lt === "STRONG BUY" || lt === "WATCH";
+  if (!stBlock || !ltAdd) return null;
+  return (
+    <p className="text-xs text-cyan-200/90 leading-snug border border-cyan-500/25 bg-cyan-950/30 rounded-lg px-3 py-2">
+      <span className="font-semibold text-cyan-200">Different horizons, different rules: </span>
+      Near-term gates block adds (swing), while long-term tiers can still show value — that is not a bug. Match the row to your holding period.
+    </p>
   );
 }
 

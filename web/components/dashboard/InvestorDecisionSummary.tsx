@@ -33,6 +33,7 @@ import {
   deriveShortTermBehavioralBadge,
   filterPrimaryTradingGates,
   HorizonActionBadgeRow,
+  HorizonDivergenceNote,
   LongTermTierLadder,
   PlainEnglishTakeCard,
   resolveLongHorizonEntryZone,
@@ -218,6 +219,13 @@ export interface HorizonSignalPayload {
       color?: string;
       margin_of_safety_pct?: number | null;
       min_price_to_buy?: number | null;
+      above_full_mos_ceiling?: boolean;
+      position_mode?: string | null;
+      reference_levels?: {
+        ma50?: number;
+        ma200?: number;
+        tier1_band?: { low: number; high: number };
+      };
     };
     tiers: {
       id: string;
@@ -408,16 +416,21 @@ function HorizonCard({
             : undefined,
         },
         horizonKind === "short"
-          ? `Swing stop: $${Number(horizon.stop_loss).toFixed(2)}${
+          ? horizon.stop_loss_framing ||
+            `Swing stop: $${Number(horizon.stop_loss).toFixed(2)}${
               horizon.stop_loss_pct != null && Number.isFinite(horizon.stop_loss_pct)
                 ? ` (${Math.abs(horizon.stop_loss_pct).toFixed(0)}% risk)`
                 : ""
             }`
           : horizonKind === "medium"
-            ? `Build stop: $${Number(horizon.stop_loss).toFixed(2)} (pause tranches)`
+            ? horizon.stop_loss_framing ||
+              `Build stop: $${Number(horizon.stop_loss).toFixed(2)} (pause tranches)`
             : structuralStop
-              ? `Thesis stop: $${Number(horizon.stop_loss).toFixed(2)} (exit thesis)`
-              : `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
+              ? entryTiers?.structural_invalidation?.note ||
+                horizon.stop_loss_framing ||
+                `Thesis stop: $${Number(horizon.stop_loss).toFixed(2)} (exit thesis)`
+              : horizon.stop_loss_framing ||
+                `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
       ),
     React.createElement(
       "p",
@@ -526,12 +539,14 @@ function BuyRangeRetailCard({
   const range = high - low;
   const stStop = short.stop_loss != null && short.stop_loss > 0 ? short.stop_loss : null;
   const activeTier2 =
-    long?.entry_tiers?.tiers?.some(
+    long?.entry_tiers?.active_tier_id === "T2" &&
+    (long?.entry_tiers?.tiers?.some(
       (t) =>
         (t.id === "T2" || t.id === "tier2") &&
         currentPrice >= t.low &&
         currentPrice <= t.high
-    ) ?? false;
+    ) ??
+      false);
 
   let statusLabel = "—";
   let statusBadgeClass =
@@ -564,6 +579,7 @@ function BuyRangeRetailCard({
   const anchorNote = anchorSnippet(ez.anchor);
 
   const maxBuyMos = long?.entry_tiers?.current_assessment?.min_price_to_buy;
+  const aboveFullMos = long?.entry_tiers?.current_assessment?.above_full_mos_ceiling === true;
   const rr = short?.risk_reward != null && Number(short.risk_reward) > 0 ? Number(short.risk_reward) : null;
   const insideBandButNotBuy =
     statusLabel === "Inside buy zone" &&
@@ -605,6 +621,17 @@ function BuyRangeRetailCard({
         "p",
         { className: "text-sm text-amber-200/90 mb-3 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-950/50 leading-snug" },
         `Price is inside the near-term band but the overall signal is ${overallVerdict} because regime and confidence gates haven\u2019t cleared \u2014 the band shows where you\u2019d buy if conditions improve, not a current buy signal.`
+      ),
+    aboveFullMos &&
+      activeTier2 &&
+      maxBuyMos != null &&
+      React.createElement(
+        "p",
+        {
+          className:
+            "text-sm text-violet-200/95 mb-3 px-3 py-2 rounded-lg border border-violet-500/35 bg-violet-950/40 leading-snug",
+        },
+        `Spot $${currentPrice.toFixed(2)} is inside Tier 2 (partial MOS band) but above the full-position ceiling $${maxBuyMos.toFixed(2)} — scale a partial tranche only, not a full allocation.`
       ),
     React.createElement(
       "div",
@@ -726,7 +753,7 @@ function BuyRangeRetailCard({
             React.createElement(
               "p",
               { className: "text-sm text-cyan-200/85 uppercase tracking-wide font-semibold mb-1" },
-              "Max buy price (full MOS)"
+              "Max buy price (full position MOS)"
             ),
             React.createElement(
               "p",
@@ -796,6 +823,7 @@ export function InvestorDecisionSummarySection({
   ma20,
   ma50,
   hideTradingGates = false,
+  compactOverview = false,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -810,6 +838,8 @@ export function InvestorDecisionSummarySection({
   ticker?: string;
   /** When GlobalActionHeader already shows gates, skip duplicate block. */
   hideTradingGates?: boolean;
+  /** Modal layout: header + playbooks already shown — trim duplicate blocks. */
+  compactOverview?: boolean;
 }) {
   const {
     fair_value,
@@ -832,6 +862,8 @@ export function InvestorDecisionSummarySection({
   const medium = horizons.medium;
   const long = horizons.long;
 
+  const [horizonDetailOpen, setHorizonDetailOpen] = useState(!compactOverview);
+  const [executionDetailOpen, setExecutionDetailOpen] = useState(!compactOverview);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [traderOpen, setTraderOpen] = useState(false);
   const [investorOpen, setInvestorOpen] = useState(false);
@@ -1041,6 +1073,7 @@ export function InvestorDecisionSummarySection({
       className: "bg-slate-800/55 border border-slate-700/80 rounded-2xl overflow-hidden shadow-xl shadow-black/20",
     },
     !hideTradingGates &&
+      !compactOverview &&
       React.createElement(
         "div",
         { className: "p-4 border-b border-violet-500/25 bg-gradient-to-b from-violet-950/40 to-slate-900/60 space-y-3" },
@@ -1055,6 +1088,7 @@ export function InvestorDecisionSummarySection({
         )
       ),
     hideTradingGates &&
+      !compactOverview &&
       primaryTradingGates.length > 0 &&
       React.createElement(
         "div",
@@ -1069,6 +1103,7 @@ export function InvestorDecisionSummarySection({
         )
       ),
     ticker &&
+      !compactOverview &&
       React.createElement(
         "div",
         { className: "px-4 pt-2 pb-0 border-b border-slate-700/80" },
@@ -1105,11 +1140,14 @@ export function InvestorDecisionSummarySection({
         one_answer.bottom_line &&
           React.createElement(
             "p",
-            { className: "text-sm font-semibold text-emerald-200/95 leading-snug mb-2" },
+            { className: "text-sm font-semibold text-emerald-200/95 leading-snug mb-1" },
             one_answer.bottom_line
           ),
-        React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
-        one_answer.subline && React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline)
+        !compactOverview &&
+          React.createElement("p", { className: "text-base font-medium text-slate-100 leading-snug" }, one_answer.headline),
+        !compactOverview &&
+          one_answer.subline &&
+          React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline)
       ),
     (short?.target || medium?.target || long?.target) &&
       React.createElement(
@@ -1127,7 +1165,8 @@ export function InvestorDecisionSummarySection({
           ma50,
         })
       ),
-    fve &&
+    !compactOverview &&
+      fve &&
       React.createElement(
         "div",
         { className: "px-4 pb-4 border-b border-slate-700/80" },
@@ -1137,14 +1176,20 @@ export function InvestorDecisionSummarySection({
           external: fve,
         })
       ),
+    !compactOverview &&
+      React.createElement(
+        "div",
+        { className: "p-4 border-b border-slate-700/80" },
+        React.createElement(PlainEnglishTakeCard, {
+          summary,
+          currentPrice,
+          prominent: true,
+          defaultOpen: false,
+        })
+      ),
     React.createElement(
       "div",
-      { className: "p-4 border-b border-slate-700/80" },
-      React.createElement(PlainEnglishTakeCard, { summary, currentPrice, prominent: true })
-    ),
-    React.createElement(
-      "div",
-      { className: "p-4 border-b border-slate-700/80" },
+      { className: "p-4 border-b border-slate-700/80 space-y-2" },
       React.createElement(HorizonActionBadgeRow, {
         short,
         medium,
@@ -1153,15 +1198,25 @@ export function InvestorDecisionSummarySection({
         regimeBullPct: regime_bull_pct,
         assessmentPct,
         rsi: rsi ?? null,
-      })
+      }),
+      compactOverview &&
+        React.createElement(HorizonDivergenceNote, { short, long })
     ),
     React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
     React.createElement(
       "div",
       { className: "px-4 pb-4 border-b border-slate-700/80" },
-      React.createElement(StopHierarchyPanel, { short, medium, long, currentPrice })
+      React.createElement(StopHierarchyPanel, {
+        short,
+        medium,
+        long,
+        currentPrice,
+        stockRegimeBullPct: summary.retail_action?.stock_regime_bull_pct ?? regime_bull_pct,
+        marketRegimeBullPct: summary.retail_action?.market_regime_bull_pct,
+      })
     ),
-    long?.entry_tiers?.tiers?.length
+    long?.entry_tiers?.tiers?.length &&
+      !compactOverview
       ? React.createElement(
           "div",
           { className: "px-4 pb-4 border-b border-slate-700/80" },
@@ -1174,26 +1229,71 @@ export function InvestorDecisionSummarySection({
       : null,
     React.createElement(
       "div",
-      { className: "p-4 border-b border-slate-700/80 bg-slate-900/30" },
-      React.createElement("p", { className: "text-sm text-slate-400 uppercase tracking-wide mb-3" }, "Horizon detail"),
+      { className: "border-b border-slate-700/80 bg-slate-900/30" },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: () => setHorizonDetailOpen((o) => !o),
+          className:
+            "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors",
+        },
+        React.createElement(
+          "span",
+          { className: "text-sm text-slate-400 uppercase tracking-wide" },
+          "Horizon detail (short · medium · long)"
+        ),
+        horizonDetailOpen
+          ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-500" })
+          : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500" })
+      ),
+      horizonDetailOpen &&
+        React.createElement(
+          "div",
+          { className: "p-4 pt-0" },
+          React.createElement(
+            "div",
+            { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
+            React.createElement(HorizonCard, { horizon: short, horizonKind: "short", ...horizonCardShared }),
+            React.createElement(HorizonCard, { horizon: medium, horizonKind: "medium", ...horizonCardShared }),
+            React.createElement(HorizonCard, {
+              horizon: long,
+              horizonKind: "long",
+              ...horizonCardShared,
+              entryTiers: long.entry_tiers,
+              showTierLadder: !compactOverview,
+              tiersOpen: ltEntryTiersOpen,
+              onToggleTiers: onToggleLtTiers,
+            })
+          )
+        )
+    ),
+    compactOverview &&
+      one_answer &&
       React.createElement(
         "div",
-        { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
-        React.createElement(HorizonCard, { horizon: short, horizonKind: "short", ...horizonCardShared }),
-        React.createElement(HorizonCard, { horizon: medium, horizonKind: "medium", ...horizonCardShared }),
-        React.createElement(HorizonCard, {
-          horizon: long,
-          horizonKind: "long",
-          ...horizonCardShared,
-          entryTiers: long.entry_tiers,
-          showTierLadder: false,
-          tiersOpen: ltEntryTiersOpen,
-          onToggleTiers: onToggleLtTiers,
-        })
-      )
-    ),
-    /* One Answer — detail (headline shown above chart) */
-    one_answer && React.createElement(
+        { className: "border-b border-slate-700/80 bg-slate-900/30" },
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setExecutionDetailOpen((o) => !o),
+            className:
+              "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors",
+          },
+          React.createElement(
+            "span",
+            { className: "text-sm text-slate-400 uppercase tracking-wide" },
+            "Execution plan & rationale"
+          ),
+          executionDetailOpen
+            ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-500" })
+            : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500" })
+        )
+      ),
+    one_answer &&
+      (!compactOverview || executionDetailOpen) &&
+      React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700/80 bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-900/40" },
       React.createElement(
@@ -1336,7 +1436,8 @@ export function InvestorDecisionSummarySection({
           )
         ),
       /* --- YOUR TRIGGER (promoted) --- */
-      one_answer.next_trigger &&
+      !compactOverview &&
+        one_answer.next_trigger &&
         React.createElement(
           "div",
           { className: "mt-3 rounded-lg border border-sky-500/35 bg-sky-950/25 px-3 py-2.5" },
@@ -1683,6 +1784,7 @@ export function InvestorDecisionSummarySection({
             )
         )
     ),
+    !compactOverview &&
     React.createElement(
       "div",
       { className: "p-4 border-b border-slate-700/80 bg-slate-900/30" },

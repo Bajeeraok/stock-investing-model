@@ -518,8 +518,19 @@ export interface DashboardData {
     records: { as_of_date: string; next_date: string; ticker: string; horizon_days: number; our_signal: string; actual_return_pct: number }[];
     summary_by_horizon?: Record<number, { avg_return_pct: number; n_observations: number }>;
     summary_by_signal?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
+    meta?: {
+      eod_date_first?: string | null;
+      eod_date_last?: string | null;
+      eod_snapshot_count?: number;
+      records_total?: number;
+      records_returned?: number;
+      as_of_date_min?: string | null;
+      as_of_date_max?: string | null;
+      ticker_count?: number;
+    };
     message?: string | null;
   };
+  model_audit?: import("@/components/dashboard/index").ModelAuditPayload;
   /** Paper realized returns vs forward-tracking 20d population mean (smoke test; Analysis tab) */
   paper_vs_backtest_drift?: PaperVsBacktestDriftPayload | null;
   /** EOD freshness, accuracy report, forward ADD hit rate, optional weekly backtest (data/model_health.json) */

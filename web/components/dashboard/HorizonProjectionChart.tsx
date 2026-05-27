@@ -274,7 +274,8 @@ function CustomTooltip({
         if (mid == null) return null;
         return (
           <p key={k} style={{ color: HORIZON_STYLE[k].stroke }} className="mt-0.5">
-            {HORIZON_STYLE[k].label}: {fmtPrice(low)} – {fmtPrice(high)} (avg {fmtPrice(mid)})
+            {HORIZON_STYLE[k].label}: {fmtPrice(low)} – {fmtPrice(high)}
+            {mid != null ? ` (target ${fmtPrice(mid)})` : ""}
           </p>
         );
       })}
@@ -373,7 +374,7 @@ export function HorizonProjectionChart({
               ) : null}
             </h3>
             <p className="text-sm text-slate-500 mt-1 leading-snug">
-              Trailing price (left) → today → forward ST / MT / LT channels (high · avg · low).
+              Trailing price (left) → today → forward ST / MT / LT channels (stop · target path · band high).
               {hasFairValue ? " Emerald line = model fair value (fundamentals anchor)." : null}
               {!hasHistory ? " History limited — bands anchored at current price." : null}
             </p>

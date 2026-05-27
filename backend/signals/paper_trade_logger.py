@@ -107,6 +107,13 @@ _FIELDS = [
     "rolling_entry_price",
     "rolling_pnl",
     "rolling_return_pct",
+    "gate_cleared",
+    "go_no_go",
+    "gates_passed",
+    "gates_total",
+    "reference_entry_price",
+    "limit_fill_date",
+    "entry_mode",
 ]
 
 
@@ -189,6 +196,166 @@ def _provisional_entry_anchor_date(dates: list[str], signal_date: str) -> str | 
     except Exception:
         pass
     return anchor
+
+
+def _prev_eod_date(dates: list[str], before: str) -> str | None:
+    """Latest EOD snapshot date strictly before ``before`` (YYYY-MM-DD)."""
+    try:
+        before_ts = pd.Timestamp(before).normalize()
+    except Exception:
+        return None
+    prev: str | None = None
+    for d in dates:
+        try:
+            if pd.Timestamp(d).normalize() < before_ts:
+                prev = d
+        except Exception:
+            continue
+    return prev
+
+
+def _net_exit_price(close: float, exit_cost_pct: float) -> float:
+    return round(float(close) * (1.0 - exit_cost_pct), 4)
+
+
+def _paper_cfg(config: dict | None) -> dict[str, Any]:
+    return (config or {}).get("paper_trading") or {}
+
+
+def _entry_mode(config: dict | None) -> str:
+    mode = str(_paper_cfg(config).get("entry_mode", "limit_touch")).strip().lower()
+    return mode if mode in ("limit_touch", "market") else "limit_touch"
+
+
+def _reference_entry_from_row(r: dict[str, Any], ref_key: str) -> float | None:
+    """
+    Model reference limit for patient paper entries.
+
+    st_band_low (default for ST audit): ATR/swing stop side of st_band — aligns with
+    paper target/stop. Falls back to suggested_buy_price (MA50/MA200 dip) then support_level.
+
+    suggested_buy_price alone: MA50 if price>MA50 else MA200; often null in sell mode.
+    Not the same as st_band or horizon entry_zone from ticker detail.
+    """
+    key = (ref_key or "st_band_low").strip().lower()
+    px: float | None = None
+
+    if key in ("st_band_low", "st", "st_preferred"):
+        st = r.get("st_band") if isinstance(r.get("st_band"), dict) else {}
+        px = _safe_float(st.get("low"))
+        if px is None:
+            px = _safe_float(r.get("suggested_buy_price"))
+        if px is None:
+            px = _safe_float(r.get("support_level"))
+    elif key == "support_level":
+        px = _safe_float(r.get("support_level"))
+        if px is None:
+            px = _safe_float(r.get("suggested_buy_price"))
+    elif key == "suggested_buy_price":
+        px = _safe_float(r.get("suggested_buy_price"))
+        if px is None:
+            st = r.get("st_band") if isinstance(r.get("st_band"), dict) else {}
+            px = _safe_float(st.get("low"))
+    else:
+        st = r.get("st_band") if isinstance(r.get("st_band"), dict) else {}
+        px = _safe_float(st.get("low"))
+
+    if px is None or px <= 0:
+        return None
+    # Limit buy reference must be at or below signal-day close when available
+    spot = _safe_float(r.get("close") or r.get("price"))
+    if spot is not None and px > spot:
+        return None
+    return round(px, 2)
+
+
+def _bar_touches_limit(bar: dict[str, Any], limit_px: float) -> bool:
+    lo = _safe_float(bar.get("low"))
+    if lo is not None and lo <= limit_px:
+        return True
+    cl = _safe_float(bar.get("close"))
+    return cl is not None and cl <= limit_px
+
+
+def _is_actionable_signal(sig: str) -> bool:
+    s = (sig or "").upper()
+    return "STRONG BUY" in s or s.strip() == "BUY" or "HOLD/ADD" in s
+
+
+def _result_to_paper_record(
+    r: dict[str, Any],
+    date_str: str,
+    horizon_trading_days: int = 20,
+) -> dict[str, Any] | None:
+    """Build a paper trade CSV row from one run_signals / EOD run_results dict."""
+    t = (r.get("ticker") or "").upper().strip()
+    if not t or r.get("error"):
+        return None
+    sig = r.get("signal") or r.get("short_suggestion") or "HOLD"
+    st = r.get("st_band") if isinstance(r.get("st_band"), dict) else None
+    target_1 = _safe_float(st.get("high")) if st else None
+    hard_stop = _safe_float(st.get("low")) if st else None
+    ml = r.get("ml_short_prob")
+    ml_conf = round(float(ml) * 100, 1) if _safe_float(ml) is not None else None
+    reg = r.get("_global_market_regime") or r.get("regime")
+    entry = _safe_float(r.get("paper_entry_price") or r.get("close") or r.get("price"))
+    entry_src = None
+    if _safe_float(r.get("paper_entry_price")) is not None:
+        entry_src = str(r.get("paper_entry_source") or "live_quote")
+    elif entry is not None:
+        entry_src = "ohlcv_last_bar"
+    atr_14 = _safe_float(r.get("atr_14"))
+    score = _safe_float(r.get("composite_buy"))
+    from signals.tracking_gate import gate_snapshot_from_row
+
+    gate = gate_snapshot_from_row(r)
+    rec = PaperTradeRecord(
+        date=date_str,
+        ticker=t,
+        signal=str(sig),
+        ml_confidence=ml_conf,
+        regime=str(reg) if reg is not None else None,
+        entry_price=round(entry, 2) if entry is not None else None,
+        entry_price_source=entry_src,
+        target_1=round(target_1, 2) if target_1 is not None else None,
+        hard_stop=round(hard_stop, 2) if hard_stop is not None else None,
+        atr_14=round(atr_14, 2) if atr_14 is not None else None,
+        model_score=round(score, 1) if score is not None else None,
+        kelly_pct=None,
+        horizon_trading_days=horizon_trading_days,
+    )
+    row = rec.to_row()
+    for k in ("gate_cleared", "go_no_go", "gates_passed", "gates_total"):
+        v = gate.get(k)
+        if v is not None:
+            row[k] = v
+    return row
+
+
+def _build_limit_paper_row(
+    r: dict[str, Any],
+    signal_date: str,
+    fill_date: str,
+    reference_entry: float,
+    horizon_trading_days: int,
+    entry_cost_pct: float,
+) -> dict[str, Any] | None:
+    """Paper row after limit order fills at reference entry on fill_date."""
+    row = _result_to_paper_record(r, signal_date, horizon_trading_days)
+    if row is None:
+        return None
+    limit_px = round(reference_entry, 2)
+    eff = round(limit_px * (1.0 + entry_cost_pct), 4)
+    row["entry_mode"] = "limit_touch"
+    row["reference_entry_price"] = limit_px
+    row["limit_fill_date"] = fill_date
+    row["entry_price"] = limit_px
+    row["entry_price_source"] = "limit_touch"
+    row["effective_entry_date"] = fill_date
+    row["effective_entry_price"] = eff
+    row["effective_entry_source"] = "limit_touch"
+    row["execution_mode"] = "close_to_close"
+    return row
 
 
 def _is_buy_side_signal(sig: str) -> bool:
@@ -316,19 +483,229 @@ class PaperTradeLogger:
         return tid
 
     def log_signal(self, rec: PaperTradeRecord) -> bool:
+        """Append a signal row (legacy PaperTradeRecord API)."""
+        return self.log_signal_row(rec.to_row())
+
+    def log_signal_row(self, row: dict[str, Any]) -> bool:
         """
         Append a signal row.
         Idempotent per (date, ticker, signal) to avoid duplicates on dashboard refresh.
         Returns True if appended, False if skipped.
         """
         rows = self._read_all()
-        key = (rec.date, rec.ticker, rec.signal)
+        key = self._dedupe_key(row)
         existing = {self._dedupe_key(r) for r in rows}
         if key in existing:
             return False
-        rows.append(rec.to_row())
+        self._ensure_trade_id(row)
+        rows.append(row)
         self._write_all(rows)
         return True
+
+    def _ticker_bar_on_snapshot(self, date_str: str, ticker: str) -> dict[str, Any] | None:
+        snap = self._load_snapshot(date_str)
+        if not snap:
+            return None
+        row = _run_results_by_ticker_upper(snap.get("run_results") or []).get(ticker.upper())
+        if not row:
+            return None
+        return {
+            "close": _safe_float(row.get("close")),
+            "high": _safe_float(row.get("high")),
+            "low": _safe_float(row.get("low")),
+        }
+
+    def _find_limit_fill_date(
+        self,
+        signal_date: str,
+        ticker: str,
+        limit_px: float,
+        dates: list[str],
+        max_wait_bd: int,
+    ) -> str | None:
+        try:
+            sig_ts = pd.Timestamp(signal_date).normalize()
+            deadline = sig_ts + BDay(max_wait_bd)
+        except Exception:
+            return None
+        for d in dates:
+            try:
+                d_ts = pd.Timestamp(d).normalize()
+            except Exception:
+                continue
+            if d_ts < sig_ts:
+                continue
+            if d_ts > deadline:
+                break
+            bar = self._ticker_bar_on_snapshot(d, ticker)
+            if bar and _bar_touches_limit(bar, limit_px):
+                return d
+        return None
+
+    def _log_market_signals_from_results(
+        self,
+        results: list[dict[str, Any]],
+        date_str: str,
+        horizon_trading_days: int,
+        only_actionable: bool,
+        config: dict | None,
+    ) -> dict[str, Any]:
+        from signals.tracking_gate import enrich_tracking_row, passes_tracking_gate
+
+        n_appended = 0
+        n_seen = 0
+        n_skipped_gate = 0
+        for r in results or []:
+            try:
+                if not isinstance(r, dict):
+                    continue
+                enrich_tracking_row(r)
+                if not passes_tracking_gate(r, config, "paper_trading"):
+                    n_skipped_gate += 1
+                    continue
+                sig = r.get("signal") or r.get("short_suggestion") or "HOLD"
+                if only_actionable and not _is_actionable_signal(str(sig)):
+                    continue
+                row = _result_to_paper_record(r, date_str, horizon_trading_days)
+                if row is None:
+                    continue
+                row["entry_mode"] = "market"
+                n_seen += 1
+                if self.log_signal_row(row):
+                    n_appended += 1
+            except Exception:
+                continue
+        return {
+            "date": date_str,
+            "seen": n_seen,
+            "appended": n_appended,
+            "skipped_gate": n_skipped_gate,
+            "entry_mode": "market",
+        }
+
+    def scan_limit_entries_from_eod(
+        self,
+        allowed_tickers: set[str] | frozenset[str] | None = None,
+        max_signal_days: int = 90,
+        horizon_trading_days: int = 20,
+        config: dict | None = None,
+        live_signal_date: str | None = None,
+        live_results: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Patient entries: log a row only when price touches the model reference limit
+        within max_wait business days after a GO-gated signal day.
+        """
+        from signals.tracking_gate import enrich_tracking_row, passes_tracking_gate
+
+        pt_cfg = _paper_cfg(config)
+        ref_key = str(pt_cfg.get("reference_entry", "st_band_low"))
+        max_wait = int(pt_cfg.get("limit_max_wait_days", 10))
+        require_actionable = bool(pt_cfg.get("require_actionable_signal", True))
+        entry_cost = self.cost_per_side_pct
+
+        dates = self._list_eod_dates()
+        if not dates and not live_results:
+            return {
+                "appended": 0,
+                "signals_scanned": 0,
+                "skipped_gate": 0,
+                "skipped_no_reference": 0,
+                "skipped_no_fill": 0,
+                "entry_mode": "limit_touch",
+                "message": "No EOD snapshots in Redis or data/eod.",
+            }
+
+        scan = dates[-max_signal_days:] if len(dates) > max_signal_days else list(dates)
+        rows = self._read_all()
+        existing = {self._dedupe_key(r) for r in rows}
+        appended = 0
+        signals_scanned = 0
+        skipped_gate = 0
+        skipped_no_ref = 0
+        skipped_no_fill = 0
+
+        live_date = live_signal_date or _today_str()
+        live_by_ticker = {
+            str(r.get("ticker") or "").upper(): r
+            for r in (live_results or [])
+            if isinstance(r, dict) and r.get("ticker")
+        }
+
+        for signal_date in scan:
+            snap = self._load_snapshot(signal_date)
+            run_results = list((snap or {}).get("run_results") or [])
+            if signal_date == live_date and live_by_ticker:
+                seen = {str(r.get("ticker") or "").upper() for r in run_results if r.get("ticker")}
+                for t, lr in live_by_ticker.items():
+                    if t not in seen:
+                        run_results.append(lr)
+
+            for r in run_results:
+                try:
+                    if not isinstance(r, dict):
+                        continue
+                    t = (r.get("ticker") or "").upper().strip()
+                    if not t or r.get("error"):
+                        continue
+                    if allowed_tickers is not None and t not in allowed_tickers:
+                        continue
+                    row_copy = dict(r)
+                    enrich_tracking_row(row_copy)
+                    if not passes_tracking_gate(row_copy, config, "paper_trading"):
+                        skipped_gate += 1
+                        continue
+                    sig = str(row_copy.get("signal") or row_copy.get("short_suggestion") or "HOLD")
+                    if require_actionable and not _is_actionable_signal(sig):
+                        continue
+                    signals_scanned += 1
+                    ref_px = _reference_entry_from_row(row_copy, ref_key)
+                    if ref_px is None:
+                        skipped_no_ref += 1
+                        continue
+                    fill_date = self._find_limit_fill_date(signal_date, t, ref_px, dates, max_wait)
+                    if fill_date is None and signal_date == live_date:
+                        bar = {
+                            "close": _safe_float(row_copy.get("close") or row_copy.get("price")),
+                            "high": _safe_float(row_copy.get("high")),
+                            "low": _safe_float(row_copy.get("low")),
+                        }
+                        if _bar_touches_limit(bar, ref_px):
+                            fill_date = live_date
+                    if fill_date is None:
+                        skipped_no_fill += 1
+                        continue
+                    rec_row = _build_limit_paper_row(
+                        row_copy,
+                        signal_date,
+                        fill_date,
+                        ref_px,
+                        horizon_trading_days,
+                        entry_cost,
+                    )
+                    if rec_row is None:
+                        continue
+                    key = self._dedupe_key(rec_row)
+                    if key in existing:
+                        continue
+                    rows.append(rec_row)
+                    existing.add(key)
+                    appended += 1
+                except Exception:
+                    continue
+
+        if appended:
+            self._write_all(rows)
+        return {
+            "appended": appended,
+            "signals_scanned": signals_scanned,
+            "skipped_gate": skipped_gate,
+            "skipped_no_reference": skipped_no_ref,
+            "skipped_no_fill": skipped_no_fill,
+            "eod_dates_total": len(dates),
+            "entry_mode": "limit_touch",
+            "message": None,
+        }
 
     def log_signals_from_results(
         self,
@@ -336,61 +713,136 @@ class PaperTradeLogger:
         date_str: str | None = None,
         horizon_trading_days: int = 20,
         only_actionable: bool = False,
+        config: dict | None = None,
+        allowed_tickers: set[str] | frozenset[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Convenience: log signals from dashboard run_signals() output.
+        Log paper trades from run_signals output.
+        Default entry_mode=limit_touch scans EOD for GO signals that fill at reference entry.
         """
         date_str = date_str or _today_str()
-        n_appended = 0
-        n_seen = 0
-        for r in results or []:
-            try:
-                t = (r.get("ticker") or "").upper().strip()
-                if not t or r.get("error"):
-                    continue
-                sig = r.get("signal") or r.get("short_suggestion") or "HOLD"
-                if only_actionable and str(sig).upper() not in ("BUY", "STRONG BUY", "HOLD/ADD"):
-                    continue
-                n_seen += 1
-                st = r.get("st_band") if isinstance(r.get("st_band"), dict) else None
-                target_1 = _safe_float(st.get("high")) if st else None
-                hard_stop = _safe_float(st.get("low")) if st else None
-                ml = r.get("ml_short_prob")
-                ml_conf = round(float(ml) * 100, 1) if _safe_float(ml) is not None else None
-                # Prefer global market regime if present (Tier1 regime scale)
-                reg = r.get("_global_market_regime") or r.get("regime")
-                # Entry: dashboard may set paper_entry_price from batch/Yahoo last — else OHLCV last bar (close)
-                entry = _safe_float(
-                    r.get("paper_entry_price") or r.get("close") or r.get("price")
-                )
-                entry_src = None
-                if _safe_float(r.get("paper_entry_price")) is not None:
-                    entry_src = str(r.get("paper_entry_source") or "live_quote")
-                elif entry is not None:
-                    entry_src = "ohlcv_last_bar"
-                atr_14 = _safe_float(r.get("atr_14"))
-                score = _safe_float(r.get("composite_buy"))
-                # kelly_pct is optional; if Tier1 sizing is available elsewhere we can backfill later
-                rec = PaperTradeRecord(
-                    date=date_str,
-                    ticker=t,
-                    signal=str(sig),
-                    ml_confidence=ml_conf,
-                    regime=str(reg) if reg is not None else None,
-                    entry_price=round(entry, 2) if entry is not None else None,
-                    entry_price_source=entry_src,
-                    target_1=round(target_1, 2) if target_1 is not None else None,
-                    hard_stop=round(hard_stop, 2) if hard_stop is not None else None,
-                    atr_14=round(atr_14, 2) if atr_14 is not None else None,
-                    model_score=round(score, 1) if score is not None else None,
-                    kelly_pct=None,
-                    horizon_trading_days=horizon_trading_days,
-                )
-                if self.log_signal(rec):
-                    n_appended += 1
-            except Exception:
+        pt_cfg = _paper_cfg(config)
+        if _entry_mode(config) == "market":
+            return self._log_market_signals_from_results(
+                results, date_str, horizon_trading_days, only_actionable, config
+            )
+        max_days = int(pt_cfg.get("backfill_from_eod_days", 90))
+        out = self.scan_limit_entries_from_eod(
+            allowed_tickers=allowed_tickers,
+            max_signal_days=max_days,
+            horizon_trading_days=horizon_trading_days,
+            config=config,
+            live_signal_date=date_str,
+            live_results=results,
+        )
+        out["date"] = date_str
+        return out
+
+    def backfill_from_eod_snapshots(
+        self,
+        allowed_tickers: set[str] | frozenset[str] | None = None,
+        max_days: int = 90,
+        horizon_trading_days: int = 20,
+        config: dict | None = None,
+    ) -> dict[str, Any]:
+        """
+        Rebuild missing paper trade rows from historical EOD snapshots.
+        limit_touch: only rows where reference entry was touched within wait window.
+        market: legacy one-row-per-GO-day at close.
+        """
+        if _entry_mode(config) == "market":
+            return self._backfill_market_from_eod(
+                allowed_tickers=allowed_tickers,
+                max_days=max_days,
+                horizon_trading_days=horizon_trading_days,
+                config=config,
+            )
+        return self.scan_limit_entries_from_eod(
+            allowed_tickers=allowed_tickers,
+            max_signal_days=max_days,
+            horizon_trading_days=horizon_trading_days,
+            config=config,
+        )
+
+    def _backfill_market_from_eod(
+        self,
+        allowed_tickers: set[str] | frozenset[str] | None = None,
+        max_days: int = 90,
+        horizon_trading_days: int = 20,
+        config: dict | None = None,
+    ) -> dict[str, Any]:
+        from signals.tracking_gate import enrich_tracking_row, passes_tracking_gate
+
+        dates = self._list_eod_dates()
+        if not dates:
+            return {
+                "appended": 0,
+                "dates_scanned": 0,
+                "skipped_existing": 0,
+                "skipped_gate": 0,
+                "entry_mode": "market",
+                "message": "No EOD snapshots in Redis or data/eod.",
+            }
+
+        scan = dates[-max_days:] if len(dates) > max_days else dates
+        rows = self._read_all()
+        existing = {self._dedupe_key(r) for r in rows}
+        appended = 0
+        skipped = 0
+        skipped_gate = 0
+        dates_scanned = 0
+
+        for date_str in scan:
+            snap = self._load_snapshot(date_str)
+            if not snap:
                 continue
-        return {"date": date_str, "seen": n_seen, "appended": n_appended}
+            dates_scanned += 1
+            for r in snap.get("run_results") or []:
+                try:
+                    if not isinstance(r, dict):
+                        continue
+                    t = (r.get("ticker") or "").upper().strip()
+                    if not t or r.get("error"):
+                        continue
+                    if allowed_tickers is not None and t not in allowed_tickers:
+                        continue
+                    row_copy = dict(r)
+                    enrich_tracking_row(row_copy)
+                    if not passes_tracking_gate(row_copy, config, "paper_trading"):
+                        skipped_gate += 1
+                        continue
+                    rec_row = _result_to_paper_record(row_copy, date_str, horizon_trading_days)
+                    if rec_row is None:
+                        continue
+                    rec_row["entry_mode"] = "market"
+                    key = self._dedupe_key(rec_row)
+                    if key in existing:
+                        skipped += 1
+                        continue
+                    rows.append(rec_row)
+                    existing.add(key)
+                    appended += 1
+                except Exception:
+                    continue
+
+        if appended:
+            self._write_all(rows)
+        return {
+            "appended": appended,
+            "dates_scanned": dates_scanned,
+            "skipped_existing": skipped,
+            "skipped_gate": skipped_gate,
+            "eod_dates_total": len(dates),
+            "entry_mode": "market",
+            "message": None,
+        }
+
+    @staticmethod
+    def _open_rows_for_update(rows: list[dict[str, Any]], max_rows: int = 5000) -> list[dict[str, Any]]:
+        """Open trades oldest-first so horizon fills are not starved by rows[:max_rows] on large CSVs."""
+        open_rows = [r for r in rows if not r.get("outcome")]
+        open_rows.sort(key=lambda r: str(r.get("date") or ""))
+        return open_rows[:max_rows]
 
     def _row_mode(self, row: dict[str, Any]) -> str:
         m = str(row.get("execution_mode") or self.execution_mode or "close_to_close").strip().lower()
@@ -415,6 +867,12 @@ class PaperTradeLogger:
         signal_date = str(row.get("date") or "")
         entry_cost = self._row_cost_pct(row, "entry_cost_pct")
         src = str(row.get("effective_entry_source") or "").strip()
+
+        if src == "limit_touch":
+            eff = _safe_float(row.get("effective_entry_price"))
+            eff_date = str(row.get("effective_entry_date") or row.get("limit_fill_date") or "").strip() or None
+            if eff is not None and eff > 0 and eff_date:
+                return eff, eff_date
 
         eff = _safe_float(row.get("effective_entry_price"))
         eff_date = str(row.get("effective_entry_date") or "").strip() or None
@@ -498,7 +956,7 @@ class PaperTradeLogger:
             return {"updated": 0, "message": "No run results to sync from."}
 
         updated = 0
-        for row in rows[:max_rows]:
+        for row in self._open_rows_for_update(rows, max_rows):
             try:
                 if row.get("outcome"):
                     continue
@@ -645,7 +1103,7 @@ class PaperTradeLogger:
             r["excess_return_pct"] = round(tr - br, 2) if (tr is not None and br is not None) else None
         return rows
 
-    def fill_outcomes(self, max_rows: int = 500) -> dict[str, Any]:
+    def fill_outcomes(self, max_rows: int = 5000) -> dict[str, Any]:
         """
         Backfill outcomes using EOD snapshots (no extra API calls).
         Uses horizon_trading_days to find the next snapshot date.
@@ -659,14 +1117,27 @@ class PaperTradeLogger:
             return {"updated": 0, "message": "Need at least 2 EOD snapshots (Redis or data/eod) to fill outcomes."}
 
         updated = 0
-        for row in rows[:max_rows]:
+        entry_synced = 0
+        for row in self._open_rows_for_update(rows, max_rows):
             try:
                 if row.get("outcome"):
                     continue
                 as_of = row.get("date")
                 if not as_of:
                     continue
+                before_entry = (
+                    row.get("effective_entry_date"),
+                    row.get("effective_entry_source"),
+                    row.get("effective_entry_price"),
+                )
                 eff_entry, eff_entry_date = self._ensure_effective_entry(row, dates)
+                after_entry = (
+                    row.get("effective_entry_date"),
+                    row.get("effective_entry_source"),
+                    row.get("effective_entry_price"),
+                )
+                if after_entry != before_entry:
+                    entry_synced += 1
                 if eff_entry is None or not eff_entry_date:
                     continue
                 horizon = int(float(row.get("horizon_trading_days") or 20))
@@ -733,11 +1204,11 @@ class PaperTradeLogger:
             except Exception:
                 continue
 
-        if updated:
+        if updated or entry_synced:
             self._write_all(rows)
-        return {"updated": updated, "message": None}
+        return {"updated": updated, "entry_synced": entry_synced, "message": None}
 
-    def mark_to_market(self, max_rows: int = 500) -> dict[str, Any]:
+    def mark_to_market(self, max_rows: int = 5000) -> dict[str, Any]:
         """
         Update open trades daily using the latest available EOD snapshot.
         This gives you a running return% even before the 20-trading-day horizon is reached.
@@ -758,13 +1229,25 @@ class PaperTradeLogger:
 
         run_by_ticker = _run_results_by_ticker_upper(snap.get("run_results") or [])
         updated = 0
+        entry_synced = 0
 
-        for row in rows[:max_rows]:
+        for row in self._open_rows_for_update(rows, max_rows):
             try:
                 if row.get("outcome"):
                     continue
                 self._ensure_trade_id(row)
+                before_entry = (
+                    row.get("effective_entry_date"),
+                    row.get("effective_entry_source"),
+                    row.get("effective_entry_price"),
+                )
                 eff_entry, _eff_date = self._ensure_effective_entry(row, dates)
+                if (
+                    row.get("effective_entry_date"),
+                    row.get("effective_entry_source"),
+                    row.get("effective_entry_price"),
+                ) != before_entry:
+                    entry_synced += 1
                 if eff_entry is None or eff_entry <= 0:
                     continue
                 t = (row.get("ticker") or "").upper()
@@ -773,10 +1256,24 @@ class PaperTradeLogger:
                 if px is None:
                     continue
                 exit_cost = self._row_cost_pct(row, "exit_cost_pct")
-                px_net = round(float(px) * (1.0 - exit_cost), 4)
+                px_net = _net_exit_price(float(px), exit_cost)
                 mtm_ret = round(100 * (px_net - eff_entry) / eff_entry, 2)
-                # Rolling columns: only after we have a prior mark — daily $/% vs last snapshot; first MTM has no prior day.
-                prev_mark = _safe_float(row.get("rolling_entry_price"))
+                # Daily Δ: prior EOD net mark vs today's net mark (not dependent on prior MTM run).
+                prev_eod = _prev_eod_date(dates, latest)
+                prev_mark: float | None = None
+                eff_date = str(row.get("effective_entry_date") or row.get("date") or "")
+                if prev_eod:
+                    prev_close = self._ticker_close_on_snapshot(prev_eod, t)
+                    if prev_close is not None and prev_close > 0:
+                        try:
+                            if eff_date and pd.Timestamp(prev_eod).normalize() >= pd.Timestamp(eff_date).normalize():
+                                prev_mark = _net_exit_price(float(prev_close), exit_cost)
+                        except Exception:
+                            prev_mark = _net_exit_price(float(prev_close), exit_cost)
+                if prev_mark is None and eff_entry and eff_entry > 0:
+                    stored = _safe_float(row.get("rolling_entry_price"))
+                    if stored is not None and stored > 0 and str(row.get("mtm_date") or "") != latest:
+                        prev_mark = stored
                 if prev_mark is not None and prev_mark > 0:
                     rolling_ret = round(100 * (px_net - prev_mark) / prev_mark, 2)
                     rolling_pnl = round(px_net - prev_mark, 2)
@@ -797,11 +1294,11 @@ class PaperTradeLogger:
             except Exception:
                 continue
 
-        if updated:
+        if updated or entry_synced:
             self._write_all(rows)
-        return {"updated": updated, "message": None, "as_of": latest}
+        return {"updated": updated, "entry_synced": entry_synced, "message": None, "as_of": latest}
 
-    def append_mtm_history(self, max_rows: int = 500) -> dict[str, Any]:
+    def append_mtm_history(self, max_rows: int = 5000) -> dict[str, Any]:
         """
         Append one MTM datapoint per open trade per EOD date (idempotent per day).
         Data lives in paper_trades_mtm.jsonl for day-by-day P&L history.
@@ -831,7 +1328,7 @@ class PaperTradeLogger:
         out_path = _mtm_history_file(self.data_root)
         appended = 0
         with open(out_path, "a", encoding="utf-8") as f:
-            for row in rows[:max_rows]:
+            for row in self._open_rows_for_update(rows, max_rows):
                 try:
                     if row.get("outcome"):
                         continue
@@ -850,6 +1347,12 @@ class PaperTradeLogger:
                         "mtm_date": latest,
                         "mtm_price": _safe_float(row.get("mtm_price")),
                         "mtm_return_pct": _safe_float(row.get("mtm_return_pct")),
+                        "total_return_pct": _safe_float(row.get("mtm_return_pct")),
+                        "total_pnl_per_share": (
+                            round(_safe_float(row.get("mtm_price_net")) - _safe_float(row.get("effective_entry_price")), 4)
+                            if _safe_float(row.get("mtm_price_net")) is not None and _safe_float(row.get("effective_entry_price")) is not None
+                            else None
+                        ),
                     }
                     f.write(json.dumps(payload) + "\n")
                     appended += 1
@@ -866,6 +1369,91 @@ class PaperTradeLogger:
         except Exception:
             pass
         return {"appended": appended, "message": None, "as_of": latest}
+
+    def sync_mtm_history_from_eod(self, max_rows: int = 5000, max_days: int = 120) -> dict[str, Any]:
+        """
+        Backfill paper_trades_mtm.jsonl with total P&L % vs entry for each EOD date after entry.
+        Each point is cumulative return from effective entry (not daily delta).
+        """
+        rows = self._read_all()
+        if not rows:
+            return {"appended": 0, "message": "No paper trades logged yet."}
+
+        dates = self._list_eod_dates()
+        if len(dates) < 2:
+            return {"appended": 0, "message": "Need at least 2 EOD snapshots."}
+
+        scan = dates[-max_days:] if len(dates) > max_days else dates
+        out_path = _mtm_history_file(self.data_root)
+        existing_keys: set[str] = set()
+        if out_path.exists():
+            try:
+                with open(out_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            obj = json.loads(line)
+                            tid = str(obj.get("trade_id") or "")
+                            d = str(obj.get("mtm_date") or "")
+                            if tid and d:
+                                existing_keys.add(f"{tid}:{d}")
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+        appended = 0
+        with open(out_path, "a", encoding="utf-8") as f:
+            for row in self._open_rows_for_update(rows, max_rows):
+                try:
+                    self._ensure_trade_id(row)
+                    tid = str(row.get("trade_id") or "")
+                    eff_entry, eff_entry_date = self._ensure_effective_entry(row, dates)
+                    if eff_entry is None or not eff_entry_date or eff_entry <= 0:
+                        continue
+                    t = (row.get("ticker") or "").upper()
+                    exit_cost = self._row_cost_pct(row, "exit_cost_pct")
+                    end_date = str(row.get("next_date") or dates[-1])
+                    try:
+                        end_ts = pd.Timestamp(end_date).normalize()
+                    except Exception:
+                        end_ts = pd.Timestamp(dates[-1]).normalize()
+                    try:
+                        start_ts = pd.Timestamp(eff_entry_date).normalize()
+                    except Exception:
+                        continue
+                    for d in scan:
+                        try:
+                            d_ts = pd.Timestamp(d).normalize()
+                        except Exception:
+                            continue
+                        if d_ts < start_ts or d_ts > end_ts:
+                            continue
+                        key = f"{tid}:{d}"
+                        if key in existing_keys:
+                            continue
+                        px = self._ticker_close_on_snapshot(d, t)
+                        if px is None or px <= 0:
+                            continue
+                        px_net = _net_exit_price(float(px), exit_cost)
+                        total_ret = round(100 * (px_net - eff_entry) / eff_entry, 2)
+                        total_pnl = round(px_net - eff_entry, 4)
+                        payload = {
+                            "trade_id": tid,
+                            "trade_date": row.get("date"),
+                            "ticker": t,
+                            "signal": row.get("signal"),
+                            "mtm_date": d,
+                            "mtm_price": round(float(px), 2),
+                            "mtm_return_pct": total_ret,
+                            "total_return_pct": total_ret,
+                            "total_pnl_per_share": total_pnl,
+                        }
+                        f.write(json.dumps(payload) + "\n")
+                        existing_keys.add(key)
+                        appended += 1
+                except Exception:
+                    continue
+        return {"appended": appended, "message": None}
 
     def get_mtm_history_map(self, recent_rows: list[dict[str, Any]], limit_per_trade: int = 12) -> dict[str, list[dict[str, Any]]]:
         """
@@ -900,8 +1488,9 @@ class PaperTradeLogger:
                         out[tid].append(
                             {
                                 "mtm_date": obj.get("mtm_date"),
-                                "mtm_return_pct": _safe_float(obj.get("mtm_return_pct")),
+                                "mtm_return_pct": _safe_float(obj.get("total_return_pct") or obj.get("mtm_return_pct")),
                                 "mtm_price": _safe_float(obj.get("mtm_price")),
+                                "total_pnl_per_share": _safe_float(obj.get("total_pnl_per_share")),
                             }
                         )
                     except Exception:
@@ -1007,9 +1596,14 @@ class PaperTradeLogger:
         """
         rows = self._read_all()
         completed = [r for r in rows if r.get("outcome") in ("HIT", "MISS", "STOP_HIT") and _safe_float(r.get("return_pct")) is not None]
+        open_rows = [r for r in rows if not r.get("outcome")]
+        open_n = len(open_rows)
+        open_dates = [str(r.get("date")) for r in open_rows if r.get("date")]
+        oldest_open = min(open_dates) if open_dates else None
+        eod_n = len(self._list_eod_dates())
 
         horizon_note = (
-            "Completed trades: exit = first EOD on or after signal date + N business days "
+            "Completed trades: exit = first EOD on or after entry date + N business days "
             "(per-row horizon_trading_days, default 20). Compare to SPY over the same dates."
         )
 
@@ -1018,18 +1612,31 @@ class PaperTradeLogger:
             "benchmark_ticker": benchmark.upper(),
             "min_required": min_completed,
             "completed": len(completed),
+            "open": open_n,
+            "total_rows": len(rows),
+            "oldest_open_date": oldest_open,
+            "eod_snapshots": eod_n,
         }
 
         # Need enough rows for basic stats; cap at 5 for default (60) runs, allow 3 when caller passes min_completed=3 (e.g. paper vs forward drift).
         stats_floor = max(3, min(5, int(min_completed)))
         if len(completed) < stats_floor:
-            open_n = sum(1 for r in rows if not r.get("outcome"))
             out["status"] = f"Need more data: {len(completed)}/{min_completed} completed trades"
             if open_n:
-                out["message"] = (
-                    f"{open_n} open — Return/Last mark update daily from EOD; "
-                    "final HIT/MISS after signal date + horizon_trading_days (default 20 business days)."
+                hint = (
+                    f"{open_n} open ({len(rows)} logged"
+                    + (f", oldest open {oldest_open}" if oldest_open else "")
+                    + "). "
                 )
+                if len(rows) <= open_n and eod_n >= 25:
+                    hint += (
+                        "EOD history exists but paper_trades.csv may be new — refresh Analysis to backfill from EOD. "
+                    )
+                hint += (
+                    "Return/Last mark update daily from EOD; "
+                    "final HIT/MISS after entry date + horizon_trading_days (default 20 business days)."
+                )
+                out["message"] = hint
             else:
                 out["message"] = None
             return out

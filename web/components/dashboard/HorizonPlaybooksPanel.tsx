@@ -28,6 +28,26 @@ function pickPlaybook(bundle: HorizonPlaybooksBundle, horizon: HorizonKey): Hori
   return bundle.long?.active ? bundle.long : null;
 }
 
+/** Lines repeated across playbooks — show once above tabs, not in every card. */
+function sharedPlaybookContext(playbooks: HorizonPlaybooksBundle): string[] {
+  const lines: string[] = [];
+  for (const h of ["short", "medium", "long"] as const) {
+    const pb = pickPlaybook(playbooks, h);
+    for (const line of pb?.setup_narrative ?? []) {
+      const t = String(line).trim();
+      if (t) lines.push(t);
+    }
+  }
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    counts.set(line, (counts.get(line) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .filter(([, n]) => n >= 2)
+    .map(([line]) => line)
+    .slice(0, 4);
+}
+
 export function HorizonPlaybooksPanel({
   ticker,
   playbooks,
@@ -68,7 +88,7 @@ export function HorizonPlaybooksPanel({
   if (available.length === 0) return null;
 
   const primary = pickPlaybook(playbooks, activeHorizon) ?? pickPlaybook(playbooks, available[0]);
-  const secondary = available.filter((h) => h !== activeHorizon && pickPlaybook(playbooks, h));
+  const sharedLines = useMemo(() => sharedPlaybookContext(playbooks), [playbooks]);
 
   return (
     <div className="border-b border-slate-700/80">
@@ -112,16 +132,16 @@ export function HorizonPlaybooksPanel({
         </div>
       )}
 
-      {primary && <HorizonPlaybookCard data={primary} />}
+      {sharedLines.length > 0 && (
+        <ul className="mx-4 sm:mx-6 mt-3 mb-1 space-y-1 text-sm text-slate-400 border-l-2 border-slate-600 pl-3">
+          {sharedLines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
 
-      {secondary.length > 0 && (
-        <div className="border-t border-slate-800/80">
-          <p className="px-4 sm:px-6 pt-2 text-[10px] uppercase tracking-wider text-slate-600">Also available</p>
-          {secondary.map((h) => {
-            const pb = pickPlaybook(playbooks, h);
-            return pb ? <HorizonPlaybookCard key={h} data={pb} compact /> : null;
-          })}
-        </div>
+      {primary && (
+        <HorizonPlaybookCard data={primary} omitNarrativeLines={sharedLines} />
       )}
     </div>
   );

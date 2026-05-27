@@ -155,12 +155,18 @@ const KIND_ACCENT: Record<string, { go: string; no: string }> = {
 export function HorizonPlaybookCard({
   data,
   compact,
+  omitNarrativeLines = [],
 }: {
   data: HorizonPlaybookPayload;
   /** Secondary playbooks — collapsed header by default */
   compact?: boolean;
+  /** Shared context lines rendered once in the panel header */
+  omitNarrativeLines?: string[];
 }) {
   if (!data?.active) return null;
+
+  const omitSet = new Set(omitNarrativeLines);
+  const narrativeLines = (data.setup_narrative ?? []).filter((line) => !omitSet.has(line.trim()));
 
   const isThesis = data.kind === "thesis_tiers";
   const isGo = isThesis
@@ -217,10 +223,10 @@ export function HorizonPlaybookCard({
         )}
       </div>
 
-      {data.setup_narrative.length > 0 && (
+      {narrativeLines.length > 0 && (
         <div className="px-4 sm:px-6 pb-3">
           <ul className="space-y-1.5 text-sm text-slate-300/95 leading-relaxed border-l-2 border-slate-600 pl-3">
-            {data.setup_narrative.map((line, i) => (
+            {narrativeLines.map((line, i) => (
               <li key={i}>{line}</li>
             ))}
           </ul>

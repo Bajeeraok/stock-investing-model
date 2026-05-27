@@ -477,11 +477,36 @@ horizons:
 paper_trading:
   min_completed_for_summary: 60   # lower (e.g. 15) to unlock full stats sooner while building history
   min_actionable_buy_summary: 8   # min completed STRONG BUY/BUY/HOLD/ADD rows for buy-only sub-summary
+  backfill_from_eod_days: 90      # rebuild paper_trades.csv from EOD when CSV is empty/stale after redeploy
+  require_gates_cleared: true     # only log GO signals (all 4 gates pass); legacy EOD without gates still backfills
+  entry_mode: limit_touch          # limit_touch (patient limit at reference) | market (legacy close fill)
+  reference_entry: st_band_low           # st_band_low (ST ATR/swing) | suggested_buy_price (MA50/200) | support_level
+  limit_max_wait_days: 10         # business days after GO signal to wait for limit touch
+  require_actionable_signal: true # BUY / STRONG BUY / HOLD-ADD only (skip GO+HOLD rows)
   benchmark_ticker: SPY
   execution:
     mode: next_session            # close_to_close (legacy) | next_session (more realistic fills)
     round_trip_cost_pct: 0.003    # commission+slippage total; applied half on entry, half on exit
     use_intraday_touch: true      # if snapshot row has high/low, use them for target/stop hit checks
+
+# Forward audit pilot: fixed 100-ticker cohort → SQLite at DATA_ROOT/signal_audit.db
+# Cohort list lives in config/signal_audit_cohort.yaml (separate from watchlist/portfolio).
+# Outcomes (Phase 2) read EOD from Redis first, then DATA_ROOT/eod/ — same as paper trades.
+signal_audit:
+  enabled: true
+  cohort_file: config/signal_audit_cohort.yaml
+  merge_into_signal_universe: true       # audit cohort on EOD/run_daily only (not dashboard refresh)
+  use_cohort_for_forward_tracking: false       # forward tracking = your book; audit panel = cohort
+  log_on_run_daily: true
+  log_on_dashboard: false
+  pilot_target_days: 30
+
+# Forward tracking panel (Analysis tab)
+forward_tracking:
+  max_pairs_per_horizon: 60              # snapshot-step pairs per horizon (raise if cohort is large)
+  max_records_response: 2000             # most recent rows returned to UI
+  require_gates_cleared: false           # keep all rows; gate fields on each record for filtering
+  enrich_gates_from_eod: true            # recompute gates from EOD row when snapshot lacks gate_cleared
 
 # 7-layer confidence: HMM bear penalty vs MA200 trend conflict; ML prob calibration (Platt / isotonic)
 # Standard equity weights: see pre_flight/constants.py (EQUITY_US — fundamentals 14%, regime 11%).

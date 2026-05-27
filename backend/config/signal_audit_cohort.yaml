@@ -1,0 +1,116 @@
+# Fixed 100-ticker forward-audit cohort (pilot).
+# Kept separate from watchlist/portfolio — do not edit mid-pilot without resetting audit window.
+cohort_tag: audit_100
+
+categories:
+  large_cap_tech:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - META
+    - NVDA
+    - TSLA
+    - NFLX
+    - AMD
+    - ORCL
+    - ADBE
+    - CRM
+    - QCOM
+    - INTC
+    - AVGO
+    - NOW
+    - SNOW
+    - PLTR
+    - PANW
+    - CRWD
+
+  large_cap_non_tech:
+    - JPM
+    - BAC
+    - GS
+    - V
+    - MA
+    - JNJ
+    - UNH
+    - PFE
+    - ABBV
+    - LLY
+    - XOM
+    - CVX
+    - COP
+    - SLB
+    - VST
+    - WMT
+    - COST
+    - HD
+    - MCD
+    - NKE
+
+  mid_cap_growth:
+    - IREN
+    - TEM
+    - SOUN
+    - IONQ
+    - RXRX
+    - BE
+    - NBIS
+    - CRWV
+    - HOOD
+    - RBLX
+    - U
+    - DKNG
+    - SOFI
+    - AFRM
+    - PATH
+    - AI
+    - BBAI
+    - SMAR
+    - GTLB
+    - COIN
+
+  etfs:
+    - SPY
+    - QQQ
+    - IWM
+    - GLD
+    - SLV
+    - TLT
+    - HYG
+    - XLE
+    - XLF
+    - XLK
+    - XLV
+    - ARKK
+    - TQQQ
+    - SOXL
+    - DIA
+
+  macro_commodity:
+    - USO
+    - CORN
+    - WEAT
+    - UNG
+    - COPX
+    - LIT
+    - REMX
+    - URNM
+    - "^VIX"
+    - URA
+
+  problem_names:
+    - SNDK
+    - SOLV
+    - LCID
+    - RIVN
+    - PLUG
+    - NKLA
+    - SAVA
+    - DJT
+    - GRAB
+    - ARM
+    - BIIB
+    - MRNA
+    - OKLO
+    - SMCI
+    - REGN

@@ -176,11 +176,8 @@ def portfolio_tickers_from_config(config: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def get_signal_universe(config: dict) -> list[str]:
-    """
-    Tickers that receive daily signals, roadmaps, and EOD rows: watchlist first,
-    then any portfolio holdings not already on the watchlist.
-    """
+def get_dashboard_signal_universe(config: dict) -> list[str]:
+    """Watchlist + portfolio only — used on dashboard refresh (no audit cohort)."""
     watchlist = [str(t).upper() for t in (config.get("watchlist") or []) if t]
     seen = set(watchlist)
     merged = list(watchlist)
@@ -189,3 +186,116 @@ def get_signal_universe(config: dict) -> list[str]:
             merged.append(t)
             seen.add(t)
     return merged
+
+
+def get_eod_signal_universe(config: dict) -> list[str]:
+    """Daily EOD / audit run: dashboard universe + fixed audit cohort when enabled."""
+    merged = get_dashboard_signal_universe(config)
+    seen = set(merged)
+    audit_cfg = config.get("signal_audit") or {}
+    if audit_cfg.get("enabled") and audit_cfg.get("merge_into_signal_universe", True):
+        for t in get_audit_cohort_tickers(config):
+            if t not in seen:
+                merged.append(t)
+                seen.add(t)
+    return merged
+
+
+def get_signal_universe(config: dict) -> list[str]:
+    """
+    Tickers for daily EOD / run_daily (includes audit cohort when enabled).
+    Dashboard refresh uses get_dashboard_signal_universe() instead.
+    """
+    return get_eod_signal_universe(config)
+
+
+def _signal_audit_cohort_path(config: dict) -> Path:
+    audit_cfg = config.get("signal_audit") or {}
+    rel = str(audit_cfg.get("cohort_file") or "config/signal_audit_cohort.yaml").strip()
+    path = Path(rel)
+    if not path.is_absolute():
+        path = ROOT / rel
+    return path
+
+
+def load_signal_audit_cohort(config: dict) -> dict:
+    """Load cohort YAML: {cohort_tag, categories: {name: [tickers]}}."""
+    path = _signal_audit_cohort_path(config)
+    if not path.exists():
+        return {"cohort_tag": "audit_100", "categories": {}}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            return {"cohort_tag": "audit_100", "categories": {}}
+        return data
+    except Exception:
+        return {"cohort_tag": "audit_100", "categories": {}}
+
+
+def get_audit_cohort_tickers(config: dict) -> list[str]:
+    """Fixed audit cohort tickers (uppercase, deduped). Empty when signal_audit disabled."""
+    audit_cfg = config.get("signal_audit") or {}
+    if not audit_cfg.get("enabled"):
+        return []
+    data = load_signal_audit_cohort(config)
+    out: list[str] = []
+    seen: set[str] = set()
+    categories = data.get("categories") or {}
+    if isinstance(categories, dict):
+        for tickers in categories.values():
+            if not isinstance(tickers, list):
+                continue
+            for t in tickers:
+                sym = str(t).upper().strip()
+                if sym and sym not in seen:
+                    out.append(sym)
+                    seen.add(sym)
+    return out
+
+
+def get_audit_cohort_meta(config: dict) -> dict[str, str]:
+    """Map ticker -> category label for audit breakdown."""
+    audit_cfg = config.get("signal_audit") or {}
+    if not audit_cfg.get("enabled"):
+        return {}
+    data = load_signal_audit_cohort(config)
+    meta: dict[str, str] = {}
+    categories = data.get("categories") or {}
+    if isinstance(categories, dict):
+        for cat, tickers in categories.items():
+            if not isinstance(tickers, list):
+                continue
+            for t in tickers:
+                sym = str(t).upper().strip()
+                if sym:
+                    meta[sym] = str(cat)
+    return meta
+
+
+def get_audit_cohort_tag(config: dict) -> str:
+    audit_cfg = config.get("signal_audit") or {}
+    if not audit_cfg.get("enabled"):
+        return ""
+    data = load_signal_audit_cohort(config)
+    return str(data.get("cohort_tag") or audit_cfg.get("cohort_tag") or "audit_100")
+
+
+def get_forward_tracking_tickers(
+    config: dict,
+    watchlist: list[str] | None = None,
+    portfolio_tickers: list[str] | None = None,
+) -> list[str]:
+    """
+    Tickers for forward-tracking stats. Uses audit cohort when enabled (pilot),
+    else watchlist + portfolio union.
+    """
+    audit_cfg = config.get("signal_audit") or {}
+    if audit_cfg.get("enabled") and audit_cfg.get("use_cohort_for_forward_tracking", True):
+        cohort = get_audit_cohort_tickers(config)
+        if cohort:
+            return cohort
+    wl = [str(t).upper() for t in (watchlist or []) if t]
+    pt = [str(t).upper() for t in (portfolio_tickers or []) if t]
+    merged = list(dict.fromkeys(wl + pt))
+    return merged or ["SPY", "QQQ"]

@@ -13,6 +13,19 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _EOD_DIR_NAME = "eod"
+_DEFAULT_MAX_RECORDS = 2000
+
+
+def _cap_records_recent(records: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    """Keep the most recent observations (records are built newest-first per horizon block)."""
+    if len(records) <= limit:
+        return records
+    sorted_rows = sorted(
+        records,
+        key=lambda r: (str(r.get("as_of_date") or ""), str(r.get("ticker") or "")),
+        reverse=True,
+    )
+    return sorted_rows[:limit]
 
 
 def _list_eod_dates_redis() -> list[str]:
@@ -127,6 +140,8 @@ def get_forward_tracking(
     max_pairs_per_horizon: int = 30,
     buy_min: float | None = None,
     sell_max: float | None = None,
+    max_records: int | None = None,
+    config: dict | None = None,
 ) -> dict[str, Any]:
     """
     Multi-horizon forward returns and signal accuracy.
@@ -162,6 +177,9 @@ def get_forward_tracking(
 
     syms = tickers or ["SPY", "QQQ"]
     horizon_list = list(horizons or [5, 20, 60])
+    record_cap = max_records if max_records is not None else _DEFAULT_MAX_RECORDS
+    ft_cfg = (config or {}).get("forward_tracking") or {}
+    enrich_gates = bool(ft_cfg.get("enrich_gates_from_eod", True))
 
     dates = _list_eod_dates(eod_dir)
     if len(dates) < 2:
@@ -180,7 +198,15 @@ def get_forward_tracking(
     records: list[dict[str, Any]] = []
     by_horizon: dict[int, list[float]] = {h: [] for h in horizon_list}
     by_signal_20: dict[str, list[float]] = {}
+    by_go_20: dict[str, list[float]] = {"go": [], "no_go": [], "unknown": []}
     signal_source_counts: dict[str, int] = {"ml_signal": 0, "score_fallback": 0}
+
+    try:
+        from signals.tracking_gate import enrich_tracking_row, gate_snapshot_from_row, passes_tracking_gate
+    except Exception:
+        enrich_tracking_row = None  # type: ignore
+        gate_snapshot_from_row = None  # type: ignore
+        passes_tracking_gate = None  # type: ignore
 
     for horizon in horizon_list:
         if horizon >= len(dates):
@@ -219,10 +245,19 @@ def get_forward_tracking(
                     continue
                 if prior <= 0:
                     continue
+                row_work = dict(row)
+                if enrich_gates and enrich_tracking_row is not None:
+                    enrich_tracking_row(row_work)
+                if passes_tracking_gate is not None and not passes_tracking_gate(row_work, config, "forward_tracking"):
+                    continue
+                gate = gate_snapshot_from_row(row_work) if gate_snapshot_from_row else {}
                 ret_pct = round(100 * (actual - prior) / prior, 2)
                 our_signal, signal_source = _signal_and_source_from_row(
-                    row, buy_min=buy_min, sell_max=sell_max
+                    row_work, buy_min=buy_min, sell_max=sell_max
                 )
+                go_key = str(gate.get("go_no_go") or "unknown").lower()
+                if go_key not in ("go", "no_go"):
+                    go_key = "unknown"
 
                 records.append({
                     "as_of_date": as_of_date,
@@ -232,11 +267,16 @@ def get_forward_tracking(
                     "our_signal": our_signal,
                     "signal_source": signal_source,
                     "actual_return_pct": ret_pct,
+                    "gate_cleared": gate.get("gate_cleared"),
+                    "go_no_go": gate.get("go_no_go"),
+                    "gates_passed": gate.get("gates_passed"),
+                    "gates_total": gate.get("gates_total"),
                 })
                 signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
                 by_horizon[horizon].append(ret_pct)
                 if horizon == 20:
                     by_signal_20.setdefault(our_signal, []).append(ret_pct)
+                    by_go_20.setdefault(go_key, []).append(ret_pct)
 
     summary_by_horizon = {}
     for h, returns in by_horizon.items():
@@ -257,11 +297,37 @@ def get_forward_tracking(
                 "hit_rate_pct": hit_rate_pct,
             }
 
+    summary_by_go_no_go: dict[str, dict[str, Any]] = {}
+    for go_key, returns in by_go_20.items():
+        if returns:
+            n_pos = sum(1 for r in returns if r > 0)
+            summary_by_go_no_go[go_key] = {
+                "avg_return_20d_pct": round(sum(returns) / len(returns), 2),
+                "n_observations": len(returns),
+                "hit_rate_pct": round(100 * n_pos / len(returns), 1),
+            }
+
+    total_records = len(records)
+    capped = _cap_records_recent(records, record_cap)
+    as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
+    meta = {
+        "eod_date_first": dates[0] if dates else None,
+        "eod_date_last": dates[-1] if dates else None,
+        "eod_snapshot_count": len(dates),
+        "records_total": total_records,
+        "records_returned": len(capped),
+        "as_of_date_min": min(as_of_dates) if as_of_dates else None,
+        "as_of_date_max": max(as_of_dates) if as_of_dates else None,
+        "ticker_count": len(syms),
+    }
+
     return {
-        "records": records[-500:],  # Cap for response size (raised for full watchlist)
+        "records": capped,
         "summary_by_horizon": summary_by_horizon,
         "summary_by_signal": summary_by_signal,
+        "summary_by_go_no_go": summary_by_go_no_go,
         "signal_source_counts": signal_source_counts,
+        "meta": meta,
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
 

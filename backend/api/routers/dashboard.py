@@ -43,7 +43,9 @@ from portfolio.performance import compute_performance_vs_benchmark
 from config_loader import (
     add_ticker as _add_ticker,
     add_uploaded_portfolio,
+    get_dashboard_signal_universe,
     get_data_root,
+    get_forward_tracking_tickers,
     get_signal_universe,
     load_config,
     remove_ticker as _remove_ticker,
@@ -92,6 +94,14 @@ try:
     from signals.tier1_api_bridge import generate_tier1_payload
 except ImportError:
     generate_tier1_payload = None
+
+
+def _forward_tracking_params(config: dict) -> dict[str, int]:
+    ft = (config.get("forward_tracking") or {}) if isinstance(config, dict) else {}
+    return {
+        "max_pairs_per_horizon": int(ft.get("max_pairs_per_horizon", 60)),
+        "max_records": int(ft.get("max_records_response", 2000)),
+    }
 
 
 def _tier1_lightweight_fallback(
@@ -488,32 +498,52 @@ def compute_analysis_bundle() -> dict | None:
 
     def _task_forward_tracking():
         try:
-            ft_tickers = list(dict.fromkeys([t for t in (watchlist + portfolio_tickers) if t])) or ["SPY", "QQQ"]
+            ft_tickers = get_forward_tracking_tickers(config, watchlist, portfolio_tickers)
+            ft_params = _forward_tracking_params(config)
             return ("forward_tracking", get_forward_tracking(
-                data_root=data_root, tickers=ft_tickers, horizons=[5, 20, 60], max_pairs_per_horizon=30,
+                data_root=data_root,
+                tickers=ft_tickers,
+                horizons=[5, 20, 60],
+                max_pairs_per_horizon=ft_params["max_pairs_per_horizon"],
+                max_records=ft_params["max_records"],
+                config=config,
             ))
         except Exception as e:
             return ("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)})
 
     def _task_paper_trading_async():
         try:
+            from config_loader import get_dashboard_signal_universe
             from signals.paper_trade_logger import PaperTradeLogger
             pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
             min_done = int(pt_cfg.get("min_completed_for_summary", 60))
             min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
             bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
+            backfill_days = int(pt_cfg.get("backfill_from_eod_days", 90))
+            horizon_days = int(pt_cfg.get("horizon_trading_days", 20))
             pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
             pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
+            paper_universe = set(get_dashboard_signal_universe(config))
+            backfill = pt.backfill_from_eod_snapshots(
+                allowed_tickers=paper_universe,
+                max_days=backfill_days,
+                horizon_trading_days=horizon_days,
+                config=config,
+            )
             sync = pt.sync_targets_stops_from_results(results)
             mtm = pt.mark_to_market()
+            mtm_history_sync = pt.sync_mtm_history_from_eod(max_days=backfill_days)
             mtm_history_log = pt.append_mtm_history()
             fill = pt.fill_outcomes()
             summary = pt.get_performance_summary(min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym)
-            recent = pt.enrich_trades_with_benchmark(pt.get_recent(limit=40), benchmark=bench_sym)
+            recent = pt.enrich_trades_with_benchmark(pt.get_recent(limit=200), benchmark=bench_sym)
             mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
             equity_curve = pt.get_completed_equity_curve(max_points=400)
             return ("paper_trading_async", {
-                "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
+                "backfill": backfill,
+                "sync_targets": sync, "mtm": mtm,
+                "mtm_history_sync": mtm_history_sync,
+                "mtm_history_log": mtm_history_log,
                 "fill": fill, "summary": summary, "recent": recent, "mtm_history": mtm_history,
                 "equity_curve": equity_curve,
             })
@@ -589,11 +619,20 @@ def compute_analysis_bundle() -> dict | None:
         except Exception as e:
             return ("confidence_calibration", {"buckets": [], "note": str(e)})
 
+    def _task_model_audit():
+        try:
+            from signals.signal_audit_store import build_model_audit_payload
+            return ("model_audit", build_model_audit_payload(config, data_root=data_root))
+        except Exception as e:
+            logger.debug("analysis-bundle model_audit: %s", e)
+            return ("model_audit", {"enabled": False, "message": str(e)})
+
     specs = [
         _task_insider, _task_fmp_plan, _task_model_validation, _task_forward_tracking,
         _task_paper_trading_async, _task_regime_validation, _task_confidence_calibration,
+        _task_model_audit,
     ]
-    with ThreadPoolExecutor(max_workers=min(7, len(specs))) as ex:
+    with ThreadPoolExecutor(max_workers=min(8, len(specs))) as ex:
         futures = [ex.submit(fn) for fn in specs]
         for fut in as_completed(futures):
             try:
@@ -607,7 +646,9 @@ def compute_analysis_bundle() -> dict | None:
     if paper_async:
         paper_trading["sync_targets"] = paper_async.get("sync_targets")
         paper_trading["mtm"] = paper_async.get("mtm")
+        paper_trading["mtm_history_sync"] = paper_async.get("mtm_history_sync")
         paper_trading["mtm_history_log"] = paper_async.get("mtm_history_log")
+        paper_trading["backfill"] = paper_async.get("backfill")
         paper_trading["fill"] = paper_async.get("fill")
         paper_trading["summary"] = paper_async.get("summary")
         paper_trading["recent"] = paper_async.get("recent")
@@ -659,6 +700,7 @@ def compute_analysis_bundle() -> dict | None:
         "indicator_validation": indicator_validation,
         "indicator_comparisons": indicator_comparisons,
         "fmp_plan_status": parallel_results.get("fmp_plan_status", {}),
+        "model_audit": parallel_results.get("model_audit", {"enabled": False, "message": "Not computed"}),
         "analysis_deferred": False,
     }
     logger.info("[analysis-bundle] DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
@@ -786,7 +828,7 @@ def _compute_full_dashboard_sync() -> dict:
 
     # Consolidate tickers for single FMP batch quote (signals + portfolio + opportunity universe) to stay under API limit
     watchlist = config.get("watchlist", [])
-    signal_universe = get_signal_universe(config)
+    signal_universe = get_dashboard_signal_universe(config)
     portfolio_tickers = [h.get("ticker") if isinstance(h, dict) else h for h in holdings]
     opportunity_universe = config.get("opportunity_universe") or []
     all_quote_tickers = list(dict.fromkeys([t for t in signal_universe + portfolio_tickers + opportunity_universe if t]))
@@ -859,11 +901,12 @@ def _compute_full_dashboard_sync() -> dict:
         logger.debug("Forward tracking for hit-rate gate: %s", e)
 
     t0 = time.perf_counter()
-    logger.info("[dashboard] section: run_signals (watchlist + portfolio, %d tickers)...", len(get_signal_universe(config)))
+    logger.info("[dashboard] section: run_signals (watchlist + portfolio, %d tickers)...", len(signal_universe))
     results = run_signals(
         config,
         prices_by_ticker=prices_by_ticker,
         hit_rate_context=hit_rate_context,
+        tickers=signal_universe,
     )
     logger.info("[dashboard] section: run_signals DONE (%d tickers, %.0f ms)", len(results) if results else 0, (time.perf_counter() - t0) * 1000)
 
@@ -889,7 +932,7 @@ def _compute_full_dashboard_sync() -> dict:
                 except (TypeError, ValueError):
                     pass
 
-    # Paper trading log: capture today's signals (idempotent by date+ticker+signal)
+    # Paper trading + signal audit log (idempotent by date+ticker)
     try:
         from datetime import datetime as _dt
 
@@ -899,18 +942,22 @@ def _compute_full_dashboard_sync() -> dict:
             from backports.zoneinfo import ZoneInfo  # type: ignore
 
         paper_trade_date = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-        from signals.paper_trade_logger import PaperTradeLogger
+        from signals.signal_audit_store import persist_daily_signal_logs
 
-        pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
-        pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
-        pt = PaperTradeLogger(data_root=get_data_root(), execution_cfg=pt_exec_cfg)
-        paper_log = pt.log_signals_from_results(
-            results, only_actionable=False, date_str=paper_trade_date
+        log_result = persist_daily_signal_logs(
+            results,
+            config,
+            date_str=paper_trade_date,
+            run_source="dashboard",
+            data_root=get_data_root(),
         )
+        paper_log = log_result.get("paper_trades") or {}
         logger.info("[dashboard] paper trades logged: %s", paper_log)
+        logger.info("[dashboard] signal audit logged: %s", log_result.get("signal_audit"))
         paper_trading["log"] = paper_log
+        paper_trading["signal_audit"] = log_result.get("signal_audit")
     except Exception as e:
-        logger.debug("Paper trading log failed: %s", e)
+        logger.debug("Paper trading / signal audit log failed: %s", e)
 
     # Update price-target accuracy report (same results, no extra fetch) so GET /api/accuracy is always current
     try:
@@ -1134,14 +1181,15 @@ def _compute_full_dashboard_sync() -> dict:
 
     def _task_forward_tracking():
         try:
-            ft_tickers = list(dict.fromkeys(
-                [t for t in (watchlist + portfolio_tickers) if t]
-            )) or ["SPY", "QQQ"]
+            ft_tickers = get_forward_tracking_tickers(config, watchlist, portfolio_tickers)
+            ft_params = _forward_tracking_params(config)
             return ("forward_tracking", get_forward_tracking(
                 data_root=data_root,
                 tickers=ft_tickers,
                 horizons=[5, 20, 60],
-                max_pairs_per_horizon=30,
+                max_pairs_per_horizon=ft_params["max_pairs_per_horizon"],
+                max_records=ft_params["max_records"],
+                config=config,
             ))
         except Exception as e:
             ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)}
@@ -1237,15 +1285,26 @@ def _compute_full_dashboard_sync() -> dict:
 
     def _task_paper_trading_async():
         try:
+            from config_loader import get_dashboard_signal_universe
             from signals.paper_trade_logger import PaperTradeLogger
             pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
             min_done = int(pt_cfg.get("min_completed_for_summary", 60))
             min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
             bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
+            backfill_days = int(pt_cfg.get("backfill_from_eod_days", 90))
+            horizon_days = int(pt_cfg.get("horizon_trading_days", 20))
             pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
             pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
+            paper_universe = set(get_dashboard_signal_universe(config))
+            backfill = pt.backfill_from_eod_snapshots(
+                allowed_tickers=paper_universe,
+                max_days=backfill_days,
+                horizon_trading_days=horizon_days,
+                config=config,
+            )
             sync = pt.sync_targets_stops_from_results(results)
             mtm = pt.mark_to_market()
+            mtm_history_sync = pt.sync_mtm_history_from_eod(max_days=backfill_days)
             mtm_history_log = pt.append_mtm_history()
             fill = pt.fill_outcomes()
             summary = pt.get_performance_summary(
@@ -1253,12 +1312,15 @@ def _compute_full_dashboard_sync() -> dict:
                 min_actionable=min_buy,
                 benchmark=bench_sym,
             )
-            recent = pt.get_recent(limit=40)
+            recent = pt.get_recent(limit=200)
             recent = pt.enrich_trades_with_benchmark(recent, benchmark=bench_sym)
             mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
             equity_curve = pt.get_completed_equity_curve(max_points=400)
             return ("paper_trading_async", {
-                "sync_targets": sync, "mtm": mtm, "mtm_history_log": mtm_history_log,
+                "backfill": backfill,
+                "sync_targets": sync, "mtm": mtm,
+                "mtm_history_sync": mtm_history_sync,
+                "mtm_history_log": mtm_history_log,
                 "fill": fill, "summary": summary, "recent": recent, "mtm_history": mtm_history,
                 "equity_curve": equity_curve,
             })
@@ -1329,7 +1391,9 @@ def _compute_full_dashboard_sync() -> dict:
     if paper_async:
         paper_trading["sync_targets"] = paper_async.get("sync_targets")
         paper_trading["mtm"] = paper_async.get("mtm")
+        paper_trading["mtm_history_sync"] = paper_async.get("mtm_history_sync")
         paper_trading["mtm_history_log"] = paper_async.get("mtm_history_log")
+        paper_trading["backfill"] = paper_async.get("backfill")
         paper_trading["fill"] = paper_async.get("fill")
         paper_trading["summary"] = paper_async.get("summary")
         paper_trading["recent"] = paper_async.get("recent")
@@ -3039,53 +3103,149 @@ def eod_save_from_last_run(snapshot_date: str | None = None):
     }
 
 
+@router.get("/eod/status")
+def eod_status():
+    """
+    Quick EOD snapshot status: latest file/Redis date, whether today's EST snapshot exists,
+    and configured signal universe sizes (dashboard vs EOD/audit).
+    """
+    from datetime import datetime as _dt
+
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+
+    today_est = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    config = _load_config()
+    from config_loader import get_dashboard_signal_universe, get_eod_signal_universe
+
+    dashboard_uni = get_dashboard_signal_universe(config)
+    eod_uni = get_eod_signal_universe(config)
+    dates: list[str] = []
+    try:
+        from signals.cache import list_eod_dates_redis
+
+        dates = list_eod_dates_redis() or []
+    except Exception:
+        pass
+    if not dates:
+        eod_dir = get_data_root() / "eod"
+        if eod_dir.exists():
+            dates = sorted(p.stem for p in eod_dir.glob("*.json") if p.stem[:4].isdigit())
+    latest = dates[-1] if dates else None
+    today_path = get_data_root() / "eod" / f"{today_est}.json"
+    return {
+        "today_est": today_est,
+        "latest_snapshot_date": latest,
+        "snapshot_count": len(dates),
+        "today_snapshot_exists": today_path.exists() or today_est in dates,
+        "today_snapshot_path": str(today_path) if today_path.exists() else None,
+        "dashboard_universe_count": len(dashboard_uni),
+        "eod_universe_count": len(eod_uni),
+        "dashboard_universe_sample": dashboard_uni[:8],
+        "manual_run_hint": (
+            "POST /api/eod/run?force=true&refresh_dashboard=true re-runs today's snapshot "
+            "and refreshes the dashboard cache (use after 8pm scheduler if you want a fresh pass)."
+        ),
+    }
+
+
 @router.post("/eod/run")
 def run_eod_now(
     snapshot_date: str | None = None,
+    force: bool = False,
+    refresh_dashboard: bool = False,
+    universe: str = "eod",
     authorization: str | None = Header(None),
 ):
     """
-    Run EOD snapshot ad-hoc: compute signals and save data/eod/YYYY-MM-DD.json.
-    snapshot_date: optional query param (YYYY-MM-DD, e.g. 2026-02-17) to save for that EST date; if omitted, uses today EST.
-    Skips if a snapshot for that date already exists (idempotent once per day when no date given).
-    May take 1-2 minutes when run. Use for manual trigger or to backfill a day.
+    Run EOD snapshot ad-hoc: compute signals and save data/eod/YYYY-MM-DD.json (+ Redis).
 
-    If env EOD_RUN_SECRET is set, require header: Authorization: Bearer <secret>.
+    Query params:
+      snapshot_date — optional YYYY-MM-DD (EST market date); default today EST.
+      force — when true, overwrite an existing snapshot for that date (default skips if file exists).
+      refresh_dashboard — when true, trigger background full dashboard recompute after a successful run.
+      universe — ticker set: ``eod`` (watchlist+portfolio+audit cohort, same as 8pm scheduler) or
+                 ``dashboard`` (watchlist+portfolio only, matches dashboard signal panels).
+
+    May take 1–2 minutes. If env EOD_RUN_SECRET is set, require header: Authorization: Bearer <secret>.
     """
     secret = os.environ.get("EOD_RUN_SECRET", "").strip()
     if secret and (authorization or "").strip() != f"Bearer {secret}":
         raise HTTPException(status_code=401, detail="Unauthorized")
     from datetime import datetime as _dt
+
     try:
         from zoneinfo import ZoneInfo
     except ImportError:
         from backports.zoneinfo import ZoneInfo  # type: ignore
+
     today_est = _dt.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
     date_str = snapshot_date.strip() if isinstance(snapshot_date, str) and snapshot_date.strip() else today_est
     eod_path = get_data_root() / "eod" / f"{date_str}.json"
-    if eod_path.exists():
-        logger.info("[eod/run] Snapshot already exists for %s, skipping", date_str)
+    uni_key = (universe or "eod").strip().lower()
+    if uni_key not in ("eod", "dashboard"):
+        raise HTTPException(status_code=400, detail="universe must be 'eod' or 'dashboard'")
+
+    if eod_path.exists() and not force:
+        logger.info("[eod/run] Snapshot already exists for %s, skipping (use force=true to overwrite)", date_str)
         return {
             "ok": True,
             "skipped": True,
-            "message": f"EOD snapshot already exists for {date_str}",
+            "forced": False,
+            "message": f"EOD snapshot already exists for {date_str}. Pass force=true to re-run.",
             "snapshot_date": date_str,
             "snapshot_path": str(eod_path),
+            "dashboard_refresh": None,
         }
+
     config = _load_config()
-    logger.info("[eod/run] Starting EOD snapshot run for date=%s", date_str)
-    result = run_eod_snapshot_only(config, snapshot_date=date_str)
+    from config_loader import get_dashboard_signal_universe, get_eod_signal_universe
+
+    if uni_key == "dashboard":
+        tickers = get_dashboard_signal_universe(config)
+    else:
+        tickers = get_eod_signal_universe(config)
+
+    logger.info(
+        "[eod/run] Starting EOD snapshot run date=%s universe=%s tickers=%d force=%s",
+        date_str,
+        uni_key,
+        len(tickers),
+        force,
+    )
+    result = run_eod_snapshot_only(config, snapshot_date=date_str, tickers=tickers)
     if result.get("error"):
         logger.warning("[eod/run] EOD snapshot failed: %s", result["error"])
         raise HTTPException(status_code=500, detail=result["error"])
     logger.info("[eod/run] EOD snapshot saved: %s", result.get("snapshot_path"))
+
+    dash_refresh: dict[str, Any] | None = None
+    if refresh_dashboard:
+        from api.dashboard_job import is_refresh_running, trigger_background_refresh
+
+        started = trigger_background_refresh(_compute_full_dashboard_sync)
+        dash_refresh = {
+            "triggered": started,
+            "already_running": (not started) and is_refresh_running(),
+            "poll_status_url": "/api/dashboard/status",
+            "reload_hint": "Poll /api/dashboard/status until idle, then reload dashboard or GET /api/dashboard/shell",
+        }
+
     return {
         "ok": True,
         "skipped": False,
+        "forced": bool(force),
         "snapshot_date": result.get("snapshot_date"),
         "snapshot_path": result.get("snapshot_path"),
         "tickers_count": result.get("tickers_count", 0),
         "pruned": result.get("pruned", 0),
+        "universe": uni_key,
+        "universe_count": len(tickers),
+        "signal_audit": result.get("signal_audit"),
+        "paper_trades": result.get("paper_trades"),
+        "dashboard_refresh": dash_refresh,
     }
 
 

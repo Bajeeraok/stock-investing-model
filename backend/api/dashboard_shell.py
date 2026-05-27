@@ -81,6 +81,7 @@ ANALYSIS_BUNDLE_KEYS: tuple[str, ...] = (
     "indicator_validation",
     "indicator_comparisons",
     "fmp_plan_status",
+    "model_audit",
 )
 
 
@@ -239,5 +240,6 @@ def empty_analysis_bundle() -> dict:
         "indicator_validation": [],
         "indicator_comparisons": [],
         "fmp_plan_status": {"has_key": False, "available": [], "unavailable": []},
+        "model_audit": {"enabled": False, "message": "Not computed"},
         "analysis_deferred": False,
     }

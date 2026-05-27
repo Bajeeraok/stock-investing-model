@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -50,6 +50,7 @@ import {
   MarketScenarios,
   PerformanceVsBenchmark,
   ForwardTracking,
+  ModelAuditPanel,
   ModelHealthStrip,
   MorningNewsletter,
   PaperTradingPanel,
@@ -400,6 +401,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const indicatorValidation = analysisBundle?.indicator_validation ?? data.indicator_validation;
   const indicatorComparisons = analysisBundle?.indicator_comparisons ?? data.indicator_comparisons;
   const fmpPlanStatus = analysisBundle?.fmp_plan_status ?? data.fmp_plan_status;
+  const modelAudit = analysisBundle?.model_audit ?? data.model_audit;
 
   const analysisPanelData = useMemo(
     (): DashboardData => ({
@@ -414,6 +416,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       indicator_validation: indicatorValidation,
       indicator_comparisons: indicatorComparisons,
       fmp_plan_status: fmpPlanStatus,
+      model_audit: modelAudit,
     }),
     [
       data,
@@ -427,6 +430,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       indicatorValidation,
       indicatorComparisons,
       fmpPlanStatus,
+      modelAudit,
     ]
   );
 
@@ -1407,8 +1411,21 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     records={forwardTracking!.records}
                     summary_by_horizon={forwardTracking!.summary_by_horizon ?? {}}
                     summary_by_signal={forwardTracking!.summary_by_signal ?? {}}
+                    summary_by_go_no_go={forwardTracking!.summary_by_go_no_go ?? {}}
                     message={forwardTracking?.message}
+                    meta={forwardTracking?.meta ?? null}
                   />
+                </ToggleSection>
+              )}
+              {(modelAudit?.enabled || modelAudit?.message) && (
+                <ToggleSection
+                  id="analysis-model-audit"
+                  title="Model audit (100 tickers)"
+                  icon={<ClipboardCheck />}
+                  badge={modelAudit?.pilot?.total_events ?? modelAudit?.cohort_size ?? undefined}
+                  defaultOpen
+                >
+                  <ModelAuditPanel audit={modelAudit ?? null} />
                 </ToggleSection>
               )}
               <ToggleSection id="analysis-calibration" title="Calibration curve" icon={<Activity />} defaultOpen>

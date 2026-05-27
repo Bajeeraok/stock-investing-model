@@ -17,16 +17,28 @@ function hasNumericValue(v: unknown): boolean {
   return !Number.isNaN(Number(v));
 }
 
-type MtmPoint = { mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null };
+type MtmPoint = {
+  mtm_date: string;
+  mtm_return_pct: number | null;
+  mtm_price: number | null;
+  total_pnl_per_share?: number | null;
+};
 
 function formatPnlHistory(history: MtmPoint[] | undefined, maxPoints = 6): { short: string; tooltip: string } {
   if (!history?.length) return { short: "—", tooltip: "" };
-  const lines = history.map((h) => `${h.mtm_date}: ${h.mtm_return_pct != null ? fmtPct(h.mtm_return_pct) : "—"}`);
+  const lines = history.map((h) => {
+    const total = h.mtm_return_pct != null ? fmtPct(h.mtm_return_pct) : "—";
+    const pnl =
+      h.total_pnl_per_share != null
+        ? ` ($${Number(h.total_pnl_per_share).toFixed(2)}/sh)`
+        : "";
+    return `${h.mtm_date}: total ${total}${pnl}`;
+  });
   const short = history
     .slice(-maxPoints)
     .map((h) => (h.mtm_return_pct != null ? fmtPct(h.mtm_return_pct) : "—"))
     .join(" → ");
-  return { short, tooltip: lines.join("\n") };
+  return { short: `total ${short}`, tooltip: lines.join("\n") };
 }
 
 type DateRange = "1W" | "1M" | "3M" | "ALL";
@@ -37,6 +49,8 @@ const DATE_RANGES: { label: string; value: DateRange }[] = [
   { label: "All", value: "ALL" },
 ];
 
+type StatusFilter = "ALL" | "OPEN" | "DONE";
+
 function cutoffDate(range: DateRange): string | null {
   if (range === "ALL") return null;
   const d = new Date();
@@ -44,6 +58,29 @@ function cutoffDate(range: DateRange): string | null {
   else if (range === "1M") d.setMonth(d.getMonth() - 1);
   else if (range === "3M") d.setMonth(d.getMonth() - 3);
   return d.toISOString().slice(0, 10);
+}
+
+function filteredPaperStats(rows: any[]) {
+  const completed = rows.filter((r) => r.outcome && String(r.outcome).trim() !== "");
+  const withReturn = completed.filter((r) => hasNumericValue(r.return_pct));
+  if (!withReturn.length) {
+    return { n: rows.length, completed: completed.length, winRate: null as number | null, avgReturn: null as number | null, avgExcess: null as number | null };
+  }
+  const returns = withReturn.map((r) => Number(r.return_pct));
+  const wins = returns.filter((x) => x > 0).length;
+  const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const excessRows = withReturn.filter((r) => hasNumericValue(r.excess_vs_benchmark_pct));
+  const avgExcess =
+    excessRows.length > 0
+      ? excessRows.reduce((a, r) => a + Number(r.excess_vs_benchmark_pct), 0) / excessRows.length
+      : null;
+  return {
+    n: rows.length,
+    completed: withReturn.length,
+    winRate: (100 * wins) / withReturn.length,
+    avgReturn,
+    avgExcess,
+  };
 }
 
 export function PaperTradingPanel({ data }: { data: DashboardData }) {
@@ -54,21 +91,34 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const allRecent = pt.recent ?? [];
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
+  const [signalFilter, setSignalFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
   const uniqueTickers = useMemo(
     () => Array.from(new Set(allRecent.map((r: any) => (r.ticker || "").toUpperCase()))).sort(),
     [allRecent],
   );
 
+  const uniqueSignals = useMemo(
+    () => Array.from(new Set(allRecent.map((r: any) => String(r.signal || "").trim()).filter(Boolean))).sort(),
+    [allRecent],
+  );
+
   const recent = useMemo(() => {
     const cutoff = cutoffDate(dateRange);
     const tf = tickerFilter.toUpperCase();
+    const sf = signalFilter.toUpperCase();
     return allRecent.filter((r: any) => {
       if (tf && (r.ticker || "").toUpperCase() !== tf) return false;
       if (cutoff && (r.date || "") < cutoff) return false;
+      if (sf && !String(r.signal || "").toUpperCase().includes(sf)) return false;
+      if (statusFilter === "OPEN" && r.outcome) return false;
+      if (statusFilter === "DONE" && !r.outcome) return false;
       return true;
     });
-  }, [allRecent, tickerFilter, dateRange]);
+  }, [allRecent, tickerFilter, dateRange, signalFilter, statusFilter]);
+
+  const filterStats = useMemo(() => filteredPaperStats(recent), [recent]);
 
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-3">
@@ -76,15 +126,24 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <div>
           <p className="text-sm font-medium text-slate-300">Paper trading (signals → outcomes)</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Entry = live quote when batch/Yahoo prices are available; otherwise last OHLCV bar (same as indicators).
-            Outcomes use the first EOD snapshot on or after signal date + N <strong>business</strong> days.
-            <strong> Return</strong> = vs signal entry; <strong>Last mark / daily Δ</strong> = change from <em>yesterday&apos;s</em> end-of-day mark to <em>today&apos;s</em> mark (shows &ldquo;—&rdquo; until two different EOD snapshots exist after you started logging).
-            <strong> Bench %</strong> = same-window return for the benchmark (default SPY); <strong>Excess</strong> = your return minus bench (open uses MTM vs entry).
+            Entry = limit fill when EOD low/close touches ref entry within the wait window after a GO signal.
+            Outcomes use the first EOD snapshot on or after fill date + N <strong>business</strong> days (ST band).
+            <strong> Ref entry</strong> = ST band low (ATR/swing), else MA50/MA200 suggested buy — must be at/below signal close.
+            <strong> Signal date</strong> = day gates passed; row opens only on touch.
+            <strong> Return</strong> = total vs limit fill; <strong>Daily Δ</strong> = vs prior EOD mark.
+            <strong> P&L history</strong> = total return vs fill at each EOD.
+            Requires <strong>4/4 gates GO</strong> + actionable signal (BUY / STRONG BUY / HOLD-ADD).
           </p>
         </div>
         {pt.log?.date && (
           <div className="text-xs text-slate-500">
             Logged {pt.log.appended}/{pt.log.seen} signals for {pt.log.date}
+          </div>
+        )}
+        {pt.backfill?.appended > 0 && (
+          <div className="text-xs text-sky-400">
+            Backfilled {pt.backfill.appended} limit fills from EOD
+            {pt.backfill.skipped_no_fill != null ? ` (${pt.backfill.skipped_no_fill} GO signals had no touch)` : ""}
           </div>
         )}
       </div>
@@ -96,10 +155,29 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           onChange={(e) => setTickerFilter(e.target.value)}
           className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
-          <option value="">All tickers</option>
+          <option value="">All tickers ({uniqueTickers.length})</option>
           {uniqueTickers.map((t) => (
             <option key={t} value={t}>{t}</option>
           ))}
+        </select>
+        <select
+          value={signalFilter}
+          onChange={(e) => setSignalFilter(e.target.value)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All signals</option>
+          {uniqueSignals.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="ALL">Open + done</option>
+          <option value="OPEN">Open only</option>
+          <option value="DONE">Completed only</option>
         </select>
         <div className="flex rounded border border-slate-600 overflow-hidden">
           {DATE_RANGES.map((dr) => (
@@ -118,12 +196,36 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             </button>
           ))}
         </div>
-        {(tickerFilter || dateRange !== "ALL") && (
+        {(tickerFilter || dateRange !== "ALL" || signalFilter || statusFilter !== "ALL") && (
           <span className="text-[10px] text-slate-500">
             Showing {recent.length} / {allRecent.length} trades
           </span>
         )}
       </div>
+
+      {(tickerFilter || dateRange !== "ALL" || signalFilter || statusFilter !== "ALL") && (
+        <div className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+          <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered slice</span>
+          <span>{filterStats.n} rows</span>
+          <span>{filterStats.completed} completed</span>
+          {filterStats.winRate != null && (
+            <span>
+              Win{" "}
+              <span className={filterStats.winRate >= 55 ? "text-emerald-400" : "text-amber-300"}>
+                {filterStats.winRate.toFixed(1)}%
+              </span>
+            </span>
+          )}
+          {filterStats.avgReturn != null && (
+            <span>
+              Avg {fmtPct(filterStats.avgReturn)}
+            </span>
+          )}
+          {filterStats.avgExcess != null && (
+            <span>Excess vs bench {fmtPct(filterStats.avgExcess)}</span>
+          )}
+        </div>
+      )}
 
       {summary && (
         <div className="space-y-2">
@@ -226,11 +328,23 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium">Date</th>
                 <th className="py-1.5 pr-2 font-medium">Ticker</th>
                 <th className="py-1.5 pr-2 font-medium">Signal</th>
+                <th className="py-1.5 pr-2 font-medium" title="4 primary gates at signal time (valuation, regime, momentum, ML)">
+                  Gates
+                </th>
                 <th
                   className="py-1.5 pr-2 font-medium"
-                  title="Live batch/Yahoo when set by dashboard; else OHLCV last close"
+                  title="Limit price from model (suggested buy / ST support)"
                 >
-                  Entry
+                  Ref entry
+                </th>
+                <th
+                  className="py-1.5 pr-2 font-medium"
+                  title="Live batch/Yahoo when market mode; limit fill price when limit_touch"
+                >
+                  Fill
+                </th>
+                <th className="py-1.5 pr-2 font-medium" title="First EOD date limit order filled">
+                  Fill date
                 </th>
                 <th className="py-1.5 pr-2 font-medium">Target</th>
                 <th className="py-1.5 pr-2 font-medium">Stop</th>
@@ -254,7 +368,9 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium" title="Day-over-day % move of the mark. Empty until a second trading day is captured.">
                   Daily Δ%
                 </th>
-                <th className="py-1.5 pr-2 font-medium">P&L history</th>
+                <th className="py-1.5 pr-2 font-medium" title="Total P&L % vs entry at each EOD after signal (hover for dates)">
+                  P&L history (total)
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -263,7 +379,21 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <td className="py-1.5 pr-2 text-slate-400">{r.date}</td>
                   <td className="py-1.5 pr-2 font-mono text-slate-200">{r.ticker}</td>
                   <td className="py-1.5 pr-2 text-slate-400">{r.signal}</td>
+                  <td className="py-1.5 pr-2 text-slate-400 text-xs">
+                    {r.gates_passed != null && r.gates_total != null ? (
+                      <span className={r.go_no_go === "go" || r.gate_cleared === true ? "text-emerald-400" : "text-amber-300"}>
+                        {r.gates_passed}/{r.gates_total}
+                        {r.go_no_go ? ` · ${String(r.go_no_go).toUpperCase()}` : ""}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-2 text-slate-300">
+                    {r.reference_entry_price != null ? `$${Number(r.reference_entry_price).toFixed(2)}` : "—"}
+                  </td>
                   <td className="py-1.5 pr-2 text-slate-300">{r.entry_price != null ? `$${Number(r.entry_price).toFixed(2)}` : "—"}</td>
+                  <td className="py-1.5 pr-2 text-slate-400">{r.limit_fill_date || "—"}</td>
                   <td className="py-1.5 pr-2 text-slate-300">{r.target_1 != null ? `$${Number(r.target_1).toFixed(2)}` : "—"}</td>
                   <td className="py-1.5 pr-2 text-slate-300">{r.hard_stop != null ? `$${Number(r.hard_stop).toFixed(2)}` : "—"}</td>
                   <td className="py-1.5 pr-2">
