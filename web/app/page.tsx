@@ -515,9 +515,21 @@ export interface DashboardData {
     bias: { ours: string | null; comparisons: { source: string; rating: string | null; status: string }[] };
   }[];
   forward_tracking?: {
-    records: { as_of_date: string; next_date: string; ticker: string; horizon_days: number; our_signal: string; actual_return_pct: number }[];
+    records: {
+      as_of_date: string;
+      next_date: string;
+      ticker: string;
+      horizon_days: number;
+      our_signal: string;
+      actual_return_pct: number;
+      gate_cleared?: boolean | null;
+      go_no_go?: string | null;
+      gates_passed?: number | null;
+      gates_total?: number | null;
+    }[];
     summary_by_horizon?: Record<number, { avg_return_pct: number; n_observations: number }>;
     summary_by_signal?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
+    summary_by_go_no_go?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
     meta?: {
       eod_date_first?: string | null;
       eod_date_last?: string | null;
