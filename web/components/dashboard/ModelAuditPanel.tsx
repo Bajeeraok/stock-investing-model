@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { clsx } from "clsx";
 import { ClipboardCheck } from "lucide-react";
+import { paginateRows, TablePager } from "./TablePager";
 
+const AUDIT_PAGE_SIZE = 25;
 export type ModelAuditBreakdownRow = {
   bucket: string | number | null;
   n: number;
@@ -32,6 +34,28 @@ export type ModelAuditRecord = {
   confidence_low?: number | null;
   confidence_high?: number | null;
   run_source?: string | null;
+  return_7d_pct?: number | null;
+  return_30d_pct?: number | null;
+  verdict?: string | null;
+  verdict_rule?: string | null;
+  hit_st_target?: number | null;
+  hit_stop_swing?: number | null;
+  max_gain_pct?: number | null;
+  max_drawdown_pct?: number | null;
+  benchmark_return_30d_pct?: number | null;
+};
+
+export type ModelAuditOutcomeSummary = {
+  events_total?: number;
+  resolved_n?: number;
+  pending_n?: number;
+  win_rate_pct?: number | null;
+  wins?: number;
+  losses?: number;
+  neutral?: number;
+  by_verdict?: { bucket: string; n: number; avg_return_7d_pct?: number | null; avg_return_30d_pct?: number | null }[];
+  by_go_no_go?: { bucket: string; n: number; win_rate_pct?: number | null }[];
+  by_ml_signal?: { bucket: string; n: number; win_rate_pct?: number | null }[];
 };
 
 export type ModelAuditPayload = {
@@ -64,9 +88,12 @@ export type ModelAuditPayload = {
   breakdown_by_regime?: ModelAuditBreakdownRow[];
   recent_records?: ModelAuditRecord[];
   outcomes_available?: boolean;
+  outcome_summary?: ModelAuditOutcomeSummary | null;
   outcomes_note?: string | null;
   message?: string | null;
   methodology?: string | null;
+  export_url?: string | null;
+  report_url?: string | null;
 };
 
 type DateRange = "1W" | "1M" | "ALL";
@@ -130,16 +157,9 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [gatesFilter, setGatesFilter] = useState<string>("");
+  const [page, setPage] = useState(0);
 
-  if (!audit?.enabled) {
-    return (
-      <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
-        <p className="text-sm text-slate-400">{audit?.message ?? "Model audit not enabled."}</p>
-      </div>
-    );
-  }
-
-  const records = audit.recent_records ?? [];
+  const records = audit?.enabled ? audit.recent_records ?? [] : [];
   const uniqueTickers = useMemo(
     () => Array.from(new Set(records.map((r) => r.ticker))).sort(),
     [records],
@@ -157,24 +177,42 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
     });
   }, [records, tickerFilter, dateRange, gatesFilter]);
 
-  const targetDays = audit.pilot_target_days ?? 30;
-  const progressDays = audit.pilot_progress_days ?? audit.pilot?.distinct_days ?? 0;
-  const progressPct = Math.min(100, Math.round((100 * progressDays) / Math.max(1, targetDays)));
-
   const gateOptions = useMemo(() => {
     const set = new Set(records.map((r) => r.gates_passed).filter((g) => g != null));
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [records]);
 
+  useEffect(() => {
+    setPage(0);
+  }, [tickerFilter, dateRange, gatesFilter]);
+
+  const pagedRows = useMemo(
+    () => paginateRows(filtered, page, AUDIT_PAGE_SIZE),
+    [filtered, page],
+  );
+
+  if (!audit?.enabled) {
+    return (
+      <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
+        <p className="text-sm text-slate-400">{audit?.message ?? "Model audit not enabled."}</p>
+      </div>
+    );
+  }
+
+  const targetDays = audit.pilot_target_days ?? 30;
+  const progressDays = audit.pilot_progress_days ?? audit.pilot?.distinct_days ?? 0;
+  const progressPct = Math.min(100, Math.round((100 * progressDays) / Math.max(1, targetDays)));
   return (
     <div className="rounded-lg border border-violet-500/30 bg-gradient-to-b from-violet-950/20 to-slate-800/30 p-4 space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-200 flex items-center gap-2">
-            <ClipboardCheck className="h-4 w-4 text-violet-400" />
-            Model audit — {audit.cohort_tag ?? "cohort"} ({audit.cohort_size ?? "—"} tickers)
-          </p>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-200 flex items-center gap-2 flex-wrap">
+            <ClipboardCheck className="h-4 w-4 text-violet-400 shrink-0" />
+            <span>
+              Model audit — {audit.cohort_tag ?? "cohort"}{" "}
+              <span className="text-violet-300">({audit.cohort_size ?? "—"} tickers)</span>
+            </span>
+          </p>          <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
             {audit.methodology ??
               "Fixed cohort captured once per EOD run. Gates and levels frozen at signal time in signal_audit.db."}
           </p>
@@ -185,6 +223,15 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             <br />
             {audit.pilot.total_events ?? 0} total rows
           </div>
+        )}
+        {audit.export_url && (
+          <a
+            href={audit.export_url}
+            className="text-xs font-medium text-violet-300 hover:text-violet-200 border border-violet-500/40 rounded px-2.5 py-1.5"
+            download
+          >
+            Export CSV
+          </a>
         )}
       </div>
 
@@ -223,12 +270,72 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         )}
       </div>
 
-      {audit.message && (
-        <p className="text-xs text-amber-200/90 rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2">{audit.message}</p>
+      {(audit.daily_captures?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Daily cohort captures</p>
+          <div className="flex flex-wrap gap-1.5">
+            {audit.daily_captures!.slice(0, 10).map((d) => (
+              <span
+                key={d.date}
+                className="inline-flex items-center gap-1 rounded bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-300 tabular-nums"
+              >
+                <span className="font-mono text-slate-400">{d.date.slice(5)}</span>
+                <span className="text-violet-300">{d.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {audit.message && (        <p className="text-xs text-amber-200/90 rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2">{audit.message}</p>
       )}
 
       {audit.outcomes_note && !audit.outcomes_available && (
         <p className="text-xs text-slate-500 border-l-2 border-slate-600 pl-2">{audit.outcomes_note}</p>
+      )}
+
+      {audit.outcome_summary && (audit.outcome_summary.resolved_n ?? 0) > 0 && (
+        <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5 space-y-2">
+          <p className="text-xs font-semibold text-emerald-200/90 uppercase tracking-wide">Outcome track record</p>
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-300">
+            <span>
+              Resolved:{" "}
+              <strong className="text-slate-100 tabular-nums">
+                {audit.outcome_summary.resolved_n}/{audit.outcome_summary.events_total}
+              </strong>
+            </span>
+            {audit.outcome_summary.win_rate_pct != null && (
+              <span>
+                Win rate:{" "}
+                <strong
+                  className={
+                    audit.outcome_summary.win_rate_pct >= 55 ? "text-emerald-400" : "text-amber-300"
+                  }
+                >
+                  {audit.outcome_summary.win_rate_pct.toFixed(1)}%
+                </strong>
+                <span className="text-slate-500">
+                  {" "}
+                  (W {audit.outcome_summary.wins ?? 0} · L {audit.outcome_summary.losses ?? 0} · N{" "}
+                  {audit.outcome_summary.neutral ?? 0})
+                </span>
+              </span>
+            )}
+            {(audit.outcome_summary.pending_n ?? 0) > 0 && (
+              <span className="text-slate-500">{audit.outcome_summary.pending_n} awaiting EOD history</span>
+            )}
+          </div>
+          {(audit.outcome_summary.by_go_no_go?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {audit.outcome_summary.by_go_no_go!.map((r) => (
+                <span key={String(r.bucket)} className="rounded bg-slate-800/80 px-2 py-0.5 text-slate-400">
+                  {String(r.bucket ?? "—").toUpperCase()}: n={r.n}
+                  {r.win_rate_pct != null ? ` · win ${r.win_rate_pct.toFixed(0)}%` : ""}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Breakdown grids */}
@@ -297,12 +404,14 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <th className="py-1.5 pr-2 font-medium">Price</th>
                   <th className="py-1.5 pr-2 font-medium">Score</th>
                   <th className="py-1.5 pr-2 font-medium">RSI</th>
+                  <th className="py-1.5 pr-2 font-medium">7d</th>
+                  <th className="py-1.5 pr-2 font-medium">~20d</th>
+                  <th className="py-1.5 pr-2 font-medium">Verdict</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.slice(0, 50).map((r) => (
-                  <tr key={`${r.signal_date}-${r.ticker}-${r.id ?? ""}`} className="border-b border-slate-700/50 text-slate-300">
-                    <td className="py-1 pr-2 text-slate-400 font-mono">{r.signal_date}</td>
+                {pagedRows.map((r) => (
+                  <tr key={`${r.signal_date}-${r.ticker}-${r.id ?? ""}`} className="border-b border-slate-700/50 text-slate-300">                    <td className="py-1 pr-2 text-slate-400 font-mono">{r.signal_date}</td>
                     <td className="py-1 pr-2 font-mono font-medium">{r.ticker}</td>
                     <td className="py-1 pr-2 text-slate-500">{r.market_cap_bucket ?? "—"}</td>
                     <td className="py-1 pr-2">{r.ml_signal ?? r.retail_verdict ?? "—"}</td>
@@ -326,17 +435,40 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                     <td className="py-1 pr-2 tabular-nums">${Number(r.price_at_signal ?? 0).toFixed(2)}</td>
                     <td className="py-1 pr-2 tabular-nums">{r.composite_score?.toFixed(0) ?? "—"}</td>
                     <td className="py-1 pr-2 tabular-nums">{r.rsi?.toFixed(0) ?? "—"}</td>
+                    <td className="py-1 pr-2 tabular-nums text-slate-400">
+                      {r.return_7d_pct != null ? `${r.return_7d_pct >= 0 ? "+" : ""}${r.return_7d_pct.toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="py-1 pr-2 tabular-nums text-slate-400">
+                      {r.return_30d_pct != null ? `${r.return_30d_pct >= 0 ? "+" : ""}${r.return_30d_pct.toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="py-1 pr-2">
+                      {r.verdict ? (
+                        <span
+                          className={clsx(
+                            "px-1.5 py-0.5 rounded text-[10px] uppercase",
+                            r.verdict === "WIN" && "bg-emerald-500/15 text-emerald-300",
+                            r.verdict === "LOSS" && "bg-red-500/15 text-red-300",
+                            r.verdict === "NEUTRAL" && "bg-slate-700 text-slate-400",
+                          )}
+                        >
+                          {r.verdict}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+        <TablePager page={page} pageSize={AUDIT_PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
       </div>
-
       {audit.pilot?.db_path && (
         <p className="text-[10px] text-slate-600 truncate" title={audit.pilot.db_path}>
           DB: {audit.pilot.db_path}
+          {audit.export_url ? " · CSV via Export button (verdict rule audit_v1, 7/20 EOD-step horizons)" : ""}
         </p>
       )}
     </div>

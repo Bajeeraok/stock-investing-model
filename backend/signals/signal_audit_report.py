@@ -9,7 +9,7 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -120,7 +120,7 @@ def build_audit_report(
     outcome = store.outcome_summary(cohort_tag=tag, since_date=since)
 
     report: dict[str, Any] = {
-        "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "cohort_tag": tag,
         "days_filter": days,
         "since_date": since,
@@ -157,7 +157,7 @@ def build_audit_report(
         paths["export_csv"] = str(csv_path)
 
         store.save_daily_summary(
-            summary_date=datetime.utcnow().strftime("%Y-%m-%d"),
+            summary_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             cohort_tag=tag,
             n_signals=int(outcome.get("events_total") or 0),
             n_with_outcomes=int(outcome.get("resolved_n") or 0),

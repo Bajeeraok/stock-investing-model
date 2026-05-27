@@ -1405,6 +1405,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </div>
                 </ToggleSection>
               )}
+              {(modelAudit?.enabled || modelAudit?.message) && (
+                <ToggleSection
+                  id="analysis-model-audit"
+                  title="Model audit"
+                  icon={<ClipboardCheck />}
+                  badge={modelAudit?.cohort_size ?? modelAudit?.pilot?.total_events ?? undefined}
+                  defaultOpen
+                >
+                  <ModelAuditPanel audit={modelAudit ?? null} />
+                </ToggleSection>
+              )}
               {(forwardTracking?.records?.length ?? 0) > 0 && (
                 <ToggleSection id="analysis-forward" title="Forward tracking" icon={<RefreshCw />} badge={forwardTracking?.records?.length ?? 0} defaultOpen>
                   <ForwardTracking
@@ -1415,17 +1426,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     message={forwardTracking?.message}
                     meta={forwardTracking?.meta ?? null}
                   />
-                </ToggleSection>
-              )}
-              {(modelAudit?.enabled || modelAudit?.message) && (
-                <ToggleSection
-                  id="analysis-model-audit"
-                  title="Model audit (100 tickers)"
-                  icon={<ClipboardCheck />}
-                  badge={modelAudit?.pilot?.total_events ?? modelAudit?.cohort_size ?? undefined}
-                  defaultOpen
-                >
-                  <ModelAuditPanel audit={modelAudit ?? null} />
                 </ToggleSection>
               )}
               <ToggleSection id="analysis-calibration" title="Calibration curve" icon={<Activity />} defaultOpen>
@@ -1440,6 +1440,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   forwardSummary={forwardTracking?.summary_by_signal ?? null}
                   modelHealth={data.model_health ?? null}
                   equityCurve={paperTrading?.equity_curve ?? null}
+                  auditOutcomeSummary={modelAudit?.outcome_summary ?? null}
                 />
               </ToggleSection>
               <ToggleSection id="analysis-browser-push" title="Browser push" icon={<Bell />} defaultOpen={false}>

@@ -26,44 +26,16 @@ const ACTION_STYLE: Record<string, string> = {
   REDUCE: "text-amber-300",
 };
 
-export function TickerMarketContextCard({ data }: { data: TickerMarketContext | null | undefined }) {
-  if (!data?.headline) return null;
-
-  const horizon = data.horizon_overlay;
-
+function ContextAlerts({
+  data,
+  compact,
+}: {
+  data: TickerMarketContext;
+  compact: boolean;
+}) {
   return (
-    <section className="rounded-xl border border-violet-500/25 bg-violet-950/10 p-4 space-y-3">
-      <div className="flex items-start gap-2">
-        <Layers className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wider text-violet-300/90">Market context for this name</p>
-          <p className="text-sm text-slate-200 mt-1 leading-snug">{data.headline}</p>
-          {data.market_temperature_label && (
-            <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
-              <Thermometer className="h-3 w-3" /> Tape: {data.market_temperature_label}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {horizon && (
-        <div className="grid grid-cols-3 gap-2 text-center">
-          {(["short", "medium", "long"] as const).map((k) => {
-            const row = horizon[k];
-            const label = k === "short" ? "ST" : k === "medium" ? "MT" : "LT";
-            return (
-              <div key={k} className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-2 py-1.5">
-                <p className="text-[10px] text-slate-500 uppercase">{label}</p>
-                <p className={clsx("text-xs font-bold", ACTION_STYLE[row?.action ?? "HOLD"] ?? ACTION_STYLE.HOLD)}>
-                  {row?.action ?? "—"}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {data.personal_question && (
+    <>
+      {!compact && data.personal_question && (
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/15 px-3 py-2">
           <p className="text-xs text-slate-400">{data.personal_question.question}</p>
           <p className="text-sm text-emerald-200/90 mt-0.5">{data.personal_question.answer}</p>
@@ -95,9 +67,67 @@ export function TickerMarketContextCard({ data }: { data: TickerMarketContext | 
         </ul>
       )}
 
-      {data.sector_rotation_note && <p className="text-xs text-slate-400">{data.sector_rotation_note}</p>}
-      {data.crowd_note && <p className="text-xs text-slate-500 italic">{data.crowd_note}</p>}
-      {data.disclaimer && <p className="text-[10px] text-slate-600">{data.disclaimer}</p>}
+      {!compact && data.sector_rotation_note && <p className="text-xs text-slate-400">{data.sector_rotation_note}</p>}
+      {!compact && data.crowd_note && <p className="text-xs text-slate-500 italic">{data.crowd_note}</p>}
+      {!compact && data.disclaimer && <p className="text-[10px] text-slate-600">{data.disclaimer}</p>}
+    </>
+  );
+}
+
+export function TickerMarketContextCard({
+  data,
+  variant = "full",
+}: {
+  data: TickerMarketContext | null | undefined;
+  /** compact: headline + tape + alerts only — no duplicate ST/MT/LT grid */
+  variant?: "full" | "compact";
+}) {
+  if (!data?.headline) return null;
+
+  const compact = variant === "compact";
+  const horizon = data.horizon_overlay;
+  const title = compact ? "Context for this trade" : "Market context for this name";
+
+  return (
+    <section
+      className={clsx(
+        "rounded-xl border border-violet-500/25 bg-violet-950/10 space-y-2.5",
+        compact ? "p-3" : "p-4 space-y-3"
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <Layers className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-violet-300/90">{title}</p>
+          <p className={clsx("text-slate-200 leading-snug", compact ? "text-sm mt-0.5" : "text-sm mt-1")}>
+            {data.headline}
+          </p>
+          {data.market_temperature_label && (
+            <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+              <Thermometer className="h-3 w-3" /> Tape: {data.market_temperature_label}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {!compact && horizon && (
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {(["short", "medium", "long"] as const).map((k) => {
+            const row = horizon[k];
+            const label = k === "short" ? "ST" : k === "medium" ? "MT" : "LT";
+            return (
+              <div key={k} className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-2 py-1.5">
+                <p className="text-[10px] text-slate-500 uppercase">{label}</p>
+                <p className={clsx("text-xs font-bold", ACTION_STYLE[row?.action ?? "HOLD"] ?? ACTION_STYLE.HOLD)}>
+                  {row?.action ?? "—"}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <ContextAlerts data={data} compact={compact} />
     </section>
   );
 }

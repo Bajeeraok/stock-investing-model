@@ -3268,13 +3268,115 @@ def audit_resolve_outcomes(authorization: str | None = Header(None)):
 
 
 @router.get("/audit/summary")
-def audit_summary():
+def audit_summary(
+    cohort: str | None = Query(None),
+    days: int | None = Query(None, ge=1, le=365),
+):
     """Headline cohort audit stats including outcome win rates when resolved."""
-    from signals.signal_audit_store import build_model_audit_payload
+    from signals.signal_audit_report import build_audit_report
 
     config = _load_config()
-    payload = build_model_audit_payload(config, data_root=get_data_root())
-    return payload
+    if days:
+        report = build_audit_report(config, data_root=get_data_root(), cohort_tag=cohort, days=days, write_files=False)
+        return report
+    from signals.signal_audit_store import build_model_audit_payload
+
+    return build_model_audit_payload(config, data_root=get_data_root())
+
+
+@router.get("/audit/report")
+def audit_report(
+    days: int | None = Query(None, ge=1, le=365),
+    write: bool = Query(True, description="Persist audit_summary.json + CSV under DATA_ROOT/reports"),
+):
+    """Build (and optionally write) full audit report JSON."""
+    from signals.signal_audit_report import build_audit_report
+
+    config = _load_config()
+    return build_audit_report(config, data_root=get_data_root(), days=days, write_files=write)
+
+
+@router.get("/audit/cohort")
+def audit_cohort():
+    """Fixed audit cohort definition + category tags."""
+    from signals.signal_audit_report import audit_cohort_payload
+
+    return audit_cohort_payload(_load_config())
+
+
+@router.get("/audit/breakdown")
+def audit_breakdown(
+    by: str = Query("gates_passed", description="gates_passed|go_no_go|market_cap_bucket|ml_signal|regime_label"),
+    days: int | None = Query(None, ge=1, le=365),
+):
+    from config_loader import get_audit_cohort_tag
+    from signals.signal_audit_report import _since_date
+    from signals.signal_audit_store import SignalAuditStore
+
+    config = _load_config()
+    tag = get_audit_cohort_tag(config)
+    since = _since_date(days)
+    store = SignalAuditStore(data_root=get_data_root())
+    col_map = {
+        "gates": "gates_passed",
+        "gates_passed": "gates_passed",
+        "go_no_go": "go_no_go",
+        "go": "go_no_go",
+        "category": "market_cap_bucket",
+        "sector": "market_cap_bucket",
+        "market_cap_bucket": "market_cap_bucket",
+        "signal": "ml_signal",
+        "ml_signal": "ml_signal",
+        "regime": "regime_label",
+        "regime_label": "regime_label",
+    }
+    group_col = col_map.get(by.strip().lower(), by)
+    rows = store.breakdown_rows(tag, group_col, since_date=since)
+    return {"cohort_tag": tag, "by": group_col, "since_date": since, "rows": rows}
+
+
+@router.get("/audit/records")
+def audit_records(
+    limit: int = Query(200, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    days: int | None = Query(None, ge=1, le=365),
+    ticker: str | None = Query(None),
+):
+    """Paginated audit rows with outcomes (JSON)."""
+    from signals.signal_audit_report import _since_date, list_audit_records
+
+    since = _since_date(days)
+    return list_audit_records(
+        _load_config(),
+        data_root=get_data_root(),
+        since_date=since,
+        limit=limit,
+        offset=offset,
+        ticker=ticker,
+    )
+
+
+@router.get("/audit/export")
+def audit_export_csv(
+    days: int | None = Query(None, ge=1, le=365),
+    limit: int = Query(10000, ge=1, le=50000),
+):
+    """Download CSV matching spreadsheet columns (signal + outcome fields)."""
+    from signals.signal_audit_report import _since_date, export_records_csv
+
+    since = _since_date(days)
+    csv_text = export_records_csv(
+        _load_config(),
+        data_root=get_data_root(),
+        since_date=since,
+        limit=limit,
+    )
+    filename = "signal_audit_export.csv"
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/eod/upload")

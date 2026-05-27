@@ -189,10 +189,8 @@ def get_forward_tracking(
             "summary_by_signal": {},
             "message": "Need at least 2 EOD snapshots. Run run_daily.py regularly.",
         }
-    # With only 2 snapshots, add 1-day horizon so we get (D, D+1) pairs and can verify tracking
-    if len(dates) == 2 and 1 not in horizon_list:
-        horizon_list = [1] + horizon_list
-    elif len(dates) < 6 and 1 not in horizon_list:
+    # Always include 1-step horizon when possible — freshest completed as-of is dates[-2], not dates[-6] (5d).
+    if len(dates) >= 2 and 1 not in horizon_list:
         horizon_list = [1] + horizon_list
 
     records: list[dict[str, Any]] = []
@@ -310,6 +308,7 @@ def get_forward_tracking(
     total_records = len(records)
     capped = _cap_records_recent(records, record_cap)
     as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
+    newest_completed_as_of = dates[-2] if len(dates) >= 2 else None
     meta = {
         "eod_date_first": dates[0] if dates else None,
         "eod_date_last": dates[-1] if dates else None,
@@ -318,6 +317,7 @@ def get_forward_tracking(
         "records_returned": len(capped),
         "as_of_date_min": min(as_of_dates) if as_of_dates else None,
         "as_of_date_max": max(as_of_dates) if as_of_dates else None,
+        "newest_completed_as_of": newest_completed_as_of,
         "ticker_count": len(syms),
     }
 

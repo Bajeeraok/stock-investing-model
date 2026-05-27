@@ -474,9 +474,10 @@ Same schema → same UI filters. Label clearly: **“Historical simulation”** 
 
 ### Phase 3 — Reporting & UI (1 week)
 
-- [ ] `scripts/build_audit_report.py` → `audit_summary.json`
-- [ ] API routes + `TrackRecordPanel` / new **Model Audit** section
-- [ ] CSV export endpoint
+- [x] `scripts/build_audit_report.py` → `DATA_ROOT/reports/audit_summary.json` + CSV
+- [x] API: `/api/audit/summary`, `/report`, `/cohort`, `/breakdown`, `/records`, `/export`
+- [x] Model Audit **Export CSV** + Track Record cohort win-rate chip
+- [ ] Dedicated marketing / three-period template (Phase 4)
 
 ### Phase 4 — Historical backtest parity (1 week)
 

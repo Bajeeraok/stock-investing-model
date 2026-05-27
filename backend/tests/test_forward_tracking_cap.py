@@ -44,5 +44,7 @@ def test_get_forward_tracking_includes_meta(monkeypatch, tmp_path):
     )
     assert out.get("meta")
     assert out["meta"]["eod_date_last"] == dates[-1]
+    assert out["meta"].get("newest_completed_as_of") == dates[-2]
     assert out["records"]
     assert max(r["as_of_date"] for r in out["records"]) >= dates[-8]
+    assert any(r["horizon_days"] == 1 for r in out["records"])

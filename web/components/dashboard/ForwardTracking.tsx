@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { clsx } from "clsx";
 import { RefreshCw } from "lucide-react";
+import { paginateRows, TablePager } from "./TablePager";
+
+const FORWARD_PAGE_SIZE = 30;
 
 interface RecordRow {
   as_of_date: string;
@@ -37,6 +40,7 @@ interface ForwardMeta {
   records_returned?: number;
   as_of_date_min?: string | null;
   as_of_date_max?: string | null;
+  newest_completed_as_of?: string | null;
   ticker_count?: number;
 }
 
@@ -101,6 +105,7 @@ export function ForwardTracking({
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [horizonFilter, setHorizonFilter] = useState<number | "">("");
+  const [page, setPage] = useState(0);
 
   const uniqueTickers = useMemo(
     () => Array.from(new Set((allRecords || []).map((r) => r.ticker))).sort(),
@@ -130,6 +135,15 @@ export function ForwardTracking({
       return a.horizon_days - b.horizon_days;
     });
   }, [allRecords, tickerFilter, dateRange, horizonFilter]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [tickerFilter, dateRange, horizonFilter]);
+
+  const pagedRecords = useMemo(
+    () => paginateRows(records, page, FORWARD_PAGE_SIZE),
+    [records, page],
+  );
 
   const filterStats = useMemo(() => filteredForwardStats(records), [records]);
 
@@ -162,12 +176,23 @@ export function ForwardTracking({
           <span className="block mt-1 text-slate-400">
             EOD through <span className="font-mono text-slate-300">{meta.eod_date_last}</span>
             {meta.eod_snapshot_count != null ? ` · ${meta.eod_snapshot_count} snapshots` : ""}
-            {meta.as_of_date_max ? ` · latest as-of ${meta.as_of_date_max}` : ""}
+            {meta.newest_completed_as_of ? (
+              <>
+                {" "}
+                · newest completed as-of{" "}
+                <span className="font-mono text-slate-300">{meta.newest_completed_as_of}</span>
+              </>
+            ) : meta.as_of_date_max ? (
+              <> · latest as-of <span className="font-mono text-slate-300">{meta.as_of_date_max}</span></>
+            ) : null}
             {meta.records_total != null && meta.records_returned != null && meta.records_total > meta.records_returned
-              ? ` · showing ${meta.records_returned} most recent of ${meta.records_total}`
+              ? ` · API capped at ${meta.records_returned} of ${meta.records_total} rows`
               : ""}
           </span>
         )}
+        <span className="block mt-1 text-slate-600">
+          As-of dates need a finished forward window (1/5/20/60 EOD steps). The latest EOD day is not listed until the next snapshot completes the pair.
+        </span>
       </p>
 
       {/* Filters */}
@@ -305,7 +330,7 @@ export function ForwardTracking({
             </tr>
           </thead>
           <tbody>
-            {records.slice(0, 50).map((r, i) => (
+            {pagedRecords.map((r, i) => (
               <tr key={`${r.as_of_date}-${r.ticker}-${r.horizon_days}-${i}`} className="group border-b border-slate-700/50 hover:bg-slate-800/30">
                 <td className="sticky left-0 z-[10] min-w-[5rem] w-24 py-1.5 pr-2 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.as_of_date}</td>
                 <td className="sticky left-24 z-[10] min-w-[4rem] w-16 py-1.5 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.ticker}</td>
@@ -326,6 +351,7 @@ export function ForwardTracking({
           </tbody>
         </table>
       </div>
+      <TablePager page={page} pageSize={FORWARD_PAGE_SIZE} total={records.length} onPageChange={setPage} />
     </div>
   );
 }

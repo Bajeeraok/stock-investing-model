@@ -11,7 +11,7 @@ import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./
 import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
 import { HorizonPlaybooksPanel } from "./HorizonPlaybooksPanel";
 import type { HorizonPlaybooksBundle } from "./HorizonPlaybookCard";
-import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
+import { type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
@@ -757,6 +757,7 @@ export function TickerDetailModal({
                   ticker={detail.ticker}
                   hideTradingGates={Boolean(detail.investor_summary && tradingGates.length > 0)}
                   compactOverview={Boolean(horizonPlaybooksBundle && tradingGates.length > 0)}
+                  marketContext={detail.market_context}
                 />
               ) : (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
@@ -765,8 +766,6 @@ export function TickerDetailModal({
                   <p className="text-xs text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
                 </section>
               )}
-
-              {detail.market_context && <TickerMarketContextCard data={detail.market_context} />}
 
               {/* CTA: jump to Roadmaps tab for full buy/sell tables */}
               {detail.investor_summary?.trade_roadmap && (

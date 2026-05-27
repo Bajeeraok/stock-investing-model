@@ -29,7 +29,7 @@ export function ToggleSection({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-3 px-5 py-4 bg-slate-800 hover:bg-slate-700/80 transition text-left group"
+        className="w-full flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-5 py-3.5 sm:py-4 bg-slate-800 hover:bg-slate-700/80 transition text-left group min-h-[48px] touch-manipulation"
       >
         <div className="flex items-center gap-3">
           <span
@@ -47,7 +47,7 @@ export function ToggleSection({
           <span className="[&>svg]:h-6 [&>svg]:w-6 [&>svg]:shrink-0 text-slate-400 group-hover:text-slate-300">
             {icon}
           </span>
-          <h2 className="text-xl font-semibold text-slate-100">{title}</h2>
+          <h2 className="text-base sm:text-xl font-semibold text-slate-100 leading-snug">{title}</h2>
           {badge != null && badge !== "" && (
             <span className="px-2.5 py-1 rounded-md text-sm font-medium bg-slate-600 text-slate-200">
               {badge}
@@ -55,7 +55,7 @@ export function ToggleSection({
           )}
         </div>
       </button>
-      {open && <div className="p-5 pt-0">{children}</div>}
+      {open && <div className="p-3 sm:p-5 pt-0">{children}</div>}
     </section>
   );
 }

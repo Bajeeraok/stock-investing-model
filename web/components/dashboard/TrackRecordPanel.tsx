@@ -65,6 +65,13 @@ interface EquityPoint {
   trade_n?: number;
 }
 
+interface AuditOutcomeSummary {
+  resolved_n?: number;
+  events_total?: number;
+  win_rate_pct?: number | null;
+  pending_n?: number;
+}
+
 interface Props {
   calibration?: CalibrationData | null;
   paperTrading?: PaperTradingSummary | null;
@@ -72,6 +79,8 @@ interface Props {
   modelHealth?: ModelHealth | null;
   /** Completed paper trades — cumulative equity index (starts 100) from dashboard API */
   equityCurve?: EquityPoint[] | null;
+  /** 100-ticker cohort audit outcomes (Phase 2+) */
+  auditOutcomeSummary?: AuditOutcomeSummary | null;
 }
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
@@ -139,18 +148,21 @@ export default function TrackRecordPanel({
   forwardSummary,
   modelHealth,
   equityCurve,
+  auditOutcomeSummary,
 }: Props) {
   const hasCalibration = calibration && calibration.buckets && calibration.buckets.length > 0;
   const hasPaper = paperTrading && paperTrading.completed_n != null && paperTrading.completed_n > 0;
   const hasForward = forwardSummary && Object.keys(forwardSummary).length > 0;
   const hasEquity = equityCurve && equityCurve.length >= 2;
+  const hasAudit = (auditOutcomeSummary?.resolved_n ?? 0) > 0;
 
   const winRate = paperTrading?.win_rate_pct;
   const avgReturn = paperTrading?.avg_return_pct;
   const dirAccuracy = modelHealth?.validation_direction_accuracy_pct;
   const fwdHitRate = modelHealth?.forward_hold_add_hit_rate_20d;
+  const auditWin = auditOutcomeSummary?.win_rate_pct;
 
-  if (!hasCalibration && !hasPaper && !hasForward && !hasEquity && !dirAccuracy && !fwdHitRate) {
+  if (!hasCalibration && !hasPaper && !hasForward && !hasEquity && !dirAccuracy && !fwdHitRate && !hasAudit) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 text-center">
         <p className="text-sm text-slate-400">
@@ -196,6 +208,14 @@ export default function TrackRecordPanel({
             value={`${fwdHitRate.toFixed(1)}%`}
             sub={`${modelHealth?.forward_observations_20d ?? 0} obs`}
             color={fwdHitRate >= 55 ? "text-emerald-400" : "text-yellow-400"}
+          />
+        )}
+        {auditWin != null && (
+          <StatCard
+            label="Cohort audit win rate"
+            value={`${auditWin.toFixed(1)}%`}
+            sub={`${auditOutcomeSummary!.resolved_n}/${auditOutcomeSummary!.events_total} resolved`}
+            color={auditWin >= 55 ? "text-emerald-400" : auditWin >= 45 ? "text-yellow-400" : "text-red-400"}
           />
         )}
       </div>

@@ -509,6 +509,12 @@ signal_audit:
     win_return_pct: 3.0
     loss_return_pct: -3.0
     false_negative_pct: 5.0
+  report:
+    enabled: true
+    output_dir: reports
+    summary_filename: audit_summary.json
+    export_filename: signal_audit_export.csv
+    resolve_before_build: true
 
 # Forward tracking panel (Analysis tab)
 forward_tracking:

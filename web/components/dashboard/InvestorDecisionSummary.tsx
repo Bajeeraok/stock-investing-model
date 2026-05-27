@@ -45,6 +45,7 @@ import {
 import { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProjectionChart";
 import { StreetVsModelBar } from "./StreetVsModelBar";
 import { PositionIntentChip } from "./PositionIntentChip";
+import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = this horizon's ML signal tier (how bullish the model read is for that specific window). " +
@@ -824,6 +825,7 @@ export function InvestorDecisionSummarySection({
   ma50,
   hideTradingGates = false,
   compactOverview = false,
+  marketContext,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -840,6 +842,8 @@ export function InvestorDecisionSummarySection({
   hideTradingGates?: boolean;
   /** Modal layout: header + playbooks already shown — trim duplicate blocks. */
   compactOverview?: boolean;
+  /** Macro/earnings context — shown compactly after horizon action row. */
+  marketContext?: TickerMarketContext | null;
 }) {
   const {
     fair_value,
@@ -1215,6 +1219,12 @@ export function InvestorDecisionSummarySection({
         marketRegimeBullPct: summary.retail_action?.market_regime_bull_pct,
       })
     ),
+    marketContext?.headline &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-4 border-b border-slate-700/80" },
+        React.createElement(TickerMarketContextCard, { data: marketContext, variant: "compact" })
+      ),
     long?.entry_tiers?.tiers?.length &&
       !compactOverview
       ? React.createElement(
