@@ -500,6 +500,15 @@ signal_audit:
   log_on_run_daily: true
   log_on_dashboard: false
   pilot_target_days: 30
+  resolve_outcomes_on_read: true   # Analysis tab auto-resolves when enough EOD history exists
+  outcomes:
+    enabled: true
+    horizon_trading_days: [7, 20]   # maps to return_7d_pct / return_30d_pct columns (~1w / ~1mo)
+    use_intraday_touch: true
+    benchmark_ticker: SPY
+    win_return_pct: 3.0
+    loss_return_pct: -3.0
+    false_negative_pct: 5.0
 
 # Forward tracking panel (Analysis tab)
 forward_tracking:

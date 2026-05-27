@@ -466,10 +466,11 @@ Same schema → same UI filters. Label clearly: **“Historical simulation”** 
 
 ### Phase 2 — Outcome resolver (3–5 days)
 
-- [ ] `scripts/resolve_signal_outcomes.py` — 7d / 30d, path max gain/loss
-- [ ] `signal_audit_verdict.py` — rule engine
-- [ ] Scheduler hook after EOD snapshot save
-- [ ] Backfill script for existing EOD history on cohort
+- [x] `scripts/resolve_signal_outcomes.py` — 7 / 20 EOD-step horizons, path max gain/loss
+- [x] `signal_audit_verdict.py` — rule engine (`audit_v1`)
+- [x] Hook after EOD snapshot save + Analysis bundle auto-resolve
+- [x] `POST /api/audit/resolve` + win rate in Model Audit panel
+- [ ] Backfill stress test on full 44+ snapshot history on Railway
 
 ### Phase 3 — Reporting & UI (1 week)
 

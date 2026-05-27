@@ -26,6 +26,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("api.dashboard")
 
@@ -3245,8 +3246,35 @@ def run_eod_now(
         "universe_count": len(tickers),
         "signal_audit": result.get("signal_audit"),
         "paper_trades": result.get("paper_trades"),
+        "signal_audit_outcomes": result.get("signal_audit_outcomes"),
         "dashboard_refresh": dash_refresh,
     }
+
+
+@router.post("/audit/resolve")
+def audit_resolve_outcomes(authorization: str | None = Header(None)):
+    """
+    Phase 2: resolve WIN/LOSS/NEUTRAL outcomes for cohort signals with enough EOD history.
+    Same as scripts/resolve_signal_outcomes.py. Optional Bearer if EOD_RUN_SECRET is set.
+    """
+    secret = os.environ.get("EOD_RUN_SECRET", "").strip()
+    if secret and (authorization or "").strip() != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    from signals.signal_audit_outcomes import resolve_signal_audit_outcomes
+
+    config = _load_config()
+    result = resolve_signal_audit_outcomes(config, data_root=get_data_root())
+    return {"ok": True, **result}
+
+
+@router.get("/audit/summary")
+def audit_summary():
+    """Headline cohort audit stats including outcome win rates when resolved."""
+    from signals.signal_audit_store import build_model_audit_payload
+
+    config = _load_config()
+    payload = build_model_audit_payload(config, data_root=get_data_root())
+    return payload
 
 
 @router.post("/eod/upload")

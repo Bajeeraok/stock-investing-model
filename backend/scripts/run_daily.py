@@ -792,6 +792,24 @@ def run_eod_snapshot_only(
             )
             result["signal_audit"] = log_result.get("signal_audit")
             result["paper_trades"] = log_result.get("paper_trades")
+            try:
+                from signals.signal_audit_outcomes import resolve_signal_audit_outcomes
+
+                result["signal_audit_outcomes"] = resolve_signal_audit_outcomes(
+                    config, data_root=get_data_root()
+                )
+            except Exception as e:
+                result["signal_audit_outcomes"] = {"error": str(e)}
+            try:
+                from signals.signal_audit_report import build_audit_report
+
+                audit_cfg = config.get("signal_audit") or {}
+                if (audit_cfg.get("report") or {}).get("enabled", True):
+                    result["signal_audit_report"] = build_audit_report(
+                        config, data_root=get_data_root(), write_files=True
+                    )
+            except Exception as e:
+                result["signal_audit_report"] = {"error": str(e)}
         except Exception as e:
             result["signal_audit"] = {"error": str(e)}
     except Exception as e:

@@ -95,6 +95,16 @@ CREATE TABLE IF NOT EXISTS audit_meta (
 );
 """
 
+_CREATE_AUDIT_DAILY_SUMMARY = """
+CREATE TABLE IF NOT EXISTS audit_daily_summary (
+  summary_date TEXT PRIMARY KEY,
+  cohort_tag TEXT,
+  n_signals INTEGER,
+  n_with_outcomes INTEGER,
+  payload_json TEXT NOT NULL
+);
+"""
+
 
 def _safe_float(x: Any) -> float | None:
     try:
@@ -321,6 +331,7 @@ class SignalAuditStore:
             conn.execute(_CREATE_SIGNAL_EVENTS)
             conn.execute(_CREATE_SIGNAL_OUTCOMES)
             conn.execute(_CREATE_META)
+            conn.execute(_CREATE_AUDIT_DAILY_SUMMARY)
             conn.execute(
                 "INSERT OR IGNORE INTO audit_meta(key, value) VALUES (?, ?)",
                 ("schema_version", str(_SCHEMA_VERSION)),
@@ -394,8 +405,9 @@ class SignalAuditStore:
         *,
         cohort_tag: str | None = None,
         signal_date: str | None = None,
+        since_date: str | None = None,
     ) -> int:
-        q = "SELECT COUNT(*) AS n FROM signal_events WHERE 1=1"
+        q = "SELECT COUNT(*) AS n FROM signal_events WHERE source = 'live'"
         params: list[Any] = []
         if cohort_tag:
             q += " AND cohort_tag = ?"
@@ -403,6 +415,9 @@ class SignalAuditStore:
         if signal_date:
             q += " AND signal_date = ?"
             params.append(signal_date)
+        if since_date:
+            q += " AND signal_date >= ?"
+            params.append(since_date)
         with self._connect() as conn:
             row = conn.execute(q, params).fetchone()
             return int(row["n"]) if row else 0
@@ -468,6 +483,7 @@ class SignalAuditStore:
         group_col: str,
         *,
         allowed_cols: frozenset[str] | None = None,
+        since_date: str | None = None,
     ) -> list[dict[str, Any]]:
         allowed = allowed_cols or frozenset(
             {"gates_passed", "go_no_go", "market_cap_bucket", "ml_signal", "retail_verdict", "regime_label"}
@@ -481,11 +497,17 @@ class SignalAuditStore:
                    SUM(CASE WHEN go_no_go = 'go' THEN 1 ELSE 0 END) AS n_go
             FROM signal_events
             WHERE cohort_tag = ? AND source = 'live'
+        """
+        params: list[Any] = [cohort_tag]
+        if since_date:
+            q += " AND signal_date >= ?"
+            params.append(since_date)
+        q += f"""
             GROUP BY {group_col}
             ORDER BY n DESC
         """
         with self._connect() as conn:
-            rows = conn.execute(q, (cohort_tag,)).fetchall()
+            rows = conn.execute(q, params).fetchall()
         out: list[dict[str, Any]] = []
         for r in rows:
             n = int(r["n"] or 0)
@@ -523,6 +545,246 @@ class SignalAuditStore:
                 (cohort_tag, signal_date),
             ).fetchall()
         return [str(r["ticker"]) for r in rows]
+
+    def list_events_for_resolution(self, *, cohort_tag: str, limit: int = 5000) -> list[dict[str, Any]]:
+        q = """
+            SELECT e.id, e.signal_date, e.ticker, e.retail_verdict, e.ml_signal, e.go_no_go,
+                   e.price_at_signal, e.stop_swing, e.st_target, e.mt_target
+            FROM signal_events e
+            LEFT JOIN signal_outcomes o ON o.signal_event_id = e.id
+            WHERE e.cohort_tag = ? AND e.source = 'live' AND o.signal_event_id IS NULL
+            ORDER BY e.signal_date ASC, e.ticker ASC
+            LIMIT ?
+        """
+        with self._connect() as conn:
+            rows = conn.execute(q, (cohort_tag, max(1, min(limit, 10000)))).fetchall()
+        return [dict(r) for r in rows]
+
+    def has_outcome(self, signal_event_id: int) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM signal_outcomes WHERE signal_event_id = ?",
+                (signal_event_id,),
+            ).fetchone()
+        return row is not None
+
+    def upsert_outcome(self, outcome: dict[str, Any]) -> None:
+        cols = [
+            "signal_event_id",
+            "resolved_ts",
+            "price_7d",
+            "price_30d",
+            "return_7d_pct",
+            "return_30d_pct",
+            "hit_stop_swing",
+            "hit_st_target",
+            "hit_mt_target",
+            "max_gain_pct",
+            "max_drawdown_pct",
+            "path_days",
+            "verdict",
+            "verdict_rule",
+            "benchmark_return_30d_pct",
+            "notes",
+        ]
+        placeholders = ", ".join("?" for _ in cols)
+        col_names = ", ".join(cols)
+        values = [outcome.get(c) for c in cols]
+        with self._connect() as conn:
+            conn.execute(
+                f"""
+                INSERT INTO signal_outcomes ({col_names}) VALUES ({placeholders})
+                ON CONFLICT(signal_event_id) DO UPDATE SET
+                  resolved_ts=excluded.resolved_ts,
+                  price_7d=excluded.price_7d,
+                  price_30d=excluded.price_30d,
+                  return_7d_pct=excluded.return_7d_pct,
+                  return_30d_pct=excluded.return_30d_pct,
+                  hit_stop_swing=excluded.hit_stop_swing,
+                  hit_st_target=excluded.hit_st_target,
+                  hit_mt_target=excluded.hit_mt_target,
+                  max_gain_pct=excluded.max_gain_pct,
+                  max_drawdown_pct=excluded.max_drawdown_pct,
+                  path_days=excluded.path_days,
+                  verdict=excluded.verdict,
+                  verdict_rule=excluded.verdict_rule,
+                  benchmark_return_30d_pct=excluded.benchmark_return_30d_pct,
+                  notes=excluded.notes
+                """,
+                values,
+            )
+            conn.commit()
+
+    def outcome_summary(self, *, cohort_tag: str, since_date: str | None = None) -> dict[str, Any]:
+        date_filter = " AND e.signal_date >= ?" if since_date else ""
+        params_base: list[Any] = [cohort_tag]
+        if since_date:
+            params_base.append(since_date)
+        with self._connect() as conn:
+            total = conn.execute(
+                f"""
+                SELECT COUNT(*) AS n FROM signal_events e
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                """,
+                tuple(params_base),
+            ).fetchone()
+            resolved = conn.execute(
+                f"""
+                SELECT COUNT(*) AS n FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                """,
+                tuple(params_base),
+            ).fetchone()
+            by_verdict = conn.execute(
+                f"""
+                SELECT o.verdict AS bucket, COUNT(*) AS n,
+                       AVG(o.return_30d_pct) AS avg_return_30d_pct,
+                       AVG(o.return_7d_pct) AS avg_return_7d_pct
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live' AND o.verdict IS NOT NULL{date_filter}
+                GROUP BY o.verdict
+                ORDER BY n DESC
+                """,
+                tuple(params_base),
+            ).fetchall()
+            by_go = conn.execute(
+                f"""
+                SELECT e.go_no_go AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                GROUP BY e.go_no_go
+                """,
+                tuple(params_base),
+            ).fetchall()
+            by_signal = conn.execute(
+                f"""
+                SELECT e.ml_signal AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                GROUP BY e.ml_signal
+                ORDER BY n DESC
+                LIMIT 12
+                """,
+                tuple(params_base),
+            ).fetchall()
+
+        n_total = int(total["n"]) if total else 0
+        n_resolved = int(resolved["n"]) if resolved else 0
+        wins = sum(int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "WIN")
+        losses = sum(int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "LOSS")
+        decided = wins + losses + sum(
+            int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "NEUTRAL"
+        )
+
+        def _win_rate_rows(rows) -> list[dict[str, Any]]:
+            out: list[dict[str, Any]] = []
+            for r in rows:
+                n = int(r["n"] or 0)
+                nw = int(r["n_win"] or 0)
+                out.append({
+                    "bucket": r["bucket"],
+                    "n": n,
+                    "win_rate_pct": round(100.0 * nw / n, 1) if n else None,
+                })
+            return out
+
+        verdict_rows = []
+        for r in by_verdict:
+            n = int(r["n"] or 0)
+            verdict_rows.append({
+                "bucket": r["bucket"],
+                "n": n,
+                "avg_return_7d_pct": round(float(r["avg_return_7d_pct"]), 2)
+                if r["avg_return_7d_pct"] is not None
+                else None,
+                "avg_return_30d_pct": round(float(r["avg_return_30d_pct"]), 2)
+                if r["avg_return_30d_pct"] is not None
+                else None,
+            })
+
+        return {
+            "events_total": n_total,
+            "resolved_n": n_resolved,
+            "pending_n": max(0, n_total - n_resolved),
+            "since_date": since_date,
+            "win_rate_pct": round(100.0 * wins / decided, 1) if decided else None,
+            "wins": wins,
+            "losses": losses,
+            "neutral": decided - wins - losses,
+            "by_verdict": verdict_rows,
+            "by_go_no_go": _win_rate_rows(by_go),
+            "by_ml_signal": _win_rate_rows(by_signal),
+        }
+
+    def list_records_with_outcomes(
+        self,
+        *,
+        cohort_tag: str,
+        limit: int = 100,
+        offset: int = 0,
+        signal_date: str | None = None,
+        since_date: str | None = None,
+        ticker: str | None = None,
+    ) -> list[dict[str, Any]]:
+        q = """
+            SELECT e.id, e.signal_date, e.signal_ts, e.ticker, e.market_cap_bucket, e.retail_verdict, e.ml_signal,
+                   e.go_no_go, e.gates_passed, e.gates_total, e.price_at_signal, e.st_target, e.stop_swing, e.mt_target,
+                   e.composite_score, e.rsi, e.regime_label, e.temperature, e.ml_short_prob, e.confidence_low,
+                   e.confidence_high, e.run_source,
+                   o.return_7d_pct, o.return_30d_pct, o.verdict, o.verdict_rule, o.hit_st_target, o.hit_stop_swing,
+                   o.max_gain_pct, o.max_drawdown_pct, o.benchmark_return_30d_pct
+            FROM signal_events e
+            LEFT JOIN signal_outcomes o ON o.signal_event_id = e.id
+            WHERE e.cohort_tag = ? AND e.source = 'live'
+        """
+        params: list[Any] = [cohort_tag]
+        if signal_date:
+            q += " AND e.signal_date = ?"
+            params.append(signal_date)
+        if since_date:
+            q += " AND e.signal_date >= ?"
+            params.append(since_date)
+        if ticker:
+            q += " AND e.ticker = ?"
+            params.append(str(ticker).upper())
+        q += " ORDER BY e.signal_date DESC, e.ticker ASC LIMIT ? OFFSET ?"
+        params.append(max(1, min(limit, 10000)))
+        params.append(max(0, offset))
+        with self._connect() as conn:
+            rows = conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def save_daily_summary(
+        self,
+        *,
+        summary_date: str,
+        cohort_tag: str,
+        n_signals: int,
+        n_with_outcomes: int,
+        payload: dict[str, Any],
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO audit_daily_summary (summary_date, cohort_tag, n_signals, n_with_outcomes, payload_json)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(summary_date) DO UPDATE SET
+                  cohort_tag=excluded.cohort_tag,
+                  n_signals=excluded.n_signals,
+                  n_with_outcomes=excluded.n_with_outcomes,
+                  payload_json=excluded.payload_json
+                """,
+                (summary_date, cohort_tag, n_signals, n_with_outcomes, json.dumps(payload, default=str)),
+            )
+            conn.commit()
 
 
 def build_model_audit_payload(config: dict, data_root: Path | None = None) -> dict[str, Any]:
@@ -563,15 +825,24 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
     missing_on_last = sorted(set(cohort_tickers) - set(captured_on_last)) if last_date else list(cohort_tickers)
 
     has_outcomes = False
+    outcome_summary: dict[str, Any] | None = None
+    resolve_result: dict[str, Any] | None = None
     try:
-        with store._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS n FROM signal_outcomes o JOIN signal_events e ON e.id = o.signal_event_id WHERE e.cohort_tag = ?",
-                (cohort_tag,),
-            ).fetchone()
-            has_outcomes = bool(row and int(row["n"]) > 0)
+        outcome_summary = store.outcome_summary(cohort_tag=cohort_tag)
+        has_outcomes = bool(outcome_summary.get("resolved_n"))
     except Exception:
         pass
+
+    if audit_cfg.get("resolve_outcomes_on_read", True):
+        try:
+            from signals.signal_audit_outcomes import resolve_signal_audit_outcomes
+
+            resolve_result = resolve_signal_audit_outcomes(config, data_root=data_root, cohort_tag=cohort_tag)
+            if resolve_result.get("updated"):
+                outcome_summary = resolve_result.get("summary") or store.outcome_summary(cohort_tag=cohort_tag)
+                has_outcomes = bool(outcome_summary and outcome_summary.get("resolved_n"))
+        except Exception as e:
+            logger.debug("signal audit outcome resolve: %s", e)
 
     message = None
     if distinct_days == 0:
@@ -600,16 +871,22 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
         "breakdown_by_category": store.breakdown_rows(cohort_tag, "market_cap_bucket"),
         "breakdown_by_signal": store.breakdown_rows(cohort_tag, "ml_signal"),
         "breakdown_by_regime": store.breakdown_rows(cohort_tag, "regime_label"),
-        "recent_records": store.list_records(cohort_tag=cohort_tag, limit=80),
+        "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),
         "outcomes_available": has_outcomes,
-        "outcomes_note": "Outcome columns (7d/30d, win/loss) fill in Phase 2 after enough EOD history."
+        "outcome_summary": outcome_summary,
+        "outcome_resolve": resolve_result,
+        "outcomes_note": (
+            "Outcomes resolve after ~20 EOD trading days per signal (7d/20d returns, WIN/LOSS/NEUTRAL)."
             if not has_outcomes
-            else None,
+            else None
+        ),
         "message": message,
         "methodology": (
             "Fixed 100-ticker cohort logged once per EOD run (not on dashboard refresh). "
             "Separate from paper trading (~your watchlist/portfolio)."
         ),
+        "export_url": "/api/audit/export",
+        "report_url": "/api/audit/report",
     }
 
 
