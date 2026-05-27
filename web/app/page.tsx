@@ -561,7 +561,21 @@ export interface DashboardData {
     log?: { date: string; seen: number; appended: number } | null;
     mtm?: { updated: number; message?: string | null; as_of?: string } | null;
     mtm_history_log?: { appended: number; message?: string | null; as_of?: string } | null;
-    fill?: { updated: number; message?: string | null } | null;
+    fill?: { updated: number; message?: string | null; entry_synced?: number | null } | null;
+    backfill?: {
+      appended: number;
+      skipped_no_fill?: number | null;
+      skipped_no_reference?: number | null;
+      skipped_gate?: number | null;
+      signals_scanned?: number | null;
+      dates_scanned?: number | null;
+      skipped_existing?: number | null;
+      eod_dates_total?: number | null;
+      entry_mode?: string | null;
+      message?: string | null;
+    } | null;
+    mtm_history_sync?: { appended?: number; message?: string | null; as_of?: string | null } | null;
+    sync_targets?: { updated?: number; message?: string | null } | null;
     summary?: {
       status: string;
       completed?: number;
@@ -619,6 +633,13 @@ export interface DashboardData {
       benchmark_ticker?: string | null;
       benchmark_return_pct?: number | null;
       excess_return_pct?: number | null;
+      gate_cleared?: boolean | null;
+      go_no_go?: string | null;
+      gates_passed?: number | null;
+      gates_total?: number | null;
+      reference_entry_price?: number | null;
+      limit_fill_date?: string | null;
+      entry_mode?: string | null;
     }>;
     /** Cumulative equity index from completed paper trades (for track record chart) */
     equity_curve?: Array<{

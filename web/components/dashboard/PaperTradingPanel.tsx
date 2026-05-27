@@ -89,6 +89,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
 
   const summary = pt.summary ?? null;
   const allRecent = pt.recent ?? [];
+  const backfill = pt.backfill;
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [signalFilter, setSignalFilter] = useState("");
@@ -140,10 +141,10 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             Logged {pt.log.appended}/{pt.log.seen} signals for {pt.log.date}
           </div>
         )}
-        {pt.backfill?.appended > 0 && (
+        {backfill != null && backfill.appended > 0 && (
           <div className="text-xs text-sky-400">
-            Backfilled {pt.backfill.appended} limit fills from EOD
-            {pt.backfill.skipped_no_fill != null ? ` (${pt.backfill.skipped_no_fill} GO signals had no touch)` : ""}
+            Backfilled {backfill.appended} limit fills from EOD
+            {backfill.skipped_no_fill != null ? ` (${backfill.skipped_no_fill} GO signals had no touch)` : ""}
           </div>
         )}
       </div>
