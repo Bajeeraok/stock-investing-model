@@ -247,7 +247,11 @@ export function HorizonPlaybookCard({
                   </p>
                   {(tier.active || tier.target) && (
                     <p className="text-[10px] uppercase text-emerald-400/90 mt-0.5">
-                      {tier.active ? "Active band" : "Target tier"}
+                      {tier.active
+                        ? tier.id === "T2" || tier.id === "tier2"
+                          ? "Partial position only"
+                          : "Active band"
+                        : "Target tier"}
                     </p>
                   )}
                 </li>
@@ -271,8 +275,13 @@ export function HorizonPlaybookCard({
                   </p>
                 </div>
                 <div className="rounded-lg bg-slate-900/80 px-2.5 py-2 border border-slate-700/60">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">Stop</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                    {data.kind === "position_build" ? "Build stop" : "Swing stop"}
+                  </p>
                   <p className="font-mono text-red-300 tabular-nums">${t.stop.toFixed(2)}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {data.kind === "position_build" ? "pause tranches" : "5% risk band"}
+                  </p>
                 </div>
                 <div className="rounded-lg bg-slate-900/80 px-2.5 py-2 border border-slate-700/60">
                   <p className="text-[10px] uppercase tracking-wider text-slate-500">Target</p>
@@ -311,12 +320,13 @@ export function HorizonPlaybookCard({
 
         {data.hold_vs_trade && (data.hold_vs_trade.bullets?.length || data.hold_vs_trade.signal_bridge) && (
           <SectionToggle title="Hold vs trim" icon={<BookOpen className="h-3.5 w-3.5" />} defaultOpen={!compact}>
-            {data.hold_vs_trade.signal_bridge && (
-              <p className="text-sm text-sky-200/90 border-l-2 border-sky-500/40 pl-2 mb-2">
+            {data.hold_vs_trade.signal_bridge ? (
+              <p className="text-sm text-sky-200/90 border-l-2 border-sky-500/40 pl-2">
                 {data.hold_vs_trade.signal_bridge}
               </p>
+            ) : (
+              <BulletList items={data.hold_vs_trade.bullets ?? []} />
             )}
-            <BulletList items={data.hold_vs_trade.bullets ?? []} />
           </SectionToggle>
         )}
 

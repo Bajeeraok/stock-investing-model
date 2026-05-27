@@ -876,6 +876,91 @@ export function StopTargetRiskBar({
   );
 }
 
+function stopRiskPct(
+  stop: number,
+  currentPrice: number,
+  fallbackPct?: number | null
+): number | null {
+  if (fallbackPct != null && Number.isFinite(fallbackPct)) return Math.abs(fallbackPct);
+  if (currentPrice <= 0 || stop <= 0) return null;
+  return Math.abs(((currentPrice - stop) / currentPrice) * 100);
+}
+
+/** Three-stop ladder: swing (days) → build (months) → thesis (years). */
+export function StopHierarchyPanel({
+  short,
+  medium,
+  long,
+  currentPrice,
+  className,
+}: {
+  short: HorizonSignalPayload;
+  medium: HorizonSignalPayload;
+  long: HorizonSignalPayload;
+  currentPrice: number;
+  className?: string;
+}) {
+  const thesisStop =
+    long.entry_tiers?.structural_invalidation?.price ??
+    (long.stop_loss_kind === "structural_invalidation" && long.stop_loss > 0 ? long.stop_loss : null);
+
+  const rows: { label: string; context: string; price: number; tone: string }[] = [];
+  if (short.stop_loss != null && short.stop_loss > 0) {
+    const pct = stopRiskPct(short.stop_loss, currentPrice, short.stop_loss_pct);
+    rows.push({
+      label: "Swing stop",
+      context: pct != null ? `${pct.toFixed(0)}% risk` : "days–weeks",
+      price: short.stop_loss,
+      tone: "text-amber-200/95",
+    });
+  }
+  if (medium.stop_loss != null && medium.stop_loss > 0) {
+    rows.push({
+      label: "Build stop",
+      context: "pause tranches",
+      price: medium.stop_loss,
+      tone: "text-orange-200/90",
+    });
+  }
+  if (thesisStop != null && thesisStop > 0) {
+    rows.push({
+      label: "Thesis stop",
+      context: "exit thesis",
+      price: thesisStop,
+      tone: "text-red-300/90",
+    });
+  }
+
+  if (rows.length === 0) return null;
+
+  return (
+    <section
+      className={clsx(
+        "rounded-xl border border-slate-700/80 bg-slate-950/50 px-3.5 py-3",
+        className
+      )}
+      aria-label="Stop hierarchy by timeframe"
+    >
+      <p className="text-xs uppercase tracking-wide font-semibold text-slate-400 mb-2">
+        Stop hierarchy — match the stop to your horizon
+      </p>
+      <ul className="space-y-2">
+        {rows.map((row) => (
+          <li key={row.label} className="flex items-baseline justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <span className="font-medium text-slate-200">{row.label}</span>
+              <span className="text-slate-500"> · {row.context}</span>
+            </div>
+            <span className={clsx("font-mono tabular-nums shrink-0", row.tone)}>
+              ${row.price.toFixed(2)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** Simple R:R ratio bar (fallback when only ratio known). */
 export function RiskRewardThermometer({
   riskReward,
@@ -920,8 +1005,8 @@ const TIER_RETAIL_COPY: Record<string, { zone: string; sizing: string; mode: str
   },
   T2: {
     zone: "Core Accumulation Zone",
-    sizing: "Heavy up to your Tier 2 allocation on dips.",
-    mode: "Core historical value",
+    sizing: "Partial position only — scale to Tier 2 allocation on dips, not full MOS.",
+    mode: "Partial position only",
   },
   T3: {
     zone: "Max Margin of Safety",
@@ -1055,7 +1140,11 @@ export function LongTermTierLadder({
                     <span className="text-xs font-semibold text-emerald-300/90">{copy.zone}</span>
                     {isHighlighted && (
                       <span className="text-[9px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
-                        {isInside ? "Active accumulation" : "Target tier"}
+                        {isInside
+                          ? tier.id === "T2" || tier.id === "tier2"
+                            ? "Partial position only"
+                            : "Active accumulation"
+                          : "Target tier"}
                       </span>
                     )}
                   </div>
@@ -1066,7 +1155,9 @@ export function LongTermTierLadder({
                   <p className="text-xs mt-1 text-slate-400">
                     {isInside ? (
                       <span className="text-emerald-300/95">
-                        Current price (${currentPrice.toFixed(2)}) is inside this band — scale here first.
+                        {tier.id === "T2" || tier.id === "tier2"
+                          ? `Current price ($${currentPrice.toFixed(2)}) is inside Tier 2 — partial position only; full MOS is lower (see max buy price).`
+                          : `Current price ($${currentPrice.toFixed(2)}) is inside this band — scale here first.`}
                       </span>
                     ) : isTarget && isAbove ? (
                       <span className="text-emerald-300/90">

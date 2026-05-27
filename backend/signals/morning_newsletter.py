@@ -205,18 +205,14 @@ def _build_market_pulse(
 ) -> list[str]:
     if market_context:
         items: list[str] = []
-        primary = market_context.get("primary_message")
-        if primary:
-            items.append(f"Unified read: {primary}")
-        expl = market_context.get("explanation")
-        if expl:
-            items.append(str(expl))
+        # Master context banner covers primary/explanation — pulse only adds net-new detail.
         coexist = market_context.get("coexistence_note")
-        if coexist:
+        if coexist and coexist not in (market_context.get("explanation") or ""):
             items.append(str(coexist))
         st = market_context.get("short_term") or {}
         st_guidance = _horizon_guidance(st)
-        if st_guidance:
+        line1_hint = _regime_line_from_context(market_context)
+        if st_guidance and st_guidance not in line1_hint:
             items.append(f"Short-term: {st_guidance}")
         if market_regime and market_regime.get("rotation_risk") == "High":
             items.append("Rotation risk elevated — step down aggressive tech adds.")
@@ -292,10 +288,11 @@ def _format_hold_vs_trade(hold_vs_trade: dict | None) -> tuple[str, str | None]:
             None,
         )
     lines = [hold_vs_trade.get("headline") or "Hold or trim?"]
-    if hold_vs_trade.get("answer"):
+    bullets = [str(b) for b in (hold_vs_trade.get("bullets") or [])[:3] if b]
+    if bullets:
+        lines.extend(bullets)
+    elif hold_vs_trade.get("answer"):
         lines.append(str(hold_vs_trade["answer"]))
-    for b in (hold_vs_trade.get("bullets") or [])[:3]:
-        lines.append(str(b))
     return "\n".join(lines), None
 
 
@@ -356,6 +353,8 @@ def build_morning_newsletter(
     pm_conf = pm.get("confidence")
     if pm_bias and pm_score is not None:
         pm_items: list[str] = []
+        if market_context and market_context.get("coexistence_note"):
+            pm_items.append(f"How to read pre-market vs regime: {market_context['coexistence_note']}")
         pm_items.append(
             f"Composite: {pm_bias} ({pm_score:+.2f})"
             + (f" — confidence {pm_conf:.0%}" if pm_conf is not None else "")
@@ -456,11 +455,24 @@ def build_morning_newsletter(
 
     hold_teaser, hold_more = _format_hold_vs_trade(hold_vs_trade)
 
+    master_context = None
+    if market_context:
+        master_context = {
+            "quadrant": market_context.get("quadrant"),
+            "primary_message": market_context.get("primary_message"),
+            "explanation": market_context.get("explanation"),
+            "coexistence_note": market_context.get("coexistence_note"),
+            "temperature_label": market_context.get("temperature_label"),
+            "regime_label": market_context.get("regime_label"),
+            "hmm_bull_pct": market_context.get("hmm_bull_pct"),
+        }
+
     return {
         "headline": f"Morning brief · {date_display}",
         "date": date_str,
         "date_display": date_display,
         "quadrant": (market_context or {}).get("quadrant"),
+        "master_context": master_context,
         "three_line_brief": three_line[:3],
         "sections": sections,
         "action_items": action_items,

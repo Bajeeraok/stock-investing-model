@@ -41,13 +41,16 @@ def test_newsletter_best_buy_zone_aligns_with_hero():
         },
     )
     assert nl["quadrant"] == "best_buy_zone"
+    assert nl.get("master_context", {}).get("primary_message")
+    assert "Risk-Off" not in (nl.get("master_context", {}).get("primary_message") or "")
     assert "YOLO" not in nl["headline"].upper()
     assert "YOLO" not in " ".join(nl["three_line_brief"]).upper()
     assert "YOLO" not in " ".join(nl["action_items"]).upper()
 
     pulse = next(s for s in nl["sections"] if s["title"] == "Market pulse")
     assert "YOLO" not in " ".join(pulse["items"]).upper()
-    assert "FEAR IN A BULL MARKET" in pulse["items"][0].upper() or "Unified read" in pulse["items"][0]
+    joined_pulse = " ".join(pulse["items"]).upper()
+    assert "UNIFIED READ" not in joined_pulse
 
     line1 = nl["three_line_brief"][0]
     assert "Setup" in line1
@@ -63,6 +66,8 @@ def test_newsletter_best_buy_zone_aligns_with_hero():
 
     assert "10:08 PM ET" in nl["headline"]
     assert "open any ticker" not in (nl.get("hold_vs_trade_teaser") or "").lower()
+    teaser = nl.get("hold_vs_trade_teaser") or ""
+    assert teaser.count("Core thesis names") <= 1
 
 
 def test_newsletter_fallback_no_yolo_on_risk_off():

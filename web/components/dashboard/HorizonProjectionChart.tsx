@@ -30,6 +30,35 @@ const HORIZON_STYLE: Record<
 const HIST_DISPLAY_DAYS = 90;
 const FORWARD_PAD_DAYS = 14;
 
+const FAIR_VALUE_STYLE = {
+  label: "Model FV",
+  stroke: "#34d399",
+  fill: "#34d399",
+};
+
+function ChartLegendItem({
+  color,
+  label,
+  dashed = false,
+}: {
+  color: string;
+  label: string;
+  dashed?: boolean;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] text-slate-400">
+      <span
+        className="inline-block h-0 w-5 border-t-2"
+        style={{
+          borderColor: color,
+          borderTopStyle: dashed ? "dashed" : "solid",
+        }}
+      />
+      {label}
+    </span>
+  );
+}
+
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
@@ -212,10 +241,12 @@ function CustomTooltip({
   active,
   payload,
   label,
+  fairValue,
 }: {
   active?: boolean;
   payload?: { payload?: ChartRow }[];
   label?: number;
+  fairValue?: number | null;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload;
@@ -230,6 +261,11 @@ function CustomTooltip({
       </p>
       {row.price != null && (
         <p className="text-slate-100 font-medium">Price {fmtPrice(row.price)}</p>
+      )}
+      {fairValue != null && fairValue > 0 && (
+        <p style={{ color: FAIR_VALUE_STYLE.stroke }} className="mt-0.5">
+          {FAIR_VALUE_STYLE.label}: {fmtPrice(fairValue)}
+        </p>
       )}
       {(["short", "medium", "long"] as HorizonKey[]).map((k) => {
         const mid = row[`${k}Mid` as keyof ChartRow] as number | undefined;
@@ -272,6 +308,7 @@ export function HorizonProjectionChart({
     medium: true,
     long: true,
   });
+  const [showFairValue, setShowFairValue] = useState(true);
 
   const horizonMeta = (
     [
@@ -318,6 +355,9 @@ export function HorizonProjectionChart({
   const hasHorizons = short?.target || medium?.target || long?.target;
   const showMa20 = ma20 != null && ma20 > 0;
   const showMa50 = ma50 != null && ma50 > 0;
+  const hasFairValue = fairValue != null && fairValue > 0;
+  const fairValueGapPct =
+    hasFairValue && currentPrice > 0 ? ((fairValue - currentPrice) / currentPrice) * 100 : null;
 
   if (!hasHorizons || currentPrice <= 0) return null;
 
@@ -334,10 +374,27 @@ export function HorizonProjectionChart({
             </h3>
             <p className="text-sm text-slate-500 mt-1 leading-snug">
               Trailing price (left) → today → forward ST / MT / LT channels (high · avg · low).
+              {hasFairValue ? " Emerald line = model fair value (fundamentals anchor)." : null}
               {!hasHistory ? " History limited — bands anchored at current price." : null}
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
+            {hasFairValue && (
+              <button
+                type="button"
+                onClick={() => setShowFairValue((v) => !v)}
+                className={`text-xs px-2 py-1 rounded-full border transition-opacity ${
+                  showFairValue ? "opacity-100" : "opacity-40"
+                }`}
+                style={{
+                  borderColor: `${FAIR_VALUE_STYLE.stroke}55`,
+                  backgroundColor: `${FAIR_VALUE_STYLE.fill}18`,
+                  color: FAIR_VALUE_STYLE.stroke,
+                }}
+              >
+                {FAIR_VALUE_STYLE.label} · {fmtPrice(fairValue)}
+              </button>
+            )}
             {horizonMeta.map(({ key, h }) => (
               <button
                 key={key}
@@ -386,7 +443,11 @@ export function HorizonProjectionChart({
                 tickFormatter={(v: number) => `$${v.toFixed(0)}`}
                 width={52}
               />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip
+                content={(props) => (
+                  <CustomTooltip {...props} fairValue={showFairValue ? fairValue : null} />
+                )}
+              />
               <ReferenceLine x={0} stroke="#fbbf24" strokeWidth={2} label={{ value: "Now", fill: "#fbbf24", fontSize: 11, position: "insideTopRight" }} />
 
               {(showMa20 || rows.some((r) => r.ma20 != null)) && (
@@ -487,19 +548,64 @@ export function HorizonProjectionChart({
                 isAnimationActive={false}
               />
 
-              {fairValue != null && fairValue > 0 && (
+              {hasFairValue && showFairValue && (
                 <ReferenceLine
                   y={fairValue}
-                  stroke="#64748b"
-                  strokeDasharray="2 6"
-                  label={{ value: "Fair value", fill: "#94a3b8", fontSize: 10, position: "insideBottomRight" }}
+                  stroke={FAIR_VALUE_STYLE.stroke}
+                  strokeWidth={1.75}
+                  strokeDasharray="6 4"
+                  label={{
+                    value: `${FAIR_VALUE_STYLE.label} ${fmtPrice(fairValue)}`,
+                    fill: FAIR_VALUE_STYLE.stroke,
+                    fontSize: 10,
+                    position: "insideTopLeft",
+                  }}
                 />
               )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
 
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          <ChartLegendItem color="#f8fafc" label="Historical price" />
+          {hasFairValue && showFairValue && (
+            <ChartLegendItem
+              color={FAIR_VALUE_STYLE.stroke}
+              label={`${FAIR_VALUE_STYLE.label} ${fmtPrice(fairValue)}`}
+              dashed
+            />
+          )}
+          {(showMa20 || rows.some((r) => r.ma20 != null)) && (
+            <ChartLegendItem color="#f59e0b" label="MA20" dashed />
+          )}
+          {(showMa50 || rows.some((r) => r.ma50 != null)) && (
+            <ChartLegendItem color="#8b5cf6" label="MA50" dashed />
+          )}
+        </div>
+
+        <div
+          className={`mt-3 grid grid-cols-1 gap-2 text-xs ${
+            hasFairValue && showFairValue
+              ? "sm:grid-cols-2 lg:grid-cols-4"
+              : "sm:grid-cols-3"
+          }`}
+        >
+          {hasFairValue && showFairValue && (
+            <div
+              className="rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-2"
+              style={{ borderLeftColor: FAIR_VALUE_STYLE.stroke, borderLeftWidth: 3 }}
+            >
+              <p className="font-semibold" style={{ color: FAIR_VALUE_STYLE.stroke }}>
+                {FAIR_VALUE_STYLE.label} · fundamentals anchor
+              </p>
+              <p className="text-slate-400 mt-0.5">
+                Fair value {fmtPrice(fairValue)}
+                {fairValueGapPct != null
+                  ? ` · ${fairValueGapPct >= 0 ? "+" : ""}${fairValueGapPct.toFixed(1)}% vs now`
+                  : null}
+              </p>
+            </div>
+          )}
           {horizonMeta.map(({ key, h }) => (
             <div
               key={key}

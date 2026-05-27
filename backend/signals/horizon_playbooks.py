@@ -279,19 +279,18 @@ def build_long_setup(
     hvt = one.get("hold_vs_trade") or {}
     hold_block: dict[str, Any] | None = None
     if hvt:
+        long_snip = (hvt.get("long_term") or "")[:160]
+        if len(hvt.get("long_term") or "") > 160:
+            long_snip += "…"
+        short_snip = (hvt.get("short_term") or "")[:160]
+        if len(hvt.get("short_term") or "") > 160:
+            short_snip += "…"
         hold_block = {
             "title": hvt.get("title") or "Hold for years vs take profits",
             "long_term": hvt.get("long_term"),
             "short_term": hvt.get("short_term"),
             "signal_bridge": hvt.get("signal_bridge"),
-            "bullets": [
-                b
-                for b in [
-                    hvt.get("signal_bridge"),
-                    (hvt.get("long_term") or "")[:160] + ("…" if len(hvt.get("long_term") or "") > 160 else ""),
-                ]
-                if b
-            ][:3],
+            "bullets": [b for b in [long_snip, short_snip] if b][:2],
         }
 
     add_triggers = [

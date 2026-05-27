@@ -37,6 +37,7 @@ import {
   PlainEnglishTakeCard,
   resolveLongHorizonEntryZone,
   RiskRewardThermometer,
+  StopHierarchyPanel,
   StopTargetRiskBar,
   TradingGateStatus,
 } from "./retailActionUX";
@@ -406,9 +407,17 @@ function HorizonCard({
             ? horizon.stop_loss_framing || "52-week stress floor — not a day-to-day trailing stop"
             : undefined,
         },
-        structuralStop
-          ? `Structural invalidation (52w stress floor): ~$${Number(horizon.stop_loss).toFixed(2)} — not a normal trailing stop`
-          : `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
+        horizonKind === "short"
+          ? `Swing stop: $${Number(horizon.stop_loss).toFixed(2)}${
+              horizon.stop_loss_pct != null && Number.isFinite(horizon.stop_loss_pct)
+                ? ` (${Math.abs(horizon.stop_loss_pct).toFixed(0)}% risk)`
+                : ""
+            }`
+          : horizonKind === "medium"
+            ? `Build stop: $${Number(horizon.stop_loss).toFixed(2)} (pause tranches)`
+            : structuralStop
+              ? `Thesis stop: $${Number(horizon.stop_loss).toFixed(2)} (exit thesis)`
+              : `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
       ),
     React.createElement(
       "p",
@@ -516,10 +525,13 @@ function BuyRangeRetailCard({
   const high = Math.max(ez.low, ez.high);
   const range = high - low;
   const stStop = short.stop_loss != null && short.stop_loss > 0 ? short.stop_loss : null;
-  const stressRaw =
-    long?.entry_tiers?.structural_invalidation?.price ??
-    (long?.stop_loss != null && long.stop_loss > 0 ? long.stop_loss : null);
-  const stress = stressRaw != null && stressRaw > 0 ? stressRaw : null;
+  const activeTier2 =
+    long?.entry_tiers?.tiers?.some(
+      (t) =>
+        (t.id === "T2" || t.id === "tier2") &&
+        currentPrice >= t.low &&
+        currentPrice <= t.high
+    ) ?? false;
 
   let statusLabel = "—";
   let statusBadgeClass =
@@ -724,7 +736,9 @@ function BuyRangeRetailCard({
             React.createElement(
               "p",
               { className: "text-xs text-slate-500 mt-1 leading-snug" },
-              "Rough ceiling from long-term margin-of-safety rule — stricter than the near-term band."
+              activeTier2
+                ? "Full margin-of-safety ceiling — stricter than Tier 2 band above (partial position only)."
+                : "Rough ceiling from long-term margin-of-safety rule — stricter than the near-term band."
             )
           ),
         (rr != null || (stStop != null && short.target > 0)) &&
@@ -755,56 +769,6 @@ function BuyRangeRetailCard({
                 { className: "text-xs text-amber-200/90 mt-1.5 leading-snug border-t border-amber-500/20 pt-1.5" },
                 "Asymmetric risk: large downside slice vs thin upside to target \u2014 wait for pullback or use long-term tiers."
               )
-          )
-      ),
-    (stStop != null || stress != null) &&
-      React.createElement(
-        "div",
-        {
-          className:
-            "rounded-lg border border-slate-700/80 bg-slate-900/40 px-3 py-2.5 grid grid-cols-1 sm:grid-cols-2 gap-3",
-        },
-        stStop != null &&
-          React.createElement(
-            "div",
-            null,
-            React.createElement(
-              "p",
-              { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold" },
-              "Risk reference (short-term stop)"
-            ),
-            React.createElement(
-              "p",
-              { className: "text-sm font-mono text-amber-200/95" },
-              `~$${stStop.toFixed(2)}`
-            ),
-            React.createElement(
-              "p",
-              { className: "text-xs text-slate-500 mt-0.5 leading-snug" },
-              "Break here challenges the tactical setup — not where we aim to initiate."
-            )
-          ),
-        stress != null &&
-          React.createElement(
-            "div",
-            null,
-            React.createElement(
-              "p",
-              { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold" },
-              "Stress / structural floor"
-            ),
-            React.createElement(
-              "p",
-              { className: "text-sm font-mono text-slate-400" },
-              `~$${stress.toFixed(2)}`
-            ),
-            React.createElement(
-              "p",
-              { className: "text-xs text-slate-500 mt-0.5 leading-snug" },
-              long?.stop_loss_kind === "structural_invalidation"
-                ? "Tail-risk / thesis-break reference — not an entry zone."
-                : "Long-horizon floor reference."
-            )
           )
       ),
     anchorNote &&
@@ -1192,6 +1156,11 @@ export function InvestorDecisionSummarySection({
       })
     ),
     React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
+    React.createElement(
+      "div",
+      { className: "px-4 pb-4 border-b border-slate-700/80" },
+      React.createElement(StopHierarchyPanel, { short, medium, long, currentPrice })
+    ),
     long?.entry_tiers?.tiers?.length
       ? React.createElement(
           "div",

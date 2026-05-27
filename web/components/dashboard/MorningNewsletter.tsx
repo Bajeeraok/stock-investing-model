@@ -9,6 +9,16 @@ export interface MorningNewsletterData {
   date_display?: string;
   /** Reconciled quadrant when available — aligns with hero panel */
   quadrant?: string | null;
+  /** Same unified read as RetailMarketDecisionsPanel hero — avoids contradicting three-line brief */
+  master_context?: {
+    quadrant?: string | null;
+    primary_message?: string | null;
+    explanation?: string | null;
+    coexistence_note?: string | null;
+    temperature_label?: string | null;
+    regime_label?: string | null;
+    hmm_bull_pct?: number | null;
+  } | null;
   /** Regime → portfolio → key level (compressed UX) */
   three_line_brief?: string[];
   sections: Array<{ title: string; items: string[] }>;
@@ -40,6 +50,31 @@ export function MorningNewsletter({ data }: Props) {
         <h2 className="font-semibold text-slate-200">{data.headline}</h2>
       </header>
       <div className="p-4 space-y-4">
+        {data.master_context?.primary_message && (
+          <section className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 p-4 space-y-2">
+            <p className="text-sm font-semibold text-emerald-200">{data.master_context.primary_message}</p>
+            {data.master_context.explanation && (
+              <p className="text-sm text-slate-300 leading-snug">{data.master_context.explanation}</p>
+            )}
+            <div className="flex flex-wrap gap-2 text-[11px]">
+              {data.master_context.temperature_label && (
+                <span className="px-2 py-0.5 rounded border border-sky-500/30 text-sky-300">
+                  Short-term: {data.master_context.temperature_label}
+                </span>
+              )}
+              {data.master_context.regime_label && (
+                <span className="px-2 py-0.5 rounded border border-emerald-500/30 text-emerald-300">
+                  Regime: {data.master_context.regime_label}
+                  {data.master_context.hmm_bull_pct != null &&
+                    ` (~${data.master_context.hmm_bull_pct}% bull)`}
+                </span>
+              )}
+            </div>
+            {data.master_context.coexistence_note && (
+              <p className="text-xs text-slate-400">{data.master_context.coexistence_note}</p>
+            )}
+          </section>
+        )}
         {data.three_line_brief && data.three_line_brief.length > 0 && (
           <section className="rounded-lg border border-amber-500/20 bg-amber-950/15 px-3 py-2.5 space-y-1.5">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-amber-500/90">Today in 3 lines</h3>
