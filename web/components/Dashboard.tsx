@@ -164,16 +164,24 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const [activeTab, setActiveTabState] = useState<TabId>("overview");
   const [overviewAlertCount, setOverviewAlertCount] = useState<number | null>(null);
+  const [overviewAlertActionCount, setOverviewAlertActionCount] = useState(0);
   useEffect(() => {
     let cancelled = false;
     const url = API_BASE ? `${API_BASE}/api/scanner/alerts?limit=80` : "/api/scanner/alerts?limit=80";
     fetch(url)
       .then((r) => (r.ok ? r.json() : []))
       .then((j) => {
-        if (!cancelled) setOverviewAlertCount(Array.isArray(j) ? j.length : 0);
+        if (cancelled) return;
+        const list = Array.isArray(j) ? j : [];
+        const action = list.filter((a: { priority?: number }) => a.priority === 1 || a.priority === 2).length;
+        setOverviewAlertCount(list.length);
+        setOverviewAlertActionCount(action);
       })
       .catch(() => {
-        if (!cancelled) setOverviewAlertCount(0);
+        if (!cancelled) {
+          setOverviewAlertCount(0);
+          setOverviewAlertActionCount(0);
+        }
       });
     return () => {
       cancelled = true;
@@ -770,10 +778,16 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   id="overview-alerts"
                   title="Alerts"
                   icon={<AlertTriangle />}
-                  badge={overviewAlertCount}
+                  badge={overviewAlertActionCount > 0 ? overviewAlertActionCount : overviewAlertCount}
                   defaultOpen
                 >
-                  <AlertsPanel onTickerClick={setSelectedTicker} />
+                  <AlertsPanel
+                    onTickerClick={setSelectedTicker}
+                    onLoaded={(total, actionRequired) => {
+                      setOverviewAlertCount(total);
+                      setOverviewAlertActionCount(actionRequired);
+                    }}
+                  />
                 </ToggleSection>
               )}
               <MarketStatePanel compactHeader={Boolean(data.retail_market_decisions?.market_context)} />

@@ -14,6 +14,7 @@ logger = logging.getLogger("scanner.horizon_levels")
 
 LEVELS_FILENAME = "horizon_levels.json"
 STATE_FILENAME = "retail_alert_state.json"
+READINESS_FILENAME = "readiness_cache.json"
 
 # Days to surface "Earnings soon" (retail quick decision)
 EARNINGS_SOON_DAYS = (1, 3, 5, 7)
@@ -202,6 +203,29 @@ def merge_ml_prob_for_ticker(data_root: Path, ticker: str, prob_pct: float) -> N
         logger.warning("merge_ml_prob_for_ticker failed: %s", e)
 
 
+def read_readiness_cache(data_root: Path) -> dict[str, dict[str, Any]]:
+    path = _scanner_dir(data_root) / READINESS_FILENAME
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.debug("read_readiness_cache failed: %s", e)
+        return {}
+
+
+def merge_readiness_for_ticker(data_root: Path, ticker: str, payload: dict[str, Any]) -> None:
+    ticker = ticker.upper()
+    cache = read_readiness_cache(data_root)
+    cache[ticker] = payload
+    path = _scanner_dir(data_root) / READINESS_FILENAME
+    try:
+        path.write_text(json.dumps(cache, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning("merge_readiness_for_ticker failed: %s", e)
+
+
 def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]) -> int:
     """
     Populate horizon_levels.json + ml_probs.json from run_signals / dashboard rows.
@@ -270,6 +294,15 @@ def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]
                     wrote = True
             except (TypeError, ValueError):
                 pass
+
+        try:
+            from signals.readiness_score import compute_readiness
+
+            readiness = compute_readiness(r)
+            merge_readiness_for_ticker(data_root, ticker, readiness)
+            wrote = True
+        except Exception:
+            pass
 
         if wrote:
             n_tickers += 1

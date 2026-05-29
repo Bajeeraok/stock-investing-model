@@ -98,6 +98,7 @@ ALERT_COLORS = {
     AlertType.TARGET_HIT: "#10B981",
     AlertType.TARGET_APPROACHING: "#FBBF24",
     AlertType.ML_PROB_CROSSED: "#3B82F6",
+    AlertType.SETUP_ALMOST_READY: "#A78BFA",
 }
 
 ALERT_EMOJIS = {
@@ -119,7 +120,44 @@ ALERT_EMOJIS = {
     AlertType.TARGET_HIT: "🎯",
     AlertType.TARGET_APPROACHING: "✂️",
     AlertType.ML_PROB_CROSSED: "📈",
+    AlertType.SETUP_ALMOST_READY: "🟡",
 }
+
+# UI filter tracks — accumulate = swing/build; tactical = quick in/out (velocity, earnings, flow)
+ACCUMULATE_ALERT_TYPES = frozenset({
+    AlertType.ENTRY_ZONE_ENTERED,
+    AlertType.STOP_HIT,
+    AlertType.STOP_APPROACHING,
+    AlertType.TARGET_HIT,
+    AlertType.TARGET_APPROACHING,
+    AlertType.ML_PROB_CROSSED,
+    AlertType.SETUP_ALMOST_READY,
+})
+TACTICAL_ALERT_TYPES = frozenset({
+    AlertType.EARNINGS_SOON,
+    AlertType.MOMENTUM_BREAKOUT,
+    AlertType.SUPPORT_BOUNCE,
+    AlertType.ER_LOTTO,
+    AlertType.ER_IV_CRUSH,
+    AlertType.COVERED_CALL,
+    AlertType.CREDIT_SPREAD,
+    AlertType.OPTIONS_FLOW_SPIKE,
+})
+
+
+def alert_track_for_type(alert_type: AlertType | str) -> str:
+    """Map alert type to accumulate | tactical | macro for UI toggles."""
+    try:
+        t = alert_type if isinstance(alert_type, AlertType) else AlertType(str(alert_type))
+    except ValueError:
+        return "macro"
+    if t in ACCUMULATE_ALERT_TYPES:
+        return "accumulate"
+    if t in TACTICAL_ALERT_TYPES:
+        return "tactical"
+    if t in (AlertType.MACRO_RISK_OFF, AlertType.MACRO_RISK_ON, AlertType.REGIME_CHANGE, AlertType.KELLY_REDUCTION):
+        return "macro"
+    return "accumulate"
 
 
 def _alert_id(ticker: Optional[str], alert_type: AlertType, suffix: str = "") -> str:
@@ -440,6 +478,9 @@ def _build_retail_alert(
         AlertType.STOP_HIT,
         AlertType.ML_PROB_CROSSED,
     ) else ScanPriority.MEDIUM
+    if alert_type == AlertType.SETUP_ALMOST_READY:
+        pr = ScanPriority.MEDIUM
+    sig_out = {**(signals or {}), "track": alert_track_for_type(alert_type)}
     return ScanAlert(
         id=_alert_id(ticker, alert_type, dedupe_extra or ""),
         type=alert_type,
@@ -451,7 +492,7 @@ def _build_retail_alert(
         color=ALERT_COLORS.get(alert_type, "#94A3B8"),
         emoji=ALERT_EMOJIS.get(alert_type, "🔔"),
         timestamp=datetime.now().isoformat(),
-        signals=signals,
+        signals=sig_out,
         scan_tier=scan_tier,
         surface_to_all=True,
         actionable=actionable,
@@ -704,6 +745,85 @@ def evaluate_retail_alerts(
     return alerts, new_state
 
 
+def evaluate_readiness_alerts(
+    snaps: list[MarketSnapshot],
+    readiness_cache: dict[str, dict[str, Any]],
+    state: dict[str, dict[str, Any]],
+    watchlist: set[str],
+    *,
+    enable: bool = True,
+) -> tuple[list[ScanAlert], dict[str, dict[str, Any]]]:
+    """
+    Fire SETUP_ALMOST_READY when a watchlist name transitions to 3/4 gates + ST add support.
+    Does not change primary GO — informational readiness for alerts/UI.
+    """
+    if not enable:
+        return [], state
+
+    alerts: list[ScanAlert] = []
+    new_state: dict[str, dict[str, Any]] = dict(state)
+
+    for snap in snaps:
+        ticker = snap.symbol
+        if ticker not in watchlist:
+            continue
+        rd = readiness_cache.get(ticker.upper()) or readiness_cache.get(ticker)
+        st = dict(new_state.get(ticker) or {})
+        cur_tier = rd.get("readiness_tier") if isinstance(rd, dict) else None
+        prev_tier = st.get("readiness_tier")
+
+        if not isinstance(rd, dict) or cur_tier != "almost_ready":
+            if prev_tier == "almost_ready" and cur_tier != "almost_ready":
+                st["readiness_tier"] = cur_tier
+                new_state[ticker] = st
+            elif cur_tier is not None:
+                st["readiness_tier"] = cur_tier
+                new_state[ticker] = st
+            continue
+
+        if prev_tier == "almost_ready":
+            continue
+
+        gp = rd.get("gates_passed")
+        gt = rd.get("gates_total") or 4
+        score = rd.get("readiness_score")
+        price = snap.price
+        alerts.append(_build_retail_alert(
+            ticker,
+            AlertType.SETUP_ALMOST_READY,
+            f"{ticker} almost ready — {gp}/{gt} gates + ST buy",
+            (
+                f"{gp} of {gt} primary gates pass and short-term verdict supports add. "
+                f"One gate still blocking full GO — open detail to see which."
+            ),
+            snap.scan_tier,
+            {
+                "readinessTier": "almost_ready",
+                "readinessScore": score,
+                "gatesPassed": gp,
+                "gatesTotal": gt,
+                "stVerdictBuy": rd.get("st_verdict_buy"),
+                "price": price,
+            },
+            actionable=(
+                f"Almost ready to accumulate: {gp}/{gt} gates green and ST supports add at ${price:.2f}. "
+                f"Wait for the last gate (often RSI cooldown or regime) before sizing — not full GO yet."
+            ),
+            one_liner=_bias_prob_range_line(
+                price=price,
+                atr_pct=snap.atr_pct,
+                regime=snap.regime,
+                regime_confidence=snap.regime_confidence,
+                prob_override=snap.ml_prob_short,
+            ),
+            dedupe_extra="almost_ready",
+        ))
+        st = {**st, "readiness_tier": "almost_ready"}
+        new_state[ticker] = st
+
+    return alerts, new_state
+
+
 class AlertDeduplicator:
     def __init__(self):
         self._last: dict[tuple[str, AlertType, str], datetime] = {}
@@ -726,6 +846,7 @@ class AlertDeduplicator:
             AlertType.TARGET_HIT: 120,
             AlertType.TARGET_APPROACHING: 90,
             AlertType.ML_PROB_CROSSED: 180,
+            AlertType.SETUP_ALMOST_READY: 360,
         }
 
     def is_dup(self, ticker: str, t: AlertType, extra: str = "") -> bool:
@@ -781,6 +902,7 @@ def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
             "enable_band_alerts": a.get("enable_band_alerts", True),
             "enable_earnings_alerts": a.get("enable_earnings_alerts", True),
             "enable_ml_prob_alerts": a.get("enable_ml_prob_alerts", True),
+            "enable_readiness_alerts": a.get("enable_readiness_alerts", True),
             "trim_approach_fraction": float(a.get("trim_approach_fraction", 0.95)),
             "cooldown_overrides": a.get("retail_cooldown_min") or {},
         }
@@ -790,6 +912,7 @@ def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
             "enable_band_alerts": True,
             "enable_earnings_alerts": True,
             "enable_ml_prob_alerts": True,
+            "enable_readiness_alerts": True,
             "trim_approach_fraction": 0.95,
             "cooldown_overrides": {},
         }
@@ -830,6 +953,7 @@ class ScanEngine:
         enable_band = rc.get("enable_band_alerts", True)
         enable_earnings = rc.get("enable_earnings_alerts", True)
         enable_ml = rc.get("enable_ml_prob_alerts", True)
+        enable_readiness = rc.get("enable_readiness_alerts", True)
         trim_frac = float(rc.get("trim_approach_fraction", 0.95))  # alert "consider trim" when price >= frac * target
         for _at_name, _mins in (rc.get("cooldown_overrides") or {}).items():
             try:
@@ -857,6 +981,7 @@ class ScanEngine:
             try:
                 from scanner.horizon_levels import (
                     read_horizon_levels,
+                    read_readiness_cache,
                     read_retail_alert_state,
                     read_ml_probs,
                     write_retail_alert_state,
@@ -864,6 +989,7 @@ class ScanEngine:
                 levels = read_horizon_levels(data_root)
                 state = read_retail_alert_state(data_root)
                 ml_probs = read_ml_probs(data_root)
+                readiness = read_readiness_cache(data_root)
                 retail_alerts, new_state = evaluate_retail_alerts(
                     snaps,
                     levels,
@@ -875,6 +1001,14 @@ class ScanEngine:
                     enable_ml_prob=enable_ml,
                     trim_approach_fraction=trim_frac,
                 )
+                readiness_alerts, new_state = evaluate_readiness_alerts(
+                    snaps,
+                    readiness,
+                    new_state,
+                    watchlist,
+                    enable=enable_readiness,
+                )
+                retail_alerts.extend(readiness_alerts)
                 write_retail_alert_state(data_root, new_state)
                 generated += len(retail_alerts)
                 for a in retail_alerts:

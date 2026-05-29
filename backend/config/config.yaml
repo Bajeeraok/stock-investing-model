@@ -425,6 +425,8 @@ alerts:
   enable_band_alerts: true
   enable_earnings_alerts: true
   enable_ml_prob_alerts: true
+  # 3/4 gates + ST verdict supports add — alerts/UI only (does not change primary GO)
+  enable_readiness_alerts: true
   trim_approach_fraction: 0.95   # trim hint when price >= this fraction of each horizon target (below full target)
   email:
     smtp_host: smtp.gmail.com

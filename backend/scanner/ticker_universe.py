@@ -31,6 +31,8 @@ class AlertType(str, Enum):
     # Price within ~trim band below target (partial profit / scale out)
     TARGET_APPROACHING = "TARGET_APPROACHING"
     ML_PROB_CROSSED = "ML_PROB_CROSSED"
+    # Accumulate track: 3/4 gates + ST verdict supports add (does not replace primary GO)
+    SETUP_ALMOST_READY = "SETUP_ALMOST_READY"
 
 
 class ScanTier(str, Enum):
