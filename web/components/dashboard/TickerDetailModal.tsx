@@ -15,6 +15,7 @@ import { type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
+import { TacticalEntryPanel, type TacticalEntryPayload } from "./TacticalEntryPanel";
 import { getPositionIntent, type PositionIntent } from "@/lib/positionIntent";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
@@ -565,6 +566,16 @@ export function TickerDetailModal({
             intent={positionIntent}
             onIntentChange={setPositionIntent}
           />
+        )}
+
+        {detail && !loading && detail.investor_summary?.tactical_entry && (
+          (positionIntent === "trade" ||
+            (detail.investor_summary.tactical_entry as TacticalEntryPayload)?.active) && (
+            <TacticalEntryPanel
+              payload={detail.investor_summary.tactical_entry as TacticalEntryPayload}
+              layout={positionIntent === "trade" ? "scout" : "planner"}
+            />
+          )
         )}
 
         {/* Catalyst — summary first, full note on expand */}

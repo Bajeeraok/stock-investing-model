@@ -427,6 +427,8 @@ alerts:
   enable_ml_prob_alerts: true
   # 3/4 gates + ST verdict supports add — alerts/UI only (does not change primary GO)
   enable_readiness_alerts: true
+  enable_tactical_velocity_alerts: true
+  tactical_min_gates: 2
   trim_approach_fraction: 0.95   # trim hint when price >= this fraction of each horizon target (below full target)
   email:
     smtp_host: smtp.gmail.com
@@ -491,6 +493,18 @@ paper_trading:
     round_trip_cost_pct: 0.003    # commission+slippage total; applied half on entry, half on exit
     use_intraday_touch: true      # if snapshot row has high/low, use them for target/stop hit checks
 
+# Velocity / tactical breakout track (P0) — does NOT change primary 4-gate GO
+velocity_tactical:
+  enabled: true
+  rvol_min: 2.0                 # today's volume vs 20d avg
+  bb_pct_b_min: 1.0             # at/above upper Bollinger band
+  bb_pct_b_extended: 0.85
+  min_velocity_score: 55        # 0–100 composite; requires rvol OR bb break when require_rvol_or_bb true
+  horizon_trading_days: 5
+  require_rvol_or_bb: true
+  log_paper_trades: true
+  tactical_min_gates_for_alert: 2
+
 # Forward audit pilot: fixed 100-ticker cohort → SQLite at DATA_ROOT/signal_audit.db
 # Cohort list lives in config/signal_audit_cohort.yaml (separate from watchlist/portfolio).
 # Outcomes (Phase 2) read EOD from Redis first, then DATA_ROOT/eod/ — same as paper trades.
@@ -511,6 +525,9 @@ signal_audit:
     win_return_pct: 3.0
     loss_return_pct: -3.0
     false_negative_pct: 5.0
+    tactical_horizon_trading_days: 5
+    tactical_win_return_pct: 1.5
+    tactical_loss_return_pct: -1.5
   report:
     enabled: true
     output_dir: reports

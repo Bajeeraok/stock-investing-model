@@ -43,6 +43,13 @@ export type ModelAuditRecord = {
   max_gain_pct?: number | null;
   max_drawdown_pct?: number | null;
   benchmark_return_30d_pct?: number | null;
+  track?: string | null;
+  velocity_triggered?: number | boolean | null;
+  velocity_score?: number | null;
+  rvol?: number | null;
+  bb_pct_b?: number | null;
+  readiness_tier?: string | null;
+  readiness_score?: number | null;
 };
 
 export type ModelAuditOutcomeSummary = {
@@ -86,6 +93,17 @@ export type ModelAuditPayload = {
   breakdown_by_category?: ModelAuditBreakdownRow[];
   breakdown_by_signal?: ModelAuditBreakdownRow[];
   breakdown_by_regime?: ModelAuditBreakdownRow[];
+  breakdown_by_track?: ModelAuditBreakdownRow[];
+  breakdown_by_readiness?: ModelAuditBreakdownRow[];
+  batch_queues?: {
+    signal_date?: string | null;
+    accumulate_count?: number;
+    tactical_count?: number;
+    accumulate_tickers?: string[];
+    tactical_tickers?: string[];
+    tactical_preview?: ModelAuditRecord[];
+    accumulate_preview?: ModelAuditRecord[];
+  } | null;
   recent_records?: ModelAuditRecord[];
   outcomes_available?: boolean;
   outcome_summary?: ModelAuditOutcomeSummary | null;
@@ -97,6 +115,7 @@ export type ModelAuditPayload = {
 };
 
 type DateRange = "1W" | "1M" | "ALL";
+type TrackFilter = "all" | "accumulate" | "velocity";
 const DATE_RANGES: { label: string; value: DateRange }[] = [
   { label: "1 W", value: "1W" },
   { label: "1 M", value: "1M" },
@@ -157,6 +176,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [gatesFilter, setGatesFilter] = useState<string>("");
+  const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const [page, setPage] = useState(0);
 
   const records = audit?.enabled ? audit.recent_records ?? [] : [];
@@ -167,15 +187,18 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
   const filtered = useMemo(() => {
     const cutoff = cutoffDate(dateRange);
-    const tf = tickerFilter.toUpperCase();
     const gf = gatesFilter;
+    const trk = trackFilter;
     return records.filter((r) => {
-      if (tf && r.ticker !== tf) return false;
+      if (tickerFilter && r.ticker !== tickerFilter) return false;
       if (cutoff && r.signal_date < cutoff) return false;
       if (gf !== "" && String(r.gates_passed ?? "") !== gf) return false;
+      const track = (r.track || "accumulate").toLowerCase();
+      if (trk === "accumulate" && track === "velocity") return false;
+      if (trk === "velocity" && track !== "velocity") return false;
       return true;
     });
-  }, [records, tickerFilter, dateRange, gatesFilter]);
+  }, [records, tickerFilter, dateRange, gatesFilter, trackFilter]);
 
   const gateOptions = useMemo(() => {
     const set = new Set(records.map((r) => r.gates_passed).filter((g) => g != null));
@@ -184,7 +207,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
   useEffect(() => {
     setPage(0);
-  }, [tickerFilter, dateRange, gatesFilter]);
+  }, [tickerFilter, dateRange, gatesFilter, trackFilter]);
 
   const pagedRows = useMemo(
     () => paginateRows(filtered, page, AUDIT_PAGE_SIZE),
@@ -290,6 +313,61 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       {audit.message && (        <p className="text-xs text-amber-200/90 rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2">{audit.message}</p>
       )}
 
+      {audit.batch_queues && (
+        <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5 space-y-2">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500">
+            Batch split
+            {audit.batch_queues.signal_date ? ` · ${audit.batch_queues.signal_date}` : ""}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTrackFilter("accumulate")}
+              className={clsx(
+                "rounded border px-2.5 py-1 text-[11px] font-medium touch-manipulation",
+                trackFilter === "accumulate"
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+                  : "border-slate-600 text-slate-400 hover:border-slate-500",
+              )}
+            >
+              Watch / accumulate{" "}
+              <span className="tabular-nums">{audit.batch_queues.accumulate_count ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrackFilter("velocity")}
+              className={clsx(
+                "rounded border px-2.5 py-1 text-[11px] font-medium touch-manipulation",
+                trackFilter === "velocity"
+                  ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
+                  : "border-slate-600 text-slate-400 hover:border-slate-500",
+              )}
+            >
+              Tactical breakout{" "}
+              <span className="tabular-nums">{audit.batch_queues.tactical_count ?? 0}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTrackFilter("all")}
+              className={clsx(
+                "rounded border px-2.5 py-1 text-[11px] touch-manipulation",
+                trackFilter === "all"
+                  ? "border-slate-500 bg-slate-800 text-slate-200"
+                  : "border-slate-700 text-slate-500 hover:border-slate-600",
+              )}
+            >
+              All tracks
+            </button>
+          </div>
+          {(audit.batch_queues.tactical_tickers?.length ?? 0) > 0 && (
+            <p className="text-[11px] text-violet-300/80 leading-snug">
+              Velocity: {audit.batch_queues.tactical_tickers!.slice(0, 12).join(", ")}
+              {(audit.batch_queues.tactical_tickers!.length ?? 0) > 12 ? "…" : ""}
+            </p>
+          )}
+        </div>
+      )}
+
       {audit.outcomes_note && !audit.outcomes_available && (
         <p className="text-xs text-slate-500 border-l-2 border-slate-600 pl-2">{audit.outcomes_note}</p>
       )}
@@ -344,6 +422,8 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         <BreakdownTable title="By GO / NO-GO" rows={audit.breakdown_by_go_no_go ?? []} bucketLabel="Status" />
         <BreakdownTable title="By category" rows={audit.breakdown_by_category ?? []} bucketLabel="Category" />
         <BreakdownTable title="By ML signal" rows={audit.breakdown_by_signal ?? []} bucketLabel="Signal" />
+        <BreakdownTable title="By track" rows={audit.breakdown_by_track ?? []} bucketLabel="Track" />
+        <BreakdownTable title="By readiness" rows={audit.breakdown_by_readiness ?? []} bucketLabel="Tier" />
       </div>
 
       {/* Recent captures table */}
@@ -400,6 +480,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <th className="py-1.5 pr-2 font-medium">Category</th>
                   <th className="py-1.5 pr-2 font-medium">Signal</th>
                   <th className="py-1.5 pr-2 font-medium">Gates</th>
+                  <th className="py-1.5 pr-2 font-medium">Track</th>
                   <th className="py-1.5 pr-2 font-medium">GO?</th>
                   <th className="py-1.5 pr-2 font-medium">Price</th>
                   <th className="py-1.5 pr-2 font-medium">Score</th>
@@ -417,6 +498,18 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                     <td className="py-1 pr-2">{r.ml_signal ?? r.retail_verdict ?? "—"}</td>
                     <td className="py-1 pr-2 tabular-nums">
                       {r.gates_passed ?? "—"}/{r.gates_total ?? 4}
+                    </td>
+                    <td className="py-1 pr-2">
+                      <span
+                        className={clsx(
+                          "px-1.5 py-0.5 rounded text-[10px] uppercase",
+                          (r.track || "accumulate") === "velocity"
+                            ? "bg-violet-500/15 text-violet-300"
+                            : "bg-slate-700/50 text-slate-400",
+                        )}
+                      >
+                        {r.track || "accumulate"}
+                      </span>
                     </td>
                     <td className="py-1 pr-2">
                       <span

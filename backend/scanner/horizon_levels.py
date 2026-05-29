@@ -299,7 +299,24 @@ def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]
             from signals.readiness_score import compute_readiness
 
             readiness = compute_readiness(r)
-            merge_readiness_for_ticker(data_root, ticker, readiness)
+            payload = {**readiness}
+            for k in (
+                "velocity_triggered",
+                "velocity_score",
+                "track",
+                "rvol",
+                "bb_pct_b",
+                "velocity_reasons",
+                "gates_passed",
+                "gates_total",
+                "go_no_go",
+                "tactical_t1",
+                "tactical_t2",
+                "tactical_stop",
+            ):
+                if r.get(k) is not None:
+                    payload[k] = r.get(k)
+            merge_readiness_for_ticker(data_root, ticker, payload)
             wrote = True
         except Exception:
             pass

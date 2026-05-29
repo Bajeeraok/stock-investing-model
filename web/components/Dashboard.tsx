@@ -70,6 +70,7 @@ import {
   TrackRecordPanel,
   PortfolioDoctorPanel,
   BrowserPushPanel,
+  TacticalBreakoutStrip,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
@@ -771,6 +772,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       ? { bullets: data.market_forecast.bullets, disclaimer: data.market_forecast.disclaimer }
                       : null
                   }
+                />
+              )}
+              {(data.tactical_breakouts?.length ?? 0) > 0 && (
+                <TacticalBreakoutStrip
+                  rows={data.tactical_breakouts}
+                  onTickerClick={setSelectedTicker}
                 />
               )}
               {overviewAlertCount != null && overviewAlertCount > 0 && (

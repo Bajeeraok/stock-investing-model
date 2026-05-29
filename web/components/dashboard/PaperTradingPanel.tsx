@@ -127,13 +127,10 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <div>
           <p className="text-sm font-medium text-slate-300">Paper trading (signals → outcomes)</p>
           <p className="text-xs text-slate-500 mt-0.5">
-            Entry = limit fill when EOD low/close touches ref entry within the wait window after a GO signal.
-            Outcomes use the first EOD snapshot on or after fill date + N <strong>business</strong> days (ST band).
-            <strong> Ref entry</strong> = ST band low (ATR/swing), else MA50/MA200 suggested buy — must be at/below signal close.
-            <strong> Signal date</strong> = day gates passed; row opens only on touch.
-            <strong> Return</strong> = total vs limit fill; <strong>Daily Δ</strong> = vs prior EOD mark.
-            <strong> P&L history</strong> = total return vs fill at each EOD.
-            Requires <strong>4/4 gates GO</strong> + actionable signal (BUY / STRONG BUY / HOLD-ADD).
+            <strong>Accumulate</strong> track: 4/4 gates GO + actionable signal (BUY / STRONG BUY / HOLD-ADD), ~20 business days.
+            <strong> Tactical</strong> track: velocity breakout (RVOL/BB), gates logged but not required, T+5 horizon.
+            Entry = limit fill when EOD low/close touches ref entry within the wait window.
+            Outcomes use the first EOD snapshot on or after fill date + N <strong>business</strong> days.
           </p>
         </div>
         {pt.log?.date && (
@@ -303,6 +300,37 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               )}
             </div>
           )}
+          {(summary.accumulate_summary || summary.tactical_summary) && (
+            <div className="flex flex-wrap gap-2">
+              {summary.accumulate_summary && (
+                <div className="rounded border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-xs text-slate-400 flex-1 min-w-[12rem]">
+                  <span className="font-medium text-emerald-300">{summary.accumulate_summary.label}</span>
+                  <span className="text-slate-500"> — n={summary.accumulate_summary.completed_n}</span>
+                  {summary.accumulate_summary.win_rate_pct != null && (
+                    <span className="ml-2">Win {summary.accumulate_summary.win_rate_pct.toFixed(1)}%</span>
+                  )}
+                  {summary.accumulate_summary.avg_return_pct != null && (
+                    <span className="ml-2">Avg {fmtPct(summary.accumulate_summary.avg_return_pct)}</span>
+                  )}
+                </div>
+              )}
+              {summary.tactical_summary && (
+                <div className="rounded border border-violet-500/25 bg-violet-950/20 px-3 py-2 text-xs text-slate-400 flex-1 min-w-[12rem]">
+                  <span className="font-medium text-violet-300">{summary.tactical_summary.label}</span>
+                  <span className="text-slate-500"> — n={summary.tactical_summary.completed_n}</span>
+                  {summary.tactical_summary.win_rate_pct != null && (
+                    <span className="ml-2">Win {summary.tactical_summary.win_rate_pct.toFixed(1)}%</span>
+                  )}
+                  {summary.tactical_summary.avg_return_pct != null && (
+                    <span className="ml-2">Avg {fmtPct(summary.tactical_summary.avg_return_pct)}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {summary.marketing_note && (
+            <p className="text-[11px] text-slate-600 leading-snug">{summary.marketing_note}</p>
+          )}
           {summary.horizon_note && (
             <p className="text-xs text-slate-600 leading-snug">{summary.horizon_note}</p>
           )}
@@ -328,6 +356,9 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               <tr className="text-slate-500 border-b border-slate-600">
                 <th className="py-1.5 pr-2 font-medium">Date</th>
                 <th className="py-1.5 pr-2 font-medium">Ticker</th>
+                <th className="py-1.5 pr-2 font-medium" title="accumulate = 4-gate GO; velocity = tactical breakout">
+                  Track
+                </th>
                 <th className="py-1.5 pr-2 font-medium">Signal</th>
                 <th className="py-1.5 pr-2 font-medium" title="4 primary gates at signal time (valuation, regime, momentum, ML)">
                   Gates
@@ -379,6 +410,13 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <tr key={`${r.date}-${r.ticker}-${r.signal}-${i}`} className="border-b border-slate-700/50 hover:bg-slate-800/30">
                   <td className="py-1.5 pr-2 text-slate-400">{r.date}</td>
                   <td className="py-1.5 pr-2 font-mono text-slate-200">{r.ticker}</td>
+                  <td className="py-1.5 pr-2 text-xs">
+                    {String(r.track || "accumulate") === "velocity" ? (
+                      <span className="text-violet-300">tactical</span>
+                    ) : (
+                      <span className="text-emerald-400/90">accumulate</span>
+                    )}
+                  </td>
                   <td className="py-1.5 pr-2 text-slate-400">{r.signal}</td>
                   <td className="py-1.5 pr-2 text-slate-400 text-xs">
                     {r.gates_passed != null && r.gates_total != null ? (

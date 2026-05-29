@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 def _outcomes_cfg(config: dict | None) -> dict[str, Any]:
     audit = (config or {}).get("signal_audit") or {}
     oc = audit.get("outcomes") or {}
+    vt = (config or {}).get("velocity_tactical") or {}
     horizons = oc.get("horizon_trading_days") or oc.get("horizons_trading_days") or [7, 20]
     if not isinstance(horizons, (list, tuple)) or len(horizons) < 2:
         horizons = [7, 20]
@@ -23,11 +24,14 @@ def _outcomes_cfg(config: dict | None) -> dict[str, Any]:
         "enabled": oc.get("enabled", True),
         "horizon_short": int(horizons[0]),
         "horizon_long": int(horizons[1]),
+        "tactical_horizon": int(oc.get("tactical_horizon_trading_days") or vt.get("horizon_trading_days") or 5),
         "use_intraday_touch": bool(oc.get("use_intraday_touch", True)),
         "benchmark_ticker": str(oc.get("benchmark_ticker") or "SPY").upper(),
         "win_return_pct": float(oc.get("win_return_pct", 3.0)),
         "loss_return_pct": float(oc.get("loss_return_pct", -3.0)),
         "false_negative_pct": float(oc.get("false_negative_pct", 5.0)),
+        "tactical_win_return_pct": float(oc.get("tactical_win_return_pct", 1.5)),
+        "tactical_loss_return_pct": float(oc.get("tactical_loss_return_pct", -1.5)),
     }
 
 
@@ -144,6 +148,9 @@ def resolve_event_outcome(
     win_return_pct: float = 3.0,
     loss_return_pct: float = -3.0,
     false_negative_pct: float = 5.0,
+    tactical_horizon: int = 5,
+    tactical_win_return_pct: float = 1.5,
+    tactical_loss_return_pct: float = -1.5,
 ) -> dict[str, Any] | None:
     """Build outcome row when enough EOD history exists; else None."""
     signal_date = str(event.get("signal_date") or "")
@@ -152,13 +159,20 @@ def resolve_event_outcome(
     if not signal_date or not ticker or entry is None or entry <= 0:
         return None
 
+    track = str(event.get("track") or "accumulate").lower()
+    is_tactical = track == "velocity" or event.get("velocity_triggered") == 1
+    default_long = horizon_long
+    effective_long = int(
+        event.get("horizon_trading_days") or (tactical_horizon if is_tactical else default_long)
+    )
+
     chain = _chain_from_signal(dates, signal_date)
-    if len(chain) <= horizon_long:
+    if len(chain) <= effective_long:
         return None
 
-    short_date = chain[horizon_short]
-    long_date = chain[horizon_long]
-    path_dates = chain[1 : horizon_long + 1]
+    short_date = chain[min(horizon_short, len(chain) - 1)]
+    long_date = chain[effective_long]
+    path_dates = chain[1 : effective_long + 1]
     bars: list[dict[str, float | None]] = []
     for d in path_dates:
         bars.append(_bar_from_snapshot(load_snapshot(d), ticker))
@@ -176,21 +190,40 @@ def resolve_event_outcome(
     stop = _safe_float(event.get("stop_swing"))
     st_tgt = _safe_float(event.get("st_target"))
     mt_tgt = _safe_float(event.get("mt_target"))
+    if is_tactical:
+        stop = _safe_float(event.get("tactical_stop")) or stop
+        st_tgt = _safe_float(event.get("tactical_t1")) or st_tgt
+        mt_tgt = _safe_float(event.get("tactical_t2")) or mt_tgt
     hit_stop, hit_st, hit_mt = _touch_hits(stop, st_tgt, mt_tgt, bars, use_intraday_touch)
 
     bench_entry = _bar_from_snapshot(load_snapshot(chain[0]), benchmark_ticker).get("close")
     bench_exit = _bar_from_snapshot(load_snapshot(long_date), benchmark_ticker).get("close")
     bench_ret = _return_pct(float(bench_entry), float(bench_exit)) if bench_entry and bench_exit else None
 
-    verdict, verdict_rule = compute_verdict(
-        event,
-        return_30d_pct=return_30d,
-        hit_st_target=hit_st,
-        hit_stop_swing=hit_stop,
-        win_return_pct=win_return_pct,
-        loss_return_pct=loss_return_pct,
-        false_negative_pct=false_negative_pct,
-    )
+    if is_tactical:
+        from signals.signal_audit_verdict import compute_tactical_verdict
+
+        verdict, verdict_rule = compute_tactical_verdict(
+            event,
+            return_horizon_pct=return_30d,
+            hit_t1=hit_st,
+            hit_stop=hit_stop,
+            horizon_days=effective_long,
+            win_return_pct=tactical_win_return_pct,
+            loss_return_pct=tactical_loss_return_pct,
+        )
+        notes = f"tactical_{effective_long}d_window"
+    else:
+        verdict, verdict_rule = compute_verdict(
+            event,
+            return_30d_pct=return_30d,
+            hit_st_target=hit_st,
+            hit_stop_swing=hit_stop,
+            win_return_pct=win_return_pct,
+            loss_return_pct=loss_return_pct,
+            false_negative_pct=false_negative_pct,
+        )
+        notes = None
 
     from signals.signal_audit_store import _now_iso
 
@@ -210,7 +243,7 @@ def resolve_event_outcome(
         "verdict": verdict,
         "verdict_rule": verdict_rule,
         "benchmark_return_30d_pct": bench_ret,
-        "notes": None,
+        "notes": notes,
     }
 
 
@@ -270,6 +303,9 @@ def resolve_signal_audit_outcomes(
             win_return_pct=oc["win_return_pct"],
             loss_return_pct=oc["loss_return_pct"],
             false_negative_pct=oc["false_negative_pct"],
+            tactical_horizon=oc["tactical_horizon"],
+            tactical_win_return_pct=oc["tactical_win_return_pct"],
+            tactical_loss_return_pct=oc["tactical_loss_return_pct"],
         )
         if row is None:
             pending += 1

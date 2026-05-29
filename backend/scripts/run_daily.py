@@ -516,9 +516,21 @@ def run_signals(
         }
         add_target_bands(row)
         try:
+            from signals.velocity_engine import attach_velocity_to_row
+
+            attach_velocity_to_row(row, close=close, volume=volume, config=config)
+        except Exception:
+            pass
+        try:
             from signals.retail_action_payload import enrich_dashboard_signal_row
 
             enrich_dashboard_signal_row(row)
+        except Exception:
+            pass
+        try:
+            from signals.readiness_score import compute_readiness
+
+            row.update(compute_readiness(row))
         except Exception:
             pass
         results.append(row)
@@ -574,6 +586,26 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
                 row["go_no_go"] = snap["go_no_go"]
         except Exception:
             pass
+        for k in (
+            "velocity_triggered",
+            "velocity_score",
+            "track",
+            "rvol",
+            "bb_pct_b",
+            "velocity_reasons",
+            "readiness_tier",
+            "readiness_score",
+            "almost_ready",
+            "tactical_entry",
+            "tactical_t1",
+            "tactical_t2",
+            "tactical_stop",
+            "tactical_horizon_trading_days",
+            "tactical_rr",
+            "tactical_expiry_note",
+        ):
+            if r.get(k) is not None:
+                row[k] = r.get(k)
         run_results.append(row)
     return {
         "run_date": datetime.now().isoformat(),

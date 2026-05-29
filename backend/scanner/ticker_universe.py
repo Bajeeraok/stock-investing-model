@@ -33,6 +33,8 @@ class AlertType(str, Enum):
     ML_PROB_CROSSED = "ML_PROB_CROSSED"
     # Accumulate track: 3/4 gates + ST verdict supports add (does not replace primary GO)
     SETUP_ALMOST_READY = "SETUP_ALMOST_READY"
+    # Tactical: velocity breakout + partial gate support
+    TACTICAL_VELOCITY = "TACTICAL_VELOCITY"
 
 
 class ScanTier(str, Enum):

@@ -47,6 +47,13 @@ CSV_COLUMNS: list[tuple[str, str]] = [
     ("max_drawdown_pct", "max_drawdown_pct"),
     ("benchmark_return_30d_pct", "benchmark_spy_30d_pct"),
     ("run_source", "run_source"),
+    ("track", "track"),
+    ("velocity_triggered", "velocity_triggered"),
+    ("velocity_score", "velocity_score"),
+    ("rvol", "rvol"),
+    ("bb_pct_b", "bb_pct_b"),
+    ("readiness_tier", "readiness_tier"),
+    ("readiness_score", "readiness_score"),
 ]
 
 

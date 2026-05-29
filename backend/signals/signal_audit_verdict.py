@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 VERDICT_RULE_V1 = "audit_v1"
+VERDICT_RULE_TACTICAL_5D = "tactical_5d_v1"
 
 
 def _sig_upper(*parts: str | None) -> str:
@@ -86,3 +87,29 @@ def compute_verdict(
         if ret > false_negative_pct:
             return "LOSS", f"{VERDICT_RULE_V1}:caution_false_negative"
     return "NEUTRAL", f"{VERDICT_RULE_V1}:caution_flat"
+
+
+def compute_tactical_verdict(
+    event: dict[str, Any],
+    *,
+    return_horizon_pct: float | None,
+    hit_t1: int | None,
+    hit_stop: int | None,
+    horizon_days: int = 5,
+    win_return_pct: float = 1.5,
+    loss_return_pct: float = -1.5,
+) -> tuple[str, str]:
+    """
+    Tactical 5d track: WIN if T1 before stop or return >= win threshold; LOSS on stop or deep loss.
+    """
+    if hit_t1 == 1 and hit_stop != 1:
+        return "WIN", f"{VERDICT_RULE_TACTICAL_5D}:t1_before_stop"
+    if hit_stop == 1:
+        return "LOSS", f"{VERDICT_RULE_TACTICAL_5D}:stop_hit"
+    ret = return_horizon_pct
+    if ret is not None:
+        if ret >= win_return_pct:
+            return "WIN", f"{VERDICT_RULE_TACTICAL_5D}:return>={win_return_pct}"
+        if ret <= loss_return_pct:
+            return "LOSS", f"{VERDICT_RULE_TACTICAL_5D}:return<={loss_return_pct}"
+    return "NEUTRAL", f"{VERDICT_RULE_TACTICAL_5D}:time_exit_{horizon_days}d"

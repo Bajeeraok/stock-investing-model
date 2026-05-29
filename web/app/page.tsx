@@ -543,6 +543,7 @@ export interface DashboardData {
     message?: string | null;
   };
   model_audit?: import("@/components/dashboard/index").ModelAuditPayload;
+  tactical_breakouts?: import("@/components/dashboard/index").TacticalBreakoutRow[];
   /** Paper realized returns vs forward-tracking 20d population mean (smoke test; Analysis tab) */
   paper_vs_backtest_drift?: PaperVsBacktestDriftPayload | null;
   /** EOD freshness, accuracy report, forward ADD hit rate, optional weekly backtest (data/model_health.json) */
@@ -596,6 +597,19 @@ export interface DashboardData {
         avg_excess_vs_spy_pct?: number | null;
         label: string;
       } | null;
+      accumulate_summary?: {
+        completed_n: number;
+        win_rate_pct?: number | null;
+        avg_return_pct?: number | null;
+        label: string;
+      } | null;
+      tactical_summary?: {
+        completed_n: number;
+        win_rate_pct?: number | null;
+        avg_return_pct?: number | null;
+        label: string;
+      } | null;
+      marketing_note?: string | null;
     } | null;
     mtm_history?: Record<string, Array<{ mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null }>> | null;
     data_root?: string | null;
@@ -637,6 +651,7 @@ export interface DashboardData {
       go_no_go?: string | null;
       gates_passed?: number | null;
       gates_total?: number | null;
+      track?: string | null;
       reference_entry_price?: number | null;
       limit_fill_date?: string | null;
       entry_mode?: string | null;

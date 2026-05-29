@@ -266,6 +266,15 @@ def _build_signal_scores(results: list[Any] | None) -> list[dict]:
     return out
 
 
+def _build_tactical_breakouts(results: list[Any] | None, config: dict) -> list[dict]:
+    try:
+        from signals.velocity_engine import build_tactical_breakouts_from_results
+
+        return build_tactical_breakouts_from_results(results or [], config=config, limit=8)
+    except Exception:
+        return []
+
+
 def _opportunities_bundle_enabled(config: dict) -> bool:
     """When false: skip lazy opportunity scan; Portfolio Doctor add ideas disabled."""
     v = config.get("opportunities_bundle_enabled", True)
@@ -2256,6 +2265,7 @@ def _compute_full_dashboard_sync() -> dict:
         "earnings_risk_count": earnings_risk_count,
         "morning_newsletter": morning_newsletter,
         "model_health": model_health,
+        "tactical_breakouts": _build_tactical_breakouts(results, config),
         "config": {
             "watchlist": config.get("watchlist", []),
             "score": config.get("score", {}),

@@ -97,9 +97,9 @@ export function HorizonPlaybooksPanel({
         <div className="flex items-center gap-2 flex-wrap">
           <PositionIntentChip ticker={ticker} compact intent={intent} onChange={handleIntent} />
           <span className="text-[10px] text-slate-600 hidden sm:inline">
-            {intent === "trade" && "Trade → swing primary"}
-            {intent === "invest" && "Invest → thesis primary"}
-            {!intent && "Set intent to tune primary playbook"}
+            {intent === "trade" && "Scout mode — swing / tactical primary"}
+            {intent === "invest" && "Planner mode — thesis / accumulate primary"}
+            {!intent && "Set intent: Scout (trade) vs Planner (invest)"}
           </span>
         </div>
       </div>

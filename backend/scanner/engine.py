@@ -99,6 +99,7 @@ ALERT_COLORS = {
     AlertType.TARGET_APPROACHING: "#FBBF24",
     AlertType.ML_PROB_CROSSED: "#3B82F6",
     AlertType.SETUP_ALMOST_READY: "#A78BFA",
+    AlertType.TACTICAL_VELOCITY: "#7C3AED",
 }
 
 ALERT_EMOJIS = {
@@ -121,6 +122,7 @@ ALERT_EMOJIS = {
     AlertType.TARGET_APPROACHING: "✂️",
     AlertType.ML_PROB_CROSSED: "📈",
     AlertType.SETUP_ALMOST_READY: "🟡",
+    AlertType.TACTICAL_VELOCITY: "⚡",
 }
 
 # UI filter tracks — accumulate = swing/build; tactical = quick in/out (velocity, earnings, flow)
@@ -142,6 +144,7 @@ TACTICAL_ALERT_TYPES = frozenset({
     AlertType.COVERED_CALL,
     AlertType.CREDIT_SPREAD,
     AlertType.OPTIONS_FLOW_SPIKE,
+    AlertType.TACTICAL_VELOCITY,
 })
 
 
@@ -480,6 +483,8 @@ def _build_retail_alert(
     ) else ScanPriority.MEDIUM
     if alert_type == AlertType.SETUP_ALMOST_READY:
         pr = ScanPriority.MEDIUM
+    if alert_type == AlertType.TACTICAL_VELOCITY:
+        pr = ScanPriority.HIGH
     sig_out = {**(signals or {}), "track": alert_track_for_type(alert_type)}
     return ScanAlert(
         id=_alert_id(ticker, alert_type, dedupe_extra or ""),
@@ -824,6 +829,77 @@ def evaluate_readiness_alerts(
     return alerts, new_state
 
 
+def evaluate_tactical_velocity_alerts(
+    snaps: list[MarketSnapshot],
+    readiness_cache: dict[str, dict[str, Any]],
+    state: dict[str, dict[str, Any]],
+    watchlist: set[str],
+    *,
+    enable: bool = True,
+    min_gates: int = 2,
+) -> tuple[list[ScanAlert], dict[str, dict[str, Any]]]:
+    """HIGH tactical alert when velocity triggered + gates_passed >= min_gates (gates logged, not required for GO)."""
+    if not enable:
+        return [], state
+
+    alerts: list[ScanAlert] = []
+    new_state: dict[str, dict[str, Any]] = dict(state)
+
+    for snap in snaps:
+        ticker = snap.symbol
+        if ticker not in watchlist:
+            continue
+        rd = readiness_cache.get(ticker.upper()) or readiness_cache.get(ticker)
+        if not isinstance(rd, dict) or not rd.get("velocity_triggered"):
+            continue
+        gp = int(rd.get("gates_passed") or 0)
+        gt = int(rd.get("gates_total") or 4)
+        if gp < min_gates:
+            continue
+
+        st = dict(new_state.get(ticker) or {})
+        if st.get("tactical_velocity_alert"):
+            continue
+
+        score = rd.get("velocity_score")
+        price = snap.price
+        alerts.append(_build_retail_alert(
+            ticker,
+            AlertType.TACTICAL_VELOCITY,
+            f"{ticker} tactical breakout — velocity + {gp}/{gt} gates",
+            (
+                f"Velocity flag (RVOL/BB breakout) with {gp} of {gt} gates passing. "
+                f"Quick in/out track — not full 4/4 GO."
+            ),
+            snap.scan_tier,
+            {
+                "readinessTier": "velocity",
+                "velocityScore": score,
+                "gatesPassed": gp,
+                "gatesTotal": gt,
+                "rvol": rd.get("rvol"),
+                "bbPctB": rd.get("bb_pct_b"),
+                "price": price,
+            },
+            actionable=(
+                f"Tactical play at ${price:.2f}: T+5 window, use T1/stop from ticker detail. "
+                f"Gates {gp}/{gt} — confirm sizing; this is not accumulate GO."
+            ),
+            one_liner=_bias_prob_range_line(
+                price=price,
+                atr_pct=snap.atr_pct,
+                regime=snap.regime,
+                regime_confidence=snap.regime_confidence,
+                prob_override=snap.ml_prob_short,
+            ),
+            dedupe_extra="tactical_velocity",
+        ))
+        st["tactical_velocity_alert"] = True
+        new_state[ticker] = st
+
+    return alerts, new_state
+
+
 class AlertDeduplicator:
     def __init__(self):
         self._last: dict[tuple[str, AlertType, str], datetime] = {}
@@ -847,6 +923,7 @@ class AlertDeduplicator:
             AlertType.TARGET_APPROACHING: 90,
             AlertType.ML_PROB_CROSSED: 180,
             AlertType.SETUP_ALMOST_READY: 360,
+            AlertType.TACTICAL_VELOCITY: 180,
         }
 
     def is_dup(self, ticker: str, t: AlertType, extra: str = "") -> bool:
@@ -903,6 +980,8 @@ def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
             "enable_earnings_alerts": a.get("enable_earnings_alerts", True),
             "enable_ml_prob_alerts": a.get("enable_ml_prob_alerts", True),
             "enable_readiness_alerts": a.get("enable_readiness_alerts", True),
+            "enable_tactical_velocity_alerts": a.get("enable_tactical_velocity_alerts", True),
+            "tactical_min_gates": int(a.get("tactical_min_gates", 2)),
             "trim_approach_fraction": float(a.get("trim_approach_fraction", 0.95)),
             "cooldown_overrides": a.get("retail_cooldown_min") or {},
         }
@@ -913,6 +992,8 @@ def _load_scanner_alert_settings() -> tuple[bool, dict[str, Any]]:
             "enable_earnings_alerts": True,
             "enable_ml_prob_alerts": True,
             "enable_readiness_alerts": True,
+            "enable_tactical_velocity_alerts": True,
+            "tactical_min_gates": 2,
             "trim_approach_fraction": 0.95,
             "cooldown_overrides": {},
         }
@@ -954,6 +1035,8 @@ class ScanEngine:
         enable_earnings = rc.get("enable_earnings_alerts", True)
         enable_ml = rc.get("enable_ml_prob_alerts", True)
         enable_readiness = rc.get("enable_readiness_alerts", True)
+        enable_tactical = rc.get("enable_tactical_velocity_alerts", True)
+        tactical_min_gates = int(rc.get("tactical_min_gates", 2))
         trim_frac = float(rc.get("trim_approach_fraction", 0.95))  # alert "consider trim" when price >= frac * target
         for _at_name, _mins in (rc.get("cooldown_overrides") or {}).items():
             try:
@@ -1009,6 +1092,15 @@ class ScanEngine:
                     enable=enable_readiness,
                 )
                 retail_alerts.extend(readiness_alerts)
+                tactical_alerts, new_state = evaluate_tactical_velocity_alerts(
+                    snaps,
+                    readiness,
+                    new_state,
+                    watchlist,
+                    enable=enable_tactical,
+                    min_gates=tactical_min_gates,
+                )
+                retail_alerts.extend(tactical_alerts)
                 write_retail_alert_state(data_root, new_state)
                 generated += len(retail_alerts)
                 for a in retail_alerts:

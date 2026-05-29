@@ -20,7 +20,22 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 3
+
+_VELOCITY_COLUMNS: list[tuple[str, str]] = [
+    ("track", "TEXT DEFAULT 'accumulate'"),
+    ("velocity_triggered", "INTEGER"),
+    ("velocity_score", "REAL"),
+    ("rvol", "REAL"),
+    ("bb_pct_b", "REAL"),
+    ("velocity_detail_json", "TEXT"),
+    ("readiness_tier", "TEXT"),
+    ("readiness_score", "REAL"),
+    ("tactical_t1", "REAL"),
+    ("tactical_t2", "REAL"),
+    ("tactical_stop", "REAL"),
+    ("horizon_trading_days", "INTEGER DEFAULT 20"),
+]
 
 _CREATE_SIGNAL_EVENTS = """
 CREATE TABLE IF NOT EXISTS signal_events (
@@ -266,7 +281,32 @@ def row_to_signal_event(
         "long_suggestion": row.get("long_suggestion"),
         "retail_status": row.get("retail_status"),
         "score_label": row.get("score_label"),
+        "track": row.get("track"),
+        "velocity_reasons": row.get("velocity_reasons"),
     }
+
+    vel_triggered = row.get("velocity_triggered")
+    track = str(row.get("track") or ("velocity" if vel_triggered else "accumulate"))
+    if vel_triggered is None:
+        vel_int = 1 if track == "velocity" else 0
+    else:
+        vel_int = 1 if bool(vel_triggered) else 0
+        if not row.get("track"):
+            track = "velocity" if vel_int else "accumulate"
+    vel_reasons = row.get("velocity_reasons")
+    vel_json = json.dumps(vel_reasons, default=str) if vel_reasons else None
+
+    is_velocity = track == "velocity" or vel_int == 1
+    horizon_days = int(row.get("tactical_horizon_trading_days") or row.get("horizon_trading_days") or (5 if is_velocity else 20))
+    tactical_t1 = _safe_float(row.get("tactical_t1"))
+    tactical_t2 = _safe_float(row.get("tactical_t2"))
+    tactical_stop = _safe_float(row.get("tactical_stop"))
+    stop_swing = _band_low(st)
+    st_target = _band_high(st)
+    if is_velocity and tactical_stop is not None:
+        stop_swing = tactical_stop
+    if is_velocity and tactical_t1 is not None:
+        st_target = tactical_t1
 
     return {
         "run_id": run_id,
@@ -284,11 +324,11 @@ def row_to_signal_event(
         "gate_detail_json": gate_json,
         "price_at_signal": round(price, 4),
         "price_source": price_src,
-        "stop_swing": _band_low(st),
+        "stop_swing": stop_swing,
         "stop_build": _band_low(mt),
         "stop_thesis": _band_low(lt),
-        "st_target": _band_high(st),
-        "mt_target": _band_high(mt),
+        "st_target": st_target,
+        "mt_target": _band_high(mt) if not is_velocity else tactical_t2,
         "lt_target": _band_high(lt),
         "entry_zone_low": _band_low(st),
         "entry_zone_high": _band_high(st),
@@ -307,6 +347,18 @@ def row_to_signal_event(
         "run_source": run_source,
         "decision_snapshot": json.dumps(snapshot, default=str),
         "source": "live",
+        "track": track,
+        "velocity_triggered": vel_int,
+        "velocity_score": _safe_float(row.get("velocity_score")),
+        "rvol": _safe_float(row.get("rvol")),
+        "bb_pct_b": _safe_float(row.get("bb_pct_b")),
+        "velocity_detail_json": vel_json,
+        "readiness_tier": row.get("readiness_tier"),
+        "readiness_score": _safe_float(row.get("readiness_score")),
+        "tactical_t1": tactical_t1,
+        "tactical_t2": tactical_t2,
+        "tactical_stop": tactical_stop,
+        "horizon_trading_days": horizon_days,
     }
 
 
@@ -332,11 +384,18 @@ class SignalAuditStore:
             conn.execute(_CREATE_SIGNAL_OUTCOMES)
             conn.execute(_CREATE_META)
             conn.execute(_CREATE_AUDIT_DAILY_SUMMARY)
+            self._migrate_columns(conn)
             conn.execute(
-                "INSERT OR IGNORE INTO audit_meta(key, value) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO audit_meta(key, value) VALUES (?, ?)",
                 ("schema_version", str(_SCHEMA_VERSION)),
             )
             conn.commit()
+
+    def _migrate_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {r[1] for r in conn.execute("PRAGMA table_info(signal_events)").fetchall()}
+        for col, typ in _VELOCITY_COLUMNS:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE signal_events ADD COLUMN {col} {typ}")
 
     def insert_event(self, event: dict[str, Any]) -> tuple[bool, str]:
         """
@@ -382,6 +441,18 @@ class SignalAuditStore:
             "run_source",
             "decision_snapshot",
             "source",
+            "track",
+            "velocity_triggered",
+            "velocity_score",
+            "rvol",
+            "bb_pct_b",
+            "velocity_detail_json",
+            "readiness_tier",
+            "readiness_score",
+            "tactical_t1",
+            "tactical_t2",
+            "tactical_stop",
+            "horizon_trading_days",
         ]
         placeholders = ", ".join("?" for _ in cols)
         col_names = ", ".join(cols)
@@ -486,7 +557,17 @@ class SignalAuditStore:
         since_date: str | None = None,
     ) -> list[dict[str, Any]]:
         allowed = allowed_cols or frozenset(
-            {"gates_passed", "go_no_go", "market_cap_bucket", "ml_signal", "retail_verdict", "regime_label"}
+            {
+                "gates_passed",
+                "go_no_go",
+                "market_cap_bucket",
+                "ml_signal",
+                "retail_verdict",
+                "regime_label",
+                "track",
+                "readiness_tier",
+                "velocity_triggered",
+            }
         )
         if group_col not in allowed:
             return []
@@ -533,6 +614,54 @@ class SignalAuditStore:
                 (cohort_tag, limit),
             ).fetchall()
         return [{"date": r["signal_date"], "count": int(r["n"])} for r in rows]
+
+    def batch_queue_summary(self, cohort_tag: str, signal_date: str | None = None) -> dict[str, Any]:
+        """
+        Split last session (or full cohort) into accumulate vs tactical (velocity) queues for Model Audit UI.
+        """
+        q = """
+            SELECT COALESCE(track, 'accumulate') AS track,
+                   ticker,
+                   velocity_triggered,
+                   velocity_score,
+                   rvol,
+                   bb_pct_b,
+                   gates_passed,
+                   gates_total,
+                   go_no_go,
+                   readiness_tier
+            FROM signal_events
+            WHERE cohort_tag = ? AND source = 'live'
+        """
+        params: list[Any] = [cohort_tag]
+        if signal_date:
+            q += " AND signal_date = ?"
+            params.append(signal_date)
+        q += " ORDER BY ticker ASC"
+        with self._connect() as conn:
+            rows = conn.execute(q, params).fetchall()
+
+        accumulate: list[dict[str, Any]] = []
+        tactical: list[dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            is_tactical = d.get("track") == "velocity" or d.get("velocity_triggered") == 1
+            if is_tactical:
+                tactical.append(d)
+            else:
+                accumulate.append(d)
+
+        return {
+            "signal_date": signal_date,
+            "accumulate_count": len(accumulate),
+            "tactical_count": len(tactical),
+            "accumulate_tickers": [x["ticker"] for x in accumulate],
+            "tactical_tickers": [x["ticker"] for x in tactical],
+            "tactical_preview": tactical[:20],
+            "accumulate_preview": [
+                x for x in accumulate if x.get("readiness_tier") in ("almost_ready", "go_ready")
+            ][:20],
+        }
 
     def tickers_on_date(self, cohort_tag: str, signal_date: str) -> list[str]:
         with self._connect() as conn:
@@ -739,6 +868,9 @@ class SignalAuditStore:
                    e.go_no_go, e.gates_passed, e.gates_total, e.price_at_signal, e.st_target, e.stop_swing, e.mt_target,
                    e.composite_score, e.rsi, e.regime_label, e.temperature, e.ml_short_prob, e.confidence_low,
                    e.confidence_high, e.run_source,
+                   e.track, e.velocity_triggered, e.velocity_score, e.rvol, e.bb_pct_b,
+                   e.readiness_tier, e.readiness_score, e.tactical_t1, e.tactical_t2, e.tactical_stop,
+                   e.horizon_trading_days,
                    o.return_7d_pct, o.return_30d_pct, o.verdict, o.verdict_rule, o.hit_st_target, o.hit_stop_swing,
                    o.max_gain_pct, o.max_drawdown_pct, o.benchmark_return_30d_pct
             FROM signal_events e
@@ -871,6 +1003,9 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
         "breakdown_by_category": store.breakdown_rows(cohort_tag, "market_cap_bucket"),
         "breakdown_by_signal": store.breakdown_rows(cohort_tag, "ml_signal"),
         "breakdown_by_regime": store.breakdown_rows(cohort_tag, "regime_label"),
+        "breakdown_by_track": store.breakdown_rows(cohort_tag, "track"),
+        "breakdown_by_readiness": store.breakdown_rows(cohort_tag, "readiness_tier"),
+        "batch_queues": store.batch_queue_summary(cohort_tag, last_date),
         "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),
         "outcomes_available": has_outcomes,
         "outcome_summary": outcome_summary,
@@ -1019,6 +1154,12 @@ def persist_daily_signal_logs(
             paper_results,
             date_str=date_str or _today_est(),
             only_actionable=False,
+            config=config,
+            allowed_tickers=paper_universe,
+        )
+        out["velocity_paper_trades"] = pt.log_velocity_trades_from_results(
+            paper_results,
+            date_str=date_str or _today_est(),
             config=config,
             allowed_tickers=paper_universe,
         )

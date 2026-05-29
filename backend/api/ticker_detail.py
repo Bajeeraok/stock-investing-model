@@ -571,6 +571,24 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
             inv["swing_setup"] = playbooks.get("swing")
         except Exception:
             pass
+        try:
+            from signals.velocity_engine import attach_velocity_to_row, build_tactical_ui_payload
+
+            if close_ticker is not None:
+                vel_row: dict = {"ticker": ticker, "close": response.get("current_price")}
+                attach_velocity_to_row(vel_row, close=close_ticker, volume=volume, config=config)
+                try:
+                    from signals.retail_action_payload import enrich_dashboard_signal_row
+
+                    enrich_dashboard_signal_row(vel_row)
+                    from signals.readiness_score import compute_readiness
+
+                    vel_row.update(compute_readiness(vel_row))
+                except Exception:
+                    pass
+                inv["tactical_entry"] = build_tactical_ui_payload(vel_row, config=config)
+        except Exception:
+            pass
 
     return response
 

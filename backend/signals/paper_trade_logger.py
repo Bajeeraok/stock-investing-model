@@ -111,6 +111,7 @@ _FIELDS = [
     "go_no_go",
     "gates_passed",
     "gates_total",
+    "track",
     "reference_entry_price",
     "limit_fill_date",
     "entry_mode",
@@ -286,6 +287,8 @@ def _result_to_paper_record(
     r: dict[str, Any],
     date_str: str,
     horizon_trading_days: int = 20,
+    *,
+    track: str = "accumulate",
 ) -> dict[str, Any] | None:
     """Build a paper trade CSV row from one run_signals / EOD run_results dict."""
     t = (r.get("ticker") or "").upper().strip()
@@ -295,6 +298,12 @@ def _result_to_paper_record(
     st = r.get("st_band") if isinstance(r.get("st_band"), dict) else None
     target_1 = _safe_float(st.get("high")) if st else None
     hard_stop = _safe_float(st.get("low")) if st else None
+    if track == "velocity":
+        target_1 = _safe_float(r.get("tactical_t1")) or target_1
+        hard_stop = _safe_float(r.get("tactical_stop")) or hard_stop
+        horizon_trading_days = int(
+            r.get("tactical_horizon_trading_days") or horizon_trading_days
+        )
     ml = r.get("ml_short_prob")
     ml_conf = round(float(ml) * 100, 1) if _safe_float(ml) is not None else None
     reg = r.get("_global_market_regime") or r.get("regime")
@@ -329,7 +338,21 @@ def _result_to_paper_record(
         v = gate.get(k)
         if v is not None:
             row[k] = v
+    row["track"] = track
     return row
+
+
+def _result_to_velocity_paper_record(
+    r: dict[str, Any],
+    date_str: str,
+    config: dict | None = None,
+) -> dict[str, Any] | None:
+    """Tactical paper row — velocity triggered; gates logged but not required."""
+    if not r.get("velocity_triggered"):
+        return None
+    vt = (config or {}).get("velocity_tactical") or {}
+    horizon = int(vt.get("horizon_trading_days", 5))
+    return _result_to_paper_record(r, date_str, horizon_trading_days=horizon, track="velocity")
 
 
 def _build_limit_paper_row(
@@ -467,8 +490,13 @@ class PaperTradeLogger:
                 w.writerow(out)
 
     @staticmethod
-    def _dedupe_key(row: dict[str, Any]) -> tuple[str, str, str]:
-        return (str(row.get("date") or ""), str(row.get("ticker") or ""), str(row.get("signal") or ""))
+    def _dedupe_key(row: dict[str, Any]) -> tuple[str, str, str, str]:
+        return (
+            str(row.get("date") or ""),
+            str(row.get("ticker") or ""),
+            str(row.get("track") or "accumulate"),
+            str(row.get("signal") or ""),
+        )
 
     @staticmethod
     def _ensure_trade_id(row: dict[str, Any]) -> str:
@@ -737,6 +765,55 @@ class PaperTradeLogger:
         )
         out["date"] = date_str
         return out
+
+    def log_velocity_trades_from_results(
+        self,
+        results: list[dict[str, Any]],
+        date_str: str | None = None,
+        config: dict | None = None,
+        allowed_tickers: set[str] | frozenset[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Log tactical paper rows for velocity_triggered names (market close entry).
+        Does not require GO gates — gates still recorded on the row.
+        """
+        vt_cfg = (config or {}).get("velocity_tactical") or {}
+        if not vt_cfg.get("enabled", True) or not vt_cfg.get("log_paper_trades", True):
+            return {"appended": 0, "skipped": 0, "enabled": False}
+
+        date_str = date_str or _today_str()
+        rows = self._read_all()
+        existing = {self._dedupe_key(r) for r in rows}
+        appended = 0
+        skipped = 0
+
+        for r in results or []:
+            try:
+                if not isinstance(r, dict) or r.get("error"):
+                    continue
+                t = (r.get("ticker") or "").upper().strip()
+                if not t or not r.get("velocity_triggered"):
+                    continue
+                if allowed_tickers is not None and t not in allowed_tickers:
+                    continue
+                rec = _result_to_velocity_paper_record(r, date_str, config)
+                if rec is None:
+                    continue
+                rec["entry_mode"] = "market"
+                rec["entry_price_source"] = rec.get("entry_price_source") or "ohlcv_last_bar"
+                key = self._dedupe_key(rec)
+                if key in existing:
+                    skipped += 1
+                    continue
+                rows.append(rec)
+                existing.add(key)
+                appended += 1
+            except Exception:
+                continue
+
+        if appended:
+            self._write_all(rows)
+        return {"appended": appended, "skipped": skipped, "date": date_str, "track": "velocity"}
 
     def backfill_from_eod_snapshots(
         self,
@@ -1670,6 +1747,29 @@ class PaperTradeLogger:
                 "avg_excess_vs_spy_pct": buy_stats["avg_excess_vs_spy_pct"],
                 "label": buy_stats["label"],
             }
+
+        accumulate = [r for r in completed if str(r.get("track") or "accumulate") != "velocity"]
+        tactical = [r for r in completed if str(r.get("track") or "") == "velocity"]
+        if accumulate:
+            acc_stats = self._stats_for_completed(accumulate, benchmark)
+            out["accumulate_summary"] = {
+                "completed_n": acc_stats["completed_n"],
+                "win_rate_pct": acc_stats["win_rate_pct"],
+                "avg_return_pct": acc_stats["avg_return_pct"],
+                "label": "Accumulate track (4-gate GO / swing)",
+            }
+        if tactical:
+            tac_stats = self._stats_for_completed(tactical, benchmark)
+            out["tactical_summary"] = {
+                "completed_n": tac_stats["completed_n"],
+                "win_rate_pct": tac_stats["win_rate_pct"],
+                "avg_return_pct": tac_stats["avg_return_pct"],
+                "label": "Tactical velocity track (T+5)",
+            }
+        out["marketing_note"] = (
+            "Headline marketing stats should use accumulate GO cohort only; "
+            "tactical track is labeled separately."
+        )
 
         return out
 
