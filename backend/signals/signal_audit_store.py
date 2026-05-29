@@ -678,7 +678,9 @@ class SignalAuditStore:
     def list_events_for_resolution(self, *, cohort_tag: str, limit: int = 5000) -> list[dict[str, Any]]:
         q = """
             SELECT e.id, e.signal_date, e.ticker, e.retail_verdict, e.ml_signal, e.go_no_go,
-                   e.price_at_signal, e.stop_swing, e.st_target, e.mt_target
+                   e.price_at_signal, e.stop_swing, e.st_target, e.mt_target,
+                   e.track, e.velocity_triggered, e.horizon_trading_days,
+                   e.tactical_t1, e.tactical_t2, e.tactical_stop
             FROM signal_events e
             LEFT JOIN signal_outcomes o ON o.signal_event_id = e.id
             WHERE e.cohort_tag = ? AND e.source = 'live' AND o.signal_event_id IS NULL

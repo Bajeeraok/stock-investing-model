@@ -15,7 +15,7 @@ import { type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
-import { TacticalEntryPanel, type TacticalEntryPayload } from "./TacticalEntryPanel";
+import { TacticalEntryPanel } from "./TacticalEntryPanel";
 import { getPositionIntent, type PositionIntent } from "@/lib/positionIntent";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
@@ -569,10 +569,9 @@ export function TickerDetailModal({
         )}
 
         {detail && !loading && detail.investor_summary?.tactical_entry && (
-          (positionIntent === "trade" ||
-            (detail.investor_summary.tactical_entry as TacticalEntryPayload)?.active) && (
+          (positionIntent === "trade" || detail.investor_summary.tactical_entry.active) && (
             <TacticalEntryPanel
-              payload={detail.investor_summary.tactical_entry as TacticalEntryPayload}
+              payload={detail.investor_summary.tactical_entry}
               layout={positionIntent === "trade" ? "scout" : "planner"}
             />
           )

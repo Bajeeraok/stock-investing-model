@@ -46,6 +46,9 @@ import { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProject
 import { StreetVsModelBar } from "./StreetVsModelBar";
 import { PositionIntentChip } from "./PositionIntentChip";
 import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
+import type { TacticalEntryPayload } from "./TacticalEntryPanel";
+
+export type { TacticalEntryPayload };
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = this horizon's ML signal tier (how bullish the model read is for that specific window). " +
@@ -178,6 +181,8 @@ export interface InvestorDecisionSummary {
   swing_setup?: import("./HorizonPlaybookCard").HorizonPlaybookPayload | null;
   /** All horizon playbooks: swing, position build, thesis & tiers. */
   horizon_playbooks?: import("./HorizonPlaybookCard").HorizonPlaybooksBundle | null;
+  /** Velocity/tactical breakout panel payload (RVOL, BB, T1/T2, T+5). */
+  tactical_entry?: TacticalEntryPayload | null;
   /** One Answer + Trader / Investor roadmaps (retail design). */
   one_answer?: OneAnswer | null;
   trader_roadmap?: TraderRoadmap | null;
