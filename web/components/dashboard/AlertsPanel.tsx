@@ -9,6 +9,7 @@ import {
   saveAlertTrackPrefs,
   type AlertTrackPrefs,
 } from "@/lib/alertTrackPrefs";
+import { formatSnapshotAge, formatSnapshotEt } from "@/lib/dashboardCache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -117,6 +118,15 @@ function AlertCard({
               {prLabel(a.priority)}
             </span>
             <span className="text-[10px] text-slate-500 shrink-0">{`Risk: ${a.risk_level}`}</span>
+            {a.timestamp ? (
+              <span
+                className="text-[10px] text-slate-500 shrink-0 tabular-nums"
+                title={formatSnapshotEt(a.timestamp)}
+              >
+                Generated{" "}
+                {formatSnapshotAge(a.timestamp) || formatSnapshotEt(a.timestamp)}
+              </span>
+            ) : null}
           </div>
           <p className="text-xs text-slate-400 mt-1 leading-snug">{a.actionable ?? a.body}</p>
           {buyZone && (

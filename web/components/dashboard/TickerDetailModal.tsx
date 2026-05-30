@@ -16,7 +16,15 @@ import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
 import { TacticalEntryPanel } from "./TacticalEntryPanel";
-import { getPositionIntent, type PositionIntent } from "@/lib/positionIntent";
+import { getPositionIntent, setPositionIntent, type PositionIntent } from "@/lib/positionIntent";
+import {
+  getDecisionMode,
+  setDecisionMode,
+  intentFromMode,
+  type DecisionMode,
+} from "@/lib/decisionMode";
+import { DecisionModeSelector } from "./DecisionModeSelector";
+import { DecisionDeck } from "./DecisionDeck";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -354,13 +362,26 @@ export function TickerDetailModal({
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"overview" | "roadmaps" | "details">("overview");
+  const [modalTab, setModalTab] = useState<"today" | "levels" | "why">("today");
   const [catalystExpanded, setCatalystExpanded] = useState(false);
-  const [positionIntent, setPositionIntent] = useState<PositionIntent | null>(null);
+  const [positionIntent, setPositionIntentLocal] = useState<PositionIntent | null>(null);
+  const [decisionMode, setDecisionModeLocal] = useState<DecisionMode>("scout");
 
   useEffect(() => {
-    setPositionIntent(getPositionIntent(ticker));
+    const intent = getPositionIntent(ticker);
+    setPositionIntentLocal(intent);
+    setDecisionModeLocal(getDecisionMode(ticker, intent));
   }, [ticker]);
+
+  const handleDecisionMode = (mode: DecisionMode) => {
+    setDecisionModeLocal(mode);
+    setDecisionMode(ticker, mode);
+    const mapped = intentFromMode(mode);
+    if (mapped) {
+      setPositionIntent(ticker, mapped);
+      setPositionIntentLocal(mapped);
+    }
+  };
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -371,7 +392,7 @@ export function TickerDetailModal({
 
   useEffect(() => {
     if (!ticker) return;
-    setModalTab("overview");
+    setModalTab("today");
     setCatalystExpanded(false);
     setLoading(true);
     setError(null);
@@ -559,22 +580,6 @@ export function TickerDetailModal({
           />
         )}
 
-        {detail && !loading && horizonPlaybooksBundle && (
-          <HorizonPlaybooksPanel
-            ticker={detail.ticker}
-            playbooks={horizonPlaybooksBundle}
-            intent={positionIntent}
-            onIntentChange={setPositionIntent}
-          />
-        )}
-
-        {detail && !loading && detail.investor_summary?.tactical_entry && (
-          <TacticalEntryPanel
-            payload={detail.investor_summary.tactical_entry}
-            layout={positionIntent === "trade" ? "scout" : "planner"}
-          />
-        )}
-
         {/* Catalyst — summary first, full note on expand */}
         {detail && !loading && detail.catalyst?.active && (
           <div className="border-b border-amber-500/30 bg-amber-950/80 px-3 py-2 sm:px-6">
@@ -656,8 +661,29 @@ export function TickerDetailModal({
               />
             </div>
             <div className="mt-2 max-w-md">
-              <PositionIntentChip ticker={ticker} compact intent={positionIntent} onChange={setPositionIntent} />
+              <PositionIntentChip
+                ticker={ticker}
+                compact
+                intent={positionIntent}
+                onChange={(intent) => {
+                  setPositionIntentLocal(intent);
+                  if (intent) {
+                    setPositionIntent(ticker, intent);
+                    const m = intentFromMode(intent);
+                    if (m) {
+                      setDecisionModeLocal(m);
+                      setDecisionMode(ticker, m);
+                    }
+                  }
+                }}
+              />
             </div>
+          </div>
+        )}
+
+        {detail && !loading && detail.investor_summary && (
+          <div className="px-4 sm:px-6 py-3 border-b border-slate-700/80 bg-slate-900/90">
+            <DecisionModeSelector mode={decisionMode} onChange={handleDecisionMode} />
           </div>
         )}
 
@@ -667,9 +693,9 @@ export function TickerDetailModal({
             <div className="flex">
             {(
               [
-                { id: "overview" as const, label: "One answer", icon: Target },
-                { id: "roadmaps" as const, label: "Roadmaps", icon: LayoutGrid },
-                { id: "details" as const, label: "Deep dive", icon: Layers },
+                { id: "today" as const, label: "Today", icon: Target },
+                { id: "levels" as const, label: "Levels", icon: LayoutGrid },
+                { id: "why" as const, label: "Why", icon: Layers },
               ] as const
             ).map(({ id, label, icon: Icon }) => (
               <button
@@ -689,7 +715,7 @@ export function TickerDetailModal({
             ))}
             </div>
             <p className="text-center text-sm text-slate-500 px-2 py-1.5 border-t border-slate-800">
-              One answer: today&apos;s takeaway · Roadmaps: prices &amp; steps · Deep dive: models, thesis, and history
+              Today: 3-second decision · Levels: roadmaps &amp; playbooks · Why: charts, gates &amp; proof
             </p>
           </div>
         )}
@@ -706,7 +732,7 @@ export function TickerDetailModal({
           {detail && !loading && (
             <>
               {/* ── Overview tab: One Answer + horizons + CTA to Roadmaps ───── */}
-              {modalTab === "overview" && (
+              {modalTab === "today" && (
                 <>
               {detail.fundamentals_snapshot && !detail.fundamentals_snapshot.point_in_time && (
                 <p
@@ -735,7 +761,7 @@ export function TickerDetailModal({
               {confidence && playbookStage3 && (
                 <button
                   type="button"
-                  onClick={() => setModalTab("details")}
+                  onClick={() => setModalTab("why")}
                   className="w-full text-left rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors"
                 >
                   <Zap className="h-5 w-5 text-amber-300 shrink-0" />
@@ -749,7 +775,23 @@ export function TickerDetailModal({
                 </button>
               )}
 
-              {/* ── Investor Decision Summary (horizon entry + tiers) ───── */}
+              {detail.investor_summary && (
+                <DecisionDeck
+                  summary={detail.investor_summary}
+                  currentPrice={detail.current_price ?? 0}
+                  mode={decisionMode}
+                  tacticalActive={Boolean(detail.investor_summary.tactical_entry?.active)}
+                />
+              )}
+
+              {decisionMode === "scout" && detail.investor_summary?.tactical_entry && (
+                <TacticalEntryPanel
+                  payload={detail.investor_summary.tactical_entry}
+                  layout="scout"
+                />
+              )}
+
+              {/* ── Investor Decision Summary (primary horizon + compare) ───── */}
               {detail.investor_summary ? (
                 <InvestorDecisionSummarySection
                   summary={detail.investor_summary}
@@ -763,9 +805,11 @@ export function TickerDetailModal({
                   onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
                   priceHistory={detail.price_history}
                   ticker={detail.ticker}
-                  hideTradingGates={Boolean(detail.investor_summary && tradingGates.length > 0)}
-                  compactOverview={Boolean(horizonPlaybooksBundle && tradingGates.length > 0)}
+                  hideTradingGates={Boolean(tradingGates.length > 0)}
+                  compactOverview
                   marketContext={detail.market_context}
+                  decisionMode={decisionMode}
+                  contentLayer="today"
                 />
               ) : (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
@@ -778,13 +822,13 @@ export function TickerDetailModal({
               {/* CTA: jump to Roadmaps tab for full buy/sell tables */}
               {detail.investor_summary?.trade_roadmap && (
                 <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-                  <p className="text-sm text-slate-300 mb-2">Full buy/sell roadmap with timeline, trader type, and price zones.</p>
+                  <p className="text-sm text-slate-300 mb-2">Staged buy/sell levels, playbooks, and timeline.</p>
                   <button
                     type="button"
-                    onClick={() => setModalTab("roadmaps")}
+                    onClick={() => setModalTab("levels")}
                     className="text-sm font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
                   >
-                    See full Roadmaps <ChevronRight className="h-4 w-4" />
+                    Open Levels tab <ChevronRight className="h-4 w-4" />
                   </button>
                 </section>
               )}
@@ -829,26 +873,65 @@ export function TickerDetailModal({
               )}
 
               {/* ── Roadmaps tab: only Trade Roadmap card ──────────────────── */}
-              {modalTab === "roadmaps" && (
-                detail.investor_summary?.trade_roadmap ? (
+              {modalTab === "levels" && (
+                <>
+                {horizonPlaybooksBundle && (
+                  <HorizonPlaybooksPanel
+                    ticker={detail.ticker}
+                    playbooks={horizonPlaybooksBundle}
+                    intent={positionIntent}
+                    onIntentChange={(intent) => {
+                      setPositionIntentLocal(intent);
+                      if (intent) {
+                        setPositionIntent(detail.ticker, intent);
+                        const m = intentFromMode(intent);
+                        if (m) {
+                          setDecisionModeLocal(m);
+                          setDecisionMode(detail.ticker, m);
+                        }
+                      }
+                    }}
+                  />
+                )}
+                {detail.investor_summary?.trade_roadmap ? (
                   <TradeRoadmapCard data={detail.investor_summary.trade_roadmap} ticker={detail.ticker} />
-                ) : (
+                ) : !horizonPlaybooksBundle ? (
                   <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center text-slate-400">
-                    <p className="text-sm">Roadmap not available for this ticker.</p>
+                    <p className="text-sm">Levels not available for this ticker.</p>
                     <button
                       type="button"
-                      onClick={() => setModalTab("overview")}
+                      onClick={() => setModalTab("today")}
                       className="mt-2 text-sm text-emerald-400 hover:text-emerald-300"
                     >
-                      Back to Overview
+                      Back to Today
                     </button>
                   </div>
-                )
+                ) : null}
+                </>
               )}
 
-              {/* ── Details tab: Confidence, signals, targets, thesis, etc. ── */}
-              {modalTab === "details" && (
+              {/* ── Why tab: proof, charts, all horizons, thesis ── */}
+              {modalTab === "why" && (
                 <>
+              {detail.investor_summary && (
+                <InvestorDecisionSummarySection
+                  summary={detail.investor_summary}
+                  currentPrice={detail.current_price ?? 0}
+                  ma200={detail.ma200}
+                  ma20={detail.ma20}
+                  ma50={detail.ma50}
+                  sector={detail.sector}
+                  companyName={detail.company_name}
+                  ltEntryTiersOpen={ltEntryTiersOpen}
+                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                  priceHistory={detail.price_history}
+                  ticker={detail.ticker}
+                  hideTradingGates={Boolean(tradingGates.length > 0)}
+                  marketContext={detail.market_context}
+                  decisionMode={decisionMode}
+                  contentLayer="why"
+                />
+              )}
               {/* ── 1. Story & catalysts (plain context before models) ─────── */}
               {(detail.thesis || detail.exit_condition) && (
                 <section>

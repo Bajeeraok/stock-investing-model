@@ -879,6 +879,152 @@ export function StopTargetRiskBar({
   );
 }
 
+/** TradingView-style buy zone on a price scale — emerald band + spot marker (distinct from stop→target bar). */
+export function EntryZonePriceBar({
+  entryLow,
+  entryHigh,
+  currentPrice,
+  stopLoss,
+  target,
+  bandLabel = "Buy zone",
+  quality,
+  anchorNote,
+  className,
+}: {
+  entryLow: number;
+  entryHigh: number;
+  currentPrice: number;
+  stopLoss?: number | null;
+  target?: number | null;
+  bandLabel?: string;
+  quality?: string | null;
+  anchorNote?: string | null;
+  className?: string;
+}) {
+  const low = Math.min(entryLow, entryHigh);
+  const high = Math.max(entryLow, entryHigh);
+  if (!(low > 0 && high > low && currentPrice > 0)) return null;
+
+  const stretch = String(quality || "").toLowerCase().includes("stretch");
+  const inside = currentPrice >= low && currentPrice <= high;
+  const above = currentPrice > high;
+  const below = currentPrice < low;
+
+  const points = [low, high, currentPrice];
+  if (stopLoss != null && stopLoss > 0) points.push(stopLoss);
+  if (target != null && target > 0) points.push(target);
+  const pad = (Math.max(...points) - Math.min(...points)) * 0.04 || low * 0.01;
+  const min = Math.min(...points) - pad;
+  const max = Math.max(...points) + pad;
+  const span = max - min;
+  if (!(span > 0)) return null;
+
+  const pct = (v: number) => Math.max(0, Math.min(100, ((v - min) / span) * 100));
+  const zoneL = pct(low);
+  const zoneW = Math.max(3, pct(high) - zoneL);
+  const nowP = pct(currentPrice);
+  const stopP = stopLoss != null && stopLoss > 0 ? pct(stopLoss) : null;
+  const highP = pct(high);
+
+  let statusLine: React.ReactNode;
+  if (inside) {
+    statusLine = (
+      <>
+        <span className="text-emerald-300 font-semibold">Inside buy zone</span>
+        <span className="text-slate-500"> — favorable for staged adds per your plan.</span>
+      </>
+    );
+  } else if (above) {
+    const gapPct = ((currentPrice - high) / high) * 100;
+    statusLine = (
+      <>
+        <span className="text-amber-300 font-semibold">{gapPct.toFixed(1)}% above band</span>
+        <span className="text-slate-500"> — wait for pullback into the green zone before adding.</span>
+      </>
+    );
+  } else {
+    const gapPct = ((low - currentPrice) / low) * 100;
+    statusLine = (
+      <>
+        <span className="text-sky-300/90 font-semibold">{gapPct.toFixed(1)}% below band low</span>
+        <span className="text-slate-500"> — price hasn&apos;t reached the planned entry floor yet.</span>
+      </>
+    );
+  }
+
+  return (
+    <div className={clsx("space-y-2", className)} aria-label={`${bandLabel} price scale`}>
+      <div className="flex justify-between gap-2 text-[11px] font-mono text-slate-500">
+        <span className="text-emerald-300/90 truncate">
+          {bandLabel} ${low.toFixed(2)}
+        </span>
+        <span className="text-slate-200 font-medium shrink-0">Now ${currentPrice.toFixed(2)}</span>
+        <span className="text-emerald-300/90 shrink-0">${high.toFixed(2)}</span>
+      </div>
+      <div className="relative h-5 rounded-full overflow-hidden border border-slate-700 bg-slate-900">
+        <div className="absolute inset-0 bg-slate-800/90" />
+        <div
+          className={clsx(
+            "absolute top-0 bottom-0 border-x border-emerald-500/50",
+            stretch ? "bg-emerald-500/25" : "bg-emerald-500/40",
+          )}
+          style={{ left: `${zoneL}%`, width: `${zoneW}%` }}
+          title={`Entry band $${low.toFixed(2)}–$${high.toFixed(2)}`}
+        />
+        {above && (
+          <div
+            className="absolute top-0 bottom-0 bg-gradient-to-r from-amber-600/30 via-amber-500/15 to-transparent"
+            style={{ left: `${highP}%`, width: `${Math.max(0, nowP - highP)}%` }}
+            title="Price extended above buy zone"
+          />
+        )}
+        {below && zoneL > 0 && (
+          <div
+            className="absolute top-0 bottom-0 bg-sky-500/15"
+            style={{ left: 0, width: `${zoneL}%` }}
+            title="Below entry band"
+          />
+        )}
+        {stopP != null && (
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-red-500/80 z-10"
+            style={{ left: `calc(${stopP}% - 1px)` }}
+            title={`Stop $${stopLoss!.toFixed(2)}`}
+          />
+        )}
+        <div
+          className={clsx(
+            "absolute top-1/2 z-20 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-md",
+            inside ? "border-emerald-200 bg-emerald-600" : "border-white bg-slate-950",
+          )}
+          style={{ left: `${nowP}%` }}
+          title={`Last price $${currentPrice.toFixed(2)}`}
+        />
+      </div>
+      <p className="text-xs text-slate-400 leading-snug">{statusLine}</p>
+      {stretch && (
+        <p className="text-[11px] text-amber-300/85 leading-snug">
+          Stretched vs anchor — band still valid; pullback toward band low improves entry quality.
+        </p>
+      )}
+      {anchorNote && (
+        <p className="text-[11px] text-slate-500 leading-snug">{anchorNote}</p>
+      )}
+      {(stopP != null || (target != null && target > 0)) && (
+        <p className="text-[10px] text-slate-600 leading-snug">
+          {stopP != null && <span className="text-red-400/80">Red tick = stop </span>}
+          {target != null && target > 0 && (
+            <span className="text-slate-500">
+              {stopP != null ? "· " : ""}
+              Target ${target.toFixed(2)} on scale for context
+            </span>
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function stopRiskPct(
   stop: number,
   currentPrice: number,
@@ -1361,57 +1507,5 @@ export function HorizonDivergenceNote({
       <span className="font-semibold text-cyan-200">Different horizons, different rules: </span>
       Near-term gates block adds (swing), while long-term tiers can still show value — that is not a bug. Match the row to your holding period.
     </p>
-  );
-}
-
-/** Stoplight badges for all three horizons — visible without scrolling to horizon cards. */
-export function HorizonActionBadgeRow({
-  short,
-  medium,
-  long,
-  currentPrice,
-  regimeBullPct,
-  assessmentPct,
-  rsi,
-}: {
-  short: HorizonSignalPayload;
-  medium: HorizonSignalPayload;
-  long: HorizonSignalPayload;
-  currentPrice: number;
-  regimeBullPct?: number | null;
-  assessmentPct: number;
-  rsi?: number | null;
-}) {
-  const shortBadge = deriveShortTermBehavioralBadge(short, regimeBullPct, rsi);
-  const longBadge = deriveLongTermBehavioralBadge(long, short, assessmentPct, currentPrice);
-  const mediumBadge: BehavioralBadge =
-    medium.verdict === "BUY" || medium.verdict === "STRONG BUY"
-      ? { emoji: "🟢", label: "SWING ADD ZONE", tone: "green" }
-      : medium.verdict === "WATCH"
-        ? { emoji: "🟡", label: "STAGE ON PULLBACK", tone: "amber" }
-        : { emoji: "🔴", label: "WAIT — NO ADD", tone: "red" };
-
-  const cols = [
-    { label: "Short-term", badge: shortBadge },
-    { label: "Medium-term", badge: mediumBadge },
-    { label: "Long-term", badge: longBadge },
-  ];
-
-  return (
-    <section className="rounded-xl border border-slate-600/80 bg-slate-950/60 overflow-hidden">
-      <div className="px-3 py-2 border-b border-slate-700/70 bg-slate-900/80">
-        <p className="text-sm font-bold uppercase tracking-[0.12em] text-slate-300">
-          Stoplight actions by timeframe
-        </p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-800/90">
-        {cols.map(({ label, badge }) => (
-          <div key={label} className="px-3 py-3 space-y-2">
-            <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold">{label}</p>
-            <BehavioralActionBadge badge={badge} />
-          </div>
-        ))}
-      </div>
-    </section>
   );
 }

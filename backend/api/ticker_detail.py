@@ -321,6 +321,12 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                     "composite": sig.get("composite_buy"),
                 },
             }
+            try:
+                from signals.velocity_engine import attach_velocity_to_row
+
+                attach_velocity_to_row(signal_data, close=close_ticker, volume=volume, config=config)
+            except Exception:
+                pass
             # Human-readable reasoning — distinguish model (7-layer) vs technical composite (rule-based)
             if buy_p is not None:
                 tech_b = int(buy_conf) if buy_conf is not None else None
@@ -587,8 +593,16 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 except Exception:
                     pass
                 inv["tactical_entry"] = build_tactical_ui_payload(vel_row, config=config)
-        except Exception:
-            pass
+            elif signal_data and signal_data.get("velocity_triggered"):
+                # Fallback when OHLCV missing but dashboard signal row has velocity flags
+                inv["tactical_entry"] = build_tactical_ui_payload(
+                    {**signal_data, "ticker": ticker, "close": response.get("current_price")},
+                    config=config,
+                )
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).debug("tactical_entry for %s: %s", ticker, exc)
 
     return response
 

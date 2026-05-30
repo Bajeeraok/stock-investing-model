@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import React, { useState } from "react";
+import { clsx } from "clsx";
 import {
   CheckCircle,
   XCircle,
@@ -32,11 +33,11 @@ import {
   deriveLongTermBehavioralBadge,
   deriveShortTermBehavioralBadge,
   filterPrimaryTradingGates,
-  HorizonActionBadgeRow,
   HorizonDivergenceNote,
   LongTermTierLadder,
   PlainEnglishTakeCard,
   resolveLongHorizonEntryZone,
+  EntryZonePriceBar,
   RiskRewardThermometer,
   StopHierarchyPanel,
   StopTargetRiskBar,
@@ -47,6 +48,11 @@ import { StreetVsModelBar } from "./StreetVsModelBar";
 import { PositionIntentChip } from "./PositionIntentChip";
 import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
 import type { TacticalEntryPayload } from "./TacticalEntryPanel";
+import {
+  type DecisionMode,
+  primaryHorizonFromMode,
+  horizonLabel,
+} from "@/lib/decisionMode";
 
 export type { TacticalEntryPayload };
 
@@ -297,6 +303,7 @@ function HorizonCard({
   assessmentPct,
   shortHorizon,
   rsi,
+  density = "detail",
 }: {
   horizon: HorizonSignalPayload;
   horizonKind: "short" | "medium" | "long";
@@ -309,7 +316,9 @@ function HorizonCard({
   assessmentPct: number;
   shortHorizon?: HorizonSignalPayload;
   rsi?: number | null;
+  density?: "scan" | "detail";
 }) {
+  const scan = density === "scan";
   const behavioralBadge =
     horizonKind === "short"
       ? deriveShortTermBehavioralBadge(horizon, regimeBullPct, rsi)
@@ -406,41 +415,94 @@ function HorizonCard({
         React.createElement(Info, { className: "h-3.5 w-3.5 text-slate-500 cursor-help" })
       )
     ),
-    React.createElement("p", { className: "text-slate-400 mt-1 font-mono" }, `${entryTierPrefix}$${ez.low.toFixed(2)} – $${ez.high.toFixed(2)}`),
-    React.createElement(
-      "p",
-      { className: "text-slate-500 text-xs", title: "ML probabilities can vary day-to-day as new price and volume data are included; large moves may reflect updated features rather than a change in thesis." },
-      `Target: +${horizon.target_pct.toFixed(0)}% · ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`
-    ),
-    hasStop &&
+    ez.low > 0 &&
+      ez.high > ez.low &&
+      currentPrice > 0 &&
       React.createElement(
-        "p",
-        {
-          className: "text-slate-500 text-xs mt-0.5",
-          title: structuralStop
-            ? horizon.stop_loss_framing || "52-week stress floor — not a day-to-day trailing stop"
-            : undefined,
-        },
-        horizonKind === "short"
-          ? horizon.stop_loss_framing ||
-            `Swing stop: $${Number(horizon.stop_loss).toFixed(2)}${
-              horizon.stop_loss_pct != null && Number.isFinite(horizon.stop_loss_pct)
-                ? ` (${Math.abs(horizon.stop_loss_pct).toFixed(0)}% risk)`
-                : ""
-            }`
-          : horizonKind === "medium"
-            ? horizon.stop_loss_framing ||
-              `Build stop: $${Number(horizon.stop_loss).toFixed(2)} (pause tranches)`
-            : structuralStop
-              ? entryTiers?.structural_invalidation?.note ||
-                horizon.stop_loss_framing ||
-                `Thesis stop: $${Number(horizon.stop_loss).toFixed(2)} (exit thesis)`
-              : horizon.stop_loss_framing ||
-                `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
+        "div",
+        { className: "mt-2 rounded-lg border border-emerald-500/25 bg-slate-950/50 p-2" },
+        React.createElement(EntryZonePriceBar, {
+          entryLow: ez.low,
+          entryHigh: ez.high,
+          currentPrice,
+          stopLoss: hasStop ? horizon.stop_loss : null,
+          target: horizon.target > 0 ? horizon.target : null,
+          bandLabel: entryTierPrefix.replace(/:\s*$/, "").trim() || "Buy zone",
+          quality: horizon.entry_zone?.quality,
+          anchorNote:
+            !scan && horizon.entry_zone?.anchor ? String(horizon.entry_zone.anchor) : null,
+        })
       ),
+    scan
+      ? React.createElement(
+          "div",
+          { className: "grid grid-cols-2 gap-2 mt-2 text-xs font-mono" },
+          hasStop &&
+            React.createElement(
+              "div",
+              { className: "rounded-md bg-slate-900/70 border border-red-500/20 px-2 py-1.5" },
+              React.createElement("p", { className: "text-[10px] text-slate-500 uppercase" }, "Stop"),
+              React.createElement(
+                "p",
+                { className: "text-red-300 tabular-nums" },
+                `$${Number(horizon.stop_loss).toFixed(2)}`
+              )
+            ),
+          horizon.target > 0 &&
+            React.createElement(
+              "div",
+              { className: "rounded-md bg-slate-900/70 border border-emerald-500/20 px-2 py-1.5" },
+              React.createElement("p", { className: "text-[10px] text-slate-500 uppercase" }, "Target"),
+              React.createElement(
+                "p",
+                { className: "text-emerald-300 tabular-nums" },
+                `$${horizon.target.toFixed(2)} (+${horizon.target_pct.toFixed(0)}%)`
+              )
+            )
+        )
+      : React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(
+            "p",
+            {
+              className: "text-slate-500 text-xs",
+              title:
+                "ML probabilities can vary day-to-day as new price and volume data are included; large moves may reflect updated features rather than a change in thesis.",
+            },
+            `Target: +${horizon.target_pct.toFixed(0)}% · ML prob: ${Number(horizon.ml_prob).toFixed(0)}%`
+          ),
+          hasStop &&
+            React.createElement(
+              "p",
+              {
+                className: "text-slate-500 text-xs mt-0.5",
+                title: structuralStop
+                  ? horizon.stop_loss_framing || "52-week stress floor — not a day-to-day trailing stop"
+                  : undefined,
+              },
+              horizonKind === "short"
+                ? horizon.stop_loss_framing ||
+                  `Swing stop: $${Number(horizon.stop_loss).toFixed(2)}${
+                    horizon.stop_loss_pct != null && Number.isFinite(horizon.stop_loss_pct)
+                      ? ` (${Math.abs(horizon.stop_loss_pct).toFixed(0)}% risk)`
+                      : ""
+                  }`
+                : horizonKind === "medium"
+                  ? horizon.stop_loss_framing ||
+                    `Build stop: $${Number(horizon.stop_loss).toFixed(2)} (pause tranches)`
+                  : structuralStop
+                    ? entryTiers?.structural_invalidation?.note ||
+                      horizon.stop_loss_framing ||
+                      `Thesis stop: $${Number(horizon.stop_loss).toFixed(2)} (exit thesis)`
+                    : horizon.stop_loss_framing || `Stop below $${Number(horizon.stop_loss).toFixed(2)}`
+            )
+        ),
     React.createElement(
       "p",
-      { className: "text-slate-400 text-sm mt-1.5 leading-snug" },
+      {
+        className: clsx("text-slate-400 mt-1.5 leading-snug", scan ? "text-xs line-clamp-2" : "text-sm"),
+      },
       React.createElement("span", { className: "text-slate-500 font-medium" }, "Act when: "),
       triggerLine
     ),
@@ -831,6 +893,8 @@ export function InvestorDecisionSummarySection({
   hideTradingGates = false,
   compactOverview = false,
   marketContext,
+  decisionMode = "scout",
+  contentLayer = "full",
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -849,6 +913,10 @@ export function InvestorDecisionSummarySection({
   compactOverview?: boolean;
   /** Macro/earnings context — shown compactly after horizon action row. */
   marketContext?: TickerMarketContext | null;
+  /** Scout / swing / owner — which horizon card to foreground on Today. */
+  decisionMode?: DecisionMode;
+  /** today = scan deck + one horizon; why = charts & proof; full = legacy layout. */
+  contentLayer?: "today" | "why" | "full";
 }) {
   const {
     fair_value,
@@ -871,8 +939,13 @@ export function InvestorDecisionSummarySection({
   const medium = horizons.medium;
   const long = horizons.long;
 
-  const [horizonDetailOpen, setHorizonDetailOpen] = useState(!compactOverview);
-  const [executionDetailOpen, setExecutionDetailOpen] = useState(!compactOverview);
+  const isToday = contentLayer === "today";
+  const isWhy = contentLayer === "why";
+  const isFull = contentLayer === "full";
+  const primaryHorizonKey = primaryHorizonFromMode(decisionMode);
+  const [compareHorizonsOpen, setCompareHorizonsOpen] = useState(false);
+  const [horizonDetailOpen, setHorizonDetailOpen] = useState(isWhy || (isFull && !compactOverview));
+  const [executionDetailOpen, setExecutionDetailOpen] = useState(isWhy || isFull ? !compactOverview : false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [traderOpen, setTraderOpen] = useState(false);
   const [investorOpen, setInvestorOpen] = useState(false);
@@ -1083,6 +1156,7 @@ export function InvestorDecisionSummarySection({
     },
     !hideTradingGates &&
       !compactOverview &&
+      !isToday &&
       React.createElement(
         "div",
         { className: "p-4 border-b border-violet-500/25 bg-gradient-to-b from-violet-950/40 to-slate-900/60 space-y-3" },
@@ -1098,6 +1172,7 @@ export function InvestorDecisionSummarySection({
       ),
     hideTradingGates &&
       !compactOverview &&
+      !isToday &&
       primaryTradingGates.length > 0 &&
       React.createElement(
         "div",
@@ -1113,12 +1188,14 @@ export function InvestorDecisionSummarySection({
       ),
     ticker &&
       !compactOverview &&
+      isFull &&
       React.createElement(
         "div",
         { className: "px-4 pt-2 pb-0 border-b border-slate-700/80" },
         React.createElement(PositionIntentChip, { ticker })
       ),
-    one_answer &&
+    !isToday &&
+      one_answer &&
       React.createElement(
         "div",
         { className: "p-4 border-b border-slate-700/80 bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-900/40" },
@@ -1158,7 +1235,8 @@ export function InvestorDecisionSummarySection({
           one_answer.subline &&
           React.createElement("p", { className: "mt-1 text-sm text-amber-200/90" }, one_answer.subline)
       ),
-    (short?.target || medium?.target || long?.target) &&
+    (isWhy || isFull) &&
+      (short?.target || medium?.target || long?.target) &&
       React.createElement(
         "div",
         { className: "px-4 pb-4 border-b border-slate-700/80" },
@@ -1174,7 +1252,8 @@ export function InvestorDecisionSummarySection({
           ma50,
         })
       ),
-    !compactOverview &&
+    (isWhy || isFull) &&
+      !compactOverview &&
       fve &&
       React.createElement(
         "div",
@@ -1185,7 +1264,8 @@ export function InvestorDecisionSummarySection({
           external: fve,
         })
       ),
-    !compactOverview &&
+    (isWhy || isFull) &&
+      !compactOverview &&
       React.createElement(
         "div",
         { className: "p-4 border-b border-slate-700/80" },
@@ -1196,34 +1276,27 @@ export function InvestorDecisionSummarySection({
           defaultOpen: false,
         })
       ),
-    React.createElement(
-      "div",
-      { className: "p-4 border-b border-slate-700/80 space-y-2" },
-      React.createElement(HorizonActionBadgeRow, {
-        short,
-        medium,
-        long,
-        currentPrice,
-        regimeBullPct: regime_bull_pct,
-        assessmentPct,
-        rsi: rsi ?? null,
-      }),
-      compactOverview &&
+    (isToday || compactOverview) &&
+      React.createElement(
+        "div",
+        { className: "p-4 border-b border-slate-700/80" },
         React.createElement(HorizonDivergenceNote, { short, long })
-    ),
-    React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
-    React.createElement(
-      "div",
-      { className: "px-4 pb-4 border-b border-slate-700/80" },
-      React.createElement(StopHierarchyPanel, {
-        short,
-        medium,
-        long,
-        currentPrice,
-        stockRegimeBullPct: summary.retail_action?.stock_regime_bull_pct ?? regime_bull_pct,
-        marketRegimeBullPct: summary.retail_action?.market_regime_bull_pct,
-      })
-    ),
+      ),
+    !isToday &&
+      React.createElement(BuyRangeRetailCard, { currentPrice, short, long, overallVerdict: overall_verdict }),
+    !isToday &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-4 border-b border-slate-700/80" },
+        React.createElement(StopHierarchyPanel, {
+          short,
+          medium,
+          long,
+          currentPrice,
+          stockRegimeBullPct: summary.retail_action?.stock_regime_bull_pct ?? regime_bull_pct,
+          marketRegimeBullPct: summary.retail_action?.market_regime_bull_pct,
+        })
+      ),
     marketContext?.headline &&
       React.createElement(
         "div",
@@ -1231,6 +1304,7 @@ export function InvestorDecisionSummarySection({
         React.createElement(TickerMarketContextCard, { data: marketContext, variant: "compact" })
       ),
     long?.entry_tiers?.tiers?.length &&
+      (isWhy || isFull) &&
       !compactOverview
       ? React.createElement(
           "div",
@@ -1242,48 +1316,134 @@ export function InvestorDecisionSummarySection({
           })
         )
       : null,
-    React.createElement(
-      "div",
-      { className: "border-b border-slate-700/80 bg-slate-900/30" },
+    isToday &&
       React.createElement(
-        "button",
-        {
-          type: "button",
-          onClick: () => setHorizonDetailOpen((o) => !o),
-          className:
-            "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors",
-        },
+        "div",
+        { className: "p-4 border-b border-slate-700/80 space-y-3" },
         React.createElement(
-          "span",
-          { className: "text-sm text-slate-400 uppercase tracking-wide" },
-          "Horizon detail (short · medium · long)"
+          "p",
+          { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold" },
+          `${horizonLabel(primaryHorizonKey)} plan`
         ),
-        horizonDetailOpen
-          ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-500" })
-          : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500" })
-      ),
-      horizonDetailOpen &&
+        primaryHorizonKey === "short" &&
+          React.createElement(HorizonCard, {
+            horizon: short,
+            horizonKind: "short",
+            ...horizonCardShared,
+            density: "scan",
+          }),
+        primaryHorizonKey === "medium" &&
+          React.createElement(HorizonCard, {
+            horizon: medium,
+            horizonKind: "medium",
+            ...horizonCardShared,
+            density: "scan",
+          }),
+        primaryHorizonKey === "long" &&
+          React.createElement(HorizonCard, {
+            horizon: long,
+            horizonKind: "long",
+            ...horizonCardShared,
+            entryTiers: long.entry_tiers,
+            showTierLadder: decisionMode === "owner",
+            tiersOpen: ltEntryTiersOpen,
+            onToggleTiers: onToggleLtTiers,
+            density: "scan",
+          }),
         React.createElement(
-          "div",
-          { className: "p-4 pt-0" },
+          "button",
+          {
+            type: "button",
+            onClick: () => setCompareHorizonsOpen((o) => !o),
+            className:
+              "w-full text-sm text-slate-400 hover:text-slate-200 py-2 rounded-lg border border-slate-700/80 hover:bg-slate-800/50 transition-colors",
+          },
+          compareHorizonsOpen ? "Hide other timeframes" : "Compare all timeframes"
+        ),
+        compareHorizonsOpen &&
           React.createElement(
             "div",
-            { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
-            React.createElement(HorizonCard, { horizon: short, horizonKind: "short", ...horizonCardShared }),
-            React.createElement(HorizonCard, { horizon: medium, horizonKind: "medium", ...horizonCardShared }),
-            React.createElement(HorizonCard, {
-              horizon: long,
-              horizonKind: "long",
-              ...horizonCardShared,
-              entryTiers: long.entry_tiers,
-              showTierLadder: !compactOverview,
-              tiersOpen: ltEntryTiersOpen,
-              onToggleTiers: onToggleLtTiers,
-            })
+            { className: "grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1" },
+            primaryHorizonKey !== "short" &&
+              React.createElement(HorizonCard, {
+                horizon: short,
+                horizonKind: "short",
+                ...horizonCardShared,
+                density: "scan",
+              }),
+            primaryHorizonKey !== "medium" &&
+              React.createElement(HorizonCard, {
+                horizon: medium,
+                horizonKind: "medium",
+                ...horizonCardShared,
+                density: "scan",
+              }),
+            primaryHorizonKey !== "long" &&
+              React.createElement(HorizonCard, {
+                horizon: long,
+                horizonKind: "long",
+                ...horizonCardShared,
+                entryTiers: long.entry_tiers,
+                showTierLadder: false,
+                density: "scan",
+              })
           )
-        )
-    ),
-    compactOverview &&
+      ),
+    (isWhy || isFull) &&
+      React.createElement(
+        "div",
+        { className: "border-b border-slate-700/80 bg-slate-900/30" },
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setHorizonDetailOpen((o) => !o),
+            className:
+              "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors",
+          },
+          React.createElement(
+            "span",
+            { className: "text-sm text-slate-400 uppercase tracking-wide" },
+            isWhy ? "All horizons (detail)" : "Horizon detail (short · medium · long)"
+          ),
+          horizonDetailOpen
+            ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-500" })
+            : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500" })
+        ),
+        (isWhy || horizonDetailOpen) &&
+          React.createElement(
+            "div",
+            { className: "p-4 pt-0" },
+            React.createElement(
+              "div",
+              { className: "grid grid-cols-1 sm:grid-cols-3 gap-3" },
+              React.createElement(HorizonCard, {
+                horizon: short,
+                horizonKind: "short",
+                ...horizonCardShared,
+                density: "detail",
+              }),
+              React.createElement(HorizonCard, {
+                horizon: medium,
+                horizonKind: "medium",
+                ...horizonCardShared,
+                density: "detail",
+              }),
+              React.createElement(HorizonCard, {
+                horizon: long,
+                horizonKind: "long",
+                ...horizonCardShared,
+                entryTiers: long.entry_tiers,
+                showTierLadder: true,
+                tiersOpen: ltEntryTiersOpen,
+                onToggleTiers: onToggleLtTiers,
+                density: "detail",
+              })
+            )
+          )
+      ),
+    !isToday &&
+      (compactOverview || isWhy) &&
       one_answer &&
       React.createElement(
         "div",
@@ -1306,7 +1466,8 @@ export function InvestorDecisionSummarySection({
             : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500" })
         )
       ),
-    one_answer &&
+    !isToday &&
+      one_answer &&
       (!compactOverview || executionDetailOpen) &&
       React.createElement(
       "div",
