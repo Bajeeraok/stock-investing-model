@@ -13,9 +13,12 @@ import type { RetailMarketDecisions } from "./RetailMarketDecisionsPanel";
 export function RetailMarketDecisionsDeepDive({
   data,
   macroBackdrop,
+  omitChecklist = false,
 }: {
   data: RetailMarketDecisions;
   macroBackdrop?: { bullets?: string[]; disclaimer?: string } | null;
+  /** Checklist promoted on Overview — skip duplicate here */
+  omitChecklist?: boolean;
 }) {
   const [contextExpanded, setContextExpanded] = useState(false);
   const [macroExpanded, setMacroExpanded] = useState(false);
@@ -53,7 +56,7 @@ export function RetailMarketDecisionsDeepDive({
         </div>
       )}
 
-      {checklist.length > 0 && (
+      {!omitChecklist && checklist.length > 0 && (
         <div className="rounded-lg border border-slate-600/70 bg-slate-800/40 px-3 py-2">
           <p className="text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">Today&apos;s checklist</p>
           <ul className="space-y-1.5">
@@ -70,7 +73,7 @@ export function RetailMarketDecisionsDeepDive({
       {questions.length > 0 && (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">Five questions</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="flex flex-col gap-2">
             {questions.map((q) => (
               <div key={q.question} className="rounded-lg border border-slate-600/70 bg-slate-800/40 px-3 py-2">
                 <p className="text-xs font-medium text-slate-300">{q.question}</p>

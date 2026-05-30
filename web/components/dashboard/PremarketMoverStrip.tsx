@@ -121,7 +121,11 @@ export function PremarketMoverStrip({
         )}
       </div>
       {chips.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="space-y-1.5">
+          <p className="text-[10px] text-slate-400">
+            <span className="text-emerald-400">Green</span> = up · <span className="text-red-400">Red</span> = down (pre-market vs prior close)
+          </p>
+          <div className="flex flex-wrap gap-1.5">
           {chips.slice(0, 8).map((c) => {
             const chipCls = clsx(
               "text-[11px] font-mono px-2 py-0.5 rounded border",
@@ -148,6 +152,7 @@ export function PremarketMoverStrip({
               </span>
             );
           })}
+          </div>
         </div>
       )}
     </div>

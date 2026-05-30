@@ -930,6 +930,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               )}
               <PortfolioHeatMap
                 holdings={selectedReport?.per_holding ?? []}
+                regimeCounts={selectedReport?.regime_counts}
                 onTickerClick={setSelectedTicker}
               />
               <ToggleSection id="overview-portfolio" title="Portfolio summary" icon={<PieChart />} defaultOpen>
@@ -1231,6 +1232,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               )}
               <PortfolioHeatMap
                 holdings={selectedReport?.per_holding ?? []}
+                regimeCounts={selectedReport?.regime_counts}
                 onTickerClick={setSelectedTicker}
               />
               {/* Portfolio Doctor v2 — answers "what do I do this week?" first */}

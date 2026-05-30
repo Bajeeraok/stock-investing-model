@@ -30,12 +30,21 @@ export function ScoreChart({
       {embedded && (
         <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Confidence by ticker</h4>
       )}
-      <div className="h-64">
+      <div className={embedded ? "h-[min(28rem,70vh)]" : "h-64"}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="ticker" tick={{ fill: "#94a3b8", fontSize: 12 }} />
-            <YAxis domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 12 }} />
+          <BarChart
+            layout="vertical"
+            data={data}
+            margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={false} />
+            <XAxis type="number" domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 11 }} />
+            <YAxis
+              type="category"
+              dataKey="ticker"
+              width={embedded ? 48 : 56}
+              tick={{ fill: "#cbd5e1", fontSize: 11 }}
+            />
             <Tooltip
               contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #334155", borderRadius: "8px" }}
               labelStyle={{ color: "#f8fafc" }}
@@ -44,7 +53,8 @@ export function ScoreChart({
             />
             <Bar
               dataKey="score"
-              radius={[4, 4, 0, 0]}
+              radius={[0, 4, 4, 0]}
+              barSize={embedded ? 14 : 18}
               onClick={(e: { payload?: { ticker?: string } }) => e?.payload?.ticker && onTickerClick?.(e.payload.ticker)}
               cursor={onTickerClick ? "pointer" : undefined}
             >

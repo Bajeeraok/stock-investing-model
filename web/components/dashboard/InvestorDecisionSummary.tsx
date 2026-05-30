@@ -1348,50 +1348,13 @@ export function InvestorDecisionSummarySection({
       React.createElement(
         "div",
         { className: "p-4 border-b border-slate-700/80 space-y-3" },
-        React.createElement(
-          "p",
-          {
-            className: "text-xs text-slate-200 uppercase tracking-wide font-semibold",
-          },
-          decisionMode === "owner" && primaryHorizonKey === "long"
-            ? "Other timeframes & tiers"
-            : `${horizonLabel(primaryHorizonKey)} plan`
-        ),
         decisionMode === "owner" &&
           primaryHorizonKey === "long" &&
           React.createElement(
             "p",
-            { className: "text-sm text-slate-200 leading-snug" },
-            "Today\u2019s call and price ladder are above. Expand to compare swing horizons or open the Levels tab for the full tier ladder."
+            { className: "text-sm text-slate-400 leading-snug" },
+            "Primary plan is in the card above. Compare other horizons below or open Levels for full roadmaps."
           ),
-        !(decisionMode === "owner" && primaryHorizonKey === "long") &&
-          primaryHorizonKey === "short" &&
-          React.createElement(HorizonCard, {
-            horizon: short,
-            horizonKind: "short",
-            ...horizonCardShared,
-            density: "scan",
-          }),
-        !(decisionMode === "owner" && primaryHorizonKey === "long") &&
-          primaryHorizonKey === "medium" &&
-          React.createElement(HorizonCard, {
-            horizon: medium,
-            horizonKind: "medium",
-            ...horizonCardShared,
-            density: "scan",
-          }),
-        !(decisionMode === "owner" && primaryHorizonKey === "long") &&
-          primaryHorizonKey === "long" &&
-          React.createElement(HorizonCard, {
-            horizon: long,
-            horizonKind: "long",
-            ...horizonCardShared,
-            entryTiers: long.entry_tiers,
-            showTierLadder: decisionMode === "owner",
-            tiersOpen: ltEntryTiersOpen,
-            onToggleTiers: onToggleLtTiers,
-            density: "scan",
-          }),
         React.createElement(
           "button",
           {

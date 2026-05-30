@@ -42,6 +42,27 @@ export function PerformanceVsBenchmark({ periods, message, as_of }: Props) {
     return null;
   }
 
+  /** Hide 1y row when portfolio return is missing — avoids "—" next to live SPY/QQQ. */
+  const displayPeriods = periods.filter((p) => {
+    const isLong = /^1\s*y/i.test(p.period.trim()) || p.period.toLowerCase().includes("1 year");
+    if (isLong && p.portfolio_pct == null) return false;
+    return true;
+  });
+
+  const hiddenLong = periods.length > displayPeriods.length;
+
+  if (displayPeriods.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
+        <p className="text-sm font-medium text-slate-400 mb-1">Performance vs benchmark</p>
+        <p className="text-slate-500 text-sm">
+          {message ?? "Not enough portfolio history yet for period comparisons."}
+          {as_of ? ` Tracking since ${new Date(as_of).toLocaleDateString()}.` : ""}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -52,9 +73,15 @@ export function PerformanceVsBenchmark({ periods, message, as_of }: Props) {
       <p className="text-xs text-slate-500 mb-3" title="Portfolio total return vs SPY (S&P 500) and QQQ (Nasdaq 100). vs SPY = portfolio − SPY.">
         Total return over period. Positive vs SPY/QQQ = outperformed.
       </p>
+      {hiddenLong && (
+        <p className="text-[11px] text-slate-500 mb-2">
+          1-year portfolio return hidden until enough history
+          {as_of ? ` (tracking since ${new Date(as_of).toLocaleDateString()})` : ""}.
+        </p>
+      )}
       {/* Mobile: card per period */}
       <div className="md:hidden space-y-3">
-        {periods.map((p) => (
+        {displayPeriods.map((p) => (
           <div key={p.period} className="rounded-lg border border-slate-600/80 bg-slate-800/50 p-3 text-sm">
             <div className="font-medium text-slate-300 border-b border-slate-600/80 pb-2 mb-2">{p.period}</div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
@@ -86,7 +113,7 @@ export function PerformanceVsBenchmark({ periods, message, as_of }: Props) {
             </tr>
           </thead>
           <tbody>
-            {periods.map((p) => (
+            {displayPeriods.map((p) => (
               <tr key={p.period} className="border-b border-slate-700/50">
                 <td className="py-2 pr-3 font-medium text-slate-300">{p.period}</td>
                 <td className={`py-2 pr-3 ${cellClass(p.portfolio_pct)}`}>{fmt(p.portfolio_pct)}</td>

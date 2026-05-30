@@ -1,6 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { clsx } from "clsx";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Info,
+  XCircle,
+} from "lucide-react";
 import type { InvestorDecisionSummary, HorizonSignalPayload } from "./InvestorDecisionSummary";
 import {
   BehavioralActionBadge,
@@ -8,6 +19,7 @@ import {
   deriveShortTermBehavioralBadge,
   EntryZonePriceBar,
   LongTermAccumulationScale,
+  LongTermTierLadder,
   filterPrimaryTradingGates,
   buildGatesFromInvestorSummary,
   resolveLongHorizonEntryZone,
@@ -18,6 +30,9 @@ import {
   horizonLabel,
 } from "@/lib/decisionMode";
 import type { RetailActionPayload } from "./retailActionUX";
+
+const STRENGTH_CONVICTION_HINT =
+  "Strength = how strong the technical read is on this horizon. Conviction = how much the model trusts that read (gates, ML, pattern).";
 
 type NextTriggerInput = RetailActionPayload["next_trigger"] | string | null | undefined;
 
@@ -93,16 +108,84 @@ function resolveEntryZone(
   return { low: ez.low, high: ez.high, label: "Buy zone" };
 }
 
+function verdictIcon(verdict: string) {
+  switch (verdict) {
+    case "STRONG BUY":
+    case "BUY":
+      return <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" aria-hidden />;
+    case "WATCH":
+      return <AlertCircle className="h-4 w-4 text-teal-400 shrink-0" aria-hidden />;
+    default:
+      return <XCircle className="h-4 w-4 text-red-400 shrink-0" aria-hidden />;
+  }
+}
+
+function verdictTextClass(verdict: string): string {
+  if (verdict === "BUY" || verdict === "STRONG BUY") return "text-emerald-400";
+  if (verdict === "WATCH") return "text-teal-400";
+  return "text-red-400";
+}
+
+function triggersDiffer(a: string | null, b: string | null): boolean {
+  if (!a || !b) return Boolean(a) !== Boolean(b);
+  const na = a.trim().toLowerCase();
+  const nb = b.trim().toLowerCase();
+  if (na === nb) return false;
+  return !(na.includes(nb) || nb.includes(na));
+}
+
+function PlanCaveats({
+  rationale,
+  warnings,
+}: {
+  rationale?: string | null;
+  warnings: string[];
+}) {
+  const [open, setOpen] = useState(false);
+  const hasRationale = Boolean(rationale?.trim());
+  const count = warnings.length + (hasRationale ? 1 : 0);
+  if (count === 0) return null;
+
+  return (
+    <div className="border-t border-slate-600/80 pt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((s) => !s)}
+        className="text-sm text-amber-300/90 flex items-center gap-1 hover:text-amber-200"
+      >
+        <AlertTriangle className="h-3 w-3 shrink-0" />
+        {count} caveat{count > 1 ? "s" : ""}
+        {open ? <ChevronUp className="h-3 w-3 shrink-0" /> : <ChevronDown className="h-3 w-3 shrink-0" />}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {hasRationale && <p className="text-sm text-slate-300 leading-snug">{rationale!.trim()}</p>}
+          {warnings.map((w, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-sm text-amber-300/90">
+              <AlertTriangle className="h-3 w-3 shrink-0 mt-0.5" />
+              <span>{w}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DecisionDeck({
   summary,
   currentPrice,
   mode,
   tacticalActive,
+  ltEntryTiersOpen,
+  onToggleLtTiers,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
   mode: DecisionMode;
   tacticalActive?: boolean;
+  ltEntryTiersOpen?: boolean;
+  onToggleLtTiers?: () => void;
 }) {
   const { horizons, one_answer, retail_action, regime_bull_pct, rsi } = summary;
   const short = horizons.short;
@@ -128,15 +211,20 @@ export function DecisionDeck({
   const ez = resolveEntryZone(mode, short, medium, long, currentPrice);
   const band = ez ? entryBandPct(currentPrice, ez.low, ez.high) : null;
 
-  const nextTriggerText = formatNextTriggerText(
-    retail_action?.next_trigger ??
-      one_answer?.next_trigger ??
-      primary.trigger_buy ??
-      null
-  );
+  const actWhenLine = primary.trigger_buy?.trim() || null;
+  const nextTriggerText = formatNextTriggerText(retail_action?.next_trigger ?? one_answer?.next_trigger ?? null);
+  const showNext =
+    nextTriggerText != null && triggersDiffer(nextTriggerText, actWhenLine);
+
+  const warnings = Array.isArray(primary.warnings)
+    ? primary.warnings.filter((w) => w && String(w).trim())
+    : [];
 
   const nextLabelClass =
     mode === "scout" ? "text-cyan-300/90" : mode === "swing" ? "text-violet-300/90" : "text-emerald-300/90";
+
+  const showOwnerTierLadder =
+    mode === "owner" && primaryKey === "long" && Boolean(long.entry_tiers?.tiers?.length);
 
   return (
     <section
@@ -150,7 +238,7 @@ export function DecisionDeck({
     >
       <div className="px-4 py-3 border-b border-slate-700/50 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-slate-200">
-          Today · {horizonLabel(primaryKey)}
+          {horizonLabel(primaryKey)} plan
         </p>
         <span
           className={clsx(
@@ -165,20 +253,42 @@ export function DecisionDeck({
       </div>
       <div className="p-4 space-y-3">
         <BehavioralActionBadge badge={badge} />
+
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <span className="text-sm font-medium text-slate-300">{primary.label}</span>
+          <span className="flex items-center gap-1.5">
+            {verdictIcon(primary.verdict)}
+            <span className={clsx("text-sm font-semibold", verdictTextClass(primary.verdict))}>
+              {primary.verdict}
+            </span>
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap -mt-1">
+          <span title={STRENGTH_CONVICTION_HINT} className="cursor-help border-b border-dotted border-slate-500/50">
+            {primary.signal} strength · {primary.conviction} conviction
+          </span>
+          <span title={STRENGTH_CONVICTION_HINT} className="inline-flex shrink-0">
+            <Info className="h-3.5 w-3.5 text-slate-500 cursor-help" aria-hidden />
+          </span>
+        </p>
+
         {tacticalActive && mode === "scout" && (
           <p className="text-xs text-cyan-200/90 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 bg-cyan-950/40">
             Velocity / tactical lane active — confirm GO/NO-GO in scout panel above.
           </p>
         )}
-        {band && !(mode === "owner" && long.entry_tiers?.tiers?.length) && (
+
+        {band && !showOwnerTierLadder && (
           <p className={clsx("text-sm font-medium leading-snug", band.inside ? "text-emerald-200" : "text-amber-100")}>
             {band.line}
           </p>
         )}
-        {mode === "owner" && long.entry_tiers?.tiers?.length && currentPrice > 0 ? (
+
+        {showOwnerTierLadder && currentPrice > 0 ? (
           <LongTermAccumulationScale
             horizon={long}
-            entryTiers={long.entry_tiers}
+            entryTiers={long.entry_tiers!}
             currentPrice={currentPrice}
             stopLoss={primary.stop_loss > 0 ? primary.stop_loss : null}
             target={primary.target > 0 ? primary.target : null}
@@ -199,31 +309,72 @@ export function DecisionDeck({
             />
           )
         )}
-        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-          {primary.stop_loss > 0 && (
-            <div className="rounded-lg bg-slate-900/80 border border-red-500/35 px-2.5 py-2">
-              <p className="text-[10px] uppercase text-red-200/90 font-semibold mb-0.5">Stop</p>
-              <p className="text-red-200 tabular-nums font-semibold">${primary.stop_loss.toFixed(2)}</p>
-            </div>
-          )}
-          {primary.target > 0 && (
-            <div className="rounded-lg bg-slate-900/80 border border-emerald-500/35 px-2.5 py-2">
-              <p className="text-[10px] uppercase text-emerald-200/90 font-semibold mb-0.5">Target</p>
-              <p className="text-emerald-200 tabular-nums font-semibold">${primary.target.toFixed(2)}</p>
-            </div>
-          )}
-        </div>
-        {nextTriggerText && (
+
+        {(primary.stop_loss > 0 || primary.target > 0) && (
+          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+            {primary.stop_loss > 0 && (
+              <div className="rounded-lg bg-slate-900/80 border border-red-500/35 px-2.5 py-2">
+                <p className="text-[10px] uppercase text-red-200/90 font-semibold mb-0.5">Stop</p>
+                <p className="text-red-200 tabular-nums font-semibold">${primary.stop_loss.toFixed(2)}</p>
+              </div>
+            )}
+            {primary.target > 0 && (
+              <div className="rounded-lg bg-slate-900/80 border border-emerald-500/35 px-2.5 py-2">
+                <p className="text-[10px] uppercase text-emerald-200/90 font-semibold mb-0.5">Target</p>
+                <p className="text-emerald-200 tabular-nums font-semibold">
+                  ${primary.target.toFixed(2)}
+                  {primary.target_pct > 0 ? (
+                    <span className="text-emerald-300/80 font-normal ml-1">(+{primary.target_pct.toFixed(0)}%)</span>
+                  ) : null}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {actWhenLine && (
           <p className="text-sm text-slate-200 leading-snug border-t border-slate-600/80 pt-2">
-            <span className={clsx("font-semibold", nextLabelClass)}>Next: </span>
-            {nextTriggerText.length > 160 ? `${nextTriggerText.slice(0, 157)}…` : nextTriggerText}
+            <span className="text-slate-500 font-medium">Act when: </span>
+            {actWhenLine}
           </p>
         )}
+
+        {showNext && (
+          <p className="text-sm text-slate-200 leading-snug">
+            <span className={clsx("font-semibold", nextLabelClass)}>Next: </span>
+            {nextTriggerText!.length > 200 ? `${nextTriggerText!.slice(0, 197)}…` : nextTriggerText}
+          </p>
+        )}
+
+        <PlanCaveats rationale={primary.rationale} warnings={warnings} />
+
         {one_answer?.bottom_line && (
           <p className="text-sm text-slate-200 leading-snug border-t border-slate-600/60 pt-2">
             <span className="font-semibold text-emerald-200/95">Bottom line: </span>
             {one_answer.bottom_line}
           </p>
+        )}
+
+        {showOwnerTierLadder && onToggleLtTiers && (
+          <div className="border-t border-slate-600/60 pt-2">
+            <button
+              type="button"
+              onClick={onToggleLtTiers}
+              className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+            >
+              {ltEntryTiersOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              {ltEntryTiersOpen ? "Hide entry tiers" : "Show entry tiers"}
+            </button>
+            {ltEntryTiersOpen && long.entry_tiers && (
+              <div className="mt-2">
+                <LongTermTierLadder
+                  entryTiers={long.entry_tiers}
+                  currentPrice={currentPrice}
+                  modeLabel={long.entry_tiers.current_assessment?.label}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
     </section>

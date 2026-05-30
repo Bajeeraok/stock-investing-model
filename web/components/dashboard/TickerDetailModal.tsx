@@ -782,6 +782,8 @@ export function TickerDetailModal({
                   currentPrice={detail.current_price ?? 0}
                   mode={decisionMode}
                   tacticalActive={Boolean(detail.investor_summary.tactical_entry?.active)}
+                  ltEntryTiersOpen={ltEntryTiersOpen}
+                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
                 />
               )}
 

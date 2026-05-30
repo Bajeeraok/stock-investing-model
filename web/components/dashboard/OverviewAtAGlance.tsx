@@ -43,16 +43,28 @@ const MATRIX_ACTION: Record<string, string> = {
   WAIT: "bg-violet-500/20 text-violet-200 border-violet-500/40",
 };
 
+/** One-line concrete action under abstract stance labels (ST/MT/LT matrix). */
+const STANCE_ACTION_HINT: Record<string, string> = {
+  "ACCUMULATE DIPS": "Add on red days near support — not chase gaps",
+  "CORE BUILDER": "Build size on pullbacks that hold",
+  "STAY INVESTED": "Hold core — skip new buys unless tier hit",
+  "ACCUMULATE": "Add in band — respect stop",
+  "REDUCE EXPOSURE": "Trim winners or cut weak lines",
+  "WAIT FOR CLARITY": "No new size until tape confirms",
+};
+
 function KpiChip({
   label,
   value,
   sub,
   tone = "neutral",
+  title,
 }: {
   label: string;
   value: string;
   sub?: string;
   tone?: "neutral" | "warn" | "good" | "cool";
+  title?: string;
 }) {
   const toneCls =
     tone === "warn"
@@ -63,7 +75,10 @@ function KpiChip({
           ? "border-sky-500/30 bg-sky-950/20"
           : "border-slate-600/60 bg-slate-800/40";
   return (
-    <div className={clsx("rounded-lg border px-3 py-2 min-w-[7rem] flex-1", toneCls)}>
+    <div
+      className={clsx("rounded-lg border px-3 py-2 min-w-[7rem] flex-1", toneCls)}
+      title={title}
+    >
       <p className="text-[10px] uppercase tracking-wider text-slate-300 font-medium">{label}</p>
       <p className="text-sm font-semibold text-slate-100 mt-0.5 tabular-nums">{value}</p>
       {sub && <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{sub}</p>}
@@ -200,8 +215,10 @@ export function OverviewAtAGlance({
               )}
             </div>
             {row.stance && <p className="text-sm font-medium text-slate-100">{row.stance}</p>}
-            {(row.bullets ?? [])[0] && (
-              <p className="text-xs text-slate-300 leading-snug line-clamp-3">{(row.bullets ?? [])[0]}</p>
+            {(STANCE_ACTION_HINT[row.stance ?? ""] ?? (row.bullets ?? [])[0]) && (
+              <p className="text-xs text-emerald-200/90 leading-snug">
+                {STANCE_ACTION_HINT[row.stance ?? ""] ?? (row.bullets ?? [])[0]}
+              </p>
             )}
           </div>
         );
@@ -303,18 +320,24 @@ export function OverviewAtAGlance({
                 )}
               </div>
               {(ctx.bull_case_trigger || ctx.bear_case_trigger) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 text-xs">
+                <div className="flex flex-wrap gap-2 mt-3">
                   {ctx.bull_case_trigger && (
-                    <p className="text-emerald-200/90 rounded-md border border-emerald-500/20 bg-emerald-950/20 px-2.5 py-1.5">
-                      <span className="font-semibold text-emerald-300">Bull: </span>
-                      {ctx.bull_case_trigger}
-                    </p>
+                    <span
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-100"
+                      title={ctx.bull_case_trigger}
+                    >
+                      <span className="font-bold text-emerald-300 shrink-0">Bull</span>
+                      <span className="truncate">{ctx.bull_case_trigger}</span>
+                    </span>
                   )}
                   {ctx.bear_case_trigger && (
-                    <p className="text-amber-100/90 rounded-md border border-amber-500/20 bg-amber-950/20 px-2.5 py-1.5">
-                      <span className="font-semibold text-amber-300">Bear: </span>
-                      {ctx.bear_case_trigger}
-                    </p>
+                    <span
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-950/35 px-3 py-1 text-xs text-amber-100"
+                      title={ctx.bear_case_trigger}
+                    >
+                      <span className="font-bold text-amber-300 shrink-0">Bear</span>
+                      <span className="truncate">{ctx.bear_case_trigger}</span>
+                    </span>
                   )}
                 </div>
               )}
@@ -358,7 +381,12 @@ export function OverviewAtAGlance({
               <KpiChip label="HMM bull" value={`${ctx.hmm_bull_pct}%`} tone="good" />
             )}
             {showPortfolioKpis && heat > 0 && (
-              <KpiChip label="Portfolio heat" value={`${heat}%`} tone={heat > 15 ? "warn" : "neutral"} />
+              <KpiChip
+                label="Portfolio heat"
+                value={`${heat}%`}
+                tone={heat > 15 ? "warn" : "neutral"}
+                title="Share of portfolio in names flagged for trim or high risk. Above ~15% suggests reviewing sizing."
+              />
             )}
             {showPortfolioKpis && top3 != null && top3 > 0 && (
               <KpiChip label="Top 3 weight" value={`${top3}%`} tone={top3 > 40 ? "warn" : "neutral"} />
@@ -382,16 +410,10 @@ export function OverviewAtAGlance({
         </div>
       </section>
 
-      {tradingLens === "scout" && tacticalSlot}
-      {tradingLens === "scout" && matrixBlock}
-      {tradingLens === "swing" && matrixBlock}
-      {tradingLens === "swing" && priorityBlock}
-      {tradingLens === "owner" && matrixBlock}
-      {tradingLens === "owner" && nudgesBlock}
-      {tradingLens === "owner" && priorityBlock}
-      {tradingLens === "scout" && priorityBlock}
-      {tradingLens === "scout" && nudgesBlock}
-      {tradingLens === "swing" && nudgesBlock}
+      {tacticalSlot}
+      {priorityBlock}
+      {matrixBlock}
+      {nudgesBlock}
       {!showPremarketProminent && (
         <PremarketMoverStrip full={preMarketFull} simple={preMarket} onTickerClick={onTickerClick} />
       )}
@@ -418,6 +440,24 @@ export function OverviewAtAGlance({
         </div>
       )}
 
+      {(market?.morning_checklist?.length ?? 0) > 0 && (
+        <ToggleSection
+          id="overview-checklist"
+          title="Today's checklist"
+          icon={<Calendar className="h-5 w-5" />}
+          defaultOpen
+        >
+          <ul className="space-y-2">
+            {market!.morning_checklist!.map((c, i) => (
+              <li key={i} className="text-sm flex gap-3 rounded-lg border border-slate-600/60 bg-slate-800/40 px-3 py-2">
+                <span className="text-sky-300 shrink-0 text-xs font-mono font-semibold min-w-[6.5rem]">{c.time}</span>
+                <span className="text-slate-100 leading-snug">{c.task}</span>
+              </li>
+            ))}
+          </ul>
+        </ToggleSection>
+      )}
+
       {market && (
         <ToggleSection
           id="overview-playbook"
@@ -425,7 +465,7 @@ export function OverviewAtAGlance({
           icon={<Shield className="h-5 w-5" />}
           defaultOpen={false}
         >
-          <RetailMarketDecisionsDeepDive data={market} macroBackdrop={macroBackdrop} />
+          <RetailMarketDecisionsDeepDive data={market} macroBackdrop={macroBackdrop} omitChecklist />
         </ToggleSection>
       )}
     </div>

@@ -71,6 +71,76 @@ function sortAlerts(list: ScanAlert[]): ScanAlert[] {
   });
 }
 
+function groupAlertsByTicker(alerts: ScanAlert[]): { key: string; ticker: string | null; alerts: ScanAlert[] }[] {
+  const map = new Map<string, ScanAlert[]>();
+  for (const a of alerts) {
+    const key = (a.ticker || "__macro__").toUpperCase();
+    const bucket = map.get(key) ?? [];
+    bucket.push(a);
+    map.set(key, bucket);
+  }
+  const groups = Array.from(map.entries()).map(([key, list]) => ({
+    key,
+    ticker: key === "__MACRO__" ? null : key,
+    alerts: sortAlerts(list),
+  }));
+  return groups.sort((a, b) => {
+    const pa = Math.min(...a.alerts.map((x) => x.priority));
+    const pb = Math.min(...b.alerts.map((x) => x.priority));
+    if (pa !== pb) return pa - pb;
+    return (a.ticker || "ZZZ").localeCompare(b.ticker || "ZZZ");
+  });
+}
+
+function TickerAlertAccordion({
+  group,
+  onTickerClick,
+  onDismiss,
+}: {
+  group: { key: string; ticker: string | null; alerts: ScanAlert[] };
+  onTickerClick?: (ticker: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(group.alerts.some((a) => isActionRequired(a.priority)));
+  const topPriority = Math.min(...group.alerts.map((a) => a.priority));
+
+  if (group.alerts.length === 1) {
+    return <AlertCard alert={group.alerts[0]} onTickerClick={onTickerClick} onDismiss={onDismiss} />;
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-700/60 bg-slate-950/20 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-800/50 touch-manipulation"
+      >
+        {open ? (
+          <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" />
+        )}
+        {group.ticker ? (
+          <span className="font-mono text-emerald-400 text-sm font-semibold">{group.ticker}</span>
+        ) : (
+          <span className="font-mono text-slate-200 text-sm font-semibold">MACRO</span>
+        )}
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 tabular-nums">
+          {group.alerts.length} alerts
+        </span>
+        <span className="text-[10px] font-bold uppercase text-amber-300/90 ml-auto">{prLabel(topPriority)}</span>
+      </button>
+      {open && (
+        <div className="p-2 pt-0 space-y-2 border-t border-slate-700/40">
+          {group.alerts.map((a) => (
+            <AlertCard key={a.id} alert={a} onTickerClick={onTickerClick} onDismiss={onDismiss} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AlertCard({
   alert: a,
   onTickerClick,
@@ -203,8 +273,13 @@ function AlertGroup({
       </button>
       {open && (
         <div className="p-2 pt-0 space-y-2 border-t border-slate-700/40">
-          {alerts.map((a) => (
-            <AlertCard key={a.id} alert={a} onTickerClick={onTickerClick} onDismiss={onDismiss} />
+          {groupAlertsByTicker(alerts).map((g) => (
+            <TickerAlertAccordion
+              key={g.key}
+              group={g}
+              onTickerClick={onTickerClick}
+              onDismiss={onDismiss}
+            />
           ))}
         </div>
       )}
@@ -328,7 +403,6 @@ export function AlertsPanel({
               )
             </span>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">{headerNote}</p>
         </div>
         <button
           type="button"
@@ -485,12 +559,15 @@ export function AlertsPanel({
         </div>
       )}
 
-      {lastAt && (
-        <p className="text-[11px] text-slate-600">
-          Last refreshed:{" "}
-          {lastAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
-        </p>
-      )}
+      <footer className="pt-2 border-t border-slate-700/50 space-y-1">
+        {lastAt && (
+          <p className="text-[11px] text-slate-600">
+            Last refreshed:{" "}
+            {lastAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
+          </p>
+        )}
+        <p className="text-[11px] text-slate-500">{headerNote}</p>
+      </footer>
     </div>
   );
 }

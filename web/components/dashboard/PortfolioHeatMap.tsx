@@ -19,9 +19,11 @@ function regimeDot(regime: string | null | undefined): string {
 export function PortfolioHeatMap({
   holdings,
   onTickerClick,
+  regimeCounts,
 }: {
   holdings: PortfolioHolding[];
   onTickerClick?: (ticker: string) => void;
+  regimeCounts?: { UP?: number; NEUTRAL?: number; DOWN?: number };
 }) {
   const items = holdings.filter((h) => h.ticker && (h.pct ?? 0) > 0);
   if (items.length === 0) return null;
@@ -30,11 +32,26 @@ export function PortfolioHeatMap({
 
   return (
     <div className="rounded-xl border border-slate-700/90 bg-slate-900/40 overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-700/80 bg-slate-900/60">
-        <h3 className="text-sm font-semibold text-slate-200">Portfolio heat map</h3>
-        <p className="text-[11px] text-slate-500 mt-1">
-          Tile size = weight · color = confidence score · dot = regime
-        </p>
+      <div className="px-4 py-3 border-b border-slate-700/80 bg-slate-900/60 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Portfolio heat map</h3>
+          <p className="text-[11px] text-slate-400 mt-1">
+            Tile size = weight · color = score · dot = regime (green up, red down)
+          </p>
+        </div>
+        {regimeCounts && (
+          <div className="flex flex-wrap gap-1.5 text-[10px] font-medium">
+            <span className="px-2 py-0.5 rounded border border-emerald-500/35 bg-emerald-950/30 text-emerald-200">
+              UP {regimeCounts.UP ?? 0}
+            </span>
+            <span className="px-2 py-0.5 rounded border border-slate-500/40 bg-slate-800/50 text-slate-300">
+              NEUTRAL {regimeCounts.NEUTRAL ?? 0}
+            </span>
+            <span className="px-2 py-0.5 rounded border border-red-500/35 bg-red-950/25 text-red-200">
+              DOWN {regimeCounts.DOWN ?? 0}
+            </span>
+          </div>
+        )}
       </div>
       <div className="p-3 sm:p-4">
         <div className="flex flex-wrap gap-1.5 min-h-[5rem]">
