@@ -3,9 +3,15 @@
 import { Activity } from "lucide-react";
 import type { MarketReversalOverlay } from "@/app/page";
 
+function overlayUnavailable(overlay: MarketReversalOverlay): boolean {
+  if (overlay.error) return true;
+  const h = (overlay.headline ?? "").toLowerCase();
+  return h.includes("need spy") || h.includes("need vix") || h.includes("unavailable") || h.includes("missing history");
+}
+
 export function MarketReversalBanner({ overlay }: { overlay: MarketReversalOverlay | null | undefined }) {
   if (!overlay || overlay.enabled === false) return null;
-  if (overlay.error && !overlay.headline) return null;
+  if (overlayUnavailable(overlay)) return null;
 
   const label = overlay.label ?? "normal";
   const border =

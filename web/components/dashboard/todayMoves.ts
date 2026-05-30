@@ -26,6 +26,8 @@ export type TodayMove = {
   id: string;
   kind: "story" | "trim" | "earnings" | "macro" | "after_hours";
   ticker?: string;
+  /** When multiple tickers share the same story, list them here. */
+  tickers?: string[];
   title: string;
   detail: string;
   storyProvenance?: StoryProvenance;
@@ -79,14 +81,39 @@ export function buildTodayMoves(input: {
     });
   }
 
+  const storyBuckets = new Map<
+    string,
+    { tickers: string[]; detail: string; sample: Signal }
+  >();
   for (const s of input.storyChanges) {
     if (!s.story_change) continue;
+    const playbook = [
+      s.short_suggestion,
+      s.medium_suggestion,
+      s.long_suggestion,
+    ]
+      .map((x) => (x ?? "").trim().toLowerCase())
+      .join("|");
+    const bucketKey = `${s.story_change.trim().toLowerCase()}::${playbook}`;
+    const existing = storyBuckets.get(bucketKey);
+    if (existing) {
+      existing.tickers.push(s.ticker);
+    } else {
+      storyBuckets.set(bucketKey, { tickers: [s.ticker], detail: s.story_change, sample: s });
+    }
+  }
+  for (const { tickers, detail } of Array.from(storyBuckets.values())) {
+    const label =
+      tickers.length > 1
+        ? `${tickers.slice(0, 4).join(" + ")}${tickers.length > 4 ? ` +${tickers.length - 4}` : ""} — story shift`
+        : `${tickers[0]} — story shift`;
     pools.story.push({
-      id: `story-${s.ticker}`,
+      id: `story-${tickers.join("-")}`,
       kind: "story",
-      ticker: s.ticker,
-      title: `${s.ticker} — story shift`,
-      detail: s.story_change,
+      ticker: tickers[0],
+      tickers,
+      title: label,
+      detail,
     });
   }
 
@@ -127,7 +154,16 @@ export function buildTodayMoves(input: {
   for (const kind of order) {
     for (const m of pools[kind]) {
       if (moves.length >= max) break;
-      if (m.ticker && moves.some((x) => x.ticker === m.ticker)) continue;
+      if (
+        m.ticker &&
+        moves.some(
+          (x) =>
+            x.ticker === m.ticker ||
+            (x.tickers?.some((t) => t === m.ticker) ?? false)
+        )
+      ) {
+        continue;
+      }
       moves.push(m);
     }
     if (moves.length >= max) break;
@@ -140,7 +176,11 @@ export function buildTodayMoves(input: {
 export function todayMoveTickers(moves: TodayMove[]): Set<string> {
   const out = new Set<string>();
   for (const m of moves) {
-    if (m.ticker) out.add(m.ticker.toUpperCase());
+    if (m.tickers?.length) {
+      for (const t of m.tickers) out.add(t.toUpperCase());
+    } else if (m.ticker) {
+      out.add(m.ticker.toUpperCase());
+    }
   }
   return out;
 }

@@ -661,23 +661,49 @@ const GATE_MINI_LABEL: Record<string, string> = {
 
 export function TradingGateMiniPills({ gates, className }: { gates: TradingGateRow[]; className?: string }) {
   const primary = filterPrimaryTradingGates(gates);
-  const locked = primary.filter((g) => !g.pass).length;
-  const allGo = locked === 0;
+  const blocked = primary.filter((g) => !g.pass);
+  const marginal = primary.filter(
+    (g) => g.pass && (g.visualStatus ?? "").toLowerCase() === "marginal"
+  );
+  const blockedCount = blocked.length;
+  const allGo = blockedCount === 0;
+
+  const summaryTitle = allGo
+    ? marginal.length > 0
+      ? `All 4 gates pass · ${marginal.length} marginal (watch sizing)`
+      : "All 4 gates pass"
+    : [
+        `${blockedCount} blocked: ${blocked.map((g) => g.label).join(", ")}`,
+        marginal.length > 0 ? `${marginal.length} marginal pass` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+  const summaryLabel = allGo
+    ? marginal.length > 0
+      ? `${marginal.length} marginal`
+      : "Go"
+    : marginal.length > 0
+      ? `${blockedCount} blocked · ${marginal.length} marginal`
+      : `${blockedCount}/4 blocked`;
 
   return (
     <div className={clsx("flex flex-wrap items-center gap-1", className)}>
       {primary.map((g) => {
         const visual = g.visualStatus ?? (g.pass ? "cleared" : "blocked");
+        const isMarginal = g.pass && visual === "marginal";
+        const glyph = !g.pass ? "✕" : isMarginal ? "!" : "✓";
+        const passLabel = !g.pass ? "Blocked" : isMarginal ? "Marginal pass" : "Pass";
         return (
         <span
           key={g.id}
-          title={`${g.label}: ${g.detail} · ${g.pass ? "Pass" : "Fail"}`}
+          title={`${g.label}: ${g.detail} · ${passLabel}`}
           className={clsx(
             "inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tabular-nums",
             retailStatusClasses(visual)
           )}
         >
-          <span aria-hidden>{g.pass ? "✓" : "✕"}</span>
+          <span aria-hidden>{glyph}</span>
           {GATE_MINI_LABEL[g.id] ?? g.label.slice(0, 3)}
         </span>
         );
@@ -685,10 +711,11 @@ export function TradingGateMiniPills({ gates, className }: { gates: TradingGateR
       <span
         className={clsx(
           "text-[9px] font-semibold uppercase",
-          allGo ? "text-emerald-400" : "text-amber-300"
+          allGo ? (marginal.length > 0 ? "text-amber-300" : "text-emerald-400") : "text-amber-300"
         )}
+        title={summaryTitle}
       >
-        {allGo ? "Go" : `${locked}/4 locked`}
+        {summaryLabel}
       </span>
     </div>
   );
@@ -706,12 +733,15 @@ export function CompactSignalActionStrip({
   oneLiner,
   variant = "card",
   onOpenDetail,
+  hideGatePills = false,
 }: {
   signal: SignalListInput;
   listContext: SignalListContext;
   oneLiner?: string | null;
   variant?: "card" | "column";
   onOpenDetail?: () => void;
+  /** When gates render in a dedicated column, omit duplicate pills here. */
+  hideGatePills?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const gates = useMemo(() => buildSignalListGates(signal, listContext), [signal, listContext]);
@@ -755,10 +785,17 @@ export function CompactSignalActionStrip({
           </button>
         )}
       </div>
-      <p className="mt-1.5 text-sm text-slate-300/95 leading-snug line-clamp-2 italic">&ldquo;{subtitle}&rdquo;</p>
-      <div className="mt-2">
-        <TradingGateMiniPills gates={gates} />
-      </div>
+      {variant !== "column" && (
+        <p className="mt-1.5 text-sm text-slate-300/95 leading-snug line-clamp-2 italic">&ldquo;{subtitle}&rdquo;</p>
+      )}
+      {variant === "column" && subtitle && (
+        <p className="mt-1 text-xs text-slate-400 leading-snug line-clamp-1">{subtitle}</p>
+      )}
+      {!hideGatePills && (
+        <div className={variant === "column" ? "mt-1.5" : "mt-2"}>
+          <TradingGateMiniPills gates={gates} />
+        </div>
+      )}
       {variant === "card" && (
         <button
           type="button"

@@ -120,6 +120,12 @@ export function TodaysMovesPanel({
             signalRow && (move.kind === "story" || move.kind === "trim")
               ? formatHorizonSuggestionsLine(signalRow)
               : null;
+          const planAction = signalRow?.plan_action?.toUpperCase() ?? "";
+          const trimAvoidClarify =
+            move.kind === "trim" &&
+            (planAction.includes("AVOID") || planAction.includes("WAIT")) &&
+            "7-layer plan says avoid new adds — “consider trim” means reduce size, not buy the dip.";
+          const tickers = move.tickers?.length ? move.tickers : move.ticker ? [move.ticker] : [];
           return (
             <div
               key={move.id}
@@ -128,14 +134,34 @@ export function TodaysMovesPanel({
               <Icon className={`h-4 w-4 shrink-0 mt-0.5 ${style.text}`} aria-hidden />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  {move.ticker && onTickerClick ? (
-                    <button
-                      type="button"
-                      onClick={() => onTickerClick(move.ticker!)}
-                      className="font-mono text-sm font-semibold text-emerald-400 hover:underline"
-                    >
-                      {move.title}
-                    </button>
+                  {tickers.length > 0 && onTickerClick ? (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {tickers.length > 1 ? (
+                        <>
+                          <span className={`text-sm font-medium ${style.text}`}>
+                            {tickers.join(" + ")} — story shift
+                          </span>
+                          {tickers.map((t) => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => onTickerClick(t)}
+                              className="font-mono text-xs font-semibold text-emerald-400 hover:underline px-1.5 py-0.5 rounded border border-slate-600/80"
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onTickerClick(tickers[0])}
+                          className="font-mono text-sm font-semibold text-emerald-400 hover:underline"
+                        >
+                          {move.title}
+                        </button>
+                      )}
+                    </div>
                   ) : (
                     <span className={`text-sm font-medium ${style.text}`}>{move.title}</span>
                   )}
@@ -147,6 +173,9 @@ export function TodaysMovesPanel({
                   />
                 </div>
                 <p className="text-xs text-slate-300 mt-0.5 leading-snug">{move.detail}</p>
+                {trimAvoidClarify && (
+                  <p className="text-[11px] text-amber-200/90 mt-1 leading-snug">{trimAvoidClarify}</p>
+                )}
                 {horizonLine && (
                   <p className="text-[10px] text-slate-400 mt-1 font-mono" title="Horizon suggestions on file — context only; alert was not triggered by a horizon flip">
                     Playbooks: {horizonLine}

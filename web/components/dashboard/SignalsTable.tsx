@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, Fragment } from "react";
 import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   CompactSignalActionStrip,
-  buildSignalListGates,
-  filterPrimaryTradingGates,
+  deriveListActionStatus,
   TradingGateMiniPills,
   type SignalListContext,
 } from "./retailActionUX";
+import {
+  groupSignalsByAction,
+  loadSignalsViewMode,
+  saveSignalsViewMode,
+  signalHasEarningsInsight,
+  signalHasLiquidity,
+  type SignalsViewMode,
+} from "@/lib/signalsTableView";
+import { gatesForSignal, tradingGateSummaryLabel } from "@/lib/signalsTableViewGates";
 import { TickerFilterBar } from "./TickerFilterBar";
 import {
   filterTickersBySource,
@@ -317,6 +326,364 @@ const POSITIONING_TOOLTIPS: Record<string, string> = {
   short: "Crowded short (CFTC): specs very short, reversal risk.",
 };
 
+function listStatusTone(light: "green" | "yellow" | "red" | "neutral"): string {
+  if (light === "green") return "text-emerald-300";
+  if (light === "red") return "text-red-300";
+  if (light === "neutral") return "text-slate-300";
+  return "text-amber-200";
+}
+
+function SignalsQuickTickerRow({
+  r,
+  gateContext,
+  tickerActions,
+  onTickerClick,
+  expanded,
+  onToggleExpand,
+  muted,
+  showEarningsCol,
+}: {
+  r: Signal;
+  gateContext: SignalListContext;
+  tickerActions?: Record<string, { action: string; one_liner: string }>;
+  onTickerClick?: (ticker: string) => void;
+  expanded: boolean;
+  onToggleExpand: (ticker: string, e: React.MouseEvent) => void;
+  muted?: boolean;
+  showEarningsCol: boolean;
+}) {
+  const gates = gatesForSignal(r, gateContext);
+  const status = deriveListActionStatus(r);
+  const colSpan = 3 + (showEarningsCol ? 1 : 0);
+
+  return (
+    <>
+      <tr
+        className={clsx(
+          "group border-t border-slate-700/50 hover:bg-slate-800/40 cursor-pointer",
+          r.story_change && "bg-amber-500/5",
+          muted && "opacity-80"
+        )}
+        onClick={() => onTickerClick?.(r.ticker)}
+      >
+        <td
+          className={clsx(
+            "sticky left-0 z-[10] min-w-[4.5rem] w-24 px-3 py-1.5 border-r border-slate-700/70",
+            r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
+          )}
+        >
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => onToggleExpand(r.ticker, e)}
+              className="p-0.5 text-slate-500 hover:text-slate-200"
+              aria-label={expanded ? "Collapse" : "Expand gates"}
+            >
+              {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onTickerClick?.(r.ticker);
+              }}
+              className="font-mono font-medium text-emerald-400 hover:underline text-sm"
+            >
+              {r.ticker}
+            </button>
+            <CatalystBadge catalyst={r.catalyst} />
+          </div>
+        </td>
+        <td
+          className={clsx(
+            "sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-1.5 border-r border-slate-700/70 text-slate-300 tabular-nums text-sm",
+            r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
+          )}
+        >
+          {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
+        </td>
+        <td className="px-3 py-1.5 align-middle">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(status.light))}>
+              {status.title}
+            </span>
+            <span className="text-[10px] font-mono text-slate-500">{tradingGateSummaryLabel(gates)}</span>
+          </div>
+        </td>
+        {showEarningsCol && (
+          <td className="px-3 py-1.5 align-middle text-xs">
+            <EarningsCell signal={r} />
+          </td>
+        )}
+      </tr>
+      {expanded && (
+        <tr className="border-t border-slate-800/80 bg-slate-950/50">
+          <td colSpan={colSpan} className="px-3 py-2">
+            <CompactSignalActionStrip
+              signal={r}
+              listContext={gateContext}
+              oneLiner={tickerActions?.[r.ticker]?.one_liner}
+              variant="card"
+              onOpenDetail={() => onTickerClick?.(r.ticker)}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function SignalsMobileQuickCard({
+  r,
+  gateContext,
+  tickerActions,
+  onTickerClick,
+  expanded,
+  onToggleExpand,
+  muted,
+  showEarningsCol,
+}: {
+  r: Signal;
+  gateContext: SignalListContext;
+  tickerActions?: Record<string, { action: string; one_liner: string }>;
+  onTickerClick?: (ticker: string) => void;
+  expanded: boolean;
+  onToggleExpand: (ticker: string, e: React.MouseEvent) => void;
+  muted?: boolean;
+  showEarningsCol: boolean;
+}) {
+  const gates = gatesForSignal(r, gateContext);
+  const status = deriveListActionStatus(r);
+
+  return (
+    <div
+      className={clsx(
+        "px-4 py-2.5",
+        r.story_change && "bg-amber-500/5",
+        muted && "bg-slate-900/40"
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={(e) => onToggleExpand(r.ticker, e)}
+            className="p-1 text-slate-500 hover:text-slate-200 touch-manipulation shrink-0"
+            aria-label={expanded ? "Collapse gates" : "Expand gates"}
+          >
+            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => onTickerClick?.(r.ticker)}
+            className="font-mono font-semibold text-emerald-400 text-base hover:underline touch-manipulation truncate"
+          >
+            {r.ticker}
+          </button>
+          <CatalystBadge catalyst={r.catalyst} />
+        </div>
+        <span className="text-slate-300 text-sm tabular-nums shrink-0">
+          {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
+        </span>
+      </div>
+      <div className="mt-1 pl-8 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(status.light))}>
+          {status.title}
+        </span>
+        <span className="text-[10px] font-mono text-slate-500">{tradingGateSummaryLabel(gates)}</span>
+      </div>
+      {r.story_change && (
+        <p className="mt-1 pl-8 text-amber-400/90 text-xs line-clamp-2 leading-snug">{r.story_change}</p>
+      )}
+      {showEarningsCol && (
+        <div className="mt-1 pl-8">
+          <EarningsCell signal={r} />
+        </div>
+      )}
+      {expanded && (
+        <div className="mt-2 pl-8">
+          <CompactSignalActionStrip
+            signal={r}
+            listContext={gateContext}
+            oneLiner={tickerActions?.[r.ticker]?.one_liner}
+            variant="card"
+            onOpenDetail={() => onTickerClick?.(r.ticker)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignalsMobileFullCard({
+  r,
+  gateContext,
+  tickerActions,
+  onTickerClick,
+  openMobileTicker,
+  setOpenMobileTicker,
+  h,
+  showEarningsCol,
+  showModelDetail,
+}: {
+  r: Signal;
+  gateContext: SignalListContext;
+  tickerActions?: Record<string, { action: string; one_liner: string }>;
+  onTickerClick?: (ticker: string) => void;
+  openMobileTicker: string | null;
+  setOpenMobileTicker: React.Dispatch<React.SetStateAction<string | null>>;
+  h: { short_term: string; medium_term: string; long_term: string };
+  showEarningsCol: boolean;
+  showModelDetail: boolean;
+}) {
+  return (
+    <div
+      className={clsx(
+        "px-4 py-3",
+        r.story_change && "bg-amber-500/5",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={() => onTickerClick?.(r.ticker)}
+          className="font-mono font-semibold text-emerald-400 text-base hover:underline text-left touch-manipulation"
+        >
+          {r.ticker}
+        </button>
+        <CatalystBadge catalyst={r.catalyst} />
+        <div className="flex flex-col items-end gap-0.5">
+          <div className="flex items-center gap-2">
+            {r.plan_action ? (
+              <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />
+            ) : tickerActions?.[r.ticker] ? (
+              <span
+                className={clsx(
+                  "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                  RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600",
+                  RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300"
+                )}
+                title={tickerActions[r.ticker].one_liner}
+              >
+                {tickerActions[r.ticker].action}
+              </span>
+            ) : null}
+            <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
+          </div>
+          {r.risk_sizing && (
+            <span className="text-[10px] text-slate-500" title="Risk budget if stop hits">
+              Risk ~$
+              {(r.risk_sizing.risk_budget_dollars != null
+                ? r.risk_sizing.risk_budget_dollars
+                : Math.round((r.risk_sizing.size_dollars * r.risk_sizing.stop_pct) / 100)
+              ).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
+              · {r.risk_sizing.shares} sh · {r.risk_sizing.stop_pct}% stop
+            </span>
+          )}
+        </div>
+      </div>
+      {showModelDetail && (
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          <span
+            className={clsx(
+              "font-medium text-sm",
+              (r.confluence_score ?? r.composite_buy ?? 0) >= 65 && "text-emerald-400",
+              (r.confluence_score ?? r.composite_buy ?? 0) <= 35 && "text-red-400",
+              (r.confluence_score ?? r.composite_buy ?? 0) > 35 &&
+                (r.confluence_score ?? r.composite_buy ?? 0) < 65 &&
+                "text-slate-300"
+            )}
+          >
+            {((r.confluence_score ?? r.composite_buy) != null
+              ? (r.confluence_score ?? r.composite_buy)!.toFixed(0)
+              : "-")}
+            <span className="text-slate-600"> cf</span>
+          </span>
+          <MLProbPill prob={r.ml_short_prob} />
+          <span
+            className={clsx(
+              "px-2 py-0.5 rounded text-xs font-medium",
+              r.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
+              r.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
+              r.regime === "DOWN" && "bg-red-500/20 text-red-400"
+            )}
+          >
+            {r.regime ?? "-"}
+          </span>
+          <SignalBadge signal={r.signal} />
+          {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
+        </div>
+      )}
+      {r.earnings_note && <p className="text-amber-400 text-xs mt-1">{r.earnings_note}</p>}
+      {showEarningsCol && (
+        <div className="mt-1">
+          <EarningsCell signal={r} />
+        </div>
+      )}
+      {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
+      <div className="mt-2">
+        <CompactSignalActionStrip
+          signal={r}
+          listContext={gateContext}
+          oneLiner={tickerActions?.[r.ticker]?.one_liner}
+          variant="card"
+          onOpenDetail={() => onTickerClick?.(r.ticker)}
+        />
+      </div>
+      <button
+        type="button"
+        className="mt-2 w-full flex items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800/70 touch-manipulation"
+        aria-expanded={openMobileTicker === r.ticker}
+        onClick={() => setOpenMobileTicker((t) => (t === r.ticker ? null : r.ticker))}
+      >
+        <span>
+          Levels &amp; horizons ({h.short_term} / {h.medium_term} / {h.long_term})
+        </span>
+        <span className="text-slate-500 tabular-nums">{openMobileTicker === r.ticker ? "−" : "+"}</span>
+      </button>
+      {openMobileTicker === r.ticker && (
+        <div className="mt-2 space-y-1.5 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-[11px] text-slate-300 leading-snug">
+          <div className="flex gap-1.5">
+            <span className="text-slate-600 shrink-0 w-7">ST</span>
+            <span className="min-w-0">{r.short_suggestion || "—"}</span>
+          </div>
+          <div className="flex gap-1.5">
+            <span className="text-slate-600 shrink-0 w-7">MT</span>
+            <span className="min-w-0">{r.medium_suggestion || "—"}</span>
+          </div>
+          <div className="flex gap-1.5">
+            <span className="text-slate-600 shrink-0 w-7">LT</span>
+            <span className="min-w-0">{r.long_suggestion || "—"}</span>
+          </div>
+          {(r.st_band || r.mt_band || r.lt_band) && (
+            <div
+              className="text-[10px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5"
+              title="ST: stop–target. MT: vol band. LT: fair+consensus"
+            >
+              {r.st_band && (
+                <span className="block font-mono">
+                  ${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)} ST band
+                </span>
+              )}
+              {r.mt_band && (
+                <span className="block font-mono">
+                  ${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)} MT band
+                </span>
+              )}
+              {r.lt_band && (
+                <span className="block font-mono">
+                  ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)} LT
+                  {r.lt_band_low_confidence && " (low conf)"}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SignalsTable({
   signals,
   horizons,
@@ -347,6 +714,9 @@ export function SignalsTable({
   const [scoreRsiDir, setScoreRsiDir] = useState<"asc" | "desc">("desc");
   const [openMobileTicker, setOpenMobileTicker] = useState<string | null>(null);
   const [showModelDetail, setShowModelDetail] = useState(false);
+  const [viewMode, setViewMode] = useState<SignalsViewMode>("quick");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const [expandedTickers, setExpandedTickers] = useState<Set<string>>(() => new Set());
   const [preset, setPreset] = useState<SignalsPresetId>("all");
   const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
 
@@ -373,6 +743,7 @@ export function SignalsTable({
   };
 
   useEffect(() => {
+    setViewMode(loadSignalsViewMode());
     try {
       const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_MODEL_DETAIL_KEY) : null;
       if (raw === "1") setShowModelDetail(true);
@@ -380,6 +751,12 @@ export function SignalsTable({
       /* ignore */
     }
   }, []);
+
+  const applyViewMode = (mode: SignalsViewMode) => {
+    setViewMode(mode);
+    saveSignalsViewMode(mode);
+    if (mode === "quick") setShowModelDetail(false);
+  };
 
   const toggleModelDetail = () => {
     setShowModelDetail((v) => {
@@ -458,6 +835,52 @@ export function SignalsTable({
     return arr;
   }, [filtered, sortBy, scoreRsiDir]);
 
+  const showLiquidityCol = useMemo(() => sorted.some(signalHasLiquidity), [sorted]);
+  const showEarningsCol = useMemo(() => sorted.some(signalHasEarningsInsight), [sorted]);
+  const earningsDataGap = useMemo(
+    () =>
+      sorted.length >= 4 &&
+      !showEarningsCol &&
+      sorted.some((r) => (r.earnings_quality?.flags ?? []).some((f) => /unavailable/i.test(f))),
+    [sorted, showEarningsCol]
+  );
+
+  const actionGroups = useMemo(
+    () => (viewMode === "quick" ? groupSignalsByAction(sorted, gateContext, tickerActions) : null),
+    [viewMode, sorted, gateContext, tickerActions]
+  );
+
+  useEffect(() => {
+    if (viewMode !== "quick" || !actionGroups) return;
+    const next = new Set<string>();
+    for (const g of actionGroups) {
+      if (g.rows.length > 1) next.add(g.key);
+    }
+    setCollapsedGroups(next);
+    setExpandedTickers(new Set());
+  }, [actionGroups, viewMode, preset, sourceFilter]);
+
+  const toggleGroup = useCallback((key: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const toggleTickerExpand = useCallback((ticker: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setExpandedTickers((prev) => {
+      const next = new Set(prev);
+      if (next.has(ticker)) next.delete(ticker);
+      else next.add(ticker);
+      return next;
+    });
+  }, []);
+
+  const isQuick = viewMode === "quick";
+
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700 space-y-2">
@@ -475,9 +898,36 @@ export function SignalsTable({
         />
         <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate flex-1">
-          {showModelDetail ? sortHint : "Retail view — Now · Action is the official read."}
+          {isQuick
+            ? "Quick view — compact rows; click a ticker to expand gates. Identical actions are grouped."
+            : showModelDetail
+              ? sortHint
+              : "Full detail — Now · Action + gate pills (official read)."}
         </p>
         <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <div className="flex rounded border border-slate-600 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => applyViewMode("quick")}
+              className={clsx(
+                "text-xs px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 touch-manipulation",
+                isQuick ? "bg-emerald-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800"
+              )}
+            >
+              Quick view
+            </button>
+            <button
+              type="button"
+              onClick={() => applyViewMode("full")}
+              className={clsx(
+                "text-xs px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 touch-manipulation",
+                !isQuick ? "bg-emerald-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800"
+              )}
+            >
+              Full detail
+            </button>
+          </div>
+          {!isQuick && (
           <button
             type="button"
             onClick={toggleModelDetail}
@@ -490,6 +940,7 @@ export function SignalsTable({
           >
             {showModelDetail ? "Retail view" : "Model detail"}
           </button>
+          )}
           <span className="text-xs text-slate-400">Sort:</span>
           <select
             value={sortBy}
@@ -504,141 +955,100 @@ export function SignalsTable({
         </select>
         </div>
         </div>
+        {earningsDataGap && (
+          <p className="text-[11px] text-slate-500 border border-slate-600/60 rounded-md px-2.5 py-1.5 bg-slate-800/40">
+            Earnings quality (EQ) is not available from the data source right now — column hidden to reduce noise.
+          </p>
+        )}
       </div>
 
       {/* Mobile: card list */}
       <div className="md:hidden divide-y divide-slate-700/50">
-        {sorted.map((r) => (
-          <div
-            key={r.ticker}
-            className={clsx(
-              "px-4 py-3",
-              r.story_change && "bg-amber-500/5",
-            )}
-          >
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <button
-                type="button"
-                onClick={() => onTickerClick?.(r.ticker)}
-                className="font-mono font-semibold text-emerald-400 text-base hover:underline text-left touch-manipulation"
-              >
-                {r.ticker}
-              </button>
-              <CatalystBadge catalyst={r.catalyst} />
-              <div className="flex flex-col items-end gap-0.5">
-                <div className="flex items-center gap-2">
-                  {r.plan_action ? (
-                    <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />
-                  ) : tickerActions?.[r.ticker] ? (
-                    <span
-                      className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600", RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300")}
-                      title={tickerActions[r.ticker].one_liner}
-                    >
-                      {tickerActions[r.ticker].action}
-                    </span>
-                  ) : null}
-                  <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
-                </div>
-                {r.risk_sizing && (
-                  <span className="text-[10px] text-slate-500" title="Risk budget if stop hits">
-                    Risk ~$
-                    {(r.risk_sizing.risk_budget_dollars != null
-                      ? r.risk_sizing.risk_budget_dollars
-                      : Math.round((r.risk_sizing.size_dollars * r.risk_sizing.stop_pct) / 100)
-                    ).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
-                    · {r.risk_sizing.shares} sh · {r.risk_sizing.stop_pct}% stop
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className={clsx(
-                "font-medium text-sm",
-                (r.confluence_score ?? r.composite_buy ?? 0) >= 65 && "text-emerald-400",
-                (r.confluence_score ?? r.composite_buy ?? 0) <= 35 && "text-red-400",
-                (r.confluence_score ?? r.composite_buy ?? 0) > 35 && (r.confluence_score ?? r.composite_buy ?? 0) < 65 && "text-slate-300"
-              )}>
-                {((r.confluence_score ?? r.composite_buy) != null
-                  ? (r.confluence_score ?? r.composite_buy)!.toFixed(0)
-                  : "-")}<span className="text-slate-600"> cf</span>
-              </span>
-              <MLProbPill prob={r.ml_short_prob} />
-              <span className={clsx(
-                "px-2 py-0.5 rounded text-xs font-medium",
-                r.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
-                r.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
-                r.regime === "DOWN" && "bg-red-500/20 text-red-400"
-              )}>
-                {r.regime ?? "-"}
-              </span>
-              <span className="text-[9px] text-slate-600 uppercase tracking-wide">Confluence tier</span>
-              <SignalBadge signal={r.signal} />
-              {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
-            </div>
-            {r.earnings_note && <p className="text-amber-400 text-xs mt-1">{r.earnings_note}</p>}
-            <div className="mt-1">
-              <EarningsCell signal={r} />
-            </div>
-            {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
-            <div className="mt-2">
-              <CompactSignalActionStrip
-                signal={r}
-                listContext={gateContext}
-                oneLiner={tickerActions?.[r.ticker]?.one_liner}
-                variant="card"
-                onOpenDetail={() => onTickerClick?.(r.ticker)}
-              />
-            </div>
-            <button
-              type="button"
-              className="mt-2 w-full flex items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800/70 touch-manipulation"
-              aria-expanded={openMobileTicker === r.ticker}
-              onClick={() =>
-                setOpenMobileTicker((t) => (t === r.ticker ? null : r.ticker))
+        {isQuick && actionGroups
+          ? actionGroups.map((group) => {
+              const collapsed = collapsedGroups.has(group.key);
+              const multi = group.rows.length > 1;
+              if (!multi) {
+                const r = group.rows[0];
+                return (
+                  <SignalsMobileQuickCard
+                    key={r.ticker}
+                    r={r}
+                    gateContext={gateContext}
+                    tickerActions={tickerActions}
+                    onTickerClick={onTickerClick}
+                    expanded={expandedTickers.has(r.ticker)}
+                    onToggleExpand={toggleTickerExpand}
+                    showEarningsCol={showEarningsCol}
+                  />
+                );
               }
-            >
-              <span>Levels &amp; horizons ({h.short_term} / {h.medium_term} / {h.long_term})</span>
-              <span className="text-slate-500 tabular-nums">{openMobileTicker === r.ticker ? "−" : "+"}</span>
-            </button>
-            {openMobileTicker === r.ticker && (
-              <div className="mt-2 space-y-1.5 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-[11px] text-slate-300 leading-snug">
-                <div className="flex gap-1.5">
-                  <span className="text-slate-600 shrink-0 w-7">ST</span>
-                  <span className="min-w-0">{r.short_suggestion || "—"}</span>
-                </div>
-                <div className="flex gap-1.5">
-                  <span className="text-slate-600 shrink-0 w-7">MT</span>
-                  <span className="min-w-0">{r.medium_suggestion || "—"}</span>
-                </div>
-                <div className="flex gap-1.5">
-                  <span className="text-slate-600 shrink-0 w-7">LT</span>
-                  <span className="min-w-0">{r.long_suggestion || "—"}</span>
-                </div>
-                {(r.st_band || r.mt_band || r.lt_band) && (
-                  <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5" title="ST: stop–target. MT: vol band. LT: fair+consensus">
-                    {r.st_band && (
-                      <span className="block font-mono">${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)} ST band</span>
+              return (
+                <Fragment key={group.key}>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    className="w-full px-4 py-2.5 flex items-center gap-2 text-left bg-slate-800/50 hover:bg-slate-800/80 touch-manipulation"
+                  >
+                    {collapsed ? (
+                      <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
                     )}
-                    {r.mt_band && (
-                      <span className="block font-mono">${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)} MT band</span>
+                    <span
+                      className={clsx(
+                        "text-xs font-bold uppercase tracking-wide",
+                        listStatusTone(deriveListActionStatus(group.rows[0]).light)
+                      )}
+                    >
+                      {group.title}
+                    </span>
+                    <span className="text-[10px] text-slate-500">({group.rows.length})</span>
+                    {group.subtitle && (
+                      <span className="text-xs text-slate-400 truncate flex-1 min-w-0">— {group.subtitle}</span>
                     )}
-                    {r.lt_band && (
-                      <span className="block font-mono">
-                        ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)} LT
-                        {r.lt_band_low_confidence && " (low conf)"}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ))}
+                  </button>
+                  {!collapsed &&
+                    group.rows.map((r) => (
+                      <SignalsMobileQuickCard
+                        key={r.ticker}
+                        r={r}
+                        gateContext={gateContext}
+                        tickerActions={tickerActions}
+                        onTickerClick={onTickerClick}
+                        expanded={expandedTickers.has(r.ticker)}
+                        onToggleExpand={toggleTickerExpand}
+                        muted
+                        showEarningsCol={showEarningsCol}
+                      />
+                    ))}
+                </Fragment>
+              );
+            })
+          : sorted.map((r) => (
+              <SignalsMobileFullCard
+                key={r.ticker}
+                r={r}
+                gateContext={gateContext}
+                tickerActions={tickerActions}
+                onTickerClick={onTickerClick}
+                openMobileTicker={openMobileTicker}
+                setOpenMobileTicker={setOpenMobileTicker}
+                h={h}
+                showEarningsCol={showEarningsCol}
+                showModelDetail={showModelDetail}
+              />
+            ))}
       </div>
 
       {/* Desktop: table with sticky header + sticky first column */}
       <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className={clsx("w-full text-sm border-collapse", showModelDetail ? "min-w-[1380px]" : "min-w-[820px]")}>
+        <table
+          className={clsx(
+            "w-full text-sm border-collapse",
+            showModelDetail ? "min-w-[1380px]" : isQuick ? "min-w-[520px]" : "min-w-[720px]"
+          )}
+        >
           <thead>
             <tr className="text-left text-base text-slate-400">
               <th
@@ -658,29 +1068,39 @@ export function SignalsTable({
                 Close
               </th>
               <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[14rem]"
-                title="Official read — behavioral action + trading gate checklist (same as ticker One Answer tab)"
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[12rem]"
+                title={
+                  isQuick
+                    ? "Action label + gate pass count — expand row for full checklist"
+                    : "Official read — behavioral action (gates in next column)"
+                }
               >
-                Now · Action
+                {isQuick ? "Action · Gates" : "Now · Action"}
               </th>
+              {!isQuick && (
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[8rem]"
                 title="Valuation / regime / momentum / ML gate pills"
               >
                 Gates
               </th>
+              )}
+              {!isQuick && showLiquidityCol && (
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[4.5rem]"
                 title="Days to exit at 20% of average daily volume (risk-sized shares or $5k probe)"
               >
                 Liquidity
               </th>
+              )}
+              {showEarningsCol && (
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left"
                 title="Earnings caution window, days to report, and FMP-based earnings quality (EQ) when available"
               >
                 Earnings
               </th>
+              )}
               {showModelDetail && (
                 <>
               <th
@@ -764,7 +1184,73 @@ export function SignalsTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r) => (
+            {isQuick && actionGroups
+              ? actionGroups.map((group) => {
+                  const collapsed = collapsedGroups.has(group.key);
+                  const multi = group.rows.length > 1;
+                  if (!multi) {
+                    const r = group.rows[0];
+                    return (
+                      <SignalsQuickTickerRow
+                        key={r.ticker}
+                        r={r}
+                        gateContext={gateContext}
+                        tickerActions={tickerActions}
+                        onTickerClick={onTickerClick}
+                        expanded={expandedTickers.has(r.ticker)}
+                        onToggleExpand={toggleTickerExpand}
+                        showEarningsCol={showEarningsCol}
+                      />
+                    );
+                  }
+                  return (
+                    <Fragment key={group.key}>
+                      <tr className="border-t border-slate-700/60 bg-slate-800/40">
+                        <td colSpan={3 + (showEarningsCol ? 1 : 0)} className="px-3 py-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(group.key)}
+                            className="w-full flex items-center gap-2 text-left hover:bg-slate-800/50 rounded-md px-1 py-0.5 touch-manipulation"
+                          >
+                            {collapsed ? (
+                              <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
+                            )}
+                            <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(deriveListActionStatus(group.rows[0]).light))}>
+                              {group.title}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              ({group.rows.length} tickers)
+                            </span>
+                            {group.subtitle && (
+                              <span className="text-xs text-slate-400 truncate flex-1 min-w-0">
+                                — {group.subtitle}
+                              </span>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                      {!collapsed &&
+                        group.rows.map((r) => (
+                          <SignalsQuickTickerRow
+                            key={r.ticker}
+                            r={r}
+                            gateContext={gateContext}
+                            tickerActions={tickerActions}
+                            onTickerClick={onTickerClick}
+                            expanded={expandedTickers.has(r.ticker)}
+                            onToggleExpand={toggleTickerExpand}
+                            muted
+                            showEarningsCol={showEarningsCol}
+                          />
+                        ))}
+                    </Fragment>
+                  );
+                })
+              : null}
+            {!isQuick &&
+            sorted.map((r) => (
               <tr
                 key={r.ticker}
                 className={clsx(
@@ -819,17 +1305,22 @@ export function SignalsTable({
                     listContext={gateContext}
                     oneLiner={tickerActions?.[r.ticker]?.one_liner}
                     variant="column"
+                    hideGatePills
                   />
                 </td>
                 <td className="px-3 py-2.5 align-top">
-                  <TradingGateMiniPills gates={filterPrimaryTradingGates(buildSignalListGates(r, gateContext))} />
+                  <TradingGateMiniPills gates={gatesForSignal(r, gateContext)} />
                 </td>
+                {showLiquidityCol && (
                 <td className="px-3 py-2.5 align-top">
                   <LiquidityCell signal={r} />
                 </td>
+                )}
+                {showEarningsCol && (
                 <td className="px-3 py-2.5 align-top text-xs">
                   <EarningsCell signal={r} />
                 </td>
+                )}
                 {showModelDetail && (
                   <>
                 <td
