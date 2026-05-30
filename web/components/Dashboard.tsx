@@ -166,28 +166,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [activeTab, setActiveTabState] = useState<TabId>("overview");
   const [overviewAlertCount, setOverviewAlertCount] = useState<number | null>(null);
   const [overviewAlertActionCount, setOverviewAlertActionCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    const url = API_BASE ? `${API_BASE}/api/scanner/alerts?limit=80` : "/api/scanner/alerts?limit=80";
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((j) => {
-        if (cancelled) return;
-        const list = Array.isArray(j) ? j : [];
-        const action = list.filter((a: { priority?: number }) => a.priority === 1 || a.priority === 2).length;
-        setOverviewAlertCount(list.length);
-        setOverviewAlertActionCount(action);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setOverviewAlertCount(0);
-          setOverviewAlertActionCount(0);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
   const [lazySignals, setLazySignals] = useState<Signal[] | null>(null);
   const [signalsFetchErr, setSignalsFetchErr] = useState<string | null>(null);
@@ -784,12 +762,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 id="overview-alerts"
                 title="Alerts"
                 icon={<AlertTriangle />}
+                keepMounted
                 badge={
-                  overviewAlertActionCount > 0
-                    ? overviewAlertActionCount
-                    : overviewAlertCount != null && overviewAlertCount > 0
-                      ? overviewAlertCount
-                      : undefined
+                  overviewAlertCount != null && overviewAlertCount > 0
+                    ? overviewAlertActionCount > 0
+                      ? overviewAlertActionCount
+                      : overviewAlertCount
+                    : undefined
                 }
                 defaultOpen={overviewAlertActionCount > 0}
               >

@@ -455,6 +455,7 @@ class SignalEvaluator:
                 "macroFlag": macro_flag,
                 "price": snap.price,
                 "supportLevel": snap.support_level,
+                "track": alert_track_for_type(alert_type),
             },
             scan_tier=snap.scan_tier,
             surface_to_all=SURFACING_THRESHOLDS[alert_type].surface_to_all,

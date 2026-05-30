@@ -11,6 +11,8 @@ interface Props {
   defaultOpen?: boolean;
   badge?: string | number | null;
   className?: string;
+  /** Keep children mounted when collapsed (avoids refetch flicker for AlertsPanel). */
+  keepMounted?: boolean;
   children: React.ReactNode;
 }
 
@@ -21,6 +23,7 @@ export function ToggleSection({
   defaultOpen = true,
   badge,
   className,
+  keepMounted = false,
   children,
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
@@ -55,7 +58,9 @@ export function ToggleSection({
           )}
         </div>
       </button>
-      {open && <div className="p-3 sm:p-5 pt-0">{children}</div>}
+      {(open || keepMounted) && (
+        <div className={clsx("p-3 sm:p-5 pt-0", !open && keepMounted && "hidden")}>{children}</div>
+      )}
     </section>
   );
 }

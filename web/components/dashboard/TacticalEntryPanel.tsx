@@ -37,9 +37,9 @@ export function TacticalEntryPanel({
   const triggered = Boolean(payload.active || payload.velocity_triggered);
   const show =
     payload.show_panel ??
-    triggered ||
-    (payload.velocity_score != null && payload.velocity_score >= 40) ||
-    payload.track === "velocity";
+    (triggered ||
+      (payload.velocity_score != null && payload.velocity_score >= 40) ||
+      payload.track === "velocity");
   if (!show) return null;
 
   const horizon = payload.horizon_trading_days ?? 5;

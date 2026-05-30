@@ -221,17 +221,15 @@ export function AlertsPanel({
 
   const base = useCallback((path: string) => (API_BASE ? `${API_BASE}${path}` : path), []);
 
-  const fetchAlerts = useCallback(async () => {
-    setLoading(true);
+  const fetchAlerts = useCallback(async (opts?: { silent?: boolean }) => {
     setError(null);
+    if (!opts?.silent) setLoading(true);
     try {
       const res = await fetch(base("/api/scanner/alerts?limit=80"));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as ScanAlert[];
       const list = sortAlerts(Array.isArray(json) ? json : []);
-      const actionRequired = list.filter((a) => isActionRequired(a.priority)).length;
       setAlerts(list);
-      onLoadedRef.current?.(list.length, actionRequired);
       setLastAt(new Date());
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed";
@@ -248,7 +246,7 @@ export function AlertsPanel({
   useEffect(() => {
     const minutes = isScannerHours() ? 1 : 0;
     if (!minutes) return;
-    const id = setInterval(fetchAlerts, minutes * 60 * 1000);
+    const id = setInterval(() => fetchAlerts({ silent: true }), minutes * 60 * 1000);
     return () => clearInterval(id);
   }, [fetchAlerts]);
 
@@ -259,12 +257,7 @@ export function AlertsPanel({
       } catch {
         // ignore
       } finally {
-        setAlerts((prev) => {
-          const next = prev.filter((x) => x.id !== id);
-          const actionRequired = next.filter((a) => isActionRequired(a.priority)).length;
-          onLoadedRef.current?.(next.length, actionRequired);
-          return next;
-        });
+        setAlerts((prev) => prev.filter((x) => x.id !== id));
       }
     },
     [base],
@@ -319,13 +312,17 @@ export function AlertsPanel({
             {watchCount > 0 && (
               <span className="text-xs text-slate-500 tabular-nums">{watchCount} watch soon</span>
             )}
-            <span className="text-xs text-slate-600 tabular-nums">({visibleAlerts.length} shown)</span>
+            <span className="text-xs text-slate-600 tabular-nums">
+              ({visibleAlerts.length} shown
+              {alerts.length > visibleAlerts.length ? ` · ${alerts.length - visibleAlerts.length} hidden by track filter` : ""}
+              )
+            </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-1">{headerNote}</p>
         </div>
         <button
           type="button"
-          onClick={fetchAlerts}
+          onClick={() => fetchAlerts()}
           className={clsx(
             "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs shrink-0 touch-manipulation",
             "border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50",
