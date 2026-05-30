@@ -600,6 +600,11 @@ evaluation:
   horizons_trading_days: [21, 63, 126, 252]  # ~1m / ~3m / ~6m / ~12m; compare to ML horizons 20/60/120 in code
   default_step: 5
   spy_ticker: SPY
+  # Primary gates on walk-forward panel (scripts/backtest_gates.py, run_evaluation_harness.py)
+  gate_backtest:
+    enabled: true
+    predict_ml: false          # true = LightGBM inference per bar (slow; enables ML gate)
+    include_confidence_gate: false  # live UI uses 4 gates; set true for 5th confidence gate
 
 # Fair value — SPY uses earnings-yield (rf+ERP) on ETF EPS; single names use fair_value_estimator multi-method
 fair_value:

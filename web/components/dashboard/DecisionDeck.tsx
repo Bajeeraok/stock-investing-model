@@ -16,6 +16,24 @@ import {
   primaryHorizonFromMode,
   horizonLabel,
 } from "@/lib/decisionMode";
+import type { RetailActionPayload } from "./retailActionUX";
+
+type NextTriggerInput = RetailActionPayload["next_trigger"] | string | null | undefined;
+
+function formatNextTriggerText(trigger: NextTriggerInput): string | null {
+  if (trigger == null) return null;
+  if (typeof trigger === "string") {
+    const t = trigger.trim();
+    return t || null;
+  }
+  const parts: string[] = [];
+  if (trigger.headline?.trim()) parts.push(trigger.headline.trim());
+  if (trigger.detail?.trim()) parts.push(trigger.detail.trim());
+  if (trigger.estimated_days != null && trigger.estimated_days > 0) {
+    parts.push(`~${trigger.estimated_days}d`);
+  }
+  return parts.length ? parts.join(" — ") : null;
+}
 
 function entryBandPct(price: number, low: number, high: number): { inside: boolean; line: string } {
   const lo = Math.min(low, high);
@@ -109,11 +127,12 @@ export function DecisionDeck({
   const ez = resolveEntryZone(mode, short, medium, long, currentPrice);
   const band = ez ? entryBandPct(currentPrice, ez.low, ez.high) : null;
 
-  const nextTrigger =
+  const nextTriggerText = formatNextTriggerText(
     retail_action?.next_trigger ??
-    one_answer?.next_trigger ??
-    primary.trigger_buy ??
-    null;
+      one_answer?.next_trigger ??
+      primary.trigger_buy ??
+      null
+  );
 
   const nextLabelClass =
     mode === "scout" ? "text-cyan-300/90" : mode === "swing" ? "text-violet-300/90" : "text-emerald-300/90";
@@ -180,10 +199,10 @@ export function DecisionDeck({
             </div>
           )}
         </div>
-        {nextTrigger && (
+        {nextTriggerText && (
           <p className="text-xs text-slate-400 leading-snug border-t border-slate-700/60 pt-2">
             <span className={clsx("font-semibold", nextLabelClass)}>Next: </span>
-            {String(nextTrigger).length > 160 ? `${String(nextTrigger).slice(0, 157)}…` : nextTrigger}
+            {nextTriggerText.length > 160 ? `${nextTriggerText.slice(0, 157)}…` : nextTriggerText}
           </p>
         )}
         {one_answer?.bottom_line && (

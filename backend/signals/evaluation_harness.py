@@ -157,6 +157,10 @@ def build_evaluation_panel(
             if isinstance(sty_meta, dict) and sty_meta.get("acf_lag1") is not None:
                 rec["acf_lag1"] = sty_meta.get("acf_lag1")
 
+            rsi_val = None
+            if pd.notna(last.get("rsi")):
+                rsi_val = float(last["rsi"])
+
             for h in horizons:
                 fr = _forward_return_pct(close, i, h)
                 rec[f"fwd_{h}d_pct"] = fr
@@ -168,6 +172,27 @@ def build_evaluation_panel(
                     rec[f"fwd_vol_adj_{h}d"] = None
                 bh = _baseline_ma200(close, i, h)
                 rec[f"baseline_ma200_fwd_{h}d_pct"] = bh
+
+            gb_cfg = (config.get("evaluation") or {}).get("gate_backtest") or {}
+            if gb_cfg.get("enabled", True):
+                try:
+                    from signals.gate_backtest import enrich_row_with_gates
+
+                    enrich_row_with_gates(
+                        rec,
+                        close=c0,
+                        sig=sig,
+                        regime_bull_pct=rb,
+                        rsi=rsi_val,
+                        indicator_row=last,
+                        ticker=sym,
+                        market_regime_bull_pct=rb,
+                        predict_ml=bool(gb_cfg.get("predict_ml", False)),
+                        close_series=c_slice,
+                        include_confidence_gate=bool(gb_cfg.get("include_confidence_gate", False)),
+                    )
+                except Exception:
+                    pass
 
             rows.append(rec)
 

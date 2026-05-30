@@ -23,6 +23,7 @@ from signals.evaluation_harness import (
     summarize_vs_baselines,
     write_jsonl,
 )
+from signals.gate_backtest import format_gate_backtest_report, summarize_gate_backtest
 
 
 def _load_config() -> dict:
@@ -68,7 +69,12 @@ def main() -> None:
         out_path = ROOT / out_path
     write_jsonl(rows, out_path)
     summ = summarize_vs_baselines(rows, horizon=args.summary_horizon, buy_min=args.buy_min)
-    out_obj: dict = {"n_rows": len(rows), "out": str(out_path), "summary": summ}
+    gate_summ = summarize_gate_backtest(
+        rows,
+        horizons=tuple(ev.get("horizons_trading_days") or (21, 63, 126)),
+        buy_min=args.buy_min,
+    )
+    out_obj: dict = {"n_rows": len(rows), "out": str(out_path), "summary": summ, "gate_backtest": gate_summ}
     if len(tickers) >= 2:
         by_sym: dict = {}
         for r in rows:
@@ -82,6 +88,9 @@ def main() -> None:
                 "n_dates": len(ew),
             }
     print(json.dumps(out_obj, indent=2))
+    if rows and rows[0].get("gates_passed") is not None:
+        print()
+        print(format_gate_backtest_report(gate_summ))
 
 
 if __name__ == "__main__":
