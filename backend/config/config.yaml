@@ -327,7 +327,7 @@ risk_sizing:
 backtest:
   calibration_ok_min: 70   # Same as score.buy_min by default; calibration_score >= this = OK
   # Short-horizon noise: skip bars with next earnings within N calendar days (FMP historical dates; needs fmp_api_key)
-  # See docs/BACKTEST_DATA.md for limits (not point-in-time perfect).
+  # See docs/backend/BACKTEST_DATA.md for limits (not point-in-time perfect).
   earnings_exclusion:
     enabled: false
     days_before: 5
@@ -619,7 +619,7 @@ fair_value:
     max_implied_upside_vs_spot: 0.52     # max implied upside vs spot; use null to disable
 
 # Phase 4: Data & earnings
-# See DATA_SOURCES.md and DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
+# See docs/data/DATA_SOURCES.md and docs/data/DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
 data:
   # When FMP batch quotes are on, overwrite SPY/QQQ/DIA/IWM with Yahoo last close so dashboard marks match OHLCV vendor.
   # Set false to keep FMP as primary quote source (including index ETFs).

@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 from api.ticker_detail import _roadmap_core_zone_3_to_6
-from signals.horizon_entry_calculator import LongTermInputs, compute_long_term_entry, resolve_active_tier
+from signals.horizon_entry_calculator import (
+    EntryTier,
+    LongTermInputs,
+    compute_long_term_entry,
+    resolve_active_tier,
+    resolve_target_tier_id,
+)
 
 
 def _sample_long_inputs(**overrides) -> LongTermInputs:
@@ -52,11 +58,17 @@ def test_roadmap_core_zone_uses_tier2_when_inside():
 
 
 def test_resolve_active_tier_prefers_t2():
-    from signals.horizon_entry_calculator import EntryTier
-
     t1 = EntryTier("T1", "T1", "", 280.0, 310.0, 0, 0, "", "M", "#fff", True, 20.0)
     t2 = EntryTier("T2", "T2", "", 380.0, 404.0, 0, 0, "", "H", "#fff", False, None)
     t3 = EntryTier("T3", "T3", "", 170.0, 186.0, 0, 0, "", "S", "#fff", True, 50.0)
     active = resolve_active_tier([t1, t2, t3], 387.66)
     assert active is not None
     assert active.id == "T2"
+
+
+def test_resolve_target_tier_nearest_between_t1_and_t2():
+    """Spot just below T2 should target T2, not T3 stress sleeve or T1 below."""
+    t1 = EntryTier("T1", "T1", "", 284.71, 314.69, 0, 0, "", "M", "#fff", True, 20.0)
+    t2 = EntryTier("T2", "T2", "", 381.92, 405.54, 0, 0, "", "H", "#fff", False, None)
+    t3 = EntryTier("T3", "T3", "", 170.10, 186.30, 0, 0, "", "S", "#fff", True, 50.0)
+    assert resolve_target_tier_id([t1, t2, t3], 380.34) == "T2"

@@ -7,6 +7,7 @@ import {
   deriveLongTermBehavioralBadge,
   deriveShortTermBehavioralBadge,
   EntryZonePriceBar,
+  LongTermAccumulationScale,
   filterPrimaryTradingGates,
   buildGatesFromInvestorSummary,
   resolveLongHorizonEntryZone,
@@ -174,16 +175,28 @@ export function DecisionDeck({
             {band.line}
           </p>
         )}
-        {ez && ez.low < ez.high && currentPrice > 0 && (
-          <EntryZonePriceBar
-            entryLow={ez.low}
-            entryHigh={ez.high}
+        {mode === "owner" && long.entry_tiers?.tiers?.length && currentPrice > 0 ? (
+          <LongTermAccumulationScale
+            horizon={long}
+            entryTiers={long.entry_tiers}
             currentPrice={currentPrice}
             stopLoss={primary.stop_loss > 0 ? primary.stop_loss : null}
             target={primary.target > 0 ? primary.target : null}
-            bandLabel={ez.label}
-            quality={primary.entry_zone?.quality}
           />
+        ) : (
+          ez &&
+          ez.low < ez.high &&
+          currentPrice > 0 && (
+            <EntryZonePriceBar
+              entryLow={ez.low}
+              entryHigh={ez.high}
+              currentPrice={currentPrice}
+              stopLoss={primary.stop_loss > 0 ? primary.stop_loss : null}
+              target={primary.target > 0 ? primary.target : null}
+              bandLabel={ez.label}
+              quality={primary.entry_zone?.quality}
+            />
+          )
         )}
         <div className="grid grid-cols-2 gap-2 text-xs font-mono">
           {primary.stop_loss > 0 && (

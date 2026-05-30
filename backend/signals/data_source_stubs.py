@@ -1,6 +1,6 @@
 """
 Placeholder clients for data sources – add API keys in config and implement.
-See DATA_SOURCES.md for integration status.
+See docs/data/DATA_SOURCES.md for integration status.
 """
 
 from __future__ import annotations

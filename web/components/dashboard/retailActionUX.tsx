@@ -955,11 +955,9 @@ export function EntryZonePriceBar({
   return (
     <div className={clsx("space-y-2", className)} aria-label={`${bandLabel} price scale`}>
       <div className="flex justify-between gap-2 text-[11px] font-mono text-slate-500">
-        <span className="text-emerald-300/90 truncate">
-          {bandLabel} ${low.toFixed(2)}
-        </span>
+        <span className="text-slate-500 shrink-0">${min.toFixed(2)}</span>
         <span className="text-slate-200 font-medium shrink-0">Now ${currentPrice.toFixed(2)}</span>
-        <span className="text-emerald-300/90 shrink-0">${high.toFixed(2)}</span>
+        <span className="text-slate-500 shrink-0">${max.toFixed(2)}</span>
       </div>
       <div className="relative h-5 rounded-full overflow-hidden border border-slate-700 bg-slate-900">
         <div className="absolute inset-0 bg-slate-800/90" />
@@ -1021,6 +1019,166 @@ export function EntryZonePriceBar({
           )}
         </p>
       )}
+    </div>
+  );
+}
+
+/** Long-term ladder: nearest target tier (emerald) + other tiers (faint) + full-position MOS ceiling (cyan). */
+export function LongTermAccumulationScale({
+  horizon,
+  entryTiers,
+  currentPrice,
+  stopLoss,
+  target,
+  className,
+}: {
+  horizon: Pick<HorizonSignalPayload, "entry_zone">;
+  entryTiers: NonNullable<HorizonSignalPayload["entry_tiers"]>;
+  currentPrice: number;
+  stopLoss?: number | null;
+  target?: number | null;
+  className?: string;
+}) {
+  const tiers = [...(entryTiers.tiers ?? [])].sort((a, b) => a.low - b.low);
+  if (!tiers.length || !(currentPrice > 0)) return null;
+
+  const resolved = resolveLongHorizonEntryZone(horizon, entryTiers, currentPrice);
+  const mos = entryTiers.current_assessment?.min_price_to_buy;
+  const primaryId = resolved.tierId;
+
+  const points: number[] = [currentPrice, resolved.low, resolved.high];
+  for (const t of tiers) {
+    points.push(Math.min(t.low, t.high), Math.max(t.low, t.high));
+  }
+  if (mos != null && mos > 0) {
+    const mosPad = mos * 0.008;
+    points.push(mos - mosPad, mos + mosPad);
+  }
+  if (stopLoss != null && stopLoss > 0) points.push(stopLoss);
+  if (target != null && target > 0) points.push(target);
+
+  const rawSpan = Math.max(...points) - Math.min(...points);
+  const pad = rawSpan * 0.06 || Math.max(...points) * 0.02;
+  const scaleMin = Math.min(...points) - pad;
+  const scaleMax = Math.max(...points) + pad;
+  const span = scaleMax - scaleMin;
+  if (!(span > 0)) return null;
+
+  const pct = (v: number) => Math.max(0, Math.min(100, ((v - scaleMin) / span) * 100));
+  const nowP = pct(currentPrice);
+  const primaryLo = Math.min(resolved.low, resolved.high);
+  const primaryHi = Math.max(resolved.low, resolved.high);
+  const insidePrimary = currentPrice >= primaryLo && currentPrice <= primaryHi;
+  const abovePrimary = currentPrice > primaryHi;
+  const mosP = mos != null && mos > 0 ? pct(mos) : null;
+  const aboveMos = mos != null && mos > 0 && currentPrice > mos;
+
+  const tierLabel = resolved.tierLabel || primaryId || "tier";
+  const primaryBandLabel = primaryId
+    ? `Target band (${primaryId})`
+    : "Target accumulation band";
+
+  let statusLine: React.ReactNode;
+  if (insidePrimary) {
+    statusLine = (
+      <>
+        <span className="text-emerald-300 font-semibold">Inside {tierLabel}</span>
+        <span className="text-slate-500"> — staged long-term adds per tier plan.</span>
+      </>
+    );
+  } else if (abovePrimary) {
+    const gapPct = ((currentPrice - primaryHi) / primaryHi) * 100;
+    statusLine = (
+      <>
+        <span className="text-amber-300 font-semibold">{gapPct.toFixed(1)}% above {tierLabel}</span>
+        <span className="text-slate-500"> — wait for pullback into the highlighted band.</span>
+      </>
+    );
+  } else {
+    const gapPct = ((primaryLo - currentPrice) / primaryLo) * 100;
+    statusLine = (
+      <>
+        <span className="text-sky-300/90 font-semibold">{gapPct.toFixed(1)}% below {tierLabel} low</span>
+        <span className="text-slate-500"> — spot hasn&apos;t reached that accumulation sleeve yet.</span>
+      </>
+    );
+  }
+
+  return (
+    <div className={clsx("space-y-2", className)} aria-label="Long-term accumulation price scale">
+      <div className="flex justify-between gap-2 text-[11px] font-mono text-slate-500">
+        <span className="text-slate-500 shrink-0">${scaleMin.toFixed(2)}</span>
+        <span className="text-slate-200 font-medium shrink-0">Now ${currentPrice.toFixed(2)}</span>
+        <span className="text-slate-500 shrink-0">${scaleMax.toFixed(2)}</span>
+      </div>
+      <div className="relative h-6 rounded-full overflow-hidden border border-slate-700 bg-slate-900">
+        <div className="absolute inset-0 bg-slate-800/90" />
+        {tiers.map((t) => {
+          const lo = Math.min(t.low, t.high);
+          const hi = Math.max(t.low, t.high);
+          const isPrimary = t.id === primaryId;
+          const left = pct(lo);
+          const width = Math.max(2, pct(hi) - left);
+          return (
+            <div
+              key={t.id}
+              className={clsx(
+                "absolute top-0 bottom-0 border-x",
+                isPrimary
+                  ? "border-emerald-500/60 bg-emerald-500/35 z-[2]"
+                  : "border-slate-600/40 bg-slate-600/20 z-[1]",
+              )}
+              style={{ left: `${left}%`, width: `${width}%` }}
+              title={`${t.label || t.id}: $${lo.toFixed(2)}–$${hi.toFixed(2)}`}
+            />
+          );
+        })}
+        {mosP != null && (
+          <div
+            className="absolute top-0 bottom-0 w-1 bg-cyan-400/90 z-[3] shadow-[0_0_6px_rgba(34,211,238,0.5)]"
+            style={{ left: `calc(${mosP}% - 2px)` }}
+            title={`Full-position MOS ceiling $${mos!.toFixed(2)}`}
+          />
+        )}
+        {stopLoss != null && stopLoss > 0 && (
+          <div
+            className="absolute top-0 bottom-0 w-0.5 bg-red-500/80 z-[4]"
+            style={{ left: `calc(${pct(stopLoss)}% - 1px)` }}
+            title={`Stop $${stopLoss.toFixed(2)}`}
+          />
+        )}
+        <div
+          className={clsx(
+            "absolute top-1/2 z-20 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-md",
+            insidePrimary ? "border-emerald-200 bg-emerald-600" : "border-white bg-slate-950",
+          )}
+          style={{ left: `${nowP}%` }}
+          title={`Last price $${currentPrice.toFixed(2)}`}
+        />
+      </div>
+      <p className="text-xs text-slate-400 leading-snug">{statusLine}</p>
+      <p className="text-[11px] text-slate-500 leading-snug">
+        <span className="text-emerald-300/90 font-medium">{primaryBandLabel}</span>
+        {" "}
+        ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
+        {mos != null && mos > 0 && (
+          <>
+            {" · "}
+            <span className="text-cyan-300/90 font-medium">Full MOS ceiling</span> ${mos.toFixed(2)}
+            {aboveMos && (
+              <span className="text-amber-200/90"> — spot above ceiling (partial sizing only above this level).</span>
+            )}
+          </>
+        )}
+      </p>
+      <p className="text-[10px] text-slate-600 leading-snug">
+        Faint bands = other tiers on the same scale.{" "}
+        {mosP != null && <span className="text-cyan-400/80">Cyan tick = max buy for a full position. </span>}
+        {stopLoss != null && stopLoss > 0 && <span className="text-red-400/80">Red tick = structural stop. </span>}
+        {target != null && target > 0 && (
+          <span>Target ${target.toFixed(2)} included in scale.</span>
+        )}
+      </p>
     </div>
   );
 }
@@ -1196,6 +1354,19 @@ export function tierPriceState(
   return "below";
 }
 
+/** Distance from spot to a tier band (0 if inside the band). */
+export function distanceToTierBand(
+  tier: { low: number; high: number },
+  price: number
+): number {
+  const lo = Math.min(tier.low, tier.high);
+  const hi = Math.max(tier.low, tier.high);
+  if (price >= lo && price <= hi) return 0;
+  if (price < lo) return lo - price;
+  return price - hi;
+}
+
+/** Nearest accumulation tier for display when spot is between bands or far from T3 stress sleeve. */
 export function pickCurrentTargetTierId(
   tiers: { id: string; low: number; high: number }[],
   price: number
@@ -1203,10 +1374,16 @@ export function pickCurrentTargetTierId(
   if (!tiers.length || !(price > 0)) return null;
   const active = tiers.find((t) => price >= t.low && price <= t.high);
   if (active) return active.id;
-  const sorted = [...tiers].sort((a, b) => a.low - b.low);
-  if (price > sorted[sorted.length - 1].high) return sorted[0].id;
-  if (price < sorted[0].low) return sorted[sorted.length - 1].id;
-  return sorted[0].id;
+  let best = tiers[0];
+  let bestDist = Infinity;
+  for (const t of tiers) {
+    const d = distanceToTierBand(t, price);
+    if (d < bestDist) {
+      bestDist = d;
+      best = t;
+    }
+  }
+  return best.id;
 }
 
 /** Long-term horizon card entry band — matches tier ladder + backend entry_zone. */

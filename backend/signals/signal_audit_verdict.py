@@ -1,7 +1,7 @@
 """
 Versioned verdict rules for signal audit outcomes (Phase 2).
 
-See docs/SIGNAL_AUDIT_FORWARD_TRACKING.md §7.
+See docs/audit/SIGNAL_AUDIT_FORWARD_TRACKING.md §7.
 """
 from __future__ import annotations
 

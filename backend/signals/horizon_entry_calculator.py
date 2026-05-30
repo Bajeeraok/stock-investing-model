@@ -276,21 +276,23 @@ def resolve_active_tier(tiers: list[EntryTier], price: float) -> EntryTier | Non
 
 
 def resolve_target_tier_id(tiers: list[EntryTier], price: float) -> str | None:
-    """Next accumulation tier for display when price is not inside any band."""
+    """Nearest accumulation tier when spot is outside all bands (not the lowest stress tier)."""
     active = resolve_active_tier(tiers, price)
     if active:
         return active.id
     if not tiers or price <= 0:
         return None
-    sorted_by_low = sorted(tiers, key=lambda t: t.low)
-    if price > sorted_by_low[-1].high:
-        return sorted_by_low[0].id
-    if price < sorted_by_low[0].low:
-        return sorted_by_low[-1].id
-    for t in reversed(sorted_by_low):
-        if price > t.high:
+    best = tiers[0]
+    best_dist = float("inf")
+    for t in tiers:
+        lo, hi = min(t.low, t.high), max(t.low, t.high)
+        if lo <= price <= hi:
             return t.id
-    return sorted_by_low[0].id
+        dist = (lo - price) if price < lo else (price - hi)
+        if dist < best_dist:
+            best_dist = dist
+            best = t
+    return best.id
 
 
 def entry_zone_from_tier(tier: EntryTier, *, inside: bool) -> EntryZone:

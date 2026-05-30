@@ -38,6 +38,7 @@ import {
   PlainEnglishTakeCard,
   resolveLongHorizonEntryZone,
   EntryZonePriceBar,
+  LongTermAccumulationScale,
   RiskRewardThermometer,
   StopHierarchyPanel,
   StopTargetRiskBar,
@@ -421,17 +422,25 @@ function HorizonCard({
       React.createElement(
         "div",
         { className: "mt-2 rounded-lg border border-emerald-500/25 bg-slate-950/50 p-2" },
-        React.createElement(EntryZonePriceBar, {
-          entryLow: ez.low,
-          entryHigh: ez.high,
-          currentPrice,
-          stopLoss: hasStop ? horizon.stop_loss : null,
-          target: horizon.target > 0 ? horizon.target : null,
-          bandLabel: entryTierPrefix.replace(/:\s*$/, "").trim() || "Buy zone",
-          quality: horizon.entry_zone?.quality,
-          anchorNote:
-            !scan && horizon.entry_zone?.anchor ? String(horizon.entry_zone.anchor) : null,
-        })
+        horizonKind === "long" && entryTiers?.tiers?.length
+          ? React.createElement(LongTermAccumulationScale, {
+              horizon,
+              entryTiers,
+              currentPrice,
+              stopLoss: hasStop ? horizon.stop_loss : null,
+              target: horizon.target > 0 ? horizon.target : null,
+            })
+          : React.createElement(EntryZonePriceBar, {
+              entryLow: ez.low,
+              entryHigh: ez.high,
+              currentPrice,
+              stopLoss: hasStop ? horizon.stop_loss : null,
+              target: horizon.target > 0 ? horizon.target : null,
+              bandLabel: entryTierPrefix.replace(/:\s*$/, "").trim() || "Buy zone",
+              quality: horizon.entry_zone?.quality,
+              anchorNote:
+                !scan && horizon.entry_zone?.anchor ? String(horizon.entry_zone.anchor) : null,
+            })
       ),
     scan
       ? React.createElement(
@@ -806,6 +815,25 @@ function BuyRangeRetailCard({
         "Dot = last price vs modeled buy band (not a forecast)."
       )
     ),
+    long?.entry_tiers?.tiers?.length &&
+      currentPrice > 0 &&
+      React.createElement(
+        "div",
+        { className: "mb-3 rounded-xl border border-emerald-500/25 bg-slate-950/40 p-3" },
+        React.createElement(
+          "p",
+          { className: "text-xs text-emerald-200/90 uppercase tracking-wide font-semibold mb-2" },
+          "Long-term tiers & full-position MOS"
+        ),
+        React.createElement(LongTermAccumulationScale, {
+          horizon: long,
+          entryTiers: long.entry_tiers!,
+          currentPrice,
+          stopLoss:
+            long.stop_loss != null && long.stop_loss > 0 ? long.stop_loss : null,
+          target: long.target > 0 ? long.target : null,
+        })
+      ),
     ((maxBuyMos != null && maxBuyMos > 0) || rr != null || (stStop != null && short.target > 0)) &&
       React.createElement(
         "div",

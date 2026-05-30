@@ -340,7 +340,7 @@ export interface BacktestResult {
   };
   /** When middle-bin avg returns reorder (e.g. 30–50 > 50–70 at 3m under MR mapping). */
   bucket_return_ordering_notes?: string[];
-  /** FMP-based earnings window exclusion when enabled in config (see backend/docs/BACKTEST_DATA.md). */
+  /** FMP-based earnings window exclusion when enabled in config (see docs/backend/BACKTEST_DATA.md). */
   earnings_exclusion?: {
     enabled: boolean;
     days_before: number;

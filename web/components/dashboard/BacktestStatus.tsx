@@ -403,7 +403,7 @@ export function BacktestStatus() {
                 {r.earnings_exclusion && r.earnings_exclusion.enabled && (
                   <p
                     className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/35 border-b border-slate-700/40 leading-snug"
-                    title="Short-horizon noise reduction: bars skipped when next earnings within N calendar days (FMP). See docs/BACKTEST_DATA.md."
+                    title="Short-horizon noise reduction: bars skipped when next earnings within N calendar days (FMP). See docs/backend/BACKTEST_DATA.md."
                   >
                     <span className="text-slate-400">Earnings exclusion:</span>{" "}
                     {r.earnings_exclusion.days_before}d window ·{" "}

@@ -2799,7 +2799,7 @@ def _build_one_answer_roadmaps(
 ) -> tuple[dict, dict, dict]:
     """
     Build One Answer headline + Trader roadmap + Investor roadmap for retail.
-    See RETAIL_ONE_ANSWER_DESIGN.md. All derived from existing investor_summary + response.
+    See docs/signals/RETAIL_ONE_ANSWER_DESIGN.md. All derived from existing investor_summary + response.
     """
     horizons = investor_out.get("horizons") or {}
     short = horizons.get("short") or {}
