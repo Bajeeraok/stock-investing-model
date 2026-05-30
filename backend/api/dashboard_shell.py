@@ -17,6 +17,7 @@ SHELL_KEYS: tuple[str, ...] = (
     "analysis_deferred",
     "watchlist",
     "signal_universe",
+    "universe_meta",
     "story_changes",
     "portfolio",
     "portfolios",
@@ -128,6 +129,8 @@ def _opp_bundle_enabled(config: dict) -> bool:
 
 def build_warming_shell(config: dict | None = None) -> dict:
     """Minimal shell while first background compute runs (no Redis cache yet). HTTP 200, stale poll."""
+    from config_loader import get_dashboard_signal_universe, get_universe_meta
+
     config = config or {}
     opp_on = _opp_bundle_enabled(config)
     empty_portfolio: dict[str, Any] = {
@@ -152,7 +155,8 @@ def build_warming_shell(config: dict | None = None) -> dict:
         "opportunities_bundle_enabled": opp_on,
         "analysis_deferred": True,
         "watchlist": list(config.get("watchlist") or []),
-        "signal_universe": list(config.get("signal_universe") or config.get("watchlist") or []),
+        "signal_universe": get_dashboard_signal_universe(config),
+        "universe_meta": get_universe_meta(config),
         "story_changes": [],
         "portfolio": empty_portfolio,
         "portfolios": {},

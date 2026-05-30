@@ -470,6 +470,14 @@ export interface DashboardData {
   watchlist?: string[];
   /** Watchlist ∪ portfolio holdings — tickers with signals / roadmaps. */
   signal_universe?: string[];
+  /** Guest vs linked portfolio; public demo universe until auth ships. */
+  universe_meta?: {
+    guest_mode?: boolean;
+    has_config_portfolio?: boolean;
+    public_demo_universe?: string[];
+    portfolio_ticker_count?: number;
+    note?: string;
+  };
   crypto?: CryptoSignal[];
   cross_asset?: CrossAssetItem[];
   story_changes: Signal[];

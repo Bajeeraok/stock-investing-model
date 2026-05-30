@@ -20,6 +20,25 @@ watchlist:
   - BLK
   - BABA
 
+# Guest / pre-login default universe (merged into dashboard signals).
+# Keeps the app useful before auth; does not replace user portfolio when linked.
+public_demo_universe:
+  - SPY
+  - QQQ
+  - IWM
+  - GLD
+  - SLV
+  - AAPL
+  - MSFT
+  - NVDA
+  - GOOGL
+  - META
+  - AMZN
+  - TSLA
+  - AVGO
+  - AMD
+  - CRM
+
 # Your actual holdings for portfolio "doctor"
 # Option A: Multiple portfolios (IRA, Taxable, 401k, etc.)
 # cost_basis = optional avg cost per share; enables P&L display

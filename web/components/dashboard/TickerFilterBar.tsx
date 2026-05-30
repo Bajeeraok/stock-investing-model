@@ -9,8 +9,10 @@ import {
 } from "@/lib/tickerSourceFilter";
 import {
   SIGNAL_PRESETS,
+  presetsForLens,
   type SignalsPresetId,
 } from "@/lib/signalPresets";
+import type { TradingLens } from "@/lib/tradingLens";
 
 interface TickerFilterBarProps {
   source: TickerSourceFilter;
@@ -24,6 +26,7 @@ interface TickerFilterBarProps {
   shownCount: number;
   totalCount: number;
   showPresets?: boolean;
+  tradingLens?: TradingLens;
 }
 
 export function TickerFilterBar({
@@ -37,7 +40,9 @@ export function TickerFilterBar({
   shownCount,
   totalCount,
   showPresets = true,
+  tradingLens,
 }: TickerFilterBarProps) {
+  const presetList = tradingLens ? presetsForLens(tradingLens) : SIGNAL_PRESETS;
   const portfolioSet = toTickerSet(portfolioTickers);
   const watchlistSet = toTickerSet(watchlistTickers);
   const counts = countBySource(tickers, portfolioSet, watchlistSet);
@@ -69,7 +74,7 @@ export function TickerFilterBar({
       {showPresets && (
         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
           <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">View</span>
-          {SIGNAL_PRESETS.map((p) => (
+          {presetList.map((p) => (
             <button
               key={p.id}
               type="button"

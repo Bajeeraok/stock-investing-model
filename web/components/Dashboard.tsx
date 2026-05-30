@@ -75,6 +75,14 @@ import {
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
+import {
+  defaultPresetForLens,
+  getTradingLens,
+  setTradingLens,
+  type TradingLens,
+} from "@/lib/tradingLens";
+import { saveSignalsPreset } from "@/lib/signalPresets";
+import { TradingLensSelector } from "./dashboard/TradingLensSelector";
 
 const AUTO_REFRESH_MIN = 30;
 
@@ -169,6 +177,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [overviewAlertActionCount, setOverviewAlertActionCount] = useState(0);
   const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
   const [lazySignals, setLazySignals] = useState<Signal[] | null>(null);
+  const [tradingLens, setTradingLensState] = useState<TradingLens>("scout");
 
   const todayMovesCoveredTickers = useMemo(() => {
     const signals = lazySignals ?? data.signals ?? [];
@@ -199,6 +208,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         ?? data.market_forecast?.headline
         ?? null,
       max: 3,
+      lens: tradingLens,
     });
     return todayMoveTickers(moves);
   }, [
@@ -210,6 +220,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     data.market_forecast,
     lazySignals,
     selectedTrimCandidates,
+    tradingLens,
   ]);
 
   const [signalsFetchErr, setSignalsFetchErr] = useState<string | null>(null);
@@ -231,6 +242,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     } catch {
       /* ignore */
     }
+    setTradingLensState(getTradingLens());
+  }, []);
+
+  const handleTradingLensChange = useCallback((lens: TradingLens) => {
+    setTradingLensState(lens);
+    setTradingLens(lens);
+    saveSignalsPreset(defaultPresetForLens(lens));
   }, []);
 
   useEffect(() => {
@@ -622,6 +640,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 Snapshot {snapshotAge || formatSnapshotAge(snapshotIso)}
               </span>
             )}
+            <TradingLensSelector
+              lens={tradingLens}
+              onChange={handleTradingLensChange}
+              compact
+              className="hidden lg:flex"
+            />
             <button
               type="button"
               onClick={toggleAdvancedMode}
@@ -757,9 +781,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             ?? data.market_forecast?.headline
             ?? null
           }
+          tradingLens={tradingLens}
           onTickerClick={setSelectedTicker}
           onViewAll={() => setActiveTab("signals")}
         />
+        <div className="lg:hidden px-1">
+          <TradingLensSelector lens={tradingLens} onChange={handleTradingLensChange} />
+        </div>
         <MarketReversalBanner overlay={data.market_reversal_overlay} />
         {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
       </div>
@@ -787,10 +815,20 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   preMarketFull={preMarketFull}
                   preMarket={data.pre_market}
                   todayMoveTickers={todayMovesCoveredTickers}
+                  tradingLens={tradingLens}
+                  guestUniverseNote={data.universe_meta?.note ?? null}
+                  tacticalSlot={
+                    tradingLens === "scout" && (data.tactical_breakouts?.length ?? 0) > 0 ? (
+                      <TacticalBreakoutStrip
+                        rows={data.tactical_breakouts}
+                        onTickerClick={setSelectedTicker}
+                      />
+                    ) : null
+                  }
                   onTickerClick={setSelectedTicker}
                 />
               )}
-              {(data.tactical_breakouts?.length ?? 0) > 0 && (
+              {tradingLens !== "scout" && (data.tactical_breakouts?.length ?? 0) > 0 && (
                 <TacticalBreakoutStrip
                   rows={data.tactical_breakouts}
                   onTickerClick={setSelectedTicker}
@@ -1153,6 +1191,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               listContext={signalListContext}
               portfolioTickers={portfolioTickerList}
               watchlistTickers={watchlistTickerList}
+              tradingLens={tradingLens}
             />
           )}
             </div>

@@ -1,4 +1,5 @@
 import type { Signal } from "@/app/page";
+import type { TradingLens } from "@/lib/tradingLens";
 import type { StoryProvenance, TrimProvenance } from "./AlertHorizonChip";
 
 function trimProv(h: {
@@ -27,8 +28,14 @@ export type TodayMove = {
   ticker?: string;
   title: string;
   detail: string;
-  storyProvenance?: import("./AlertHorizonChip").StoryProvenance;
+  storyProvenance?: StoryProvenance;
   trimProvenance?: TrimProvenance;
+};
+
+const KIND_ORDER: Record<TradingLens, TodayMove["kind"][]> = {
+  scout: ["after_hours", "story", "trim", "earnings", "macro"],
+  swing: ["earnings", "trim", "story", "after_hours", "macro"],
+  owner: ["trim", "story", "earnings", "macro", "after_hours"],
 };
 
 export function buildTodayMoves(input: {
@@ -45,15 +52,25 @@ export function buildTodayMoves(input: {
   afterHours?: AfterHoursMove[];
   macroHeadline?: string | null;
   max?: number;
+  lens?: TradingLens;
 }): TodayMove[] {
   const max = input.max ?? 3;
-  const moves: TodayMove[] = [];
+  const lens = input.lens ?? "scout";
+  const order = KIND_ORDER[lens];
 
-  for (const ah of (input.afterHours ?? []).slice(0, 2)) {
+  const pools: Record<TodayMove["kind"], TodayMove[]> = {
+    after_hours: [],
+    story: [],
+    trim: [],
+    earnings: [],
+    macro: [],
+  };
+
+  for (const ah of input.afterHours ?? []) {
     const pct = ah.change_pct;
     const pctStr = pct != null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% AH` : "AH move";
     const note = ah.post_earnings?.transition_note || ah.post_earnings?.beat_or_miss;
-    moves.push({
+    pools.after_hours.push({
       id: `ah-${ah.ticker}`,
       kind: "after_hours",
       ticker: ah.ticker,
@@ -62,9 +79,9 @@ export function buildTodayMoves(input: {
     });
   }
 
-  for (const s of input.storyChanges.slice(0, 2)) {
+  for (const s of input.storyChanges) {
     if (!s.story_change) continue;
-    moves.push({
+    pools.story.push({
       id: `story-${s.ticker}`,
       kind: "story",
       ticker: s.ticker,
@@ -73,10 +90,8 @@ export function buildTodayMoves(input: {
     });
   }
 
-  for (const t of input.trimCandidates.slice(0, 2)) {
-    if (moves.length >= max) break;
-    if (moves.some((m) => m.ticker === t.ticker)) continue;
-    moves.push({
+  for (const t of input.trimCandidates) {
+    pools.trim.push({
       id: `trim-${t.ticker}`,
       kind: "trim",
       ticker: t.ticker,
@@ -86,10 +101,8 @@ export function buildTodayMoves(input: {
     });
   }
 
-  for (const s of input.earningsSignals.slice(0, 2)) {
-    if (moves.length >= max) break;
-    if (moves.some((m) => m.ticker === s.ticker)) continue;
-    moves.push({
+  for (const s of input.earningsSignals) {
+    pools.earnings.push({
       id: `earn-${s.ticker}`,
       kind: "earnings",
       ticker: s.ticker,
@@ -101,13 +114,23 @@ export function buildTodayMoves(input: {
     });
   }
 
-  if (moves.length < max && input.macroHeadline) {
-    moves.push({
+  if (input.macroHeadline) {
+    pools.macro.push({
       id: "macro",
       kind: "macro",
       title: "Market backdrop",
       detail: input.macroHeadline,
     });
+  }
+
+  const moves: TodayMove[] = [];
+  for (const kind of order) {
+    for (const m of pools[kind]) {
+      if (moves.length >= max) break;
+      if (m.ticker && moves.some((x) => x.ticker === m.ticker)) continue;
+      moves.push(m);
+    }
+    if (moves.length >= max) break;
   }
 
   return moves.slice(0, max);

@@ -8,6 +8,7 @@ import {
   type AlertSourceKind,
   type StoryProvenance,
 } from "./AlertHorizonChip";
+import type { TradingLens } from "@/lib/tradingLens";
 import {
   buildTodayMoves,
   type AfterHoursMove,
@@ -52,6 +53,7 @@ export function TodaysMovesPanel({
   signals,
   afterHours,
   macroHeadline,
+  tradingLens,
   onTickerClick,
   onViewAll,
 }: {
@@ -67,6 +69,7 @@ export function TodaysMovesPanel({
   signals: Signal[];
   afterHours?: AfterHoursMove[];
   macroHeadline?: string | null;
+  tradingLens?: TradingLens;
   onTickerClick?: (ticker: string) => void;
   onViewAll?: () => void;
 }) {
@@ -81,6 +84,7 @@ export function TodaysMovesPanel({
     afterHours,
     macroHeadline,
     max: 3,
+    lens: tradingLens,
   });
 
   if (moves.length === 0) return null;

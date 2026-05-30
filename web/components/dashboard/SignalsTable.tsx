@@ -23,6 +23,7 @@ import {
   saveSignalsPreset,
   type SignalsPresetId,
 } from "@/lib/signalPresets";
+import { defaultPresetForLens, type TradingLens } from "@/lib/tradingLens";
 
 export type { SignalsPresetId } from "@/lib/signalPresets";
 
@@ -326,6 +327,7 @@ export function SignalsTable({
   listContext,
   portfolioTickers,
   watchlistTickers,
+  tradingLens,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
@@ -337,6 +339,7 @@ export function SignalsTable({
   listContext?: SignalListContext;
   portfolioTickers?: string[];
   watchlistTickers?: string[];
+  tradingLens?: TradingLens;
 }) {
   const gateContext: SignalListContext = listContext ?? {};
   const h = horizons || DEFAULT_HORIZONS;
@@ -348,9 +351,16 @@ export function SignalsTable({
   const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
 
   useEffect(() => {
-    setPreset(loadSignalsPreset());
     setSourceFilter(loadTickerSourceFilter());
   }, []);
+
+  useEffect(() => {
+    if (tradingLens) {
+      setPreset(defaultPresetForLens(tradingLens));
+    } else {
+      setPreset(loadSignalsPreset());
+    }
+  }, [tradingLens]);
 
   const applyPreset = (id: SignalsPresetId) => {
     setPreset(id);
@@ -461,6 +471,7 @@ export function SignalsTable({
           watchlistTickers={watchlistTickers}
           shownCount={sorted.length}
           totalCount={signals.length}
+          tradingLens={tradingLens}
         />
         <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate flex-1">

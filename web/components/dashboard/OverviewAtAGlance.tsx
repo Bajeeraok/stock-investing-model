@@ -20,6 +20,13 @@ import { PremarketMoverStrip } from "./PremarketMoverStrip";
 import type { RetailMarketDecisions } from "./RetailMarketDecisionsPanel";
 import { ToggleSection } from "./ToggleSection";
 import { RetailMarketDecisionsDeepDive } from "./RetailMarketDecisionsDeepDive";
+import {
+  matrixHorizonOrder,
+  primaryHorizonKey,
+  tradingLensHint,
+  tradingLensLabel,
+  type TradingLens,
+} from "@/lib/tradingLens";
 
 const ACTION_STYLE: Record<string, string> = {
   BUY: "bg-emerald-500/25 text-emerald-200 border-emerald-500/45",
@@ -92,8 +99,24 @@ interface Props {
   preMarketFull?: PreMarketData | null;
   preMarket?: DashboardData["pre_market"];
   todayMoveTickers?: Set<string>;
+  tradingLens?: TradingLens;
+  /** Rendered after hero for Scout (e.g. tactical breakouts). */
+  tacticalSlot?: React.ReactNode;
+  guestUniverseNote?: string | null;
   onTickerClick?: (ticker: string) => void;
 }
+
+const HORIZON_TAG: Record<string, string> = {
+  short_term: "ST",
+  medium_term: "MT",
+  long_term: "LT",
+};
+
+const HORIZON_LABEL: Record<string, string> = {
+  short_term: "Short",
+  medium_term: "Medium",
+  long_term: "Long",
+};
 
 export function OverviewAtAGlance({
   briefing,
@@ -103,6 +126,9 @@ export function OverviewAtAGlance({
   preMarketFull,
   preMarket,
   todayMoveTickers: coveredTickers,
+  tradingLens = "scout",
+  tacticalSlot,
+  guestUniverseNote,
   onTickerClick,
 }: Props) {
   const [analogOpen, setAnalogOpen] = useState(false);
@@ -131,6 +157,106 @@ export function OverviewAtAGlance({
   const vixStr = temp?.vix != null ? temp.vix.toFixed(1) : null;
   const hyDriver = temp?.drivers?.find((d) => d.toLowerCase().includes("spread") || d.toLowerCase().includes("hy"));
   const macroDriver = temp?.drivers?.find((d) => d.toLowerCase().includes("macro") || d.toLowerCase().includes("risk"));
+  const primaryKey = primaryHorizonKey(tradingLens);
+  const matrixOrder = matrixHorizonOrder(tradingLens);
+  const showPortfolioKpis = tradingLens === "owner" || tradingLens === "swing";
+  const showPremarketProminent = tradingLens === "scout" || tradingLens === "swing";
+
+  const matrixBlock = matrix ? (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {matrixOrder.map((key) => {
+        const row = matrix[key];
+        if (!row) return null;
+        const tag = HORIZON_TAG[key];
+        const label = HORIZON_LABEL[key];
+        const isPrimary =
+          (key === "short_term" && primaryKey === "short") ||
+          (key === "medium_term" && primaryKey === "medium") ||
+          (key === "long_term" && primaryKey === "long");
+        return (
+          <div
+            key={key}
+            className={clsx(
+              "rounded-xl border bg-slate-800/50 p-3 flex flex-col gap-2",
+              isPrimary ? "border-emerald-500/50 ring-1 ring-emerald-500/25" : "border-slate-600/70"
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+                {tag} · {label}
+                {isPrimary && (
+                  <span className="ml-1 text-[10px] text-emerald-400 font-normal normal-case">focus</span>
+                )}
+              </span>
+              {row.action && (
+                <span
+                  className={clsx(
+                    "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
+                    MATRIX_ACTION[row.action] ?? MATRIX_ACTION.HOLD
+                  )}
+                >
+                  {row.action}
+                </span>
+              )}
+            </div>
+            {row.stance && <p className="text-sm font-medium text-slate-100">{row.stance}</p>}
+            {(row.bullets ?? [])[0] && (
+              <p className="text-xs text-slate-300 leading-snug line-clamp-3">{(row.bullets ?? [])[0]}</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const priorityBlock =
+    suggested.length > 0 ? (
+      <div className="rounded-xl border border-slate-600/80 bg-slate-800/40 px-4 py-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-200 mb-2 flex items-center gap-1.5">
+          <Grid3X3 className="h-3.5 w-3.5 text-emerald-400" />
+          {skippedSuggested > 0 || coveredTickers?.size ? "More priority actions" : "Priority actions"}
+        </h3>
+        {skippedSuggested > 0 && (
+          <p className="text-[11px] text-slate-400 mb-2">
+            {skippedSuggested} ticker{skippedSuggested === 1 ? "" : "s"} already in Today&apos;s 3 moves above.
+          </p>
+        )}
+        <ul className="space-y-2">
+          {suggested.slice(0, 4).map((a, i) => (
+            <li key={`${a.ticker}-${i}`} className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => onTickerClick?.(a.ticker)}
+                className="font-semibold text-emerald-300 hover:text-emerald-200 hover:underline"
+              >
+                {a.ticker}
+              </button>
+              <span
+                className={clsx(
+                  "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
+                  ACTION_STYLE[a.action] ?? ACTION_STYLE.HOLD
+                )}
+              >
+                {a.action}
+              </span>
+              <span className="text-sm text-slate-300">{a.reason}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null;
+
+  const nudgesBlock =
+    nudges.length > 0 ? (
+      <ul className="space-y-2">
+        {nudges.map((n, i) => (
+          <li key={i} className={clsx("flex items-start gap-2 rounded-lg border px-3 py-2 text-sm", n.tone)}>
+            <n.icon className="h-4 w-4 shrink-0 mt-0.5 opacity-80" />
+            <span>{n.text}</span>
+          </li>
+        ))}
+      </ul>
+    ) : null;
 
   return (
     <div className="space-y-4">
@@ -149,6 +275,12 @@ export function OverviewAtAGlance({
         </div>
 
         <div className="p-4 space-y-4">
+          <p className="text-[11px] text-slate-400 -mt-1">{tradingLensHint(tradingLens)}</p>
+          {guestUniverseNote && (
+            <p className="text-[11px] text-sky-200/90 rounded-md border border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5">
+              {guestUniverseNote}
+            </p>
+          )}
           {ctx?.primary_message && (
             <div>
               <p className="text-base sm:text-lg font-bold text-emerald-100 leading-snug tracking-tight">
@@ -225,11 +357,13 @@ export function OverviewAtAGlance({
             {ctx?.hmm_bull_pct != null && (
               <KpiChip label="HMM bull" value={`${ctx.hmm_bull_pct}%`} tone="good" />
             )}
-            {heat > 0 && (
+            {showPortfolioKpis && heat > 0 && (
               <KpiChip label="Portfolio heat" value={`${heat}%`} tone={heat > 15 ? "warn" : "neutral"} />
             )}
-            {top3 != null && top3 > 0 && <KpiChip label="Top 3 weight" value={`${top3}%`} tone={top3 > 40 ? "warn" : "neutral"} />}
-            {risk?.score != null && (
+            {showPortfolioKpis && top3 != null && top3 > 0 && (
+              <KpiChip label="Top 3 weight" value={`${top3}%`} tone={top3 > 40 ? "warn" : "neutral"} />
+            )}
+            {showPortfolioKpis && risk?.score != null && (
               <div className="flex-[2] min-w-[12rem] rounded-lg border border-slate-600/60 bg-slate-800/40 px-3 py-2">
                 <RiskMeter score={risk.score} scale={risk.score_scale} />
               </div>
@@ -242,97 +376,24 @@ export function OverviewAtAGlance({
             </p>
           )}
 
-          <PremarketMoverStrip full={preMarketFull} simple={preMarket} onTickerClick={onTickerClick} />
+          {showPremarketProminent && (
+            <PremarketMoverStrip full={preMarketFull} simple={preMarket} onTickerClick={onTickerClick} />
+          )}
         </div>
       </section>
 
-      {/* ST · MT · LT matrix as cards */}
-      {matrix && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {(
-            [
-              ["short_term", "Short", "ST"],
-              ["medium_term", "Medium", "MT"],
-              ["long_term", "Long", "LT"],
-            ] as const
-          ).map(([key, label, tag]) => {
-            const row = matrix[key];
-            if (!row) return null;
-            return (
-              <div
-                key={key}
-                className="rounded-xl border border-slate-600/70 bg-slate-800/50 p-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
-                    {tag} · {label}
-                  </span>
-                  {row.action && (
-                    <span
-                      className={clsx(
-                        "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
-                        MATRIX_ACTION[row.action] ?? MATRIX_ACTION.HOLD
-                      )}
-                    >
-                      {row.action}
-                    </span>
-                  )}
-                </div>
-                {row.stance && <p className="text-sm font-medium text-slate-100">{row.stance}</p>}
-                {(row.bullets ?? [])[0] && (
-                  <p className="text-xs text-slate-300 leading-snug line-clamp-3">{(row.bullets ?? [])[0]}</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {suggested.length > 0 && (
-        <div className="rounded-xl border border-slate-600/80 bg-slate-800/40 px-4 py-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-200 mb-2 flex items-center gap-1.5">
-            <Grid3X3 className="h-3.5 w-3.5 text-emerald-400" />
-            {skippedSuggested > 0 || coveredTickers?.size ? "More priority actions" : "Priority actions"}
-          </h3>
-          {skippedSuggested > 0 && (
-            <p className="text-[11px] text-slate-400 mb-2">
-              {skippedSuggested} ticker{skippedSuggested === 1 ? "" : "s"} already in Today&apos;s 3 moves above.
-            </p>
-          )}
-          <ul className="space-y-2">
-            {suggested.slice(0, 4).map((a, i) => (
-              <li key={`${a.ticker}-${i}`} className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => onTickerClick?.(a.ticker)}
-                  className="font-semibold text-emerald-300 hover:text-emerald-200 hover:underline"
-                >
-                  {a.ticker}
-                </button>
-                <span
-                  className={clsx(
-                    "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
-                    ACTION_STYLE[a.action] ?? ACTION_STYLE.HOLD
-                  )}
-                >
-                  {a.action}
-                </span>
-                <span className="text-sm text-slate-300">{a.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {nudges.length > 0 && (
-        <ul className="space-y-2">
-          {nudges.map((n, i) => (
-            <li key={i} className={clsx("flex items-start gap-2 rounded-lg border px-3 py-2 text-sm", n.tone)}>
-              <n.icon className="h-4 w-4 shrink-0 mt-0.5 opacity-80" />
-              <span>{n.text}</span>
-            </li>
-          ))}
-        </ul>
+      {tradingLens === "scout" && tacticalSlot}
+      {tradingLens === "scout" && matrixBlock}
+      {tradingLens === "swing" && matrixBlock}
+      {tradingLens === "swing" && priorityBlock}
+      {tradingLens === "owner" && matrixBlock}
+      {tradingLens === "owner" && nudgesBlock}
+      {tradingLens === "owner" && priorityBlock}
+      {tradingLens === "scout" && priorityBlock}
+      {tradingLens === "scout" && nudgesBlock}
+      {tradingLens === "swing" && nudgesBlock}
+      {!showPremarketProminent && (
+        <PremarketMoverStrip full={preMarketFull} simple={preMarket} onTickerClick={onTickerClick} />
       )}
 
       {(rb?.tax_approaching_ltcg ?? db?.tax_approaching_ltcg ?? []).length > 0 && (

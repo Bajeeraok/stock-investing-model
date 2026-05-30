@@ -176,16 +176,54 @@ def portfolio_tickers_from_config(config: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def get_dashboard_signal_universe(config: dict) -> list[str]:
-    """Watchlist + portfolio only — used on dashboard refresh (no audit cohort)."""
+def get_public_demo_universe(config: dict) -> list[str]:
+    """
+    Default tickers for signals when no user login / empty book.
+    Used for guest demos and to ensure the app is useful before auth ships.
+    """
+    demo = config.get("public_demo_universe")
+    if isinstance(demo, list) and demo:
+        return list(dict.fromkeys(str(t).upper().strip() for t in demo if t))
     watchlist = [str(t).upper() for t in (config.get("watchlist") or []) if t]
-    seen = set(watchlist)
-    merged = list(watchlist)
-    for t in portfolio_tickers_from_config(config):
-        if t not in seen:
+    if watchlist:
+        return watchlist
+    return ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "GOOGL", "META", "AMZN"]
+
+
+def has_config_portfolio(config: dict) -> bool:
+    """True when config defines at least one holding (pre-auth portfolio source)."""
+    return len(portfolio_tickers_from_config(config)) > 0
+
+
+def get_dashboard_signal_universe(config: dict) -> list[str]:
+    """Public demo + watchlist + portfolio — dashboard refresh (no audit cohort)."""
+    demo = get_public_demo_universe(config)
+    watchlist = [str(t).upper() for t in (config.get("watchlist") or []) if t]
+    seen: set[str] = set()
+    merged: list[str] = []
+    for t in demo + watchlist + portfolio_tickers_from_config(config):
+        if t and t not in seen:
             merged.append(t)
             seen.add(t)
-    return merged
+    return merged or demo
+
+
+def get_universe_meta(config: dict) -> dict:
+    """API metadata for guest vs linked portfolio (auth will extend this)."""
+    portfolio = portfolio_tickers_from_config(config)
+    demo = get_public_demo_universe(config)
+    guest = not has_config_portfolio(config)
+    return {
+        "guest_mode": guest,
+        "has_config_portfolio": not guest,
+        "public_demo_universe": demo,
+        "portfolio_ticker_count": len(portfolio),
+        "note": (
+            "Signals use the public demo universe until you sign in and link a portfolio."
+            if guest
+            else "Signals combine your portfolio, watchlist, and public demo ETFs."
+        ),
+    }
 
 
 def get_eod_signal_universe(config: dict) -> list[str]:

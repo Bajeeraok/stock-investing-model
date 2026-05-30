@@ -1,15 +1,41 @@
 /** Shared signal list presets (Signals tab + Roadmaps tab). */
 
+import type { TradingLens } from "./tradingLens";
+import { defaultPresetForLens } from "./tradingLens";
+
 export type SignalsPresetId = "all" | "pullback_buys" | "trim_candidates" | "earnings_week";
 
 export const SIGNALS_PRESET_STORAGE_KEY = "thrive-signals-preset";
 
-export const SIGNAL_PRESETS: { id: SignalsPresetId; label: string; hint: string }[] = [
+export const SIGNAL_PRESETS: { id: SignalsPresetId; label: string; hint: string; lens?: TradingLens }[] = [
   { id: "all", label: "All signals", hint: "No action/regime filter" },
-  { id: "pullback_buys", label: "Pullback buys", hint: "UP regime · RSI < 50 · score ≥ 55" },
-  { id: "trim_candidates", label: "Trim candidates", hint: "Score < 40 or REDUCE/AVOID signal" },
-  { id: "earnings_week", label: "Earnings week", hint: "Report within 7 days or caution window" },
+  {
+    id: "pullback_buys",
+    label: "Tactical setups",
+    hint: "UP regime · RSI < 50 · score ≥ 55 — Scout-friendly",
+    lens: "scout",
+  },
+  {
+    id: "trim_candidates",
+    label: "Core trim",
+    hint: "Score < 40 or REDUCE/AVOID — Owner / steward",
+    lens: "owner",
+  },
+  {
+    id: "earnings_week",
+    label: "Earnings week",
+    hint: "Report within 7 days or caution window — Swing",
+    lens: "swing",
+  },
 ];
+
+/** Presets ordered with lens-default first. */
+export function presetsForLens(lens: TradingLens): typeof SIGNAL_PRESETS {
+  const def = defaultPresetForLens(lens);
+  const rest = SIGNAL_PRESETS.filter((p) => p.id !== def);
+  const primary = SIGNAL_PRESETS.find((p) => p.id === def);
+  return primary ? [primary, ...rest] : SIGNAL_PRESETS;
+}
 
 export function loadSignalsPreset(): SignalsPresetId {
   try {

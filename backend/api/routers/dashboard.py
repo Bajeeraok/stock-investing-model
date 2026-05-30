@@ -48,6 +48,7 @@ from config_loader import (
     get_data_root,
     get_forward_tracking_tickers,
     get_signal_universe,
+    get_universe_meta,
     load_config,
     remove_ticker as _remove_ticker,
 )
@@ -2268,6 +2269,7 @@ def _compute_full_dashboard_sync() -> dict:
         "analysis_deferred": True,
         "watchlist": watchlist,
         "signal_universe": signal_universe,
+        "universe_meta": get_universe_meta(config),
         "signal_scores": _build_signal_scores(results),
         "thesis_check": thesis_check,
         "what_changed": what_changed_list,
