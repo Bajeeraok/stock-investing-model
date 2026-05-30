@@ -780,23 +780,27 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   onTickerClick={setSelectedTicker}
                 />
               )}
-              {overviewAlertCount != null && overviewAlertCount > 0 && (
-                <ToggleSection
-                  id="overview-alerts"
-                  title="Alerts"
-                  icon={<AlertTriangle />}
-                  badge={overviewAlertActionCount > 0 ? overviewAlertActionCount : overviewAlertCount}
-                  defaultOpen
-                >
-                  <AlertsPanel
-                    onTickerClick={setSelectedTicker}
-                    onLoaded={(total, actionRequired) => {
-                      setOverviewAlertCount(total);
-                      setOverviewAlertActionCount(actionRequired);
-                    }}
-                  />
-                </ToggleSection>
-              )}
+              <ToggleSection
+                id="overview-alerts"
+                title="Alerts"
+                icon={<AlertTriangle />}
+                badge={
+                  overviewAlertActionCount > 0
+                    ? overviewAlertActionCount
+                    : overviewAlertCount != null && overviewAlertCount > 0
+                      ? overviewAlertCount
+                      : undefined
+                }
+                defaultOpen={overviewAlertActionCount > 0}
+              >
+                <AlertsPanel
+                  onTickerClick={setSelectedTicker}
+                  onLoaded={(total, actionRequired) => {
+                    setOverviewAlertCount(total);
+                    setOverviewAlertActionCount(actionRequired);
+                  }}
+                />
+              </ToggleSection>
               <MarketStatePanel compactHeader={Boolean(data.retail_market_decisions?.market_context)} />
               <ModelHealthStrip
                 model_health={data.model_health}

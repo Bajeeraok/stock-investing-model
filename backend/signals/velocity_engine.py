@@ -195,9 +195,19 @@ def build_tactical_ui_payload(row: dict[str, Any], *, config: dict | None = None
     """Compact payload for ticker detail TacticalEntryPanel."""
     cfg = _default_cfg(config)
     horizon = int(row.get("tactical_horizon_trading_days") or cfg.get("horizon_trading_days", 5))
+    triggered = bool(row.get("velocity_triggered"))
+    try:
+        score = float(row.get("velocity_score") or 0)
+    except (TypeError, ValueError):
+        score = 0.0
+    min_score = int(cfg.get("min_velocity_score", 55))
+    # Show panel when triggered OR score is in watch band (aligns with paper-trading tactical track visibility).
+    show_panel = triggered or score >= max(40, min_score - 15)
     return {
-        "active": bool(row.get("velocity_triggered")),
-        "track": row.get("track") or ("velocity" if row.get("velocity_triggered") else "accumulate"),
+        "active": triggered,
+        "velocity_triggered": triggered,
+        "show_panel": show_panel,
+        "track": row.get("track") or ("velocity" if triggered else "accumulate"),
         "velocity_score": row.get("velocity_score"),
         "rvol": row.get("rvol"),
         "bb_pct_b": row.get("bb_pct_b"),

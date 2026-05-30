@@ -5,6 +5,10 @@ import { Zap } from "lucide-react";
 
 export type TacticalEntryPayload = {
   active?: boolean;
+  /** True when RVOL/BB rules fired (same as paper-trading tactical track). */
+  velocity_triggered?: boolean;
+  /** Backend hint: show velocity strip even when not fully triggered (watch band). */
+  show_panel?: boolean;
   track?: string;
   velocity_score?: number | null;
   rvol?: number | null;
@@ -29,23 +33,36 @@ export function TacticalEntryPanel({
   payload: TacticalEntryPayload | null | undefined;
   layout?: "scout" | "planner";
 }) {
-  if (!payload?.active) return null;
+  if (!payload) return null;
+  const triggered = Boolean(payload.active || payload.velocity_triggered);
+  const show =
+    payload.show_panel ??
+    triggered ||
+    (payload.velocity_score != null && payload.velocity_score >= 40) ||
+    payload.track === "velocity";
+  if (!show) return null;
 
   const horizon = payload.horizon_trading_days ?? 5;
   const compact = layout === "scout";
+  const watchOnly = !triggered;
 
   return (
     <div
       className={clsx(
-        "border-b border-violet-500/25 bg-violet-950/30",
+        "border-b",
+        watchOnly ? "border-violet-500/15 bg-violet-950/15" : "border-violet-500/25 bg-violet-950/30",
         compact ? "px-3 py-2 sm:px-5" : "px-4 py-3 sm:px-6",
       )}
     >
       <div className="flex items-start gap-2">
-        <Zap className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
+        <Zap className={clsx("h-4 w-4 mt-0.5 shrink-0", watchOnly ? "text-violet-400/70" : "text-violet-400")} />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-semibold uppercase tracking-wide text-violet-200">
-            {layout === "scout" ? "Scout — tactical breakout" : "Planner — quick in/out"}
+            {watchOnly
+              ? "Velocity watch (RVOL / BB)"
+              : layout === "scout"
+                ? "Scout — tactical breakout"
+                : "Planner — quick in/out"}
           </p>
           {!compact && (
             <p className="text-[11px] text-slate-400 mt-1 leading-snug">

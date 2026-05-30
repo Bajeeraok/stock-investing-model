@@ -569,12 +569,10 @@ export function TickerDetailModal({
         )}
 
         {detail && !loading && detail.investor_summary?.tactical_entry && (
-          (positionIntent === "trade" || detail.investor_summary.tactical_entry.active) && (
-            <TacticalEntryPanel
-              payload={detail.investor_summary.tactical_entry}
-              layout={positionIntent === "trade" ? "scout" : "planner"}
-            />
-          )
+          <TacticalEntryPanel
+            payload={detail.investor_summary.tactical_entry}
+            layout={positionIntent === "trade" ? "scout" : "planner"}
+          />
         )}
 
         {/* Catalyst — summary first, full note on expand */}
