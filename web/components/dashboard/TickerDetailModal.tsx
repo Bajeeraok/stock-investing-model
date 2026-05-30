@@ -21,6 +21,7 @@ import {
   getDecisionMode,
   setDecisionMode,
   intentFromMode,
+  modeFromIntent,
   type DecisionMode,
 } from "@/lib/decisionMode";
 import { DecisionModeSelector } from "./DecisionModeSelector";
@@ -669,7 +670,7 @@ export function TickerDetailModal({
                   setPositionIntentLocal(intent);
                   if (intent) {
                     setPositionIntent(ticker, intent);
-                    const m = intentFromMode(intent);
+                    const m = modeFromIntent(intent);
                     if (m) {
                       setDecisionModeLocal(m);
                       setDecisionMode(ticker, m);
@@ -884,7 +885,7 @@ export function TickerDetailModal({
                       setPositionIntentLocal(intent);
                       if (intent) {
                         setPositionIntent(detail.ticker, intent);
-                        const m = intentFromMode(intent);
+                        const m = modeFromIntent(intent);
                         if (m) {
                           setDecisionModeLocal(m);
                           setDecisionMode(detail.ticker, m);
