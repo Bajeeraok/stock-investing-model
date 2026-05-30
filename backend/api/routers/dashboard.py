@@ -1012,6 +1012,9 @@ def _compute_full_dashboard_sync() -> dict:
         except Exception as e:
             logger.debug("Confidence fetch failed: %s", e)
 
+    from signals.alert_provenance import attach_trim_provenance_to_holdings
+
+    sell_max_trim = float((config.get("score") or {}).get("sell_max", 35))
     portfolios_out: dict[str, dict] = {}
     for name in portfolio_names:
         if name == "All":
@@ -1047,6 +1050,7 @@ def _compute_full_dashboard_sync() -> dict:
                 for h in rep.get("per_holding", []):
                     if h.get("value") is not None and total_value > 0:
                         h["pct"] = round(100 * h["value"] / total_value, 1)
+        attach_trim_provenance_to_holdings(rep.get("per_holding") or [], sell_max=sell_max_trim)
         portfolios_out[name] = rep
     report = portfolios_out.get("All") or (portfolios_out[portfolio_names[1]] if len(portfolio_names) > 1 else {})
     logger.info("[dashboard] section: portfolio_report DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
@@ -1818,7 +1822,12 @@ def _compute_full_dashboard_sync() -> dict:
             "nudge": nudge,
         })
 
-    trim_candidates = [h for h in report["per_holding"] if h.get("score") is not None and h["score"] < 40]
+    from signals.alert_provenance import build_trim_candidates_from_holdings
+
+    trim_candidates = build_trim_candidates_from_holdings(
+        report.get("per_holding") or [],
+        sell_max=sell_max_trim,
+    )
 
     # Tax-aware exit optimizer: positions approaching 1-year LTCG threshold (federal + SC state)
     tax_aware_exits_out: dict = {"items": [], "message": None}

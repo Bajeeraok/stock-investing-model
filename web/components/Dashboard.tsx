@@ -692,6 +692,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           trimCandidates={selectedTrimCandidates.map((h) => ({
             ticker: h.ticker,
             label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
+            trim_source: h.trim_source,
+            trim_primary_driver: h.trim_primary_driver,
+            trim_triggers: h.trim_triggers,
+            trim_detail: h.trim_detail,
           }))}
           signals={lazySignals ?? data.signals ?? []}
           afterHours={

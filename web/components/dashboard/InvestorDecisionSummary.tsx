@@ -1350,24 +1350,38 @@ export function InvestorDecisionSummarySection({
         { className: "p-4 border-b border-slate-700/80 space-y-3" },
         React.createElement(
           "p",
-          { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold" },
-          `${horizonLabel(primaryHorizonKey)} plan`
+          {
+            className: "text-xs text-slate-200 uppercase tracking-wide font-semibold",
+          },
+          decisionMode === "owner" && primaryHorizonKey === "long"
+            ? "Other timeframes & tiers"
+            : `${horizonLabel(primaryHorizonKey)} plan`
         ),
-        primaryHorizonKey === "short" &&
+        decisionMode === "owner" &&
+          primaryHorizonKey === "long" &&
+          React.createElement(
+            "p",
+            { className: "text-sm text-slate-200 leading-snug" },
+            "Today\u2019s call and price ladder are above. Expand to compare swing horizons or open the Levels tab for the full tier ladder."
+          ),
+        !(decisionMode === "owner" && primaryHorizonKey === "long") &&
+          primaryHorizonKey === "short" &&
           React.createElement(HorizonCard, {
             horizon: short,
             horizonKind: "short",
             ...horizonCardShared,
             density: "scan",
           }),
-        primaryHorizonKey === "medium" &&
+        !(decisionMode === "owner" && primaryHorizonKey === "long") &&
+          primaryHorizonKey === "medium" &&
           React.createElement(HorizonCard, {
             horizon: medium,
             horizonKind: "medium",
             ...horizonCardShared,
             density: "scan",
           }),
-        primaryHorizonKey === "long" &&
+        !(decisionMode === "owner" && primaryHorizonKey === "long") &&
+          primaryHorizonKey === "long" &&
           React.createElement(HorizonCard, {
             horizon: long,
             horizonKind: "long",
@@ -1384,7 +1398,7 @@ export function InvestorDecisionSummarySection({
             type: "button",
             onClick: () => setCompareHorizonsOpen((o) => !o),
             className:
-              "w-full text-sm text-slate-400 hover:text-slate-200 py-2 rounded-lg border border-slate-700/80 hover:bg-slate-800/50 transition-colors",
+              "w-full text-sm text-slate-200 hover:text-white py-2 rounded-lg border border-slate-600/80 hover:bg-slate-800/50 transition-colors",
           },
           compareHorizonsOpen ? "Hide other timeframes" : "Compare all timeframes"
         ),

@@ -149,7 +149,7 @@ export function DecisionDeck({
       aria-label={`Today’s decision — ${horizonLabel(primaryKey)}`}
     >
       <div className="px-4 py-3 border-b border-slate-700/50 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-[0.14em] font-bold text-slate-400">
+        <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-slate-200">
           Today · {horizonLabel(primaryKey)}
         </p>
         <span
@@ -170,8 +170,8 @@ export function DecisionDeck({
             Velocity / tactical lane active — confirm GO/NO-GO in scout panel above.
           </p>
         )}
-        {band && (
-          <p className={clsx("text-sm font-medium leading-snug", band.inside ? "text-emerald-200" : "text-amber-200/95")}>
+        {band && !(mode === "owner" && long.entry_tiers?.tiers?.length) && (
+          <p className={clsx("text-sm font-medium leading-snug", band.inside ? "text-emerald-200" : "text-amber-100")}>
             {band.line}
           </p>
         )}
@@ -182,6 +182,7 @@ export function DecisionDeck({
             currentPrice={currentPrice}
             stopLoss={primary.stop_loss > 0 ? primary.stop_loss : null}
             target={primary.target > 0 ? primary.target : null}
+            variant="deck"
           />
         ) : (
           ez &&
@@ -200,26 +201,29 @@ export function DecisionDeck({
         )}
         <div className="grid grid-cols-2 gap-2 text-xs font-mono">
           {primary.stop_loss > 0 && (
-            <div className="rounded-lg bg-slate-900/80 border border-red-500/25 px-2.5 py-2">
-              <p className="text-[10px] uppercase text-slate-500 mb-0.5">Stop</p>
-              <p className="text-red-300 tabular-nums">${primary.stop_loss.toFixed(2)}</p>
+            <div className="rounded-lg bg-slate-900/80 border border-red-500/35 px-2.5 py-2">
+              <p className="text-[10px] uppercase text-red-200/90 font-semibold mb-0.5">Stop</p>
+              <p className="text-red-200 tabular-nums font-semibold">${primary.stop_loss.toFixed(2)}</p>
             </div>
           )}
           {primary.target > 0 && (
-            <div className="rounded-lg bg-slate-900/80 border border-emerald-500/25 px-2.5 py-2">
-              <p className="text-[10px] uppercase text-slate-500 mb-0.5">Target</p>
-              <p className="text-emerald-300 tabular-nums">${primary.target.toFixed(2)}</p>
+            <div className="rounded-lg bg-slate-900/80 border border-emerald-500/35 px-2.5 py-2">
+              <p className="text-[10px] uppercase text-emerald-200/90 font-semibold mb-0.5">Target</p>
+              <p className="text-emerald-200 tabular-nums font-semibold">${primary.target.toFixed(2)}</p>
             </div>
           )}
         </div>
         {nextTriggerText && (
-          <p className="text-xs text-slate-400 leading-snug border-t border-slate-700/60 pt-2">
+          <p className="text-sm text-slate-200 leading-snug border-t border-slate-600/80 pt-2">
             <span className={clsx("font-semibold", nextLabelClass)}>Next: </span>
             {nextTriggerText.length > 160 ? `${nextTriggerText.slice(0, 157)}…` : nextTriggerText}
           </p>
         )}
         {one_answer?.bottom_line && (
-          <p className="text-[11px] text-slate-500 leading-snug">{one_answer.bottom_line}</p>
+          <p className="text-sm text-slate-200 leading-snug border-t border-slate-600/60 pt-2">
+            <span className="font-semibold text-emerald-200/95">Bottom line: </span>
+            {one_answer.bottom_line}
+          </p>
         )}
       </div>
     </section>

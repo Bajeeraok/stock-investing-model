@@ -2,6 +2,13 @@
 
 import { ArrowRight, Calendar, Moon, Scissors, Zap } from "lucide-react";
 import type { Signal } from "@/app/page";
+import {
+  AlertHorizonChip,
+  formatHorizonSuggestionsLine,
+  type AlertSourceKind,
+  type StoryProvenance,
+  type TrimProvenance,
+} from "./AlertHorizonChip";
 
 export type AfterHoursMove = {
   ticker: string;
@@ -15,11 +22,43 @@ export type TodayMove = {
   ticker?: string;
   title: string;
   detail: string;
+  storyProvenance?: import("./AlertHorizonChip").StoryProvenance;
+  trimProvenance?: import("./AlertHorizonChip").TrimProvenance;
 };
+
+function storyProv(s: Signal): StoryProvenance {
+  return {
+    source: (s as Signal & { story_change_source?: string }).story_change_source ?? null,
+    trigger: (s as Signal & { story_change_trigger?: string }).story_change_trigger ?? null,
+    horizon: (s as Signal & { story_change_horizon?: string }).story_change_horizon ?? null,
+    horizonFlips: (s as Signal & { story_change_horizon_flips?: string[] }).story_change_horizon_flips ?? null,
+  };
+}
+
+function trimProv(h: {
+  trim_source?: string | null;
+  trim_primary_driver?: string | null;
+  trim_triggers?: string[] | null;
+  trim_horizon?: string | null;
+}): TrimProvenance {
+  return {
+    source: h.trim_source ?? null,
+    primaryDriver: h.trim_primary_driver ?? null,
+    triggers: h.trim_triggers ?? null,
+    horizon: h.trim_horizon ?? null,
+  };
+}
 
 function buildTodayMoves(input: {
   storyChanges: Signal[];
-  trimCandidates: { ticker: string; label: string }[];
+  trimCandidates: {
+    ticker: string;
+    label: string;
+    trim_source?: string | null;
+    trim_primary_driver?: string | null;
+    trim_triggers?: string[] | null;
+    trim_detail?: string | null;
+  }[];
   earningsSignals: Signal[];
   afterHours?: AfterHoursMove[];
   macroHeadline?: string | null;
@@ -60,7 +99,8 @@ function buildTodayMoves(input: {
       kind: "trim",
       ticker: t.ticker,
       title: `${t.ticker} — consider trim`,
-      detail: t.label,
+      detail: t.trim_detail || t.label,
+      trimProvenance: trimProv(t),
     });
   }
 
@@ -109,7 +149,14 @@ export function TodaysMovesPanel({
   onViewAll,
 }: {
   storyChanges: Signal[];
-  trimCandidates: { ticker: string; label: string }[];
+  trimCandidates: {
+    ticker: string;
+    label: string;
+    trim_source?: string | null;
+    trim_primary_driver?: string | null;
+    trim_triggers?: string[] | null;
+    trim_detail?: string | null;
+  }[];
   signals: Signal[];
   afterHours?: AfterHoursMove[];
   macroHeadline?: string | null;
@@ -136,7 +183,9 @@ export function TodaysMovesPanel({
       <div className="flex items-center justify-between gap-2 mb-3">
         <div>
           <h2 className="font-semibold text-emerald-300 text-sm">Today&apos;s 3 moves</h2>
-          <p className="text-[11px] text-slate-500 mt-0.5">What changed · trim flags · earnings — tap to open ticker</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Composite (MT) story & trim · ST earnings — hover chips for what drove each alert
+          </p>
         </div>
         {onViewAll && (
           <button
@@ -152,6 +201,14 @@ export function TodaysMovesPanel({
         {moves.map((move) => {
           const style = KIND_STYLE[move.kind];
           const Icon = style.icon;
+          const signalRow =
+            move.ticker && signals.length > 0
+              ? signals.find((s) => s.ticker === move.ticker)
+              : undefined;
+          const horizonLine =
+            signalRow && (move.kind === "story" || move.kind === "trim")
+              ? formatHorizonSuggestionsLine(signalRow)
+              : null;
           return (
             <div
               key={move.id}
@@ -171,8 +228,19 @@ export function TodaysMovesPanel({
                   ) : (
                     <span className={`text-sm font-medium ${style.text}`}>{move.title}</span>
                   )}
+                  <AlertHorizonChip
+                    kind={move.kind as AlertSourceKind}
+                    compact
+                    story={move.storyProvenance}
+                    trim={move.trimProvenance}
+                  />
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5 leading-snug">{move.detail}</p>
+                {horizonLine && (
+                  <p className="text-[10px] text-slate-500 mt-1 font-mono" title="Horizon suggestions on file — context only; alert was not triggered by a horizon flip">
+                    Playbooks: {horizonLine}
+                  </p>
+                )}
               </div>
             </div>
           );

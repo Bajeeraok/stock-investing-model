@@ -932,6 +932,10 @@ export interface Signal {
     error?: string | null;
   } | null;
   story_change?: string | null;
+  story_change_source?: string | null;
+  story_change_trigger?: string | null;
+  story_change_horizon?: string | null;
+  story_change_horizon_flips?: string[] | null;
   short_suggestion?: string | null;
   medium_suggestion?: string | null;
   long_suggestion?: string | null;
@@ -1026,6 +1030,11 @@ export interface PortfolioHolding {
   suggestion: string;
   /** One-line “do this today” from portfolio doctor */
   action_today?: string | null;
+  trim_source?: string | null;
+  trim_primary_driver?: string | null;
+  trim_triggers?: string[] | null;
+  trim_horizon?: string | null;
+  trim_detail?: string | null;
   earnings_note?: string | null;
   account?: string;
   cost_basis?: number;

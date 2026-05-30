@@ -1024,6 +1024,13 @@ export function EntryZonePriceBar({
 }
 
 /** Long-term ladder: nearest target tier (emerald) + other tiers (faint) + full-position MOS ceiling (cyan). */
+type ScaleMarker = {
+  value: number;
+  label: string;
+  tone: "emerald" | "slate" | "cyan" | "red" | "violet" | "white";
+  priority: number;
+};
+
 export function LongTermAccumulationScale({
   horizon,
   entryTiers,
@@ -1031,6 +1038,7 @@ export function LongTermAccumulationScale({
   stopLoss,
   target,
   className,
+  variant = "full",
 }: {
   horizon: Pick<HorizonSignalPayload, "entry_zone">;
   entryTiers: NonNullable<HorizonSignalPayload["entry_tiers"]>;
@@ -1038,6 +1046,8 @@ export function LongTermAccumulationScale({
   stopLoss?: number | null;
   target?: number | null;
   className?: string;
+  /** deck = Today hero (bar labels only); full = horizon card + extra copy */
+  variant?: "full" | "deck";
 }) {
   const tiers = [...(entryTiers.tiers ?? [])].sort((a, b) => a.low - b.low);
   if (!tiers.length || !(currentPrice > 0)) return null;
@@ -1078,107 +1088,169 @@ export function LongTermAccumulationScale({
     ? `Target band (${primaryId})`
     : "Target accumulation band";
 
-  let statusLine: React.ReactNode;
+  let statusHeadline: string;
+  let statusDetail: string;
   if (insidePrimary) {
-    statusLine = (
-      <>
-        <span className="text-emerald-300 font-semibold">Inside {tierLabel}</span>
-        <span className="text-slate-500"> — staged long-term adds per tier plan.</span>
-      </>
-    );
+    statusHeadline = `Inside ${tierLabel}`;
+    statusDetail = "Staged long-term adds per your tier plan.";
   } else if (abovePrimary) {
     const gapPct = ((currentPrice - primaryHi) / primaryHi) * 100;
-    statusLine = (
-      <>
-        <span className="text-amber-300 font-semibold">{gapPct.toFixed(1)}% above {tierLabel}</span>
-        <span className="text-slate-500"> — wait for pullback into the highlighted band.</span>
-      </>
-    );
+    statusHeadline = `${gapPct.toFixed(1)}% above ${tierLabel}`;
+    statusDetail = "Wait for pullback into the highlighted band.";
   } else {
     const gapPct = ((primaryLo - currentPrice) / primaryLo) * 100;
-    statusLine = (
-      <>
-        <span className="text-sky-300/90 font-semibold">{gapPct.toFixed(1)}% below {tierLabel} low</span>
-        <span className="text-slate-500"> — spot hasn&apos;t reached that accumulation sleeve yet.</span>
-      </>
-    );
+    statusHeadline = `${gapPct.toFixed(1)}% below ${tierLabel} low`;
+    statusDetail = "Spot has not reached that accumulation sleeve yet.";
   }
 
+  const markerToneClass: Record<ScaleMarker["tone"], string> = {
+    emerald: "text-emerald-200",
+    slate: "text-slate-300",
+    cyan: "text-cyan-200",
+    red: "text-red-300",
+    violet: "text-violet-200",
+    white: "text-white",
+  };
+
+  const barMarkers: ScaleMarker[] = [];
+  for (const t of tiers) {
+    const lo = Math.min(t.low, t.high);
+    const hi = Math.max(t.lo, t.high);
+    const isPrimary = t.id === primaryId;
+    barMarkers.push({
+      value: lo,
+      label: `${t.id} ${lo.toFixed(0)}`,
+      tone: isPrimary ? "emerald" : "slate",
+      priority: isPrimary ? 2 : 1,
+    });
+    if (hi - lo > scaleMax * 0.02) {
+      barMarkers.push({
+        value: hi,
+        label: `${hi.toFixed(0)}`,
+        tone: isPrimary ? "emerald" : "slate",
+        priority: isPrimary ? 2 : 0,
+      });
+    }
+  }
+  if (mos != null && mos > 0) {
+    barMarkers.push({ value: mos, label: `MOS ${mos.toFixed(0)}`, tone: "cyan", priority: 5 });
+  }
+  if (stopLoss != null && stopLoss > 0) {
+    barMarkers.push({ value: stopLoss, label: `Stop ${stopLoss.toFixed(0)}`, tone: "red", priority: 4 });
+  }
+  if (target != null && target > 0) {
+    barMarkers.push({ value: target, label: `Tgt ${target.toFixed(0)}`, tone: "violet", priority: 3 });
+  }
+
+  const placedMarkers = barMarkers
+    .sort((a, b) => b.priority - a.priority || a.value - b.value)
+    .filter((m, i, arr) => {
+      const p = pct(m.value);
+      return !arr.slice(0, i).some((o) => Math.abs(pct(o.value) - p) < 7);
+    });
+
   return (
-    <div className={clsx("space-y-2", className)} aria-label="Long-term accumulation price scale">
-      <div className="flex justify-between gap-2 text-[11px] font-mono text-slate-500">
-        <span className="text-slate-500 shrink-0">${scaleMin.toFixed(2)}</span>
-        <span className="text-slate-200 font-medium shrink-0">Now ${currentPrice.toFixed(2)}</span>
-        <span className="text-slate-500 shrink-0">${scaleMax.toFixed(2)}</span>
+    <div className={clsx("space-y-2.5", className)} aria-label="Long-term accumulation price scale">
+      <div className="flex justify-between gap-2 text-xs font-mono text-slate-300">
+        <span className="shrink-0 tabular-nums">${scaleMin.toFixed(2)}</span>
+        <span className="text-white font-semibold shrink-0 tabular-nums">Now ${currentPrice.toFixed(2)}</span>
+        <span className="shrink-0 tabular-nums">${scaleMax.toFixed(2)}</span>
       </div>
-      <div className="relative h-6 rounded-full overflow-hidden border border-slate-700 bg-slate-900">
-        <div className="absolute inset-0 bg-slate-800/90" />
-        {tiers.map((t) => {
-          const lo = Math.min(t.low, t.high);
-          const hi = Math.max(t.low, t.high);
-          const isPrimary = t.id === primaryId;
-          const left = pct(lo);
-          const width = Math.max(2, pct(hi) - left);
-          return (
+      <div className="relative">
+        <div className="relative h-8 rounded-lg overflow-hidden border border-slate-600 bg-slate-900">
+          <div className="absolute inset-0 bg-slate-800/90" />
+          {tiers.map((t) => {
+            const lo = Math.min(t.low, t.high);
+            const hi = Math.max(t.lo, t.high);
+            const isPrimary = t.id === primaryId;
+            const left = pct(lo);
+            const width = Math.max(3, pct(hi) - left);
+            return (
+              <div
+                key={t.id}
+                className={clsx(
+                  "absolute top-0 bottom-0 border-x flex items-center justify-center overflow-hidden",
+                  isPrimary
+                    ? "border-emerald-400/70 bg-emerald-500/40 z-[2]"
+                    : "border-slate-500/50 bg-slate-600/25 z-[1]",
+                )}
+                style={{ left: `${left}%`, width: `${width}%` }}
+                title={`${t.label || t.id}: $${lo.toFixed(2)}–$${hi.toFixed(2)}`}
+              >
+                {width >= 10 && (
+                  <span
+                    className={clsx(
+                      "text-[9px] font-mono font-semibold truncate px-0.5",
+                      isPrimary ? "text-emerald-100" : "text-slate-400",
+                    )}
+                  >
+                    {t.id} ${lo.toFixed(0)}–{hi.toFixed(0)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+          {mosP != null && (
             <div
-              key={t.id}
-              className={clsx(
-                "absolute top-0 bottom-0 border-x",
-                isPrimary
-                  ? "border-emerald-500/60 bg-emerald-500/35 z-[2]"
-                  : "border-slate-600/40 bg-slate-600/20 z-[1]",
-              )}
-              style={{ left: `${left}%`, width: `${width}%` }}
-              title={`${t.label || t.id}: $${lo.toFixed(2)}–$${hi.toFixed(2)}`}
+              className="absolute top-0 bottom-0 w-1.5 bg-cyan-400 z-[3] shadow-[0_0_8px_rgba(34,211,238,0.65)]"
+              style={{ left: `calc(${mosP}% - 3px)` }}
+              title={`Full-position MOS ceiling $${mos!.toFixed(2)}`}
             />
-          );
-        })}
-        {mosP != null && (
-          <div
-            className="absolute top-0 bottom-0 w-1 bg-cyan-400/90 z-[3] shadow-[0_0_6px_rgba(34,211,238,0.5)]"
-            style={{ left: `calc(${mosP}% - 2px)` }}
-            title={`Full-position MOS ceiling $${mos!.toFixed(2)}`}
-          />
-        )}
-        {stopLoss != null && stopLoss > 0 && (
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-red-500/80 z-[4]"
-            style={{ left: `calc(${pct(stopLoss)}% - 1px)` }}
-            title={`Stop $${stopLoss.toFixed(2)}`}
-          />
-        )}
-        <div
-          className={clsx(
-            "absolute top-1/2 z-20 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-md",
-            insidePrimary ? "border-emerald-200 bg-emerald-600" : "border-white bg-slate-950",
           )}
-          style={{ left: `${nowP}%` }}
-          title={`Last price $${currentPrice.toFixed(2)}`}
-        />
-      </div>
-      <p className="text-xs text-slate-400 leading-snug">{statusLine}</p>
-      <p className="text-[11px] text-slate-500 leading-snug">
-        <span className="text-emerald-300/90 font-medium">{primaryBandLabel}</span>
-        {" "}
-        ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
-        {mos != null && mos > 0 && (
-          <>
-            {" · "}
-            <span className="text-cyan-300/90 font-medium">Full MOS ceiling</span> ${mos.toFixed(2)}
-            {aboveMos && (
-              <span className="text-amber-200/90"> — spot above ceiling (partial sizing only above this level).</span>
+          {stopLoss != null && stopLoss > 0 && (
+            <div
+              className="absolute top-0 bottom-0 w-1 bg-red-500 z-[4]"
+              style={{ left: `calc(${pct(stopLoss)}% - 1px)` }}
+              title={`Stop $${stopLoss.toFixed(2)}`}
+            />
+          )}
+          <div
+            className={clsx(
+              "absolute top-1/2 z-20 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 shadow-md",
+              insidePrimary ? "border-emerald-100 bg-emerald-500" : "border-white bg-slate-950",
             )}
-          </>
-        )}
-      </p>
-      <p className="text-[10px] text-slate-600 leading-snug">
-        Faint bands = other tiers on the same scale.{" "}
-        {mosP != null && <span className="text-cyan-400/80">Cyan tick = max buy for a full position. </span>}
-        {stopLoss != null && stopLoss > 0 && <span className="text-red-400/80">Red tick = structural stop. </span>}
-        {target != null && target > 0 && (
-          <span>Target ${target.toFixed(2)} included in scale.</span>
-        )}
-      </p>
+            style={{ left: `${nowP}%` }}
+            title={`Last price $${currentPrice.toFixed(2)}`}
+          />
+        </div>
+        <div className="relative h-9 mt-1">
+          {placedMarkers.map((m) => (
+            <span
+              key={`${m.label}-${m.value}`}
+              className={clsx(
+                "absolute top-0 -translate-x-1/2 text-[10px] font-mono font-semibold tabular-nums whitespace-nowrap",
+                markerToneClass[m.tone],
+              )}
+              style={{ left: `${pct(m.value)}%` }}
+            >
+              {m.label}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="text-sm leading-snug">
+        <p className="font-semibold text-amber-100">{statusHeadline}</p>
+        <p className="text-slate-200 mt-0.5">{statusDetail}</p>
+      </div>
+      {variant === "full" && (
+        <p className="text-xs text-slate-200 leading-snug">
+          <span className="text-emerald-300 font-semibold">{primaryBandLabel}</span>
+          {" "}
+          <span className="font-mono tabular-nums">
+            ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
+          </span>
+          {mos != null && mos > 0 && (
+            <>
+              {" · "}
+              <span className="text-cyan-300 font-semibold">Full MOS</span>{" "}
+              <span className="font-mono tabular-nums">${mos.toFixed(2)}</span>
+              {aboveMos && (
+                <span className="text-amber-100"> — above full-position ceiling (partial size only).</span>
+              )}
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -1680,8 +1752,8 @@ export function HorizonDivergenceNote({
   const ltAdd = lt === "BUY" || lt === "STRONG BUY" || lt === "WATCH";
   if (!stBlock || !ltAdd) return null;
   return (
-    <p className="text-xs text-cyan-200/90 leading-snug border border-cyan-500/25 bg-cyan-950/30 rounded-lg px-3 py-2">
-      <span className="font-semibold text-cyan-200">Different horizons, different rules: </span>
+    <p className="text-sm text-cyan-100 leading-snug border border-cyan-500/35 bg-cyan-950/40 rounded-lg px-3 py-2.5">
+      <span className="font-semibold text-cyan-50">Different horizons, different rules: </span>
       Near-term gates block adds (swing), while long-term tiers can still show value — that is not a bug. Match the row to your holding period.
     </p>
   );

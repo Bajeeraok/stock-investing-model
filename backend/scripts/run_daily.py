@@ -216,6 +216,10 @@ def run_signals(
                 "medium_suggestion": None,
                 "long_suggestion": None,
                 "story_change": None,
+                "story_change_source": None,
+                "story_change_trigger": None,
+                "story_change_horizon": None,
+                "story_change_horizon_flips": None,
             })
             continue
 
@@ -412,18 +416,26 @@ def run_signals(
             except Exception:
                 pass
 
-        # Story-change detection: regime flip or score drop
-        story_change = None
+        # Story-change detection (composite + optional ST/MT/LT suggestion flips)
+        story_patch: dict = {}
         if last_run and ticker in last_run:
-            prev = last_run[ticker]
-            prev_regime = prev.get("regime")
-            prev_score = prev.get("composite_buy")
-            if prev_regime and prev_regime != regime:
-                story_change = f"REGIME: {prev_regime} -> {regime}"
-            elif prev_score is not None and composite_buy is not None:
-                delta = prev_score - composite_buy
-                if delta >= alert_delta:
-                    story_change = f"SCORE DROP: {prev_score:.0f} -> {composite_buy:.0f} (-{delta:.0f})"
+            from signals.alert_provenance import detect_story_change
+
+            prev_row = last_run[ticker]
+            _sp = detect_story_change(
+                prev_row,
+                regime=regime,
+                composite_buy=composite_buy,
+                current_row={
+                    "short_suggestion": sig.get("short_suggestion"),
+                    "medium_suggestion": sig.get("medium_suggestion"),
+                    "long_suggestion": sig.get("long_suggestion"),
+                },
+                alert_delta=alert_delta,
+            )
+            if _sp:
+                story_patch = _sp
+        story_change = story_patch.get("story_change")
 
         daily_move_pct = None
         if close is not None and len(close) >= 2:
@@ -493,6 +505,10 @@ def run_signals(
             "buy_target_confidence_pct": sig.get("buy_target_confidence_pct"),
             "sell_target_confidence_pct": sig.get("sell_target_confidence_pct"),
             "story_change": story_change,
+            "story_change_source": story_patch.get("story_change_source"),
+            "story_change_trigger": story_patch.get("story_change_trigger"),
+            "story_change_horizon": story_patch.get("story_change_horizon"),
+            "story_change_horizon_flips": story_patch.get("story_change_horizon_flips"),
             "volume_ratio": volume_ratio,
             "volume_unusual": volume_unusual,
             "drawdown_52w": drawdown_52w,
