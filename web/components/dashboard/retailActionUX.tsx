@@ -1115,7 +1115,7 @@ export function LongTermAccumulationScale({
   const barMarkers: ScaleMarker[] = [];
   for (const t of tiers) {
     const lo = Math.min(t.low, t.high);
-    const hi = Math.max(t.lo, t.high);
+    const hi = Math.max(lo, t.high);
     const isPrimary = t.id === primaryId;
     barMarkers.push({
       value: lo,
@@ -1161,7 +1161,7 @@ export function LongTermAccumulationScale({
           <div className="absolute inset-0 bg-slate-800/90" />
           {tiers.map((t) => {
             const lo = Math.min(t.low, t.high);
-            const hi = Math.max(t.lo, t.high);
+            const hi = Math.max(lo, t.high);
             const isPrimary = t.id === primaryId;
             const left = pct(lo);
             const width = Math.max(3, pct(hi) - left);

@@ -1,6 +1,7 @@
 export { DashboardTabs, type TabId } from "./DashboardTabs";
 export { StoryAlerts } from "./StoryAlerts";
-export { TodaysMovesPanel } from "./TodaysMovesPanel";
+export { TodaysMovesPanel, buildTodayMoves, todayMoveTickers } from "./TodaysMovesPanel";
+export { PremarketMoverStrip } from "./PremarketMoverStrip";
 export { TickerDetailModal } from "./TickerDetailModal";
 export { AddTickerBar } from "./AddTickerBar";
 export { CryptoSection } from "./CryptoSection";
@@ -67,6 +68,7 @@ export { InsiderFlowTracker, type InsiderFlowData, type InsiderBuy, type Insider
 export { TaxAwareExitPanel, type TaxAwareExitsData, type TaxAwareExitItem } from "./TaxAwareExitPanel";
 export { AlertsPanel, type ScanAlert } from "./AlertsPanel";
 export { RetailBriefingPanel } from "./RetailBriefingPanel";
+export { OverviewAtAGlance } from "./OverviewAtAGlance";
 export { RoadmapsPanel } from "./RoadmapsPanel";
 export { default as TrackRecordPanel } from "./TrackRecordPanel";
 export { CalibrationCurvePanel } from "./CalibrationCurvePanel";

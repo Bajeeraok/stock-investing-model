@@ -15,7 +15,7 @@ This guide lists **concrete ways** to validate your model’s predictions, using
 - **Direction accuracy:** % of days we called Bullish/Bearish and the next day went the right way. Target: >52–55%; 58%+ is strong.
 - **Range hit rate:** % of days the actual move was within our ±typical_move. ~68% is a good target if we use ±1σ.
 
-**How to improve:** See **MODEL_VALIDATION.md** (bias thresholds, state definition, typical_move).
+**How to improve:** See **[MODEL_VALIDATION.md](MODEL_VALIDATION.md)** (bias thresholds, state definition, typical_move).
 
 ---
 

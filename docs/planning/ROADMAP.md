@@ -122,7 +122,7 @@ This document tracks the implementation plan and verification checklist. Use it 
 
 When resuming:
 
-1. Open this file (`ROADMAP.md`).
+1. Open this file (`docs/planning/ROADMAP.md`).
 2. Find the next unchecked item in the Implementation checklist.
 3. Implement that item.
 4. Mark it `[x]` when done.

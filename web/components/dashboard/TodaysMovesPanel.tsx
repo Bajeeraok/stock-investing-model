@@ -7,24 +7,15 @@ import {
   formatHorizonSuggestionsLine,
   type AlertSourceKind,
   type StoryProvenance,
-  type TrimProvenance,
 } from "./AlertHorizonChip";
+import {
+  buildTodayMoves,
+  type AfterHoursMove,
+  type TodayMove,
+} from "./todayMoves";
 
-export type AfterHoursMove = {
-  ticker: string;
-  change_pct?: number | null;
-  post_earnings?: { transition_note?: string | null; beat_or_miss?: string | null };
-};
-
-export type TodayMove = {
-  id: string;
-  kind: "story" | "trim" | "earnings" | "macro" | "after_hours";
-  ticker?: string;
-  title: string;
-  detail: string;
-  storyProvenance?: import("./AlertHorizonChip").StoryProvenance;
-  trimProvenance?: import("./AlertHorizonChip").TrimProvenance;
-};
+export type { AfterHoursMove, TodayMove };
+export { buildTodayMoves, todayMoveTickers } from "./todayMoves";
 
 function storyProv(s: Signal): StoryProvenance {
   return {
@@ -35,100 +26,16 @@ function storyProv(s: Signal): StoryProvenance {
   };
 }
 
-function trimProv(h: {
-  trim_source?: string | null;
-  trim_primary_driver?: string | null;
-  trim_triggers?: string[] | null;
-  trim_horizon?: string | null;
-}): TrimProvenance {
-  return {
-    source: h.trim_source ?? null,
-    primaryDriver: h.trim_primary_driver ?? null,
-    triggers: h.trim_triggers ?? null,
-    horizon: h.trim_horizon ?? null,
-  };
-}
-
-function buildTodayMoves(input: {
-  storyChanges: Signal[];
-  trimCandidates: {
-    ticker: string;
-    label: string;
-    trim_source?: string | null;
-    trim_primary_driver?: string | null;
-    trim_triggers?: string[] | null;
-    trim_detail?: string | null;
-  }[];
-  earningsSignals: Signal[];
-  afterHours?: AfterHoursMove[];
-  macroHeadline?: string | null;
-  max?: number;
-}): TodayMove[] {
-  const max = input.max ?? 3;
-  const moves: TodayMove[] = [];
-
-  for (const ah of (input.afterHours ?? []).slice(0, 2)) {
-    const pct = ah.change_pct;
-    const pctStr = pct != null ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% AH` : "AH move";
-    const note = ah.post_earnings?.transition_note || ah.post_earnings?.beat_or_miss;
-    moves.push({
-      id: `ah-${ah.ticker}`,
-      kind: "after_hours",
-      ticker: ah.ticker,
-      title: `${ah.ticker} — ${pctStr}`,
-      detail: note ? String(note) : "Earnings today — mark vs prior close (score updates on next full refresh)",
-    });
-  }
-
-  for (const s of input.storyChanges.slice(0, 2)) {
-    if (!s.story_change) continue;
-    moves.push({
-      id: `story-${s.ticker}`,
-      kind: "story",
-      ticker: s.ticker,
-      title: `${s.ticker} — story shift`,
-      detail: s.story_change,
-    });
-  }
-
-  for (const t of input.trimCandidates.slice(0, 2)) {
-    if (moves.length >= max) break;
-    if (moves.some((m) => m.ticker === t.ticker)) continue;
-    moves.push({
-      id: `trim-${t.ticker}`,
-      kind: "trim",
-      ticker: t.ticker,
-      title: `${t.ticker} — consider trim`,
-      detail: t.trim_detail || t.label,
-      trimProvenance: trimProv(t),
-    });
-  }
-
-  for (const s of input.earningsSignals.slice(0, 2)) {
-    if (moves.length >= max) break;
-    if (moves.some((m) => m.ticker === s.ticker)) continue;
-    moves.push({
-      id: `earn-${s.ticker}`,
-      kind: "earnings",
-      ticker: s.ticker,
-      title: `${s.ticker} — earnings soon`,
-      detail:
-        s.earnings_caution
-          ? `Caution window${s.earnings_days_until != null ? ` · ${s.earnings_days_until}d` : ""}`
-          : `${s.earnings_days_until ?? "?"} days to report`,
-    });
-  }
-
-  if (moves.length < max && input.macroHeadline) {
-    moves.push({
-      id: "macro",
-      kind: "macro",
-      title: "Market backdrop",
-      detail: input.macroHeadline,
-    });
-  }
-
-  return moves.slice(0, max);
+function buildTodayMovesWithProvenance(
+  input: Parameters<typeof buildTodayMoves>[0]
+): TodayMove[] {
+  const moves = buildTodayMoves(input);
+  return moves.map((m) => {
+    if (m.kind !== "story" || !m.ticker) return m;
+    const s = input.storyChanges.find((row) => row.ticker === m.ticker);
+    if (!s) return m;
+    return { ...m, storyProvenance: storyProv(s) };
+  });
 }
 
 const KIND_STYLE: Record<TodayMove["kind"], { icon: typeof Zap; border: string; text: string }> = {
@@ -167,7 +74,7 @@ export function TodaysMovesPanel({
     (s) => s.earnings_caution || (s.earnings_days_until != null && s.earnings_days_until <= 7)
   );
 
-  const moves = buildTodayMoves({
+  const moves = buildTodayMovesWithProvenance({
     storyChanges,
     trimCandidates,
     earningsSignals,
@@ -183,7 +90,7 @@ export function TodaysMovesPanel({
       <div className="flex items-center justify-between gap-2 mb-3">
         <div>
           <h2 className="font-semibold text-emerald-300 text-sm">Today&apos;s 3 moves</h2>
-          <p className="text-[11px] text-slate-500 mt-0.5">
+          <p className="text-[11px] text-slate-400 mt-0.5">
             Composite (MT) story & trim · ST earnings — hover chips for what drove each alert
           </p>
         </div>
@@ -235,9 +142,9 @@ export function TodaysMovesPanel({
                     trim={move.trimProvenance}
                   />
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5 leading-snug">{move.detail}</p>
+                <p className="text-xs text-slate-300 mt-0.5 leading-snug">{move.detail}</p>
                 {horizonLine && (
-                  <p className="text-[10px] text-slate-500 mt-1 font-mono" title="Horizon suggestions on file — context only; alert was not triggered by a horizon flip">
+                  <p className="text-[10px] text-slate-400 mt-1 font-mono" title="Horizon suggestions on file — context only; alert was not triggered by a horizon flip">
                     Playbooks: {horizonLine}
                   </p>
                 )}

@@ -132,7 +132,7 @@ Suggested (crisper, same intent):
 
 ### 4.6 Optional future ideas
 
-- **Thesis / exit condition:** Per-position “I will trim if …” and resurface when score/regime changes (see ANALYSIS_AND_RECOMMENDATIONS.md).
+- **Thesis / exit condition:** Per-position “I will trim if …” and resurface when score/regime changes (see [ANALYSIS_AND_RECOMMENDATIONS.md](../planning/ANALYSIS_AND_RECOMMENDATIONS.md)).
 - **Earnings count in header:** “3 holdings with earnings in next 7 days” already considered; ensure it’s visible when &gt; 0.
 - **Grey or caution** on signal row when earnings in ≤7 days (IMPROVEMENT_PLAN 5.3).
 

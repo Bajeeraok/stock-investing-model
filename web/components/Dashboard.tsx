@@ -19,8 +19,9 @@ import {
   CrossAssetSection,
   DashboardTabs,
   type TabId,
-  StoryAlerts,
   TodaysMovesPanel,
+  buildTodayMoves,
+  todayMoveTickers,
   PortfolioSummary,
   PortfolioStressStrip,
   DataFreshnessBar,
@@ -63,7 +64,7 @@ import {
   InsiderFlowTracker,
   TaxAwareExitPanel,
   AlertsPanel,
-  RetailBriefingPanel,
+  OverviewAtAGlance,
   RoadmapsPanel,
   MarketStatePanel,
   RetailMarketDecisionsPanel,
@@ -168,6 +169,49 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [overviewAlertActionCount, setOverviewAlertActionCount] = useState(0);
   const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
   const [lazySignals, setLazySignals] = useState<Signal[] | null>(null);
+
+  const todayMovesCoveredTickers = useMemo(() => {
+    const signals = lazySignals ?? data.signals ?? [];
+    const earningsSignals = signals.filter(
+      (s) => s.earnings_caution || (s.earnings_days_until != null && s.earnings_days_until <= 7)
+    );
+    const moves = buildTodayMoves({
+      storyChanges: data.story_changes,
+      trimCandidates: selectedTrimCandidates.map((h) => ({
+        ticker: h.ticker,
+        label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
+        trim_source: h.trim_source,
+        trim_primary_driver: h.trim_primary_driver,
+        trim_triggers: h.trim_triggers,
+        trim_detail: h.trim_detail,
+      })),
+      earningsSignals,
+      afterHours: data.after_hours_earnings?.skipped
+        ? undefined
+        : data.after_hours_earnings?.items?.map((i) => ({
+            ticker: i.ticker,
+            change_pct: i.change_pct,
+            post_earnings: i.post_earnings,
+          })),
+      macroHeadline:
+        data.retail_market_decisions?.market_context?.primary_message
+        ?? data.macro_analog?.one_liner
+        ?? data.market_forecast?.headline
+        ?? null,
+      max: 3,
+    });
+    return todayMoveTickers(moves);
+  }, [
+    data.story_changes,
+    data.signals,
+    data.after_hours_earnings,
+    data.retail_market_decisions,
+    data.macro_analog,
+    data.market_forecast,
+    lazySignals,
+    selectedTrimCandidates,
+  ]);
+
   const [signalsFetchErr, setSignalsFetchErr] = useState<string | null>(null);
   const [signalsLoading, setSignalsLoading] = useState(false);
   const [oppBundle, setOppBundle] = useState<{
@@ -716,15 +760,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           onTickerClick={setSelectedTicker}
           onViewAll={() => setActiveTab("signals")}
         />
-        {data.story_changes.length > 0 && <StoryAlerts items={data.story_changes} onTickerClick={setSelectedTicker} />}
-        {(data.earnings_risk_count ?? 0) > 0 && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-2 flex items-center gap-2">
-            <Calendar className="h-4 w-4 text-amber-400 shrink-0" />
-            <p className="text-amber-200 text-sm font-medium">
-              {data.earnings_risk_count} holding{data.earnings_risk_count === 1 ? "" : "s"} with earnings in next week
-            </p>
-          </div>
-        )}
         <MarketReversalBanner overlay={data.market_reversal_overlay} />
         {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
       </div>
@@ -739,21 +774,20 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {/* Overview tab */}
           {activeTab === "overview" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {data.retail_briefing && (
-                <RetailBriefingPanel
-                  data={data}
-                  onTickerClick={setSelectedTicker}
+              {(data.retail_briefing || data.retail_market_decisions) && (
+                <OverviewAtAGlance
+                  briefing={data.retail_briefing}
+                  market={data.retail_market_decisions}
                   marketQuadrant={marketQuadrant}
-                />
-              )}
-              {data.retail_market_decisions && (
-                <RetailMarketDecisionsPanel
-                  data={data.retail_market_decisions}
                   macroBackdrop={
                     data.market_forecast
                       ? { bullets: data.market_forecast.bullets, disclaimer: data.market_forecast.disclaimer }
                       : null
                   }
+                  preMarketFull={preMarketFull}
+                  preMarket={data.pre_market}
+                  todayMoveTickers={todayMovesCoveredTickers}
+                  onTickerClick={setSelectedTicker}
                 />
               )}
               {(data.tactical_breakouts?.length ?? 0) > 0 && (
@@ -784,7 +818,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   }}
                 />
               </ToggleSection>
-              <MarketStatePanel compactHeader={Boolean(data.retail_market_decisions?.market_context)} />
+              <ToggleSection
+                id="overview-market-tape"
+                title="Live market tape"
+                icon={<Globe className="h-5 w-5" />}
+                defaultOpen={false}
+              >
+                <MarketStatePanel compactHeader />
+              </ToggleSection>
               <ModelHealthStrip
                 model_health={data.model_health}
                 summary_by_signal={forwardTracking?.summary_by_signal}
@@ -853,7 +894,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 holdings={selectedReport?.per_holding ?? []}
                 onTickerClick={setSelectedTicker}
               />
-              <ToggleSection id="overview-portfolio" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
+              <ToggleSection id="overview-portfolio" title="Portfolio summary" icon={<PieChart />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <PortfolioSummary report={selectedReport} />
                 </div>
@@ -878,7 +919,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 )}
                 <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
               </ToggleSection>
-              <ToggleSection id="overview-score-regime" title="Confidence & Regime Charts" icon={<Activity />} defaultOpen>
+              <ToggleSection id="overview-score-regime" title="Score & regime charts" icon={<Activity />} defaultOpen={false}>
                 <AnchorChartPanel
                   title="Portfolio tape"
                   hint="One shared chart surface — click a bar to open the ticker hub. Regime mix is holdings-weighted."

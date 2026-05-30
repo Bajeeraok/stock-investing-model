@@ -4,7 +4,7 @@
 
 **Status:** Design (May 2026)  
 **Audience:** Engineering + product  
-**Related:** `paper_trade_logger.py`, `forward_tracking.py`, `TrackRecordPanel.tsx`, `MODEL_VALIDATION.md`
+**Related:** `paper_trade_logger.py`, `forward_tracking.py`, `TrackRecordPanel.tsx`, [`docs/signals/MODEL_VALIDATION.md`](../signals/MODEL_VALIDATION.md)
 
 ---
 
@@ -241,6 +241,8 @@ CREATE TABLE signal_events (
   source            TEXT NOT NULL DEFAULT 'live',  -- live | backtest
   UNIQUE(signal_date, ticker, cohort_tag, source)
 );
+-- Schema v2 (P0): track, velocity_triggered, velocity_score, rvol, bb_pct_b,
+-- velocity_detail_json, readiness_tier, readiness_score (ALTER on existing DBs)
 CREATE INDEX idx_signal_events_date ON signal_events(signal_date);
 CREATE INDEX idx_signal_events_ticker ON signal_events(ticker);
 CREATE INDEX idx_signal_events_gates ON signal_events(gates_passed, go_no_go);
@@ -483,6 +485,103 @@ Same schema → same UI filters. Label clearly: **“Historical simulation”** 
 
 - [ ] Batch backtest writer to `signal_events` with `source=backtest`
 - [ ] Three-period report template for marketing page
+
+**Gate backtest (implemented)** — validate primary GO/NO-GO gates on history:
+
+| Script | Source | Notes |
+|--------|--------|--------|
+| `scripts/backtest_gates.py` | `eod` | Uses `run_daily` EOD + `enrich_dashboard_signal_row` (best match to live dashboard) |
+| `scripts/backtest_gates.py` | `walkforward` | Causal panel via `evaluation_harness` + `gate_backtest.enrich_row_with_gates` |
+| `scripts/run_evaluation_harness.py` | walkforward | Panel JSONL now includes `gates_passed`, `gate_cleared`, per-gate pass flags |
+
+Cohorts reported: all bars · composite ≥ buy_min · gates ≥ N/4 · 4/4 cleared · composite + cleared.
+
+Config: `evaluation.gate_backtest` (`predict_ml`, `include_confidence_gate`). Summary: `data/evaluation/gate_backtest_summary.json`.
+
+---
+
+## 16. Velocity / tactical initiative (P0–P4)
+
+Dual playbook: **accumulate** (4/4 GO, ~20d paper) vs **velocity/tactical** (RVOL + BB breakout, T+5, gates logged not required).
+
+| Phase | Scope | Est. | Status |
+|-------|--------|------|--------|
+| **P0** | `velocity_engine.py`; EOD + audit columns (`track`, `velocity_triggered`, `rvol`, `bb_pct_b`, readiness); Model Audit batch split (Watch/Accumulate vs Tactical Breakout) | ~2–3 days | **Done** |
+| **P1** | `tactical_5d` expiry; T1/T2/stop from Phase 2 targets; outcome resolver branch for 5 EOD-step window | ~2–3 days | **Done** |
+| **P2** | Scout/Planner toggle + `TacticalEntryPanel` on ticker detail | ~2–3 days | **Done** |
+| **P3** | Overview “Tactical breakout” strip; alert rules (HIGH if velocity + gates≥2) | ~1–2 days | **Done** |
+| **P4** | Separate tactical paper bucket + marketing stats by track (after 30d data) | post-pilot | **Done** |
+
+### P0 deliverables (implemented)
+
+**Backend**
+
+- `signals/velocity_engine.py` — RVOL, Bollinger %B, velocity score; `track=velocity|accumulate`
+- `signals/readiness_score.py` — `almost_ready` (3/4 gates + ST buy) for alerts/UI only
+- `run_signals()` attaches velocity + readiness before gate enrichment
+- EOD `run_results` persist: `velocity_triggered`, `velocity_score`, `track`, `rvol`, `bb_pct_b`, `readiness_tier`, …
+- `signal_audit.db` schema v2 columns: `track`, `velocity_*`, `readiness_*`
+- `batch_queues` + `breakdown_by_track` in Model Audit API payload
+
+**Config**
+
+```yaml
+velocity_tactical:
+  enabled: true
+  rvol_min: 2.0
+  bb_pct_b_min: 1.0
+  min_velocity_score: 55
+  require_rvol_or_bb: true
+```
+
+**UI**
+
+- Model Audit: batch split chips (Watch/accumulate vs Tactical breakout), track filter, track column
+
+**Rules (unchanged)**
+
+- Primary GO = 4/4 gates — paper accumulate track only
+- Velocity rows logged in audit with gate snapshot; do not merge into GO definition
+
+### P1 — Tactical outcomes
+
+- [x] `config.velocity_tactical.horizon_trading_days: 5`
+- [x] Pull T1/T2/stop from `velocity_engine.compute_tactical_targets()` when velocity flagged
+- [x] `signal_audit_outcomes.py` branch: 5-step path window for `track=velocity`
+- [x] Verdict rule `tactical_5d_v1` (target before stop vs time exit)
+
+### P2 — Ticker detail UX
+
+- [x] `PositionIntentChip` drives Scout vs Planner layout on `TickerDetailModal`
+- [x] `TacticalEntryPanel`: RVOL, BB, T1/T2, T+5 expiry copy
+- [x] Velocity names default to Planner; trade intent uses Scout layout
+
+### P3 — Alerts + Overview
+
+- [x] Overview strip: last-session tactical breakouts (top N by velocity_score)
+- [x] Scanner alert: HIGH when `velocity_triggered` + `gates_passed >= 2` (gates recorded, not required)
+- [x] Alerts panel tactical track toggle (accumulate vs tactical) — partial via `SETUP_ALMOST_READY` + track filter
+
+### P4 — Paper + marketing (after 30d audit data)
+
+- [x] `paper_trade_logger.log_velocity_trades_from_results()` — `track=velocity` column
+- [x] Paper summary stats split by track (`accumulate_summary` / `tactical_summary`)
+- [x] Marketing copy only from accumulate GO cohort; tactical labeled separately
+
+---
+
+## 17. Readiness score (alerts/UI only)
+
+Informational tier — **does not change GO/NO-GO**:
+
+| Tier | Condition |
+|------|-----------|
+| `go_ready` | 4/4 gates |
+| `almost_ready` | 3/4 gates + ST verdict supports add |
+| `warming` | 3/4 gates, ST not buy yet |
+| `watch` | else |
+
+Used for `SETUP_ALMOST_READY` scanner alerts and Model Audit `breakdown_by_readiness`. Paper trading still requires `gate_cleared=True` on accumulate track.
 
 ---
 

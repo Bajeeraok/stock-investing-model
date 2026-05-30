@@ -36,8 +36,7 @@ stock-investing-model/
 ├── scripts/
 │   ├── run_daily.py         # main: fetch → signals → persist → alerts
 │   └── backtest_simple.py   # score vs forward returns
-├── ANALYSIS_AND_RECOMMENDATIONS.md
-├── IMPLEMENTATION_ROADMAP.md
+├── docs/                    # module-aligned documentation (see docs/README.md)
 ├── requirements.txt
 └── README.md
 ```
