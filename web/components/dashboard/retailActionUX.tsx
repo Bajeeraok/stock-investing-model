@@ -926,6 +926,7 @@ export function EntryZonePriceBar({
   bandLabel = "Buy zone",
   quality,
   anchorNote,
+  touchForecast,
   className,
 }: {
   entryLow: number;
@@ -936,6 +937,7 @@ export function EntryZonePriceBar({
   bandLabel?: string;
   quality?: string | null;
   anchorNote?: string | null;
+  touchForecast?: HorizonSignalPayload["entry_touch_forecast"];
   className?: string;
 }) {
   const low = Math.min(entryLow, entryHigh);
@@ -1037,6 +1039,21 @@ export function EntryZonePriceBar({
         />
       </div>
       <p className="text-xs text-slate-400 leading-snug">{statusLine}</p>
+      {touchForecast?.touch_probability_pct != null && touchForecast.window_sessions != null && (
+        <p
+          className="text-[11px] text-sky-200/90 leading-snug border border-sky-500/20 rounded-lg px-2 py-1.5 bg-sky-950/25"
+          title={touchForecast.note ?? "Pooled index history from EOD OHLCV backtest — not paper trades."}
+        >
+          <span className="font-medium text-sky-300/90">Band touch (history): </span>
+          ~{touchForecast.touch_probability_pct}% touched within {touchForecast.window_sessions} sessions
+          {touchForecast.median_sessions_to_touch != null
+            ? ` (median ~${touchForecast.median_sessions_to_touch}d when touched)`
+            : ""}
+          {touchForecast.sample_n != null ? (
+            <span className="text-slate-500"> · n={touchForecast.sample_n} EOD bars</span>
+          ) : null}
+        </p>
+      )}
       {stretch && (
         <p className="text-[11px] text-amber-300/85 leading-snug">
           Stretched vs anchor — band still valid; pullback toward band low improves entry quality.

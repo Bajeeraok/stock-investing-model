@@ -31,6 +31,8 @@ import {
 } from "@/lib/decisionMode";
 import type { RetailActionPayload } from "./retailActionUX";
 import { ExternalContextChip } from "./ExternalContextChip";
+import { ValuationDeck } from "./ValuationDeck";
+import { StreetSentimentChip } from "./StreetSentimentChip";
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = how strong the technical read is on this horizon. Conviction = how much the model trusts that read (gates, ML, pattern).";
@@ -201,7 +203,8 @@ export function DecisionDeck({
   ltEntryTiersOpen?: boolean;
   onToggleLtTiers?: () => void;
 }) {
-  const { horizons, one_answer, retail_action, regime_bull_pct, rsi } = summary;
+  const { horizons, one_answer, retail_action, regime_bull_pct, rsi, valuation_deck, fair_value, fair_value_vs_external } =
+    summary;
   const short = horizons.short;
   const medium = horizons.medium;
   const long = horizons.long;
@@ -332,6 +335,30 @@ export function DecisionDeck({
 
         <ExternalContextChip context={one_answer?.external_context} />
 
+        {mode === "owner" && valuation_deck && currentPrice > 0 && (
+          <ValuationDeck
+            deck={valuation_deck}
+            currentPrice={currentPrice}
+            modelFairValue={fair_value}
+            external={fair_value_vs_external}
+            mode="owner"
+            variant="full"
+          />
+        )}
+        {mode === "swing" && valuation_deck && currentPrice > 0 && (
+          <ValuationDeck
+            deck={valuation_deck}
+            currentPrice={currentPrice}
+            modelFairValue={fair_value}
+            external={fair_value_vs_external}
+            mode="swing"
+            variant="compact"
+          />
+        )}
+        {mode === "scout" && valuation_deck && (
+          <StreetSentimentChip deck={valuation_deck} executionLabel={executionToday} />
+        )}
+
         {band && !showOwnerTierLadder && (
           <p className={clsx("text-sm font-medium leading-snug", band.inside ? "text-emerald-200" : "text-amber-100")}>
             {band.line}
@@ -359,6 +386,7 @@ export function DecisionDeck({
               target={primary.target > 0 ? primary.target : null}
               bandLabel={ez.label}
               quality={primary.entry_zone?.quality}
+              touchForecast={primary.entry_touch_forecast}
             />
           )
         )}

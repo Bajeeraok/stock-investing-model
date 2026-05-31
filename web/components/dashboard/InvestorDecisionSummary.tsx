@@ -46,6 +46,8 @@ import {
 } from "./retailActionUX";
 import { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProjectionChart";
 import { StreetVsModelBar } from "./StreetVsModelBar";
+import { ValuationDeck } from "./ValuationDeck";
+import { StreetSentimentChip } from "./StreetSentimentChip";
 import { PositionIntentChip } from "./PositionIntentChip";
 import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
 import type { TacticalEntryPayload } from "./TacticalEntryPanel";
@@ -162,8 +164,11 @@ export interface FairValueVsExternal {
   /** True when median was inferred as (low+high)/2 — label as range midpoint, not analyst median. */
   fmp_median_is_range_midpoint?: boolean | null;
   pct_model_vs_fmp_median?: number | null;
+  street_primary_source?: "fmp" | "yahoo" | null;
   note?: string | null;
 }
+
+export type { ValuationDeckPayload } from "./valuationDeckTypes";
 
 export interface InvestorDecisionSummary {
   fair_value: number;
@@ -182,6 +187,8 @@ export interface InvestorDecisionSummary {
   fair_value_metadata?: FairValueMetadata | null;
   /** Model FV vs Yahoo mean and FMP consensus (when API key present). */
   fair_value_vs_external?: FairValueVsExternal | null;
+  /** Street + model + house valuation deck (FMP-primary street). */
+  valuation_deck?: import("./valuationDeckTypes").ValuationDeckPayload | null;
   /** Short-term pattern score (0-100); when low, show signal-deterioration banner. */
   pattern_score?: number | null;
   /** Backend-enriched gates, rsi_status, gate_cleared (source of truth for UI styling). */
@@ -213,6 +220,17 @@ export interface HorizonSignalPayload {
   conviction: string;
   ml_prob: number;
   entry_zone: { low: number; high: number; anchor: string; quality: string; quality_color: string };
+  /** Historical EOD touch stats for this entry band (not paper trades). */
+  entry_touch_forecast?: {
+    horizon?: string;
+    window_sessions?: number;
+    spot_vs_band?: string;
+    touch_probability_pct?: number;
+    median_sessions_to_touch?: number | null;
+    sample_n?: number;
+    data_source?: string;
+    note?: string;
+  } | null;
   target: number;
   target_pct: number;
   stop_loss: number;
@@ -442,6 +460,7 @@ function HorizonCard({
               quality: horizon.entry_zone?.quality,
               anchorNote:
                 !scan && horizon.entry_zone?.anchor ? String(horizon.entry_zone.anchor) : null,
+              touchForecast: horizon.entry_touch_forecast,
             })
       ),
     scan
@@ -951,6 +970,7 @@ export function InvestorDecisionSummarySection({
   const {
     fair_value,
     fair_value_vs_external: fve,
+    valuation_deck: valuationDeck,
     overall_verdict,
     regime_bull_pct,
     model_confidence_pct,
@@ -1284,6 +1304,22 @@ export function InvestorDecisionSummarySection({
       ),
     (isWhy || isFull) &&
       !compactOverview &&
+      valuationDeck &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-4 border-b border-slate-700/80" },
+        React.createElement(ValuationDeck, {
+          deck: valuationDeck,
+          currentPrice,
+          modelFairValue: fair_value,
+          external: fve ?? undefined,
+          mode: decisionMode,
+          variant: "full",
+        })
+      ),
+    (isWhy || isFull) &&
+      !compactOverview &&
+      !valuationDeck &&
       fve &&
       React.createElement(
         "div",
@@ -1292,6 +1328,43 @@ export function InvestorDecisionSummarySection({
           modelFairValue: fair_value,
           currentPrice,
           external: fve,
+        })
+      ),
+    isToday &&
+      compactOverview &&
+      decisionMode === "swing" &&
+      valuationDeck &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-3 border-b border-slate-700/80" },
+        React.createElement(ValuationDeck, {
+          deck: valuationDeck,
+          currentPrice,
+          modelFairValue: fair_value,
+          external: fve ?? undefined,
+          mode: "swing",
+          variant: "compact",
+        })
+      ),
+    isToday &&
+      compactOverview &&
+      decisionMode === "scout" &&
+      valuationDeck &&
+      React.createElement(
+        "div",
+        { className: "px-4 pb-3 border-b border-slate-700/80" },
+        React.createElement(StreetSentimentChip, {
+          deck: valuationDeck,
+          executionLabel:
+            one_answer?.action_today === "enter_now"
+              ? "Enter now"
+              : one_answer?.action_today === "hold"
+                ? "Hold"
+                : one_answer?.action_today === "wait_for_pullback"
+                  ? "Wait for pullback"
+                  : one_answer?.action_today === "no_new_position"
+                    ? "No new position"
+                    : null,
         })
       ),
     (isWhy || isFull) &&

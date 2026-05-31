@@ -166,6 +166,26 @@ def fetch_price_target(config: dict, ticker: str) -> tuple[dict | None, str | No
     return None, "No data"
 
 
+def fetch_grades_consensus(config: dict, ticker: str) -> tuple[dict | None, str | None]:
+    """Analyst rating counts (strong buy / buy / hold / sell / strong sell) for TipRanks-style bar."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    url = f"{BASE}/grades-consensus?symbol={sym}"
+    data, err = _request(url, api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data:
+        row = data[0]
+        return (row, None) if isinstance(row, dict) else (None, "Invalid grades payload")
+    if isinstance(data, dict):
+        return data, None
+    return None, "No grades data"
+
+
 def fetch_price_target_consensus(config: dict, ticker: str) -> tuple[dict | None, str | None]:
     """Analyst consensus: high, low, median. For LT band blend."""
     api_key = get_api_key(config)

@@ -632,9 +632,10 @@ fair_value:
   equity_risk_premium: 0.045   # large-cap ERP; ~3.5–5% common — affects implied P/E = 1/(rf+ERP)
   # Caps keep displayed FV near Street + spot (retail-safe). For forecast-accuracy research / backtests,
   # set analyst_mean_cap_enabled: false and max_implied_upside_vs_spot: null so FV reflects the raw multi-method estimate.
+  sector_pe_default: 28.0              # RV strip reference when sector ETF PE unavailable
   guardrails:
     analyst_mean_cap_enabled: true
-    analyst_mean_cap_mult: 1.10          # max FV = Yahoo 12m mean × this (when cap enabled)
+    analyst_mean_cap_mult: 1.10          # max FV = street anchor (FMP median, else Yahoo) × this
     max_implied_upside_vs_spot: 0.52     # max implied upside vs spot; use null to disable
 
 # Phase 4: Data & earnings

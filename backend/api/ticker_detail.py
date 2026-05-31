@@ -837,7 +837,13 @@ def _build_investor_summary(
     ttm_pe_used: float | None = None
     forward_pe_used: float | None = None
     forward_pe_discarded = False  # set True when fwd << ttm and we exclude from FV
-    analyst_target_yahoo: float | None = None  # yfinance targetMeanPrice — exposed vs model FV for verification
+    analyst_target_yahoo: float | None = None  # yfinance targetMeanPrice — cross-check / fallback
+    analyst_target_fmp: float | None = _safe_float(response.get("consensus_median"))
+    if analyst_target_fmp is None:
+        _cl0 = _safe_float(response.get("cons_low"))
+        _ch0 = _safe_float(response.get("cons_high"))
+        if _cl0 is not None and _ch0 is not None and _cl0 > 0 and _ch0 > 0:
+            analyst_target_fmp = (_cl0 + _ch0) / 2.0
     try:
         import yfinance as yf
         from signals.fmp_client import fetch_key_metrics_ttm
@@ -914,8 +920,8 @@ def _build_investor_summary(
         de = _safe_float(info.get("debtToEquity"))
         sector_pe = 28.0
         sector_forward_pe = 25.0
-        analyst_target = _safe_float(info.get("targetMeanPrice"))
-        analyst_target_yahoo = analyst_target
+        analyst_target_yahoo = _safe_float(info.get("targetMeanPrice"))
+        analyst_target = analyst_target_fmp if analyst_target_fmp and analyst_target_fmp > 0 else analyst_target_yahoo
         fcf = _safe_float(info.get("freeCashflow"))
         shares = _safe_float(info.get("sharesOutstanding"))
         fcf_per_share = (fcf / shares) if (fcf and shares and shares > 0) else None
@@ -1006,21 +1012,22 @@ def _build_investor_summary(
         pass
 
     # Extreme-divergence guardrail (UI safety): when model FV collapses far below
-    # external consensus, anchor to Yahoo 12m mean to avoid obviously broken copy
-    # like "$27 fair value" on liquid mega-cap names.
+    # street consensus (FMP primary, Yahoo fallback), anchor to avoid broken copy.
+    _street_floor = analyst_target_fmp if analyst_target_fmp and analyst_target_fmp > 0 else analyst_target_yahoo
     if (
         fair_value is not None
         and fair_value > 0
-        and analyst_target_yahoo is not None
-        and analyst_target_yahoo > 0
-        and fair_value < analyst_target_yahoo * 0.25
+        and _street_floor is not None
+        and _street_floor > 0
+        and fair_value < _street_floor * 0.25
     ):
         _raw_fv = float(fair_value)
-        fair_value = float(analyst_target_yahoo)
+        fair_value = float(_street_floor)
+        _floor_label = "FMP consensus" if analyst_target_fmp and analyst_target_fmp > 0 else "Yahoo 12m mean"
         if fv_result is not None:
             notes = list(getattr(fv_result, "notes", []) or [])
             notes.append(
-                "Model fair value was >75% below analyst mean; anchored to Yahoo 12m mean for display safety."
+                f"Model fair value was >75% below street ({_floor_label}); anchored for display safety."
             )
             fv_result.notes = notes
             fv_result.fair_value = fair_value
@@ -1030,7 +1037,7 @@ def _build_investor_summary(
                 fv_result.method_used = f"{fv_result.method_used} + consensus_floor_override"
             fv_result.methodology_summary = (
                 f"Consensus floor override: raw model FV ${_raw_fv:.2f} "
-                f"replaced with Yahoo mean ${fair_value:.2f}."
+                f"replaced with street (${fair_value:.2f}, {_floor_label})."
             )
         else:
             fv_result = FairValueResult(
@@ -1039,9 +1046,9 @@ def _build_investor_summary(
                 method_used="analyst_consensus_floor",
                 confidence="Low",
                 discount_pct=round((fair_value - current_price) / current_price * 100, 1),
-                analyst_target=analyst_target_yahoo,
+                analyst_target=_street_floor,
                 notes=[
-                    "Model fair value was >75% below analyst mean; using Yahoo 12m mean as display floor."
+                    f"Model fair value was >75% below street; using {_floor_label} as display floor."
                 ],
                 bear_case=round(fair_value * 0.75, 2),
                 methodology_summary=f"Raw model FV ${_raw_fv:.2f} replaced by consensus floor.",
@@ -1183,9 +1190,14 @@ def _build_investor_summary(
         "fmp_consensus_median_usd": round(fmp_med, 2) if fmp_med is not None else None,
         "fmp_median_is_range_midpoint": fmp_median_is_range_midpoint,
         "pct_model_vs_fmp_median": _fv_pct_vs_ref(fair_value, fmp_med),
+        "street_primary_source": (
+            "fmp"
+            if fmp_med is not None
+            else ("yahoo" if analyst_target_yahoo else None)
+        ),
         "note": (
-            "Model FV vs Yahoo mean (yfinance targetMeanPrice) and vs FMP analyst consensus when configured. "
-            "Yahoo mean is also used to cap FV at +10% in the estimator; large gaps often mean stale consensus or method mismatch."
+            "Street primary: FMP price-target consensus when configured; Yahoo 12m mean as cross-check/fallback. "
+            "Model FV caps at +10% vs street anchor in estimator. Gap >20% → review inputs; >40% → caution."
         ),
     }
     out["fair_value_vs_external"] = fv_ext
@@ -1285,6 +1297,29 @@ def _build_investor_summary(
                     horizon_label=label,
                 )
         merge_ml_prob_for_ticker(data_root, ticker, st_ml_prob)
+    except Exception:
+        pass
+
+    try:
+        from signals.valuation_deck import build_valuation_deck
+
+        long_h = (out.get("horizons") or {}).get("long") or {}
+        deck = build_valuation_deck(
+            ticker=ticker,
+            config=config,
+            fair_value=float(out.get("fair_value") or fair_value),
+            current_price=current_price,
+            fair_value_vs_external=out.get("fair_value_vs_external"),
+            fair_value_metadata=out.get("fair_value_metadata"),
+            entry_tiers=(long_h.get("entry_tiers") if isinstance(long_h, dict) else None),
+            ttm_pe=out.get("ttm_pe_used"),
+            forward_pe=out.get("forward_pe_used"),
+            one_answer=out.get("one_answer"),
+            eps_fwd=_safe_float(response.get("eps_fwd")),
+            eps_dispersion=_safe_float(response.get("eps_dispersion")),
+        )
+        if deck:
+            out["valuation_deck"] = deck
     except Exception:
         pass
 

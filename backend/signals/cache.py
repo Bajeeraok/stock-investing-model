@@ -326,6 +326,19 @@ def cached_price_target_consensus(ticker: str, fetch_fn):
     return None
 
 
+def cached_grades_consensus(ticker: str, fetch_fn):
+    """Cache FMP grades-consensus (buy/hold/sell counts). TTL 12h."""
+    key = cache_key("grades_consensus", ticker)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out, _ = fetch_fn()
+    if out is not None:
+        set_cached(key, out, TTL_FUNDAMENTALS)
+        return out
+    return None
+
+
 def cached_key_metrics(ticker: str, fetch_fn) -> dict | None:
     """Cache FMP key-metrics-ttm (forwardPE, roe, operatingMargin, debtToEquity). TTL 12h."""
     key = cache_key("key_metrics", ticker)

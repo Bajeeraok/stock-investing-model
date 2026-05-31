@@ -1346,6 +1346,23 @@ def build_all_horizons_payload(
         ma50=ma50,
         ma200=ma200,
     )
+    try:
+        from signals.entry_band_touch import enrich_horizons_entry_touch
+
+        if regime_bull_pct >= 60:
+            _reg = "UP"
+        elif regime_bull_pct <= 40:
+            _reg = "DOWN"
+        else:
+            _reg = "NEUTRAL"
+        enrich_horizons_entry_touch(
+            payload,
+            regime=_reg,
+            current_price=current_price,
+            atr=atr if atr and atr > 0 else current_price * 0.02,
+        )
+    except Exception:
+        pass
     return payload
 
 
