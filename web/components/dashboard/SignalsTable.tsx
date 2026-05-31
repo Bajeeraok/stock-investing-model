@@ -23,9 +23,12 @@ import { TickerFilterBar } from "./TickerFilterBar";
 import {
   filterTickersBySource,
   loadTickerSourceFilter,
+  positionStatusForTicker,
   saveTickerSourceFilter,
+  toTickerSet,
   type TickerSourceFilter,
 } from "@/lib/tickerSourceFilter";
+import { PossessionBadge } from "./PossessionBadge";
 import {
   loadSignalsPreset,
   matchesSignalPreset,
@@ -342,6 +345,8 @@ function SignalsQuickTickerRow({
   onToggleExpand,
   muted,
   showEarningsCol,
+  portfolioSet,
+  watchlistSet,
 }: {
   r: Signal;
   gateContext: SignalListContext;
@@ -351,6 +356,8 @@ function SignalsQuickTickerRow({
   onToggleExpand: (ticker: string, e: React.MouseEvent) => void;
   muted?: boolean;
   showEarningsCol: boolean;
+  portfolioSet: Set<string>;
+  watchlistSet: Set<string>;
 }) {
   const gates = gatesForSignal(r, gateContext);
   const status = deriveListActionStatus(r);
@@ -391,6 +398,9 @@ function SignalsQuickTickerRow({
             >
               {r.ticker}
             </button>
+            <PossessionBadge
+              status={positionStatusForTicker(r.ticker, portfolioSet, watchlistSet)}
+            />
             <CatalystBadge catalyst={r.catalyst} />
           </div>
         </td>
@@ -802,9 +812,10 @@ export function SignalsTable({
   const sortHint =
     "Sort: click column headers on desktop. Confluence / RSI: click again to flip high→low.";
 
+  const portfolioSet = useMemo(() => toTickerSet(portfolioTickers), [portfolioTickers]);
+  const watchlistSet = useMemo(() => toTickerSet(watchlistTickers), [watchlistTickers]);
+
   const filtered = useMemo(() => {
-    const portfolioSet = new Set((portfolioTickers ?? []).map((t) => t.toUpperCase()));
-    const watchlistSet = new Set((watchlistTickers ?? []).map((t) => t.toUpperCase()));
     const bySource = filterTickersBySource(
       signals.map((s) => s.ticker).filter(Boolean) as string[],
       sourceFilter,
@@ -1200,6 +1211,8 @@ export function SignalsTable({
                         expanded={expandedTickers.has(r.ticker)}
                         onToggleExpand={toggleTickerExpand}
                         showEarningsCol={showEarningsCol}
+                        portfolioSet={portfolioSet}
+                        watchlistSet={watchlistSet}
                       />
                     );
                   }
@@ -1243,6 +1256,8 @@ export function SignalsTable({
                             onToggleExpand={toggleTickerExpand}
                             muted
                             showEarningsCol={showEarningsCol}
+                            portfolioSet={portfolioSet}
+                            watchlistSet={watchlistSet}
                           />
                         ))}
                     </Fragment>
@@ -1275,6 +1290,9 @@ export function SignalsTable({
                     >
                       {r.ticker}
                     </button>
+                    <PossessionBadge
+                      status={positionStatusForTicker(r.ticker, portfolioSet, watchlistSet)}
+                    />
                     <CatalystBadge catalyst={r.catalyst} />
                     {!r.plan_action && tickerActions?.[r.ticker] && (
                       <span

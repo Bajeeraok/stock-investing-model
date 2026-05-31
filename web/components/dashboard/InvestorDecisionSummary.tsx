@@ -118,6 +118,8 @@ export interface OneAnswer {
     signal_bridge: string;
     disclaimer: string;
   } | null;
+  /** MA/RSI screener-style context (no extra API). */
+  external_context?: import("./ExternalContextChip").ExternalContextPayload | null;
 }
 
 /** Trader roadmap: short/medium entry, stop, target, when to act. */

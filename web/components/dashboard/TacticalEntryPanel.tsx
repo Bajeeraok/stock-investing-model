@@ -24,6 +24,12 @@ export type TacticalEntryPayload = {
   gates_passed?: number | null;
   gates_total?: number | null;
   go_no_go?: string | null;
+  /** Fused with One Answer — avoids reading breakout as "buy now". */
+  action_today?: string | null;
+  entry_stance?: string | null;
+  stance_headline?: string | null;
+  stance_note?: string | null;
+  one_answer_verdict?: string | null;
 };
 
 export function TacticalEntryPanel({
@@ -45,6 +51,17 @@ export function TacticalEntryPanel({
   const horizon = payload.horizon_trading_days ?? 5;
   const compact = layout === "scout";
   const watchOnly = !triggered;
+  const headline =
+    payload.stance_headline ??
+    (watchOnly
+      ? "Velocity watch (RVOL / BB)"
+      : layout === "scout"
+        ? "Scout — tactical breakout"
+        : "Planner — quick in/out");
+  const chaseAction =
+    payload.action_today === "hold" ||
+    payload.action_today === "wait_for_pullback" ||
+    payload.action_today === "no_new_position";
 
   return (
     <div
@@ -57,21 +74,37 @@ export function TacticalEntryPanel({
       <div className="flex items-start gap-2">
         <Zap className={clsx("h-4 w-4 mt-0.5 shrink-0", watchOnly ? "text-violet-400/70" : "text-violet-400")} />
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-violet-200">
-            {watchOnly
-              ? "Velocity watch (RVOL / BB)"
-              : layout === "scout"
-                ? "Scout — tactical breakout"
-                : "Planner — quick in/out"}
+          <p
+            className={clsx(
+              "text-xs font-semibold uppercase tracking-wide",
+              triggered && chaseAction ? "text-amber-200" : "text-violet-200",
+            )}
+          >
+            {headline}
           </p>
-          {!compact && (
+          {payload.stance_note && (
+            <p
+              className={clsx(
+                "text-[11px] mt-1 leading-snug",
+                triggered && chaseAction ? "text-amber-200/90" : "text-slate-400",
+              )}
+            >
+              {payload.stance_note}
+            </p>
+          )}
+          {!compact && !payload.stance_note && (
             <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-              Velocity flagged (RVOL / Bollinger). Gates logged for context — not required for this track.
+              Velocity flagged (RVOL / Bollinger). Separate from 4-gate GO — follow One Answer for sizing today.
               {payload.go_no_go === "go"
                 ? " Full GO also clear."
                 : payload.gates_passed != null
                   ? ` ${payload.gates_passed}/${payload.gates_total ?? 4} gates pass.`
                   : ""}
+            </p>
+          )}
+          {triggered && chaseAction && payload.one_answer_verdict && (
+            <p className="text-[10px] text-slate-500 mt-1">
+              Horizon read: {payload.one_answer_verdict} · Execution today: hold/watch (see bottom line)
             </p>
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-300 tabular-nums">

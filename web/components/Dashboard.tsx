@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Crosshair, Database, Info, Radio, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -72,6 +72,8 @@ import {
   PortfolioDoctorPanel,
   BrowserPushPanel,
   TacticalBreakoutStrip,
+  HunterPanel,
+  ScannerHomeLite,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
@@ -834,6 +836,32 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   onTickerClick={setSelectedTicker}
                 />
               )}
+              <ToggleSection
+                id="overview-hunter"
+                title="Hunter panel"
+                icon={<Crosshair />}
+                badge={data.hunter_panel?.candidate_count ?? 0}
+                defaultOpen={(data.hunter_panel?.candidate_count ?? 0) > 0}
+              >
+                <HunterPanel
+                  panel={data.hunter_panel}
+                  portfolioTickers={portfolioTickerList}
+                  watchlistTickers={watchlistTickerList}
+                  onTickerClick={setSelectedTicker}
+                />
+              </ToggleSection>
+              <ToggleSection
+                id="overview-scanner-lite"
+                title="Scanner highlights"
+                icon={<Radio />}
+                badge={data.scanner_home_lite?.alert_count ?? 0}
+                defaultOpen={false}
+              >
+                <ScannerHomeLite
+                  data={data.scanner_home_lite}
+                  onTickerClick={setSelectedTicker}
+                />
+              </ToggleSection>
               <ToggleSection
                 id="overview-alerts"
                 title="Alerts"

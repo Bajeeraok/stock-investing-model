@@ -276,6 +276,39 @@ def _build_tactical_breakouts(results: list[Any] | None, config: dict) -> list[d
         return []
 
 
+def _build_hunter_panel_payload(
+    results: list[Any] | None,
+    config: dict,
+    *,
+    signal_universe: list[str],
+    as_of: str | None,
+) -> dict:
+    try:
+        from config_loader import portfolio_tickers_from_config
+        from signals.hunter_panel import build_hunter_panel
+
+        return build_hunter_panel(
+            results or [],
+            portfolio_tickers=portfolio_tickers_from_config(config),
+            watchlist_tickers=[str(t).upper() for t in (config.get("watchlist") or []) if t],
+            signal_universe=signal_universe,
+            as_of=as_of,
+        )
+    except Exception as e:
+        logger.debug("hunter_panel build failed: %s", e)
+        return {"candidate_count": 0, "candidates": [], "message": str(e)}
+
+
+def _build_scanner_home_lite_payload(data_root) -> dict:
+    try:
+        from signals.hunter_panel import build_scanner_home_lite
+
+        return build_scanner_home_lite(data_root, limit=12)
+    except Exception as e:
+        logger.debug("scanner_home_lite build failed: %s", e)
+        return {"alerts": [], "alert_count": 0, "message": str(e)}
+
+
 def _opportunities_bundle_enabled(config: dict) -> bool:
     """When false: skip lazy opportunity scan; Portfolio Doctor add ideas disabled."""
     v = config.get("opportunities_bundle_enabled", True)
@@ -1750,6 +1783,15 @@ def _compute_full_dashboard_sync() -> dict:
             if r.get("error"):
                 continue
             enrich_dashboard_signal_row(r, regime_bull_pct=_regime_bull_global)
+        try:
+            from signals.readiness_score import compute_readiness
+
+            for r in results:
+                if r.get("error"):
+                    continue
+                r.update(compute_readiness(r))
+        except Exception as e:
+            logger.debug("readiness recompute after enrich: %s", e)
     except Exception as e:
         logger.debug("retail_status enrich: %s", e)
 
@@ -2277,6 +2319,13 @@ def _compute_full_dashboard_sync() -> dict:
         "morning_newsletter": morning_newsletter,
         "model_health": model_health,
         "tactical_breakouts": _build_tactical_breakouts(results, config),
+        "hunter_panel": _build_hunter_panel_payload(
+            results,
+            config,
+            signal_universe=signal_universe,
+            as_of=as_of_date,
+        ),
+        "scanner_home_lite": _build_scanner_home_lite_payload(data_root),
         "config": {
             "watchlist": config.get("watchlist", []),
             "score": config.get("score", {}),

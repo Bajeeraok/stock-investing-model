@@ -25,6 +25,10 @@ export { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProject
 export { PortfolioHeatMap } from "./PortfolioHeatMap";
 export { StreetVsModelBar } from "./StreetVsModelBar";
 export { TacticalBreakoutStrip, type TacticalBreakoutRow } from "./TacticalBreakoutStrip";
+export { HunterPanel, type HunterPanelPayload } from "./HunterPanel";
+export { ScannerHomeLite, type ScannerHomeLitePayload } from "./ScannerHomeLite";
+export { PossessionBadge, type PositionStatus } from "./PossessionBadge";
+export { ExternalContextChip, type ExternalContextPayload } from "./ExternalContextChip";
 export { TacticalEntryPanel, type TacticalEntryPayload } from "./TacticalEntryPanel";
 export { BacktestStatus } from "./BacktestStatus";
 export { EconomicCalendarSection } from "./EconomicCalendarSection";

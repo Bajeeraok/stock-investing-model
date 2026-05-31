@@ -191,6 +191,44 @@ def compute_tactical_targets(
     }
 
 
+def align_tactical_entry_with_one_answer(
+    tactical: dict[str, Any] | None,
+    one_answer: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """
+    Tie velocity/breakout lane to execution (One Answer) so retail UI does not read as 'BUY now'.
+    Horizon verdict can be BUY while action_today is hold/wait — popular tools split trend vs entry timing.
+    """
+    if not isinstance(tactical, dict):
+        return tactical
+    oa = one_answer if isinstance(one_answer, dict) else {}
+    action = str(oa.get("action_today") or "hold").strip().lower()
+    tactical["action_today"] = action
+    tactical["one_answer_verdict"] = oa.get("verdict")
+    triggered = bool(tactical.get("active") or tactical.get("velocity_triggered"))
+    chase_actions = frozenset({"hold", "no_new_position", "trim", "wait_for_pullback"})
+    if triggered and action in chase_actions:
+        tactical["entry_stance"] = "breakout_watch"
+        tactical["stance_headline"] = "Momentum breakout — wait for entry"
+        tactical["stance_note"] = (
+            "Tape shows breakout strength (RVOL / Bollinger). That is not the same as enter at the close — "
+            "use One Answer triggers (entry zone, RSI, ML) before sizing."
+        )
+    elif action == "enter_now" and triggered:
+        tactical["entry_stance"] = "breakout_aligned"
+        tactical["stance_headline"] = "Breakout + enter-now aligned"
+        tactical["stance_note"] = "Velocity lane and execution both allow entry — still use stops and staged size."
+    elif triggered:
+        tactical["entry_stance"] = "breakout_context"
+        tactical["stance_headline"] = "Momentum breakout (context)"
+        tactical["stance_note"] = "Breakout metrics for monitoring; follow One Answer for action today."
+    else:
+        tactical["entry_stance"] = "velocity_watch"
+        tactical["stance_headline"] = "Velocity watch"
+        tactical["stance_note"] = None
+    return tactical
+
+
 def build_tactical_ui_payload(row: dict[str, Any], *, config: dict | None = None) -> dict[str, Any]:
     """Compact payload for ticker detail TacticalEntryPanel."""
     cfg = _default_cfg(config)

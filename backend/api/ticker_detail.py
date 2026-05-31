@@ -599,6 +599,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                     {**signal_data, "ticker": ticker, "close": response.get("current_price")},
                     config=config,
                 )
+            if isinstance(inv.get("tactical_entry"), dict):
+                from signals.velocity_engine import align_tactical_entry_with_one_answer
+
+                align_tactical_entry_with_one_answer(
+                    inv["tactical_entry"],
+                    inv.get("one_answer") if isinstance(inv.get("one_answer"), dict) else None,
+                )
         except Exception as exc:
             import logging
 
@@ -3014,6 +3021,12 @@ def _build_one_answer_roadmaps(
             regime_bull_pct=regime_bull_pct if isinstance(regime_bull_pct, (int, float)) else None,
         ),
     }
+    try:
+        from signals.external_context_chip import build_external_context_from_response
+
+        one_answer["external_context"] = build_external_context_from_response(response)
+    except Exception:
+        one_answer["external_context"] = None
 
     # Trader roadmap (short + medium)
     short_entry = {"low": round(s_lo, 2), "high": round(s_hi, 2)} if (s_lo is not None and s_hi is not None) else None

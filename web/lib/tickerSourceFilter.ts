@@ -6,9 +6,9 @@ export const TICKER_SOURCE_STORAGE_KEY = "thrive-ticker-source-filter";
 
 export const TICKER_SOURCE_FILTERS: { id: TickerSourceFilter; label: string; hint: string }[] = [
   { id: "all", label: "All", hint: "Watchlist + portfolio holdings" },
-  { id: "portfolio", label: "Portfolio", hint: "Current portfolio holdings only" },
-  { id: "watchlist", label: "Watchlist", hint: "All watchlist tickers" },
-  { id: "watchlist_only", label: "Watchlist only", hint: "On watchlist but not held" },
+  { id: "portfolio", label: "Owning", hint: "Names you hold in the linked portfolio" },
+  { id: "watchlist", label: "Watchlist", hint: "All watchlist tickers (held or not)" },
+  { id: "watchlist_only", label: "Watching", hint: "On watchlist but not in portfolio" },
 ];
 
 export function loadTickerSourceFilter(): TickerSourceFilter {
@@ -33,6 +33,19 @@ export function saveTickerSourceFilter(id: TickerSourceFilter): void {
 
 export function toTickerSet(tickers: string[] | undefined | null): Set<string> {
   return new Set((tickers ?? []).map((t) => String(t).toUpperCase()).filter(Boolean));
+}
+
+export type PositionStatus = "owned" | "watching" | "universe";
+
+export function positionStatusForTicker(
+  ticker: string,
+  portfolioSet: Set<string>,
+  watchlistSet: Set<string>,
+): PositionStatus {
+  const u = String(ticker).toUpperCase();
+  if (portfolioSet.has(u)) return "owned";
+  if (watchlistSet.has(u)) return "watching";
+  return "universe";
 }
 
 export function filterTickersBySource(

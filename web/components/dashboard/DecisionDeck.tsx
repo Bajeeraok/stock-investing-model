@@ -30,6 +30,7 @@ import {
   horizonLabel,
 } from "@/lib/decisionMode";
 import type { RetailActionPayload } from "./retailActionUX";
+import { ExternalContextChip } from "./ExternalContextChip";
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = how strong the technical read is on this horizon. Conviction = how much the model trusts that read (gates, ML, pattern).";
@@ -118,6 +119,19 @@ function verdictIcon(verdict: string) {
     default:
       return <XCircle className="h-4 w-4 text-red-400 shrink-0" aria-hidden />;
   }
+}
+
+const ACTION_TODAY_LABEL: Record<string, string> = {
+  enter_now: "Enter now (staged)",
+  wait_for_pullback: "Wait for pullback",
+  hold: "Hold / watch",
+  trim: "Trim",
+  no_new_position: "No new adds",
+};
+
+function executionLabel(action: string | null | undefined): string {
+  if (!action) return "Hold / watch";
+  return ACTION_TODAY_LABEL[action] ?? action.replace(/_/g, " ");
 }
 
 function verdictTextClass(verdict: string): string {
@@ -226,6 +240,15 @@ export function DecisionDeck({
   const showOwnerTierLadder =
     mode === "owner" && primaryKey === "long" && Boolean(long.entry_tiers?.tiers?.length);
 
+  const actionToday = one_answer?.action_today;
+  const executionToday = executionLabel(actionToday);
+  const horizonVerdict = (primary.verdict || "").toUpperCase();
+  const horizonBuy = horizonVerdict === "BUY" || horizonVerdict === "STRONG BUY";
+  const executionBlocksChase =
+    actionToday === "hold" ||
+    actionToday === "wait_for_pullback" ||
+    actionToday === "no_new_position";
+
   return (
     <section
       className={clsx(
@@ -273,11 +296,41 @@ export function DecisionDeck({
           </span>
         </p>
 
+        <p
+          className={clsx(
+            "text-xs font-medium rounded-lg px-2.5 py-1.5 border",
+            actionToday === "enter_now"
+              ? "text-emerald-200 border-emerald-500/35 bg-emerald-950/30"
+              : "text-amber-100 border-amber-500/30 bg-amber-950/25",
+          )}
+          title="Horizon verdict is trend bias; execution is whether to act at this price today."
+        >
+          <span className="text-slate-400 font-normal">Execution today: </span>
+          {executionToday}
+          {horizonBuy && executionBlocksChase && (
+            <span className="text-slate-500 font-normal">
+              {" "}
+              — horizon still {horizonVerdict} (like TradingView trend vs RSI overbought)
+            </span>
+          )}
+        </p>
+
         {tacticalActive && mode === "scout" && (
-          <p className="text-xs text-cyan-200/90 border border-cyan-500/30 rounded-lg px-2.5 py-1.5 bg-cyan-950/40">
-            Velocity / tactical lane active — confirm GO/NO-GO in scout panel above.
+          <p
+            className={clsx(
+              "text-xs rounded-lg px-2.5 py-1.5 border",
+              executionBlocksChase
+                ? "text-amber-200/90 border-amber-500/35 bg-amber-950/30"
+                : "text-cyan-200/90 border-cyan-500/30 bg-cyan-950/40",
+            )}
+          >
+            {executionBlocksChase
+              ? "Tactical breakout is momentum context — not a chase-the-close buy. Use act-when triggers below."
+              : "Velocity lane aligns with enter-now — still use stops and staged size."}
           </p>
         )}
+
+        <ExternalContextChip context={one_answer?.external_context} />
 
         {band && !showOwnerTierLadder && (
           <p className={clsx("text-sm font-medium leading-snug", band.inside ? "text-emerald-200" : "text-amber-100")}>
