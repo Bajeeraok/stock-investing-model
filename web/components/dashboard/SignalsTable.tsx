@@ -36,6 +36,7 @@ import {
   type SignalsPresetId,
 } from "@/lib/signalPresets";
 import { defaultPresetForLens, type TradingLens } from "@/lib/tradingLens";
+import { SwipeableSignalCard, type SwipeRevealAction } from "./SwipeableSignalCard";
 
 export type { SignalsPresetId } from "@/lib/signalPresets";
 
@@ -452,27 +453,50 @@ function SignalsMobileQuickCard({
   onToggleExpand,
   muted,
   showEarningsCol,
+  activeSwipeKey,
+  onSwipeKeyChange,
 }: {
   r: Signal;
   gateContext: SignalListContext;
   tickerActions?: Record<string, { action: string; one_liner: string }>;
   onTickerClick?: (ticker: string) => void;
   expanded: boolean;
-  onToggleExpand: (ticker: string, e: React.MouseEvent) => void;
+  onToggleExpand: (ticker: string, e?: React.MouseEvent) => void;
   muted?: boolean;
   showEarningsCol: boolean;
+  activeSwipeKey?: string | null;
+  onSwipeKeyChange?: (key: string | null) => void;
 }) {
   const gates = gatesForSignal(r, gateContext);
   const status = deriveListActionStatus(r);
 
+  const swipeActions: SwipeRevealAction[] = [
+    {
+      id: "gates",
+      label: expanded ? "Hide" : "Gates",
+      tone: "sky",
+      onClick: () => onToggleExpand(r.ticker),
+    },
+    {
+      id: "open",
+      label: "Open",
+      tone: "emerald",
+      onClick: () => onTickerClick?.(r.ticker),
+    },
+  ];
+
   return (
-    <div
+    <SwipeableSignalCard
+      cardKey={r.ticker}
+      actions={swipeActions}
+      activeSwipeKey={activeSwipeKey}
+      onSwipeKeyChange={onSwipeKeyChange}
       className={clsx(
-        "px-4 py-2.5",
         r.story_change && "bg-amber-500/5",
-        muted && "bg-slate-900/40"
+        muted && "bg-slate-900/40",
       )}
     >
+      <div className="px-4 py-2.5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <button
@@ -521,7 +545,8 @@ function SignalsMobileQuickCard({
           />
         </div>
       )}
-    </div>
+      </div>
+    </SwipeableSignalCard>
   );
 }
 
@@ -535,6 +560,8 @@ function SignalsMobileFullCard({
   h,
   showEarningsCol,
   showModelDetail,
+  activeSwipeKey,
+  onSwipeKeyChange,
 }: {
   r: Signal;
   gateContext: SignalListContext;
@@ -545,14 +572,34 @@ function SignalsMobileFullCard({
   h: { short_term: string; medium_term: string; long_term: string };
   showEarningsCol: boolean;
   showModelDetail: boolean;
+  activeSwipeKey?: string | null;
+  onSwipeKeyChange?: (key: string | null) => void;
 }) {
+  const levelsOpen = openMobileTicker === r.ticker;
+  const swipeActions: SwipeRevealAction[] = [
+    {
+      id: "levels",
+      label: levelsOpen ? "Hide" : "Levels",
+      tone: "sky",
+      onClick: () => setOpenMobileTicker((t) => (t === r.ticker ? null : r.ticker)),
+    },
+    {
+      id: "open",
+      label: "Open",
+      tone: "emerald",
+      onClick: () => onTickerClick?.(r.ticker),
+    },
+  ];
+
   return (
-    <div
-      className={clsx(
-        "px-4 py-3",
-        r.story_change && "bg-amber-500/5",
-      )}
+    <SwipeableSignalCard
+      cardKey={r.ticker}
+      actions={swipeActions}
+      activeSwipeKey={activeSwipeKey}
+      onSwipeKeyChange={onSwipeKeyChange}
+      className={clsx(r.story_change && "bg-amber-500/5")}
     >
+      <div className="px-4 py-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <button
           type="button"
@@ -690,7 +737,8 @@ function SignalsMobileFullCard({
           )}
         </div>
       )}
-    </div>
+      </div>
+    </SwipeableSignalCard>
   );
 }
 
@@ -727,6 +775,7 @@ export function SignalsTable({
   const [viewMode, setViewMode] = useState<SignalsViewMode>("quick");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(() => new Set());
+  const [activeSwipeKey, setActiveSwipeKey] = useState<string | null>(null);
   const [preset, setPreset] = useState<SignalsPresetId>("all");
   const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
 
@@ -973,7 +1022,10 @@ export function SignalsTable({
         )}
       </div>
 
-      {/* Mobile: card list */}
+      {/* Mobile: card list — swipe left for Open / Gates */}
+      <p className="md:hidden text-[10px] text-slate-500 px-4 py-1.5 border-b border-slate-700/40 bg-slate-900/30">
+        Swipe a card left for quick actions · tap chevron for gate detail
+      </p>
       <div className="md:hidden divide-y divide-slate-700/50">
         {isQuick && actionGroups
           ? actionGroups.map((group) => {
@@ -991,6 +1043,8 @@ export function SignalsTable({
                     expanded={expandedTickers.has(r.ticker)}
                     onToggleExpand={toggleTickerExpand}
                     showEarningsCol={showEarningsCol}
+                    activeSwipeKey={activeSwipeKey}
+                    onSwipeKeyChange={setActiveSwipeKey}
                   />
                 );
               }
@@ -1031,6 +1085,8 @@ export function SignalsTable({
                         onToggleExpand={toggleTickerExpand}
                         muted
                         showEarningsCol={showEarningsCol}
+                        activeSwipeKey={activeSwipeKey}
+                        onSwipeKeyChange={setActiveSwipeKey}
                       />
                     ))}
                 </Fragment>
@@ -1048,6 +1104,8 @@ export function SignalsTable({
                 h={h}
                 showEarningsCol={showEarningsCol}
                 showModelDetail={showModelDetail}
+                activeSwipeKey={activeSwipeKey}
+                onSwipeKeyChange={setActiveSwipeKey}
               />
             ))}
       </div>
