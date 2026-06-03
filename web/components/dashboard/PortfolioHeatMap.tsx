@@ -35,7 +35,8 @@ export function PortfolioHeatMap({
       <div className="px-4 py-3 border-b border-slate-700/80 bg-slate-900/60 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Portfolio heat map</h3>
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[11px] text-slate-400 mt-1 md:hidden">Sorted by weight · tap a row for detail</p>
+          <p className="text-[11px] text-slate-400 mt-1 hidden md:block">
             Tile size = weight · color = score · dot = regime (green up, red down)
           </p>
         </div>
@@ -54,6 +55,48 @@ export function PortfolioHeatMap({
         )}
       </div>
       <div className="p-3 sm:p-4">
+        {/* Mobile: scannable list (heat map tiles don't scale to many holdings) */}
+        <div className="md:hidden divide-y divide-slate-700/60 rounded-lg border border-slate-700/50 overflow-hidden">
+          {sorted.map((h) => {
+            const pct = h.pct ?? 0;
+            const rowClass = clsx(
+              "w-full flex items-center gap-3 px-3 py-2.5 text-left touch-manipulation min-h-[44px]",
+              scoreColor(h.score),
+              onTickerClick && "hover:opacity-95 active:opacity-90",
+            );
+            const inner = (
+              <>
+                <span className="font-mono text-sm font-semibold w-14 shrink-0 truncate">{h.ticker}</span>
+                <span className="text-xs tabular-nums w-10 shrink-0 opacity-80">{pct.toFixed(1)}%</span>
+                <span className="text-xs font-medium tabular-nums w-8 shrink-0">
+                  {h.score != null ? Math.round(h.score) : "—"}
+                </span>
+                <span
+                  className={clsx("ml-auto h-2.5 w-2.5 rounded-full shrink-0", regimeDot(h.regime))}
+                  title={h.regime ?? "Regime"}
+                />
+              </>
+            );
+            return onTickerClick ? (
+              <button
+                key={h.ticker}
+                type="button"
+                onClick={() => onTickerClick(h.ticker)}
+                className={rowClass}
+                title={`${h.ticker} · ${pct.toFixed(1)}% · score ${h.score ?? "—"} · ${h.regime ?? "—"}`}
+              >
+                {inner}
+              </button>
+            ) : (
+              <div key={h.ticker} className={rowClass}>
+                {inner}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop: tile heat map */}
+        <div className="hidden md:block">
         <div className="flex flex-wrap gap-1.5 min-h-[5rem]">
           {sorted.map((h) => {
             const pct = Math.max(h.pct ?? 1, 1);
@@ -97,6 +140,7 @@ export function PortfolioHeatMap({
               </div>
             );
           })}
+        </div>
         </div>
         <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-500">
           <span className="inline-flex items-center gap-1">

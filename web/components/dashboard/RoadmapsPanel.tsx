@@ -33,7 +33,7 @@ export interface RoadmapItem {
 interface Props {
   /** Tickers to load (e.g. watchlist or signals). */
   tickers: string[];
-  onTickerClick: (ticker: string) => void;
+  onTickerClick: (ticker: string, tab?: "today" | "levels" | "why") => void;
   /** Skip fetch while dashboard background compute is running. */
   warming?: boolean;
   portfolioTickers?: string[];
@@ -54,12 +54,21 @@ export function RoadmapsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const [preset, setPreset] = useState<SignalsPresetId>("all");
   const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
 
   useEffect(() => {
     setPreset(loadSignalsPreset());
     setSourceFilter(loadTickerSourceFilter());
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
 
   const applyPreset = (id: SignalsPresetId) => {
@@ -153,8 +162,8 @@ export function RoadmapsPanel({
       ) : (
         <>
           <p className="text-sm text-slate-400">
-            One answer + buy/sell roadmap per ticker (portfolio holdings first, then watchlist). Click a ticker to
-            open full detail, or expand to see the full roadmap card.
+            One answer + buy/sell roadmap per ticker (portfolio holdings first, then watchlist). Tap a ticker for
+            full detail; on phone, roadmap opens full-screen on the Levels tab.
             {filteredTickers.length > MAX_TICKERS && (
               <span className="text-slate-500">
                 {" "}
@@ -220,16 +229,22 @@ export function RoadmapsPanel({
                         {hasRoadmap && (
                           <button
                             type="button"
-                            onClick={() => setExpandedTicker(isExpanded ? null : item.ticker)}
+                            onClick={() => {
+                              if (isMobile) {
+                                onTickerClick(item.ticker, "levels");
+                                return;
+                              }
+                              setExpandedTicker(isExpanded ? null : item.ticker);
+                            }}
                             className="text-xs text-slate-400 hover:text-slate-300"
                           >
-                            {isExpanded ? "Collapse" : "Expand roadmap"}
+                            {isMobile ? "Roadmap" : isExpanded ? "Collapse" : "Expand roadmap"}
                           </button>
                         )}
                       </div>
                     </div>
                   </div>
-                  {isExpanded && item.trade_roadmap && (
+                  {isExpanded && !isMobile && item.trade_roadmap && (
                     <div className="border-t border-slate-700 p-4 bg-slate-900/50">
                       <TradeRoadmapCard data={item.trade_roadmap} ticker={item.ticker} />
                     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -370,6 +370,16 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
   /** Full roadmap vs TL;DR-first (retail) — default simple for faster decisions */
   const [advancedRoadmap, setAdvancedRoadmap] = useState(false);
   const [showRoadmapAnalysis, setShowRoadmapAnalysis] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => {
+      if (mq.matches) setAdvancedRoadmap(true);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
   /** Compact evidence rows for fast decision flow */
   const [evidenceOpen, setEvidenceOpen] = useState<{
     market: boolean;
@@ -953,10 +963,10 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-emerald-400 mb-2">
                   <TrendingUp className="h-4 w-4" /> Buy roadmap
                 </h4>
-                <p className="text-xs text-slate-500 mb-2 sm:hidden">
-                  On small screens use the cards below; swipe the desktop table on larger screens for all columns.
+                <p className="text-xs text-slate-500 mb-2 md:hidden">
+                  Timeline cards below — full table on desktop.
                 </p>
-                <div className="sm:hidden space-y-3">
+                <div className="md:hidden space-y-3">
                   {buyRowsWithZoneHints.map(({ row, sameBandAsPrior }) => (
                     <BuyRoadmapMobileCard
                       key={row.timeline_key}
@@ -968,7 +978,7 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     />
                   ))}
                 </div>
-                <div className="hidden sm:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
+                <div className="hidden md:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
                   <table className="min-w-[980px] w-full text-sm border-collapse table-fixed">
                     <colgroup>
                       <col className="w-[100px]" />
@@ -1083,12 +1093,12 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-amber-400 mb-2">
                   <TrendingDown className="h-4 w-4" /> Sell roadmap
                 </h4>
-                <div className="sm:hidden space-y-3">
+                <div className="md:hidden space-y-3">
                   {sellFiltered.map((row) => (
                     <SellRoadmapMobileCard key={row.timeline_key} row={row} activeTimelineKey={activeTimelineKey} />
                   ))}
                 </div>
-                <div className="hidden sm:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
+                <div className="hidden md:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
                   <table className="min-w-[880px] w-full text-sm border-collapse">
                     <thead>
                       <tr className="text-slate-500 border-b border-slate-600">

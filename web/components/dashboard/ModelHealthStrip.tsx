@@ -6,6 +6,17 @@ interface SummaryBySignal {
   [signal: string]: { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number };
 }
 
+interface HorizonSummary {
+  avg_return_pct?: number;
+  n_observations?: number;
+  win_rate_pct?: number;
+  st_target_hit_rate_pct?: number;
+  st_stop_hit_rate_pct?: number;
+  trim_avg_net_score_pct?: number;
+  trim_helped_pct?: number;
+  trim_n?: number;
+}
+
 /** API `model_health` + optional forward-tracking fallbacks */
 export interface WalkForwardRegimeBreakdownEntry {
   window_count?: number;
@@ -32,7 +43,7 @@ export interface ModelHealthData {
 interface Props {
   model_health?: ModelHealthData | null;
   summary_by_signal?: SummaryBySignal | null;
-  summary_by_horizon?: Record<number, { avg_return_pct: number; n_observations: number }> | null;
+  summary_by_horizon?: Record<number, HorizonSummary> | null;
   message?: string | null;
 }
 

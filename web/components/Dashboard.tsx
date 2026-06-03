@@ -159,6 +159,11 @@ function isValidTab(t: string): t is TabId {
 export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stale = false, lastRefreshedAt }: Props) {
   const router = useRouter();
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [modalInitialTab, setModalInitialTab] = useState<"today" | "levels" | "why">("today");
+  const openTickerDetail = useCallback((ticker: string, tab?: "today" | "levels" | "why") => {
+    setModalInitialTab(tab ?? "today");
+    setSelectedTicker(ticker);
+  }, []);
   const [refreshAgo, setRefreshAgo] = useState("");
   const [eodSaving, setEodSaving] = useState(false);
   const [eodMessage, setEodMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -785,7 +790,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             ?? null
           }
           tradingLens={tradingLens}
-          onTickerClick={setSelectedTicker}
+          onTickerClick={openTickerDetail}
           onViewAll={() => setActiveTab("signals")}
         />
         <div className="lg:hidden px-1">
@@ -824,17 +829,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     tradingLens === "scout" && (data.tactical_breakouts?.length ?? 0) > 0 ? (
                       <TacticalBreakoutStrip
                         rows={data.tactical_breakouts}
-                        onTickerClick={setSelectedTicker}
+                        onTickerClick={openTickerDetail}
                       />
                     ) : null
                   }
-                  onTickerClick={setSelectedTicker}
+                  onTickerClick={openTickerDetail}
                 />
               )}
               {tradingLens !== "scout" && (data.tactical_breakouts?.length ?? 0) > 0 && (
                 <TacticalBreakoutStrip
                   rows={data.tactical_breakouts}
-                  onTickerClick={setSelectedTicker}
+                  onTickerClick={openTickerDetail}
                 />
               )}
               <ToggleSection
@@ -848,7 +853,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   panel={data.hunter_panel}
                   portfolioTickers={portfolioTickerList}
                   watchlistTickers={watchlistTickerList}
-                  onTickerClick={setSelectedTicker}
+                  onTickerClick={openTickerDetail}
                 />
               </ToggleSection>
               <ToggleSection
@@ -860,7 +865,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               >
                 <ScannerHomeLite
                   data={data.scanner_home_lite}
-                  onTickerClick={setSelectedTicker}
+                  onTickerClick={openTickerDetail}
                 />
               </ToggleSection>
               <ToggleSection
@@ -878,7 +883,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 defaultOpen={overviewAlertActionCount > 0}
               >
                 <AlertsPanel
-                  onTickerClick={setSelectedTicker}
+                  onTickerClick={openTickerDetail}
                   onLoaded={(total, actionRequired) => {
                     setOverviewAlertCount(total);
                     setOverviewAlertActionCount(actionRequired);
@@ -960,7 +965,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <PortfolioHeatMap
                 holdings={selectedReport?.per_holding ?? []}
                 regimeCounts={selectedReport?.regime_counts}
-                onTickerClick={setSelectedTicker}
+                onTickerClick={openTickerDetail}
               />
               <ToggleSection id="overview-portfolio" title="Portfolio summary" icon={<PieChart />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -992,7 +997,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   title="Portfolio tape"
                   hint="One shared chart surface — click a bar to open the ticker hub. Regime mix is holdings-weighted."
                 >
-                  <ScoreChart signals={scoreChartSignals} onTickerClick={setSelectedTicker} embedded />
+                  <ScoreChart signals={scoreChartSignals} onTickerClick={openTickerDetail} embedded />
                   <RegimeChart report={selectedReport} embedded />
                 </AnchorChartPanel>
               </ToggleSection>
@@ -1214,7 +1219,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             <SignalsTable
               signals={effectiveSignals}
               horizons={data.config?.horizons}
-              onTickerClick={setSelectedTicker}
+              onTickerClick={openTickerDetail}
               riskSizing={data.config?.risk_sizing}
               cotByTicker={data.cot_by_ticker}
               tickerActions={data.retail_briefing?.ticker_actions}
@@ -1233,7 +1238,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <RoadmapsPanel
                 warming={Boolean(data.warming)}
                 tickers={roadmapTickers}
-                onTickerClick={setSelectedTicker}
+                onTickerClick={openTickerDetail}
                 portfolioTickers={portfolioTickerList}
                 watchlistTickers={watchlistTickerList}
                 signalsByTicker={signalsByTicker}
@@ -1262,7 +1267,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <PortfolioHeatMap
                 holdings={selectedReport?.per_holding ?? []}
                 regimeCounts={selectedReport?.regime_counts}
-                onTickerClick={setSelectedTicker}
+                onTickerClick={openTickerDetail}
               />
               {/* Portfolio Doctor v2 — answers "what do I do this week?" first */}
               <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen>
@@ -1275,7 +1280,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   holdingCount={selectedReport?.per_holding?.length}
                   sectorExposure={selectedReport?.sector_allocation}
                   holdings={selectedReport?.per_holding}
-                  onTickerClick={setSelectedTicker}
+                  onTickerClick={openTickerDetail}
                 />
               </ToggleSection>
               <ToggleSection id="portfolio-summary" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
@@ -1293,7 +1298,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 {(selectedReport?.per_holding?.length ?? 0) > 0 ? (
                   <PortfolioHoldings
                     holdings={selectedReport?.per_holding ?? []}
-                    onTickerClick={setSelectedTicker}
+                    onTickerClick={openTickerDetail}
                     hideAccountColumn={selectedPortfolio !== "All"}
                     addMinConfidence={data.config?.model_rules?.add_min_confidence ?? 70}
                     trimMaxConfidence={data.config?.model_rules?.trim_max_confidence ?? 30}
@@ -1308,7 +1313,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               </ToggleSection>
               <ToggleSection id="portfolio-trim" title="Consider Trim" icon={<AlertTriangle />} badge={selectedTrimCandidates.length || undefined} defaultOpen>
                 {selectedTrimCandidates.length > 0 ? (
-                  <TrimCandidates items={selectedTrimCandidates} onTickerClick={setSelectedTicker} />
+                  <TrimCandidates items={selectedTrimCandidates} onTickerClick={openTickerDetail} />
                 ) : (
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
                     <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
@@ -1318,7 +1323,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 )}
               </ToggleSection>
               <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
-                <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={setSelectedTicker} />
+                <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={openTickerDetail} />
               </ToggleSection>
               <ToggleSection
                 id="portfolio-doctor-legacy"
@@ -1344,7 +1349,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <PortfolioDoctorRecommendations
                     recommendation={mergedDoctorRec?.[selectedPortfolio]}
                     selectedPortfolio={selectedPortfolio}
-                    onTickerClick={setSelectedTicker}
+                    onTickerClick={openTickerDetail}
                   />
                 </div>
               </ToggleSection>
@@ -1376,7 +1381,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {oppBundleEnabled ? (
                 <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
                   {mergedOpportunities.length ? (
-                    <Opportunities items={mergedOpportunities} onTickerClick={setSelectedTicker} />
+                    <Opportunities items={mergedOpportunities} onTickerClick={openTickerDetail} />
                   ) : (
                     <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
                       <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
@@ -1390,12 +1395,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               ) : null}
               {data.thesis_check.length > 0 && (
                 <ToggleSection id="opps-thesis" title="Thesis check" icon={<FileText />} badge={data.thesis_check.length} defaultOpen>
-                  <ThesisCheck items={data.thesis_check} onTickerClick={setSelectedTicker} />
+                  <ThesisCheck items={data.thesis_check} onTickerClick={openTickerDetail} />
                 </ToggleSection>
               )}
               {data.what_changed.length > 0 && (
                 <ToggleSection id="opps-what-changed" title="What changed" icon={<RefreshCw />} badge={data.what_changed.length} defaultOpen>
-                  <WhatChanged items={data.what_changed} onTickerClick={setSelectedTicker} />
+                  <WhatChanged items={data.what_changed} onTickerClick={openTickerDetail} />
                 </ToggleSection>
               )}
               <ToggleSection
@@ -1642,7 +1647,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       </main>
 
       {selectedTicker && (
-        <TickerDetailModal ticker={selectedTicker} onClose={() => setSelectedTicker(null)} />
+        <TickerDetailModal
+          ticker={selectedTicker}
+          initialTab={modalInitialTab}
+          onClose={() => setSelectedTicker(null)}
+        />
       )}
 
       <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">

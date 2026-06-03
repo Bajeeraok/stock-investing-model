@@ -355,9 +355,12 @@ export interface TickerDetail {
 export function TickerDetailModal({
   ticker,
   onClose,
+  initialTab = "today",
 }: {
   ticker: string;
   onClose: () => void;
+  /** Which hub tab to show first (e.g. Levels when opening from roadmap expand). */
+  initialTab?: "today" | "levels" | "why";
 }) {
   const [detail, setDetail]               = useState<TickerDetail | null>(null);
   const [confidence, setConfidence]        = useState<ConfidenceData | null>(null);
@@ -368,7 +371,7 @@ export function TickerDetailModal({
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"today" | "levels" | "why">("today");
+  const [modalTab, setModalTab] = useState<"today" | "levels" | "why">(initialTab);
   const [whySubTab, setWhySubTab] = useState<WhySubTab>("valuation");
 
   const openWhyValuation = () => {
@@ -404,7 +407,7 @@ export function TickerDetailModal({
 
   useEffect(() => {
     if (!ticker) return;
-    setModalTab("today");
+    setModalTab(initialTab);
     setWhySubTab("valuation");
     setCatalystExpanded(false);
     setLoading(true);
@@ -439,7 +442,7 @@ export function TickerDetailModal({
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && !d.error && setPriceTargets(d))
       .catch(() => {/* graceful — price targets unavailable */});
-  }, [ticker]);
+  }, [ticker, initialTab]);
 
   const periods = ["1m", "3m", "6m", "1y"];
 
