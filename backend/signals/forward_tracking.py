@@ -187,6 +187,7 @@ def get_forward_tracking(
             "records": [],
             "summary_by_horizon": {},
             "summary_by_signal": {},
+            "summary_by_gates": {},
             "message": "Need at least 2 EOD snapshots. Run run_daily.py regularly.",
         }
     # Always include 1-step horizon when possible — freshest completed as-of is dates[-2], not dates[-6] (5d).
@@ -194,17 +195,30 @@ def get_forward_tracking(
         horizon_list = [1] + horizon_list
 
     records: list[dict[str, Any]] = []
-    by_horizon: dict[int, list[float]] = {h: [] for h in horizon_list}
-    by_signal_20: dict[str, list[float]] = {}
-    by_go_20: dict[str, list[float]] = {"go": [], "no_go": [], "unknown": []}
     signal_source_counts: dict[str, int] = {"ml_signal": 0, "score_fallback": 0}
+    use_intraday = bool(ft_cfg.get("use_intraday_touch", True))
+    date_to_idx = {d: i for i, d in enumerate(dates)}
 
     try:
-        from signals.tracking_gate import enrich_tracking_row, gate_snapshot_from_row, passes_tracking_gate
-    except Exception:
-        enrich_tracking_row = None  # type: ignore
-        gate_snapshot_from_row = None  # type: ignore
-        passes_tracking_gate = None  # type: ignore
+        from signals.tracking_gate import enrich_tracking_row, passes_tracking_gate
+        from signals.forward_tracking_metrics import (
+            aggregate_by_gates,
+            aggregate_by_signal,
+            aggregate_horizon_stats,
+            bars_between_dates,
+            path_metrics,
+            read_frozen_gates,
+            st_stop_target_from_row,
+            trim_outcome_metrics,
+        )
+    except Exception as imp_err:
+        return {
+            "records": [],
+            "summary_by_horizon": {},
+            "summary_by_signal": {},
+            "summary_by_gates": {},
+            "message": f"Forward tracking metrics unavailable: {imp_err}",
+        }
 
     for horizon in horizon_list:
         if horizon >= len(dates):
@@ -214,6 +228,9 @@ def get_forward_tracking(
             snap = _load_snapshot(eod_dir, as_of_date)
             snap_next = _load_snapshot(eod_dir, next_date)
             if not snap or not snap_next:
+                continue
+            start_idx = date_to_idx.get(as_of_date)
+            if start_idx is None:
                 continue
             run_by_ticker = {
                 str(r["ticker"]).upper(): r
@@ -244,11 +261,12 @@ def get_forward_tracking(
                 if prior <= 0:
                     continue
                 row_work = dict(row)
-                if enrich_gates and enrich_tracking_row is not None:
-                    enrich_tracking_row(row_work)
-                if passes_tracking_gate is not None and not passes_tracking_gate(row_work, config, "forward_tracking"):
+                if enrich_gates:
+                    if not row_work.get("gates_frozen"):
+                        enrich_tracking_row(row_work)
+                if not passes_tracking_gate(row_work, config, "forward_tracking"):
                     continue
-                gate = gate_snapshot_from_row(row_work) if gate_snapshot_from_row else {}
+                gate = read_frozen_gates(row_work)
                 ret_pct = round(100 * (actual - prior) / prior, 2)
                 our_signal, signal_source = _signal_and_source_from_row(
                     row_work, buy_min=buy_min, sell_max=sell_max
@@ -257,7 +275,16 @@ def get_forward_tracking(
                 if go_key not in ("go", "no_go"):
                     go_key = "unknown"
 
-                records.append({
+                stop, target = st_stop_target_from_row(row_work)
+                path_bars = bars_between_dates(
+                    dates, start_idx, horizon, tk, _load_snapshot, eod_dir
+                )
+                path = path_metrics(
+                    prior, path_bars, stop, target, use_intraday=use_intraday
+                )
+                trim_m = trim_outcome_metrics(ret_pct, our_signal)
+
+                rec: dict[str, Any] = {
                     "as_of_date": as_of_date,
                     "next_date": next_date,
                     "ticker": tk,
@@ -269,41 +296,49 @@ def get_forward_tracking(
                     "go_no_go": gate.get("go_no_go"),
                     "gates_passed": gate.get("gates_passed"),
                     "gates_total": gate.get("gates_total"),
-                })
+                    "gates_frozen": bool(row_work.get("gates_frozen")),
+                    "st_stop_at_signal": stop,
+                    "st_target_at_signal": target,
+                    "hit_st_stop": path.get("hit_st_stop"),
+                    "hit_st_target": path.get("hit_st_target"),
+                    "max_gain_pct": path.get("max_gain_pct"),
+                    "max_drawdown_pct": path.get("max_drawdown_pct"),
+                }
+                if trim_m:
+                    rec.update(trim_m)
+                records.append(rec)
                 signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
-                by_horizon[horizon].append(ret_pct)
-                if horizon == 20:
-                    by_signal_20.setdefault(our_signal, []).append(ret_pct)
-                    by_go_20.setdefault(go_key, []).append(ret_pct)
 
-    summary_by_horizon = {}
-    for h, returns in by_horizon.items():
-        if returns:
-            summary_by_horizon[h] = {
-                "avg_return_pct": round(sum(returns) / len(returns), 2),
-                "n_observations": len(returns),
-            }
+    summary_by_horizon: dict[str, Any] = {}
+    for h in horizon_list:
+        hrows = [r for r in records if r.get("horizon_days") == h]
+        if hrows:
+            summary_by_horizon[h] = aggregate_horizon_stats(hrows)
 
-    summary_by_signal = {}
-    for sig, returns in by_signal_20.items():
-        if returns:
-            n_pos = sum(1 for r in returns if r > 0)
-            hit_rate_pct = round(100 * n_pos / len(returns), 1) if returns else 0.0
-            summary_by_signal[sig] = {
-                "avg_return_20d_pct": round(sum(returns) / len(returns), 2),
-                "n_observations": len(returns),
-                "hit_rate_pct": hit_rate_pct,
-            }
+    summary_by_signal = aggregate_by_signal(records, 20)
+    # Back-compat keys for ModelHealthStrip
+    for sig, stats in list(summary_by_signal.items()):
+        if stats.get("avg_return_pct") is not None:
+            stats["avg_return_20d_pct"] = stats["avg_return_pct"]
 
     summary_by_go_no_go: dict[str, dict[str, Any]] = {}
-    for go_key, returns in by_go_20.items():
-        if returns:
-            n_pos = sum(1 for r in returns if r > 0)
-            summary_by_go_no_go[go_key] = {
-                "avg_return_20d_pct": round(sum(returns) / len(returns), 2),
-                "n_observations": len(returns),
-                "hit_rate_pct": round(100 * n_pos / len(returns), 1),
-            }
+    for go_key in ("go", "no_go", "unknown"):
+        grows = [
+            r
+            for r in records
+            if r.get("horizon_days") == 20
+            and str(r.get("go_no_go") or "unknown").lower() == go_key
+        ]
+        if grows:
+            summary_by_go_no_go[go_key] = aggregate_horizon_stats(grows)
+            summary_by_go_no_go[go_key]["avg_return_20d_pct"] = summary_by_go_no_go[go_key].get(
+                "avg_return_pct"
+            )
+            summary_by_go_no_go[go_key]["hit_rate_pct"] = summary_by_go_no_go[go_key].get(
+                "win_rate_pct"
+            )
+
+    summary_by_gates = aggregate_by_gates([r for r in records if r.get("horizon_days") == 20])
 
     total_records = len(records)
     capped = _cap_records_recent(records, record_cap)
@@ -326,8 +361,13 @@ def get_forward_tracking(
         "summary_by_horizon": summary_by_horizon,
         "summary_by_signal": summary_by_signal,
         "summary_by_go_no_go": summary_by_go_no_go,
+        "summary_by_gates": summary_by_gates,
         "signal_source_counts": signal_source_counts,
         "meta": meta,
+        "data_source_note": (
+            "Returns and ST stop/target touches from EOD OHLCV between snapshot dates "
+            "(not paper trades). Gates frozen on new EOD saves; legacy rows recompute gates when enriched."
+        ),
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
 

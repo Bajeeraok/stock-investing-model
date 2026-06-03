@@ -345,6 +345,14 @@ risk_sizing:
 # Backtest: calibration "OK" when score >= this (used in backtest_simple.py and model health)
 backtest:
   calibration_ok_min: 70   # Same as score.buy_min by default; calibration_score >= this = OK
+  # When true, each bar uses global market_regime + market_reversal_overlay (live run_daily parity)
+  apply_live_adjustments: true
+  parity_note: "Question (A) only — not gate clearance (B) or paper outcomes (C)."
+  walk_forward:
+    enabled: true
+    train_years: 3
+    test_months: 6
+    buy_threshold: 70
   # Short-horizon noise: skip bars with next earnings within N calendar days (FMP historical dates; needs fmp_api_key)
   # See docs/backend/BACKTEST_DATA.md for limits (not point-in-time perfect).
   earnings_exclusion:
@@ -559,7 +567,8 @@ forward_tracking:
   max_pairs_per_horizon: 60              # snapshot-step pairs per horizon (raise if cohort is large)
   max_records_response: 2000             # most recent rows returned to UI
   require_gates_cleared: false           # keep all rows; gate fields on each record for filtering
-  enrich_gates_from_eod: true            # recompute gates from EOD row when snapshot lacks gate_cleared
+  enrich_gates_from_eod: true            # recompute gates when snapshot lacks gates_frozen
+  use_intraday_touch: true               # ST stop/target use EOD high/low between as-of and forward date
 
 # 7-layer confidence: HMM bear penalty vs MA200 trend conflict; ML prob calibration (Platt / isotonic)
 # Standard equity weights: see pre_flight/constants.py (EQUITY_US — fundamentals 14%, regime 11%).

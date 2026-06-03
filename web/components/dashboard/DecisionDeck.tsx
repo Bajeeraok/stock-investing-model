@@ -29,30 +29,13 @@ import {
   primaryHorizonFromMode,
   horizonLabel,
 } from "@/lib/decisionMode";
-import type { RetailActionPayload } from "./retailActionUX";
 import { ExternalContextChip } from "./ExternalContextChip";
 import { ValuationDeck } from "./ValuationDeck";
 import { StreetSentimentChip } from "./StreetSentimentChip";
+import { ExecutionPlanRationale } from "./ExecutionPlanRationale";
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = how strong the technical read is on this horizon. Conviction = how much the model trusts that read (gates, ML, pattern).";
-
-type NextTriggerInput = RetailActionPayload["next_trigger"] | string | null | undefined;
-
-function formatNextTriggerText(trigger: NextTriggerInput): string | null {
-  if (trigger == null) return null;
-  if (typeof trigger === "string") {
-    const t = trigger.trim();
-    return t || null;
-  }
-  const parts: string[] = [];
-  if (trigger.headline?.trim()) parts.push(trigger.headline.trim());
-  if (trigger.detail?.trim()) parts.push(trigger.detail.trim());
-  if (trigger.estimated_days != null && trigger.estimated_days > 0) {
-    parts.push(`~${trigger.estimated_days}d`);
-  }
-  return parts.length ? parts.join(" — ") : null;
-}
 
 function entryBandPct(price: number, low: number, high: number): { inside: boolean; line: string } {
   const lo = Math.min(low, high);
@@ -142,14 +125,6 @@ function verdictTextClass(verdict: string): string {
   return "text-red-400";
 }
 
-function triggersDiffer(a: string | null, b: string | null): boolean {
-  if (!a || !b) return Boolean(a) !== Boolean(b);
-  const na = a.trim().toLowerCase();
-  const nb = b.trim().toLowerCase();
-  if (na === nb) return false;
-  return !(na.includes(nb) || nb.includes(na));
-}
-
 function PlanCaveats({
   rationale,
   warnings,
@@ -203,7 +178,7 @@ export function DecisionDeck({
   ltEntryTiersOpen?: boolean;
   onToggleLtTiers?: () => void;
 }) {
-  const { horizons, one_answer, retail_action, regime_bull_pct, rsi, valuation_deck, fair_value, fair_value_vs_external } =
+  const { horizons, one_answer, regime_bull_pct, rsi, valuation_deck, fair_value, fair_value_vs_external } =
     summary;
   const short = horizons.short;
   const medium = horizons.medium;
@@ -228,17 +203,9 @@ export function DecisionDeck({
   const ez = resolveEntryZone(mode, short, medium, long, currentPrice);
   const band = ez ? entryBandPct(currentPrice, ez.low, ez.high) : null;
 
-  const actWhenLine = primary.trigger_buy?.trim() || null;
-  const nextTriggerText = formatNextTriggerText(retail_action?.next_trigger ?? one_answer?.next_trigger ?? null);
-  const showNext =
-    nextTriggerText != null && triggersDiffer(nextTriggerText, actWhenLine);
-
   const warnings = Array.isArray(primary.warnings)
     ? primary.warnings.filter((w) => w && String(w).trim())
     : [];
-
-  const nextLabelClass =
-    mode === "scout" ? "text-cyan-300/90" : mode === "swing" ? "text-violet-300/90" : "text-emerald-300/90";
 
   const showOwnerTierLadder =
     mode === "owner" && primaryKey === "long" && Boolean(long.entry_tiers?.tiers?.length);
@@ -413,28 +380,17 @@ export function DecisionDeck({
           </div>
         )}
 
-        {actWhenLine && (
-          <p className="text-sm text-slate-200 leading-snug border-t border-slate-600/80 pt-2">
-            <span className="text-slate-500 font-medium">Act when: </span>
-            {actWhenLine}
-          </p>
-        )}
-
-        {showNext && (
-          <p className="text-sm text-slate-200 leading-snug">
-            <span className={clsx("font-semibold", nextLabelClass)}>Next: </span>
-            {nextTriggerText!.length > 200 ? `${nextTriggerText!.slice(0, 197)}…` : nextTriggerText}
-          </p>
+        {one_answer && (
+          <ExecutionPlanRationale
+            summary={summary}
+            currentPrice={currentPrice}
+            mode={mode}
+            variant="deck"
+            showTickerLine={false}
+          />
         )}
 
         <PlanCaveats rationale={primary.rationale} warnings={warnings} />
-
-        {one_answer?.bottom_line && (
-          <p className="text-sm text-slate-200 leading-snug border-t border-slate-600/60 pt-2">
-            <span className="font-semibold text-emerald-200/95">Bottom line: </span>
-            {one_answer.bottom_line}
-          </p>
-        )}
 
         {showOwnerTierLadder && onToggleLtTiers && (
           <div className="border-t border-slate-600/60 pt-2">

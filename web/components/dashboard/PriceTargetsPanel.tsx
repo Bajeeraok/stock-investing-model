@@ -19,6 +19,7 @@ import {
   Activity, Calendar,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -607,7 +608,7 @@ function DataRow({ label, value, color = "text-slate-300", mono = false, bold = 
 // Technical levels explanation bar
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TechnicalLevelsBar({ lv, price }: { lv: TechnicalLevels; price: number }) {
+export function TechnicalLevelsBar({ lv, price }: { lv: TechnicalLevels; price: number }) {
   if (!lv.ma50 && !lv.ma200) return null;
   const levels = [
     { label: "52w Low",  value: lv.low_52w,  color: "text-red-400",     dot: "bg-red-400"     },
@@ -789,9 +790,17 @@ export function PriceTargetsPanel({ data, hideHorizonZones }: { data: PriceTarge
         </div>
       </div>
 
-      {/* ── Analyst consensus ── */}
-      {data.analyst_targets && (
-        <AnalystConsensusStrip at={data.analyst_targets} price={data.current_price} />
+      {/* ── Unified valuation (street PT + buy/sell counts + deck) ── */}
+      {(valuationDeck || data.analyst_targets) && !hideAnalystStrip && (
+        <UnifiedValuationSummary
+          deck={valuationDeck}
+          analystTargets={data.analyst_targets}
+          currentPrice={data.current_price}
+          fairValue={fairValue}
+          external={fairValueExternal ?? undefined}
+          decisionMode={decisionMode}
+          showFullDeck={false}
+        />
       )}
 
       {/* ── Live macro context ── */}
@@ -802,7 +811,9 @@ export function PriceTargetsPanel({ data, hideHorizonZones }: { data: PriceTarge
       {data.earnings_target && <EarningsTargetCard et={data.earnings_target} price={data.current_price} />}
 
       {/* ── Technical level anchors ── */}
-      <TechnicalLevelsBar lv={data.technical_levels} price={data.current_price} />
+      {!hideTechnicalLevels && (
+        <TechnicalLevelsBar lv={data.technical_levels} price={data.current_price} />
+      )}
 
       {/* ── Horizon cards (hidden when Investor Decision Summary is shown to avoid conflicting entry logic) ── */}
       {!hideHorizonZones && hasHorizons && (
@@ -821,12 +832,16 @@ export function PriceTargetsPanel({ data, hideHorizonZones }: { data: PriceTarge
       {/* ── Scenario analysis ── */}
       {scenarios.length > 0 && (
         <div className="space-y-2">
+          <p className="text-[10px] font-semibold text-violet-300/90 uppercase tracking-widest">
+            Scenario analysis ({scenarios.length} scenarios)
+          </p>
           <button
-            onClick={() => setShowScenarios(v => !v)}
-            className="flex items-center gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest w-full hover:text-slate-200 transition-colors"
+            type="button"
+            onClick={() => setShowScenarios((v) => !v)}
+            className="flex items-center gap-2 text-[10px] text-slate-500 w-full hover:text-slate-300 transition-colors"
           >
             {showScenarios ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            Scenario Analysis ({scenarios.length} scenarios)
+            {showScenarios ? "Collapse list" : "Expand list"}
           </button>
 
           {showScenarios && (

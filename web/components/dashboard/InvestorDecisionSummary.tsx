@@ -47,6 +47,7 @@ import {
 import { HorizonProjectionChart, type PriceHistoryPoint } from "./HorizonProjectionChart";
 import { StreetVsModelBar } from "./StreetVsModelBar";
 import { ValuationDeck } from "./ValuationDeck";
+import { ExecutionPlanRationale } from "./ExecutionPlanRationale";
 import { StreetSentimentChip } from "./StreetSentimentChip";
 import { PositionIntentChip } from "./PositionIntentChip";
 import { TickerMarketContextCard, type TickerMarketContext } from "./TickerMarketContextCard";
@@ -940,6 +941,7 @@ export function InvestorDecisionSummarySection({
   ma20,
   ma50,
   hideTradingGates = false,
+  hideRoadmaps = false,
   compactOverview = false,
   marketContext,
   decisionMode = "scout",
@@ -958,6 +960,8 @@ export function InvestorDecisionSummarySection({
   ticker?: string;
   /** When GlobalActionHeader already shows gates, skip duplicate block. */
   hideTradingGates?: boolean;
+  /** Roadmaps live on Levels tab in ticker modal — skip duplicate collapsibles. */
+  hideRoadmaps?: boolean;
   /** Modal layout: header + playbooks already shown — trim duplicate blocks. */
   compactOverview?: boolean;
   /** Macro/earnings context — shown compactly after horizon action row. */
@@ -995,24 +999,12 @@ export function InvestorDecisionSummarySection({
   const primaryHorizonKey = primaryHorizonFromMode(decisionMode);
   const [compareHorizonsOpen, setCompareHorizonsOpen] = useState(false);
   const [horizonDetailOpen, setHorizonDetailOpen] = useState(isWhy || (isFull && !compactOverview));
-  const [executionDetailOpen, setExecutionDetailOpen] = useState(isWhy || isFull ? !compactOverview : false);
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [traderOpen, setTraderOpen] = useState(false);
   const [investorOpen, setInvestorOpen] = useState(false);
   const [holdVsTradeOpen, setHoldVsTradeOpen] = useState(false);
   const [advancedDiagnosticsOpen, setAdvancedDiagnosticsOpen] = useState(false);
   const [gatesDetailOpen, setGatesDetailOpen] = useState(false);
-  const [evidenceOpen, setEvidenceOpen] = useState<{
-    market: boolean;
-    chart: boolean;
-    flow: boolean;
-    business: boolean;
-  }>({
-    market: false,
-    chart: false,
-    flow: false,
-    business: false,
-  });
   const verdicts = [short?.verdict, medium?.verdict, long?.verdict].filter(Boolean);
   const hasDivergence = verdicts.length >= 2 && new Set(verdicts).size > 1;
   const divergenceMessage =
@@ -1027,40 +1019,12 @@ export function InvestorDecisionSummarySection({
   // When pattern_score is 0, the card already shows "Confluence" fallback — avoid duplicate "Pattern score low (0/100)" block
   const patternLow = pattern_score != null && pattern_score > 0 && pattern_score < 50;
   const tldr = summary.trade_roadmap?.tldr ?? null;
-  const dual = tldr?.dual_signal ?? null;
   const confidenceBand = tldr?.model_confidence_band ?? null;
   const confidenceBandMatch = confidenceBand?.match(/(\d+)\s*-\s*(\d+)%?/);
   const confidenceBandMid =
     confidenceBandMatch && confidenceBandMatch[1] && confidenceBandMatch[2]
       ? (Number(confidenceBandMatch[1]) + Number(confidenceBandMatch[2])) / 2
       : (model_confidence_pct ?? tldr?.model_confidence_pct ?? null);
-
-  const marketStatus: "Constructive" | "Neutral" | "Cautionary" =
-    dual?.display_mode === "pre_flip_watch"
-      ? "Cautionary"
-      : overall_verdict === "STRONG BUY" || overall_verdict === "BUY"
-        ? "Constructive"
-        : overall_verdict === "WATCH"
-          ? "Neutral"
-          : "Cautionary";
-  const chartStatus: "Constructive" | "Neutral" | "Cautionary" =
-    (pattern_score ?? 50) >= 65 && (short?.verdict === "BUY" || short?.verdict === "STRONG BUY")
-      ? "Constructive"
-      : (pattern_score ?? 50) < 45 || short?.verdict === "WAIT"
-        ? "Cautionary"
-        : "Neutral";
-  const flowStatus: "Constructive" | "Neutral" | "Cautionary" =
-    (medium?.ml_prob ?? 50) >= 60
-      ? "Constructive"
-      : (medium?.ml_prob ?? 50) < 40
-        ? "Cautionary"
-        : "Neutral";
-  const businessStatus: "Constructive" | "Neutral" | "Cautionary" =
-    long?.verdict === "BUY" || long?.verdict === "STRONG BUY"
-      ? "Constructive"
-      : long?.verdict === "WATCH"
-        ? "Neutral"
-        : "Cautionary";
 
   const combinedNotes = [
     ...(Array.isArray(one_answer?.why_this_call) ? one_answer!.why_this_call : []),
@@ -1121,34 +1085,6 @@ export function InvestorDecisionSummarySection({
       .slice(0, 2)
       .map((m) => ({ severity: "info" as const, message: m }))),
   ];
-  const statusTone = (status: "Constructive" | "Neutral" | "Cautionary"): string =>
-    status === "Constructive"
-      ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30"
-      : status === "Cautionary"
-        ? "text-amber-200 bg-amber-500/10 border-amber-500/30"
-        : "text-slate-300 bg-slate-700/40 border-slate-600/60";
-  const prioritizeBullets = (lines: string[], maxBullets = 3): string[] => {
-    const priorityKeywords = [
-      "pulls back", "entry", "stop",
-      "scale", "powder", "partial",
-      "loses", "reassess",
-    ];
-    const score = (line: string): number => {
-      const lower = line.toLowerCase();
-      const idx = priorityKeywords.findIndex((k) => lower.includes(k));
-      return idx === -1 ? 99 : idx;
-    };
-    return [...lines].sort((a, b) => score(a) - score(b)).slice(0, maxBullets);
-  };
-  const executionBullets = prioritizeBullets(
-    Array.isArray(one_answer?.execution_plan_lines) ? one_answer.execution_plan_lines : [],
-    3
-  );
-  const whyBullets = (Array.isArray(one_answer?.why_this_call) ? one_answer.why_this_call : []).slice(0, 2);
-  const marketSummary = dual?.bridge_note || tldr?.strategy || "Regime context is mixed.";
-  const chartSummary = `Pattern ${Math.round(Number(pattern_score ?? 50))}/100 · Short ${short?.verdict || "N/A"} · ML ${Number(medium?.ml_prob ?? 0).toFixed(0)}%`;
-  const flowSummary = `Confidence ${medium?.conviction || "mixed"} / ${long?.conviction || "mixed"}`;
-  const businessSummary = `Long verdict ${long?.verdict || "N/A"} · FV gap ${assessmentPct >= 0 ? "+" : ""}${assessmentPct.toFixed(1)}%`;
   const gateRows: Array<{ label: string; value: number | null; target: number; unit: "%" | "pts" }> = [
     { label: "Regime", value: regime_bull_pct ?? null, target: 60, unit: "%" },
     { label: "Pattern", value: pattern_score ?? null, target: 60, unit: "pts" },
@@ -1302,7 +1238,7 @@ export function InvestorDecisionSummarySection({
           ma50,
         })
       ),
-    (isWhy || isFull) &&
+    (isFull) &&
       !compactOverview &&
       valuationDeck &&
       React.createElement(
@@ -1523,365 +1459,19 @@ export function InvestorDecisionSummarySection({
           )
       ),
     !isToday &&
-      (compactOverview || isWhy) &&
       one_answer &&
-      React.createElement(
-        "div",
-        { className: "border-b border-slate-700/80 bg-slate-900/30" },
-        React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: () => setExecutionDetailOpen((o) => !o),
-            className:
-              "w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors",
-          },
-          React.createElement(
-            "span",
-            { className: "text-sm text-slate-400 uppercase tracking-wide" },
-            "Execution plan & rationale"
-          ),
-          executionDetailOpen
-            ? React.createElement(ChevronDown, { className: "h-4 w-4 text-slate-500" })
-            : React.createElement(ChevronRight, { className: "h-4 w-4 text-slate-500" })
-        )
-      ),
+      React.createElement(ExecutionPlanRationale, {
+        summary,
+        currentPrice,
+        companyName,
+        sector,
+        mode: decisionMode,
+        variant: "panel",
+        collapsible: compactOverview,
+        defaultOpen: !compactOverview,
+      }),
     !isToday &&
       one_answer &&
-      (!compactOverview || executionDetailOpen) &&
-      React.createElement(
-      "div",
-      { className: "p-4 border-b border-slate-700/80 bg-gradient-to-br from-emerald-500/10 via-slate-900/60 to-slate-900/40" },
-      React.createElement(
-        "div",
-        { className: "flex items-center justify-between gap-2 flex-wrap mb-2" },
-        React.createElement(
-          "span",
-          {
-            className:
-              assessmentPct >= 0
-                ? "text-sm text-emerald-300 font-medium cursor-help"
-                : "text-sm text-red-300 font-medium cursor-help",
-            title:
-              "Undervalued / overvalued here means current price vs this card's model fair value only. The Details tab may still say REDUCE if regime, chart, or other layers argue for smaller size today.",
-          },
-          `${Math.abs(assessmentPct).toFixed(1)}% ${assessmentPct >= 0 ? "undervalued" : "overvalued"}`
-        )
-      ),
-      React.createElement(
-        "p",
-        {
-          className: "text-xs text-slate-500 leading-snug mb-2 cursor-help",
-          title:
-            "Cheap vs fair value answers 'margin of safety on the model anchor.' Verdict and confidence answer 'do we want full size right now?' — both can disagree until the tape improves.",
-        },
-        "You can be undervalued on this line and still see WATCH or REDUCE elsewhere — that usually means value without timing yet, not a broken model.",
-      ),
-      confidenceNearlyThere &&
-        React.createElement(
-          "div",
-          {
-            className:
-              "mb-3 rounded-xl border-2 border-violet-400/60 bg-violet-950/45 px-3 py-2.5 shadow-[0_0_22px_-6px_rgba(167,139,250,0.45)] ring-1 ring-violet-400/25",
-            role: "status",
-          },
-          React.createElement(
-            "p",
-            { className: "text-sm font-semibold text-violet-200 mb-0.5 flex items-center gap-1.5" },
-            React.createElement("span", { className: "inline-block h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" }),
-            "Nearly there — confidence gate"
-          ),
-          React.createElement(
-            "p",
-            { className: "text-sm text-violet-100/95 leading-snug" },
-            `Fused model confidence is ${Math.round(Number(confidenceBandMid))}% vs ${CONFIDENCE_GATE_TARGET}% used here — you're within about ${Math.ceil(Number(ptsToConfidenceGate))} point${Math.ceil(Number(ptsToConfidenceGate)) === 1 ? "" : "s"}. Fresh sessions often move this; worth a quick revisit.`
-          )
-        ),
-      one_answer.momentum_valuation_tension?.active &&
-        React.createElement(
-          "div",
-          {
-            className:
-              "mb-3 rounded-xl border border-cyan-500/45 bg-cyan-950/35 px-3 py-2.5 ring-1 ring-cyan-400/20",
-            role: "note",
-          },
-          React.createElement(
-            "p",
-            { className: "text-sm font-semibold text-cyan-200 mb-1" },
-            one_answer.momentum_valuation_tension.headline
-          ),
-          React.createElement(
-            "p",
-            { className: "text-sm text-cyan-100/90 leading-snug" },
-            one_answer.momentum_valuation_tension.detail
-          ),
-          one_answer.momentum_valuation_tension.momentum_target != null &&
-            React.createElement(
-              "div",
-              { className: "mt-2 pt-2 border-t border-cyan-500/20 grid grid-cols-2 gap-x-4 gap-y-1" },
-              React.createElement(
-                "div",
-                { className: "text-xs text-cyan-300/80" },
-                "Momentum target"
-              ),
-              React.createElement(
-                "div",
-                { className: "text-sm font-medium text-cyan-100 text-right" },
-                `$${one_answer.momentum_valuation_tension.momentum_target.toFixed(2)} (+${one_answer.momentum_valuation_tension.momentum_upside_pct ?? 0}%)`
-              ),
-              React.createElement(
-                "div",
-                { className: "text-xs text-cyan-300/80" },
-                "Momentum stop"
-              ),
-              React.createElement(
-                "div",
-                { className: "text-sm font-medium text-cyan-100 text-right" },
-                `$${(one_answer.momentum_valuation_tension.momentum_stop ?? 0).toFixed(2)} (-${one_answer.momentum_valuation_tension.momentum_risk_pct ?? 0}%)`
-              ),
-              React.createElement(
-                "div",
-                { className: "text-xs text-cyan-300/80 col-span-2 mt-1 italic" },
-                one_answer.momentum_valuation_tension.momentum_target_method === "analyst_consensus_high"
-                  ? "Based on analyst consensus high"
-                  : "Based on ATR breakout extension"
-              )
-            )
-        ),
-      one_answer.ath_macro_regime_disconnect?.active &&
-        React.createElement(
-          "div",
-          {
-            className:
-              "mb-3 rounded-xl border border-amber-500/45 bg-amber-950/30 px-3 py-2.5 ring-1 ring-amber-400/20",
-            role: "note",
-          },
-          React.createElement(
-            "p",
-            { className: "text-sm font-semibold text-amber-200 mb-1" },
-            one_answer.ath_macro_regime_disconnect.headline
-          ),
-          React.createElement(
-            "p",
-            { className: "text-sm text-amber-100/90 leading-snug" },
-            one_answer.ath_macro_regime_disconnect.detail
-          )
-        ),
-      React.createElement(
-        "p",
-        { className: "text-sm text-slate-400 mb-1" },
-        `${companyName || "This ticker"}${sector ? ` â€¢ ${sector}` : ""} â€¢ $${currentPrice.toFixed(2)} â€¢ Fair value $${fair_value.toFixed(2)}`
-      ),
-      /* --- WHY THIS CALL (promoted) --- */
-      whyBullets.length > 0 &&
-        React.createElement(
-          "div",
-          { className: "mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5" },
-          React.createElement("p", { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1.5" }, "Why this call"),
-          React.createElement(
-            "ul",
-            { className: "space-y-1.5 text-sm text-slate-200 leading-snug" },
-            whyBullets.map((line, i) =>
-              React.createElement(
-                "li",
-                { key: i, className: "flex items-start gap-2" },
-                React.createElement("span", { className: "text-emerald-400 shrink-0 mt-0.5" }, "›"),
-                React.createElement("span", null, line)
-              )
-            )
-          )
-        ),
-      /* --- YOUR TRIGGER (promoted) --- */
-      !compactOverview &&
-        one_answer.next_trigger &&
-        React.createElement(
-          "div",
-          { className: "mt-3 rounded-lg border border-sky-500/35 bg-sky-950/25 px-3 py-2.5" },
-          React.createElement(
-            "p",
-            { className: "text-sm text-sky-100 leading-snug" },
-            React.createElement("span", { className: "font-semibold text-sky-200" }, "Your trigger: "),
-            one_answer.next_trigger
-          )
-        ),
-      /* --- EXECUTION PLAN (promoted, numbered) --- */
-      executionBullets.length > 0 &&
-        React.createElement(
-          "div",
-          { className: "mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5" },
-          React.createElement("p", { className: "text-xs text-emerald-300/80 uppercase tracking-wide font-semibold mb-1.5" }, "Action plan"),
-          React.createElement(
-            "ol",
-            { className: "space-y-1.5 text-sm text-slate-200 leading-snug list-none" },
-            executionBullets.map((line, i) =>
-              React.createElement(
-                "li",
-                { key: i, className: "flex items-start gap-2" },
-                React.createElement("span", { className: "text-emerald-400 font-bold shrink-0 w-4 text-center" }, `${i + 1}`),
-                React.createElement("span", null, line)
-              )
-            )
-          )
-        ),
-      /* --- NEAR-TERM BUY STAGES PREVIEW (from trade_roadmap) --- */
-      (() => {
-        const stages = summary.trade_roadmap?.buy_roadmap;
-        if (!Array.isArray(stages) || stages.length === 0) return null;
-        const preview = stages.slice(0, 3).filter((s) => s.price_zone_low != null && s.price_zone_high != null);
-        if (preview.length === 0) return null;
-        return React.createElement(
-          "div",
-          { className: "mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5" },
-          React.createElement("p", { className: "text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2" }, "Staged buy timeline"),
-          React.createElement(
-            "div",
-            { className: "space-y-1.5" },
-            preview.map((s) =>
-              React.createElement(
-                "div",
-                { key: s.timeline_key, className: "flex items-center gap-2 text-sm" },
-                React.createElement(
-                  "span",
-                  { className: "shrink-0 w-20 text-slate-400 font-medium" },
-                  s.label
-                ),
-                React.createElement(
-                  "span",
-                  {
-                    className:
-                      "shrink-0 px-1.5 py-0.5 rounded text-xs font-medium " +
-                      (s.when_to_act.toLowerCase().includes("add") || s.when_to_act.toLowerCase().includes("start")
-                        ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                        : s.when_to_act.toLowerCase().includes("watch")
-                          ? "bg-amber-500/10 text-amber-300 border border-amber-500/30"
-                          : "bg-slate-700/40 text-slate-400 border border-slate-600/60"),
-                  },
-                  s.when_to_act
-                ),
-                React.createElement(
-                  "span",
-                  { className: "font-mono text-slate-300" },
-                  `$${Number(s.price_zone_low).toFixed(2)}–$${Number(s.price_zone_high).toFixed(2)}`
-                ),
-                s.position_pct > 0 &&
-                  React.createElement(
-                    "span",
-                    { className: "text-slate-500" },
-                    `${s.position_pct}%`
-                  )
-              )
-            )
-          )
-        );
-      })(),
-      React.createElement(
-        "div",
-        { className: "mt-3 rounded-xl border border-slate-700/80 bg-slate-900/50 overflow-hidden divide-y divide-slate-700/60" },
-        React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: () => setEvidenceOpen((s) => ({ ...s, market: !s.market })),
-            className: "w-full px-3.5 py-2.5 text-left hover:bg-slate-800/70 flex items-center justify-between gap-2",
-          },
-          React.createElement(
-            "div",
-            { className: "min-w-0" },
-            React.createElement(
-              "span",
-              { className: "text-xs text-slate-200 flex items-center gap-2" },
-              "Market structure",
-              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(marketStatus)}` }, marketStatus)
-            ),
-            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, marketSummary)
-          ),
-          evidenceOpen.market ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
-        ),
-        evidenceOpen.market &&
-          React.createElement(
-            "p",
-            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
-            marketSummary
-          ),
-        React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: () => setEvidenceOpen((s) => ({ ...s, chart: !s.chart })),
-            className: "w-full px-3.5 py-2.5 text-left hover:bg-slate-800/70 flex items-center justify-between gap-2",
-          },
-          React.createElement(
-            "div",
-            { className: "min-w-0" },
-            React.createElement(
-              "span",
-              { className: "text-xs text-slate-200 flex items-center gap-2" },
-              "Chart & momentum",
-              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(chartStatus)}` }, chartStatus)
-            ),
-            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, chartSummary)
-          ),
-          evidenceOpen.chart ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
-        ),
-        evidenceOpen.chart &&
-          React.createElement(
-            "p",
-            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
-            chartSummary
-          ),
-        React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: () => setEvidenceOpen((s) => ({ ...s, flow: !s.flow })),
-            className: "w-full px-3.5 py-2.5 text-left hover:bg-slate-800/70 flex items-center justify-between gap-2",
-          },
-          React.createElement(
-            "div",
-            { className: "min-w-0" },
-            React.createElement(
-              "span",
-              { className: "text-xs text-slate-200 flex items-center gap-2" },
-              "Smart money",
-              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(flowStatus)}` }, flowStatus)
-            ),
-            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, flowSummary)
-          ),
-          evidenceOpen.flow ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
-        ),
-        evidenceOpen.flow &&
-          React.createElement(
-            "p",
-            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
-            `${flowSummary}. Keep sizing staged while transition risk remains.`
-          ),
-        React.createElement(
-          "button",
-          {
-            type: "button",
-            onClick: () => setEvidenceOpen((s) => ({ ...s, business: !s.business })),
-            className: "w-full px-3.5 py-2.5 text-left hover:bg-slate-800/70 flex items-center justify-between gap-2",
-          },
-          React.createElement(
-            "div",
-            { className: "min-w-0" },
-            React.createElement(
-              "span",
-              { className: "text-xs text-slate-200 flex items-center gap-2" },
-              "Business & news",
-              React.createElement("span", { className: `text-xs px-1.5 py-0.5 rounded border ${statusTone(businessStatus)}` }, businessStatus)
-            ),
-            React.createElement("p", { className: "text-xs text-slate-500 mt-0.5 truncate" }, businessSummary)
-          ),
-          evidenceOpen.business ? React.createElement(ChevronDown, { className: "h-3.5 w-3.5 text-slate-500" }) : React.createElement(ChevronRight, { className: "h-3.5 w-3.5 text-slate-500" })
-        ),
-        evidenceOpen.business &&
-          React.createElement(
-            "p",
-            { className: "px-3.5 pb-2.5 text-sm text-slate-300 bg-slate-950/40 leading-snug" },
-            businessSummary
-          )
-      ),
       React.createElement(
         "div",
         { className: "mt-3 space-y-3" },
@@ -1980,7 +1570,8 @@ export function InvestorDecisionSummarySection({
                 )
             );
           })
-        ),
+            ),
+          ),
         React.createElement(
           "div",
           {
@@ -2006,8 +1597,9 @@ export function InvestorDecisionSummarySection({
             ? `Estimated time: about ${etaDays} trading days if regime confirms.`
             : "Estimated time: uncertain — wait for gate progress above."
         )
-          )
       ),
+    !isToday &&
+      one_answer &&
       one_answer.hold_vs_trade &&
         React.createElement(
           "div",
@@ -2038,8 +1630,7 @@ export function InvestorDecisionSummarySection({
               React.createElement("p", { className: "text-sky-200/90 border-l-2 border-sky-500/50 pl-2" }, one_answer.hold_vs_trade.signal_bridge),
               React.createElement("p", { className: "text-slate-500 italic" }, one_answer.hold_vs_trade.disclaimer)
             )
-        )
-    ),
+        ),
     !compactOverview &&
     React.createElement(
       "div",
@@ -2137,6 +1728,7 @@ export function InvestorDecisionSummarySection({
         )
       ),
     /* Trader roadmap (collapsible) */
+    !hideRoadmaps &&
     trader_roadmap && React.createElement(
       "div",
       { className: "border-b border-slate-700" },
@@ -2174,6 +1766,7 @@ export function InvestorDecisionSummarySection({
       )
     ),
     /* Investor roadmap (collapsible) */
+    !hideRoadmaps &&
     investor_roadmap && React.createElement(
       "div",
       { className: "border-b border-slate-700" },

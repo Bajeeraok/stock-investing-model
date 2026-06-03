@@ -553,7 +553,7 @@ def compute_analysis_bundle() -> dict | None:
                 config=config,
             ))
         except Exception as e:
-            return ("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)})
+            return ("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "summary_by_gates": {}, "message": str(e)})
 
     def _task_paper_trading_async():
         try:
@@ -685,7 +685,7 @@ def compute_analysis_bundle() -> dict | None:
             except Exception as e:
                 logger.debug("analysis-bundle task failed: %s", e)
 
-    forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
+    forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "summary_by_gates": {}, "message": None})
     paper_async = parallel_results.get("paper_trading_async")
     if paper_async:
         paper_trading["sync_targets"] = paper_async.get("sync_targets")
@@ -1240,7 +1240,7 @@ def _compute_full_dashboard_sync() -> dict:
                 config=config,
             ))
         except Exception as e:
-            ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": str(e)}
+            ft = {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "summary_by_gates": {}, "message": str(e)}
             return ("forward_tracking", ft)
 
     def _task_confidence_calibration():
@@ -1432,7 +1432,7 @@ def _compute_full_dashboard_sync() -> dict:
     insider_flow = parallel_results.get("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
     fmp_plan_status = parallel_results.get("fmp_plan_status", {})
     model_validation = parallel_results.get("model_validation", {"records": [], "summary": {}})
-    forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None})
+    forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "summary_by_gates": {}, "message": None})
     regime_validation = parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"})
     confidence_calibration = parallel_results.get("confidence_calibration", {"buckets": [], "note": "Not computed"})
     paper_async = parallel_results.get("paper_trading_async")
@@ -2494,17 +2494,32 @@ async def get_backtest(
     years = max(2, min(10, years))
     period = f"{years}y"
     force_refresh = _parse_refresh(refresh)
-    from scripts.backtest_simple import run_backtest as _run_backtest
+    from scripts.backtest_simple import run_backtest as _run_backtest, walk_forward_backtest
     from signals.backtest_validation import validate_backtest_result
+    cfg = _load_config()
+    wf_cfg = (cfg.get("backtest") or {}).get("walk_forward") or {}
+    wf_enabled = bool(wf_cfg.get("enabled"))
+    txn_cost = float(cfg.get("backtest_transaction_cost", 0.003))
     out = []
     from signals.cache import cached_backtest
     for t in ticker_list[:6]:
-        result = cached_backtest(
-            t,
-            period,
-            lambda ticker=t, per=period: _run_backtest(ticker, per),
-            force_refresh=force_refresh,
-        )
+        def _fetch_backtest(ticker=t, per=period):
+            res = _run_backtest(ticker, per, transaction_cost=txn_cost)
+            if wf_enabled and res and "error" not in res:
+                try:
+                    res["walk_forward"] = walk_forward_backtest(
+                        ticker,
+                        per,
+                        train_years=int(wf_cfg.get("train_years", 3)),
+                        test_months=int(wf_cfg.get("test_months", 6)),
+                        buy_threshold=float(wf_cfg.get("buy_threshold", 70)),
+                        transaction_cost=txn_cost,
+                    )
+                except Exception as e:
+                    res["walk_forward"] = {"error": str(e)}
+            return res
+
+        result = cached_backtest(t, period, _fetch_backtest, force_refresh=force_refresh)
         if result and "error" not in result:
             result["validation"] = validate_backtest_result(result)
         out.append(result)

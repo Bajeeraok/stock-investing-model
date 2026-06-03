@@ -549,6 +549,11 @@ def run_signals(
             row.update(compute_readiness(row))
         except Exception:
             pass
+        if row.get("model_confidence_pct") is None and row.get("composite_buy") is not None:
+            try:
+                row["model_confidence_pct"] = round(float(row["composite_buy"]), 1)
+            except (TypeError, ValueError):
+                pass
         results.append(row)
     return results
 
@@ -591,17 +596,25 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
         if rs.get("go_no_go"):
             row["go_no_go"] = rs.get("go_no_go")
         try:
-            from signals.tracking_gate import gate_snapshot_from_row
+            from signals.forward_tracking_metrics import freeze_gate_fields_from_row
 
-            snap = gate_snapshot_from_row(r)
-            if snap.get("gates_passed") is not None:
-                row["gates_passed"] = snap["gates_passed"]
-            if snap.get("gates_total") is not None:
-                row["gates_total"] = snap["gates_total"]
-            if row.get("go_no_go") is None and snap.get("go_no_go"):
-                row["go_no_go"] = snap["go_no_go"]
+            frozen = freeze_gate_fields_from_row(r)
+            for k, v in frozen.items():
+                if v is not None:
+                    row[k] = v
         except Exception:
-            pass
+            try:
+                from signals.tracking_gate import gate_snapshot_from_row
+
+                snap = gate_snapshot_from_row(r)
+                if snap.get("gates_passed") is not None:
+                    row["gates_passed"] = snap["gates_passed"]
+                if snap.get("gates_total") is not None:
+                    row["gates_total"] = snap["gates_total"]
+                if row.get("go_no_go") is None and snap.get("go_no_go"):
+                    row["go_no_go"] = snap["go_no_go"]
+            except Exception:
+                pass
         for k in (
             "velocity_triggered",
             "velocity_score",

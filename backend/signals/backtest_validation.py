@@ -12,6 +12,7 @@ import numpy as np
 
 
 MIN_SAMPLE_SIZE = 10
+LOW_N_WARN = 15
 BUCKETS_EXPECTED = {"70-100", "50-70", "30-50", "0-30"}
 
 
@@ -82,14 +83,36 @@ def validate_backtest_result(backtest: dict) -> dict:
         except Exception:
             pass
 
-    # Score inversion: 0-30 vs 70-100 at 3m — only flag as "bad" when buckets use raw (trending) semantics.
-    # When MR-dominated, 0-30 ≈ momentum periods and 70-100 ≈ dip periods after flip — momentum can legitimately win.
+    # Per-year: low N, middle-bucket quirks, score inversion (raw mode only).
     for year_str, year_data in by_year.items():
+        for bkey in BUCKETS_EXPECTED:
+            cnt = year_data.get(bkey, {}).get(3, {}).get("count")
+            if cnt is not None and 0 < int(cnt) < LOW_N_WARN:
+                issues.append(
+                    f"Year {year_str}, bucket {bkey}: Low sample at 3m (N={cnt}) — treat hit rate / avg as noisy."
+                )
+
+        b50 = year_data.get("50-70", {}).get(3, {}).get("avg_return_pct")
+        b70 = year_data.get("70-100", {}).get(3, {}).get("avg_return_pct")
+        if (
+            pct_mr_global >= 50
+            and b50 is not None
+            and b70 is not None
+            and float(b50) > float(b70)
+        ):
+            issues.append(
+                f"Year {year_str}: 50-70 ({b50:+.2f}%) beat 70-100 ({b70:+.2f}%) at 3m — "
+                "common under MR mapping (middle bin is mixed); prefer 6m and MR spread line."
+            )
+
         high = year_data.get("70-100", {}).get(3, {}).get("avg_return_pct")
         low = year_data.get("0-30", {}).get(3, {}).get("avg_return_pct")
         if high is not None and low is not None and low > high:
             if pct_mr_global >= 50:
-                # MR bucket mode: 70–100 ≈ dip periods, 0–30 ≈ momentum — momentum beating dips at 3m is not "inversion."
+                issues.append(
+                    f"Year {year_str}: Momentum (0-30) beat dip (70-100) at 3m "
+                    f"({low:+.2f}% vs {high:+.2f}%) — expected in bull stretches; check 6m spread."
+                )
                 continue
             issues.append(
                 f"Year {year_str}: Score inversion — 0-30 bucket ({low:+.2f}%) > 70-100 ({high:+.2f}%) at 3m."

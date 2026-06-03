@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { BarChart3, HelpCircle, Plus, X, Play } from "lucide-react";
-import type { BacktestResult, BacktestBucketMonth } from "@/app/page";
+import type { BacktestResult, BacktestBucketMonth, WalkForwardBacktest } from "@/app/page";
 import { INTERPRETATION_BULLETS, SCHEMA_V2_NOTE } from "@/lib/modelSemantics";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -13,7 +13,51 @@ const YEAR_LABELS: Record<number, string> = { 2: "2 years", 5: "5 years", 10: "1
 const BUCKET_ORDER = ["70-100", "50-70", "30-50", "0-30"];
 const FORWARD_MONTHS = [1, 3, 6] as const;
 
-function BucketTable({ buckets }: { buckets: Record<string, Record<number, BacktestBucketMonth>> }) {
+function formatPct(v: number | null | undefined): string {
+  if (v == null) return "–";
+  return `${v >= 0 ? "+" : ""}${v}%`;
+}
+
+function BucketMonthCell({
+  d,
+  benchmark,
+}: {
+  d: BacktestBucketMonth;
+  benchmark: string;
+}) {
+  return (
+    <td className="px-3 py-2">
+      <span className={d.avg_return_pct != null && d.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+        {formatPct(d.avg_return_pct)}
+      </span>
+      {d.margin_of_error_pct != null && (
+        <span className="text-slate-500 text-xs ml-1">±{d.margin_of_error_pct}%</span>
+      )}
+      <span className="text-slate-500 text-xs ml-1">({d.hit_rate != null ? `${d.hit_rate}%` : "–"} hit)</span>
+      {d.avg_excess_vs_benchmark_pct != null && (
+        <span
+          className={`text-xs block mt-0.5 ${
+            d.avg_excess_vs_benchmark_pct >= 0 ? "text-sky-400/90" : "text-amber-400/90"
+          }`}
+          title={`Average net return minus ${benchmark} over the same forward window`}
+        >
+          vs {benchmark} {formatPct(d.avg_excess_vs_benchmark_pct)}
+        </span>
+      )}
+      {d.count != null && d.count > 0 && (
+        <span className="text-slate-500 text-xs block mt-0.5">N={d.count}</span>
+      )}
+    </td>
+  );
+}
+
+function BucketTable({
+  buckets,
+  benchmark = "SPY",
+}: {
+  buckets: Record<string, Record<number, BacktestBucketMonth>>;
+  benchmark?: string;
+}) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -22,6 +66,14 @@ function BucketTable({ buckets }: { buckets: Record<string, Record<number, Backt
           <th className="px-3 py-2 font-medium">Actual 1m</th>
           <th className="px-3 py-2 font-medium">Actual 3m</th>
           <th className="px-3 py-2 font-medium">Actual 6m</th>
+        </tr>
+        <tr className="text-left text-slate-500 border-b border-slate-700/60 bg-slate-800/30 text-[10px]">
+          <th className="px-3 py-1 font-normal" />
+          {FORWARD_MONTHS.map((m) => (
+            <th key={m} className="px-3 py-1 font-normal">
+              incl. excess vs {benchmark}
+            </th>
+          ))}
         </tr>
       </thead>
       <tbody>
@@ -34,20 +86,7 @@ function BucketTable({ buckets }: { buckets: Record<string, Record<number, Backt
               {FORWARD_MONTHS.map((m) => {
                 const d = months[m];
                 if (!d) return <td key={m} className="px-3 py-2 text-slate-500">–</td>;
-                return (
-                  <td key={m} className="px-3 py-2">
-                    <span className={d.avg_return_pct != null && d.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
-                      {d.avg_return_pct != null ? `${d.avg_return_pct >= 0 ? "+" : ""}${d.avg_return_pct}%` : "–"}
-                    </span>
-                    {d.margin_of_error_pct != null && (
-                      <span className="text-slate-500 text-xs ml-1">±{d.margin_of_error_pct}%</span>
-                    )}
-                    <span className="text-slate-500 text-xs ml-1">({d.hit_rate != null ? `${d.hit_rate}%` : "–"} hit)</span>
-                    {d.count != null && d.count > 0 && (
-                      <span className="text-slate-500 text-xs block mt-0.5">N={d.count}</span>
-                    )}
-                  </td>
-                );
+                return <BucketMonthCell key={m} d={d} benchmark={benchmark} />;
               })}
             </tr>
           );
@@ -92,17 +131,7 @@ function ByPeriodTable({
                 {FORWARD_MONTHS.map((m) => {
                   const d = bucketData[m];
                   if (!d) return <td key={m} className="px-3 py-2 text-slate-500">–</td>;
-                  return (
-                    <td key={m} className="px-3 py-2">
-                      <span className={d.avg_return_pct != null && d.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
-                        {d.avg_return_pct != null ? `${d.avg_return_pct >= 0 ? "+" : ""}${d.avg_return_pct}%` : "–"}
-                      </span>
-                      {d.margin_of_error_pct != null && (
-                        <span className="text-slate-500 text-xs ml-1">±{d.margin_of_error_pct}%</span>
-                      )}
-                      <span className="text-slate-500 text-xs ml-1">({d.hit_rate != null ? `${d.hit_rate}%` : "–"} hit)</span>
-                    </td>
-                  );
+                  return <BucketMonthCell key={m} d={d} benchmark={benchmark} />;
                 })}
               </tr>
             );
@@ -110,6 +139,38 @@ function ByPeriodTable({
         )}
       </tbody>
     </table>
+  );
+}
+
+function MrSpreadLine({
+  spread,
+  label,
+}: {
+  spread: {
+    edge_pct?: number;
+    dip_avg_return_pct?: number | null;
+    momentum_avg_return_pct?: number | null;
+    dip_n?: number;
+    momentum_n?: number;
+  } | null | undefined;
+  label: string;
+}) {
+  if (!spread || spread.edge_pct == null) return null;
+  const edge = spread.edge_pct;
+  return (
+    <p className="px-4 py-1.5 text-xs text-slate-400 bg-slate-900/30 border-b border-slate-700/40 leading-snug">
+      <span className="font-medium text-sky-400">{label}:</span> dip 70–100{" "}
+      {spread.dip_avg_return_pct != null ? `${spread.dip_avg_return_pct >= 0 ? "+" : ""}${spread.dip_avg_return_pct}%` : "—"}{" "}
+      (N={spread.dip_n ?? "—"}) vs momentum 0–30{" "}
+      {spread.momentum_avg_return_pct != null
+        ? `${spread.momentum_avg_return_pct >= 0 ? "+" : ""}${spread.momentum_avg_return_pct}%`
+        : "—"}{" "}
+      (N={spread.momentum_n ?? "—"}) →{" "}
+      <span className={edge >= 0 ? "text-emerald-400" : "text-amber-300"}>
+        {edge >= 0 ? "+" : ""}
+        {edge.toFixed(1)}% edge
+      </span>
+    </p>
   );
 }
 
@@ -180,7 +241,7 @@ export function BacktestStatus() {
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
           <BarChart3 className="h-4 w-4 text-emerald-500" />
-          Backtesting status
+          (A) Historical dip edge — backtest
         </h3>
         <span className="text-sm text-slate-400">
           Data: <span className="font-medium text-slate-200">{yearsUsed} year{yearsUsed !== 1 ? "s" : ""}</span>
@@ -336,6 +397,17 @@ export function BacktestStatus() {
                     </span>
                   )}
                 </div>
+                {r.score_parity && (
+                  <p className="px-4 py-1.5 text-xs text-sky-300/90 bg-sky-950/30 border-b border-sky-900/40 leading-snug">
+                    <span className="font-medium">Live parity:</span>{" "}
+                    {r.score_parity.live_ctx_active
+                      ? "regime + MRO applied on each bar"
+                      : r.score_parity.apply_live_adjustments
+                        ? "enabled in config but inactive (check SPY/VIX history)"
+                        : "off — bar composite only"}
+                    {r.score_parity.note ? ` — ${r.score_parity.note}` : ""}
+                  </p>
+                )}
                 {r.bucket_assignment_note && (
                   <p className="px-4 py-1.5 text-xs text-slate-400 bg-slate-900/40 border-b border-slate-700/50 leading-snug">
                     {r.bucket_assignment_note}
@@ -356,37 +428,31 @@ export function BacktestStatus() {
                       (raw) · N={r.bucket_assignment_stats.n_bars_scored}
                     </p>
                   )}
+                <MrSpreadLine spread={r.mr_spread_3m} label="MR spread (3m)" />
+                <MrSpreadLine spread={r.mr_spread_6m} label="MR spread (6m)" />
                 {r.buckets && (() => {
                   const high = r.buckets["70-100"]?.[3]?.avg_return_pct;
                   const low = r.buckets["0-30"]?.[3]?.avg_return_pct;
                   const edge = high != null && low != null ? (high - low) : null;
                   const pctMr = r.bucket_assignment_stats?.pct_mean_reverting ?? 0;
                   const mrDominated = pctMr >= 50;
+                  if (r.mr_spread_3m?.edge_pct != null) return null;
                   return edge != null ? (
                     <p className="px-4 py-2 text-sm text-slate-300 bg-slate-800/50 border-b border-slate-700/50 leading-snug">
                       {mrDominated ? (
                         <>
-                          <span className="font-medium text-sky-400">MR bucket spread (3m):</span> dip-period rows (70–100
-                          after flip) vs momentum-period rows (0–30) ={" "}
+                          <span className="font-medium text-sky-400">MR bucket spread (3m):</span>{" "}
                           <span className={edge >= 0 ? "text-emerald-400" : "text-amber-300"}>
                             {edge >= 0 ? "+" : ""}{edge.toFixed(1)}%
                           </span>{" "}
-                          (dip − momentum).{" "}
-                          {edge >= 0 ? (
-                            <span className="text-slate-400">Dips led 3m — MR-style edge.</span>
-                          ) : (
-                            <span className="text-slate-400">
-                              Momentum led 3m — common for mega-cap growth; not a failed flip.
-                            </span>
-                          )}
+                          (dip − momentum).
                         </>
                       ) : (
                         <>
-                          <span className="font-medium text-emerald-400">Model edge:</span> 70–100 bucket beats 0–30 by{" "}
+                          <span className="font-medium text-emerald-400">Model edge (3m):</span>{" "}
                           <span className={edge >= 0 ? "text-emerald-400" : "text-red-400"}>
                             {edge >= 0 ? "+" : ""}{edge.toFixed(1)}%
-                          </span>{" "}
-                          per 3m (avg).
+                          </span>
                         </>
                       )}
                     </p>
@@ -432,13 +498,13 @@ export function BacktestStatus() {
                   )}
                 <div className="overflow-x-auto">
                   {view === "overall" && r.buckets && Object.keys(r.buckets).length > 0 && (
-                    <BucketTable buckets={r.buckets} />
+                    <BucketTable buckets={r.buckets} benchmark={r.benchmark ?? "SPY"} />
                   )}
                   {view === "yearly" && r.by_year && Object.keys(r.by_year).length > 0 && (
-                    <ByPeriodTable byPeriod={r.by_year} periodLabel="Year" />
+                    <ByPeriodTable byPeriod={r.by_year} periodLabel="Year" benchmark={r.benchmark ?? "SPY"} />
                   )}
                   {view === "quarterly" && r.by_quarter && Object.keys(r.by_quarter).length > 0 && (
-                    <ByPeriodTable byPeriod={r.by_quarter} periodLabel="Quarter" />
+                    <ByPeriodTable byPeriod={r.by_quarter} periodLabel="Quarter" benchmark={r.benchmark ?? "SPY"} />
                   )}
                   {view === "yearly" && (!r.by_year || Object.keys(r.by_year).length === 0) && (
                     <p className="px-4 py-3 text-sm text-slate-500">No by-year data.</p>
@@ -447,6 +513,14 @@ export function BacktestStatus() {
                     <p className="px-4 py-3 text-sm text-slate-500">No by-quarter data.</p>
                   )}
                 </div>
+                {r.walk_forward && !r.walk_forward.error && (
+                  <WalkForwardSummary wf={r.walk_forward} />
+                )}
+                {r.walk_forward?.error && (
+                  <p className="px-4 py-2 text-xs text-amber-400/90 border-t border-slate-700/50">
+                    Walk-forward: {r.walk_forward.error}
+                  </p>
+                )}
                 {r.validation && !r.validation.valid && r.validation.issues.length > 0 && (
                   <div className="px-4 py-2 bg-amber-500/10 border-t border-amber-500/30 text-sm">
                     <p className="font-medium text-amber-400 mb-1">Data quality</p>

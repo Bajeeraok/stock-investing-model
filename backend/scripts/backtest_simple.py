@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -49,15 +50,22 @@ def _composite_for_row(
     idx: int,
     ticker: str = "",
     config: dict | None = None,
+    live_ctx: Any | None = None,
 ) -> float | None:
     """Delegate to shared composite (MR-aware bucket semantics when enabled)."""
-    return composite_bar_score_for_backtest(close, idx, ticker, config)
+    return composite_bar_score_for_backtest(close, idx, ticker, config, live_ctx=live_ctx)
 
 
-def _stats(vals: list[float]) -> dict:
-    """avg_return_pct, hit_rate, count, margin_of_error_pct (95% CI)."""
+def _stats(vals: list[float], excess_vals: list[float] | None = None) -> dict:
+    """avg_return_pct, hit_rate, count, margin_of_error_pct (95% CI), optional excess vs benchmark."""
     if not vals:
-        return {"avg_return_pct": None, "hit_rate": None, "count": 0, "margin_of_error_pct": None}
+        return {
+            "avg_return_pct": None,
+            "hit_rate": None,
+            "count": 0,
+            "margin_of_error_pct": None,
+            "avg_excess_vs_benchmark_pct": None,
+        }
     n = len(vals)
     mean_pct = round(100 * float(np.mean(vals)), 2)
     hit_rate = round(100 * float(np.mean([1 if v > 0 else 0 for v in vals])), 1)
@@ -66,11 +74,15 @@ def _stats(vals: list[float]) -> dict:
         std = float(np.std(vals, ddof=1))
         moe = 1.96 * std / (n ** 0.5)
         margin_of_error_pct = round(100 * moe, 2)
+    excess_avg = None
+    if excess_vals and len(excess_vals) == n:
+        excess_avg = round(100 * float(np.mean(excess_vals)), 2)
     return {
         "avg_return_pct": mean_pct,
         "hit_rate": hit_rate,
         "count": n,
         "margin_of_error_pct": margin_of_error_pct,
+        "avg_excess_vs_benchmark_pct": excess_avg,
     }
 
 
@@ -306,6 +318,36 @@ def _bucket_return_ordering_notes(
     return notes
 
 
+def _mr_spread_summary(
+    results: dict[str, dict[int, dict]],
+    horizon_months: int,
+    *,
+    mr_dominated: bool,
+) -> dict[str, Any] | None:
+    """Dip (70-100) vs momentum (0-30) spread when MR mapping is active."""
+    if not mr_dominated:
+        return None
+    high = results.get("70-100", {}).get(horizon_months, {})
+    low = results.get("0-30", {}).get(horizon_months, {})
+    h_avg = high.get("avg_return_pct")
+    l_avg = low.get("avg_return_pct")
+    if h_avg is None or l_avg is None:
+        return None
+    edge = round(float(h_avg) - float(l_avg), 2)
+    return {
+        "horizon_months": horizon_months,
+        "dip_bucket": "70-100",
+        "momentum_bucket": "0-30",
+        "dip_avg_return_pct": h_avg,
+        "momentum_avg_return_pct": l_avg,
+        "edge_pct": edge,
+        "dip_n": high.get("count"),
+        "momentum_n": low.get("count"),
+        "dip_hit_rate_pct": high.get("hit_rate"),
+        "momentum_hit_rate_pct": low.get("hit_rate"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Main backtest
 # ---------------------------------------------------------------------------
@@ -369,8 +411,21 @@ def run_backtest(
 
     bucket_returns: dict[str, dict[int, list[float]]] = {k: {m: [] for m in forward_months} for k in bucket_keys}
     bucket_bm_returns: dict[str, dict[int, list[float]]] = {k: {m: [] for m in forward_months} for k in bucket_keys}
+    bucket_excess_returns: dict[str, dict[int, list[float]]] = {
+        k: {m: [] for m in forward_months} for k in bucket_keys
+    }
+
+    live_ctx = None
+    try:
+        from signals.backtest_live_parity import BacktestLiveContext
+
+        live_ctx = BacktestLiveContext.prepare(close.index, period, _cfg)
+    except Exception:
+        live_ctx = None
     by_year_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
     by_quarter_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
+    by_year_excess_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
+    by_quarter_excess_raw: dict[str, dict[str, dict[int, list[float]]]] = {}
 
     mr_bar_count = 0
     trending_bar_count = 0
@@ -386,7 +441,7 @@ def run_backtest(
         ):
             bars_skipped_earnings += 1
             continue
-        score = _composite_for_row(close, i, ticker, _cfg)
+        score = _composite_for_row(close, i, ticker, _cfg, live_ctx=live_ctx)
         if score is None:
             continue
         try:
@@ -416,6 +471,7 @@ def run_backtest(
             bucket_returns[bucket_key][months].append(net_ret)
 
             # Benchmark return for the same window
+            bm_ret = None
             if bm_close is not None and ts in bm_close.index:
                 try:
                     bm_i = bm_close.index.get_loc(ts)
@@ -423,24 +479,44 @@ def run_backtest(
                     bm_p0 = float(bm_close.iloc[bm_i])
                     bm_ret = (float(bm_close.iloc[bm_j]) - bm_p0) / bm_p0 if bm_p0 > 0 else 0.0
                     bucket_bm_returns[bucket_key][months].append(bm_ret)
+                    bucket_excess_returns[bucket_key][months].append(net_ret - bm_ret)
                 except Exception:
                     pass
 
             # By year / quarter
-            for period_raw, period_dict in [(year_str, by_year_raw), (quarter_str, by_quarter_raw)]:
+            for period_raw, period_dict, period_excess_dict in [
+                (year_str, by_year_raw, by_year_excess_raw),
+                (quarter_str, by_quarter_raw, by_quarter_excess_raw),
+            ]:
                 if period_raw not in period_dict:
                     period_dict[period_raw] = {k: {m: [] for m in forward_months} for k in bucket_keys}
+                    period_excess_dict[period_raw] = {k: {m: [] for m in forward_months} for k in bucket_keys}
                 period_dict[period_raw][bucket_key][months].append(net_ret)
+                if bm_ret is not None:
+                    period_excess_dict[period_raw][bucket_key][months].append(net_ret - bm_ret)
 
-    def _aggregate(period_returns: dict) -> dict:
-        return {
-            pk: {bk: {m: _stats(period_returns[pk][bk].get(m, [])) for m in forward_months} for bk in bucket_keys}
-            for pk in period_returns
-        }
+    def _aggregate(period_returns: dict, period_excess: dict | None = None) -> dict:
+        out = {}
+        for pk in period_returns:
+            out[pk] = {}
+            for bk in bucket_keys:
+                out[pk][bk] = {}
+                for m in forward_months:
+                    ex = None
+                    if period_excess and pk in period_excess:
+                        ex = period_excess[pk][bk].get(m, [])
+                    out[pk][bk][m] = _stats(
+                        period_returns[pk][bk].get(m, []),
+                        period_excess[pk][bk].get(m, []) if period_excess else None,
+                    )
+        return out
 
     results: dict[str, dict[int, dict]] = {}
     for key in bucket_keys:
-        results[key] = {m: _stats(bucket_returns[key][m]) for m in forward_months}
+        results[key] = {
+            m: _stats(bucket_returns[key][m], bucket_excess_returns[key][m])
+            for m in forward_months
+        }
 
     # Calibration: hit rates across all buckets at 3-month horizon
     bucket_hit_rates_3m = {
@@ -462,12 +538,24 @@ def run_backtest(
 
     sector = classify_ticker(ticker)
     ic = ((_cfg.get("score") or {}).get("interpretation") or {})
+    bt_cfg = _cfg.get("backtest") or {}
+    apply_live = bool(bt_cfg.get("apply_live_adjustments"))
+    live_active = live_ctx is not None and getattr(live_ctx, "enabled", False)
+    parity_note = str(bt_cfg.get("parity_note") or "").strip()
     bucket_note = (
         "Buckets use ACF mean-reversion detection: on MR tape, assignment uses (100 − raw score) "
-        "so high buckets match dip-buy edge (aligned with score.interpretation)."
+        "so high buckets match dip-buy edge (aligned with score.interpretation). "
+        + (
+            "Scores include live-parity global regime + market-reversal overlay on each bar "
+            "(backtest.apply_live_adjustments)."
+            if live_active
+            else "Scores use bar composite only — enable backtest.apply_live_adjustments for regime + MRO parity."
+        )
         if ic.get("apply_to_backtest_buckets", True)
         else "Buckets use raw composite score only."
     )
+    if parity_note:
+        bucket_note = f"{bucket_note} {parity_note}"
 
     n_style = mr_bar_count + trending_bar_count
     if n_style > 0:
@@ -519,9 +607,20 @@ def run_backtest(
         "ticker": ticker,
         "period": period,
         "schema_version": 2,
+        "score_parity": {
+            "apply_live_adjustments": apply_live,
+            "live_ctx_active": live_active,
+            "question": "A",
+            "question_label": "Historical dip edge (backtest buckets)",
+            "note": (
+                "Not a pass/fail for today's trade — compares bucketed historical forward returns."
+            ),
+        },
         "bucket_assignment_note": bucket_note,
         "bucket_assignment_stats": bucket_assignment_stats,
         "bucket_return_ordering_notes": bucket_return_ordering_notes,
+        "mr_spread_3m": _mr_spread_summary(results, 3, mr_dominated=mr_dominated),
+        "mr_spread_6m": _mr_spread_summary(results, 6, mr_dominated=mr_dominated),
         "earnings_exclusion": earnings_exclusion_out,
         "spy_regime_summary": spy_regime_summary,
         "sector": sector,
@@ -529,8 +628,8 @@ def run_backtest(
         "transaction_cost_pct": round(transaction_cost * 100, 3),
         "benchmark": benchmark_ticker,
         "buckets": results,
-        "by_year": _aggregate(by_year_raw),
-        "by_quarter": _aggregate(by_quarter_raw),
+        "by_year": _aggregate(by_year_raw, by_year_excess_raw),
+        "by_quarter": _aggregate(by_quarter_raw, by_quarter_excess_raw),
         "calibration": cal,
         "buy_bucket_metrics": full_metrics,
         "suggested_buy_min": _suggest_band(results, "buy", mr_dominated=mr_dominated),
@@ -580,6 +679,14 @@ def walk_forward_backtest(
     ecfg_wf = (_wf_cfg.get("backtest") or {}).get("earnings_exclusion") or {}
     earnings_days_before_wf = int(ecfg_wf.get("days_before") or 0)
 
+    wf_live_ctx = None
+    try:
+        from signals.backtest_live_parity import BacktestLiveContext
+
+        wf_live_ctx = BacktestLiveContext.prepare(close.index, period, _wf_cfg)
+    except Exception:
+        wf_live_ctx = None
+
     rc_wf = (_wf_cfg.get("backtest") or {}).get("regime") or {}
     regime_sym_wf = str(rc_wf.get("benchmark") or "SPY").upper()
     ma_days_wf = int(rc_wf.get("ma_days") or 200)
@@ -607,7 +714,7 @@ def walk_forward_backtest(
                 close.index[i], sorted_earnings_ts, earnings_days_before_wf
             ):
                 continue
-            score = _composite_for_row(close, i, ticker, _wf_cfg)
+            score = _composite_for_row(close, i, ticker, _wf_cfg, live_ctx=wf_live_ctx)
             if score is None or score < buy_threshold:
                 continue
             price_today = float(close.iloc[i])
@@ -647,12 +754,21 @@ def walk_forward_backtest(
 
     regime_breakdown = aggregate_walk_forward_by_regime(windows, 3) if windows else {}
 
+    wf_bt = _wf_cfg.get("backtest") or {}
+    wf_live = bool(wf_bt.get("apply_live_adjustments")) and wf_live_ctx is not None and wf_live_ctx.enabled
+
     return {
         "ticker": ticker,
         "sector": classify_ticker(ticker),
         "train_years": train_years,
         "test_months": test_months,
         "buy_threshold": buy_threshold,
+        "score_parity": {
+            "apply_live_adjustments": bool(wf_bt.get("apply_live_adjustments")),
+            "live_ctx_active": wf_live,
+            "question": "A",
+            "question_label": "Walk-forward OOS (high-score bars only)",
+        },
         "transaction_cost_pct": round(transaction_cost * 100, 3),
         "windows": windows,
         "consistency": consistency,

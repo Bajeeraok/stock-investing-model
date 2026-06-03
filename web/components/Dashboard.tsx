@@ -40,6 +40,7 @@ import {
   TickerDetailModal,
   ToggleSection,
   BacktestStatus,
+  TrackRecordFramework,
   EconomicCalendarSection,
   GuidelinesBanner,
   FMPPlanStatus,
@@ -1476,6 +1477,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   {analysisFetchErr}
                 </div>
               )}
+              <TrackRecordFramework />
               <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen={false}>
                 <EodAndSystemPanel
                   eodSnapshots={data.eod_snapshots ?? []}
@@ -1484,7 +1486,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   onRefresh={onRefresh}
                 />
               </ToggleSection>
-              <ToggleSection id="analysis-backtest" title="Backtesting" icon={<BarChart3 />} defaultOpen={false}>
+              <ToggleSection id="analysis-backtest" title="(A) Historical dip edge — backtest" icon={<BarChart3 />} defaultOpen={false}>
                 <BacktestStatus />
               </ToggleSection>
               <ToggleSection id="analysis-price-target" title="Price target accuracy" icon={<Target />} defaultOpen={false}>
@@ -1526,7 +1528,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {(modelAudit?.enabled || modelAudit?.message) && (
                 <ToggleSection
                   id="analysis-model-audit"
-                  title="Model audit"
+                  title="(B) Live gate clearance — audit"
                   icon={<ClipboardCheck />}
                   badge={modelAudit?.cohort_size ?? modelAudit?.pilot?.total_events ?? undefined}
                   defaultOpen
@@ -1535,12 +1537,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 </ToggleSection>
               )}
               {(forwardTracking?.records?.length ?? 0) > 0 && (
-                <ToggleSection id="analysis-forward" title="Forward tracking" icon={<RefreshCw />} badge={forwardTracking?.records?.length ?? 0} defaultOpen>
+                <ToggleSection id="analysis-forward" title="(C) Forward outcomes — tracking" icon={<RefreshCw />} badge={forwardTracking?.records?.length ?? 0} defaultOpen>
                   <ForwardTracking
                     records={forwardTracking!.records}
                     summary_by_horizon={forwardTracking!.summary_by_horizon ?? {}}
                     summary_by_signal={forwardTracking!.summary_by_signal ?? {}}
                     summary_by_go_no_go={forwardTracking!.summary_by_go_no_go ?? {}}
+                    summary_by_gates={forwardTracking!.summary_by_gates ?? {}}
+                    data_source_note={forwardTracking!.data_source_note ?? null}
                     message={forwardTracking?.message}
                     meta={forwardTracking?.meta ?? null}
                   />
@@ -1567,7 +1571,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {(paperTrading || paperVsBacktestDrift) && (
                 <ToggleSection
                   id="analysis-paper"
-                  title="Paper trading"
+                  title="(C) Paper trading — forward outcomes"
                   icon={<FlaskConical />}
                   badge={paperTrading?.summary?.completed ?? undefined}
                   defaultOpen={false}
@@ -1579,11 +1583,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 </ToggleSection>
               )}
               {forwardTracking?.message && !forwardTracking?.records?.length && (
-                <ToggleSection id="analysis-forward-msg" title="Forward tracking" icon={<RefreshCw />} defaultOpen>
+                <ToggleSection id="analysis-forward-msg" title="(C) Forward outcomes — tracking" icon={<RefreshCw />} defaultOpen>
                   <ForwardTracking
                     records={[]}
                     summary_by_horizon={{}}
                     summary_by_signal={{}}
+                    summary_by_gates={{}}
                     message={forwardTracking.message}
                   />
                 </ToggleSection>

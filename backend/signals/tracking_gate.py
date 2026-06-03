@@ -25,15 +25,54 @@ def _as_bool(v: Any) -> bool | None:
     return None
 
 
+def primary_gates_detail(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Frozen primary gates for EOD / forward tracking."""
+    rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
+    gates = rs.get("gates") or []
+    out = []
+    for g in gates:
+        if not isinstance(g, dict) or g.get("id") not in PRIMARY_GATE_IDS:
+            continue
+        out.append(
+            {
+                "id": g.get("id"),
+                "label": g.get("label"),
+                "pass": bool(g.get("pass")),
+                "detail": (g.get("detail") or "")[:200],
+            }
+        )
+    return out
+
+
 def gate_snapshot_from_row(row: dict[str, Any]) -> dict[str, Any]:
     """Compact gate fields for EOD / CSV persistence."""
+    if row.get("gates_frozen"):
+        total = int(row.get("gates_total") or 4)
+        try:
+            passed = int(row.get("gates_passed")) if row.get("gates_passed") is not None else 0
+        except (TypeError, ValueError):
+            passed = 0
+        cleared = row.get("gate_cleared")
+        if cleared is None:
+            cleared = passed >= total
+        return {
+            "gate_cleared": bool(cleared),
+            "go_no_go": row.get("go_no_go"),
+            "gates_passed": passed,
+            "gates_total": total,
+        }
     rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
     gates = rs.get("gates") or []
     primary = [g for g in gates if isinstance(g, dict) and g.get("id") in PRIMARY_GATE_IDS]
     total = len(primary) if primary else 4
     passed = sum(1 for g in primary if g.get("pass"))
-    if rs.get("gates_locked_count") is not None and primary:
+    if rs.get("gates_locked_count") is not None:
         passed = max(0, total - int(rs.get("gates_locked_count") or 0))
+    elif not primary and row.get("gates_passed") is not None:
+        try:
+            passed = int(row.get("gates_passed"))
+        except (TypeError, ValueError):
+            pass
     go = rs.get("go_no_go")
     if not go:
         if row.get("gate_cleared") is True:
@@ -55,9 +94,16 @@ def enrich_tracking_row(
     row: dict[str, Any],
     *,
     regime_bull_pct: float | None = None,
+    force_recompute: bool = False,
 ) -> dict[str, Any]:
     """Ensure gate fields exist on a run_results row (recompute from EOD fields if missing)."""
-    if row.get("gate_cleared") is not None:
+    if row.get("gates_frozen") and not force_recompute:
+        snap = gate_snapshot_from_row(row)
+        for k, v in snap.items():
+            if v is not None:
+                row[k] = v
+        return row
+    if row.get("gate_cleared") is not None and row.get("gates_passed") is not None and not force_recompute:
         snap = gate_snapshot_from_row(row)
         row.setdefault("go_no_go", snap.get("go_no_go"))
         row.setdefault("gates_passed", snap.get("gates_passed"))

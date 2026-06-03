@@ -35,6 +35,7 @@ CSV_COLUMNS: list[tuple[str, str]] = [
     ("go_no_go", "go_no_go"),
     ("gates_passed", "gates_passed"),
     ("gates_total", "gates_total"),
+    ("gates_failed", "gates_failed"),
     ("rsi", "rsi"),
     ("composite_score", "composite_score"),
     ("return_7d_pct", "return_7d_pct"),

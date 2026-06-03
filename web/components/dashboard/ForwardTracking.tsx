@@ -18,14 +18,43 @@ interface RecordRow {
   go_no_go?: string | null;
   gates_passed?: number | null;
   gates_total?: number | null;
+  gates_frozen?: boolean | null;
+  hit_st_target?: number | null;
+  hit_st_stop?: number | null;
+  trim_net_score_pct?: number | null;
+  trim_outcome_label?: string | null;
+  max_drawdown_pct?: number | null;
+}
+
+interface HorizonSummary {
+  avg_return_pct?: number;
+  n_observations?: number;
+  win_rate_pct?: number;
+  st_target_hit_rate_pct?: number;
+  st_stop_hit_rate_pct?: number;
+  trim_avg_net_score_pct?: number;
+  trim_helped_pct?: number;
+  trim_n?: number;
 }
 
 interface SummaryByHorizon {
-  [horizon: number]: { avg_return_pct: number; n_observations: number };
+  [horizon: number]: HorizonSummary;
 }
 
 interface SummaryBySignal {
-  [signal: string]: { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number };
+  [signal: string]: {
+    avg_return_20d_pct?: number;
+    avg_return_pct?: number;
+    n_observations?: number;
+    hit_rate_pct?: number;
+    trim_avg_net_score_pct?: number;
+    trim_helped_pct?: number;
+    metric_note?: string;
+  };
+}
+
+interface SummaryByGates {
+  [gateKey: string]: HorizonSummary;
 }
 
 interface SummaryByGoNoGo {
@@ -49,8 +78,15 @@ interface Props {
   summary_by_horizon: SummaryByHorizon;
   summary_by_signal: SummaryBySignal;
   summary_by_go_no_go?: SummaryByGoNoGo;
+  summary_by_gates?: SummaryByGates;
+  data_source_note?: string | null;
   message?: string | null;
   meta?: ForwardMeta | null;
+}
+
+function isTrimSignal(sig: string): boolean {
+  const u = (sig || "").toUpperCase();
+  return u.includes("TRIM") || u === "SELL" || u === "REDUCE";
 }
 
 function fmt(pct: number): string {
@@ -99,12 +135,15 @@ export function ForwardTracking({
   summary_by_horizon,
   summary_by_signal,
   summary_by_go_no_go,
+  summary_by_gates,
+  data_source_note,
   message,
   meta,
 }: Props) {
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [horizonFilter, setHorizonFilter] = useState<number | "">("");
+  const [gateFilter, setGateFilter] = useState<"" | "4" | "0" | "3plus" | "go">("");
   const [page, setPage] = useState(0);
 
   const uniqueTickers = useMemo(
@@ -127,6 +166,15 @@ export function ForwardTracking({
       if (tf && r.ticker !== tf) return false;
       if (cutoff && r.as_of_date < cutoff) return false;
       if (horizonFilter !== "" && r.horizon_days !== horizonFilter) return false;
+      if (gateFilter === "4") {
+        if ((r.gates_passed ?? 0) < (r.gates_total ?? 4)) return false;
+      } else if (gateFilter === "0") {
+        if ((r.gates_passed ?? 0) > 0) return false;
+      } else if (gateFilter === "3plus") {
+        if ((r.gates_passed ?? 0) < 3) return false;
+      } else if (gateFilter === "go") {
+        if (!r.gate_cleared && r.go_no_go !== "go") return false;
+      }
       return true;
     });
     return [...filtered].sort((a, b) => {
@@ -134,11 +182,11 @@ export function ForwardTracking({
       if (a.ticker !== b.ticker) return a.ticker.localeCompare(b.ticker);
       return a.horizon_days - b.horizon_days;
     });
-  }, [allRecords, tickerFilter, dateRange, horizonFilter]);
+  }, [allRecords, tickerFilter, dateRange, horizonFilter, gateFilter]);
 
   useEffect(() => {
     setPage(0);
-  }, [tickerFilter, dateRange, horizonFilter]);
+  }, [tickerFilter, dateRange, horizonFilter, gateFilter]);
 
   const pagedRecords = useMemo(
     () => paginateRows(records, page, FORWARD_PAGE_SIZE),
@@ -171,7 +219,8 @@ export function ForwardTracking({
         <p className="text-sm font-medium text-slate-300">Forward tracking (what we said vs what happened)</p>
       </div>
       <p className="text-xs text-slate-500 mb-3" title="Multi-horizon actual returns for all portfolio/watchlist tickers based on EOD snapshots. Signal accuracy: when we said CONSIDER TRIM vs HOLD/ADD, avg 20d return.">
-        Uses EOD snapshots (Redis + disk). Avg return by horizon and by signal (score-based).
+        EOD OHLCV between snapshot dates — return % plus ST stop/target touches. Gates frozen on new daily saves.
+        {data_source_note && <span className="block mt-1 text-slate-600">{data_source_note}</span>}
         {meta?.eod_date_last && (
           <span className="block mt-1 text-slate-400">
             EOD through <span className="font-mono text-slate-300">{meta.eod_date_last}</span>
@@ -217,6 +266,17 @@ export function ForwardTracking({
             <option key={h} value={h}>{h}d steps</option>
           ))}
         </select>
+        <select
+          value={gateFilter}
+          onChange={(e) => setGateFilter(e.target.value as "" | "4" | "0" | "3plus" | "go")}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All gates</option>
+          <option value="4">4/4 pass</option>
+          <option value="0">0/4 pass</option>
+          <option value="3plus">3+ pass</option>
+          <option value="go">GO only</option>
+        </select>
         <div className="flex rounded border border-slate-600 overflow-hidden">
           {DATE_RANGES.map((dr) => (
             <button
@@ -234,14 +294,14 @@ export function ForwardTracking({
             </button>
           ))}
         </div>
-        {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "") && (
+        {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "") && (
           <span className="text-[10px] text-slate-500">
             Showing {records.length} / {allRecords.length} records
           </span>
         )}
       </div>
 
-      {filterStats && (tickerFilter || dateRange !== "ALL" || horizonFilter !== "") && (
+      {filterStats && (tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "") && (
         <div className="mb-3 rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered</span>
           <span>n={filterStats.n}</span>
@@ -266,20 +326,48 @@ export function ForwardTracking({
       )}
 
       {horizons.length > 0 && (
-        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-300 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
           {horizons.map((h) => {
             const s = summary_by_horizon[h];
             if (!s) return null;
             return (
-              <span key={h}>
-                <span className="text-slate-500">{h}d:</span>{" "}
-                <span className={s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
-                  {fmt(s.avg_return_pct)}
-                </span>
-                <span className="text-slate-500 text-xs"> (n={s.n_observations})</span>
-              </span>
+              <div
+                key={h}
+                className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs"
+              >
+                <p className="text-slate-400 font-medium mb-1">{h} EOD steps</p>
+                <p>
+                  Avg{" "}
+                  <span className={s.avg_return_pct != null && s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                    {fmt(s.avg_return_pct ?? 0)}
+                  </span>
+                  <span className="text-slate-500"> · n={s.n_observations}</span>
+                </p>
+                {s.win_rate_pct != null && (
+                  <p className="text-slate-500 mt-0.5">
+                    Win {s.win_rate_pct}% · ST tgt {s.st_target_hit_rate_pct ?? "—"}% · ST stop{" "}
+                    {s.st_stop_hit_rate_pct ?? "—"}%
+                  </p>
+                )}
+              </div>
             );
           })}
+        </div>
+      )}
+
+      {summary_by_gates && Object.keys(summary_by_gates).length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-slate-500 mb-1">By gates (20d forward)</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {Object.entries(summary_by_gates)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .map(([gk, s]) => (
+                <span key={gk} className="text-slate-300">
+                  <span className="text-violet-300/90 font-medium">{gk}</span>:{" "}
+                  {fmt(s.avg_return_pct ?? 0)} win {s.win_rate_pct ?? "—"}% (n={s.n_observations})
+                </span>
+              ))}
+          </div>
         </div>
       )}
 
@@ -302,15 +390,33 @@ export function ForwardTracking({
 
       {summary_by_signal && Object.keys(summary_by_signal).length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">Signal accuracy (20d forward)</p>
+          <p className="text-xs text-slate-500 mb-1">By signal (20d forward)</p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {Object.entries(summary_by_signal).map(([sig, s]) => (
-              <span key={sig}>
+              <span key={sig} title={s.metric_note}>
                 <span className="text-slate-400">{sig}:</span>{" "}
-                <span className={(s.avg_return_20d_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
-                  {fmt(s.avg_return_20d_pct ?? 0)}
-                </span>
-                <span className="text-slate-500 text-xs"> (n={s.n_observations ?? 0})</span>
+                {isTrimSignal(sig) && s.trim_avg_net_score_pct != null ? (
+                  <>
+                    <span className={s.trim_avg_net_score_pct >= 0 ? "text-emerald-400" : "text-amber-300"}>
+                      trim net {s.trim_avg_net_score_pct >= 0 ? "+" : ""}
+                      {s.trim_avg_net_score_pct.toFixed(1)}%
+                    </span>
+                    <span className="text-slate-500 text-xs">
+                      {" "}
+                      (helped {s.trim_helped_pct ?? "—"}% · raw {fmt(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0)})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className={(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                      {fmt(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0)}
+                    </span>
+                    <span className="text-slate-500 text-xs">
+                      {" "}
+                      (win {s.hit_rate_pct ?? "—"}% · n={s.n_observations ?? 0})
+                    </span>
+                  </>
+                )}
               </span>
             ))}
           </div>
@@ -318,15 +424,18 @@ export function ForwardTracking({
       )}
 
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className="w-full text-sm text-left border-collapse min-w-[400px]">
+        <table className="w-full text-sm text-left border-collapse min-w-[720px]">
           <thead>
             <tr className="text-slate-500 border-b border-slate-600">
               <th className="sticky top-0 left-0 z-[30] min-w-[5rem] w-24 py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">As of</th>
               <th className="sticky top-0 left-24 z-[25] min-w-[4rem] w-16 py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">Ticker</th>
-              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Horizon</th>
+              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Hz</th>
               <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Signal</th>
               <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Gates</th>
-              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Actual %</th>
+              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">Return</th>
+              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">ST tgt</th>
+              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">ST stop</th>
+              <th className="sticky top-0 z-[20] py-1.5 pr-2 font-medium bg-slate-800/95 backdrop-blur-sm">TRIM net</th>
             </tr>
           </thead>
           <tbody>
@@ -340,16 +449,34 @@ export function ForwardTracking({
                   {r.gates_passed != null && r.gates_total != null ? (
                     <span className={r.go_no_go === "go" || r.gate_cleared ? "text-emerald-400" : "text-amber-300"}>
                       {r.gates_passed}/{r.gates_total}
+                      {r.gates_frozen ? "" : " †"}
                     </span>
                   ) : (
                     "—"
                   )}
                 </td>
                 <td className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>{fmt(r.actual_return_pct)}</td>
+                <td className="py-1.5 pr-2 text-xs text-slate-400">
+                  {r.hit_st_target === 1 ? "✓" : r.hit_st_target === 0 ? "·" : "—"}
+                </td>
+                <td className="py-1.5 pr-2 text-xs text-slate-400">
+                  {r.hit_st_stop === 1 ? "✓" : r.hit_st_stop === 0 ? "·" : "—"}
+                </td>
+                <td className="py-1.5 pr-2 text-xs">
+                  {r.trim_net_score_pct != null ? (
+                    <span className={r.trim_net_score_pct >= 0 ? "text-emerald-400/90" : "text-amber-300/90"}>
+                      {r.trim_net_score_pct >= 0 ? "+" : ""}
+                      {r.trim_net_score_pct.toFixed(1)}%
+                    </span>
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        <p className="text-[10px] text-slate-600 mt-1">† gates recomputed from EOD (legacy snapshot). New daily runs freeze gates at save time.</p>
       </div>
       <TablePager page={page} pageSize={FORWARD_PAGE_SIZE} total={records.length} onPageChange={setPage} />
     </div>

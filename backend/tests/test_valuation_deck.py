@@ -57,3 +57,7 @@ def test_build_valuation_deck_minimal(_mock_ratings):
     assert deck["model"]["gap_badge"] == "ok"
     assert deck["house"]["min_price_to_buy"] == 352.0
     assert deck["scout_street_alert"] is False
+    assert deck["street"]["median_usd"] == 561.0
+    assert deck["street"]["high_usd"] == 600.0
+    assert deck["street"]["low_usd"] == 520.0
+    assert deck["street"]["median_return_pct"] is not None

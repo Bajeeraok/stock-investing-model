@@ -167,24 +167,59 @@ def resolve_event_outcome(
     )
 
     chain = _chain_from_signal(dates, signal_date)
-    if len(chain) <= effective_long:
+    if len(chain) <= horizon_short:
         return None
 
     short_date = chain[min(horizon_short, len(chain) - 1)]
+    short_bar = _bar_from_snapshot(load_snapshot(short_date), ticker)
+    price_7d = short_bar.get("close")
+    if price_7d is None:
+        return None
+    return_7d = _return_pct(entry, float(price_7d))
+
+    full_ready = len(chain) > effective_long
+    if not full_ready:
+        path_dates = chain[1 : min(len(chain), horizon_short + 1)]
+        bars = [_bar_from_snapshot(load_snapshot(d), ticker) for d in path_dates]
+        max_gain, max_dd = _path_excursions(entry, bars, use_intraday_touch)
+        stop = _safe_float(event.get("stop_swing"))
+        st_tgt = _safe_float(event.get("st_target"))
+        if is_tactical:
+            stop = _safe_float(event.get("tactical_stop")) or stop
+            st_tgt = _safe_float(event.get("tactical_t1")) or st_tgt
+        hit_stop, hit_st, hit_mt = _touch_hits(stop, st_tgt, None, bars, use_intraday_touch)
+        from signals.signal_audit_store import _now_iso
+
+        return {
+            "signal_event_id": event["id"],
+            "resolved_ts": _now_iso(),
+            "price_7d": round(float(price_7d), 4),
+            "price_30d": None,
+            "return_7d_pct": return_7d,
+            "return_30d_pct": None,
+            "hit_stop_swing": hit_stop,
+            "hit_st_target": hit_st,
+            "hit_mt_target": hit_mt,
+            "max_gain_pct": max_gain,
+            "max_drawdown_pct": max_dd,
+            "path_days": len(path_dates),
+            "verdict": None,
+            "verdict_rule": None,
+            "benchmark_return_30d_pct": None,
+            "notes": "partial_7d_only",
+        }
+
     long_date = chain[effective_long]
     path_dates = chain[1 : effective_long + 1]
     bars: list[dict[str, float | None]] = []
     for d in path_dates:
         bars.append(_bar_from_snapshot(load_snapshot(d), ticker))
 
-    short_bar = _bar_from_snapshot(load_snapshot(short_date), ticker)
     long_bar = _bar_from_snapshot(load_snapshot(long_date), ticker)
-    price_7d = short_bar.get("close")
     price_30d = long_bar.get("close")
-    if price_7d is None or price_30d is None:
+    if price_30d is None:
         return None
 
-    return_7d = _return_pct(entry, float(price_7d))
     return_30d = _return_pct(entry, float(price_30d))
     max_gain, max_dd = _path_excursions(entry, bars, use_intraday_touch)
     stop = _safe_float(event.get("stop_swing"))
@@ -276,11 +311,12 @@ def resolve_signal_audit_outcomes(
     store = SignalAuditStore(data_root=data_root)
     pt = PaperTradeLogger(data_root=data_root or store.data_root)
     dates = pt._list_eod_dates()
-    if len(dates) < oc["horizon_long"] + 1:
+    min_dates = oc["horizon_short"] + 1
+    if len(dates) < min_dates:
         return {
             "updated": 0,
             "pending": store.count_events(cohort_tag=tag) if tag else 0,
-            "message": f"Need {oc['horizon_long'] + 1}+ EOD snapshots; have {len(dates)}.",
+            "message": f"Need {min_dates}+ EOD snapshots for 7d outcomes; have {len(dates)}.",
         }
 
     events = store.list_events_for_resolution(cohort_tag=tag, limit=max_events)
@@ -289,7 +325,7 @@ def resolve_signal_audit_outcomes(
     pending = 0
 
     for ev in events:
-        if store.has_outcome(int(ev["id"])):
+        if store.outcome_is_complete(int(ev["id"])):
             skipped += 1
             continue
         row = resolve_event_outcome(

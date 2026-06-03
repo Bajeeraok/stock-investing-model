@@ -25,6 +25,7 @@ def test_year_inversion_skipped_when_pct_missing_but_mr_counts_full():
     }
     v = validate_backtest_result(bt)
     assert not any("Score inversion" in i for i in v["issues"])
+    assert any("Momentum (0-30) beat dip" in i for i in v["issues"])
 
 
 def test_year_inversion_flagged_when_trending_dominated():

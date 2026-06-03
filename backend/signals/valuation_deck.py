@@ -65,6 +65,22 @@ def build_valuation_deck(
     sector_pe = _sector_pe_default(config)
     rel_line = _relative_valuation_line(ttm_pe, forward_pe, sector_pe)
 
+    median_usd = fve.get("fmp_consensus_median_usd")
+    if median_usd is None and street_usd:
+        median_usd = street_usd
+    high_usd = fve.get("fmp_consensus_high_usd")
+    low_usd = fve.get("fmp_consensus_low_usd")
+    analyst_count = (ratings or {}).get("total") if ratings else None
+
+    def _ret_pct(target: float | None) -> float | None:
+        if target is None or current_price <= 0:
+            return None
+        return round(100.0 * (float(target) - current_price) / current_price, 1)
+
+    median_return_pct = _ret_pct(median_usd if median_usd else None)
+    high_return_pct = _ret_pct(high_usd if high_usd else None)
+    low_return_pct = _ret_pct(low_usd if low_usd else None)
+
     meta = fair_value_metadata if isinstance(fair_value_metadata, dict) else {}
     method = meta.get("method_used")
     methodology = meta.get("methodology_summary")
@@ -113,8 +129,13 @@ def build_valuation_deck(
         "street": {
             "primary_usd": round(street_usd, 2) if street_usd else None,
             "primary_label": street_label or None,
-            "low_usd": fve.get("fmp_consensus_low_usd"),
-            "high_usd": fve.get("fmp_consensus_high_usd"),
+            "median_usd": round(float(median_usd), 2) if median_usd else None,
+            "low_usd": low_usd,
+            "high_usd": high_usd,
+            "median_return_pct": median_return_pct,
+            "high_return_pct": high_return_pct,
+            "low_return_pct": low_return_pct,
+            "analyst_count": analyst_count,
             "yahoo_mean_usd": fve.get("yahoo_12m_mean_usd"),
             "ratings": ratings,
             "eps_fwd": eps_fwd,

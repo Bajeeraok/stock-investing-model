@@ -6,8 +6,13 @@ import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, 
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
-import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
+import { PriceTargetsPanel, TechnicalLevelsBar, type PriceTargetsData } from "./PriceTargetsPanel";
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
+import { HorizonProjectionChart } from "./HorizonProjectionChart";
+import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
+import { TickerDetailWhyNav, type WhySubTab } from "./TickerDetailWhyNav";
+import { ScenarioTeaser } from "./ScenarioTeaser";
+import { RoadmapSummaries } from "./RoadmapSummaries";
 import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
 import { HorizonPlaybooksPanel } from "./HorizonPlaybooksPanel";
 import type { HorizonPlaybooksBundle } from "./HorizonPlaybookCard";
@@ -364,6 +369,12 @@ export function TickerDetailModal({
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
   const [modalTab, setModalTab] = useState<"today" | "levels" | "why">("today");
+  const [whySubTab, setWhySubTab] = useState<WhySubTab>("valuation");
+
+  const openWhyValuation = () => {
+    setModalTab("why");
+    setWhySubTab("valuation");
+  };
   const [catalystExpanded, setCatalystExpanded] = useState(false);
   const [positionIntent, setPositionIntentLocal] = useState<PositionIntent | null>(null);
   const [decisionMode, setDecisionModeLocal] = useState<DecisionMode>("scout");
@@ -394,6 +405,7 @@ export function TickerDetailModal({
   useEffect(() => {
     if (!ticker) return;
     setModalTab("today");
+    setWhySubTab("valuation");
     setCatalystExpanded(false);
     setLoading(true);
     setError(null);
@@ -716,7 +728,7 @@ export function TickerDetailModal({
             ))}
             </div>
             <p className="text-center text-sm text-slate-500 px-2 py-1.5 border-t border-slate-800">
-              Today: 3-second decision · Levels: roadmaps &amp; playbooks · Why: charts, gates &amp; proof
+              Today: decide · Levels: prices &amp; plans · Why: scenarios, model proof, context
             </p>
           </div>
         )}
@@ -762,7 +774,7 @@ export function TickerDetailModal({
               {confidence && playbookStage3 && (
                 <button
                   type="button"
-                  onClick={() => setModalTab("why")}
+                  onClick={() => { setModalTab("why"); setWhySubTab("proof"); }}
                   className="w-full text-left rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors"
                 >
                   <Zap className="h-5 w-5 text-amber-300 shrink-0" />
@@ -787,6 +799,32 @@ export function TickerDetailModal({
                 />
               )}
 
+              <ScenarioTeaser data={priceTargets} onOpenValuation={openWhyValuation} />
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalTab("levels")}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
+                >
+                  Levels &amp; roadmaps
+                </button>
+                <button
+                  type="button"
+                  onClick={openWhyValuation}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-violet-600/50 text-violet-200 hover:bg-violet-950/40"
+                >
+                  Scenarios
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setModalTab("why"); setWhySubTab("proof"); }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
+                >
+                  Model proof
+                </button>
+              </div>
+
               {decisionMode === "scout" && detail.investor_summary?.tactical_entry && (
                 <TacticalEntryPanel
                   payload={detail.investor_summary.tactical_entry}
@@ -809,6 +847,7 @@ export function TickerDetailModal({
                   priceHistory={detail.price_history}
                   ticker={detail.ticker}
                   hideTradingGates={Boolean(tradingGates.length > 0)}
+                  hideRoadmaps
                   compactOverview
                   marketContext={detail.market_context}
                   decisionMode={decisionMode}
@@ -822,19 +861,6 @@ export function TickerDetailModal({
                 </section>
               )}
 
-              {/* CTA: jump to Roadmaps tab for full buy/sell tables */}
-              {detail.investor_summary?.trade_roadmap && (
-                <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-                  <p className="text-sm text-slate-300 mb-2">Staged buy/sell levels, playbooks, and timeline.</p>
-                  <button
-                    type="button"
-                    onClick={() => setModalTab("levels")}
-                    className="text-sm font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1"
-                  >
-                    Open Levels tab <ChevronRight className="h-4 w-4" />
-                  </button>
-                </section>
-              )}
 
               {/* Quick reference – at bottom so it doesn't clutter the primary decision view */}
               <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden">
@@ -878,6 +904,19 @@ export function TickerDetailModal({
               {/* ── Roadmaps tab: only Trade Roadmap card ──────────────────── */}
               {modalTab === "levels" && (
                 <>
+                <p className="text-xs text-slate-500 -mt-2 mb-2 leading-snug">
+                  Staged entries, playbooks, technical anchors, and trader/investor roadmaps.
+                </p>
+                {priceTargets?.technical_levels && detail.current_price != null && (
+                  <TechnicalLevelsBar
+                    lv={priceTargets.technical_levels}
+                    price={detail.current_price}
+                  />
+                )}
+                <RoadmapSummaries
+                  traderRoadmap={detail.investor_summary?.trader_roadmap}
+                  investorRoadmap={detail.investor_summary?.investor_roadmap}
+                />
                 {horizonPlaybooksBundle && (
                   <HorizonPlaybooksPanel
                     ticker={detail.ticker}
@@ -913,29 +952,189 @@ export function TickerDetailModal({
                 </>
               )}
 
-              {/* ── Why tab: proof, charts, all horizons, thesis ── */}
+              {/* ── Why tab: valuation / proof / context sub-tabs ── */}
               {modalTab === "why" && (
                 <>
-              {detail.investor_summary && (
-                <InvestorDecisionSummarySection
-                  summary={detail.investor_summary}
-                  currentPrice={detail.current_price ?? 0}
-                  ma200={detail.ma200}
-                  ma20={detail.ma20}
-                  ma50={detail.ma50}
-                  sector={detail.sector}
-                  companyName={detail.company_name}
-                  ltEntryTiersOpen={ltEntryTiersOpen}
-                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
-                  priceHistory={detail.price_history}
-                  ticker={detail.ticker}
-                  hideTradingGates={Boolean(tradingGates.length > 0)}
-                  marketContext={detail.market_context}
-                  decisionMode={decisionMode}
-                  contentLayer="why"
-                />
+              <TickerDetailWhyNav active={whySubTab} onChange={setWhySubTab} />
+
+              {whySubTab === "valuation" && (
+                <div className="space-y-4">
+                  {detail.investor_summary && detail.price_history && detail.price_history.length > 0 && (
+                    <section className="rounded-xl border border-slate-700/50 bg-slate-900/60 overflow-hidden">
+                      <HorizonProjectionChart
+                        ticker={detail.ticker}
+                        currentPrice={detail.current_price ?? 0}
+                        priceHistory={detail.price_history}
+                        short={detail.investor_summary.horizons.short}
+                        medium={detail.investor_summary.horizons.medium}
+                        long={detail.investor_summary.horizons.long}
+                        fairValue={detail.investor_summary.fair_value}
+                        ma20={detail.ma20}
+                        ma50={detail.ma50}
+                      />
+                    </section>
+                  )}
+                  {detail.investor_summary && (
+                    <UnifiedValuationSummary
+                      deck={detail.investor_summary.valuation_deck}
+                      analystTargets={priceTargets?.analyst_targets}
+                      currentPrice={detail.current_price ?? 0}
+                      fairValue={detail.investor_summary.fair_value}
+                      external={detail.investor_summary.fair_value_vs_external}
+                      decisionMode={decisionMode}
+                      showFullDeck
+                    />
+                  )}
+                  {priceTargets ? (
+                    <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
+                      <PriceTargetsPanel
+                        data={priceTargets}
+                        hideHorizonZones={!!detail.investor_summary}
+                        hideTechnicalLevels
+                        hideAnalystStrip={!!detail.investor_summary}
+                        scenariosDefaultOpen
+                        valuationDeck={detail.investor_summary?.valuation_deck}
+                        fairValue={detail.investor_summary?.fair_value ?? 0}
+                        fairValueExternal={detail.investor_summary?.fair_value_vs_external}
+                        decisionMode={decisionMode}
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                      <Activity className="h-4 w-4 shrink-0" />
+                      <span>Computing price ranges &amp; scenarios…</span>
+                    </div>
+                  )}
+                </div>
               )}
-              {/* ── 1. Story & catalysts (plain context before models) ─────── */}
+
+              {whySubTab === "proof" && (
+                <div className="space-y-4">
+              {confidence && playbookStage3 && (
+                <section
+                  className="rounded-xl border border-amber-500/45 bg-gradient-to-br from-amber-500/12 to-slate-900/40 p-4 space-y-2"
+                  aria-label="Special playbook step active"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 rounded-lg bg-amber-500/20 p-1.5 border border-amber-500/35">
+                      <Zap className="h-4 w-4 text-amber-300 shrink-0" />
+                    </div>
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold text-amber-100">
+                        Special playbook step is active
+                      </p>
+                      <p className="text-xs text-amber-200/90 leading-snug">
+                        <span className="font-medium text-amber-100">{playbookStage3.name}</span>
+                        {" — "}
+                        {playbookStage3.action}
+                      </p>
+                      {regimeShift && (
+                        <p className="text-sm text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
+                          Chance the market backdrop changes meaningfully in about {regimeShift.days_estimate}:{" "}
+                          <span className="font-mono font-semibold text-amber-300/95">
+                            {regimeShift.shift_probability.toFixed(0)}%
+                          </span>
+                          {regimeShift.label === "WATCH_CLOSELY" && (
+                            <span className="text-amber-400/90"> — worth watching closely</span>
+                          )}
+                          .
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {confidence ? (
+                <section className="space-y-2">
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-200 uppercase tracking-wide">7-Layer model signal</p>
+                    <p className="text-sm text-slate-400">Regime + ML + options + fundamentals fused.</p>
+                  </div>
+                  <ConfidenceBreakdownSafe data={confidence} />
+                </section>
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Loading full confidence model…</span>
+                </div>
+              )}
+
+              {unified ? (
+                <section className="space-y-2">
+                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/20 px-3 py-2">
+                    <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
+                    <p className="text-sm text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
+                  </div>
+                  {hasVerdictConflict && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+                      <p className="text-sm text-amber-200 leading-snug">
+                        Overview says <span className="font-semibold">{overviewVerdict}</span> (fused multi-layer model),
+                        while Technical Pattern says <span className="font-semibold">{patternVerdict}</span> (chart-only).
+                        This is expected when structural thesis and tactical timing diverge.
+                      </p>
+                    </div>
+                  )}
+                  <PatternSignalCardSafe data={unified} />
+                </section>
+              ) : (
+                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+                  <Activity className="h-4 w-4 shrink-0" />
+                  <span>Loading chart-pattern readout…</span>
+                </div>
+              )}
+
+              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
+                    <BarChart3 className="h-4 w-4 text-emerald-500" />
+                    Quick momentum check (rules, not odds)
+                  </h3>
+                  <p className="text-slate-500 text-xs mb-3">
+                    These are 0–100 rule scores (not win probabilities). For odds and sizing, rely on the confidence block above.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                    {detail.score_breakdown.trend != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Trend strength</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.rsi != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Stretched vs normal</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.macd != null && (
+                      <div className="bg-slate-800 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Momentum shift</p>
+                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
+                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                    {detail.score_breakdown.composite != null && (
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
+                        <p className="text-slate-500 text-xs">Blended</p>
+                        <p className="font-mono font-semibold text-emerald-400">
+                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )}
+                </div>
+              )}
+
+              {whySubTab === "context" && (
+                <div className="space-y-6">
+              {/* ── Story & catalysts ─────── */}
               {(detail.thesis || detail.exit_condition) && (
                 <section>
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300 mb-2">
@@ -1139,147 +1338,6 @@ export function TickerDetailModal({
                   </div>
                 )}
               </section>
-
-              {confidence && playbookStage3 && (
-                <section
-                  className="rounded-xl border border-amber-500/45 bg-gradient-to-br from-amber-500/12 to-slate-900/40 p-4 space-y-2"
-                  aria-label="Special playbook step active"
-                >
-                  <div className="flex items-start gap-2.5">
-                    <div className="mt-0.5 rounded-lg bg-amber-500/20 p-1.5 border border-amber-500/35">
-                      <Zap className="h-4 w-4 text-amber-300 shrink-0" />
-                    </div>
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-sm font-semibold text-amber-100">
-                        Special playbook step is active
-                      </p>
-                      <p className="text-xs text-amber-200/90 leading-snug">
-                        <span className="font-medium text-amber-100">{playbookStage3.name}</span>
-                        {" — "}
-                        {playbookStage3.action}
-                      </p>
-                      {regimeShift && (
-                        <p className="text-sm text-slate-400 leading-snug pt-1 border-t border-amber-500/20">
-                          Chance the market backdrop changes meaningfully in about {regimeShift.days_estimate}:{" "}
-                          <span className="font-mono font-semibold text-amber-300/95">
-                            {regimeShift.shift_probability.toFixed(0)}%
-                          </span>
-                          {regimeShift.label === "WATCH_CLOSELY" && (
-                            <span className="text-amber-400/90"> — worth watching closely</span>
-                          )}
-                          . Use the confidence section below as supporting context, not the only thing you read.
-                        </p>
-                      )}
-                      {!regimeShift && (
-                        <p className="text-sm text-slate-500 pt-1">
-                          Full scenario list is in the confidence card below under the playbook section.
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {/* ── 7-Layer Confidence Engine ──────────────────────────── */}
-              {confidence ? (
-                <section className="space-y-2">
-                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-200 uppercase tracking-wide">7-Layer model signal</p>
-                    <p className="text-sm text-slate-400">Regime + ML + options + fundamentals fused.</p>
-                  </div>
-                  <ConfidenceBreakdownSafe data={confidence} />
-                </section>
-              ) : (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
-                  <Activity className="h-4 w-4 shrink-0" />
-                  <span>Loading full confidence model…</span>
-                </div>
-              )}
-
-              {/* ── Unified Signal Engine (regime + pattern + momentum) ─ */}
-              {unified ? (
-                <section className="space-y-2">
-                  <div className="rounded-lg border border-slate-700/70 bg-slate-900/20 px-3 py-2">
-                    <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
-                    <p className="text-sm text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
-                  </div>
-                  {hasVerdictConflict && (
-                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
-                      <p className="text-sm text-amber-200 leading-snug">
-                        Overview says <span className="font-semibold">{overviewVerdict}</span> (fused multi-layer model),
-                        while Technical Pattern says <span className="font-semibold">{patternVerdict}</span> (chart-only).
-                        This is expected when structural thesis and tactical timing diverge.
-                      </p>
-                    </div>
-                  )}
-                  <PatternSignalCardSafe data={unified} />
-                </section>
-              ) : (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
-                  <Activity className="h-4 w-4 shrink-0" />
-                  <span>Loading chart-pattern readout…</span>
-                </div>
-              )}
-
-              {/* ── Price Targets & Scenario Analysis ──────────────────── */}
-              {priceTargets ? (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
-                  <PriceTargetsPanel data={priceTargets} hideHorizonZones={!!detail.investor_summary} />
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
-                  <Activity className="h-4 w-4 shrink-0" />
-                  <span>Computing price ranges &amp; scenarios…</span>
-                </div>
-              )}
-
-              {/* Simple rule-based momentum (secondary to ML confidence above) */}
-              {detail.score_breakdown && (detail.score_breakdown.trend != null || detail.score_breakdown.composite != null) && (
-                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-1">
-                    <BarChart3 className="h-4 w-4 text-emerald-500" />
-                    Quick momentum check (rules, not odds)
-                  </h3>
-                  <p className="text-slate-500 text-xs mb-3">
-                    These are 0–100 rule scores (not win probabilities). For odds and sizing, rely on the confidence block above.
-                    The blended number is about 50% trend, 30% how &ldquo;stretched&rdquo; the move is, and 20% momentum shift.
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                    {detail.score_breakdown.trend != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Trend strength</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.rsi != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Stretched vs normal</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.macd != null && (
-                      <div className="bg-slate-800 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Momentum shift</p>
-                        <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
-                          {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                    {detail.score_breakdown.composite != null && (
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
-                        <p className="text-slate-500 text-xs">Blended</p>
-                        <p className="font-mono font-semibold text-emerald-400">
-                          {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
 
               {/* Spot vs averages — skip when price-targets panel already shows MA lines */}
               {!priceTargets && (detail.current_price != null || detail.ma20 != null || detail.ma50 != null || detail.ma200 != null) && (
@@ -1656,6 +1714,9 @@ export function TickerDetailModal({
                   </div>
                   )}
                 </section>
+              )}
+
+                </div>
               )}
 
                 </>

@@ -6,6 +6,8 @@ Shared by scripts/backtest_simple.py and signals/thrive_phase2/short_backtest.py
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -18,6 +20,7 @@ def composite_bar_score_for_backtest(
     idx: int,
     ticker: str = "",
     config: dict | None = None,
+    live_ctx: Any | None = None,
 ) -> float | None:
     """
     Composite score for bar idx (causal: data only up to idx).
@@ -25,10 +28,10 @@ def composite_bar_score_for_backtest(
     When score.interpretation.apply_to_backtest_buckets is True and the rolling window is
     classified MEAN_REVERTING (ACF), uses (100 - raw score) so the score aligns with
     bucket semantics (dip-buy edge on MR tape).
+
+    When ``backtest.apply_live_adjustments`` is enabled, pass a prepared ``BacktestLiveContext``
+    as ``live_ctx`` so scores include global regime multipliers + MRO overlay (live parity).
     """
-    subset = close.iloc[: idx + 1]
-    if len(subset) < 50:
-        return None
     if config is None:
         try:
             from config_loader import load_config
@@ -37,20 +40,31 @@ def composite_bar_score_for_backtest(
         except Exception:
             config = {}
 
-    use_spec = bool(config.get("use_spec_regime_score", False))
-    weights = get_sector_weights(ticker) if ticker else None
-    sig = composite_score(
-        subset,
-        weights=weights,
-        use_spec=use_spec,
-        ticker=ticker or None,
-        config=config,
-    )
-    raw = sig.get("composite_buy")
-    if raw is None:
-        return None
-    bias = get_sector_score_bias(ticker) if ticker else 0.0
-    score = float(np.clip(raw + bias, 0.0, 100.0))
+    bt = (config.get("backtest") or {}) if config else {}
+    if bt.get("apply_live_adjustments") and live_ctx is not None:
+        from signals.backtest_live_parity import composite_with_live_parity
+
+        score = composite_with_live_parity(close, idx, ticker, config, live_ctx)
+        if score is None:
+            return None
+    else:
+        subset = close.iloc[: idx + 1]
+        if len(subset) < 50:
+            return None
+        use_spec = bool(config.get("use_spec_regime_score", False))
+        weights = get_sector_weights(ticker) if ticker else None
+        sig = composite_score(
+            subset,
+            weights=weights,
+            use_spec=use_spec,
+            ticker=ticker or None,
+            config=config,
+        )
+        raw = sig.get("composite_buy")
+        if raw is None:
+            return None
+        bias = get_sector_score_bias(ticker) if ticker else 0.0
+        score = float(np.clip(raw + bias, 0.0, 100.0))
 
     ic = ((config.get("score") or {}).get("interpretation") or {})
     if not ic.get("apply_to_backtest_buckets", True):
@@ -62,6 +76,7 @@ def composite_bar_score_for_backtest(
     try:
         from signals.score_interpretation import detect_interpretation_style
 
+        subset = close.iloc[: idx + 1]
         style, _meta = detect_interpretation_style(
             subset,
             None,

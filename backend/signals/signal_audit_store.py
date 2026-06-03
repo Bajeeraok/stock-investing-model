@@ -210,17 +210,56 @@ def _gates_from_row(row: dict) -> tuple[int, int, str | None]:
     if not primary and gates:
         primary = [g for g in gates if isinstance(g, dict)]
     total = len(primary) if primary else 4
-    passed = sum(1 for g in primary if g.get("pass"))
-    if rs.get("gates_locked_count") is not None and primary:
-        passed = max(0, total - int(rs.get("gates_locked_count") or 0))
+    locked = rs.get("gates_locked_count")
+    if locked is not None and primary:
+        passed = max(0, total - int(locked or 0))
+    else:
+        passed = sum(1 for g in primary if g.get("pass"))
     detail = json.dumps(gates, default=str) if gates else None
     return passed, total, detail
+
+
+def _gates_failed_labels(row: dict) -> str | None:
+    """Comma-separated primary gate ids that failed (for audit UI/export)."""
+    rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
+    gates = rs.get("gates") or []
+    primary_ids = {"valuation", "regime", "momentum", "ml"}
+    failed = [
+        str(g.get("id"))
+        for g in gates
+        if isinstance(g, dict) and g.get("id") in primary_ids and not g.get("pass")
+    ]
+    if not failed and rs.get("gates_locked_count"):
+        for g in gates:
+            if isinstance(g, dict) and g.get("id") in primary_ids and not g.get("pass"):
+                failed.append(str(g.get("id")))
+    return ",".join(failed) if failed else None
+
+
+def _gates_failed_from_json(gate_detail_json: str | None) -> str | None:
+    if not gate_detail_json:
+        return None
+    try:
+        gates = json.loads(gate_detail_json)
+    except Exception:
+        return None
+    if not isinstance(gates, list):
+        return None
+    primary_ids = {"valuation", "regime", "momentum", "ml"}
+    failed = [
+        str(g.get("id"))
+        for g in gates
+        if isinstance(g, dict) and g.get("id") in primary_ids and not g.get("pass")
+    ]
+    return ",".join(failed) if failed else None
 
 
 def _confidence_band(row: dict) -> tuple[float | None, float | None]:
     conf = _safe_float(row.get("plan_confidence"))
     if conf is None:
         conf = _safe_float(row.get("model_confidence_pct"))
+    if conf is None:
+        conf = _safe_float(row.get("composite_buy"))
     if conf is None:
         return None, None
     if conf <= 1.0:
@@ -600,6 +639,39 @@ class SignalAuditStore:
             })
         return out
 
+    def gate_blocker_breakdown(self, cohort_tag: str, *, since_date: str | None = None) -> list[dict[str, Any]]:
+        """Count how often each primary gate fails across cohort captures."""
+        from collections import Counter
+
+        q = """
+            SELECT gate_detail_json FROM signal_events
+            WHERE cohort_tag = ? AND source = 'live'
+        """
+        params: list[Any] = [cohort_tag]
+        if since_date:
+            q += " AND signal_date >= ?"
+            params.append(since_date)
+        with self._connect() as conn:
+            rows = conn.execute(q, params).fetchall()
+        counts: Counter[str] = Counter()
+        for r in rows:
+            label = _gates_failed_from_json(r["gate_detail_json"])
+            if not label:
+                continue
+            for gid in label.split(","):
+                gid = gid.strip()
+                if gid:
+                    counts[gid] += 1
+        n_events = len(rows)
+        return [
+            {
+                "gate": gid,
+                "n": n,
+                "pct_of_events": round(100.0 * n / n_events, 1) if n_events else 0.0,
+            }
+            for gid, n in counts.most_common()
+        ]
+
     def daily_capture_counts(self, cohort_tag: str, limit: int = 30) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -698,6 +770,31 @@ class SignalAuditStore:
                 (signal_event_id,),
             ).fetchone()
         return row is not None
+
+    def outcome_is_complete(self, signal_event_id: int) -> bool:
+        """True when 30d verdict row exists (not partial 7d-only)."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT verdict, return_30d_pct FROM signal_outcomes WHERE signal_event_id = ?",
+                (signal_event_id,),
+            ).fetchone()
+        if not row:
+            return False
+        return row["verdict"] is not None or row["return_30d_pct"] is not None
+
+    def count_partial_7d_outcomes(self, *, cohort_tag: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'
+                  AND o.return_7d_pct IS NOT NULL
+                  AND o.verdict IS NULL
+                """,
+                (cohort_tag,),
+            ).fetchone()
+        return int(row["n"] or 0) if row else 0
 
     def upsert_outcome(self, outcome: dict[str, Any]) -> None:
         cols = [
@@ -809,6 +906,7 @@ class SignalAuditStore:
 
         n_total = int(total["n"]) if total else 0
         n_resolved = int(resolved["n"]) if resolved else 0
+        partial_7d = self.count_partial_7d_outcomes(cohort_tag=cohort_tag)
         wins = sum(int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "WIN")
         losses = sum(int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "LOSS")
         decided = wins + losses + sum(
@@ -844,6 +942,7 @@ class SignalAuditStore:
         return {
             "events_total": n_total,
             "resolved_n": n_resolved,
+            "partial_7d_n": partial_7d,
             "pending_n": max(0, n_total - n_resolved),
             "since_date": since_date,
             "win_rate_pct": round(100.0 * wins / decided, 1) if decided else None,
@@ -869,7 +968,7 @@ class SignalAuditStore:
             SELECT e.id, e.signal_date, e.signal_ts, e.ticker, e.market_cap_bucket, e.retail_verdict, e.ml_signal,
                    e.go_no_go, e.gates_passed, e.gates_total, e.price_at_signal, e.st_target, e.stop_swing, e.mt_target,
                    e.composite_score, e.rsi, e.regime_label, e.temperature, e.ml_short_prob, e.confidence_low,
-                   e.confidence_high, e.run_source,
+                   e.confidence_high, e.run_source, e.gate_detail_json,
                    e.track, e.velocity_triggered, e.velocity_score, e.rvol, e.bb_pct_b,
                    e.readiness_tier, e.readiness_score, e.tactical_t1, e.tactical_t2, e.tactical_stop,
                    e.horizon_trading_days,
@@ -894,7 +993,13 @@ class SignalAuditStore:
         params.append(max(0, offset))
         with self._connect() as conn:
             rows = conn.execute(q, params).fetchall()
-        return [dict(r) for r in rows]
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            d.pop("gate_detail_json", None)
+            d["gates_failed"] = _gates_failed_from_json(r["gate_detail_json"])
+            out.append(d)
+        return out
 
     def save_daily_summary(
         self,
@@ -919,6 +1024,31 @@ class SignalAuditStore:
                 (summary_date, cohort_tag, n_signals, n_with_outcomes, json.dumps(payload, default=str)),
             )
             conn.commit()
+
+
+def _audit_outcomes_note(
+    *,
+    eod_snapshots: int,
+    has_outcomes: bool,
+    partial_7d_n: int,
+    progress_days: int,
+) -> str | None:
+    if has_outcomes and partial_7d_n == 0:
+        return None
+    parts: list[str] = []
+    if eod_snapshots > 0:
+        parts.append(f"{eod_snapshots} EOD snapshots on disk")
+    if partial_7d_n > 0:
+        parts.append(f"{partial_7d_n} rows have 7d return (30d verdict pending)")
+    if eod_snapshots < 8:
+        parts.append("7d returns need ~8+ snapshots after each signal date")
+    if eod_snapshots < 21:
+        parts.append("30d verdicts need ~21+ snapshots after each signal date")
+    if progress_days < 4:
+        parts.append(f"pilot day {progress_days}/30 — keep running run_daily")
+    if not parts:
+        return "Outcomes resolve after ~20 EOD trading days per signal (7d/20d returns, WIN/LOSS/NEUTRAL)."
+    return " · ".join(parts) + "."
 
 
 def build_model_audit_payload(config: dict, data_root: Path | None = None) -> dict[str, Any]:
@@ -949,6 +1079,13 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
         }
 
     store = SignalAuditStore(data_root=data_root)
+    eod_snapshots = 0
+    try:
+        from signals.paper_trade_logger import PaperTradeLogger
+
+        eod_snapshots = len(PaperTradeLogger(data_root=data_root or store.data_root)._list_eod_dates())
+    except Exception:
+        pass
     pilot = store.get_pilot_status(cohort_tag, expected_tickers=len(cohort_tickers))
     pilot_target_days = int(audit_cfg.get("pilot_target_days", 30))
     distinct_days = int(pilot.get("distinct_days") or 0)
@@ -963,7 +1100,9 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
     resolve_result: dict[str, Any] | None = None
     try:
         outcome_summary = store.outcome_summary(cohort_tag=cohort_tag)
-        has_outcomes = bool(outcome_summary.get("resolved_n"))
+        has_outcomes = bool(outcome_summary.get("resolved_n")) or bool(
+            outcome_summary.get("partial_7d_n")
+        )
     except Exception:
         pass
 
@@ -974,7 +1113,13 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
             resolve_result = resolve_signal_audit_outcomes(config, data_root=data_root, cohort_tag=cohort_tag)
             if resolve_result.get("updated"):
                 outcome_summary = resolve_result.get("summary") or store.outcome_summary(cohort_tag=cohort_tag)
-                has_outcomes = bool(outcome_summary and outcome_summary.get("resolved_n"))
+                has_outcomes = bool(
+                    outcome_summary
+                    and (
+                        outcome_summary.get("resolved_n")
+                        or outcome_summary.get("partial_7d_n")
+                    )
+                )
         except Exception as e:
             logger.debug("signal audit outcome resolve: %s", e)
 
@@ -1007,15 +1152,18 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
         "breakdown_by_regime": store.breakdown_rows(cohort_tag, "regime_label"),
         "breakdown_by_track": store.breakdown_rows(cohort_tag, "track"),
         "breakdown_by_readiness": store.breakdown_rows(cohort_tag, "readiness_tier"),
+        "gate_blocker_breakdown": store.gate_blocker_breakdown(cohort_tag),
         "batch_queues": store.batch_queue_summary(cohort_tag, last_date),
         "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),
-        "outcomes_available": has_outcomes,
+        "eod_snapshot_count": eod_snapshots,
+        "outcomes_available": has_outcomes or bool((outcome_summary or {}).get("partial_7d_n")),
         "outcome_summary": outcome_summary,
         "outcome_resolve": resolve_result,
-        "outcomes_note": (
-            "Outcomes resolve after ~20 EOD trading days per signal (7d/20d returns, WIN/LOSS/NEUTRAL)."
-            if not has_outcomes
-            else None
+        "outcomes_note": _audit_outcomes_note(
+            eod_snapshots=eod_snapshots,
+            has_outcomes=has_outcomes,
+            partial_7d_n=int((outcome_summary or {}).get("partial_7d_n") or 0),
+            progress_days=distinct_days,
         ),
         "message": message,
         "methodology": (
@@ -1071,6 +1219,13 @@ def log_signal_audit_from_results(
         if not row:
             missing += 1
             continue
+        if not isinstance(row.get("retail_status"), dict):
+            try:
+                from signals.retail_action_payload import enrich_dashboard_signal_row
+
+                enrich_dashboard_signal_row(row)
+            except Exception:
+                pass
         event = row_to_signal_event(
             row,
             signal_date=signal_date,

@@ -238,7 +238,13 @@ def enrich_shell_snapshot_meta(shell: dict) -> dict:
 def empty_analysis_bundle() -> dict:
     return {
         "model_validation": {"records": [], "summary": {}},
-        "forward_tracking": {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "message": None},
+        "forward_tracking": {
+            "records": [],
+            "summary_by_horizon": {},
+            "summary_by_signal": {},
+            "summary_by_gates": {},
+            "message": None,
+        },
         "regime_validation": {"validated": None, "summary": "Not computed"},
         "confidence_calibration": {"buckets": [], "note": "Not computed"},
         "paper_trading": {},

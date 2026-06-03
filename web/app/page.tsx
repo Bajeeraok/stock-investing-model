@@ -314,6 +314,44 @@ export interface BacktestBucketMonth {
   hit_rate: number | null;
   count: number;
   margin_of_error_pct?: number | null;
+  avg_excess_vs_benchmark_pct?: number | null;
+}
+
+export interface BacktestScoreParity {
+  apply_live_adjustments?: boolean;
+  live_ctx_active?: boolean;
+  question?: string;
+  question_label?: string;
+  note?: string;
+}
+
+export interface WalkForwardConsistency {
+  avg_hit_rate_pct?: number;
+  std_hit_rate_pct?: number;
+  avg_net_return_pct?: number | null;
+  consistent?: boolean;
+  window_count?: number;
+}
+
+export interface WalkForwardBacktest {
+  ticker?: string;
+  train_years?: number;
+  test_months?: number;
+  buy_threshold?: number;
+  transaction_cost_pct?: number;
+  windows?: Array<{
+    train_start: string;
+    train_end: string;
+    test_start: string;
+    test_end: string;
+    spy_regime?: string;
+    results: Record<number, BacktestBucketMonth>;
+  }>;
+  consistency?: Record<number, WalkForwardConsistency>;
+  regime_breakdown?: Record<string, { window_count?: number; avg_hit_rate_pct?: number; avg_net_return_pct?: number | null }>;
+  regime_note?: string;
+  score_parity?: BacktestScoreParity;
+  error?: string;
 }
 
 export interface BacktestValidation {
@@ -340,6 +378,20 @@ export interface BacktestResult {
   };
   /** When middle-bin avg returns reorder (e.g. 30–50 > 50–70 at 3m under MR mapping). */
   bucket_return_ordering_notes?: string[];
+  mr_spread_3m?: {
+    edge_pct?: number;
+    dip_avg_return_pct?: number | null;
+    momentum_avg_return_pct?: number | null;
+    dip_n?: number;
+    momentum_n?: number;
+  } | null;
+  mr_spread_6m?: {
+    edge_pct?: number;
+    dip_avg_return_pct?: number | null;
+    momentum_avg_return_pct?: number | null;
+    dip_n?: number;
+    momentum_n?: number;
+  } | null;
   /** FMP-based earnings window exclusion when enabled in config (see docs/backend/BACKTEST_DATA.md). */
   earnings_exclusion?: {
     enabled: boolean;
@@ -367,6 +419,9 @@ export interface BacktestResult {
   suggested_buy_min?: string;
   suggested_sell_max?: string;
   validation?: BacktestValidation;
+  benchmark?: string;
+  score_parity?: BacktestScoreParity;
+  walk_forward?: WalkForwardBacktest;
 }
 
 /** Backend `portfolio_risk_metrics` — optional fields when data is insufficient */
@@ -534,10 +589,50 @@ export interface DashboardData {
       go_no_go?: string | null;
       gates_passed?: number | null;
       gates_total?: number | null;
+      gates_frozen?: boolean | null;
+      hit_st_target?: number | null;
+      hit_st_stop?: number | null;
+      trim_net_score_pct?: number | null;
+      trim_outcome_label?: string | null;
+      max_drawdown_pct?: number | null;
     }[];
-    summary_by_horizon?: Record<number, { avg_return_pct: number; n_observations: number }>;
-    summary_by_signal?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
+    summary_by_horizon?: Record<
+      number,
+      {
+        avg_return_pct?: number;
+        n_observations?: number;
+        win_rate_pct?: number;
+        st_target_hit_rate_pct?: number;
+        st_stop_hit_rate_pct?: number;
+        trim_avg_net_score_pct?: number;
+        trim_helped_pct?: number;
+        trim_n?: number;
+      }
+    >;
+    summary_by_signal?: Record<
+      string,
+      {
+        avg_return_20d_pct?: number;
+        avg_return_pct?: number;
+        n_observations?: number;
+        hit_rate_pct?: number;
+        trim_avg_net_score_pct?: number;
+        trim_helped_pct?: number;
+        metric_note?: string;
+      }
+    >;
+    summary_by_gates?: Record<
+      string,
+      {
+        avg_return_pct?: number;
+        n_observations?: number;
+        win_rate_pct?: number;
+        st_target_hit_rate_pct?: number;
+        st_stop_hit_rate_pct?: number;
+      }
+    >;
     summary_by_go_no_go?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
+    data_source_note?: string | null;
     meta?: {
       eod_date_first?: string | null;
       eod_date_last?: string | null;

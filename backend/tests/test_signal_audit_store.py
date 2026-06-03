@@ -171,6 +171,42 @@ def test_build_model_audit_payload_with_rows(audit_config, tmp_path, monkeypatch
     assert payload["breakdown_by_gates"]
 
 
+def test_confidence_band_falls_back_to_composite(audit_config):
+    from signals.signal_audit_store import row_to_signal_event, compute_config_hash
+
+    row = _sample_row("SPY")
+    row.pop("retail_status", None)
+    row["composite_buy"] = 72.5
+    ev = row_to_signal_event(
+        row,
+        signal_date="2026-05-24",
+        signal_ts="2026-05-24T07:30:00",
+        run_id="r1",
+        cohort_tag="test_cohort",
+        market_cap_bucket="etfs",
+        config_hash=compute_config_hash(audit_config),
+        run_source="run_daily",
+    )
+    assert ev is not None
+    assert ev["confidence_low"] == 68.5
+    assert ev["confidence_high"] == 76.5
+
+
+def test_gate_blocker_breakdown(audit_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    from signals.signal_audit_store import SignalAuditStore, log_signal_audit_from_results
+
+    log_signal_audit_from_results(
+        [_sample_row("SPY"), _sample_row("QQQ")],
+        audit_config,
+        date_str="2026-05-24",
+        data_root=tmp_path,
+    )
+    store = SignalAuditStore(data_root=tmp_path)
+    blockers = store.gate_blocker_breakdown("test_cohort")
+    assert any(b["gate"] in ("regime", "momentum") for b in blockers)
+
+
 def test_duplicate_run_skips(audit_config, tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
     results = [_sample_row("SPY")]

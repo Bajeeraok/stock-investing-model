@@ -24,6 +24,7 @@ export type ModelAuditRecord = {
   go_no_go?: string | null;
   gates_passed?: number | null;
   gates_total?: number | null;
+  gates_failed?: string | null;
   price_at_signal?: number | null;
   st_target?: number | null;
   stop_swing?: number | null;
@@ -56,6 +57,7 @@ export type ModelAuditOutcomeSummary = {
   events_total?: number;
   resolved_n?: number;
   pending_n?: number;
+  partial_7d_n?: number;
   win_rate_pct?: number | null;
   wins?: number;
   losses?: number;
@@ -95,6 +97,8 @@ export type ModelAuditPayload = {
   breakdown_by_regime?: ModelAuditBreakdownRow[];
   breakdown_by_track?: ModelAuditBreakdownRow[];
   breakdown_by_readiness?: ModelAuditBreakdownRow[];
+  gate_blocker_breakdown?: { gate: string; n: number; pct_of_events?: number }[];
+  eod_snapshot_count?: number;
   batch_queues?: {
     signal_date?: string | null;
     accumulate_count?: number;
@@ -139,15 +143,20 @@ function BreakdownTable({
   title,
   rows,
   bucketLabel,
+  hint,
 }: {
   title: string;
   rows: ModelAuditBreakdownRow[];
   bucketLabel: string;
+  hint?: string;
 }) {
   if (!rows?.length) return null;
   return (
     <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 overflow-hidden">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500 px-3 py-2 border-b border-slate-700/60">{title}</p>
+      <div className="px-3 py-2 border-b border-slate-700/60">
+        <p className="text-[10px] uppercase tracking-wider text-slate-500">{title}</p>
+        {hint && <p className="text-[10px] text-slate-600 mt-0.5">{hint}</p>}
+      </div>
       <table className="w-full text-xs">
         <thead>
           <tr className="text-slate-500 border-b border-slate-700/50">
@@ -202,7 +211,11 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
   const gateOptions = useMemo(() => {
     const set = new Set(records.map((r) => r.gates_passed).filter((g) => g != null));
-    return Array.from(set).sort((a, b) => Number(a) - Number(b));
+    const arr = Array.from(set).sort((a, b) => Number(a) - Number(b));
+    for (const g of [0, 4]) {
+      if (!arr.includes(g)) arr.push(g);
+    }
+    return arr.sort((a, b) => Number(a) - Number(b));
   }, [records]);
 
   useEffect(() => {
@@ -368,11 +381,31 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         </div>
       )}
 
-      {audit.outcomes_note && !audit.outcomes_available && (
-        <p className="text-xs text-slate-500 border-l-2 border-slate-600 pl-2">{audit.outcomes_note}</p>
+      {audit.outcomes_note && (
+        <p className="text-xs text-slate-500 border-l-2 border-violet-500/40 pl-2">{audit.outcomes_note}</p>
       )}
 
-      {audit.outcome_summary && (audit.outcome_summary.resolved_n ?? 0) > 0 && (
+      {(audit.gate_blocker_breakdown?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-amber-500/25 bg-amber-950/20 px-3 py-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-amber-200/80 mb-1.5">
+            Why GO % is 0 — primary gates failing most often
+          </p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-300">
+            {audit.gate_blocker_breakdown!.map((g) => (
+              <span key={g.gate}>
+                <span className="text-amber-300/90 font-medium">{g.gate}</span>: {g.n}
+                {g.pct_of_events != null ? ` (${g.pct_of_events}%)` : ""}
+              </span>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-500 mt-1.5">
+            GO requires all 4 primary gates (valuation, regime, momentum, ML). Retail TACTICAL/BUY labels can still show when gates block.
+          </p>
+        </div>
+      )}
+
+      {audit.outcome_summary &&
+        ((audit.outcome_summary.resolved_n ?? 0) > 0 || (audit.outcome_summary.partial_7d_n ?? 0) > 0) && (
         <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5 space-y-2">
           <p className="text-xs font-semibold text-emerald-200/90 uppercase tracking-wide">Outcome track record</p>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-300">
@@ -399,6 +432,11 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 </span>
               </span>
             )}
+            {(audit.outcome_summary.partial_7d_n ?? 0) > 0 && (
+              <span className="text-violet-300/90">
+                {audit.outcome_summary.partial_7d_n} with 7d return only
+              </span>
+            )}
             {(audit.outcome_summary.pending_n ?? 0) > 0 && (
               <span className="text-slate-500">{audit.outcome_summary.pending_n} awaiting EOD history</span>
             )}
@@ -418,7 +456,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
       {/* Breakdown grids */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <BreakdownTable title="By gates passed" rows={audit.breakdown_by_gates ?? []} bucketLabel="Gates" />
+        <BreakdownTable
+          title="By gates passed"
+          rows={audit.breakdown_by_gates ?? []}
+          bucketLabel="Passed"
+          hint="X of 4 primary gates cleared at signal time"
+        />
         <BreakdownTable title="By GO / NO-GO" rows={audit.breakdown_by_go_no_go ?? []} bucketLabel="Status" />
         <BreakdownTable title="By category" rows={audit.breakdown_by_category ?? []} bucketLabel="Category" />
         <BreakdownTable title="By ML signal" rows={audit.breakdown_by_signal ?? []} bucketLabel="Signal" />
@@ -478,8 +521,10 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <th className="py-1.5 pr-2 font-medium">Date</th>
                   <th className="py-1.5 pr-2 font-medium">Ticker</th>
                   <th className="py-1.5 pr-2 font-medium">Category</th>
-                  <th className="py-1.5 pr-2 font-medium">Signal</th>
+                  <th className="py-1.5 pr-2 font-medium">Retail</th>
+                  <th className="py-1.5 pr-2 font-medium">ML</th>
                   <th className="py-1.5 pr-2 font-medium">Gates</th>
+                  <th className="py-1.5 pr-2 font-medium">Conf</th>
                   <th className="py-1.5 pr-2 font-medium">Track</th>
                   <th className="py-1.5 pr-2 font-medium">GO?</th>
                   <th className="py-1.5 pr-2 font-medium">Price</th>
@@ -495,9 +540,25 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <tr key={`${r.signal_date}-${r.ticker}-${r.id ?? ""}`} className="border-b border-slate-700/50 text-slate-300">                    <td className="py-1 pr-2 text-slate-400 font-mono">{r.signal_date}</td>
                     <td className="py-1 pr-2 font-mono font-medium">{r.ticker}</td>
                     <td className="py-1 pr-2 text-slate-500">{r.market_cap_bucket ?? "—"}</td>
-                    <td className="py-1 pr-2">{r.ml_signal ?? r.retail_verdict ?? "—"}</td>
-                    <td className="py-1 pr-2 tabular-nums">
+                    <td className="py-1 pr-2 text-slate-400 max-w-[7rem] truncate" title={r.retail_verdict ?? ""}>
+                      {r.retail_verdict ?? "—"}
+                    </td>
+                    <td className="py-1 pr-2">{r.ml_signal ?? "—"}</td>
+                    <td
+                      className="py-1 pr-2 tabular-nums"
+                      title={r.gates_failed ? `Blocked: ${r.gates_failed}` : undefined}
+                    >
                       {r.gates_passed ?? "—"}/{r.gates_total ?? 4}
+                      {r.gates_failed ? (
+                        <span className="block text-[9px] text-amber-400/80 truncate max-w-[5rem]">
+                          {r.gates_failed}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-1 pr-2 tabular-nums text-slate-500 text-[10px]">
+                      {r.confidence_low != null && r.confidence_high != null
+                        ? `${r.confidence_low}-${r.confidence_high}`
+                        : "—"}
                     </td>
                     <td className="py-1 pr-2">
                       <span
