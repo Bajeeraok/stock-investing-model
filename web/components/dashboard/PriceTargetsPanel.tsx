@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
+import type { ValuationDeckPayload } from "./valuationDeckTypes";
+import type { FairValueVsExternal } from "./InvestorDecisionSummary";
+import type { DecisionMode } from "@/lib/decisionMode";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -750,8 +753,28 @@ function ScenarioRow({ s, price }: { s: Scenario; price: number }) {
 // Main panel
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function PriceTargetsPanel({ data, hideHorizonZones }: { data: PriceTargetsData; hideHorizonZones?: boolean }) {
-  const [showScenarios, setShowScenarios] = useState(true);
+export function PriceTargetsPanel({
+  data,
+  hideHorizonZones,
+  hideTechnicalLevels = false,
+  hideAnalystStrip = false,
+  scenariosDefaultOpen = false,
+  valuationDeck,
+  fairValue = 0,
+  fairValueExternal,
+  decisionMode = "owner",
+}: {
+  data: PriceTargetsData;
+  hideHorizonZones?: boolean;
+  hideTechnicalLevels?: boolean;
+  hideAnalystStrip?: boolean;
+  scenariosDefaultOpen?: boolean;
+  valuationDeck?: ValuationDeckPayload | null;
+  fairValue?: number;
+  fairValueExternal?: FairValueVsExternal | null;
+  decisionMode?: DecisionMode;
+}) {
+  const [showScenarios, setShowScenarios] = useState(scenariosDefaultOpen);
 
   if (data.error) {
     return (
