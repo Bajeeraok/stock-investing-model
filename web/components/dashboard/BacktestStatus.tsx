@@ -99,9 +99,11 @@ function BucketTable({
 function ByPeriodTable({
   byPeriod,
   periodLabel,
+  benchmark = "SPY",
 }: {
   byPeriod: Record<string, Record<string, Record<number, BacktestBucketMonth>>>;
   periodLabel: "Year" | "Quarter";
+  benchmark?: string;
 }) {
   const periods = Object.keys(byPeriod).sort();
   return (
@@ -113,6 +115,14 @@ function ByPeriodTable({
           <th className="px-3 py-2 font-medium">Actual 1m</th>
           <th className="px-3 py-2 font-medium">Actual 3m</th>
           <th className="px-3 py-2 font-medium">Actual 6m</th>
+        </tr>
+        <tr className="text-left text-slate-500 border-b border-slate-700/60 bg-slate-800/30 text-[10px]">
+          <th className="px-3 py-1 font-normal" colSpan={2} />
+          {FORWARD_MONTHS.map((m) => (
+            <th key={m} className="px-3 py-1 font-normal">
+              incl. excess vs {benchmark}
+            </th>
+          ))}
         </tr>
       </thead>
       <tbody>
@@ -139,6 +149,70 @@ function ByPeriodTable({
         )}
       </tbody>
     </table>
+  );
+}
+
+function WalkForwardSummary({ wf }: { wf: WalkForwardBacktest }) {
+  const horizons = [1, 3, 6] as const;
+  const rows = horizons
+    .map((h) => ({ h, c: wf.consistency?.[h] }))
+    .filter((x) => x.c != null);
+  if (rows.length === 0 && !wf.regime_note && !wf.windows?.length) return null;
+
+  return (
+    <div className="px-4 py-3 border-t border-slate-700/50 bg-slate-900/30 text-sm space-y-2">
+      <p className="font-medium text-slate-200">Walk-forward validation</p>
+      {(wf.train_years != null || wf.test_months != null || wf.windows?.length) && (
+        <p className="text-xs text-slate-400">
+          {wf.train_years != null && <>Train {wf.train_years}y · </>}
+          {wf.test_months != null && <>Test {wf.test_months}m · </>}
+          {wf.windows?.length ? <>{wf.windows.length} rolling windows</> : null}
+        </p>
+      )}
+      {rows.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 border-b border-slate-700">
+                <th className="text-left py-1 pr-3 font-medium">Horizon</th>
+                <th className="text-left py-1 pr-3 font-medium">Avg hit rate</th>
+                <th className="text-left py-1 pr-3 font-medium">Avg net return</th>
+                <th className="text-left py-1 font-medium">Stable?</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ h, c }) => (
+                <tr key={h} className="border-b border-slate-800/80">
+                  <td className="py-1.5 pr-3 text-slate-300">{h}m</td>
+                  <td className="py-1.5 pr-3 text-slate-400">
+                    {c!.avg_hit_rate_pct != null ? `${c!.avg_hit_rate_pct}%` : "—"}
+                    {c!.std_hit_rate_pct != null && (
+                      <span className="text-slate-600"> ±{c!.std_hit_rate_pct}%</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-3">{formatPct(c!.avg_net_return_pct)}</td>
+                  <td className={`py-1.5 ${c!.consistent ? "text-emerald-400" : "text-amber-300"}`}>
+                    {c!.consistent ? "Yes" : "Review"}
+                    {c!.window_count != null && (
+                      <span className="text-slate-600"> ({c!.window_count}w)</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {wf.regime_breakdown && Object.keys(wf.regime_breakdown).length > 0 && (
+        <p className="text-xs text-slate-500 font-mono">
+          By regime:{" "}
+          {Object.entries(wf.regime_breakdown)
+            .map(([k, v]) => `${k}:${v.window_count ?? 0}w`)
+            .join(" · ")}
+        </p>
+      )}
+      {wf.regime_note && <p className="text-xs text-slate-500 leading-snug">{wf.regime_note}</p>}
+    </div>
   );
 }
 
