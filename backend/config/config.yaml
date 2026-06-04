@@ -364,6 +364,8 @@ backtest:
   # See docs/backend/BACKTEST_DATA.md for limits (not point-in-time perfect).
   earnings_exclusion:
     enabled: false
+    # Auto-enable for equities (not SPY/QQQ/ETF) when FMP earnings dates available
+    auto_single_stock: true
     days_before: 5
   # Market regime labels for reporting (SPY vs SMA) — does not change composite scores
   regime:
@@ -510,6 +512,18 @@ horizons:
     speculative: 30
   # Optional per-ticker Tier 2 MOS % (overrides class), e.g. BLK: 12
   tier2_mos_pct_by_ticker: {}
+
+# Trim gates (exit stack — parallel to buy gates; hybrid v1: 2/4 pass + score trigger)
+trim_gates:
+  enabled: true
+  min_pass: 2
+  require_score_trigger: true
+  extension_rsi_min: 65
+  extension_above_ma20_pct: 3.0
+  regime_bull_max: 45
+  pattern_weak_max: 40
+  ml_bear_max_pct: 35
+  macd_hist_bear_max: 0.0
 
 # Paper trading panel: summary thresholds + benchmark column (same-date window as each trade)
 paper_trading:

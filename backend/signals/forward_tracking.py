@@ -204,10 +204,12 @@ def get_forward_tracking(
         from signals.forward_tracking_metrics import (
             aggregate_by_gates,
             aggregate_by_signal,
+            aggregate_by_trim_gates,
             aggregate_horizon_stats,
             bars_between_dates,
             path_metrics,
             read_frozen_gates,
+            read_frozen_trim_gates,
             st_stop_target_from_row,
             trim_outcome_metrics,
         )
@@ -267,6 +269,7 @@ def get_forward_tracking(
                 if not passes_tracking_gate(row_work, config, "forward_tracking"):
                     continue
                 gate = read_frozen_gates(row_work)
+                trim_gate = read_frozen_trim_gates(row_work)
                 ret_pct = round(100 * (actual - prior) / prior, 2)
                 our_signal, signal_source = _signal_and_source_from_row(
                     row_work, buy_min=buy_min, sell_max=sell_max
@@ -297,6 +300,12 @@ def get_forward_tracking(
                     "gates_passed": gate.get("gates_passed"),
                     "gates_total": gate.get("gates_total"),
                     "gates_frozen": bool(row_work.get("gates_frozen")),
+                    "trim_gate_cleared": trim_gate.get("trim_gate_cleared"),
+                    "trim_gates_passed": trim_gate.get("trim_gates_passed"),
+                    "trim_gates_total": trim_gate.get("trim_gates_total"),
+                    "trim_score_triggered": trim_gate.get("trim_score_triggered"),
+                    "trim_recommendation": trim_gate.get("trim_recommendation"),
+                    "trim_gates_frozen": bool(row_work.get("trim_gates_frozen")),
                     "st_stop_at_signal": stop,
                     "st_target_at_signal": target,
                     "hit_st_stop": path.get("hit_st_stop"),
@@ -339,6 +348,9 @@ def get_forward_tracking(
             )
 
     summary_by_gates = aggregate_by_gates([r for r in records if r.get("horizon_days") == 20])
+    summary_by_trim_gates = aggregate_by_trim_gates(
+        [r for r in records if r.get("horizon_days") == 20 and r.get("trim_score_triggered")]
+    )
 
     total_records = len(records)
     capped = _cap_records_recent(records, record_cap)
@@ -362,6 +374,7 @@ def get_forward_tracking(
         "summary_by_signal": summary_by_signal,
         "summary_by_go_no_go": summary_by_go_no_go,
         "summary_by_gates": summary_by_gates,
+        "summary_by_trim_gates": summary_by_trim_gates,
         "signal_source_counts": signal_source_counts,
         "meta": meta,
         "data_source_note": (

@@ -115,6 +115,12 @@ def enrich_tracking_row(
         enrich_dashboard_signal_row(row, regime_bull_pct=regime_bull_pct)
     except Exception:
         pass
+    try:
+        from signals.trim_gates import attach_trim_gates_to_row
+
+        attach_trim_gates_to_row(row, regime_bull_pct=regime_bull_pct)
+    except Exception:
+        pass
     snap = gate_snapshot_from_row(row)
     for k, v in snap.items():
         if v is not None:

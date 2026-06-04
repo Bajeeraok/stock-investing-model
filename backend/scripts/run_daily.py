@@ -596,12 +596,19 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
         if rs.get("go_no_go"):
             row["go_no_go"] = rs.get("go_no_go")
         try:
-            from signals.forward_tracking_metrics import freeze_gate_fields_from_row
+            from signals.forward_tracking_metrics import freeze_gate_fields_from_row, freeze_trim_gate_fields_from_row
 
             frozen = freeze_gate_fields_from_row(r)
             for k, v in frozen.items():
                 if v is not None:
                     row[k] = v
+            try:
+                trim_frozen = freeze_trim_gate_fields_from_row(r)
+                for k, v in trim_frozen.items():
+                    if v is not None:
+                        row[k] = v
+            except Exception:
+                pass
         except Exception:
             try:
                 from signals.tracking_gate import gate_snapshot_from_row

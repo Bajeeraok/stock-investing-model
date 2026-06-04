@@ -105,11 +105,28 @@ def trim_alert_meta(
     holding: dict[str, Any],
     *,
     sell_max: float = 35.0,
+    trim_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Whether a portfolio holding is a trim candidate and why.
-    Aligns with Dashboard.tsx filter (score, plan action, suggestion).
+    Hybrid v1: score trigger required + trim_gates_passed >= min_pass when gates enabled.
     """
+    from signals.trim_gates import DEFAULT_TRIM_CFG, trim_gates_config
+
+    tg_cfg = trim_cfg if trim_cfg and "enabled" in trim_cfg else trim_gates_config(
+        {"trim_gates": trim_cfg} if trim_cfg else None
+    )
+    if trim_cfg is None:
+        try:
+            from config_loader import load_config
+
+            tg_cfg = trim_gates_config(load_config())
+        except Exception:
+            tg_cfg = dict(DEFAULT_TRIM_CFG)
+    min_pass = int(tg_cfg.get("min_pass", 2))
+    gates_enabled = bool(tg_cfg.get("enabled", True))
+    require_score = bool(tg_cfg.get("require_score_trigger", True))
+
     score = holding.get("score")
     action = (holding.get("action") or "").strip().upper()
     suggestion = (holding.get("suggestion") or "").strip().upper()
@@ -122,9 +139,34 @@ def trim_alert_meta(
     if "TRIM" in suggestion:
         triggers.append("suggestion_trim")
 
-    is_candidate = bool(triggers)
+    score_trigger = bool(triggers)
+    trim_passed = holding.get("trim_gates_passed")
+    trim_total = holding.get("trim_gates_total") or 4
+    trim_gate_cleared = holding.get("trim_gate_cleared")
+    if trim_gate_cleared is None and trim_passed is not None:
+        try:
+            trim_gate_cleared = int(trim_passed) >= min_pass
+        except (TypeError, ValueError):
+            trim_gate_cleared = False
+
+    gate_triggers: list[str] = []
+    for g in holding.get("trim_gates") or []:
+        if isinstance(g, dict) and g.get("pass") and g.get("id"):
+            gate_triggers.append(str(g["id"]))
+
+    is_candidate = score_trigger
+    if gates_enabled and is_candidate:
+        is_candidate = bool(trim_gate_cleared)
+    elif gates_enabled and not require_score:
+        is_candidate = bool(trim_gate_cleared)
+
     if not is_candidate:
-        return {"is_trim_candidate": False}
+        out: dict[str, Any] = {"is_trim_candidate": False}
+        if score_trigger and gates_enabled and not trim_gate_cleared:
+            out["trim_gates_pending"] = True
+            out["trim_gates_passed"] = trim_passed
+            out["trim_gates_total"] = trim_total
+        return out
 
     drivers: list[str] = []
     if "score_below_threshold" in triggers:
@@ -151,13 +193,22 @@ def trim_alert_meta(
     if score is not None and float(score) < sell_max:
         label_parts.append(f"score {float(score):.0f}")
 
+    all_triggers = triggers + [t for t in gate_triggers if t not in triggers]
+    detail = " · ".join(label_parts) if label_parts else "Review sizing"
+    if trim_passed is not None:
+        detail = f"{detail} · trim gates {trim_passed}/{trim_total}"
+
     return {
         "is_trim_candidate": True,
-        "trim_triggers": triggers,
+        "trim_triggers": all_triggers,
         "trim_source": source,
         "trim_primary_driver": primary,
         "trim_horizon": "medium",
-        "trim_detail": " · ".join(label_parts) if label_parts else "Review sizing",
+        "trim_detail": detail,
+        "trim_gates_passed": trim_passed,
+        "trim_gates_total": trim_total,
+        "trim_gate_cleared": trim_gate_cleared,
+        "trim_recommendation": holding.get("trim_recommendation"),
     }
 
 
@@ -189,12 +240,30 @@ def attach_trim_provenance_to_holdings(
     per_holding: list[dict[str, Any]],
     *,
     sell_max: float = 35.0,
+    signals_by_ticker: dict[str, dict[str, Any]] | None = None,
+    trim_cfg: dict[str, Any] | None = None,
 ) -> None:
     """Mutates each holding with trim_* fields for UI (portfolio + Today's moves)."""
+    from signals.trim_gates import trim_gates_config
+
+    tg = trim_gates_config({"trim_gates": trim_cfg} if trim_cfg else None)
     for h in per_holding:
         if not isinstance(h, dict):
             continue
-        meta = trim_alert_meta(h, sell_max=sell_max)
+        tk = str(h.get("ticker") or "").upper()
+        sig = (signals_by_ticker or {}).get(tk) if tk else None
+        if isinstance(sig, dict):
+            for fk in (
+                "trim_gates",
+                "trim_gates_passed",
+                "trim_gates_total",
+                "trim_gate_cleared",
+                "trim_score_triggered",
+                "trim_recommendation",
+            ):
+                if sig.get(fk) is not None:
+                    h[fk] = sig[fk]
+        meta = trim_alert_meta(h, sell_max=sell_max, trim_cfg=tg)
         for k in (
             "is_trim_candidate",
             "trim_source",
@@ -202,21 +271,34 @@ def attach_trim_provenance_to_holdings(
             "trim_triggers",
             "trim_horizon",
             "trim_detail",
+            "trim_gates_passed",
+            "trim_gates_total",
+            "trim_gate_cleared",
+            "trim_recommendation",
+            "trim_gates_pending",
         ):
-            h[k] = meta.get(k)
+            if k in meta:
+                h[k] = meta.get(k)
 
 
 def build_trim_candidates_from_holdings(
     per_holding: list[dict[str, Any]],
     *,
     sell_max: float = 35.0,
+    signals_by_ticker: dict[str, dict[str, Any]] | None = None,
+    trim_cfg: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Dashboard trim list with provenance (score and/or plan)."""
+    """Dashboard trim list with provenance (score trigger + trim gates when enabled)."""
+    attach_trim_provenance_to_holdings(
+        per_holding,
+        sell_max=sell_max,
+        signals_by_ticker=signals_by_ticker,
+        trim_cfg=trim_cfg,
+    )
     out: list[dict[str, Any]] = []
     for h in per_holding:
         if not isinstance(h, dict) or not h.get("ticker"):
             continue
-        meta = trim_alert_meta(h, sell_max=sell_max)
-        if meta.get("is_trim_candidate"):
-            out.append({**h, **meta})
+        if h.get("is_trim_candidate"):
+            out.append(dict(h))
     return sorted(out, key=lambda x: (x.get("score") is None, x.get("score") or 0))

@@ -1065,6 +1065,10 @@ def _compute_full_dashboard_sync() -> dict:
     from signals.alert_provenance import attach_trim_provenance_to_holdings
 
     sell_max_trim = float((config.get("score") or {}).get("sell_max", 35))
+    trim_cfg = config.get("trim_gates") or {}
+    signals_by_ticker = {
+        str(r["ticker"]).upper(): r for r in results if isinstance(r, dict) and r.get("ticker") and not r.get("error")
+    }
     portfolios_out: dict[str, dict] = {}
     for name in portfolio_names:
         if name == "All":
@@ -1100,7 +1104,12 @@ def _compute_full_dashboard_sync() -> dict:
                 for h in rep.get("per_holding", []):
                     if h.get("value") is not None and total_value > 0:
                         h["pct"] = round(100 * h["value"] / total_value, 1)
-        attach_trim_provenance_to_holdings(rep.get("per_holding") or [], sell_max=sell_max_trim)
+        attach_trim_provenance_to_holdings(
+            rep.get("per_holding") or [],
+            sell_max=sell_max_trim,
+            signals_by_ticker=signals_by_ticker,
+            trim_cfg=trim_cfg,
+        )
         portfolios_out[name] = rep
     report = portfolios_out.get("All") or (portfolios_out[portfolio_names[1]] if len(portfolio_names) > 1 else {})
     logger.info("[dashboard] section: portfolio_report DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
@@ -1886,6 +1895,8 @@ def _compute_full_dashboard_sync() -> dict:
     trim_candidates = build_trim_candidates_from_holdings(
         report.get("per_holding") or [],
         sell_max=sell_max_trim,
+        signals_by_ticker=signals_by_ticker,
+        trim_cfg=trim_cfg,
     )
 
     # Tax-aware exit optimizer: positions approaching 1-year LTCG threshold (federal + SC state)
@@ -2562,6 +2573,12 @@ async def get_backtest(
         result = cached_backtest(t, period, _fetch_backtest, force_refresh=force_refresh)
         if result and "error" not in result:
             result["validation"] = validate_backtest_result(result)
+            try:
+                from signals.backtest_tiers import build_primary_kpis
+
+                result["primary_kpis"] = build_primary_kpis(result)
+            except Exception:
+                pass
         out.append(result)
     return {
         "backtest": out,

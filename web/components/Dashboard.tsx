@@ -178,13 +178,15 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const defaultPortfolio = portfolioNames[0] ?? "All";
   const [selectedPortfolio, setSelectedPortfolio] = useState(defaultPortfolio);
   const selectedReport = data.portfolios?.[selectedPortfolio] ?? data.portfolio;
-  const selectedTrimCandidates = (selectedReport?.per_holding ?? []).filter(
-    (h) => (
-      (h.action ? (h.action === "REDUCE" || h.action === "AVOID") : false) ||
+  const selectedTrimCandidates = (selectedReport?.per_holding ?? []).filter((h) => {
+    if (h.is_trim_candidate === true) return true;
+    if (h.is_trim_candidate === false) return false;
+    return (
+      (h.action ? h.action === "REDUCE" || h.action === "AVOID" : false) ||
       (typeof h.suggestion === "string" && h.suggestion.toLowerCase().includes("trim")) ||
       (h.score != null && h.score < 40)
-    )
-  );
+    );
+  });
   const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
   const [activeTab, setActiveTabState] = useState<TabId>("overview");

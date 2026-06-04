@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { BarChart3, HelpCircle, Plus, X, Play } from "lucide-react";
 import type { BacktestResult, BacktestBucketMonth, WalkForwardBacktest } from "@/app/page";
 import { INTERPRETATION_BULLETS, SCHEMA_V2_NOTE } from "@/lib/modelSemantics";
+import { BacktestTierPanels } from "./BacktestTierPanels";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -595,6 +596,7 @@ export function BacktestStatus() {
                     Walk-forward: {r.walk_forward.error}
                   </p>
                 )}
+                <BacktestTierPanels result={r} />
                 {r.validation && !r.validation.valid && r.validation.issues.length > 0 && (
                   <div className="px-4 py-2 bg-amber-500/10 border-t border-amber-500/30 text-sm">
                     <p className="font-medium text-amber-400 mb-1">Data quality</p>

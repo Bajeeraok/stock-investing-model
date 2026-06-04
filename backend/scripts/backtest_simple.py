@@ -603,7 +603,7 @@ def run_backtest(
             ),
         }
 
-    return {
+    out = {
         "ticker": ticker,
         "period": period,
         "schema_version": 2,
@@ -635,6 +635,24 @@ def run_backtest(
         "suggested_buy_min": _suggest_band(results, "buy", mr_dominated=mr_dominated),
         "suggested_sell_max": _suggest_band(results, "sell", mr_dominated=mr_dominated),
     }
+
+    try:
+        from signals.backtest_tiers import build_tier_enhancements, build_primary_kpis
+
+        out["tier_enhancements"] = build_tier_enhancements(
+            ticker=ticker,
+            period=period,
+            config=_cfg,
+            transaction_cost=transaction_cost,
+            bucket_results=results,
+            mr_dominated=mr_dominated,
+            mr_spread_6m=out.get("mr_spread_6m"),
+        )
+        out["primary_kpis"] = build_primary_kpis(out)
+    except Exception as _tier_err:
+        out["tier_enhancements"] = {"error": str(_tier_err)}
+
+    return out
 
 
 # ---------------------------------------------------------------------------

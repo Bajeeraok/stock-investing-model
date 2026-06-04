@@ -422,6 +422,66 @@ export interface BacktestResult {
   benchmark?: string;
   score_parity?: BacktestScoreParity;
   walk_forward?: WalkForwardBacktest;
+  /** Tier 1–3: gates, rule sim, exit, regime, thresholds (see docs/signals/BACKTEST_CONFIDENCE.md). */
+  tier_enhancements?: BacktestTierEnhancements | null;
+  primary_kpis?: BacktestPrimaryKpis | null;
+}
+
+export interface BacktestPrimaryKpis {
+  headline?: string;
+  recommended_horizon_months?: number;
+  mr_spread_6m_edge_pct?: number | null;
+  walk_forward_6m_avg_return_pct?: number | null;
+  walk_forward_6m_consistent?: boolean | null;
+  dip_bucket_6m_hit_rate_pct?: number | null;
+  pct_mean_reverting?: number | null;
+  confidence_band?: "good" | "moderate" | "review" | string;
+  calibration_note?: string;
+}
+
+export interface BacktestTierEnhancements {
+  error?: string;
+  gate_backtest?: {
+    n_rows?: number;
+    by_horizon_trading_days?: Record<
+      string,
+      Record<string, { n?: number; mean_fwd_pct?: number | null; hit_rate_pct?: number | null }>
+    >;
+    notes?: string[];
+  };
+  exit_backtest?: {
+    sell_max?: number;
+    sell_avg_fwd_3m_pct?: number | null;
+    unconditional_avg_fwd_3m_pct?: number | null;
+    sell_precision_3m_pct?: number | null;
+    notes?: string[];
+  };
+  rule_strategy?: {
+    entry_rule?: string;
+    non_overlapping?: {
+      n?: number;
+      avg_return_pct?: number | null;
+      hit_rate_pct?: number | null;
+      strategy_cagr_pct?: number | null;
+      buy_hold_cagr_pct?: number | null;
+      alpha_vs_buy_hold_cagr_pct?: number | null;
+    };
+  };
+  by_regime?: Record<
+    string,
+    {
+      dip_bucket_6m?: { avg_return_pct?: number | null };
+      momentum_bucket_6m?: { avg_return_pct?: number | null };
+      mr_spread_6m_edge_pct?: number | null;
+    }
+  >;
+  per_ticker_threshold?: {
+    suggested_buy_min?: number;
+    suggested_sell_max?: number;
+    notes?: string[];
+  };
+  forward_tracking?: { note?: string };
+  regime_gate_proxy_note?: string;
 }
 
 /** Backend `portfolio_risk_metrics` — optional fields when data is insufficient */
@@ -1159,6 +1219,14 @@ export interface PortfolioHolding {
   trim_triggers?: string[] | null;
   trim_horizon?: string | null;
   trim_detail?: string | null;
+  /** Trim gate stack (hybrid v1: score trigger + 2/4 gates) */
+  trim_gates_passed?: number | null;
+  trim_gates_total?: number | null;
+  trim_gate_cleared?: boolean | null;
+  trim_recommendation?: string | null;
+  trim_gates?: Array<{ id: string; label: string; detail: string; pass: boolean }> | null;
+  is_trim_candidate?: boolean | null;
+  trim_gates_pending?: boolean | null;
   earnings_note?: string | null;
   account?: string;
   cost_basis?: number;

@@ -792,4 +792,10 @@ def enrich_dashboard_signal_row(
     row["retail_status"] = payload
     row["rsi_status"] = payload["rsi_status"]
     row["gate_cleared"] = payload["gate_cleared"]
+    try:
+        from signals.trim_gates import attach_trim_gates_to_row
+
+        attach_trim_gates_to_row(row, regime_bull_pct=rb)
+    except Exception:
+        pass
     return row

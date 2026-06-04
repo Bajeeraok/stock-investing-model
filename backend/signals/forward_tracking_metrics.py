@@ -23,6 +23,74 @@ def freeze_gate_fields_from_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def freeze_trim_gate_fields_from_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Compact frozen trim gate snapshot for EOD persistence."""
+    from signals.trim_gates import primary_trim_gates_detail, trim_gate_snapshot_from_row
+
+    snap = trim_gate_snapshot_from_row(row)
+    detail = primary_trim_gates_detail(row)
+    out = dict(snap)
+    if detail:
+        out["trim_gate_detail_json"] = json.dumps(detail, default=str)
+    out["trim_gates_frozen"] = True
+    return out
+
+
+def read_frozen_trim_gates(row: dict[str, Any]) -> dict[str, Any]:
+    """Prefer frozen EOD trim gate fields; fall back to live row."""
+    if row.get("trim_gates_frozen") or row.get("trim_gate_detail_json"):
+        passed = row.get("trim_gates_passed")
+        total = row.get("trim_gates_total") or 4
+        try:
+            passed = int(passed) if passed is not None else None
+        except (TypeError, ValueError):
+            passed = None
+        if passed is None and row.get("trim_gate_detail_json"):
+            try:
+                detail = json.loads(row["trim_gate_detail_json"])
+                if isinstance(detail, list):
+                    passed = sum(1 for g in detail if isinstance(g, dict) and g.get("pass"))
+            except Exception:
+                pass
+        if passed is None:
+            from signals.trim_gates import trim_gate_snapshot_from_row
+
+            snap = trim_gate_snapshot_from_row(row)
+            passed = snap.get("trim_gates_passed")
+            total = snap.get("trim_gates_total") or total
+        min_pass = int(row.get("trim_min_pass") or 2)
+        cleared = row.get("trim_gate_cleared")
+        if cleared is None and passed is not None:
+            cleared = passed >= min_pass
+        return {
+            "trim_gate_cleared": bool(cleared),
+            "trim_gates_passed": passed if passed is not None else 0,
+            "trim_gates_total": int(total),
+            "trim_score_triggered": bool(row.get("trim_score_triggered")),
+            "trim_recommendation": row.get("trim_recommendation"),
+            "trim_gates_frozen": True,
+        }
+    from signals.trim_gates import trim_gate_snapshot_from_row
+
+    return trim_gate_snapshot_from_row(row)
+
+
+def aggregate_by_trim_gates(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Trim cohort stats by trim_gates_passed/total (score-triggered rows only)."""
+    buckets: dict[str, list[dict]] = {}
+    for r in rows:
+        if not r.get("trim_score_triggered"):
+            continue
+        p = r.get("trim_gates_passed")
+        t = r.get("trim_gates_total") or 4
+        try:
+            key = f"{int(p)}/{int(t)}"
+        except (TypeError, ValueError):
+            key = "unknown"
+        buckets.setdefault(key, []).append(r)
+    return {k: aggregate_horizon_stats(v) for k, v in buckets.items()}
+
+
 def read_frozen_gates(row: dict[str, Any]) -> dict[str, Any]:
     """Prefer frozen EOD gate fields; fall back to gate_snapshot_from_row."""
     if row.get("gates_frozen") or row.get("gate_detail_json"):

@@ -39,8 +39,17 @@ def test_story_horizon_flip_only():
 
 def test_trim_plan_and_score():
     meta = trim_alert_meta(
-        {"ticker": "MSFT", "score": 32, "action": "AVOID", "suggestion": "CONSIDER TRIM"},
+        {
+            "ticker": "MSFT",
+            "score": 32,
+            "action": "AVOID",
+            "suggestion": "CONSIDER TRIM",
+            "trim_gates_passed": 3,
+            "trim_gates_total": 4,
+            "trim_gate_cleared": True,
+        },
         sell_max=35,
+        trim_cfg={"enabled": True, "min_pass": 2},
     )
     assert meta["is_trim_candidate"]
     assert meta["trim_source"] == "composite+plan"
@@ -51,9 +60,17 @@ def test_build_trim_candidates_sorted():
     rows = build_trim_candidates_from_holdings(
         [
             {"ticker": "A", "score": 50, "action": "HOLD", "suggestion": "HOLD"},
-            {"ticker": "B", "score": 30, "action": "AVOID", "suggestion": "CONSIDER TRIM"},
+            {
+                "ticker": "B",
+                "score": 30,
+                "action": "AVOID",
+                "suggestion": "CONSIDER TRIM",
+                "trim_gates_passed": 3,
+                "trim_gate_cleared": True,
+            },
         ],
         sell_max=35,
+        trim_cfg={"enabled": True, "min_pass": 2},
     )
     assert len(rows) == 1
     assert rows[0]["ticker"] == "B"

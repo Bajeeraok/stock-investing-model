@@ -66,12 +66,19 @@ def load_earnings_exclusion_state(
         "source": None,
         "error": None,
         "note": None,
+        "auto_single_stock": bool(ecfg.get("auto_single_stock", False)),
     }
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
+    if not meta["enabled"] and meta["auto_single_stock"] and sym not in _SKIP_EARNINGS_FETCH:
+        meta["enabled"] = True
+        if meta["days_before"] <= 0:
+            meta["days_before"] = 5
+        meta["note"] = "Auto-enabled for single-stock backtest (backtest.earnings_exclusion.auto_single_stock)."
     if not meta["enabled"] or meta["days_before"] <= 0:
-        meta["note"] = "Earnings exclusion off (backtest.earnings_exclusion)."
+        if not meta.get("note"):
+            meta["note"] = "Earnings exclusion off (backtest.earnings_exclusion)."
         return None, meta
 
-    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
     if sym in _SKIP_EARNINGS_FETCH:
         meta["note"] = f"Ticker {sym} skipped (index/ETF — no earnings calendar)."
         return None, meta
