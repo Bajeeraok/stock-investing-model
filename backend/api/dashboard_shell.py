@@ -67,6 +67,7 @@ SHELL_KEYS: tuple[str, ...] = (
     "hunter_panel",
     "scanner_home_lite",
     "tactical_breakouts",
+    "event_risk_strip",
     "after_hours_earnings",
     "stale",
     "refresh_status",

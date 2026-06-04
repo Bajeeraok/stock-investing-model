@@ -86,6 +86,15 @@ export interface RetailMarketDecisions {
     headline?: string;
     tech_rule?: string;
     broad_rule?: string;
+    levels?: Record<
+      string,
+      {
+        last_close: number;
+        primary_trigger?: number | null;
+        supports?: { label: string; price: number; type?: string }[];
+        chip_levels?: { label: string; price: number; distance_pct?: number | null; type?: string }[];
+      }
+    >;
   } | null;
   sector_rotation?: {
     plain_english?: string;

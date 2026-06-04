@@ -586,6 +586,14 @@ function SignalsMobileQuickCard({
       {r.story_change && (
         <p className="mt-1 pl-8 text-amber-400/90 text-xs line-clamp-2 leading-snug">{r.story_change}</p>
       )}
+      {(r.stress_label) && (
+        <p className="mt-1 pl-8 text-[10px] text-sky-300/90 leading-snug">{r.stress_label}</p>
+      )}
+      {r.post_earnings_transition?.transition_note && (
+        <p className="mt-1 pl-8 text-[10px] text-indigo-300/90 line-clamp-2 leading-snug">
+          {r.post_earnings_transition.transition_note}
+        </p>
+      )}
       {showEarningsCol && (
         <div className="mt-1 pl-8">
           <EarningsCell signal={r} />

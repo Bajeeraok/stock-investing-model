@@ -73,6 +73,7 @@ import {
   PortfolioDoctorPanel,
   BrowserPushPanel,
   TacticalBreakoutStrip,
+  EventRiskStrip,
   HunterPanel,
   ScannerHomeLite,
 } from "./dashboard/index";
@@ -826,11 +827,23 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   tradingLens={tradingLens}
                   guestUniverseNote={data.universe_meta?.note ?? null}
                   tacticalSlot={
-                    tradingLens === "scout" && (data.tactical_breakouts?.length ?? 0) > 0 ? (
-                      <TacticalBreakoutStrip
-                        rows={data.tactical_breakouts}
-                        onTickerClick={openTickerDetail}
-                      />
+                    tradingLens === "scout" &&
+                    ((data.event_risk_strip?.rows?.length ?? 0) > 0 ||
+                      (data.tactical_breakouts?.length ?? 0) > 0) ? (
+                      <div className="space-y-3">
+                        {(data.event_risk_strip?.rows?.length ?? 0) > 0 && (
+                          <EventRiskStrip
+                            payload={data.event_risk_strip}
+                            onTickerClick={openTickerDetail}
+                          />
+                        )}
+                        {(data.tactical_breakouts?.length ?? 0) > 0 && (
+                          <TacticalBreakoutStrip
+                            rows={data.tactical_breakouts}
+                            onTickerClick={openTickerDetail}
+                          />
+                        )}
+                      </div>
                     ) : null
                   }
                   onTickerClick={openTickerDetail}
@@ -1216,6 +1229,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             </div>
           )}
           {(!data.signals_deferred || lazySignals !== null) && (
+            <>
+              {tradingLens === "scout" && (data.event_risk_strip?.rows?.length ?? 0) > 0 && (
+                <EventRiskStrip payload={data.event_risk_strip} onTickerClick={openTickerDetail} />
+              )}
             <SignalsTable
               signals={effectiveSignals}
               horizons={data.config?.horizons}
@@ -1228,6 +1245,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               watchlistTickers={watchlistTickerList}
               tradingLens={tradingLens}
             />
+            </>
           )}
             </div>
           )}

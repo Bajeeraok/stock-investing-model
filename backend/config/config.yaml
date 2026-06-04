@@ -532,6 +532,14 @@ velocity_tactical:
   log_paper_trades: true
   tactical_min_gates_for_alert: 2
 
+# Scout overview: 1-day event risk strip (earnings + ATR + velocity ranking)
+event_risk_strip:
+  enabled: true
+  max_earnings_days: 14
+  max_lookback_days: 21
+  limit: 8
+  min_score: 12.0
+
 # Forward audit pilot: fixed 100-ticker cohort → SQLite at DATA_ROOT/signal_audit.db
 # Cohort list lives in config/signal_audit_cohort.yaml (separate from watchlist/portfolio).
 # Outcomes (Phase 2) read EOD from Redis first, then DATA_ROOT/eod/ — same as paper trades.

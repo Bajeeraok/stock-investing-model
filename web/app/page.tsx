@@ -647,6 +647,7 @@ export interface DashboardData {
   };
   model_audit?: import("@/components/dashboard/index").ModelAuditPayload;
   tactical_breakouts?: import("@/components/dashboard/index").TacticalBreakoutRow[];
+  event_risk_strip?: import("@/components/dashboard/index").EventRiskStripPayload;
   hunter_panel?: import("@/components/dashboard/index").HunterPanelPayload;
   scanner_home_lite?: import("@/components/dashboard/index").ScannerHomeLitePayload;
   /** Paper realized returns vs forward-tracking 20d population mean (smoke test; Analysis tab) */
@@ -1105,6 +1106,21 @@ export interface Signal {
     override_note?: string | null;
     hours_since_catalyst?: number | null;
   } | null;
+  catalyst_modifier?: {
+    active?: boolean;
+    event_type?: string | null;
+    headline?: string | null;
+    override_note?: string | null;
+  } | null;
+  post_earnings_transition?: {
+    active?: boolean;
+    beat_or_miss?: string | null;
+    signal_direction?: string | null;
+    transition_note?: string | null;
+    eps_surprise_pct?: number | null;
+    days_since?: number | null;
+  } | null;
+  stress_label?: string | null;
   error?: string;
 }
 

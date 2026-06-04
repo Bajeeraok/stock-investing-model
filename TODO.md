@@ -170,27 +170,27 @@ Glue calendar + pre-market engine + regime tension + FOMC historical stats.
 
 **P0 payload:** `scheduled_today`, `live_tape`, `tensions`, `flip_narratives`, `summary_line`, FOMC `scenario` stats where available.
 
-### P1 — Event-day flip stats (next)
+### P1 — Event-day flip stats ✅
 
 Historical behavior in similar setups — **not** release forecasts.
 
-- [ ] **`data/market_flip_stats.json`** — Monthly refresh script; gap fade, event-day tables
-- [ ] **Gap fade rate** — ES pre-market gap sign vs SPY same-day close sign (backtest)
-- [ ] **CPI / NFP date tables** — Extend `event_scenarios.py` beyond FOMC-only (`get_event_reaction_stats`)
-- [ ] **Pre-market vs close contradiction** — Join `pre_market_latest.json` history to EOD pairs
-- [ ] **UI** — Show on catalyst board: “Gap faded X% on past CPI days (n=…)”
+- [x] **`data/market_flip_stats.json`** — `scripts/build_market_flip_stats.py`; seed in `backend/data/` — 2026-05-22
+- [x] **Gap fade rate** — ES=F open (fallback SPY open) vs SPY close sign in `market_flip_stats.py` — 2026-05-22
+- [x] **CPI / NFP date tables** — `event_scenarios.py` + generated NFP/CPI calendars — 2026-05-22
+- [x] **Pre-market vs close contradiction** — `pre_market_history/` archive + EOD join in build script — 2026-05-22
+- [x] **UI** — Catalyst board `gap_fade_line` + scenario stats — 2026-05-22
 
-### P2 — Trading-hours extensions (after P1)
+### P2 — Trading-hours extensions ✅
 
-- [ ] **Release markers** — 8:30 / 2:00 ET on board (“released” / “pending”)
-- [ ] **Since open / since CPI** — SPY move from open and from release timestamp
-- [ ] **Intraday refresh** — Optional 1–5 min polling; needs Premium Polygon/FMP or similar
-- [ ] **Push digest hook** — “CPI in 30m; pre-market bull; gap-fade history 61%”
+- [x] **Release markers** — pending/released badges on catalyst board (8:30 / 14:00 ET) — 2026-05-22
+- [x] **Since open / since CPI** — `intraday` block via yfinance 5m SPY — 2026-05-22
+- [x] **Intraday refresh** — ET-aware polling + `?refresh=true` on `/api/pre-market`; `market_state.intraday_poll_ms` — 2026-05-22
+- [x] **Push digest hook** — `build_catalyst_digest_line` + `maybe_broadcast_catalyst_push` — 2026-05-22
 
-### P3 — Unified market state (optional)
+### P3 — Unified market state ✅
 
-- [ ] **`MarketStatePanel` on Overview** — Drivers + catalysts + pre-market + next-day outlook in one card
-- [ ] **`GET /api/market-state`** — Optional dedicated endpoint
+- [x] **`MarketStatePanel` on Overview** — pre-market + catalysts + outlook + typical move — 2026-05-22
+- [x] **`GET /api/market-state`** — `signals/market_state.py` — 2026-05-22
 
 ### Signals / roadmaps ↔ portfolio sync
 
@@ -198,6 +198,100 @@ Historical behavior in similar setups — **not** release forecasts.
 - [x] **`run_signals`** uses signal universe (dashboard + daily EOD) — 2026-05-22
 - [x] **API `signal_universe`** — Top-level dashboard field for Roadmaps tab — 2026-05-22
 - [x] **Roadmaps tab** — Portfolio holdings first, then watchlist; cap 24 cards with truncation note — 2026-05-22
+
+### Retail decision framework (institutional → retail)
+
+**Shipped P0 reconciliation (2026-05-24):**
+- [x] **`market_context_reconciler.py`** — Temperature × regime quadrants (e.g. fear in bull = BUY dips)
+- [x] **Unified hero** — `RetailMarketDecisionsPanel` shows one message; matrix driven by reconciler not raw temperature
+- [x] **Risk-Off + STRONG_BULL** — Macro overlay (ST) vs SPY regime (LT) labeled; no contradictory REDUCE on cold+bull
+- [x] **Actionable 5 questions** — SPY triggers, trim %, concentration from portfolio
+- [x] **Overnight delta + checklist + hold vs trade** — inline in decisions panel
+- [x] **Market state** — next-day “no edge” summary, range-used %, pre-market mover WHY
+- [x] **Alerts** — hidden when empty; open when active
+
+**P1 — Context pillars (reuse existing data):**
+- [x] **Breadth panel** — RSP/SPY proxy + `breadth_panel` in retail decisions — 2026-05-23
+- [x] **Earnings season pulse** — FMP calendar density + beat-rate sample — 2026-05-23
+- [x] **Crowd positioning** — CNN Fear & Greed (+ optional AAII config overrides) — 2026-05-23
+- [x] **Ticker detail `market_context`** — per-name ST/MT/LT overlay, earnings rule, triggers — 2026-05-23
+
+**P2 — Depth:**
+- [x] **Sector rotation tilt** — Leading/lagging sector ETFs vs SPY — 2026-05-23
+- [x] **Personal earnings calendar** — Holdings-only trim rules in decisions payload — 2026-05-23
+- [x] **Trigger levels** — SPY/QQQ MA20/50 + ATR bands — 2026-05-23
+
+---
+
+## Signal audit — 100-ticker pilot (Phase 0–4)
+
+**Primary spec:** [`docs/audit/SIGNAL_AUDIT_FORWARD_TRACKING.md`](docs/audit/SIGNAL_AUDIT_FORWARD_TRACKING.md) (schema, verdict rules, API, phased checklist).
+
+### Done
+
+- [x] Phase 0/1 — `signal_audit_store.py`, cohort yaml, EOD hook, Model Audit panel (2026-05)
+- [x] Phase 2 core — `signal_audit_verdict.py`, `signal_audit_outcomes.py`, `resolve_signal_outcomes.py`, `POST /api/audit/resolve`, win rate in Model Audit UI (2026-05-27)
+- [x] Phase 3 — `build_audit_report.py`, CSV export API, Track Record cohort chip (2026-05-27)
+
+### Pending (from spec)
+
+- [ ] Phase 2 — `signal_path_daily` table + drawdown charts
+- [ ] Phase 4 — backtest rows with `source=backtest` in `signal_events`
+
+---
+
+## Multi-persona roadmap (all retail traders & investors)
+
+North star: *Any retail user—Scout, Swing, or Owner—gets a horizon-appropriate digest in under 10 seconds.*
+
+### Phase A — Persona lens (shipping)
+
+- [x] **A1. Global trading lens** — Header `TradingLensSelector` (Scout / Swing / Owner); `web/lib/tradingLens.ts` + localStorage — 2026-05-30
+- [x] **A2. Mode-aware Overview** — `OverviewAtAGlance`: lens hint, matrix order + primary horizon ring, section reorder, Scout tactical slot — 2026-05-30
+- [x] **A3. Mode-aware Today's 3 moves** — `buildTodayMoves` kind priority by lens in `todayMoves.ts` — 2026-05-30
+- [x] **A4. Signals lens presets** — Renamed presets (Tactical setups / Core trim / Earnings week); default preset follows lens — 2026-05-30
+- [ ] **A5. Bulk mode on holdings** — Set Scout/Swing/Owner for all portfolio tickers from Portfolio tab
+
+### Phase B — Discovery & screening
+
+- [x] **B0. Hunter data on dashboard warm** — `hunter_panel` from signal universe (readiness + velocity); no 100-ticker intraday recompute — 2026-05-30
+- [x] **B1. Scanner home (lite)** — `scanner_home_lite` on Overview from scanner `alerts.jsonl` — 2026-05-30
+- [x] **B2. Hunter panel** — Overview: all candidates (not cap-3); gates + track + book filters — 2026-05-30
+- [x] **B3. Saved screens** — Built-in hunter screens + 2 custom (localStorage) — 2026-05-30
+- [x] **B4. Watching vs owning** — `PossessionBadge`; Source labels Owning / Watching on Signals, Roadmaps, Hunter — 2026-05-30
+
+### Phase C — Session & tactical depth
+
+- [x] **C1. Session strip on Overview** — `SessionStrip` + `PhaseCSessionBlock`: pre-market + RTH since-open always visible for Scout/Swing — 2026-06-04
+- [x] **C2. Trigger dashboard** — `TriggerLevelChips`: SPY/QQQ distance-to-level % chips from `trigger_levels.chip_levels` — 2026-06-04
+- [x] **C3. Scout playbook** — `ScoutPlaybook`: collapsed open rules from `morning_checklist` — 2026-06-04
+- [x] **C4. Catalyst → signal** — `signal_event_modifiers.py`: post-earnings + catalyst patch `retail_status` / row fields — 2026-06-04
+- [x] **C5. Stress labels on setups** — VIX-aware `stress_label` on ST BUY rows in Signals mobile cards — 2026-06-04
+- [x] **Event risk strip (Scout)** — `event_risk_strip` ranked ER+ATR+velocity; Overview + Signals tab — 2026-06-04
+
+### Phase D — Trust, workflow, stickiness
+
+- [ ] **D1. Track record on Overview** — One-line ADD 20d hit rate / direction accuracy (preload analysis bundle)
+- [ ] **D2. Calibration by lens** — Forward tracking split Scout vs Owner horizons
+- [ ] **D3. Searchable decision log** — Extend journal beyond one-line prompt
+- [ ] **D4. Copy trade plan** — Export ticker, action, stop, size for manual broker entry
+- [ ] **D5. Degraded data mode** — Feature flags when FMP/FRED partial fail
+
+### Phase E — Charting (optional)
+
+- [ ] **E1. TradingView embed** — Widget on ticker One Answer (fastest path)
+- [ ] **E2. Sparkline-only** — Cheaper; extend `HorizonProjectionChart`
+- [ ] **E3. Native chart** — Only if product pivots chart-first (not recommended near-term)
+
+### Auth, portfolio, and default universe
+
+- [x] **Public demo universe** — `public_demo_universe` in `config.yaml`; merged in `get_dashboard_signal_universe()` — 2026-05-30
+- [x] **`universe_meta` on dashboard API** — `guest_mode`, `note`, demo list for UI — 2026-05-30
+- [ ] **User sign-up / login** — OAuth or email; session on API
+- [ ] **Portfolio per user** — Replace config-file holdings with DB/blob keyed by `user_id`; migrate `user_overrides.json` pattern
+- [ ] **Guest vs authenticated shell** — Anonymous: demo universe + empty portfolio doctor; authed: user holdings only
+- [ ] **Portfolio import** — CSV / broker export upload tied to login (extend `add_uploaded_portfolio`)
+- [ ] **Config watchlist as admin default** — Keep `watchlist` for operator; users get personal watchlist store
 
 ---
 

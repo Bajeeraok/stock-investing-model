@@ -17,6 +17,7 @@ import { useState } from "react";
 import type { DashboardData } from "@/app/page";
 import type { PreMarketData } from "./PreMarketPanel";
 import { PremarketMoverStrip } from "./PremarketMoverStrip";
+import { PhaseCSessionBlock } from "./PhaseCSessionBlock";
 import type { RetailMarketDecisions } from "./RetailMarketDecisionsPanel";
 import { ToggleSection } from "./ToggleSection";
 import { RetailMarketDecisionsDeepDive } from "./RetailMarketDecisionsDeepDive";
@@ -175,8 +176,6 @@ export function OverviewAtAGlance({
   const primaryKey = primaryHorizonKey(tradingLens);
   const matrixOrder = matrixHorizonOrder(tradingLens);
   const showPortfolioKpis = tradingLens === "owner" || tradingLens === "swing";
-  const showPremarketProminent = tradingLens === "scout" || tradingLens === "swing";
-
   const matrixBlock = matrix ? (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
       {matrixOrder.map((key) => {
@@ -398,23 +397,25 @@ export function OverviewAtAGlance({
             )}
           </div>
 
+          <PhaseCSessionBlock
+            preMarketFull={preMarketFull}
+            preMarket={preMarket}
+            market={market}
+            tradingLens={tradingLens}
+            onTickerClick={onTickerClick}
+          />
+
           {(vixStr || macroDriver || hyDriver || temp?.macro_overlay) && (
             <p className="text-xs text-slate-300">
               {[vixStr && `VIX ${vixStr}`, macroDriver, hyDriver, temp?.macro_overlay].filter(Boolean).join(" · ")}
             </p>
           )}
 
-          {showPremarketProminent && (
-            <PremarketMoverStrip full={preMarketFull} simple={preMarket} onTickerClick={onTickerClick} />
-          )}
-        </div>
-      </section>
-
-      {tacticalSlot}
+          {tacticalSlot}
       {priorityBlock}
       {matrixBlock}
       {nudgesBlock}
-      {!showPremarketProminent && (
+      {tradingLens !== "scout" && tradingLens !== "swing" && (
         <PremarketMoverStrip full={preMarketFull} simple={preMarket} onTickerClick={onTickerClick} />
       )}
 

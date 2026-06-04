@@ -276,6 +276,22 @@ def _build_tactical_breakouts(results: list[Any] | None, config: dict) -> list[d
         return []
 
 
+def _build_event_risk_strip(results: list[Any] | None, config: dict) -> dict:
+    try:
+        from config_loader import portfolio_tickers_from_config
+        from signals.event_risk_strip import build_event_risk_strip
+
+        return build_event_risk_strip(
+            results or [],
+            config,
+            watchlist_tickers=[str(t).upper() for t in (config.get("watchlist") or []) if t],
+            portfolio_tickers=portfolio_tickers_from_config(config),
+        )
+    except Exception as e:
+        logger.debug("event_risk_strip build failed: %s", e)
+        return {"rows": [], "message": str(e), "rank_note": None}
+
+
 def _build_hunter_panel_payload(
     results: list[Any] | None,
     config: dict,
@@ -1975,6 +1991,21 @@ def _compute_full_dashboard_sync() -> dict:
         logger.debug("enrich_results_catalysts: %s", e)
 
     try:
+        from signals.signal_event_modifiers import enrich_results_event_modifiers
+
+        _vix_level = None
+        for item in cross_asset or []:
+            if isinstance(item, dict) and str(item.get("label") or item.get("ticker") or "").upper() in ("VIX", "^VIX"):
+                try:
+                    _vix_level = float(item.get("close") or item.get("value") or item.get("last"))
+                except (TypeError, ValueError):
+                    pass
+                break
+        enrich_results_event_modifiers(results, config, vix=_vix_level)
+    except Exception as e:
+        logger.debug("enrich_results_event_modifiers: %s", e)
+
+    try:
         from scanner.horizon_levels import sync_horizon_levels_from_signal_results
 
         _nhl = sync_horizon_levels_from_signal_results(get_data_root(), results)
@@ -2319,6 +2350,7 @@ def _compute_full_dashboard_sync() -> dict:
         "morning_newsletter": morning_newsletter,
         "model_health": model_health,
         "tactical_breakouts": _build_tactical_breakouts(results, config),
+        "event_risk_strip": _build_event_risk_strip(results, config),
         "hunter_panel": _build_hunter_panel_payload(
             results,
             config,

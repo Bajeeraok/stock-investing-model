@@ -37,11 +37,18 @@ def _levels_for_ticker(ticker: str, period: str = "6mo") -> dict[str, Any] | Non
         deep = supports[-1]["price"]
         rules.append(f"Break below ${deep:.2f} → defensive mode; trim extended tech/growth 10–15%.")
 
+    chip_levels: list[dict[str, Any]] = []
+    for s in supports:
+        px = float(s["price"])
+        dist_pct = round(100.0 * (close - px) / close, 2) if close > 0 else None
+        chip_levels.append({**s, "distance_pct": dist_pct})
+
     return {
         "ticker": ticker,
         "last_close": round(close, 2),
         "atr14": atr,
         "supports": supports,
+        "chip_levels": chip_levels,
         "primary_trigger": primary,
         "rules": rules[:2],
     }
