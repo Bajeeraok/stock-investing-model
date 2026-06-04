@@ -12,6 +12,7 @@ import {
 } from "./retailActionUX";
 import {
   groupSignalsByAction,
+  actionGroupTickerPreview,
   loadSignalsViewMode,
   saveSignalsViewMode,
   signalHasEarningsInsight,
@@ -444,6 +445,59 @@ function SignalsQuickTickerRow({
   );
 }
 
+function SignalsMobileActionGroupHeader({
+  group,
+  collapsed,
+  onToggle,
+}: {
+  group: { key: string; title: string; subtitle: string; rows: Signal[] };
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const light = deriveListActionStatus(group.rows[0]).light;
+  const preview = actionGroupTickerPreview(group.rows, 6);
+  const extra = group.rows.length > 6 ? ` +${group.rows.length - 6}` : "";
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full px-4 py-3 text-left bg-slate-800/70 hover:bg-slate-800 touch-manipulation border-b border-slate-700/60"
+    >
+      <div className="flex items-start gap-2">
+        {collapsed ? (
+          <ChevronRight className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+        ) : (
+          <ChevronDown className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(light))}>
+              {group.title}
+            </span>
+            <span className="text-[10px] font-mono text-slate-500">
+              {group.rows.length} {group.rows.length === 1 ? "ticker" : "tickers"}
+            </span>
+          </div>
+          {collapsed ? (
+            <p className="mt-1 text-xs text-slate-400 truncate">
+              {preview}
+              {extra}
+            </p>
+          ) : group.subtitle ? (
+            <p className="mt-1 text-xs text-slate-400 line-clamp-2 leading-snug">{group.subtitle}</p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500 truncate">
+              {preview}
+              {extra}
+            </p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 function SignalsMobileQuickCard({
   r,
   gateContext,
@@ -479,11 +533,16 @@ function SignalsMobileQuickCard({
     },
     {
       id: "open",
-      label: "Open",
+      label: "Detail",
       tone: "emerald",
       onClick: () => onTickerClick?.(r.ticker),
     },
   ];
+
+  const surfaceClassName = clsx(
+    r.story_change && "bg-amber-500/5",
+    muted && "bg-slate-900/80",
+  );
 
   return (
     <SwipeableSignalCard
@@ -491,10 +550,8 @@ function SignalsMobileQuickCard({
       actions={swipeActions}
       activeSwipeKey={activeSwipeKey}
       onSwipeKeyChange={onSwipeKeyChange}
-      className={clsx(
-        r.story_change && "bg-amber-500/5",
-        muted && "bg-slate-900/40",
-      )}
+      disabled={expanded}
+      surfaceClassName={surfaceClassName}
     >
       <div className="px-4 py-2.5">
       <div className="flex items-center justify-between gap-2">
@@ -597,7 +654,8 @@ function SignalsMobileFullCard({
       actions={swipeActions}
       activeSwipeKey={activeSwipeKey}
       onSwipeKeyChange={onSwipeKeyChange}
-      className={clsx(r.story_change && "bg-amber-500/5")}
+      disabled={levelsOpen}
+      surfaceClassName={clsx(r.story_change && "bg-amber-500/5")}
     >
       <div className="px-4 py-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -912,12 +970,8 @@ export function SignalsTable({
 
   useEffect(() => {
     if (viewMode !== "quick" || !actionGroups) return;
-    const next = new Set<string>();
-    for (const g of actionGroups) {
-      if (g.rows.length > 1) next.add(g.key);
-    }
-    setCollapsedGroups(next);
     setExpandedTickers(new Set());
+    setActiveSwipeKey(null);
   }, [actionGroups, viewMode, preset, sourceFilter]);
 
   const toggleGroup = useCallback((key: string) => {
@@ -929,8 +983,21 @@ export function SignalsTable({
     });
   }, []);
 
+  const handleSwipeKeyChange = useCallback((key: string | null) => {
+    setActiveSwipeKey(key);
+    if (key) {
+      setExpandedTickers((prev) => {
+        if (!prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, []);
+
   const toggleTickerExpand = useCallback((ticker: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    setActiveSwipeKey(null);
     setExpandedTickers((prev) => {
       const next = new Set(prev);
       if (next.has(ticker)) next.delete(ticker);
@@ -1024,9 +1091,9 @@ export function SignalsTable({
 
       {/* Mobile: card list — swipe left for Open / Gates */}
       <p className="md:hidden text-[10px] text-slate-500 px-4 py-1.5 border-b border-slate-700/40 bg-slate-900/30">
-        Swipe a card left for quick actions · tap chevron for gate detail
+        Tap chevron for gates · swipe left for Detail (disabled while gates open)
       </p>
-      <div className="md:hidden divide-y divide-slate-700/50">
+      <div className="md:hidden">
         {isQuick && actionGroups
           ? actionGroups.map((group) => {
               const collapsed = collapsedGroups.has(group.key);
@@ -1034,67 +1101,53 @@ export function SignalsTable({
               if (!multi) {
                 const r = group.rows[0];
                 return (
-                  <SignalsMobileQuickCard
-                    key={r.ticker}
-                    r={r}
-                    gateContext={gateContext}
-                    tickerActions={tickerActions}
-                    onTickerClick={onTickerClick}
-                    expanded={expandedTickers.has(r.ticker)}
-                    onToggleExpand={toggleTickerExpand}
-                    showEarningsCol={showEarningsCol}
-                    activeSwipeKey={activeSwipeKey}
-                    onSwipeKeyChange={setActiveSwipeKey}
-                  />
+                  <div key={r.ticker} className="border-b border-slate-700/50">
+                    <SignalsMobileQuickCard
+                      r={r}
+                      gateContext={gateContext}
+                      tickerActions={tickerActions}
+                      onTickerClick={onTickerClick}
+                      expanded={expandedTickers.has(r.ticker)}
+                      onToggleExpand={toggleTickerExpand}
+                      showEarningsCol={showEarningsCol}
+                      activeSwipeKey={activeSwipeKey}
+                      onSwipeKeyChange={handleSwipeKeyChange}
+                    />
+                  </div>
                 );
               }
               return (
-                <Fragment key={group.key}>
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group.key)}
-                    className="w-full px-4 py-2.5 flex items-center gap-2 text-left bg-slate-800/50 hover:bg-slate-800/80 touch-manipulation"
-                  >
-                    {collapsed ? (
-                      <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
-                    )}
-                    <span
-                      className={clsx(
-                        "text-xs font-bold uppercase tracking-wide",
-                        listStatusTone(deriveListActionStatus(group.rows[0]).light)
-                      )}
-                    >
-                      {group.title}
-                    </span>
-                    <span className="text-[10px] text-slate-500">({group.rows.length})</span>
-                    {group.subtitle && (
-                      <span className="text-xs text-slate-400 truncate flex-1 min-w-0">— {group.subtitle}</span>
-                    )}
-                  </button>
-                  {!collapsed &&
-                    group.rows.map((r) => (
-                      <SignalsMobileQuickCard
-                        key={r.ticker}
-                        r={r}
-                        gateContext={gateContext}
-                        tickerActions={tickerActions}
-                        onTickerClick={onTickerClick}
-                        expanded={expandedTickers.has(r.ticker)}
-                        onToggleExpand={toggleTickerExpand}
-                        muted
-                        showEarningsCol={showEarningsCol}
-                        activeSwipeKey={activeSwipeKey}
-                        onSwipeKeyChange={setActiveSwipeKey}
-                      />
-                    ))}
-                </Fragment>
+                <section key={group.key} className="border-b border-slate-700/60">
+                  <SignalsMobileActionGroupHeader
+                    group={group}
+                    collapsed={collapsed}
+                    onToggle={() => toggleGroup(group.key)}
+                  />
+                  {!collapsed && (
+                    <div className="border-l-2 border-slate-700/40 ml-3 mr-1 divide-y divide-slate-700/40">
+                      {group.rows.map((r) => (
+                        <SignalsMobileQuickCard
+                          key={r.ticker}
+                          r={r}
+                          gateContext={gateContext}
+                          tickerActions={tickerActions}
+                          onTickerClick={onTickerClick}
+                          expanded={expandedTickers.has(r.ticker)}
+                          onToggleExpand={toggleTickerExpand}
+                          muted
+                          showEarningsCol={showEarningsCol}
+                          activeSwipeKey={activeSwipeKey}
+                          onSwipeKeyChange={handleSwipeKeyChange}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </section>
               );
             })
           : sorted.map((r) => (
+              <div key={r.ticker} className="border-b border-slate-700/50">
               <SignalsMobileFullCard
-                key={r.ticker}
                 r={r}
                 gateContext={gateContext}
                 tickerActions={tickerActions}
@@ -1105,8 +1158,9 @@ export function SignalsTable({
                 showEarningsCol={showEarningsCol}
                 showModelDetail={showModelDetail}
                 activeSwipeKey={activeSwipeKey}
-                onSwipeKeyChange={setActiveSwipeKey}
+                onSwipeKeyChange={handleSwipeKeyChange}
               />
+              </div>
             ))}
       </div>
 

@@ -66,10 +66,36 @@ export function groupSignalsByAction(
     bucket.push(r);
     map.set(key, bucket);
   }
-  return Array.from(map.entries()).map(([key, groupRows]) => {
+  const groups = Array.from(map.entries()).map(([key, groupRows]) => {
     const { title, subtitle } = parseRowActionKey(key);
     return { key, title, subtitle, rows: groupRows };
   });
+  return sortSignalActionGroups(groups);
+}
+
+const ACTION_GROUP_PRIORITY: Record<string, number> = {
+  "TACTICAL ENTRY": 0,
+  "WATCH OR HOLD": 1,
+  "DO NOT CHASE": 2,
+};
+
+/** Stable action-first ordering for grouped quick view. */
+export function sortSignalActionGroups(groups: SignalActionGroup[]): SignalActionGroup[] {
+  return [...groups].sort((a, b) => {
+    const pa = ACTION_GROUP_PRIORITY[a.title] ?? 99;
+    const pb = ACTION_GROUP_PRIORITY[b.title] ?? 99;
+    if (pa !== pb) return pa - pb;
+    if (b.rows.length !== a.rows.length) return b.rows.length - a.rows.length;
+    return a.title.localeCompare(b.title);
+  });
+}
+
+export function actionGroupTickerPreview(rows: Signal[], max = 5): string {
+  return rows
+    .slice(0, max)
+    .map((r) => r.ticker)
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** True when earnings cell would show something besides placeholder/unavailable noise. */

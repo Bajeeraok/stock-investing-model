@@ -26,6 +26,8 @@ export function SwipeableSignalCard({
   activeSwipeKey,
   onSwipeKeyChange,
   className,
+  surfaceClassName,
+  disabled = false,
 }: {
   children: React.ReactNode;
   actions: SwipeRevealAction[];
@@ -34,6 +36,10 @@ export function SwipeableSignalCard({
   activeSwipeKey?: string | null;
   onSwipeKeyChange?: (key: string | null) => void;
   className?: string;
+  /** Background/styling for the sliding foreground panel (must be opaque). */
+  surfaceClassName?: string;
+  /** When true, swipe is off and panel stays flush (e.g. gate detail expanded). */
+  disabled?: boolean;
 }) {
   const revealWidth = Math.max(actions.length * ACTION_WIDTH, ACTION_WIDTH);
   const [offset, setOffset] = useState(0);
@@ -43,15 +49,23 @@ export function SwipeableSignalCard({
   const tracking = useRef(false);
   const offsetRef = useRef(0);
 
-  const isOpen = activeSwipeKey === cardKey;
+  const isOpen = !disabled && activeSwipeKey === cardKey;
+  const revealActions = !disabled && Math.abs(offset) > 6;
 
   useEffect(() => {
     offsetRef.current = offset;
   }, [offset]);
 
   useEffect(() => {
+    if (disabled) {
+      setOffset(0);
+      setDragging(false);
+      tracking.current = false;
+      if (activeSwipeKey === cardKey) onSwipeKeyChange?.(null);
+      return;
+    }
     if (!isOpen && !dragging) setOffset(0);
-  }, [isOpen, dragging]);
+  }, [disabled, isOpen, dragging, activeSwipeKey, cardKey, onSwipeKeyChange]);
 
   useEffect(() => {
     if (isOpen && !dragging) setOffset(-revealWidth);
@@ -63,12 +77,13 @@ export function SwipeableSignalCard({
   }, [onSwipeKeyChange]);
 
   const open = useCallback(() => {
+    if (disabled) return;
     onSwipeKeyChange?.(cardKey);
     setOffset(-revealWidth);
-  }, [cardKey, onSwipeKeyChange, revealWidth]);
+  }, [cardKey, disabled, onSwipeKeyChange, revealWidth]);
 
   const onTouchStart = (e: React.TouchEvent) => {
-    if (actions.length === 0) return;
+    if (disabled || actions.length === 0) return;
     startX.current = e.touches[0].clientX;
     startOffset.current = isOpen ? -revealWidth : offset;
     tracking.current = true;
@@ -76,7 +91,7 @@ export function SwipeableSignalCard({
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
-    if (!tracking.current) return;
+    if (disabled || !tracking.current) return;
     const dx = e.touches[0].clientX - startX.current;
     const next = Math.min(0, Math.max(-revealWidth, startOffset.current + dx));
     setOffset(next);
@@ -84,7 +99,7 @@ export function SwipeableSignalCard({
   };
 
   const onTouchEnd = () => {
-    if (!tracking.current) return;
+    if (disabled || !tracking.current) return;
     tracking.current = false;
     setDragging(false);
     if (offsetRef.current <= -SNAP_THRESHOLD) open();
@@ -99,8 +114,11 @@ export function SwipeableSignalCard({
   return (
     <div className={clsx("relative overflow-hidden touch-pan-y", className)}>
       <div
-        className="absolute inset-y-0 right-0 flex"
-        aria-hidden={!isOpen && offset === 0}
+        className={clsx(
+          "absolute inset-y-0 right-0 z-0 flex transition-opacity duration-150",
+          revealActions ? "opacity-100" : "opacity-0 pointer-events-none",
+        )}
+        aria-hidden={!revealActions}
       >
         {actions.map((action) => (
           <button
@@ -119,11 +137,11 @@ export function SwipeableSignalCard({
 
       <div
         className={clsx(
-          "relative",
-          className,
-          !dragging && "transition-transform duration-200 ease-out",
+          "relative z-10 bg-slate-900",
+          surfaceClassName,
+          !dragging && !disabled && "transition-transform duration-200 ease-out",
         )}
-        style={{ transform: `translateX(${offset}px)` }}
+        style={{ transform: disabled ? undefined : `translateX(${offset}px)` }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
