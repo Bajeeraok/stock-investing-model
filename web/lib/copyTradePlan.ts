@@ -36,8 +36,12 @@ export function formatTradePlanForClipboard(
     );
   }
 
-  const stop = horizon?.stop ?? primary.stop;
-  const target = horizon?.target ?? primary.target;
+  const stop =
+    horizon?.stop ??
+    (primary.stop_loss != null && primary.stop_loss > 0 ? primary.stop_loss : null);
+  const target =
+    horizon?.target ??
+    (primary.target != null && primary.target > 0 ? primary.target : null);
   if (stop != null) lines.push(`Stop: $${stop.toFixed(2)}`);
   if (target != null) lines.push(`Target: $${target.toFixed(2)}`);
 
