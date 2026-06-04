@@ -75,6 +75,19 @@ export type RetailActionPayload = {
     marginal_pass?: boolean;
   }>;
   primary_gate_ids?: string[];
+  unlock_summary?: string | null;
+  zone_context?: {
+    zone_name?: string;
+    state?: string;
+    in_watch_zone?: boolean;
+    in_bridge_band?: boolean;
+    gap_low?: number | null;
+    gap_high?: number | null;
+    bridge_low?: number | null;
+    bridge_high?: number | null;
+    bridge_rationale?: string;
+    catch_levels?: Array<{ id: string; label: string; price: number; role?: string }>;
+  } | null;
 };
 
 export function mapApiGateToRow(g: NonNullable<RetailActionPayload["gates"]>[number]): TradingGateRow {
@@ -1512,20 +1525,27 @@ export function LongTermAccumulationScale({
             Catch levels · {primaryId ?? "band"} ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {catchLevels.map((lv) => (
-              <span
-                key={lv.id}
-                className={clsx(
-                  "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
-                  lv.role === "anchor"
-                    ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
-                    : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
-                )}
-                title={lv.label}
-              >
-                ${lv.price.toFixed(2)}
-              </span>
-            ))}
+            {catchLevels.map((lv) => {
+              const dist =
+                currentPrice > 0
+                  ? `${((lv.price - currentPrice) / currentPrice) * 100 >= 0 ? "+" : ""}${(((lv.price - currentPrice) / currentPrice) * 100).toFixed(1)}%`
+                  : null;
+              return (
+                <span
+                  key={lv.id}
+                  className={clsx(
+                    "inline-flex flex-col items-center rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
+                    lv.role === "anchor"
+                      ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
+                      : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
+                  )}
+                  title={lv.label}
+                >
+                  <span>${lv.price.toFixed(2)}</span>
+                  {dist && <span className="text-[9px] text-slate-500">{dist}</span>}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}

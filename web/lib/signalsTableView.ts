@@ -28,23 +28,39 @@ export function saveSignalsViewMode(mode: SignalsViewMode): void {
   }
 }
 
-export function rowActionKey(
+export function rowActionSubtitle(
   signal: Signal,
   listContext: SignalListContext,
   oneLiner?: string | null
 ): string {
-  const status = deriveListActionStatus(signal);
-  const subtitle =
+  return (
     oneLiner?.trim() ||
     signal.retail_status?.dynamic_subtitle ||
     signal.retail_status?.action_title ||
-    "";
-  return `${status.title}|||${subtitle.slice(0, 120)}`;
+    ""
+  ).slice(0, 120);
+}
+
+/** Group key — action title only so identical labels (e.g. DO NOT CHASE) stay together. */
+export function rowActionKey(
+  signal: Signal,
+  _listContext: SignalListContext,
+  _oneLiner?: string | null
+): string {
+  return deriveListActionStatus(signal).title;
 }
 
 export function parseRowActionKey(key: string): { title: string; subtitle: string } {
   const [title, subtitle] = key.split("|||");
   return { title: title ?? "—", subtitle: subtitle ?? "" };
+}
+
+function pickGroupSubtitle(subtitles: string[]): string {
+  const trimmed = subtitles.map((s) => s.trim()).filter(Boolean);
+  if (trimmed.length === 0) return "";
+  const unique = new Set(trimmed);
+  if (unique.size === 1) return trimmed[0];
+  return "";
 }
 
 export type SignalActionGroup = {
@@ -59,17 +75,21 @@ export function groupSignalsByAction(
   listContext: SignalListContext,
   tickerActions?: Record<string, { action: string; one_liner: string }>
 ): SignalActionGroup[] {
-  const map = new Map<string, Signal[]>();
+  const map = new Map<string, { rows: Signal[]; subtitles: string[] }>();
   for (const r of rows) {
     const key = rowActionKey(r, listContext, tickerActions?.[r.ticker]?.one_liner);
-    const bucket = map.get(key) ?? [];
-    bucket.push(r);
+    const subtitle = rowActionSubtitle(r, listContext, tickerActions?.[r.ticker]?.one_liner);
+    const bucket = map.get(key) ?? { rows: [], subtitles: [] };
+    bucket.rows.push(r);
+    bucket.subtitles.push(subtitle);
     map.set(key, bucket);
   }
-  const groups = Array.from(map.entries()).map(([key, groupRows]) => {
-    const { title, subtitle } = parseRowActionKey(key);
-    return { key, title, subtitle, rows: groupRows };
-  });
+  const groups = Array.from(map.entries()).map(([key, { rows: groupRows, subtitles }]) => ({
+    key,
+    title: key,
+    subtitle: pickGroupSubtitle(subtitles),
+    rows: groupRows,
+  }));
   return sortSignalActionGroups(groups);
 }
 

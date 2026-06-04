@@ -412,6 +412,9 @@ export function OverviewAtAGlance({
           )}
 
           {tacticalSlot}
+        </div>
+      </section>
+
       {priorityBlock}
       {matrixBlock}
       {nudgesBlock}

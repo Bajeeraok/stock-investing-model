@@ -161,7 +161,11 @@ export function ExecutionPlanRationale({
 
       {!hideBuyStages && vm.buyStages.length > 0 && (
         <div className="mt-3">
-          <RoadmapTimeline stages={vm.buyStages} title="Staged buy timeline" />
+          <RoadmapTimeline
+            stages={vm.buyStages}
+            title="Staged buy timeline"
+            currentPrice={currentPrice}
+          />
         </div>
       )}
 

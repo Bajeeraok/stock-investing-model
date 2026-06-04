@@ -428,6 +428,129 @@ def derive_action_title(overall_verdict: str | None, gate_cleared: bool) -> tupl
     return "WATCH OR HOLD", "yellow"
 
 
+def derive_zone_aware_action_title(
+    overall_verdict: str | None,
+    gate_cleared: bool,
+    *,
+    long_spot: dict | None = None,
+    short_spot: dict | None = None,
+    in_bridge_band: bool = False,
+) -> tuple[str, ActionLight]:
+    """Price-zone-aware headline — updates with spot vs tiers (per request snapshot)."""
+    spot = long_spot or short_spot or {}
+    state = (spot.get("state") or "").lower()
+    tier_id = spot.get("tier_id") or spot.get("active_tier_id") or spot.get("next_add_tier_id")
+
+    if state == "in_tier" and tier_id:
+        tier = str(tier_id).upper()
+        if gate_cleared:
+            return f"ACCUMULATE · {tier}", "green"
+        return f"ACCUMULATE · {tier} (partial)", "yellow"
+
+    if state in ("in_band",) and gate_cleared:
+        return "TACTICAL ENTRY", "green"
+    if state in ("in_band",):
+        return "IN BUY BAND · WAIT FOR GATES", "yellow"
+
+    if in_bridge_band or (state in ("between_tiers", "between_horizon_bands") and spot.get("in_bridge_band")):
+        return "BRIDGE ONLY · PARTIAL", "yellow"
+
+    if state in ("between_tiers", "between_horizon_bands"):
+        return "WATCH ZONE", "yellow"
+
+    return derive_action_title(overall_verdict, gate_cleared)
+
+
+def build_zone_context(
+    investor_out: dict[str, Any],
+    current_price: float | None,
+) -> dict[str, Any] | None:
+    """Named zone + bridge band for Watch Zone UI."""
+    if current_price is None or current_price <= 0:
+        return None
+    horizons = investor_out.get("horizons") or {}
+    long_h = horizons.get("long") or {}
+    long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
+    short_ez = (horizons.get("short") or {}).get("entry_zone") or {}
+    st_spot = short_ez.get("spot_position") or {}
+
+    spot = long_spot if long_spot.get("state") in ("between_tiers", "in_tier") else st_spot
+    if not spot:
+        cross = st_spot.get("cross_gap") or {}
+        if cross.get("state") == "between_horizon_bands":
+            spot = {**st_spot, **cross}
+
+    state = spot.get("state")
+    if state not in ("between_tiers", "between_horizon_bands", "in_tier", "in_band"):
+        return None
+
+    bridge = spot.get("bridge_band") or {}
+    bridge_lo = bridge.get("low")
+    bridge_hi = bridge.get("high")
+    gap_lo = spot.get("floor_band_high") or spot.get("band_low")
+    gap_hi = spot.get("ceiling_band_low") or spot.get("band_high")
+
+    in_watch = state in ("between_tiers", "between_horizon_bands")
+    zone_name = "Watch Zone" if in_watch else f"Inside {spot.get('active_tier_id') or spot.get('tier_id') or 'tier'}"
+
+    return {
+        "zone_name": zone_name,
+        "state": state,
+        "in_watch_zone": in_watch,
+        "in_bridge_band": bool(spot.get("in_bridge_band")),
+        "gap_low": gap_lo,
+        "gap_high": gap_hi,
+        "bridge_low": bridge_lo,
+        "bridge_high": bridge_hi,
+        "bridge_rationale": (
+            "Bridge zone — partial starter if regime improves; not full position sizing."
+        ),
+        "catch_levels": bridge.get("levels") or spot.get("catch_levels") or [],
+        "floor_tier_id": spot.get("floor_tier_id"),
+        "ceiling_tier_id": spot.get("ceiling_tier_id"),
+        "next_add_tier_id": spot.get("next_add_tier_id"),
+    }
+
+
+def build_unlock_summary(
+    gates: list[dict[str, Any]],
+    *,
+    stock_bull_pct: float | None,
+    zone_context: dict[str, Any] | None = None,
+    st_band: dict | None = None,
+) -> str | None:
+    """One-line 'what flips WAIT → BUY' for Today tab."""
+    parts: list[str] = []
+    primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
+    regime_gate = next((g for g in primary if g.get("id") == "regime"), None)
+    if regime_gate and not regime_gate.get("pass"):
+        bull = round(float(stock_bull_pct or 0))
+        parts.append(f"HMM bull ≥{REGIME_GATE}% (now {bull}%)")
+
+    failed = [g for g in primary if not g.get("pass") and g.get("id") != "regime"]
+    if failed:
+        top = sorted(failed, key=lambda x: -(x.get("blocker_weight") or 0))[0]
+        label = str(top.get("label") or "gate").title()
+        parts.append(f"{label} clears")
+
+    zc = zone_context or {}
+    if zc.get("in_bridge_band") and zc.get("bridge_low") is not None:
+        parts.append(
+            f"price in bridge ${float(zc['bridge_low']):.0f}–${float(zc['bridge_high']):.0f}"
+        )
+    elif zc.get("gap_low") is not None and zc.get("gap_high") is not None:
+        parts.append(
+            f"price enters ${float(zc['gap_low']):.0f}–${float(zc['gap_high']):.0f}"
+        )
+    elif st_band and st_band.get("low") is not None:
+        lo, hi = float(st_band["low"]), float(st_band["high"])
+        parts.append(f"price in ST band ${lo:.0f}–${hi:.0f}")
+
+    if not parts:
+        return None
+    return "Unlocks when: " + " + ".join(parts)
+
+
 def build_retail_action_payload(
     *,
     current_price: float | None,
@@ -571,6 +694,32 @@ def enrich_investor_summary_retail_action(
         else investor_out.get("market_regime_bull_pct"),
         regime_transition_days=investor_out.get("regime_transition_days_estimate"),
     )
+
+    long_h = horizons.get("long") or {}
+    long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
+    short_spot = (short.get("entry_zone") or {}).get("spot_position") or {}
+    zone_ctx = build_zone_context(investor_out, current_price)
+    ra = investor_out["retail_action"]
+    if zone_ctx:
+        ra["zone_context"] = zone_ctx
+        title, light = derive_zone_aware_action_title(
+            investor_out.get("overall_verdict"),
+            ra.get("gate_cleared", False),
+            long_spot=long_spot,
+            short_spot=short_spot,
+            in_bridge_band=bool(zone_ctx.get("in_bridge_band")),
+        )
+        ra["action_title"] = title
+        ra["action_light"] = light
+    unlock = build_unlock_summary(
+        ra.get("gates") or [],
+        stock_bull_pct=investor_out.get("regime_bull_pct"),
+        zone_context=zone_ctx,
+        st_band=st_band,
+    )
+    if unlock:
+        ra["unlock_summary"] = unlock
+
     return investor_out
 
 

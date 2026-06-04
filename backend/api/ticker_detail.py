@@ -1637,12 +1637,16 @@ def _roadmap_sync_gap_timeline(
 
     gap_stage = {
         "timeline_key": "between_bands",
-        "label": "Now · between bands",
+        "label": "Watch Zone",
+        "zone_display_name": "Watch Zone",
         "when_to_act": when,
         "price_zone_low": round(floor_hi, 2),
         "price_zone_high": round(ceil_lo, 2),
         "bridge_zone_low": bridge_lo,
         "bridge_zone_high": bridge_hi,
+        "bridge_rationale": (
+            "Bridge zone — partial starter if regime improves; not full position sizing."
+        ),
         "catch_levels": catch_levels,
         "condition": " ".join(p for p in cond_parts if p),
         "conviction": "Low" if in_bridge else "None",
@@ -1721,20 +1725,21 @@ def _roadmap_you_are_here(buy_stages: list[dict], price: float) -> dict | None:
             ):
                 return {
                     "timeline_key": gap_row.get("timeline_key"),
-                    "label": gap_row.get("label"),
+                    "label": gap_row.get("label") or "Watch Zone",
                     "within_zone": True,
                     "in_bridge_band": True,
+                    "zone_display_name": "Watch Zone",
                     "note": "Inside bridge sleeve — partial starter only; not core MOS.",
                 }
             if gap_lo is not None and gap_hi is not None and float(gap_lo) <= price <= float(gap_hi):
                 return {
                     "timeline_key": gap_row.get("timeline_key"),
-                    "label": gap_row.get("label"),
+                    "label": gap_row.get("label") or "Watch Zone",
                     "within_zone": True,
                     "in_bridge_band": False,
+                    "zone_display_name": "Watch Zone",
                     "note": (
-                        "In the between-bands gap — hold size; use bridge catch levels or wait for "
-                        "lower-tier retest before scaling."
+                        "Price in Watch Zone — hold size; bridge catch levels or lower-tier retest before scaling."
                     ),
                 }
         except (TypeError, ValueError):

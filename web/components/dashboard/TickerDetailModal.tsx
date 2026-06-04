@@ -39,6 +39,7 @@ import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { TradingViewWidget } from "./TradingViewWidget";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
+import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -833,6 +834,13 @@ export function TickerDetailModal({
 
               {detail.investor_summary && (
                 <div className="space-y-3">
+                  {detail.investor_summary.retail_action?.zone_context?.in_watch_zone && (
+                    <WatchZoneCallout
+                      zone={detail.investor_summary.retail_action.zone_context}
+                      currentPrice={detail.current_price}
+                      regimeBullPct={detail.investor_summary.regime_bull_pct}
+                    />
+                  )}
                   <TickerCommandCard
                     summary={detail.investor_summary}
                     currentPrice={detail.current_price ?? 0}
@@ -964,6 +972,8 @@ export function TickerDetailModal({
                 />
               ) : null}
 
+              <UnlockWhenStrip text={detail.investor_summary?.retail_action?.unlock_summary} />
+
               {!detail.investor_summary && (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
                   <AlertCircle className="h-8 w-8 text-slate-500 mx-auto mb-2" />
@@ -1049,6 +1059,7 @@ export function TickerDetailModal({
                   <RoadmapTimeline
                     stages={executionVm.buyStages}
                     title="Staged entry roadmap"
+                    currentPrice={detail.current_price}
                   />
                 )}
                 {detail.investor_summary?.trade_roadmap ? (
