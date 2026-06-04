@@ -2132,6 +2132,14 @@ def _compute_full_dashboard_sync() -> dict:
             "Targets and stops are model ranges and thresholds, not guaranteed prices."
         ),
     }
+    try:
+        from signals.data_degraded import build_degraded_sources, degraded_mode_active
+
+        degraded_sources = build_degraded_sources(config)
+        data_freshness["degraded_sources"] = degraded_sources
+        data_freshness["degraded_mode"] = degraded_mode_active(degraded_sources)
+    except Exception as deg_err:
+        logger.debug("degraded_sources: %s", deg_err)
 
     paper_vs_backtest_drift = None
     try:
@@ -2597,10 +2605,22 @@ async def post_trim_cooldown(body: dict):
 
 
 @router.get("/behavior/journal")
-async def get_trade_journal(limit: int = Query(30, ge=1, le=100)):
+async def get_trade_journal(
+    limit: int = Query(30, ge=1, le=200),
+    ticker: str | None = Query(None, description="Filter by ticker"),
+    action: str | None = Query(None, description="Filter by action (add|trim)"),
+    q: str | None = Query(None, description="Search note/ticker/action"),
+):
     from behavior.trade_discipline import list_journal
 
-    return {"entries": list_journal(limit)}
+    return {
+        "entries": list_journal(
+            limit,
+            ticker=ticker,
+            action=action,
+            q=q,
+        )
+    }
 
 
 @router.post("/behavior/journal")

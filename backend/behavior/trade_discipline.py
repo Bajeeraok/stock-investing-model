@@ -143,9 +143,35 @@ def append_journal(ticker: str, action: str, note: str, config: dict) -> dict[st
     return {"ok": True, "ticker": t, "action": action}
 
 
-def list_journal(limit: int = 30) -> list[dict]:
+def list_journal(
+    limit: int = 30,
+    *,
+    ticker: str | None = None,
+    action: str | None = None,
+    q: str | None = None,
+) -> list[dict]:
     data = _load()
     entries = data.get("journal") or []
     if not isinstance(entries, list):
         return []
-    return entries[: max(1, min(100, limit))]
+
+    t_filter = (ticker or "").strip().upper()
+    a_filter = (action or "").strip().lower()
+    q_filter = (q or "").strip().lower()
+
+    filtered: list[dict] = []
+    for row in entries:
+        if not isinstance(row, dict):
+            continue
+        if t_filter and str(row.get("ticker") or "").upper() != t_filter:
+            continue
+        if a_filter and str(row.get("action") or "").lower() != a_filter:
+            continue
+        if q_filter:
+            hay = f"{row.get('ticker')} {row.get('action')} {row.get('note')}".lower()
+            if q_filter not in hay:
+                continue
+        filtered.append(row)
+
+    cap = max(1, min(200, limit))
+    return filtered[:cap]

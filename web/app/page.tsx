@@ -644,6 +644,7 @@ export interface DashboardData {
       ticker_count?: number;
     };
     message?: string | null;
+    summary_by_lens?: import("@/lib/forwardTrackingLens").SummaryByLens;
   };
   model_audit?: import("@/components/dashboard/index").ModelAuditPayload;
   tactical_breakouts?: import("@/components/dashboard/index").TacticalBreakoutRow[];
@@ -863,6 +864,8 @@ export interface DashboardData {
     price_last_bar_date?: string | null;
     eod_snapshot_latest_date?: string | null;
     precision_note?: string | null;
+    degraded_mode?: boolean;
+    degraded_sources?: import("@/components/dashboard/index").DegradedSource[];
   };
   /** Parallel shock scenarios to total portfolio value (illustrative) */
   portfolio_stress?: {

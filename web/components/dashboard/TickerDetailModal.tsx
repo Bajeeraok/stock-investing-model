@@ -36,6 +36,9 @@ import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
 import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
 import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
 import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
+import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
+import { TradingViewWidget } from "./TradingViewWidget";
+import { CopyTradePlanButton } from "./CopyTradePlanButton";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -837,6 +840,30 @@ export function TickerDetailModal({
                     actionTitle={headerActionStatus.title}
                     actionLight={headerActionStatus.light}
                   />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CopyTradePlanButton
+                      ticker={detail.ticker}
+                      summary={detail.investor_summary}
+                      currentPrice={detail.current_price ?? 0}
+                      mode={decisionMode}
+                    />
+                  </div>
+                  {detail.price_history && detail.price_history.length >= 3 && (
+                    <HorizonProjectionChart
+                      ticker={detail.ticker}
+                      currentPrice={detail.current_price ?? 0}
+                      priceHistory={detail.price_history}
+                      short={detail.investor_summary.horizons.short}
+                      medium={detail.investor_summary.horizons.medium}
+                      long={detail.investor_summary.horizons.long}
+                      fairValue={detail.investor_summary.fair_value}
+                      ma20={detail.ma20}
+                      ma50={detail.ma50}
+                      variant="sparkline"
+                    />
+                  )}
+                  <TradingViewWidget ticker={detail.ticker} height={320} />
+                  <InstitutionalInsightsPanel ticker={detail.ticker} />
                   {executionVm && (
                     <SignalBreakdownGrid
                       rows={[

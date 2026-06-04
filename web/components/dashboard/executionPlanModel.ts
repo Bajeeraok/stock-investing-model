@@ -247,3 +247,55 @@ export function statusTone(status: EvidenceStatus): string {
       ? "text-amber-200 bg-amber-500/10 border-amber-500/30"
       : "text-slate-300 bg-slate-700/40 border-slate-600/60";
 }
+
+export function catchLevelsFingerprint(
+  levels?: BuyStagePreview["catch_levels"] | null,
+): string {
+  if (!levels?.length) return "";
+  return levels.map((l) => `${l.id}:${l.price.toFixed(4)}`).join("|");
+}
+
+export function resolveSharedCatchLevels(stages: BuyStagePreview[]): {
+  shared: BuyStagePreview["catch_levels"] | null;
+  uniform: boolean;
+} {
+  const withLevels = stages.filter((s) => s.catch_levels && s.catch_levels.length > 0);
+  if (withLevels.length === 0) return { shared: null, uniform: true };
+  const fp0 = catchLevelsFingerprint(withLevels[0].catch_levels);
+  const uniform = withLevels.every((s) => catchLevelsFingerprint(s.catch_levels) === fp0);
+  return {
+    shared: uniform ? withLevels[0].catch_levels ?? null : null,
+    uniform,
+  };
+}
+
+export function resolveSharedBridgeZone(stages: BuyStagePreview[]): {
+  uniform: boolean;
+  low: number | null;
+  high: number | null;
+} {
+  const withBridge = stages.filter(
+    (s) => s.bridge_zone_low != null && s.bridge_zone_high != null,
+  );
+  if (withBridge.length === 0) return { uniform: true, low: null, high: null };
+  const lo = withBridge[0].bridge_zone_low!;
+  const hi = withBridge[0].bridge_zone_high!;
+  const uniform = withBridge.every(
+    (s) => s.bridge_zone_low === lo && s.bridge_zone_high === hi,
+  );
+  return { uniform, low: uniform ? lo : null, high: uniform ? hi : null };
+}
+
+/** Border tint when catch levels differ per watch period. */
+export function periodCatchLevelTone(timelineKey: string): string {
+  if (timelineKey === "today" || timelineKey === "immediate") {
+    return "border-cyan-500/35 bg-cyan-950/20";
+  }
+  if (timelineKey.includes("days") || timelineKey === "short_term") {
+    return "border-violet-500/35 bg-violet-950/20";
+  }
+  if (timelineKey.includes("week")) {
+    return "border-emerald-500/35 bg-emerald-950/20";
+  }
+  return "border-amber-500/30 bg-amber-950/15";
+}

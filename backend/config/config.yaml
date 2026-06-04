@@ -314,6 +314,13 @@ portfolio_risk:
 #   - Custom bullet one
 #   - Custom bullet two
 
+# Phase D5 — surface partial vendor failure (see signals/data_degraded.py)
+feature_flags:
+  fred_disabled: false
+  yahoo_prices_disabled: false
+  degraded_mode_force: false
+  degraded_mode_note: ""
+
 # Alert when score moves by this much (points)
 alert_score_delta: 15
 

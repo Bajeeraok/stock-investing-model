@@ -356,7 +356,7 @@ def get_forward_tracking(
         "ticker_count": len(syms),
     }
 
-    return {
+    result = {
         "records": capped,
         "summary_by_horizon": summary_by_horizon,
         "summary_by_signal": summary_by_signal,
@@ -370,6 +370,14 @@ def get_forward_tracking(
         ),
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
+    try:
+        from signals.forward_tracking_lens import build_summary_by_lens
+
+        result["summary_by_lens"] = build_summary_by_lens(result)
+    except Exception as lens_err:
+        logger.debug("summary_by_lens: %s", lens_err)
+        result["summary_by_lens"] = {}
+    return result
 
 
 def collect_forward_records(

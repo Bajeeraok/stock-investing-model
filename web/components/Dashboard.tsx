@@ -76,6 +76,12 @@ import {
   EventRiskStrip,
   HunterPanel,
   ScannerHomeLite,
+  InstitutionalInsightsPanel,
+  TradingViewWidget,
+  CopyTradePlanButton,
+  DecisionJournalPanel,
+  LensTrackRecordStrip,
+  DegradedDataBanner,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
@@ -402,7 +408,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     if (data.warming) return;
     if (data.analysis_deferred !== true) return;
     if (analysisBundle !== null) return;
-    if (activeTab !== "analysis" && activeTab !== "markets") return;
+    // D1: preload on Overview so track record strip has forward stats without visiting Analysis
+    if (activeTab !== "overview" && activeTab !== "analysis" && activeTab !== "markets") return;
     let cancelled = false;
     setAnalysisLoading(true);
     setAnalysisFetchErr(null);
@@ -460,6 +467,29 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const indicatorComparisons = analysisBundle?.indicator_comparisons ?? data.indicator_comparisons;
   const fmpPlanStatus = analysisBundle?.fmp_plan_status ?? data.fmp_plan_status;
   const modelAudit = analysisBundle?.model_audit ?? data.model_audit;
+
+  const summaryByLens = forwardTracking?.summary_by_lens;
+  const degradedSources = useMemo(() => {
+    const base = data.data_freshness?.degraded_sources ?? [];
+    if (!fmpPlanStatus?.unavailable?.length) return base;
+    const fmpFailed = fmpPlanStatus.unavailable
+      .map((u) => u.feature)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(", ");
+    const merged = [...base];
+    const idx = merged.findIndex((d) => d.source === "FMP");
+    const fmpEntry = {
+      source: "FMP",
+      status: "degraded" as const,
+      message: `Probe failed: ${fmpFailed || "plan limit"}`,
+    };
+    if (idx >= 0) merged[idx] = fmpEntry;
+    else merged.push(fmpEntry);
+    return merged;
+  }, [data.data_freshness?.degraded_sources, fmpPlanStatus]);
+  const degradedMode =
+    Boolean(data.data_freshness?.degraded_mode) || degradedSources.some((d) => d.status !== "ok");
 
   const analysisPanelData = useMemo(
     (): DashboardData => ({
@@ -917,6 +947,15 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 summary_by_horizon={forwardTracking?.summary_by_horizon}
                 message={forwardTracking?.message}
               />
+              <LensTrackRecordStrip
+                activeLens={tradingLens}
+                summaryByLens={summaryByLens}
+                loading={analysisLoading && !forwardTracking}
+              />
+              {degradedMode && (
+                <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} compact />
+              )}
+              <DecisionJournalPanel />
               {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
               {!data.retail_market_decisions?.market_context && (data.macro_regime || data.macro_analog) && (
                 <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -1583,6 +1622,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   calibration={(confidenceCalibration ?? null) as Parameters<typeof TrackRecordPanel>[0]["calibration"]}
                   paperTrading={paperTrading?.summary ?? null}
                   forwardSummary={forwardTracking?.summary_by_signal ?? null}
+                  summaryByLens={summaryByLens}
+                  activeLens={tradingLens}
                   modelHealth={data.model_health ?? null}
                   equityCurve={paperTrading?.equity_curve ?? null}
                   auditOutcomeSummary={modelAudit?.outcome_summary ?? null}

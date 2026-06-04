@@ -76,6 +76,8 @@ interface Props {
   calibration?: CalibrationData | null;
   paperTrading?: PaperTradingSummary | null;
   forwardSummary?: ForwardSummary | null;
+  summaryByLens?: import("@/lib/forwardTrackingLens").SummaryByLens | null;
+  activeLens?: import("@/lib/tradingLens").TradingLens;
   modelHealth?: ModelHealth | null;
   /** Completed paper trades — cumulative equity index (starts 100) from dashboard API */
   equityCurve?: EquityPoint[] | null;
@@ -146,6 +148,8 @@ export default function TrackRecordPanel({
   calibration,
   paperTrading,
   forwardSummary,
+  summaryByLens,
+  activeLens = "scout",
   modelHealth,
   equityCurve,
   auditOutcomeSummary,
@@ -219,6 +223,29 @@ export default function TrackRecordPanel({
           />
         )}
       </div>
+
+      {summaryByLens && Object.keys(summaryByLens).length > 0 && (
+        <div className="rounded-lg border border-violet-500/20 bg-violet-950/10 px-3 py-2">
+          <p className="text-[11px] text-violet-300/90 font-medium mb-1.5">Calibration by lens (forward EOD pairs)</p>
+          <div className="grid gap-1.5 sm:grid-cols-3 text-[10px]">
+            {(["scout", "swing", "owner"] as const).map((lens) => {
+              const row = summaryByLens[lens];
+              const active = lens === activeLens;
+              return (
+                <div
+                  key={lens}
+                  className={`rounded px-2 py-1.5 border ${
+                    active ? "border-violet-400/40 bg-violet-500/10" : "border-slate-700/50 bg-slate-900/30"
+                  }`}
+                >
+                  <span className="uppercase tracking-wide text-slate-400">{lens}</span>
+                  <p className="text-slate-200 mt-0.5">{row?.label || "Insufficient EOD history"}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Cumulative paper-trade equity (compounded by completed trade returns) */}
       {hasEquity && (

@@ -283,6 +283,112 @@ function CustomTooltip({
   );
 }
 
+function fmtPct(n: number): string {
+  const sign = n >= 0 ? "+" : "";
+  return `${sign}${n.toFixed(1)}%`;
+}
+
+/** Compact 90d price path — Phase E2 sparkline mode. */
+function PriceSparkline({
+  priceHistory,
+  currentPrice,
+  fairValue,
+  targetPrice,
+  onExpand,
+}: {
+  priceHistory: PriceHistoryPoint[];
+  currentPrice: number;
+  fairValue?: number | null;
+  targetPrice?: number | null;
+  onExpand?: () => void;
+}) {
+  const hist = priceHistory.slice(-60);
+  const sparkData = useMemo(
+    () => hist.map((p, i) => ({ i, close: p.close, date: p.date })),
+    [hist]
+  );
+
+  const periodPct = useMemo(() => {
+    if (hist.length < 2 || currentPrice <= 0) return null;
+    const first = hist[0]?.close;
+    if (!first || first <= 0) return null;
+    return ((currentPrice - first) / first) * 100;
+  }, [hist, currentPrice]);
+
+  const sparkDomain = useMemo((): [number, number] => {
+    const vals = hist.map((p) => p.close).filter((n) => n > 0);
+    if (fairValue != null && fairValue > 0) vals.push(fairValue);
+    if (targetPrice != null && targetPrice > 0) vals.push(targetPrice);
+    if (vals.length === 0) return [currentPrice * 0.95, currentPrice * 1.05];
+    const lo = Math.min(...vals);
+    const hi = Math.max(...vals);
+    const pad = (hi - lo) * 0.06 || currentPrice * 0.02;
+    return [lo - pad, hi + pad];
+  }, [hist, currentPrice, fairValue, targetPrice]);
+
+  const trendUp = periodPct != null && periodPct >= 0;
+  const stroke = trendUp ? "#34d399" : "#f87171";
+
+  if (sparkData.length < 3) {
+    return (
+      <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs text-slate-500">
+        Price history too short for sparkline.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[10px] uppercase tracking-wider text-slate-500 shrink-0">90d path</span>
+          {periodPct != null && (
+            <span className={`text-xs font-mono tabular-nums ${trendUp ? "text-emerald-400" : "text-red-400"}`}>
+              {fmtPct(periodPct)}
+            </span>
+          )}
+          {fairValue != null && fairValue > 0 && currentPrice > 0 && (
+            <span className="text-[10px] text-slate-600 truncate hidden sm:inline">
+              FV {fmtPrice(fairValue)}
+            </span>
+          )}
+        </div>
+        {onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            className="text-[10px] text-cyan-400/90 hover:text-cyan-300 shrink-0"
+          >
+            Target bands →
+          </button>
+        )}
+      </div>
+      <div className="h-12 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={sparkData} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+            <YAxis domain={sparkDomain} hide />
+            <XAxis dataKey="i" hide />
+            <Line
+              type="monotone"
+              dataKey="close"
+              stroke={stroke}
+              strokeWidth={1.75}
+              dot={false}
+              isAnimationActive={false}
+            />
+            {fairValue != null && fairValue > 0 && (
+              <ReferenceLine y={fairValue} stroke="#34d399" strokeDasharray="2 3" strokeOpacity={0.55} />
+            )}
+            {targetPrice != null && targetPrice > 0 && targetPrice !== fairValue && (
+              <ReferenceLine y={targetPrice} stroke="#22d3ee" strokeDasharray="2 3" strokeOpacity={0.45} />
+            )}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 export function HorizonProjectionChart({
   ticker,
   currentPrice,
@@ -293,6 +399,7 @@ export function HorizonProjectionChart({
   fairValue,
   ma20,
   ma50,
+  variant = "full",
 }: {
   ticker?: string;
   currentPrice: number;
@@ -303,7 +410,10 @@ export function HorizonProjectionChart({
   fairValue?: number | null;
   ma20?: number | null;
   ma50?: number | null;
+  /** full = bands chart; sparkline = compact 90d path (Phase E2) */
+  variant?: "full" | "sparkline";
 }) {
+  const [expanded, setExpanded] = useState(variant === "full");
   const [visible, setVisible] = useState<Record<HorizonKey, boolean>>({
     short: true,
     medium: true,
@@ -354,13 +464,28 @@ export function HorizonProjectionChart({
 
   const hasHistory = priceHistory.length >= 5;
   const hasHorizons = short?.target || medium?.target || long?.target;
+  const primaryTarget = short?.target ?? medium?.target ?? long?.target ?? null;
+
+  if (variant === "sparkline" && !expanded) {
+    if (currentPrice <= 0 || priceHistory.length < 3) return null;
+    return (
+      <PriceSparkline
+        priceHistory={priceHistory}
+        currentPrice={currentPrice}
+        fairValue={fairValue}
+        targetPrice={primaryTarget}
+        onExpand={hasHorizons ? () => setExpanded(true) : undefined}
+      />
+    );
+  }
+
+  if (!hasHorizons || currentPrice <= 0) return null;
+
   const showMa20 = ma20 != null && ma20 > 0;
   const showMa50 = ma50 != null && ma50 > 0;
   const hasFairValue = fairValue != null && fairValue > 0;
   const fairValueGapPct =
     hasFairValue && currentPrice > 0 ? ((fairValue - currentPrice) / currentPrice) * 100 : null;
-
-  if (!hasHorizons || currentPrice <= 0) return null;
 
   return (
     <div className="rounded-xl border border-slate-700/90 bg-slate-900/40 overflow-hidden">
@@ -379,7 +504,16 @@ export function HorizonProjectionChart({
               {!hasHistory ? " History limited — bands anchored at current price." : null}
             </p>
           </div>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {variant === "sparkline" && expanded && (
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                className="text-xs px-2 py-1 rounded-full border border-slate-600 text-slate-400 hover:text-slate-200"
+              >
+                Collapse
+              </button>
+            )}
             {hasFairValue && (
               <button
                 type="button"

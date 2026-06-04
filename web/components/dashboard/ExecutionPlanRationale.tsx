@@ -7,9 +7,9 @@ import type { DecisionMode } from "@/lib/decisionMode";
 import type { InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import {
   buildExecutionPlanViewModel,
-  stageActChipClass,
   statusTone,
 } from "./executionPlanModel";
+import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
 
 export function ExecutionPlanRationale({
   summary,
@@ -160,48 +160,8 @@ export function ExecutionPlanRationale({
       )}
 
       {!hideBuyStages && vm.buyStages.length > 0 && (
-        <div className="mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5">
-          <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Staged buy timeline</p>
-          <div className="space-y-2">
-            {vm.buyStages.map((s) => (
-              <div
-                key={s.timeline_key}
-                className={clsx(
-                  "text-sm",
-                  s.is_gap_row && "rounded-lg border border-amber-500/25 bg-amber-950/20 px-2 py-1.5 -mx-1",
-                )}
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="shrink-0 w-24 text-slate-400 font-medium">{s.label}</span>
-                  <span className={clsx("shrink-0 px-1.5 py-0.5 rounded text-xs font-medium", stageActChipClass(s.when_to_act))}>
-                    {s.when_to_act}
-                  </span>
-                  <span className="font-mono text-slate-300">
-                    ${s.price_zone_low.toFixed(2)}–${s.price_zone_high.toFixed(2)}
-                  </span>
-                  {s.position_pct > 0 && <span className="text-slate-500">{s.position_pct}%</span>}
-                </div>
-                {s.bridge_zone_low != null && s.bridge_zone_high != null && (
-                  <p className="text-[11px] text-cyan-300/90 font-mono mt-0.5 ml-24 sm:ml-0">
-                    Bridge ${s.bridge_zone_low.toFixed(2)}–${s.bridge_zone_high.toFixed(2)}
-                  </p>
-                )}
-                {s.catch_levels && s.catch_levels.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {s.catch_levels.map((lv) => (
-                      <span
-                        key={lv.id}
-                        className="text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-200/90"
-                        title={lv.label}
-                      >
-                        ${lv.price.toFixed(2)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+        <div className="mt-3">
+          <RoadmapTimeline stages={vm.buyStages} title="Staged buy timeline" />
         </div>
       )}
 

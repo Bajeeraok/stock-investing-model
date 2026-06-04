@@ -76,6 +76,23 @@ def get_weighted_insider_signal(config: dict, ticker: str, limit: int = 20) -> d
 def get_short_interest_signal(config: dict, ticker: str) -> dict[str, Any]:
     row, err = fetch_short_float_summary(config, ticker)
     if err or not row:
+        # Free fallback: FINRA bi-weekly via yfinance (no FMP subscription required)
+        try:
+            from signals.short_interest import fetch_short_interest
+
+            si = fetch_short_interest(ticker)
+            if si and si.get("short_pct") is not None:
+                pct = float(si["short_pct"]) * 100.0
+                risk = si.get("squeeze_risk") or "unknown"
+                return {
+                    "short_float_pct": round(pct, 2),
+                    "signal": f"{str(risk).upper()} — {si.get('label', 'FINRA via Yahoo')}",
+                    "source": "yfinance_finra",
+                    "days_to_cover": si.get("days_to_cover"),
+                    "trend": si.get("trend"),
+                }
+        except Exception as exc:
+            logger.debug("short_interest yfinance fallback %s: %s", ticker, exc)
         return {"short_float_pct": None, "signal": "UNKNOWN", "error": err}
 
     sf = row.get("shortPercentOfFloat")
@@ -98,7 +115,7 @@ def get_short_interest_signal(config: dict, ticker: str) -> dict[str, Any]:
     else:
         label = "LOW_SHORT — clean"
 
-    return {"short_float_pct": round(pct, 2), "signal": label}
+    return {"short_float_pct": round(pct, 2), "signal": label, "source": "fmp"}
 
 
 def get_institutional_trend_proxy(config: dict, ticker: str) -> dict[str, Any]:
