@@ -22,6 +22,8 @@ export function ExecutionPlanRationale({
   showTickerLine = true,
   collapsible = false,
   defaultOpen = true,
+  hideValuationHeader = false,
+  hideBuyStages = false,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -34,6 +36,8 @@ export function ExecutionPlanRationale({
   showTickerLine?: boolean;
   collapsible?: boolean;
   defaultOpen?: boolean;
+  hideValuationHeader?: boolean;
+  hideBuyStages?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [evidenceOpen, setEvidenceOpen] = useState({
@@ -54,6 +58,8 @@ export function ExecutionPlanRationale({
   const { fair_value } = summary;
   const body = (
     <>
+      {!hideValuationHeader && (
+        <>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
         <span
           className={clsx(
@@ -72,6 +78,8 @@ export function ExecutionPlanRationale({
         You can be undervalued on this line and still see WATCH or REDUCE elsewhere — value without timing yet,
         not a broken model.
       </p>
+        </>
+      )}
 
       {vm.confidenceNearlyThere && vm.confidenceNearlyThereCopy && (
         <div
@@ -151,7 +159,7 @@ export function ExecutionPlanRationale({
         </div>
       )}
 
-      {vm.buyStages.length > 0 && (
+      {!hideBuyStages && vm.buyStages.length > 0 && (
         <div className="mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5">
           <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-2">Staged buy timeline</p>
           <div className="space-y-1.5">

@@ -111,6 +111,8 @@ export type GlobalActionHeaderProps = {
   rsi?: number | null;
   coherentStory?: string | null;
   nextTrigger?: RetailActionPayload["next_trigger"];
+  /** Skip ticker/price/status hero — gates + next trigger only (command card already shown). */
+  contextOnly?: boolean;
 };
 
 // ─── Behavioral badges (horizon cards) ───────────────────────────────────────
@@ -387,6 +389,7 @@ export function GlobalActionHeader({
   rsi,
   coherentStory,
   nextTrigger,
+  contextOnly = false,
 }: GlobalActionHeaderProps) {
   const primaryGates = filterPrimaryTradingGates(gates);
   const displayGates = primaryGates.length > 0 ? primaryGates : gates;
@@ -396,6 +399,44 @@ export function GlobalActionHeader({
   const storyLine = coherentStory?.trim() || dynamicLine;
 
   const marginalCount = displayGates.filter((g) => g.visualStatus === "marginal").length;
+
+  const gatesBlock = (
+    <div className={contextOnly ? "p-4 space-y-3" : "px-3 sm:px-5 pb-4"}>
+      {contextOnly && nextTrigger && (
+        <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/25 px-3 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
+          <p className="text-sm font-semibold text-emerald-100 mt-0.5">{nextTrigger.headline}</p>
+          {nextTrigger.detail ? (
+            <p className="text-xs text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
+          ) : null}
+        </div>
+      )}
+      <TradingGateStatus gates={displayGates} />
+      {gateTotal > 0 && (
+        <p className={clsx("text-xs text-slate-500", contextOnly ? "px-1" : "mt-2 px-1")}>
+          Gates:{" "}
+          <span className="text-slate-200 font-semibold tabular-nums">
+            {passCount} of {gateTotal} pass
+            {marginalCount > 0 ? ` (${marginalCount} marginal)` : ""}
+            {" · "}
+            {setupQualityLabel(passCount, gateTotal)}
+          </span>
+        </p>
+      )}
+    </div>
+  );
+
+  if (contextOnly) {
+    if (gateTotal === 0 && !nextTrigger) return null;
+    return (
+      <section
+        className="rounded-2xl border border-violet-500/25 bg-gradient-to-b from-violet-950/30 to-slate-950/80 overflow-hidden"
+        aria-label="Trading gates and next trigger"
+      >
+        {gatesBlock}
+      </section>
+    );
+  }
 
   const accent =
     statusLight === "green"
@@ -440,20 +481,7 @@ export function GlobalActionHeader({
           </div>
         )}
       </div>
-      <div className="px-3 sm:px-5 pb-4">
-        <TradingGateStatus gates={displayGates} />
-        {gateTotal > 0 && (
-          <p className="mt-2 px-1 text-xs text-slate-500">
-            Gates:{" "}
-            <span className="text-slate-200 font-semibold tabular-nums">
-              {passCount} of {gateTotal} pass
-              {marginalCount > 0 ? ` (${marginalCount} marginal)` : ""}
-              {" · "}
-              {setupQualityLabel(passCount, gateTotal)}
-            </span>
-          </p>
-        )}
-      </div>
+      {gatesBlock}
     </header>
   );
 }

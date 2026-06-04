@@ -13,12 +13,10 @@ import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
 import { TickerDetailWhyNav, type WhySubTab } from "./TickerDetailWhyNav";
 import { ScenarioTeaser } from "./ScenarioTeaser";
 import { RoadmapSummaries } from "./RoadmapSummaries";
-import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
 import { HorizonPlaybooksPanel } from "./HorizonPlaybooksPanel";
 import type { HorizonPlaybooksBundle } from "./HorizonPlaybookCard";
 import { type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
-import { DataMetricCard } from "./DataMetricCard";
 import { PositionIntentChip } from "./PositionIntentChip";
 import { TacticalEntryPanel } from "./TacticalEntryPanel";
 import { getPositionIntent, setPositionIntent, type PositionIntent } from "@/lib/positionIntent";
@@ -31,6 +29,13 @@ import {
 } from "@/lib/decisionMode";
 import { DecisionModeSelector } from "./DecisionModeSelector";
 import { DecisionDeck } from "./DecisionDeck";
+import { buildExecutionPlanViewModel } from "./executionPlanModel";
+import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
+import { DataMetricCard } from "./DataMetricCard";
+import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
+import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
+import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
+import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -488,13 +493,6 @@ export function TickerDetailModal({
     });
   }, [detail, confidence]);
 
-  const tradingGates = useMemo(() => {
-    const inv = detail?.investor_summary;
-    const cp = detail?.current_price;
-    if (!inv || cp == null || !(cp > 0)) return [];
-    return buildGatesFromInvestorSummary(inv, cp);
-  }, [detail]);
-
   const headerActionStatus = useMemo((): RetailActionStatus => {
     const ra = detail?.investor_summary?.retail_action;
     if (ra?.action_title && ra?.action_light) {
@@ -515,11 +513,11 @@ export function TickerDetailModal({
     return { light: "yellow", title: "WATCH OR HOLD", subtitle: "Mixed setup — wait for locked gates to clear." };
   }, [retailActionStatus, detail?.investor_summary?.retail_action, detail?.investor_summary?.overall_verdict]);
 
-  const assessmentPctForHeader = useMemo(() => {
+  const tradingGates = useMemo(() => {
     const inv = detail?.investor_summary;
     const cp = detail?.current_price;
-    if (!inv || !cp) return 0;
-    return ((inv.fair_value - cp) / cp) * 100;
+    if (!inv || cp == null || !(cp > 0)) return [];
+    return buildGatesFromInvestorSummary(inv, cp);
   }, [detail]);
 
   const buyBandContext = useMemo(() => {
@@ -533,6 +531,25 @@ export function TickerDetailModal({
     const high = Math.max(ez.low, ez.high);
     return { insideBuyBand: cp >= low && cp <= high, rsi: inv?.rsi ?? null };
   }, [detail]);
+
+  const assessmentPctForHeader = useMemo(() => {
+    const inv = detail?.investor_summary;
+    const cp = detail?.current_price;
+    if (!inv || !cp) return 0;
+    return ((inv.fair_value - cp) / cp) * 100;
+  }, [detail]);
+
+  const executionVm = useMemo(() => {
+    const inv = detail?.investor_summary;
+    const cp = detail?.current_price ?? 0;
+    if (!inv || cp <= 0) return null;
+    return buildExecutionPlanViewModel(inv, cp, decisionMode);
+  }, [detail?.investor_summary, detail?.current_price, decisionMode]);
+
+  const streetVsExecutionText = useMemo(() => {
+    const inv = detail?.investor_summary;
+    return inv?.retail_action?.coherent_story?.trim() || inv?.one_answer?.bottom_line || null;
+  }, [detail?.investor_summary]);
 
   const horizonPlaybooksBundle = useMemo((): HorizonPlaybooksBundle | null => {
     const inv = detail?.investor_summary;
@@ -567,34 +584,48 @@ export function TickerDetailModal({
         aria-modal="true"
         aria-labelledby="ticker-detail-title"
       >
-        <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700/80 px-4 sm:px-6 py-2.5 flex items-center justify-between z-20">
-          <h2 id="ticker-detail-title" className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-            Ticker detail
-          </h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-          >
-            <X className="h-5 w-5" />
-          </button>
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700/80 px-4 sm:px-6 py-2.5 flex items-start justify-between gap-3 z-20">
+          {detail && !loading ? (
+            <div className="min-w-0 flex-1">
+              <p id="ticker-detail-title" className="font-mono text-lg font-bold text-white tracking-tight">
+                {detail.ticker}
+              </p>
+              <p className="text-[11px] text-slate-500 truncate">
+                {detail.company_name ?? "—"}
+                {detail.sector ? ` · ${detail.sector}` : ""}
+              </p>
+            </div>
+          ) : (
+            <h2 id="ticker-detail-title" className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+              Ticker detail
+            </h2>
+          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {detail && !loading && detail.current_price != null && (
+              <div className="text-right hidden sm:block">
+                <p className="text-lg font-bold text-white tabular-nums">${detail.current_price.toFixed(2)}</p>
+                {detail.investor_summary && (
+                  <p
+                    className={clsx(
+                      "text-[10px] font-mono tabular-nums",
+                      assessmentPctForHeader >= 0 ? "text-teal-400" : "text-red-400",
+                    )}
+                  >
+                    {assessmentPctForHeader >= 0 ? "+" : "−"}
+                    {Math.abs(assessmentPctForHeader).toFixed(1)}% vs FV
+                  </p>
+                )}
+              </div>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
+              aria-label="Close ticker detail"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
-
-        {detail && !loading && detail.investor_summary && tradingGates.length > 0 && (
-          <GlobalActionHeader
-            ticker={detail.ticker}
-            companyName={detail.company_name}
-            sector={detail.sector}
-            currentPrice={detail.current_price}
-            statusTitle={headerActionStatus.title}
-            statusLight={headerActionStatus.light}
-            assessmentPct={assessmentPctForHeader}
-            gates={tradingGates}
-            insideBuyBand={buyBandContext.insideBuyBand}
-            rsi={buyBandContext.rsi}
-            coherentStory={detail.investor_summary.retail_action?.coherent_story}
-            nextTrigger={detail.investor_summary.retail_action?.next_trigger}
-          />
-        )}
 
         {/* Catalyst — summary first, full note on expand */}
         {detail && !loading && detail.catalyst?.active && (
@@ -643,10 +674,10 @@ export function TickerDetailModal({
           </div>
         )}
 
-        {/* Ticker hub — quick read strip */}
+        {/* Ticker hub — quick read strip (earnings, plan, intent) */}
         {detail && !loading && (
           <div className="border-b border-slate-700 bg-slate-900/90 px-3 sm:px-5 py-3">
-            <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Ticker hub</p>
+            <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">Ticker hub</p>
             <div className="flex gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch] pb-0.5">
               <DataMetricCard
                 dense
@@ -660,7 +691,13 @@ export function TickerDetailModal({
                 className="shrink-0 min-w-[7.5rem]"
                 title="Plan"
                 primary={detail.investor_summary?.one_answer?.verdict ?? detail.investor_summary?.overall_verdict ?? "—"}
-                secondary={unified?.action ? `Pattern: ${unified.action}` : undefined}
+                secondary={
+                  hasVerdictConflict && patternVerdict
+                    ? `Pattern: ${patternVerdict}`
+                    : unified?.action
+                      ? `Pattern: ${unified.action}`
+                      : undefined
+                }
               />
               <DataMetricCard
                 dense
@@ -719,19 +756,19 @@ export function TickerDetailModal({
                 type="button"
                 onClick={() => setModalTab(id)}
                 className={clsx(
-                  "flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors",
+                  "flex-1 flex items-center justify-center gap-2 py-2.5 text-[11px] font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px",
                   modalTab === id
-                    ? "text-emerald-400 border-b-2 border-emerald-500 bg-slate-800/50"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/30"
+                    ? "text-teal-400 border-teal-400 bg-slate-800/50"
+                    : "text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-800/30"
                 )}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className="h-3.5 w-3.5 shrink-0" />
                 {label}
               </button>
             ))}
             </div>
-            <p className="text-center text-sm text-slate-500 px-2 py-1.5 border-t border-slate-800">
-              Today: decide · Levels: prices &amp; plans · Why: scenarios, model proof, context
+            <p className="text-center text-[10px] text-slate-600 px-2 py-1 border-t border-slate-800 font-mono">
+              Today · decide · Levels · prices · Why · proof
             </p>
           </div>
         )}
@@ -792,6 +829,45 @@ export function TickerDetailModal({
               )}
 
               {detail.investor_summary && (
+                <div className="space-y-3">
+                  <TickerCommandCard
+                    summary={detail.investor_summary}
+                    currentPrice={detail.current_price ?? 0}
+                    mode={decisionMode}
+                    actionTitle={headerActionStatus.title}
+                    actionLight={headerActionStatus.light}
+                  />
+                  {executionVm && (
+                    <SignalBreakdownGrid
+                      rows={[
+                        { label: "Market structure", status: executionVm.marketStatus, summary: executionVm.marketSummary },
+                        { label: "Chart & momentum", status: executionVm.chartStatus, summary: executionVm.chartSummary },
+                        { label: "Smart money", status: executionVm.flowStatus, summary: executionVm.flowSummary },
+                        { label: "Business & news", status: executionVm.businessStatus, summary: executionVm.businessSummary },
+                      ]}
+                      bottomLine={detail.investor_summary.one_answer?.bottom_line}
+                    />
+                  )}
+                  {tradingGates.length > 0 && (
+                    <GlobalActionHeader
+                      ticker={detail.ticker}
+                      companyName={detail.company_name}
+                      sector={detail.sector}
+                      currentPrice={detail.current_price}
+                      statusTitle={headerActionStatus.title}
+                      statusLight={headerActionStatus.light}
+                      assessmentPct={assessmentPctForHeader}
+                      gates={tradingGates}
+                      insideBuyBand={buyBandContext.insideBuyBand}
+                      rsi={buyBandContext.rsi}
+                      nextTrigger={detail.investor_summary.retail_action?.next_trigger}
+                      contextOnly
+                    />
+                  )}
+                </div>
+              )}
+
+              {detail.investor_summary && (
                 <DecisionDeck
                   summary={detail.investor_summary}
                   currentPrice={detail.current_price ?? 0}
@@ -799,8 +875,12 @@ export function TickerDetailModal({
                   tacticalActive={Boolean(detail.investor_summary.tactical_entry?.active)}
                   ltEntryTiersOpen={ltEntryTiersOpen}
                   onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                  hideHero
+                  hideExecutionEvidence={Boolean(executionVm)}
                 />
               )}
+
+              <StreetVsExecutionCard text={streetVsExecutionText} />
 
               <ScenarioTeaser data={priceTargets} onOpenValuation={openWhyValuation} />
 
@@ -835,7 +915,6 @@ export function TickerDetailModal({
                 />
               )}
 
-              {/* ── Investor Decision Summary (primary horizon + compare) ───── */}
               {detail.investor_summary ? (
                 <InvestorDecisionSummarySection
                   summary={detail.investor_summary}
@@ -849,23 +928,24 @@ export function TickerDetailModal({
                   onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
                   priceHistory={detail.price_history}
                   ticker={detail.ticker}
-                  hideTradingGates={Boolean(tradingGates.length > 0)}
+                  hideTradingGates={tradingGates.length > 0}
                   hideRoadmaps
                   compactOverview
                   marketContext={detail.market_context}
                   decisionMode={decisionMode}
                   contentLayer="today"
                 />
-              ) : (
+              ) : null}
+
+              {!detail.investor_summary && (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
                   <AlertCircle className="h-8 w-8 text-slate-500 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">Signal data is still loading or unavailable for this ticker.</p>
+                  <p className="text-sm text-slate-400">Signal summary is still loading or unavailable for this ticker.</p>
                   <p className="text-xs text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
                 </section>
               )}
 
-
-              {/* Quick reference – at bottom so it doesn't clutter the primary decision view */}
+              {/* Quick reference — collapsed by default */}
               <section className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl overflow-hidden">
                 <button
                   type="button"
@@ -936,6 +1016,12 @@ export function TickerDetailModal({
                         }
                       }
                     }}
+                  />
+                )}
+                {executionVm && executionVm.buyStages.length > 0 && (
+                  <RoadmapTimeline
+                    stages={executionVm.buyStages}
+                    title="Staged entry roadmap"
                   />
                 )}
                 {detail.investor_summary?.trade_roadmap ? (

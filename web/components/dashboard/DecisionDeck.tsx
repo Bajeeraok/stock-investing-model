@@ -170,6 +170,8 @@ export function DecisionDeck({
   tacticalActive,
   ltEntryTiersOpen,
   onToggleLtTiers,
+  hideHero = false,
+  hideExecutionEvidence = false,
 }: {
   summary: InvestorDecisionSummary;
   currentPrice: number;
@@ -177,6 +179,10 @@ export function DecisionDeck({
   tacticalActive?: boolean;
   ltEntryTiersOpen?: boolean;
   onToggleLtTiers?: () => void;
+  /** When command card already shows action headline — skip duplicate hero rows. */
+  hideHero?: boolean;
+  /** Signal breakdown grid already shows evidence rows — skip duplicate in execution plan. */
+  hideExecutionEvidence?: boolean;
 }) {
   const { horizons, one_answer, regime_bull_pct, rsi, valuation_deck, fair_value, fair_value_vs_external } =
     summary;
@@ -233,6 +239,7 @@ export function DecisionDeck({
         <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-slate-200">
           {horizonLabel(primaryKey)} plan
         </p>
+        {!hideHero && (
         <span
           className={clsx(
             "text-[10px] font-mono tabular-nums px-2 py-0.5 rounded border",
@@ -243,8 +250,11 @@ export function DecisionDeck({
         >
           {passed}/{gates.length} gates
         </span>
+        )}
       </div>
       <div className="p-4 space-y-3">
+        {!hideHero && (
+          <>
         <BehavioralActionBadge badge={badge} />
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -265,6 +275,8 @@ export function DecisionDeck({
             <Info className="h-3.5 w-3.5 text-slate-500 cursor-help" aria-hidden />
           </span>
         </p>
+          </>
+        )}
 
         <p
           className={clsx(
@@ -285,7 +297,7 @@ export function DecisionDeck({
           )}
         </p>
 
-        {tacticalActive && mode === "scout" && (
+        {!hideHero && tacticalActive && mode === "scout" && (
           <p
             className={clsx(
               "text-xs rounded-lg px-2.5 py-1.5 border",
@@ -387,6 +399,9 @@ export function DecisionDeck({
             mode={mode}
             variant="deck"
             showTickerLine={false}
+            showEvidence={!hideExecutionEvidence}
+            hideValuationHeader={hideHero}
+            hideBuyStages={false}
           />
         )}
 
