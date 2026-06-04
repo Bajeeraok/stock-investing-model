@@ -1526,6 +1526,158 @@ def _roadmap_market_regime_layer(
     }
 
 
+def _roadmap_primary_entry_gap(investor_out: dict, current_price: float) -> dict | None:
+    """Unified gap context from long tiers and/or short↔swing cross-band."""
+    horizons = investor_out.get("horizons") or {}
+    long_h = horizons.get("long") or {}
+    short_ez = (horizons.get("short") or {}).get("entry_zone") or {}
+    medium_ez = (horizons.get("medium") or {}).get("entry_zone") or {}
+    long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
+    st_spot = short_ez.get("spot_position") or {}
+    mt_spot = medium_ez.get("spot_position") or {}
+
+    if long_spot.get("state") == "between_tiers":
+        bridge = long_spot.get("bridge_band") or {}
+        return {
+            "kind": "long_tiers",
+            "label": long_spot.get("label") or "Between long-term tiers",
+            "detail": long_spot.get("detail") or "",
+            "floor_band_high": long_spot.get("floor_band_high"),
+            "ceiling_band_low": long_spot.get("ceiling_band_low"),
+            "floor_tier_id": long_spot.get("floor_tier_id"),
+            "ceiling_tier_id": long_spot.get("ceiling_tier_id"),
+            "next_add_tier_id": long_spot.get("next_add_tier_id"),
+            "bridge_band": bridge,
+            "in_bridge_band": long_spot.get("in_bridge_band"),
+            "catch_levels": bridge.get("levels") or [],
+        }
+
+    cross = st_spot.get("cross_gap") or mt_spot.get("cross_gap")
+    if cross and cross.get("state") == "between_horizon_bands":
+        bridge = cross.get("bridge_band") or st_spot.get("bridge_band") or {}
+        return {
+            "kind": "st_mt",
+            "label": cross.get("label") or "Between short & swing bands",
+            "detail": cross.get("detail") or "",
+            "floor_band_high": cross.get("floor_band_high"),
+            "ceiling_band_low": cross.get("ceiling_band_low"),
+            "next_scout_add_at": cross.get("next_scout_add_at"),
+            "next_swing_add_at": cross.get("next_swing_add_at"),
+            "bridge_band": bridge,
+            "in_bridge_band": st_spot.get("in_bridge_band"),
+            "catch_levels": bridge.get("levels") or [],
+        }
+
+    if current_price > 0:
+        st_hi = max(float(short_ez.get("low") or 0), float(short_ez.get("high") or 0))
+        mt_lo = min(
+            float(medium_ez.get("low") or 0) or float("inf"),
+            float(medium_ez.get("high") or 0) or float("inf"),
+        )
+        if st_hi > 0 and mt_lo < float("inf") and st_hi < current_price < mt_lo:
+            from signals.horizon_entry_calculator import build_bridge_band
+
+            bridge = build_bridge_band(st_hi, mt_lo, current_price, band_label="ST–Swing bridge")
+            return {
+                "kind": "st_mt",
+                "label": "Between short & swing bands",
+                "detail": (
+                    f"Spot ${current_price:.2f} sits between short top ${st_hi:.2f} "
+                    f"and swing low ${mt_lo:.2f}."
+                ),
+                "floor_band_high": round(st_hi, 2),
+                "ceiling_band_low": round(mt_lo, 2),
+                "bridge_band": bridge or {},
+                "in_bridge_band": bool(
+                    bridge and bridge.get("low") <= current_price <= bridge.get("high")
+                ),
+                "catch_levels": (bridge or {}).get("levels") or [],
+            }
+    return None
+
+
+def _roadmap_sync_gap_timeline(
+    buy_stages: list[dict],
+    investor_out: dict,
+    current_price: float,
+    *,
+    ma50: float | None = None,
+) -> dict | None:
+    """
+    Prepend an explicit gap row and align near-term stage zones with gap + bridge catch levels.
+    """
+    gap = _roadmap_primary_entry_gap(investor_out, current_price)
+    if not gap:
+        return None
+
+    floor_hi = _safe_float(gap.get("floor_band_high"))
+    ceil_lo = _safe_float(gap.get("ceiling_band_low"))
+    if floor_hi is None or ceil_lo is None or ceil_lo <= floor_hi:
+        return None
+
+    bridge = gap.get("bridge_band") or {}
+    bridge_lo = _safe_float(bridge.get("low"))
+    bridge_hi = _safe_float(bridge.get("high"))
+    in_bridge = bool(gap.get("in_bridge_band"))
+    catch_levels = gap.get("catch_levels") or bridge.get("levels") or []
+
+    gap_fmt = f"${floor_hi:.2f}–${ceil_lo:.2f}"
+    bridge_fmt = (
+        f"${bridge_lo:.2f}–${bridge_hi:.2f}"
+        if bridge_lo is not None and bridge_hi is not None
+        else None
+    )
+
+    when = "Partial only (bridge)" if in_bridge else "Hold at spot"
+    pos = int(bridge.get("max_allocation_pct") or 0) if in_bridge else 0
+    cond_parts = [gap.get("detail") or gap.get("label") or "Price sits between staged bands."]
+    if bridge_fmt:
+        cond_parts.append(f"Bridge sleeve {bridge_fmt} — max ~{bridge.get('max_allocation_pct', 10)}% if touched.")
+    cond_parts.append(f"Full gap span {gap_fmt} shown for context — do not treat the whole gap as a buy zone.")
+
+    gap_stage = {
+        "timeline_key": "between_bands",
+        "label": "Now · between bands",
+        "when_to_act": when,
+        "price_zone_low": round(floor_hi, 2),
+        "price_zone_high": round(ceil_lo, 2),
+        "bridge_zone_low": bridge_lo,
+        "bridge_zone_high": bridge_hi,
+        "catch_levels": catch_levels,
+        "condition": " ".join(p for p in cond_parts if p),
+        "conviction": "Low" if in_bridge else "None",
+        "position_pct": pos,
+        "cumulative_pct": pos,
+        "is_gap_row": True,
+        "gap_kind": gap.get("kind"),
+    }
+    buy_stages.insert(0, gap_stage)
+
+    for key in ("today", "days_1_10", "week_2_4"):
+        row = next((s for s in buy_stages if s.get("timeline_key") == key), None)
+        if not row or row.get("is_gap_row"):
+            continue
+        try:
+            row_hi = float(row.get("price_zone_high") or 0)
+        except (TypeError, ValueError):
+            row_hi = 0
+        if current_price > row_hi * 1.002 or gap.get("kind") == "st_mt":
+            row["when_to_act"] = "Watch only"
+            row["price_zone_low"] = round(floor_hi, 2)
+            row["price_zone_high"] = round(ceil_lo, 2)
+            if bridge_lo is not None and bridge_hi is not None:
+                row["bridge_zone_low"] = bridge_lo
+                row["bridge_zone_high"] = bridge_hi
+            row["catch_levels"] = catch_levels
+            row["sync_note"] = (
+                f"Synced to gap {gap_fmt}"
+                + (f"; bridge {bridge_fmt} for partial limits" if bridge_fmt else "")
+                + f". Lower-tier retest ({gap.get('next_add_tier_id') or 'scout band'}) is the primary add."
+            )
+
+    return gap_stage
+
+
 def _roadmap_resolve_near_term_conflict(buy_stages: list[dict]) -> None:
     """If Today and Days 1–10 share the same price band but differ in action, make dominance explicit."""
     today = next((s for s in buy_stages if s.get("timeline_key") == "today"), None)
@@ -1555,6 +1707,39 @@ def _roadmap_resolve_near_term_conflict(buy_stages: list[dict]) -> None:
 
 
 def _roadmap_you_are_here(buy_stages: list[dict], price: float) -> dict | None:
+    gap_row = next((s for s in buy_stages if s.get("is_gap_row")), None)
+    if gap_row:
+        bridge_lo = gap_row.get("bridge_zone_low")
+        bridge_hi = gap_row.get("bridge_zone_high")
+        gap_lo = gap_row.get("price_zone_low")
+        gap_hi = gap_row.get("price_zone_high")
+        try:
+            if (
+                bridge_lo is not None
+                and bridge_hi is not None
+                and float(bridge_lo) <= price <= float(bridge_hi)
+            ):
+                return {
+                    "timeline_key": gap_row.get("timeline_key"),
+                    "label": gap_row.get("label"),
+                    "within_zone": True,
+                    "in_bridge_band": True,
+                    "note": "Inside bridge sleeve — partial starter only; not core MOS.",
+                }
+            if gap_lo is not None and gap_hi is not None and float(gap_lo) <= price <= float(gap_hi):
+                return {
+                    "timeline_key": gap_row.get("timeline_key"),
+                    "label": gap_row.get("label"),
+                    "within_zone": True,
+                    "in_bridge_band": False,
+                    "note": (
+                        "In the between-bands gap — hold size; use bridge catch levels or wait for "
+                        "lower-tier retest before scaling."
+                    ),
+                }
+        except (TypeError, ValueError):
+            pass
+
     highest_zone_hi: float | None = None
     for s in buy_stages:
         lo = s.get("price_zone_low")
@@ -1910,6 +2095,12 @@ def _build_trade_roadmap(
         "cumulative_pct": cum_612,
     })
 
+    _roadmap_sync_gap_timeline(
+        buy_stages,
+        investor_out,
+        float(current_price),
+        ma50=ma50,
+    )
     _roadmap_resolve_near_term_conflict(buy_stages)
     atr_for_notes = _safe_float(response.get("atr14"))
     if atr_for_notes is None or atr_for_notes <= 0:
@@ -2571,6 +2762,8 @@ def _build_trade_roadmap(
         "Start small": "Starter tranche only — first slice of your planned position (not full size).",
         "Watch only": "Do not add shares; observe. Any existing starter is held, not enlarged here.",
         "Patience — no new buy yet": "Subordinate row: defers to Today — hold only, no scale in the same band.",
+        "Hold at spot": "Spot sits between staged bands — no new adds at current price.",
+        "Partial only (bridge)": "Inside the thin bridge sleeve — starter tranche only (~10% max).",
         "Add position": "Scale toward your target allocation once this row’s conditions are met.",
         "Tail risk / black swan zone only": "Reserved slice for extreme stress — not ordinary dips.",
         "Do not buy": "Model verdict blocks new purchases in this zone.",

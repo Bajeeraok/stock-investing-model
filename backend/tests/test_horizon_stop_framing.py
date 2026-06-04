@@ -67,3 +67,121 @@ def test_tier2_above_full_mos_ceiling_flagged():
         assert ca.get("position_mode") == "partial_only"
         joined = " ".join(long_h.get("warnings") or [])
         assert "partial position only" in joined.lower()
+
+
+def test_googl_between_tiers_gap_at_358():
+    """Extended GOOGL: spot between MA200 T1 and FV-based T2 — not 'below T2 low' chase."""
+    out = build_all_horizons_payload(
+        current_price=358.99,
+        rsi=58.0,
+        atr=8.5,
+        vwap=358.0,
+        support_level=350.0,
+        resistance_level=395.0,
+        ma50=387.04,
+        ma200=295.50,
+        week52_low=140.0,
+        volume_ratio=1.0,
+        st_ml_prob=46.0,
+        mt_ml_prob=42.0,
+        lt_ml_prob=55.0,
+        regime_bull_pct=45.0,
+        pattern_score=52.0,
+        fair_value=461.0,
+        options_sentiment_score=50.0,
+        insider_activity_score=50.0,
+        fundamentals_score=72.0,
+        ticker="GOOGL",
+        tier2_mos_pct=15.0,
+    )
+    et = out["long"]["entry_tiers"]
+    spot = et.get("spot_position") or {}
+    assert spot.get("state") == "between_tiers"
+    assert spot.get("floor_tier_id") == "T1"
+    assert spot.get("ceiling_tier_id") == "T2"
+    assert et.get("target_tier_id") == "T1"
+    assert et.get("active_tier_id") is None
+    trigger = out["long"].get("trigger_buy") or ""
+    assert "pullback to" in trigger.lower() or "hold at spot" in trigger.lower()
+    assert "T1" in trigger or "Tier 1" in trigger
+    assert 358.99 > et["tiers"][0]["high"]  # above T1
+    t2 = next(t for t in et["tiers"] if t["id"] == "T2")
+    assert 358.99 < t2["low"]  # below T2
+
+
+def test_bridge_band_inside_gap():
+    from signals.horizon_entry_calculator import build_bridge_band
+
+    bridge = build_bridge_band(310.0, 380.0, 358.0, band_label="T1.5 test")
+    assert bridge is not None
+    assert bridge["low"] <= 358.0 <= bridge["high"]
+    assert len(bridge["levels"]) >= 3
+    assert bridge.get("max_allocation_pct") == 10
+
+
+def test_googl_long_and_st_bridge_bands_at_358():
+    out = build_all_horizons_payload(
+        current_price=358.99,
+        rsi=58.0,
+        atr=8.5,
+        vwap=355.0,
+        support_level=350.0,
+        resistance_level=395.0,
+        ma50=340.0,
+        ma200=295.50,
+        week52_low=140.0,
+        volume_ratio=1.0,
+        st_ml_prob=46.0,
+        mt_ml_prob=42.0,
+        lt_ml_prob=55.0,
+        regime_bull_pct=45.0,
+        pattern_score=52.0,
+        fair_value=461.0,
+        options_sentiment_score=50.0,
+        insider_activity_score=50.0,
+        fundamentals_score=72.0,
+        ticker="GOOGL",
+        tier2_mos_pct=15.0,
+    )
+    lt_spot = out["long"]["entry_tiers"]["spot_position"]
+    assert lt_spot.get("state") == "between_tiers"
+    assert lt_spot.get("bridge_band")
+    bb = lt_spot["bridge_band"]
+    assert bb["gap_low"] < bb["low"] < bb["high"] < bb["gap_high"]
+    assert bb["gap_low"] < 358.99 < bb["gap_high"]
+
+
+def test_short_swing_between_bands_and_catch_levels():
+    out = build_all_horizons_payload(
+        current_price=358.99,
+        rsi=58.0,
+        atr=8.5,
+        vwap=355.0,
+        support_level=350.0,
+        resistance_level=395.0,
+        ma50=340.0,
+        ma200=295.50,
+        week52_low=140.0,
+        volume_ratio=1.0,
+        st_ml_prob=46.0,
+        mt_ml_prob=42.0,
+        lt_ml_prob=55.0,
+        regime_bull_pct=45.0,
+        pattern_score=52.0,
+        fair_value=461.0,
+        options_sentiment_score=50.0,
+        insider_activity_score=50.0,
+        fundamentals_score=72.0,
+        ticker="GOOGL",
+        tier2_mos_pct=15.0,
+    )
+    st_ez = out["short"]["entry_zone"]
+    mt_ez = out["medium"]["entry_zone"]
+    assert st_ez.get("levels") and len(st_ez["levels"]) >= 3
+    assert mt_ez.get("levels") and len(mt_ez["levels"]) >= 3
+    st_hi = max(st_ez["low"], st_ez["high"])
+    mt_lo = min(mt_ez["low"], mt_ez["high"])
+    if 358.99 > st_hi and 358.99 < mt_lo:
+        assert st_ez["spot_position"]["state"] == "between_horizon_bands"
+        assert st_ez["spot_position"]["cross_gap"]["floor_horizon"] == "short"
+        assert st_ez["spot_position"]["cross_gap"]["ceiling_horizon"] == "medium"

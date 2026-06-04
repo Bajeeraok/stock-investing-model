@@ -122,6 +122,24 @@ export function deriveShortTermBehavioralBadge(
   regimeBullPct: number | null | undefined,
   rsi?: number | null
 ): BehavioralBadge {
+  const cross = horizon.entry_zone?.spot_position?.cross_gap;
+  if (horizon.entry_zone?.spot_position?.state === "between_horizon_bands" && cross?.detail) {
+    return {
+      emoji: "🟡",
+      label: "BETWEEN ST & SWING — WAIT",
+      tone: "amber",
+      hint: cross.detail,
+    };
+  }
+  const bandSpot = horizon.entry_zone?.spot_position;
+  if (bandSpot?.state === "above_band" && bandSpot.detail) {
+    return {
+      emoji: "🔴",
+      label: "ABOVE SCOUT BAND",
+      tone: "red",
+      hint: bandSpot.detail,
+    };
+  }
   const verdict = String(horizon.verdict || "").toUpperCase();
   const quality = String(horizon.entry_zone?.quality || "").toLowerCase();
   const ml = Number(horizon.ml_prob);
@@ -158,6 +176,19 @@ export function deriveLongTermBehavioralBadge(
   currentPrice: number
 ): BehavioralBadge {
   const tiers = long.entry_tiers?.tiers ?? [];
+  const gap = long.entry_tiers?.spot_position;
+  if (gap?.state === "between_tiers") {
+    const floor = gap.floor_tier_id ?? "T1";
+    const ceiling = gap.ceiling_tier_id ?? "T2";
+    return {
+      emoji: "🟡",
+      label: "BETWEEN TIERS — HOLD",
+      tone: "amber",
+      hint:
+        gap.detail ??
+        `No new long-term adds at $${currentPrice.toFixed(0)} — between ${floor} and ${ceiling}. Wait for ${floor} retest.`,
+    };
+  }
   const inAnyTier = currentPrice > 0 && tiers.some((t) => currentPrice >= t.low && currentPrice <= t.high);
   const t1 = tiers.find((t) => t.id === "T1") ?? tiers[0];
   const aboveAllTiers = t1 != null && currentPrice > 0 && currentPrice > t1.high;
@@ -944,6 +975,39 @@ export function StopTargetRiskBar({
   );
 }
 
+/** Client fallback when API has not attached entry_zone.levels yet. */
+export function buildEntryBandLevels(
+  bandLow: number,
+  bandHigh: number,
+  anchors?: Array<{ id: string; label: string; price: number }>
+): Array<{ id: string; label: string; price: number; role?: string }> {
+  const lo = Math.min(bandLow, bandHigh);
+  const hi = Math.max(bandLow, bandHigh);
+  if (!(lo > 0 && hi > lo)) return [];
+  const span = hi - lo;
+  const rows = [
+    { id: "band_low", label: "Band low · first add", price: lo, role: "entry" },
+    { id: "q25", label: "25% into band", price: lo + span * 0.25, role: "entry" },
+    { id: "band_mid", label: "Band mid · scale", price: (lo + hi) / 2, role: "entry" },
+    { id: "q75", label: "75% into band", price: lo + span * 0.75, role: "entry" },
+    { id: "band_high", label: "Band high · last add", price: hi, role: "entry" },
+  ];
+  for (const a of anchors ?? []) {
+    if (a.price > 0 && a.price >= lo && a.price <= hi) {
+      rows.push({ id: a.id, label: a.label, price: a.price, role: "anchor" });
+    }
+  }
+  const seen = new Set<number>();
+  return rows
+    .map((r) => ({ ...r, price: Math.round(r.price * 100) / 100 }))
+    .filter((r) => {
+      if (seen.has(r.price)) return false;
+      seen.add(r.price);
+      return true;
+    })
+    .sort((a, b) => a.price - b.price);
+}
+
 /** TradingView-style buy zone on a price scale — emerald band + spot marker (distinct from stop→target bar). */
 export function EntryZonePriceBar({
   entryLow,
@@ -955,6 +1019,8 @@ export function EntryZonePriceBar({
   quality,
   anchorNote,
   touchForecast,
+  spotPosition,
+  levels: levelsProp,
   className,
 }: {
   entryLow: number;
@@ -966,18 +1032,24 @@ export function EntryZonePriceBar({
   quality?: string | null;
   anchorNote?: string | null;
   touchForecast?: HorizonSignalPayload["entry_touch_forecast"];
+  spotPosition?: HorizonSignalPayload["entry_zone"]["spot_position"];
+  levels?: HorizonSignalPayload["entry_zone"]["levels"];
   className?: string;
 }) {
   const low = Math.min(entryLow, entryHigh);
   const high = Math.max(entryLow, entryHigh);
   if (!(low > 0 && high > low && currentPrice > 0)) return null;
 
+  const levels =
+    levelsProp && levelsProp.length > 0 ? levelsProp : buildEntryBandLevels(low, high);
+  const crossGap = spotPosition?.cross_gap;
+
   const stretch = String(quality || "").toLowerCase().includes("stretch");
   const inside = currentPrice >= low && currentPrice <= high;
   const above = currentPrice > high;
   const below = currentPrice < low;
 
-  const points = [low, high, currentPrice];
+  const points = [low, high, currentPrice, ...levels.map((l) => l.price)];
   if (stopLoss != null && stopLoss > 0) points.push(stopLoss);
   if (target != null && target > 0) points.push(target);
   const pad = (Math.max(...points) - Math.min(...points)) * 0.04 || low * 0.01;
@@ -994,7 +1066,21 @@ export function EntryZonePriceBar({
   const highP = pct(high);
 
   let statusLine: React.ReactNode;
-  if (inside) {
+  if (crossGap?.detail) {
+    statusLine = (
+      <>
+        <span className="text-amber-300 font-semibold">{crossGap.label ?? "Between bands"}</span>
+        <span className="text-slate-500"> — {crossGap.detail}</span>
+      </>
+    );
+  } else if (spotPosition?.detail && spotPosition.state !== "in_band") {
+    statusLine = (
+      <>
+        <span className="text-amber-300 font-semibold">{spotPosition.label}</span>
+        <span className="text-slate-500"> — {spotPosition.detail}</span>
+      </>
+    );
+  } else if (inside) {
     statusLine = (
       <>
         <span className="text-emerald-300 font-semibold">Inside buy zone</span>
@@ -1065,8 +1151,50 @@ export function EntryZonePriceBar({
           style={{ left: `${nowP}%` }}
           title={`Last price $${currentPrice.toFixed(2)}`}
         />
+        {levels.map((lv) => {
+          const lp = pct(lv.price);
+          const isAnchor = lv.role === "anchor";
+          return (
+            <div
+              key={lv.id}
+              className={clsx(
+                "absolute top-0 bottom-0 w-px z-[5]",
+                isAnchor ? "bg-cyan-400/70" : "bg-emerald-300/40",
+              )}
+              style={{ left: `${lp}%` }}
+              title={`${lv.label}: $${lv.price.toFixed(2)}`}
+            />
+          );
+        })}
       </div>
       <p className="text-xs text-slate-400 leading-snug">{statusLine}</p>
+      <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-2.5 py-2 space-y-1.5">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+          Catch levels · ${low.toFixed(2)}–${high.toFixed(2)}
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {levels.map((lv) => (
+            <span
+              key={lv.id}
+              className={clsx(
+                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
+                lv.role === "anchor"
+                  ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
+                  : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
+              )}
+              title={lv.label}
+            >
+              <span className="text-slate-500 font-sans text-[10px] hidden sm:inline truncate max-w-[7rem]">
+                {lv.label}
+              </span>
+              <span className="font-semibold">${lv.price.toFixed(2)}</span>
+            </span>
+          ))}
+        </div>
+        <p className="text-[10px] text-slate-600 leading-snug">
+          Set limits/alerts at these prices inside the band — anchors (cyan) are structural levels from the model.
+        </p>
+      </div>
       {touchForecast?.touch_probability_pct != null && touchForecast.window_sessions != null && (
         <p
           className="text-[11px] text-sky-200/90 leading-snug border border-sky-500/20 rounded-lg px-2 py-1.5 bg-sky-950/25"
@@ -1136,9 +1264,22 @@ export function LongTermAccumulationScale({
 
   const resolved = resolveLongHorizonEntryZone(horizon, entryTiers, currentPrice);
   const mos = entryTiers.current_assessment?.min_price_to_buy;
+  const spotGap = entryTiers.spot_position;
   const primaryId = resolved.tierId;
+  const primaryTier = tiers.find((t) => t.id === primaryId);
+  const primaryLo = Math.min(resolved.low, resolved.high);
+  const primaryHi = Math.max(resolved.low, resolved.high);
+  const catchLevels =
+    primaryTier?.levels ??
+    horizon.entry_zone?.levels ??
+    buildEntryBandLevels(primaryLo, primaryHi);
 
-  const points: number[] = [currentPrice, resolved.low, resolved.high];
+  const points: number[] = [
+    currentPrice,
+    resolved.low,
+    resolved.high,
+    ...catchLevels.map((l) => l.price),
+  ];
   for (const t of tiers) {
     points.push(Math.min(t.low, t.high), Math.max(t.low, t.high));
   }
@@ -1158,12 +1299,17 @@ export function LongTermAccumulationScale({
 
   const pct = (v: number) => Math.max(0, Math.min(100, ((v - scaleMin) / span) * 100));
   const nowP = pct(currentPrice);
-  const primaryLo = Math.min(resolved.low, resolved.high);
-  const primaryHi = Math.max(resolved.low, resolved.high);
   const insidePrimary = currentPrice >= primaryLo && currentPrice <= primaryHi;
   const abovePrimary = currentPrice > primaryHi;
   const mosP = mos != null && mos > 0 ? pct(mos) : null;
   const aboveMos = mos != null && mos > 0 && currentPrice > mos;
+  const bridge = spotGap?.bridge_band;
+  const bridgeLo = bridge?.low;
+  const bridgeHi = bridge?.high;
+  const bridgeLoP = bridgeLo != null && bridgeLo > 0 ? pct(bridgeLo) : null;
+  const bridgeHiP = bridgeHi != null && bridgeHi > 0 ? pct(bridgeHi) : null;
+  const inBridge =
+    bridgeLo != null && bridgeHi != null && currentPrice >= bridgeLo && currentPrice <= bridgeHi;
 
   const tierLabel = resolved.tierLabel || primaryId || "tier";
   const primaryBandLabel = primaryId
@@ -1172,7 +1318,21 @@ export function LongTermAccumulationScale({
 
   let statusHeadline: string;
   let statusDetail: string;
-  if (insidePrimary) {
+  if (spotGap?.state === "between_tiers") {
+    const floor = spotGap.floor_tier_id ?? "T1";
+    const ceiling = spotGap.ceiling_tier_id ?? "T2";
+    const floorHi = spotGap.floor_band_high;
+    const ceilingLo = spotGap.ceiling_band_low;
+    statusHeadline = `Between ${floor} and ${ceiling} — no man's land`;
+    statusDetail =
+      spotGap.detail ??
+      (floorHi != null && ceilingLo != null
+        ? `Spot cleared ${floor} (above $${floorHi.toFixed(0)}) but is $${(ceilingLo - currentPrice).toFixed(0)} below ${ceiling}. Hold size; next add on ${floor} retest, not chasing into ${ceiling}.`
+        : "Hold existing size; wait for a pullback into the lower tier band.");
+    if (bridge && bridgeLo != null && bridgeHi != null) {
+      statusDetail += ` Bridge sleeve $${bridgeLo.toFixed(0)}–$${bridgeHi.toFixed(0)} — partial only (~10% max) if price revisits.`;
+    }
+  } else if (insidePrimary) {
     statusHeadline = `Inside ${tierLabel}`;
     statusDetail = "Staged long-term adds per your tier plan.";
   } else if (abovePrimary) {
@@ -1279,6 +1439,16 @@ export function LongTermAccumulationScale({
               title={`Full-position MOS ceiling $${mos!.toFixed(2)}`}
             />
           )}
+          {bridgeLoP != null && bridgeHiP != null && (
+            <div
+              className="absolute top-0 bottom-0 border-x border-cyan-400/60 bg-cyan-500/25 z-[2]"
+              style={{
+                left: `${Math.min(bridgeLoP, bridgeHiP)}%`,
+                width: `${Math.max(3, Math.abs(bridgeHiP - bridgeLoP))}%`,
+              }}
+              title={`Bridge band $${bridgeLo!.toFixed(2)}–$${bridgeHi!.toFixed(2)}`}
+            />
+          )}
           {stopLoss != null && stopLoss > 0 && (
             <div
               className="absolute top-0 bottom-0 w-1 bg-red-500 z-[4]"
@@ -1313,6 +1483,9 @@ export function LongTermAccumulationScale({
       <div className="text-sm leading-snug">
         <p className="font-semibold text-amber-100">{statusHeadline}</p>
         <p className="text-slate-200 mt-0.5">{statusDetail}</p>
+        {inBridge && (
+          <p className="text-xs text-cyan-300/90 mt-1 font-medium">Inside bridge sleeve — partial starter only.</p>
+        )}
       </div>
       {variant === "full" && (
         <p className="text-xs text-slate-200 leading-snug">
@@ -1332,6 +1505,29 @@ export function LongTermAccumulationScale({
             </>
           )}
         </p>
+      )}
+      {catchLevels.length > 0 && (
+        <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-2.5 py-2 space-y-1.5">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+            Catch levels · {primaryId ?? "band"} ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {catchLevels.map((lv) => (
+              <span
+                key={lv.id}
+                className={clsx(
+                  "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
+                  lv.role === "anchor"
+                    ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
+                    : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
+                )}
+                title={lv.label}
+              >
+                ${lv.price.toFixed(2)}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1523,11 +1719,29 @@ export function distanceToTierBand(
 /** Nearest accumulation tier for display when spot is between bands or far from T3 stress sleeve. */
 export function pickCurrentTargetTierId(
   tiers: { id: string; low: number; high: number }[],
-  price: number
+  price: number,
+  spotPosition?: { state?: string; next_add_tier_id?: string | null } | null
 ): string | null {
+  if (spotPosition?.next_add_tier_id) {
+    return spotPosition.next_add_tier_id;
+  }
   if (!tiers.length || !(price > 0)) return null;
   const active = tiers.find((t) => price >= t.low && price <= t.high);
   if (active) return active.id;
+  let floorTier: { id: string; low: number; high: number } | null = null;
+  let ceilingTier: { id: string; low: number; high: number } | null = null;
+  for (const t of [...tiers].sort((a, b) => a.high - b.high)) {
+    if (price > t.high) floorTier = t;
+  }
+  for (const t of [...tiers].sort((a, b) => a.low - b.low)) {
+    if (price < t.low) {
+      ceilingTier = t;
+      break;
+    }
+  }
+  if (floorTier && ceilingTier && floorTier.high < ceilingTier.low) {
+    return floorTier.id;
+  }
   let best = tiers[0];
   let bestDist = Infinity;
   for (const t of tiers) {
@@ -1558,10 +1772,11 @@ export function resolveLongHorizonEntryZone(
     };
   }
   const insideTier = tiers.find((t) => currentPrice >= t.low && currentPrice <= t.high);
+  const spotPosition = entryTiers?.spot_position;
   const tierId =
     entryTiers?.active_tier_id ??
     insideTier?.id ??
-    pickCurrentTargetTierId(tiers, currentPrice);
+    pickCurrentTargetTierId(tiers, currentPrice, spotPosition);
   const tier = tiers.find((t) => t.id === tierId) ?? insideTier;
   if (tier) {
     return {
@@ -1590,7 +1805,8 @@ export function LongTermTierLadder({
   currentPrice: number;
   modeLabel?: string;
 }) {
-  const targetTierId = pickCurrentTargetTierId(entryTiers.tiers, currentPrice);
+  const spotGap = entryTiers.spot_position;
+  const targetTierId = pickCurrentTargetTierId(entryTiers.tiers, currentPrice, entryTiers.spot_position);
   const sorted = [...entryTiers.tiers].sort((a, b) => b.low - a.low);
 
   return (
@@ -1654,6 +1870,24 @@ export function LongTermTierLadder({
                   <p className="text-sm font-mono text-slate-100 mt-0.5">
                     ${tier.low.toFixed(2)} – ${tier.high.toFixed(2)}
                   </p>
+                  {tier.levels && tier.levels.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {tier.levels.map((lv) => (
+                        <span
+                          key={lv.id}
+                          className={clsx(
+                            "text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded border",
+                            lv.role === "anchor"
+                              ? "border-cyan-500/35 text-cyan-300/90"
+                              : "border-slate-600 text-slate-400",
+                          )}
+                          title={lv.label}
+                        >
+                          ${lv.price.toFixed(2)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <p className="text-xs text-slate-500 mt-1">{copy.sizing}</p>
                   <p className="text-xs mt-1 text-slate-400">
                     {isInside ? (
@@ -1661,6 +1895,11 @@ export function LongTermTierLadder({
                         {tier.id === "T2" || tier.id === "tier2"
                           ? `Current price ($${currentPrice.toFixed(2)}) is inside Tier 2 — partial position only; full MOS is lower (see max buy price).`
                           : `Current price ($${currentPrice.toFixed(2)}) is inside this band — scale here first.`}
+                      </span>
+                    ) : isTarget && isAbove && spotGap?.state === "between_tiers" && tier.id === spotGap.ceiling_tier_id ? (
+                      <span className="text-amber-300/90">
+                        Core band above spot — do not chase up; wait for {spotGap.floor_tier_id ?? "T1"} retest near $
+                        {spotGap.floor_band_high?.toFixed(0) ?? tier.low.toFixed(0)}.
                       </span>
                     ) : isTarget && isAbove ? (
                       <span className="text-emerald-300/90">

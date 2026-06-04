@@ -282,6 +282,9 @@ def resolve_target_tier_id(tiers: list[EntryTier], price: float) -> str | None:
         return active.id
     if not tiers or price <= 0:
         return None
+    spot = classify_spot_tier_position(tiers, price)
+    if spot.get("state") == "between_tiers" and spot.get("next_add_tier_id"):
+        return spot["next_add_tier_id"]
     best = tiers[0]
     best_dist = float("inf")
     for t in tiers:
@@ -293,6 +296,330 @@ def resolve_target_tier_id(tiers: list[EntryTier], price: float) -> str | None:
             best_dist = dist
             best = t
     return best.id
+
+
+def classify_spot_tier_position(tiers: list[EntryTier], price: float) -> dict[str, Any]:
+    """
+    Classify spot vs tier ladder — especially the 'between tiers' gap when MA200 (T1)
+    sits well below FV-based T2 (common on extended large-cap growth names).
+    """
+    if not tiers or price <= 0:
+        return {"state": "unknown"}
+    active = resolve_active_tier(tiers, price)
+    if active:
+        return {
+            "state": "in_tier",
+            "active_tier_id": active.id,
+            "next_add_tier_id": active.id,
+        }
+    floor_tier: EntryTier | None = None
+    for t in sorted(tiers, key=lambda x: x.high):
+        if price > t.high:
+            floor_tier = t
+    ceiling_tier: EntryTier | None = None
+    for t in sorted(tiers, key=lambda x: x.low):
+        if price < t.low:
+            ceiling_tier = t
+            break
+    if floor_tier and ceiling_tier and floor_tier.high < ceiling_tier.low - 1e-6:
+        return {
+            "state": "between_tiers",
+            "floor_tier_id": floor_tier.id,
+            "ceiling_tier_id": ceiling_tier.id,
+            "floor_band_high": _r(floor_tier.high),
+            "ceiling_band_low": _r(ceiling_tier.low),
+            "gap_width_pct_of_spot": _r((ceiling_tier.low - floor_tier.high) / price * 100, 1),
+            "next_add_tier_id": floor_tier.id,
+            "label": "Between {} and {} — no new long-term adds at spot".format(
+                floor_tier.id, ceiling_tier.id
+            ),
+            "detail": (
+                "Spot ${:.2f} is above {} (${:.2f}–${:.2f}) but below {} (${:.2f}–${:.2f}). "
+                "Hold existing size; next adds on pullback to {}, not chasing up into {}."
+            ).format(
+                price,
+                floor_tier.id,
+                floor_tier.low,
+                floor_tier.high,
+                ceiling_tier.id,
+                ceiling_tier.low,
+                ceiling_tier.high,
+                floor_tier.id,
+                ceiling_tier.id,
+            ),
+        }
+    if ceiling_tier and floor_tier is None:
+        return {"state": "below_all", "next_add_tier_id": ceiling_tier.id}
+    if floor_tier and ceiling_tier is None:
+        return {"state": "above_all", "next_add_tier_id": floor_tier.id}
+    best = tiers[0]
+    best_dist = float("inf")
+    for t in tiers:
+        lo, hi = min(t.low, t.high), max(t.low, t.high)
+        dist = (lo - price) if price < lo else (price - hi)
+        if dist < best_dist:
+            best_dist = dist
+            best = t
+    return {"state": "unknown", "next_add_tier_id": best.id}
+
+
+def classify_spot_band_position(
+    price: float,
+    band_low: float,
+    band_high: float,
+    *,
+    band_label: str = "entry band",
+) -> dict[str, Any]:
+    """Spot vs a single horizon entry band (short / swing / long primary zone)."""
+    if not (price > 0 and band_low > 0 and band_high > 0):
+        return {"state": "unknown"}
+    lo, hi = min(band_low, band_high), max(band_low, band_high)
+    if hi <= lo:
+        return {"state": "unknown"}
+    if lo <= price <= hi:
+        return {
+            "state": "in_band",
+            "band_low": _r(lo),
+            "band_high": _r(hi),
+            "label": f"Inside {band_label}",
+            "detail": f"Spot ${price:.2f} is inside ${lo:.2f}–${hi:.2f} — use catch levels below for staged adds.",
+        }
+    if price > hi:
+        gap_pct = _r((price - hi) / hi * 100, 1)
+        return {
+            "state": "above_band",
+            "band_low": _r(lo),
+            "band_high": _r(hi),
+            "gap_pct": gap_pct,
+            "next_add_at": _r(hi),
+            "label": f"{gap_pct:.1f}% above {band_label}",
+            "detail": (
+                f"Wait for pullback into ${lo:.2f}–${hi:.2f}. "
+                f"First limit near band high ${hi:.2f}, scale toward ${lo:.2f}."
+            ),
+        }
+    gap_pct = _r((lo - price) / lo * 100, 1)
+    return {
+        "state": "below_band",
+        "band_low": _r(lo),
+        "band_high": _r(hi),
+        "gap_pct": gap_pct,
+        "next_add_at": _r(lo),
+        "label": f"{gap_pct:.1f}% below {band_label} low",
+        "detail": (
+            f"Spot has not reached ${lo:.2f} yet — alert at band low, scale through mid/high."
+        ),
+    }
+
+
+def build_entry_band_levels(
+    band_low: float,
+    band_high: float,
+    *,
+    anchors: list[tuple[str, str, float]] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Actionable prices inside an entry band for limit orders / alerts.
+    anchors: (id, label, price) — included when price falls inside the band.
+    """
+    lo, hi = min(band_low, band_high), max(band_low, band_high)
+    if not (lo > 0 and hi > lo):
+        return []
+    mid = _r((lo + hi) / 2)
+    span = hi - lo
+    levels: list[dict[str, Any]] = [
+        {"id": "band_low", "label": "Band low · first add", "price": _r(lo), "role": "entry", "sort": 1},
+        {"id": "q25", "label": "25% into band", "price": _r(lo + span * 0.25), "role": "entry", "sort": 2},
+        {"id": "band_mid", "label": "Band mid · scale", "price": mid, "role": "entry", "sort": 3},
+        {"id": "q75", "label": "75% into band", "price": _r(lo + span * 0.75), "role": "entry", "sort": 4},
+        {"id": "band_high", "label": "Band high · last add", "price": _r(hi), "role": "entry", "sort": 5},
+    ]
+    for aid, alabel, apx in anchors or []:
+        if apx > 0 and lo - 1e-6 <= apx <= hi + 1e-6:
+            levels.append(
+                {"id": aid, "label": alabel, "price": _r(apx), "role": "anchor", "sort": 0}
+            )
+    # Dedupe prices within $0.02
+    seen: set[float] = set()
+    out: list[dict[str, Any]] = []
+    for row in sorted(levels, key=lambda x: (x["sort"], x["price"])):
+        key = round(float(row["price"]), 2)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return sorted(out, key=lambda x: x["price"])
+
+
+def build_bridge_band(
+    floor_high: float,
+    ceiling_low: float,
+    center: float | None = None,
+    *,
+    band_label: str = "Bridge band",
+) -> dict[str, Any] | None:
+    """
+    Thin actionable sleeve inside a tier/horizon gap (T1→T2 or short→swing).
+    Partial size only — not a substitute for core MOS / lower-tier adds.
+    """
+    if not (floor_high > 0 and ceiling_low > floor_high + 1e-6):
+        return None
+    gap_mid = (floor_high + ceiling_low) / 2.0
+    anchor = center if center and floor_high < center < ceiling_low else gap_mid
+    gap_width = ceiling_low - floor_high
+    half = min(gap_width * 0.18, max(anchor * 0.012, 0.5), gap_width / 2.0 - 0.01)
+    half = max(half, gap_width * 0.08)
+    lo = max(floor_high, anchor - half)
+    hi = min(ceiling_low, anchor + half)
+    if hi <= lo + 1e-6:
+        hi = min(ceiling_low, floor_high + max(gap_width * 0.22, 0.5))
+        lo = floor_high
+    levels = build_entry_band_levels(lo, hi)
+    return {
+        "low": _r(lo),
+        "high": _r(hi),
+        "center": _r(anchor),
+        "gap_low": _r(floor_high),
+        "gap_high": _r(ceiling_low),
+        "label": band_label,
+        "max_allocation_pct": 10,
+        "detail": (
+            f"Thin extension sleeve ${lo:.2f}–${hi:.2f} inside the ${floor_high:.2f}–${ceiling_low:.2f} gap — "
+            "partial starter only (≈10% max), not core MOS. Prefer lower-tier retest for real adds."
+        ),
+        "levels": levels,
+    }
+
+
+def _attach_bridge_to_spot_position(
+    spot_position: dict[str, Any],
+    *,
+    center: float | None,
+    band_label: str,
+) -> dict[str, Any]:
+    if spot_position.get("state") not in ("between_tiers", "between_horizon_bands"):
+        return spot_position
+    floor_hi = spot_position.get("floor_band_high")
+    ceil_lo = spot_position.get("ceiling_band_low")
+    if floor_hi is None or ceil_lo is None:
+        cross = spot_position.get("cross_gap") or {}
+        floor_hi = cross.get("floor_band_high")
+        ceil_lo = cross.get("ceiling_band_low")
+    if floor_hi is None or ceil_lo is None:
+        return spot_position
+    bridge = build_bridge_band(float(floor_hi), float(ceil_lo), center, band_label=band_label)
+    if bridge:
+        spot_position = dict(spot_position)
+        spot_position["bridge_band"] = bridge
+        if floor_hi <= (center or 0) <= ceil_lo or (
+            bridge["low"] <= (center or 0) <= bridge["high"]
+        ):
+            spot_position["in_bridge_band"] = (
+                bridge["low"] <= (center or 0) <= bridge["high"]
+            )
+    return spot_position
+
+
+def _enrich_horizon_entry_zone_extras(
+    payload: dict[str, Any],
+    *,
+    current_price: float,
+    vwap: float,
+    support_level: float,
+    ma50: float,
+) -> None:
+    """Attach spot_position + catch levels to short/medium entry zones; cross-horizon gap detection."""
+    short_ez = payload.get("short", {}).get("entry_zone") or {}
+    medium_ez = payload.get("medium", {}).get("entry_zone") or {}
+    if not short_ez or not medium_ez or not (current_price > 0):
+        return
+
+    st_lo = min(float(short_ez["low"]), float(short_ez["high"]))
+    st_hi = max(float(short_ez["low"]), float(short_ez["high"]))
+    mt_lo = min(float(medium_ez["low"]), float(medium_ez["high"]))
+    mt_hi = max(float(medium_ez["low"]), float(medium_ez["high"]))
+
+    short_ez["levels"] = build_entry_band_levels(
+        st_lo,
+        st_hi,
+        anchors=[
+            ("vwap", "VWAP", float(vwap)),
+            ("support", "Support", float(support_level)),
+        ],
+    )
+    medium_ez["levels"] = build_entry_band_levels(
+        mt_lo,
+        mt_hi,
+        anchors=[("ma50", "MA50", float(ma50))],
+    )
+
+    st_spot = classify_spot_band_position(current_price, st_lo, st_hi, band_label="short-term band")
+    mt_spot = classify_spot_band_position(current_price, mt_lo, mt_hi, band_label="swing band")
+
+    between_st_mt = st_hi < current_price < mt_lo - 1e-6
+    between_mt_st = mt_hi < current_price < st_lo - 1e-6  # rare after harmonization
+
+    if between_st_mt:
+        cross = {
+            "state": "between_horizon_bands",
+            "floor_horizon": "short",
+            "ceiling_horizon": "medium",
+            "floor_band_high": _r(st_hi),
+            "ceiling_band_low": _r(mt_lo),
+            "gap_width_pct": _r((mt_lo - st_hi) / current_price * 100, 1),
+            "label": "Between short & swing bands — no man's land",
+            "detail": (
+                f"Spot ${current_price:.2f} cleared short band top ${st_hi:.2f} "
+                f"but is ${(mt_lo - current_price):.2f} below swing band low ${mt_lo:.2f}. "
+                f"Hold — next scout add on short retest (${st_lo:.2f}–${st_hi:.2f}); "
+                f"swing adds wait for ${mt_lo:.2f}–${mt_hi:.2f}."
+            ),
+            "next_scout_add_at": _r(st_hi),
+            "next_swing_add_at": _r(mt_lo),
+        }
+        bridge = build_bridge_band(
+            st_hi,
+            mt_lo,
+            ma50 if ma50 > 0 else vwap,
+            band_label="ST–Swing bridge",
+        )
+        if bridge:
+            cross["bridge_band"] = bridge
+        st_spot = {**st_spot, "cross_gap": cross, "state": "between_horizon_bands", "floor_band_high": _r(st_hi), "ceiling_band_low": _r(mt_lo)}
+        mt_spot = {**mt_spot, "cross_gap": cross, "state": "between_horizon_bands", "floor_band_high": _r(st_hi), "ceiling_band_low": _r(mt_lo)}
+        if bridge:
+            st_spot["bridge_band"] = bridge
+            mt_spot["bridge_band"] = bridge
+            st_spot["in_bridge_band"] = bridge["low"] <= current_price <= bridge["high"]
+            mt_spot["in_bridge_band"] = st_spot["in_bridge_band"]
+    elif between_mt_st:
+        cross = {
+            "state": "between_horizon_bands",
+            "floor_horizon": "medium",
+            "ceiling_horizon": "short",
+            "floor_band_high": _r(mt_hi),
+            "ceiling_band_low": _r(st_lo),
+            "label": "Between swing & short bands",
+            "detail": (
+                f"Spot sits above swing top but below short band — unusual after harmonization; "
+                f"prefer swing levels ${mt_lo:.2f}–${mt_hi:.2f} for 3–6m adds."
+            ),
+        }
+        st_spot = {**st_spot, "cross_gap": cross}
+        mt_spot = {**mt_spot, "cross_gap": cross}
+
+    short_ez["spot_position"] = st_spot
+    medium_ez["spot_position"] = mt_spot
+
+    # Long primary entry zone catch levels (display tier band)
+    long_ez = payload.get("long", {}).get("entry_zone") or {}
+    if long_ez:
+        lt_lo = min(float(long_ez["low"]), float(long_ez["high"]))
+        lt_hi = max(float(long_ez["low"]), float(long_ez["high"]))
+        long_ez["levels"] = build_entry_band_levels(lt_lo, lt_hi)
+        long_ez["spot_position"] = classify_spot_band_position(
+            current_price, lt_lo, lt_hi, band_label="long-term band"
+        )
 
 
 def entry_zone_from_tier(tier: EntryTier, *, inside: bool) -> EntryZone:
@@ -865,6 +1192,7 @@ class LongTermInputs:
     atr: Optional[float] = None
     model_confidence_pct: Optional[float] = None
     horizon_confidence_pct: Optional[float] = None  # 0-100, per-horizon 7-layer fused score
+    ma50: Optional[float] = None
 
 
 def _harmonize_long_entry_zone_with_short(
@@ -1003,16 +1331,41 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     # ── Entry zone for HorizonSignal — sync with active / target tier ───────
     all_tiers = [tier1, tier2, tier3]
     active_tier = resolve_active_tier(all_tiers, p)
+    spot_position = classify_spot_tier_position(all_tiers, p)
     target_tid = resolve_target_tier_id(all_tiers, p)
     display_tier = active_tier or next((t for t in all_tiers if t.id == target_tid), tier1)
     entry_zone = entry_zone_from_tier(display_tier, inside=active_tier is not None)
     entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
-    ez_lo, ez_hi, zone_compressed = _compress_entry_zone_for_display(
-        band_key="long",
-        low=entry_zone.low,
-        high=entry_zone.high,
-        current_price=inp.current_price,
-    )
+    if spot_position.get("state") == "between_tiers":
+        detail = spot_position.get("detail")
+        if detail:
+            warnings.append(detail)
+        assess_label = spot_position.get("label") or assess_label
+        if assess_verdict == "BUY":
+            assess_verdict = "PARTIAL"
+            assess_label = (
+                "MOS OK at spot, but price sits between tiers — partial/hold only; "
+                "next add on {} retest".format(spot_position.get("floor_tier_id", "T1"))
+            )
+            assess_color = "#f5a623"
+        bridge = build_bridge_band(
+            float(spot_position.get("floor_band_high", 0)),
+            float(spot_position.get("ceiling_band_low", 0)),
+            inp.ma50 if inp.ma50 and inp.ma50 > 0 else None,
+            band_label="T1.5 bridge — extension watch",
+        )
+        if bridge:
+            spot_position = dict(spot_position)
+            spot_position["bridge_band"] = bridge
+            spot_position["in_bridge_band"] = bridge["low"] <= p <= bridge["high"]
+        ez_lo, ez_hi, zone_compressed = entry_zone.low, entry_zone.high, False
+    else:
+        ez_lo, ez_hi, zone_compressed = _compress_entry_zone_for_display(
+            band_key="long",
+            low=entry_zone.low,
+            high=entry_zone.high,
+            current_price=inp.current_price,
+        )
     if zone_compressed:
         warnings.append("Long-term entry zone was too wide; narrowed for actionable use.")
         entry_zone = EntryZone(
@@ -1115,15 +1468,28 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             high=display_tier.high,
         )
     else:
-        trigger = (
-            "Price enters {label} (${low}–${high}) "
-            "AND HMM Bull >= 60% "
-            "AND ML prob > 25%"
-        ).format(
-            label=display_tier.label.split("—")[0].strip() if "—" in display_tier.label else display_tier.id,
-            low=display_tier.low,
-            high=display_tier.high,
-        )
+        if spot_position.get("state") == "between_tiers":
+            floor_t = next((t for t in all_tiers if t.id == spot_position.get("floor_tier_id")), tier1)
+            trigger = (
+                "Hold at spot — no new long-term adds in the ${gap_lo:.2f}–${gap_hi:.2f} gap. "
+                "Next add on pullback to {label} (${low}–${high}) when HMM Bull >= 60% and ML prob > 25%"
+            ).format(
+                gap_lo=spot_position.get("floor_band_high", floor_t.high),
+                gap_hi=spot_position.get("ceiling_band_low", display_tier.low),
+                label=floor_t.label.split("—")[0].strip() if "—" in floor_t.label else floor_t.id,
+                low=floor_t.low,
+                high=floor_t.high,
+            )
+        else:
+            trigger = (
+                "Price enters {label} (${low}–${high}) "
+                "AND HMM Bull >= 60% "
+                "AND ML prob > 25%"
+            ).format(
+                label=display_tier.label.split("—")[0].strip() if "—" in display_tier.label else display_tier.id,
+                low=display_tier.low,
+                high=display_tier.high,
+            )
 
     from signals.tranche_heuristic import compute_long_horizon_tier_percentages
 
@@ -1167,6 +1533,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         entry_tiers={
             "active_tier_id": active_tier.id if active_tier else None,
             "target_tier_id": target_tid,
+            "spot_position": spot_position,
             "current_assessment": {
                 "verdict":              assess_verdict,
                 "label":               assess_label,
@@ -1199,7 +1566,20 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                     "full thesis exit if broken; not a day-to-day trailing stop."
                 ),
             },
-            "tiers": [asdict(tier1), asdict(tier2), asdict(tier3)],
+            "tiers": [
+                {
+                    **asdict(tier1),
+                    "levels": build_entry_band_levels(tier1.low, tier1.high, anchors=[("ma200", "MA200", inp.ma200)]),
+                },
+                {
+                    **asdict(tier2),
+                    "levels": build_entry_band_levels(tier2.low, tier2.high),
+                },
+                {
+                    **asdict(tier3),
+                    "levels": build_entry_band_levels(tier3.low, tier3.high),
+                },
+            ],
             "position_sizing": position_sizing,
             "tranche_policy": tranche_policy,
         },
@@ -1333,6 +1713,7 @@ def build_all_horizons_payload(
         atr=atr,
         model_confidence_pct=model_confidence_pct,
         horizon_confidence_pct=lt_confidence_pct,
+        ma50=ma50,
     ))
 
     payload = {
@@ -1345,6 +1726,13 @@ def build_all_horizons_payload(
         current_price=current_price,
         ma50=ma50,
         ma200=ma200,
+    )
+    _enrich_horizon_entry_zone_extras(
+        payload,
+        current_price=current_price,
+        vwap=vwap,
+        support_level=support_level,
+        ma50=ma50,
     )
     try:
         from signals.entry_band_touch import enrich_horizons_entry_touch

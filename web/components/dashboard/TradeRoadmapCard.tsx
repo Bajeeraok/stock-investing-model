@@ -33,6 +33,12 @@ export interface BuyRoadmapStage {
   } | null;
   allocation_note?: string | null;
   priority_note?: string | null;
+  bridge_zone_low?: number | null;
+  bridge_zone_high?: number | null;
+  catch_levels?: Array<{ id: string; label: string; price: number; role?: string }>;
+  is_gap_row?: boolean;
+  sync_note?: string | null;
+  gap_kind?: string | null;
 }
 
 export interface SellRoadmapStage {

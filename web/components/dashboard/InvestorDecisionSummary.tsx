@@ -220,7 +220,52 @@ export interface HorizonSignalPayload {
   signal: string;
   conviction: string;
   ml_prob: number;
-  entry_zone: { low: number; high: number; anchor: string; quality: string; quality_color: string };
+  entry_zone: {
+    low: number;
+    high: number;
+    anchor: string;
+    quality: string;
+    quality_color: string;
+    spot_position?: {
+      state?: string;
+      band_low?: number;
+      band_high?: number;
+      gap_pct?: number;
+      next_add_at?: number;
+      label?: string;
+      detail?: string;
+      cross_gap?: {
+        state?: string;
+        floor_horizon?: string;
+        ceiling_horizon?: string;
+        floor_band_high?: number;
+        ceiling_band_low?: number;
+        label?: string;
+        detail?: string;
+        next_scout_add_at?: number;
+        next_swing_add_at?: number;
+        bridge_band?: {
+          low?: number;
+          high?: number;
+          label?: string;
+          levels?: Array<{ id: string; label: string; price: number; role?: string }>;
+        };
+      };
+      in_bridge_band?: boolean;
+      bridge_band?: {
+        low?: number;
+        high?: number;
+        label?: string;
+        levels?: Array<{ id: string; label: string; price: number; role?: string }>;
+      };
+    };
+    levels?: Array<{
+      id: string;
+      label: string;
+      price: number;
+      role?: string;
+    }>;
+  };
   /** Historical EOD touch stats for this entry band (not paper trades). */
   entry_touch_forecast?: {
     horizon?: string;
@@ -247,6 +292,28 @@ export interface HorizonSignalPayload {
   entry_tiers?: {
     active_tier_id?: string | null;
     target_tier_id?: string | null;
+    spot_position?: {
+      state?: string;
+      floor_tier_id?: string;
+      ceiling_tier_id?: string;
+      floor_band_high?: number;
+      ceiling_band_low?: number;
+      next_add_tier_id?: string;
+      label?: string;
+      detail?: string;
+      in_bridge_band?: boolean;
+      bridge_band?: {
+        low?: number;
+        high?: number;
+        center?: number;
+        gap_low?: number;
+        gap_high?: number;
+        label?: string;
+        max_allocation_pct?: number;
+        detail?: string;
+        levels?: Array<{ id: string; label: string; price: number; role?: string }>;
+      };
+    };
     current_assessment: {
       verdict: string;
       label: string;
@@ -274,6 +341,7 @@ export interface HorizonSignalPayload {
       color: string;
       reachable: boolean;
       drop_needed_pct: number | null;
+      levels?: Array<{ id: string; label: string; price: number; role?: string }>;
     }[];
     position_sizing?: { tier: string; allocation_pct: number; note: string }[];
     structural_invalidation?: {
@@ -462,6 +530,8 @@ function HorizonCard({
               anchorNote:
                 !scan && horizon.entry_zone?.anchor ? String(horizon.entry_zone.anchor) : null,
               touchForecast: horizon.entry_touch_forecast,
+              spotPosition: horizon.entry_zone?.spot_position,
+              levels: horizon.entry_zone?.levels,
             })
       ),
     scan

@@ -366,6 +366,8 @@ export function DecisionDeck({
               bandLabel={ez.label}
               quality={primary.entry_zone?.quality}
               touchForecast={primary.entry_touch_forecast}
+              spotPosition={primary.entry_zone?.spot_position}
+              levels={primary.entry_zone?.levels}
             />
           )
         )}

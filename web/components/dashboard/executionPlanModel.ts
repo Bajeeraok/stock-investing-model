@@ -12,6 +12,12 @@ export type BuyStagePreview = {
   price_zone_low: number;
   price_zone_high: number;
   position_pct: number;
+  bridge_zone_low?: number;
+  bridge_zone_high?: number;
+  catch_levels?: Array<{ id: string; label: string; price: number; role?: string }>;
+  is_gap_row?: boolean;
+  condition?: string;
+  sync_note?: string;
 };
 
 export type ExecutionPlanViewModel = {
@@ -164,8 +170,8 @@ export function buildExecutionPlanViewModel(
   const stages = trade_roadmap?.buy_roadmap;
   const buyStages: BuyStagePreview[] = Array.isArray(stages)
     ? stages
-        .slice(0, 3)
         .filter((s) => s.price_zone_low != null && s.price_zone_high != null)
+        .slice(0, 6)
         .map((s) => ({
           timeline_key: s.timeline_key,
           label: s.label,
@@ -173,6 +179,25 @@ export function buildExecutionPlanViewModel(
           price_zone_low: Number(s.price_zone_low),
           price_zone_high: Number(s.price_zone_high),
           position_pct: s.position_pct ?? 0,
+          bridge_zone_low:
+            s.bridge_zone_low != null && s.bridge_zone_low !== undefined
+              ? Number(s.bridge_zone_low)
+              : undefined,
+          bridge_zone_high:
+            s.bridge_zone_high != null && s.bridge_zone_high !== undefined
+              ? Number(s.bridge_zone_high)
+              : undefined,
+          catch_levels: Array.isArray(s.catch_levels)
+            ? s.catch_levels.map((l) => ({
+                id: String(l.id),
+                label: String(l.label),
+                price: Number(l.price),
+                role: l.role,
+              }))
+            : undefined,
+          is_gap_row: Boolean(s.is_gap_row),
+          condition: s.condition ? String(s.condition) : undefined,
+          sync_note: s.sync_note ? String(s.sync_note) : undefined,
         }))
     : [];
 
