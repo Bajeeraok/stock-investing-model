@@ -2,7 +2,7 @@
 Causal per-bar score adjustments to align backtest with live run_daily path.
 
 When ``backtest.apply_live_adjustments`` is true, each bar uses:
-  - ``market_regime`` passed into ``composite_score`` (5-level SPY regime)
+  - global SPY regime multiplier on composite (same as ``multi_horizon_scores``)
   - ``market_reversal_overlay`` delta on composite (SPY+VIX history up to bar only)
 
 Bucket MR flip (100−score) still runs after these adjustments via ``composite_bar_score_for_backtest``.
@@ -157,11 +157,16 @@ def composite_with_live_parity(
         use_spec=use_spec,
         ticker=ticker or None,
         config=config,
-        market_regime=global_regime,
     )
     raw = sig.get("composite_buy")
     if raw is None:
         return None
+    if global_regime:
+        from signals.regime import get_regime_multiplier
+
+        reg_mult, _ = get_regime_multiplier(global_regime, float(raw))
+        raw = min(100.0, float(raw) * reg_mult)
+        sig = {**sig, "composite_buy": round(raw, 1)}
     conf = sig.get("confluence_score")
     if conf is None:
         conf = raw
