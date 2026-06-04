@@ -86,6 +86,7 @@ export {
 } from "./Tier1RiskFeatures";
 export { EodAndSystemPanel, type EodSnapshotItem, type RedisStatus } from "./EodAndSystemPanel";
 export { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
+export { InsiderFlowTracker, type InsiderFlowData } from "./InsiderFlowTracker";
 export { TradingViewWidget } from "./TradingViewWidget";
 export { CopyTradePlanButton } from "./CopyTradePlanButton";
 export { DecisionJournalPanel } from "./DecisionJournalPanel";
