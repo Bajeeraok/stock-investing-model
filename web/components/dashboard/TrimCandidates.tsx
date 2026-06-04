@@ -20,7 +20,7 @@ function TrimGatePills({ holding }: { holding: PortfolioHolding }) {
   if (!gates.length && holding.trim_gates_passed == null) return null;
 
   const passed = holding.trim_gates_passed ?? gates.filter((g) => g.pass).length;
-  const total = holding.trim_gates_total ?? gates.length || 4;
+  const total = holding.trim_gates_total ?? (gates.length || 4);
   const cleared = holding.trim_gate_cleared ?? (passed >= 2);
 
   return (
