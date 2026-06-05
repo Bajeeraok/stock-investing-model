@@ -438,11 +438,18 @@ def run_signals(
         story_change = story_patch.get("story_change")
 
         daily_move_pct = None
+        sparkline_closes = None
         if close is not None and len(close) >= 2:
             try:
                 c0, c1 = float(close.iloc[-2]), float(close.iloc[-1])
                 if c0 > 0:
                     daily_move_pct = round(100.0 * (c1 - c0) / c0, 4)
+            except Exception:
+                pass
+            try:
+                tail = close.dropna().tail(30)
+                if len(tail) >= 2:
+                    sparkline_closes = [round(float(v), 4) for v in tail.tolist()]
             except Exception:
                 pass
 
@@ -465,6 +472,7 @@ def run_signals(
             "high": bar_high,
             "low": bar_low,
             "daily_move_pct": daily_move_pct,
+            "sparkline_closes": sparkline_closes,
             "trend_score": sig["trend_score"],
             "rsi": sig["rsi"],
             "rsi_contrib": sig.get("rsi_contrib"),

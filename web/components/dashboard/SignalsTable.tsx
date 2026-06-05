@@ -38,6 +38,13 @@ import {
 } from "@/lib/signalPresets";
 import { defaultPresetForLens, type TradingLens } from "@/lib/tradingLens";
 import { SwipeableSignalCard, type SwipeRevealAction } from "./SwipeableSignalCard";
+import {
+  GateProgressBar,
+  MiniPriceSparkline,
+  SignalDetailRail,
+  SignalSparklineCell,
+  formatDailyMovePct,
+} from "./tradingPlatformUX";
 
 export type { SignalsPresetId } from "@/lib/signalPresets";
 
@@ -343,6 +350,8 @@ function SignalsQuickTickerRow({
   gateContext,
   tickerActions,
   onTickerClick,
+  onRowSelect,
+  selected,
   expanded,
   onToggleExpand,
   muted,
@@ -354,6 +363,8 @@ function SignalsQuickTickerRow({
   gateContext: SignalListContext;
   tickerActions?: Record<string, { action: string; one_liner: string }>;
   onTickerClick?: (ticker: string) => void;
+  onRowSelect?: (ticker: string) => void;
+  selected?: boolean;
   expanded: boolean;
   onToggleExpand: (ticker: string, e: React.MouseEvent) => void;
   muted?: boolean;
@@ -371,9 +382,10 @@ function SignalsQuickTickerRow({
         className={clsx(
           "group border-t border-slate-700/50 hover:bg-slate-800/40 cursor-pointer",
           r.story_change && "bg-amber-500/5",
-          muted && "opacity-80"
+          muted && "opacity-80",
+          selected && "bg-emerald-950/20 ring-1 ring-inset ring-emerald-500/25"
         )}
-        onClick={() => onTickerClick?.(r.ticker)}
+        onClick={() => (onRowSelect ? onRowSelect(r.ticker) : onTickerClick?.(r.ticker))}
       >
         <td
           className={clsx(
@@ -408,11 +420,16 @@ function SignalsQuickTickerRow({
         </td>
         <td
           className={clsx(
-            "sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-1.5 border-r border-slate-700/70 text-slate-300 tabular-nums text-sm",
+            "sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-1.5 border-r border-slate-700/70 text-sm",
             r.story_change ? "bg-amber-500/5" : "bg-slate-900 group-hover:bg-slate-800/30"
           )}
         >
-          {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-slate-300 tabular-nums">
+              {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
+            </span>
+            <SignalSparklineCell signal={r} />
+          </div>
         </td>
         <td className="px-3 py-1.5 align-middle">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -573,9 +590,19 @@ function SignalsMobileQuickCard({
           </button>
           <CatalystBadge catalyst={r.catalyst} />
         </div>
-        <span className="text-slate-300 text-sm tabular-nums shrink-0">
-          {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
-        </span>
+        <div className="flex flex-col items-end gap-0.5 shrink-0">
+          <span className="text-slate-300 text-sm tabular-nums">
+            {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
+          </span>
+          {r.sparkline_closes && r.sparkline_closes.length >= 3 && (
+            <MiniPriceSparkline closes={r.sparkline_closes} width={64} height={22} />
+          )}
+          {r.daily_move_pct != null && (
+            <span className={clsx("text-[10px] font-semibold tabular-nums", formatDailyMovePct(r.daily_move_pct).className)}>
+              {formatDailyMovePct(r.daily_move_pct).text}
+            </span>
+          )}
+        </div>
       </div>
       <div className="mt-1 pl-8 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(status.light))}>
@@ -600,7 +627,10 @@ function SignalsMobileQuickCard({
         </div>
       )}
       {expanded && (
-        <div className="mt-2 pl-8">
+        <div className="mt-2 pl-8 space-y-2">
+          {gates && gates.length > 0 && (
+            <GateProgressBar passed={gates.filter((g) => g.pass).length} total={4} variant="buy" />
+          )}
           <CompactSignalActionStrip
             signal={r}
             listContext={gateContext}
@@ -693,6 +723,14 @@ function SignalsMobileFullCard({
             ) : null}
             <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
           </div>
+          {r.sparkline_closes && r.sparkline_closes.length >= 3 && (
+            <MiniPriceSparkline closes={r.sparkline_closes} width={72} height={24} />
+          )}
+          {r.daily_move_pct != null && (
+            <span className={clsx("text-[10px] font-semibold tabular-nums", formatDailyMovePct(r.daily_move_pct).className)}>
+              {formatDailyMovePct(r.daily_move_pct).text}
+            </span>
+          )}
           {r.risk_sizing && (
             <span className="text-[10px] text-slate-500" title="Risk budget if stop hits">
               Risk ~$
@@ -844,6 +882,7 @@ export function SignalsTable({
   const [activeSwipeKey, setActiveSwipeKey] = useState<string | null>(null);
   const [preset, setPreset] = useState<SignalsPresetId>("all");
   const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
+  const [splitSelected, setSplitSelected] = useState<string | null>(null);
 
   useEffect(() => {
     setSourceFilter(loadTickerSourceFilter());
@@ -976,6 +1015,21 @@ export function SignalsTable({
     [viewMode, sorted, gateContext, tickerActions]
   );
 
+  const splitSignal = useMemo(
+    () => sorted.find((s) => s.ticker === splitSelected) ?? null,
+    [sorted, splitSelected]
+  );
+
+  useEffect(() => {
+    if (!sorted.length) {
+      setSplitSelected(null);
+      return;
+    }
+    setSplitSelected((prev) =>
+      prev && sorted.some((s) => s.ticker === prev) ? prev : sorted[0].ticker
+    );
+  }, [sorted]);
+
   useEffect(() => {
     if (viewMode !== "quick" || !actionGroups) return;
     setExpandedTickers(new Set());
@@ -1012,6 +1066,10 @@ export function SignalsTable({
       else next.add(ticker);
       return next;
     });
+  }, []);
+
+  const handleDesktopRowSelect = useCallback((ticker: string) => {
+    setSplitSelected(ticker);
   }, []);
 
   const isQuick = viewMode === "quick";
@@ -1172,8 +1230,12 @@ export function SignalsTable({
             ))}
       </div>
 
-      {/* Desktop: table with sticky header + sticky first column */}
-      <div className="hidden md:block overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      {/* Desktop: table with sticky header + optional lg split detail rail */}
+      <div className="hidden md:block lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-stretch lg:max-h-[min(72vh,900px)]">
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch] lg:overflow-y-auto lg:min-h-0">
+        <p className="hidden lg:block px-3 py-1.5 text-[10px] text-slate-500 border-b border-slate-800/80">
+          Click a row to preview · Open full detail from the rail
+        </p>
         <table
           className={clsx(
             "w-full text-sm border-collapse",
@@ -1196,7 +1258,7 @@ export function SignalsTable({
                 </button>
               </th>
               <th className="sticky top-0 left-24 z-[25] min-w-[5rem] w-20 px-3 py-2.5 font-medium bg-slate-800 border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)]">
-                Close
+                Price · 30d
               </th>
               <th
                 className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[12rem]"
@@ -1328,6 +1390,8 @@ export function SignalsTable({
                         gateContext={gateContext}
                         tickerActions={tickerActions}
                         onTickerClick={onTickerClick}
+                        onRowSelect={handleDesktopRowSelect}
+                        selected={splitSelected === r.ticker}
                         expanded={expandedTickers.has(r.ticker)}
                         onToggleExpand={toggleTickerExpand}
                         showEarningsCol={showEarningsCol}
@@ -1372,6 +1436,8 @@ export function SignalsTable({
                             gateContext={gateContext}
                             tickerActions={tickerActions}
                             onTickerClick={onTickerClick}
+                            onRowSelect={handleDesktopRowSelect}
+                            selected={splitSelected === r.ticker}
                             expanded={expandedTickers.has(r.ticker)}
                             onToggleExpand={toggleTickerExpand}
                             muted
@@ -1624,6 +1690,14 @@ export function SignalsTable({
             ))}
           </tbody>
         </table>
+      </div>
+      <SignalDetailRail
+        signal={splitSignal}
+        gateContext={gateContext}
+        tickerActions={tickerActions}
+        onOpenDetail={onTickerClick}
+        onSelectTicker={setSplitSelected}
+      />
       </div>
     </div>
   );

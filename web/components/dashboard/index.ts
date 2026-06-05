@@ -97,6 +97,17 @@ export { TaxAwareExitPanel, type TaxAwareExitsData, type TaxAwareExitItem } from
 export { AlertsPanel, type ScanAlert } from "./AlertsPanel";
 export { RetailBriefingPanel } from "./RetailBriefingPanel";
 export { OverviewAtAGlance } from "./OverviewAtAGlance";
+export {
+  GateProgressBar,
+  MiniEquityCurve,
+  MiniPriceSparkline,
+  NewsSentimentRail,
+  SignalDetailRail,
+  SignalSparklineCell,
+  StickyTickerQuoteBar,
+  TrustMetricsStrip,
+  formatDailyMovePct,
+} from "./tradingPlatformUX";
 export { TradingLensSelector } from "./TradingLensSelector";
 export { RoadmapsPanel } from "./RoadmapsPanel";
 export { default as TrackRecordPanel } from "./TrackRecordPanel";

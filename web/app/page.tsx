@@ -1138,6 +1138,10 @@ export interface PriceBand {
 export interface Signal {
   ticker: string;
   close: number | null;
+  /** Prior close → last close % move (EOD snapshot). */
+  daily_move_pct?: number | null;
+  /** Last ~30 EOD closes for list sparklines. */
+  sparkline_closes?: number[] | null;
   composite_buy: number | null;
   regime: string | null;
   signal: string | null;

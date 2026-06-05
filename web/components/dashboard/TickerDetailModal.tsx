@@ -31,15 +31,17 @@ import { DecisionModeSelector } from "./DecisionModeSelector";
 import { DecisionDeck } from "./DecisionDeck";
 import { buildExecutionPlanViewModel } from "./executionPlanModel";
 import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
-import { DataMetricCard } from "./DataMetricCard";
 import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
 import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
 import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
 import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
-import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
-import { TradingViewWidget } from "./TradingViewWidget";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
+import {
+  GateProgressBar,
+  NewsSentimentRail,
+  StickyTickerQuoteBar,
+} from "./tradingPlatformUX";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -265,6 +267,7 @@ export interface TickerDetail {
   sector_etf_name: string;
   peers: string[];
   current_price: number | null;
+  daily_move_pct?: number | null;
   price_history?: { date: string; close: number }[];
   returns: Record<string, number>;
   benchmark_spy: Record<string, number>;
@@ -524,6 +527,30 @@ export function TickerDetailModal({
     return buildGatesFromInvestorSummary(inv, cp);
   }, [detail]);
 
+  const gatesPassedCount = tradingGates.filter((g) => g.pass).length;
+
+  const quoteDailyMovePct = useMemo(() => {
+    if (detail?.daily_move_pct != null) return detail.daily_move_pct;
+    const hist = detail?.price_history;
+    if (!hist || hist.length < 2) return null;
+    const c0 = hist[hist.length - 2]?.close;
+    const c1 = hist[hist.length - 1]?.close;
+    if (c0 == null || c1 == null || c0 <= 0) return null;
+    return ((c1 - c0) / c0) * 100;
+  }, [detail?.daily_move_pct, detail?.price_history]);
+
+  const modalNewsRail = useMemo(() => {
+    const roadmapNews = detail?.investor_summary?.trade_roadmap?.news_sentiment_layer;
+    const catalyst = detail?.catalyst?.headline_summary;
+    return {
+      label: roadmapNews?.sentiment_label ?? null,
+      score: roadmapNews?.score_0_1 ?? null,
+      headlineCount: roadmapNews?.headline_count ?? null,
+      headlines: (roadmapNews?.headlines ?? []).map((h) => ({ title: h.title })),
+      catalystNote: catalyst ?? detail?.catalyst?.override_note ?? null,
+    };
+  }, [detail]);
+
   const buyBandContext = useMemo(() => {
     const inv = detail?.investor_summary;
     const cp = detail?.current_price;
@@ -678,64 +705,50 @@ export function TickerDetailModal({
           </div>
         )}
 
-        {/* Ticker hub — quick read strip (earnings, plan, intent) */}
+        {/* Sticky quote + gates (mobile + desktop) */}
         {detail && !loading && (
-          <div className="border-b border-slate-700 bg-slate-900/90 px-3 sm:px-5 py-3">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">Ticker hub</p>
-            <div className="flex gap-2 overflow-x-auto [-webkit-overflow-scrolling:touch] pb-0.5">
-              <DataMetricCard
-                dense
-                className="shrink-0 min-w-[7rem]"
-                title="Last"
-                primary={detail.current_price != null ? `$${detail.current_price.toFixed(2)}` : "—"}
-                secondary={detail.sector ?? undefined}
-              />
-              <DataMetricCard
-                dense
-                className="shrink-0 min-w-[7.5rem]"
-                title="Plan"
-                primary={detail.investor_summary?.one_answer?.verdict ?? detail.investor_summary?.overall_verdict ?? "—"}
-                secondary={
-                  hasVerdictConflict && patternVerdict
-                    ? `Pattern: ${patternVerdict}`
-                    : unified?.action
-                      ? `Pattern: ${unified.action}`
-                      : undefined
-                }
-              />
-              <DataMetricCard
-                dense
-                className="shrink-0 min-w-[8rem]"
-                title="Next earnings"
-                primary={
-                  detail.earnings?.date
-                    ? detail.earnings.days_until > 0
-                      ? `T+${detail.earnings.days_until}d`
-                      : "Soon"
-                    : "—"
-                }
-                secondary={detail.earnings?.date ?? undefined}
-              />
-            </div>
-            <div className="mt-2 max-w-md">
-              <PositionIntentChip
-                ticker={ticker}
-                compact
-                intent={positionIntent}
-                onChange={(intent) => {
-                  setPositionIntentLocal(intent);
-                  if (intent) {
-                    setPositionIntent(ticker, intent);
-                    const m = modeFromIntent(intent);
-                    if (m) {
-                      setDecisionModeLocal(m);
-                      setDecisionMode(ticker, m);
+          <>
+            <StickyTickerQuoteBar
+              ticker={ticker}
+              price={detail.current_price}
+              dailyMovePct={quoteDailyMovePct}
+              score={detail.score_breakdown?.composite ?? detail.investor_summary?.pattern_score}
+              regime={
+                detail.investor_summary?.regime_hmm_label?.toUpperCase().includes("BULL")
+                  ? "UP"
+                  : detail.investor_summary?.regime_hmm_label?.toUpperCase().includes("BEAR")
+                    ? "DOWN"
+                    : "NEUTRAL"
+              }
+              actionTitle={headerActionStatus.title}
+              gatesPassed={tradingGates.length ? gatesPassedCount : null}
+              earningsLabel={
+                detail.earnings?.days_until != null && detail.earnings.days_until <= 14
+                  ? `Earnings T+${detail.earnings.days_until}d`
+                  : null
+              }
+            />
+            <div className="border-b border-slate-700 bg-slate-900/90 px-3 sm:px-5 py-2">
+              <div className="max-w-md">
+                <PositionIntentChip
+                  ticker={ticker}
+                  compact
+                  intent={positionIntent}
+                  onChange={(intent) => {
+                    setPositionIntentLocal(intent);
+                    if (intent) {
+                      setPositionIntent(ticker, intent);
+                      const m = modeFromIntent(intent);
+                      if (m) {
+                        setDecisionModeLocal(m);
+                        setDecisionMode(ticker, m);
+                      }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {detail && !loading && detail.investor_summary && (
@@ -790,7 +803,8 @@ export function TickerDetailModal({
             <>
               {/* ── Overview tab: One Answer + horizons + CTA to Roadmaps ───── */}
               {modalTab === "today" && (
-                <>
+                <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] lg:gap-4 lg:items-start">
+                <div className="min-w-0">
               {detail.fundamentals_snapshot && !detail.fundamentals_snapshot.point_in_time && (
                 <p
                   className="text-xs text-slate-500 border border-slate-600/80 bg-slate-800/40 rounded-lg px-3 py-2 mb-3 leading-snug"
@@ -848,6 +862,20 @@ export function TickerDetailModal({
                     actionTitle={headerActionStatus.title}
                     actionLight={headerActionStatus.light}
                   />
+                  <div className="lg:hidden">
+                    <NewsSentimentRail
+                      label={modalNewsRail.label}
+                      score={modalNewsRail.score}
+                      headlineCount={modalNewsRail.headlineCount}
+                      headlines={modalNewsRail.headlines}
+                      catalystNote={modalNewsRail.catalystNote}
+                    />
+                  </div>
+                  {tradingGates.length > 0 && (
+                    <div className="lg:hidden max-w-xs">
+                      <GateProgressBar passed={gatesPassedCount} total={4} variant="buy" />
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <CopyTradePlanButton
                       ticker={detail.ticker}
@@ -870,8 +898,6 @@ export function TickerDetailModal({
                       variant="sparkline"
                     />
                   )}
-                  <TradingViewWidget ticker={detail.ticker} height={320} />
-                  <InstitutionalInsightsPanel ticker={detail.ticker} />
                   {executionVm && (
                     <SignalBreakdownGrid
                       rows={[
@@ -1018,7 +1044,20 @@ export function TickerDetailModal({
                   </div>
                 )}
               </section>
-                </>
+                </div>
+                <aside className="hidden lg:block sticky top-28 space-y-3 self-start">
+                  <NewsSentimentRail
+                    label={modalNewsRail.label}
+                    score={modalNewsRail.score}
+                    headlineCount={modalNewsRail.headlineCount}
+                    headlines={modalNewsRail.headlines}
+                    catalystNote={modalNewsRail.catalystNote}
+                  />
+                  {tradingGates.length > 0 && (
+                    <GateProgressBar passed={gatesPassedCount} total={4} variant="buy" />
+                  )}
+                </aside>
+                </div>
               )}
 
               {/* ── Roadmaps tab: only Trade Roadmap card ──────────────────── */}

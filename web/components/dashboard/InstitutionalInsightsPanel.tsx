@@ -41,7 +41,7 @@ function trendColor(trend: string | undefined): string {
   return "text-slate-400";
 }
 
-export function InstitutionalInsightsPanel({ ticker }: Props) {
+export function InstitutionalInsightsPanel({ ticker, silentOnError = true }: Props & { silentOnError?: boolean }) {
   const [data, setData] = useState<InstitutionalBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +78,7 @@ export function InstitutionalInsightsPanel({ ticker }: Props) {
   }, [ticker]);
 
   if (loading) {
+    if (silentOnError) return null;
     return (
       <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-xs text-slate-500">
         Loading holder & positioning proxies…
@@ -86,10 +87,11 @@ export function InstitutionalInsightsPanel({ ticker }: Props) {
   }
 
   if (error) {
+    if (silentOnError) return null;
     return (
       <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-xs text-slate-500 flex items-center gap-2">
         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-        Institutional proxies unavailable ({error}).
+        Positioning data unavailable — insider/13F feeds need FMP Starter+ (holders need Ultimate tier).
       </div>
     );
   }

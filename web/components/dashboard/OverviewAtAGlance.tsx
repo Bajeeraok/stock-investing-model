@@ -28,6 +28,7 @@ import {
   tradingLensLabel,
   type TradingLens,
 } from "@/lib/tradingLens";
+import { MiniEquityCurve, TrustMetricsStrip } from "./tradingPlatformUX";
 
 const ACTION_STYLE: Record<string, string> = {
   BUY: "bg-emerald-500/25 text-emerald-200 border-emerald-500/45",
@@ -120,6 +121,10 @@ interface Props {
   tacticalSlot?: React.ReactNode;
   guestUniverseNote?: string | null;
   onTickerClick?: (ticker: string) => void;
+  forwardTracking?: DashboardData["forward_tracking"];
+  modelHealth?: DashboardData["model_health"];
+  modelValidation?: DashboardData["model_validation"];
+  paperTrading?: DashboardData["paper_trading"];
 }
 
 const HORIZON_TAG: Record<string, string> = {
@@ -146,6 +151,10 @@ export function OverviewAtAGlance({
   tacticalSlot,
   guestUniverseNote,
   onTickerClick,
+  forwardTracking,
+  modelHealth,
+  modelValidation,
+  paperTrading,
 }: Props) {
   const [analogOpen, setAnalogOpen] = useState(false);
 
@@ -274,6 +283,21 @@ export function OverviewAtAGlance({
       </ul>
     ) : null;
 
+  const gateFourFour = forwardTracking?.summary_by_gates?.["4/4"];
+  const holdAddHit =
+    modelHealth?.forward_hold_add_hit_rate_20d ??
+    forwardTracking?.summary_by_signal?.HOLD?.hit_rate_pct ??
+    forwardTracking?.summary_by_signal?.ADD?.hit_rate_pct ??
+    null;
+  const forwardObs =
+    modelHealth?.forward_observations_20d ??
+    forwardTracking?.summary_by_signal?.HOLD?.n_observations ??
+    null;
+  const gateCohortEdge =
+    gateFourFour?.avg_return_pct != null && gateFourFour.n_observations
+      ? `+${gateFourFour.avg_return_pct.toFixed(1)}% avg`
+      : null;
+
   return (
     <div className="space-y-4">
       {/* Hero + KPI strip */}
@@ -291,6 +315,20 @@ export function OverviewAtAGlance({
         </div>
 
         <div className="p-4 space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-start">
+            <TrustMetricsStrip
+              className="flex-1"
+              forwardHitRate={holdAddHit}
+              forwardObservations={forwardObs}
+              gateCohortEdge={gateCohortEdge}
+              directionAccuracy={modelValidation?.summary?.direction_accuracy_pct ?? null}
+              paperWinRate={paperTrading?.summary?.win_rate_pct ?? null}
+            />
+            <MiniEquityCurve
+              points={paperTrading?.equity_curve ?? []}
+              className="sm:w-52 shrink-0"
+            />
+          </div>
           <p className="text-[11px] text-slate-400 -mt-1">{tradingLensHint(tradingLens)}</p>
           {guestUniverseNote && (
             <p className="text-[11px] text-sky-200/90 rounded-md border border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5">

@@ -858,6 +858,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   preMarket={data.pre_market}
                   todayMoveTickers={todayMovesCoveredTickers}
                   tradingLens={tradingLens}
+                  forwardTracking={data.forward_tracking}
+                  modelHealth={data.model_health}
+                  modelValidation={data.model_validation}
+                  paperTrading={data.paper_trading}
                   guestUniverseNote={data.universe_meta?.note ?? null}
                   tacticalSlot={
                     tradingLens === "scout" &&
