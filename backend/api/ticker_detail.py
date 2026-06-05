@@ -3031,6 +3031,75 @@ def _ath_vs_macro_regime_disconnect_payload(
     }
 
 
+def _resolve_lt_target_tier(
+    long_h: dict,
+    current_price: float,
+) -> tuple[float | None, float | None, str | None]:
+    """Primary long-term accumulation tier for reconciliation (mirrors UI tier ladder)."""
+    et = long_h.get("entry_tiers") or {}
+    tiers = et.get("tiers") or []
+    if not tiers:
+        ez = long_h.get("entry_zone") or {}
+        return _safe_float(ez.get("low")), _safe_float(ez.get("high")), None
+    active_id = et.get("active_tier_id")
+    tier = next((t for t in tiers if t.get("id") == active_id), None)
+    if not tier and current_price > 0:
+        sorted_tiers = sorted(tiers, key=lambda t: float(t.get("low") or 0), reverse=True)
+        for t in sorted_tiers:
+            hi = _safe_float(t.get("high"))
+            if hi is not None and current_price > hi:
+                tier = t
+                break
+        if not tier:
+            tier = sorted_tiers[-1] if sorted_tiers else None
+    if not tier:
+        return None, None, None
+    return _safe_float(tier.get("low")), _safe_float(tier.get("high")), tier.get("id")
+
+
+def _build_horizon_zone_reconciliation(
+    *,
+    action_today: str,
+    in_short: bool,
+    in_medium: bool,
+    current_price: float,
+    short_zone: str,
+    long_h: dict,
+) -> dict | None:
+    """
+    ST/MT in-zone + enter_now but spot above LT core tier — explain split so UI does not read as one BUY.
+    """
+    if action_today != "enter_now" or not (in_short or in_medium):
+        return None
+    lt_lo, lt_hi, tier_id = _resolve_lt_target_tier(long_h, current_price)
+    if lt_lo is None or lt_hi is None or not (current_price > lt_hi):
+        return None
+    lt_zone = f"${lt_lo:.0f}–${lt_hi:.0f}"
+    tier_label = tier_id or "core"
+    gap_pct = ((current_price - lt_hi) / lt_hi) * 100 if lt_hi > 0 else 0.0
+    st_pretty = short_zone.replace("-", "–")
+    return {
+        "active": True,
+        "st_zone": st_pretty,
+        "lt_zone": lt_zone,
+        "lt_tier_id": tier_id,
+        "gap_pct_above_lt": round(gap_pct, 1),
+        "execution_label": "Short-term add OK (staged)",
+        "summary": (
+            f"Short-term add OK in {st_pretty} · Core tier ({tier_label}) still {lt_zone} "
+            f"({gap_pct:.0f}% below spot) — size for swing, not full core."
+        ),
+        "owner_summary": (
+            f"Above {tier_label} core band ({lt_zone}). Hold core sizing; "
+            f"any add here is tactical ({st_pretty}) only."
+        ),
+        "scout_summary": (
+            f"Gates clear for a staged short-term add in {st_pretty}. "
+            f"Long-term core builds lower at {lt_zone}."
+        ),
+    }
+
+
 def _build_one_answer_roadmaps(
     ticker: str,
     investor_out: dict,
@@ -3077,6 +3146,14 @@ def _build_one_answer_roadmaps(
     action_today = _action_today(display_verdict, in_zone)
     short_zone = f"${s_lo:.2f}-${s_hi:.2f}" if (s_lo is not None and s_hi is not None) else "short entry zone"
     medium_zone = f"${m_lo:.2f}-${m_hi:.2f}" if (m_lo is not None and m_hi is not None) else "medium entry zone"
+    horizon_zone_reconciliation = _build_horizon_zone_reconciliation(
+        action_today=action_today,
+        in_short=in_short,
+        in_medium=in_medium,
+        current_price=current_price,
+        short_zone=short_zone,
+        long_h=long_h,
+    )
 
     # Headline: one sentence
     verdict_label = display_verdict or overall
@@ -3096,7 +3173,13 @@ def _build_one_answer_roadmaps(
     else:
         if action_today == "enter_now":
             z = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else "current zone"
-            headline_parts.append(f"{verdict_label}: Enter in the zone {z}.")
+            if horizon_zone_reconciliation:
+                hr = horizon_zone_reconciliation
+                headline_parts.append(
+                    f"{verdict_label}: Short-term staged add in {z} (core tier {hr['lt_zone']})."
+                )
+            else:
+                headline_parts.append(f"{verdict_label}: Enter in the zone {z}.")
         elif action_today == "wait_for_pullback":
             z = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else (f"${m_lo:.2f}–${m_hi:.2f}" if (m_lo and m_hi) else "entry zone")
             headline_parts.append(f"{verdict_label}: Wait for pullback. Buy at {z}.")
@@ -3200,10 +3283,18 @@ def _build_one_answer_roadmaps(
             "and re-enter only at lower planned zones."
         )
     elif action_today == "enter_now":
-        bottom_line = (
-            f"Bottom line: buy is actionable now - price is inside planned entry zone ({short_zone}); "
-            "enter staged, not all at once."
-        )
+        if horizon_zone_reconciliation:
+            hr = horizon_zone_reconciliation
+            tier_tag = hr.get("lt_tier_id") or "LT"
+            bottom_line = (
+                f"Bottom line: Short-term add OK (staged) in {short_zone} — "
+                f"core long-term tier ({tier_tag}) still {hr['lt_zone']}; don't max-size here."
+            )
+        else:
+            bottom_line = (
+                f"Bottom line: Short-term add OK (staged) in {short_zone}; "
+                "enter in tranches, not all at once."
+            )
     elif action_today == "wait_for_pullback":
         bottom_line = (
             f"Bottom line: constructive setup, but wait for pullback toward {short_zone} "
@@ -3253,6 +3344,7 @@ def _build_one_answer_roadmaps(
             overall=overall,
             regime_bull_pct=regime_bull_pct if isinstance(regime_bull_pct, (int, float)) else None,
         ),
+        "horizon_zone_reconciliation": horizon_zone_reconciliation,
     }
     try:
         from signals.external_context_chip import build_external_context_from_response

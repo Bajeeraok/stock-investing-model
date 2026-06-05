@@ -33,6 +33,12 @@ import { ExternalContextChip } from "./ExternalContextChip";
 import { ValuationDeck } from "./ValuationDeck";
 import { StreetSentimentChip } from "./StreetSentimentChip";
 import { ExecutionPlanRationale } from "./ExecutionPlanRationale";
+import {
+  executionLabelWithReconciliation,
+  getHorizonZoneReconciliation,
+  reconciliationCopy,
+} from "@/lib/horizonReconcile";
+import { HorizonReconcileStrip } from "./zoneContextUX";
 
 const STRENGTH_CONVICTION_HINT =
   "Strength = how strong the technical read is on this horizon. Conviction = how much the model trusts that read (gates, ML, pattern).";
@@ -107,7 +113,7 @@ function verdictIcon(verdict: string) {
 }
 
 const ACTION_TODAY_LABEL: Record<string, string> = {
-  enter_now: "Enter now (staged)",
+  enter_now: "Short-term add OK (staged)",
   wait_for_pullback: "Wait for pullback",
   hold: "Hold / watch",
   trim: "Trim",
@@ -217,7 +223,11 @@ export function DecisionDeck({
     mode === "owner" && primaryKey === "long" && Boolean(long.entry_tiers?.tiers?.length);
 
   const actionToday = one_answer?.action_today;
-  const executionToday = executionLabel(actionToday);
+  const hr = getHorizonZoneReconciliation(summary, currentPrice);
+  const reconcileText = reconciliationCopy(hr, mode);
+  const executionOverride = executionLabelWithReconciliation(actionToday, hr, mode);
+  const executionToday = executionOverride ?? executionLabel(actionToday);
+  const splitActive = Boolean(hr?.active);
   const horizonVerdict = (primary.verdict || "").toUpperCase();
   const horizonBuy = horizonVerdict === "BUY" || horizonVerdict === "STRONG BUY";
   const executionBlocksChase =
@@ -278,21 +288,27 @@ export function DecisionDeck({
           </>
         )}
 
+        {reconcileText && <HorizonReconcileStrip text={reconcileText} mode={mode} />}
+
         <p
           className={clsx(
             "text-xs font-medium rounded-lg px-2.5 py-1.5 border",
-            actionToday === "enter_now"
-              ? "text-emerald-200 border-emerald-500/35 bg-emerald-950/30"
-              : "text-amber-100 border-amber-500/30 bg-amber-950/25",
+            splitActive && mode === "owner"
+              ? "text-violet-100 border-violet-500/35 bg-violet-950/30"
+              : splitActive
+                ? "text-amber-100 border-amber-500/35 bg-amber-950/25"
+                : actionToday === "enter_now"
+                  ? "text-emerald-200 border-emerald-500/35 bg-emerald-950/30"
+                  : "text-amber-100 border-amber-500/30 bg-amber-950/25",
           )}
           title="Horizon verdict is trend bias; execution is whether to act at this price today."
         >
           <span className="text-slate-400 font-normal">Execution today: </span>
           {executionToday}
-          {horizonBuy && executionBlocksChase && (
+          {horizonBuy && executionBlocksChase && !splitActive && (
             <span className="text-slate-500 font-normal">
               {" "}
-              — horizon still {horizonVerdict} (like TradingView trend vs RSI overbought)
+              — horizon still {horizonVerdict} (trend vs entry timing)
             </span>
           )}
         </p>
@@ -303,12 +319,16 @@ export function DecisionDeck({
               "text-xs rounded-lg px-2.5 py-1.5 border",
               executionBlocksChase
                 ? "text-amber-200/90 border-amber-500/35 bg-amber-950/30"
-                : "text-cyan-200/90 border-cyan-500/30 bg-cyan-950/40",
+                : splitActive
+                  ? "text-amber-200/90 border-amber-500/35 bg-amber-950/30"
+                  : "text-cyan-200/90 border-cyan-500/30 bg-cyan-950/40",
             )}
           >
-            {executionBlocksChase
-              ? "Tactical breakout is momentum context — not a chase-the-close buy. Use act-when triggers below."
-              : "Velocity lane aligns with enter-now — still use stops and staged size."}
+            {splitActive
+              ? "4/4 gates = short-term lane only. Long-term core tier is lower — see banner above."
+              : executionBlocksChase
+                ? "Tactical breakout is momentum context — not a chase-the-close buy. Use act-when triggers below."
+                : "Velocity lane aligns with enter-now — still use stops and staged size."}
           </p>
         )}
 

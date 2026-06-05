@@ -301,8 +301,9 @@ macro_regime:
   macro_weight: 0.60
 
 # Per-ticker institutional + earnings-quality API (/api/insights/{ticker})
+# Holder trend needs FMP Ultimate; keep off unless you want Analysis-tab deep dives.
 insights:
-  enabled: true
+  enabled: false
 
 # Portfolio-level VaR / correlation (dashboard payload; equal-weight illustrative)
 portfolio_risk:

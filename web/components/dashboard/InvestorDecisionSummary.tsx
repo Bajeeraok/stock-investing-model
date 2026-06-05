@@ -123,6 +123,8 @@ export interface OneAnswer {
   } | null;
   /** MA/RSI screener-style context (no extra API). */
   external_context?: import("./ExternalContextChip").ExternalContextPayload | null;
+  /** ST in-zone + enter_now but spot above LT core tier — reconciles conflicting bands. */
+  horizon_zone_reconciliation?: import("@/lib/horizonReconcile").HorizonZoneReconciliation | null;
 }
 
 /** Trader roadmap: short/medium entry, stop, target, when to act. */

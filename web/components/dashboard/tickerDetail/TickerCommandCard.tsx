@@ -11,6 +11,9 @@ import {
   filterPrimaryTradingGates,
   buildGatesFromInvestorSummary,
 } from "../retailActionUX";
+import {
+  getHorizonZoneReconciliation,
+} from "@/lib/horizonReconcile";
 
 const LIGHT_BORDER: Record<"red" | "yellow" | "green" | "neutral", string> = {
   green: "border-emerald-500/25 bg-emerald-500/5",
@@ -82,6 +85,8 @@ export function TickerCommandCard({
 
   const gates = filterPrimaryTradingGates(buildGatesFromInvestorSummary(summary, currentPrice));
   const passed = gates.filter((g) => g.pass).length;
+  const hr = getHorizonZoneReconciliation(summary, currentPrice);
+  const splitActive = Boolean(hr?.active);
 
   const headline = planHeadline(
     mode,
@@ -95,6 +100,12 @@ export function TickerCommandCard({
   );
 
   const actionLabel = primary.verdict || one_answer?.verdict || actionTitle;
+  const gateHint =
+    splitActive && passed >= gates.length
+      ? mode === "owner"
+        ? "4/4 ST gates · core tier below"
+        : "4/4 ST gates · LT tier lower"
+      : null;
   const mosLabel =
     assessmentPct >= 0
       ? `${Math.abs(assessmentPct).toFixed(1)}% to FV`
@@ -123,6 +134,9 @@ export function TickerCommandCard({
             <span className="text-[10px] font-mono text-slate-500 tabular-nums">
               {passed}/{gates.length} gates
             </span>
+            {gateHint && (
+              <span className="text-[9px] font-mono text-amber-300/90 uppercase">{gateHint}</span>
+            )}
           </div>
           <p className="text-base font-semibold text-white leading-snug">{headline}</p>
           <p className="text-xs text-slate-400 mt-0.5">

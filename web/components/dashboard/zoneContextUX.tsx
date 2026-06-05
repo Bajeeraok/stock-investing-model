@@ -196,3 +196,28 @@ export function UnlockWhenStrip({ text }: { text: string | null | undefined }) {
     </div>
   );
 }
+
+/** When ST says enter-now but LT core tier is lower — one clear reconcile line. */
+export function HorizonReconcileStrip({
+  text,
+  mode = "swing",
+}: {
+  text: string | null | undefined;
+  mode?: "scout" | "swing" | "owner";
+}) {
+  if (!text?.trim()) return null;
+  const tone =
+    mode === "owner"
+      ? "border-violet-500/35 bg-violet-950/40 text-violet-100"
+      : mode === "scout"
+        ? "border-cyan-500/35 bg-cyan-950/35 text-cyan-100"
+        : "border-amber-500/35 bg-amber-950/30 text-amber-100";
+  return (
+    <div className={clsx("rounded-xl border px-3 py-2.5", tone)} role="note">
+      <p className="text-[10px] uppercase tracking-wider font-semibold opacity-80 mb-1">
+        Two horizons — read together
+      </p>
+      <p className="text-xs leading-snug">{text}</p>
+    </div>
+  );
+}
