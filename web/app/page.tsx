@@ -287,6 +287,59 @@ export interface CryptoSignal {
   error?: string;
 }
 
+export interface PreIpoProxySignal {
+  ticker: string;
+  close?: number | null;
+  composite_buy?: number | null;
+  regime?: string | null;
+  signal?: string | null;
+}
+
+export interface PreIpoHeadline {
+  title: string;
+  url?: string | null;
+  published_at?: string | null;
+  source?: string | null;
+}
+
+export interface PreIpoNewsBlock {
+  available?: boolean;
+  headline_count?: number;
+  sentiment_label?: string | null;
+  sentiment_score_avg?: number | null;
+  sentiment_method?: string | null;
+  latest?: PreIpoHeadline | null;
+  headlines?: PreIpoHeadline[];
+  themes?: string[];
+  catalyst?: {
+    headline_summary?: string | null;
+    top_event_type?: string | null;
+    top_impact?: number | null;
+    hours_since_catalyst?: number | null;
+  } | null;
+  sources_note?: string | null;
+  message?: string | null;
+}
+
+export interface PreIpoItem {
+  id: string;
+  name: string;
+  sector?: string | null;
+  last_valuation_usd_b?: number | null;
+  valuation_as_of?: string | null;
+  status?: string | null;
+  note?: string | null;
+  public_proxies?: string[];
+  proxy_signals?: PreIpoProxySignal[];
+  news?: PreIpoNewsBlock | null;
+}
+
+export interface PreIpoPanel {
+  enabled?: boolean;
+  disclaimer?: string | null;
+  items?: PreIpoItem[];
+}
+
 export interface EconomicCalendarEvent {
   date?: string;
   name?: string;
@@ -594,6 +647,7 @@ export interface DashboardData {
     note?: string;
   };
   crypto?: CryptoSignal[];
+  pre_ipo?: PreIpoPanel;
   cross_asset?: CrossAssetItem[];
   story_changes: Signal[];
   portfolio: PortfolioReport;

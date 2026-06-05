@@ -40,6 +40,7 @@ TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
+TTL_NEWS_GENERAL = 3600  # 1h – FMP general news for pre-IPO keyword filter
 
 
 def _dashboard_ttl_seconds() -> int:
@@ -271,6 +272,30 @@ def cached_economic_calendar(days: int, fetch_fn):
     out = fetch_fn()
     if out is not None and isinstance(out, list):
         set_cached(key, out, TTL_ECONOMIC_CALENDAR)
+    return out
+
+
+def cached_general_news(fetch_fn):
+    """Cache FMP general-latest feed. TTL 1h."""
+    key = cache_key("general_news", "latest")
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, list):
+        set_cached(key, out, TTL_NEWS_GENERAL)
+    return out
+
+
+def cached_stock_news_articles(ticker: str, fetch_fn):
+    """Cache raw stock news articles per ticker. TTL 1h."""
+    key = cache_key("stock_news_articles", ticker.upper())
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, list):
+        set_cached(key, out, TTL_NEWS_GENERAL)
     return out
 
 

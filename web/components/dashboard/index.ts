@@ -5,6 +5,7 @@ export { PremarketMoverStrip } from "./PremarketMoverStrip";
 export { TickerDetailModal } from "./TickerDetailModal";
 export { AddTickerBar } from "./AddTickerBar";
 export { CryptoSection } from "./CryptoSection";
+export { PreIpoSection } from "./PreIpoSection";
 export { CrossAssetSection } from "./CrossAssetSection";
 export { ToggleSection } from "./ToggleSection";
 export { PortfolioSummary } from "./PortfolioSummary";

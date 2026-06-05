@@ -16,6 +16,7 @@ import {
   AddTickerBar,
   CalibrationCurvePanel,
   CryptoSection,
+  PreIpoSection,
   CrossAssetSection,
   DashboardTabs,
   type TabId,
@@ -1501,6 +1502,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
                 <MarketScenarios scenarios={data.market_scenarios ?? []} />
               </ToggleSection>
+              {data.pre_ipo?.enabled && (data.pre_ipo.items?.length ?? 0) > 0 ? (
+                <ToggleSection
+                  id="markets-pre-ipo"
+                  title="Pre-IPO watch"
+                  icon={<Sparkles />}
+                  badge={data.pre_ipo.items!.length}
+                  defaultOpen
+                >
+                  <PreIpoSection panel={data.pre_ipo} onTickerClick={openTickerDetail} />
+                </ToggleSection>
+              ) : null}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 min-w-0 items-start">
                 {data.crypto?.length ? (
                   <div className="min-w-0">

@@ -2304,6 +2304,19 @@ def _compute_full_dashboard_sync() -> dict:
         except Exception as e:
             logger.debug("Market forecast reconcile: %s", e)
 
+    try:
+        from signals.pre_ipo import build_pre_ipo_panel
+
+        pre_ipo_results = {
+            str(r["ticker"]).upper(): r
+            for r in results
+            if isinstance(r, dict) and r.get("ticker") and not r.get("error")
+        }
+        pre_ipo_panel = build_pre_ipo_panel(config, results_by_ticker=pre_ipo_results)
+    except Exception as pre_ipo_err:
+        logger.debug("pre_ipo panel failed: %s", pre_ipo_err)
+        pre_ipo_panel = {"enabled": False, "items": []}
+
     out = {
         "as_of_date": as_of_date,
         "data_freshness": data_freshness,
@@ -2313,6 +2326,7 @@ def _compute_full_dashboard_sync() -> dict:
         "retail_briefing": retail_briefing,
         "retail_market_decisions": retail_market_decisions,
         "crypto": crypto_signals,
+        "pre_ipo": pre_ipo_panel,
         "cross_asset": cross_asset,
         "economic_calendar": economic_calendar,
         "market_scenarios": market_scenarios,

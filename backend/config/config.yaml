@@ -794,6 +794,41 @@ cross_asset_tickers:
   - SLV
   - "^VIX"
 
+# Pre-IPO / private names — reference panel (not tradable; valuations manually maintained)
+pre_ipo_watchlist:
+  enabled: true
+  disclaimer: "Reference only — not tradable in this app. Valuations from public sources; update valuation_as_of when funding rounds print."
+  companies:
+    - id: spacex
+      name: SpaceX
+      sector: Aerospace
+      last_valuation_usd_b: 350
+      valuation_as_of: "2024-12"
+      status: private
+      note: "No public ticker. Watch launch cadence and defense/space read-through."
+      public_proxies: [RKLB, BA]
+      news_keywords: [SpaceX, Starship, Starlink]
+    - id: openai
+      name: OpenAI
+      sector: AI
+      last_valuation_usd_b: 157
+      valuation_as_of: "2024-10"
+      status: private
+      note: "Structurally private; MSFT/NVDA often used as AI-cycle proxies."
+      public_proxies: [MSFT, NVDA]
+      news_keywords: [OpenAI, ChatGPT, "Sam Altman"]
+    - id: anthropic
+      name: Anthropic
+      sector: AI
+      last_valuation_usd_b: 61.5
+      valuation_as_of: "2025-03"
+      status: private
+      note: "Google/Amazon-backed; no direct equity access for most retail."
+      public_proxies: [GOOGL, AMZN]
+      news_keywords: [Anthropic, Claude]
+  fetch_news: true
+  news_limit: 100
+
 # Tax-aware exit optimizer: flag positions approaching 1-year (LTCG) threshold
 # Add purchase_date (YYYY-MM-DD) to holdings in config or Excel upload to enable
 # taxable_accounts: only show suggestions for these (e.g. Taxable); omit to include all

@@ -513,6 +513,51 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
     }
 
 
+def fetch_stock_news_articles(config: dict, ticker: str, limit: int = 15) -> tuple[list[dict], str | None]:
+    """Raw FMP stock news rows (stable then v3 fallback)."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    sym = (ticker or "").upper().split("-")[0]
+    if not sym:
+        return [], "No ticker"
+    lim = min(limit, 50)
+    errs: list[str] = []
+
+    url_stable = f"{BASE}/news/stock?symbols={sym}&limit={lim}"
+    data_s, err_s = _request(url_stable, api_key)
+    if not err_s and isinstance(data_s, list) and data_s:
+        return [x for x in data_s if isinstance(x, dict)], None
+    if err_s:
+        errs.append(f"stable: {err_s}")
+
+    url_v3 = f"{BASE_V3}/stock_news?tickers={sym}&limit={lim}"
+    data_v, err_v = _request(url_v3, api_key)
+    if not err_v and isinstance(data_v, list) and data_v:
+        return [x for x in data_v if isinstance(x, dict)], None
+    if err_v:
+        errs.append(f"v3: {err_v}")
+
+    if errs:
+        return [], "; ".join(errs)
+    return [], "Empty stock news (stable and v3)"
+
+
+def fetch_general_news_latest(config: dict, limit: int = 100) -> tuple[list[dict], str | None]:
+    """FMP stable general news feed (Starter+)."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    lim = min(max(limit, 1), 250)
+    url = f"{BASE}/news/general-latest?limit={lim}"
+    data, err = _request(url, api_key)
+    if err:
+        return [], err
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)], None
+    return [], "Unexpected general news response"
+
+
 def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict | None, str | None]:
     """
     Fetch recent stock news: prefer FMP stable ``/news/stock``, fall back to legacy v3 ``stock_news``.
@@ -534,21 +579,11 @@ def fetch_stock_news(config: dict, ticker: str, limit: int = 10) -> tuple[dict |
     lim = min(limit, 50)
     errs: list[str] = []
 
-    # Primary: stable search stock news (documented path; v3 may be restricted on some plans)
-    url_stable = f"{BASE}/news/stock?symbols={sym}"
-    data_s, err_s = _request(url_stable, api_key)
-    if not err_s and isinstance(data_s, list) and data_s:
-        return _stock_news_summary_from_items(data_s, ticker, limit), None
-    if err_s:
-        errs.append(f"stable: {err_s}")
-
-    # Fallback: legacy v3
-    url_v3 = f"{BASE_V3}/stock_news?tickers={sym}&limit={lim}"
-    data_v, err_v = _request(url_v3, api_key)
-    if not err_v and isinstance(data_v, list) and data_v:
-        return _stock_news_summary_from_items(data_v, ticker, limit), None
-    if err_v:
-        errs.append(f"v3: {err_v}")
+    articles, err_a = fetch_stock_news_articles(config, ticker, limit=lim)
+    if articles:
+        return _stock_news_summary_from_items(articles, ticker, limit), None
+    if err_a:
+        errs.append(err_a)
 
     if errs:
         return None, "; ".join(errs)
