@@ -4,8 +4,10 @@ Uses parallel fetches and 5-min cache to reduce timeout risk.
 """
 from __future__ import annotations
 
+import logging
 import re
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -25,6 +27,8 @@ try:
     import pandas as pd
 except ImportError:
     pd = None
+
+logger = logging.getLogger(__name__)
 
 _MAX_PEERS_RETURNS = 2  # Fewer peer fetches = faster (was 4)
 
@@ -94,6 +98,7 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
 
 def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     """Inner implementation (called with or without cache)."""
+    t0 = time.perf_counter()
     ticker = ticker.upper()
     theses = load_theses()
     thesis_data = theses.get(ticker, {})
@@ -106,7 +111,10 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     earnings = None
     close_ticker = None
     volume = None
+    df_ticker = None
     close_spy = None
+    extra_info: dict = {}
+    earnings_history: dict = {}
 
     def _sector():
         return get_sector_and_industry(ticker, config) or {}
@@ -118,21 +126,36 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         return get_next_earnings(ticker, config)
 
     def _ticker_ohlcv():
+        from signals.fetcher import fetch_ohlcv_dataframe, fetch_ohlcv_safe, fetch_ohlcv_with_volume
+
+        df = fetch_ohlcv_dataframe(ticker, period)
+        if df is not None and not df.empty and "close" in df.columns:
+            close = df["close"]
+            vol = df["volume"] if "volume" in df.columns else None
+            return close, vol, df
         c, v = fetch_ohlcv_with_volume(ticker, period)
         if c is None:
             c = fetch_ohlcv_safe(ticker, period)
-        return c, v
+        return c, v, None
 
     def _spy():
         return fetch_ohlcv_safe("SPY", period)
 
-    with ThreadPoolExecutor(max_workers=5) as ex:
+    def _extra():
+        return _get_extra_info(ticker, config)
+
+    def _earn_hist():
+        return _get_earnings_history(ticker)
+
+    with ThreadPoolExecutor(max_workers=7) as ex:
         f_sector = ex.submit(_sector)
         f_peers = ex.submit(_peers)
         f_earn = ex.submit(_earn)
         f_ticker = ex.submit(_ticker_ohlcv)
         f_spy = ex.submit(_spy)
-        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy]):
+        f_extra = ex.submit(_extra)
+        f_earn_hist = ex.submit(_earn_hist)
+        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy, f_extra, f_earn_hist]):
             try:
                 r = f.result()
                 if f is f_sector:
@@ -142,9 +165,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 elif f is f_earn:
                     earnings = r
                 elif f is f_ticker:
-                    close_ticker, volume = r or (None, None)
+                    close_ticker, volume, df_ticker = r or (None, None, None)
                 elif f is f_spy:
                     close_spy = r
+                elif f is f_extra:
+                    extra_info = r or {}
+                elif f is f_earn_hist:
+                    earnings_history = r or {}
             except Exception:
                 pass
 
@@ -269,9 +296,20 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     # Single fused confidence pass for this request (price_reasoning + investor_summary + news layer)
     conf_snapshot_for_request: dict | None = None
     try:
+        from signals.cache import cached_run_confidence
         from signals.confidence_engine import run_confidence
 
-        conf_snapshot_for_request = run_confidence(ticker, config=config)
+        conf_snapshot_for_request = cached_run_confidence(
+            ticker,
+            period,
+            lambda: run_confidence(
+                ticker,
+                period=period,
+                config=config,
+                close=close_ticker,
+                df=df_ticker,
+            ),
+        )
     except Exception:
         pass
 
@@ -370,7 +408,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         except Exception:
             pass
 
-    extra = _get_extra_info(ticker, config)
+    extra = extra_info
     high_52w = extra.get("high_52w") if extra.get("high_52w") is not None else (round(range_high, 2) if range_high is not None else None)
     low_52w = extra.get("low_52w") if extra.get("low_52w") is not None else (round(range_low, 2) if range_low is not None else None)
 
@@ -451,7 +489,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "benchmark_spy": ret_spy or {},
         "benchmark_industry": ret_sector or {},
         "peer_returns": peer_returns or [],
-        "earnings_history": _get_earnings_history(ticker),
+        "earnings_history": earnings_history,
         "sector_specific": _get_sector_specific_metrics(ticker, sector_info.get("sector")),
         "rate_sensitivity": _get_rate_sensitivity(ticker, close_ticker),
         "seasonal_note": _seasonal_note(ticker),
@@ -472,7 +510,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     try:
         from signals.cross_asset_sensitivity import compute_cross_asset_sensitivity
 
-        response["cross_asset"] = compute_cross_asset_sensitivity(ticker)
+        response["cross_asset"] = compute_cross_asset_sensitivity(ticker, close_series=close_ticker)
     except Exception:
         response["cross_asset"] = None
     response["investor_summary"] = _build_investor_summary(
@@ -523,16 +561,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 market_decisions = cached.get("retail_market_decisions")
         except Exception:
             pass
-        if market_decisions is None:
-            try:
-                from signals.retail_market_decisions import build_retail_market_decisions
-
-                market_decisions = build_retail_market_decisions(
-                    config=config,
-                    include_p1=True,
-                )
-            except Exception:
-                market_decisions = None
+        # Do not rebuild full retail_market_decisions here — that duplicates dashboard work (30–90s).
+        # market_context degrades gracefully when market_decisions is None.
 
         response["market_context"] = build_ticker_market_context(
             ticker,
@@ -611,6 +641,14 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
 
             logging.getLogger(__name__).debug("tactical_entry for %s: %s", ticker, exc)
 
+    if conf_snapshot_for_request:
+        response["confidence"] = conf_snapshot_for_request
+
+    logger.info(
+        "[ticker_detail] %s completed in %.0f ms (cache miss path)",
+        ticker,
+        (time.perf_counter() - t0) * 1000,
+    )
     return response
 
 

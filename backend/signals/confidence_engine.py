@@ -996,16 +996,24 @@ def run_confidence(
     market_regime: str = "NEUTRAL",
     config: dict | None = None,
     vix: float | None = None,
+    close: pd.Series | None = None,
+    df: pd.DataFrame | None = None,
 ) -> dict:
     """
     Fetch all required data and run ConfidenceEngine in one call.
     Suitable for API routes and scripting.
+    Pass `close` / `df` when already loaded (e.g. ticker detail) to skip duplicate OHLCV fetches.
     """
     from signals.fetcher import fetch_ohlcv_dataframe, fetch_ohlcv_safe
     from signals.indicators import multi_horizon_scores
 
-    df    = fetch_ohlcv_dataframe(ticker, period)
-    close = fetch_ohlcv_safe(ticker, period)
+    if df is None:
+        df = fetch_ohlcv_dataframe(ticker, period)
+    if close is None:
+        if df is not None and not df.empty and "close" in df.columns:
+            close = df["close"]
+        else:
+            close = fetch_ohlcv_safe(ticker, period)
 
     # GAP B fix: fetch live VIX when not supplied by caller (standalone /api/confidence route).
     # This enables: ETF options VIX proxy, VIX risk factor, and VIX multiplier on composite score.

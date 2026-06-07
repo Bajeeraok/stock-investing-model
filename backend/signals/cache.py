@@ -39,6 +39,7 @@ TTL_TARGET_BANDS = 24 * 3600  # Default max TTL (quiet days); add_target_bands u
 TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
+TTL_CONFIDENCE = 5 * 60  # 5 min – 7-layer confidence (shared by ticker detail + /confidence route)
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
 TTL_NEWS_GENERAL = 3600  # 1h – FMP general news for pre-IPO keyword filter
 
@@ -411,6 +412,18 @@ def cached_ticker_detail(ticker: str, config_hash: str, fetch_fn):
     out = fetch_fn()
     if out is not None and isinstance(out, dict) and out.get("ticker"):
         set_cached(key, out, TTL_TICKER_DETAIL)
+    return out
+
+
+def cached_run_confidence(ticker: str, config_hash: str, fetch_fn):
+    """Cache run_confidence() payload. TTL 5 min — avoids duplicate work in ticker detail + /confidence."""
+    key = cache_key("confidence", ticker, config_hash)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict) and out.get("confidence") is not None:
+        set_cached(key, out, TTL_CONFIDENCE)
     return out
 
 

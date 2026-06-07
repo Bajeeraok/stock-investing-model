@@ -42,6 +42,7 @@ import {
   NewsSentimentRail,
   StickyTickerQuoteBar,
 } from "./tradingPlatformUX";
+import { apiUrl, fetchJsonWithRetry, formatFetchError, isMobileLikeBrowser } from "@/lib/apiBase";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -243,8 +244,6 @@ function RetailActionStatusBanner({ status }: { status: RetailActionStatus | nul
   );
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
-
 export interface TickerDetail {
   ticker: string;
   company_name?: string | null;
@@ -356,6 +355,8 @@ export interface TickerDetail {
   cross_asset?: { badges: string[]; correlations?: Record<string, number | null> } | null;
   market_context?: TickerMarketContext | null;
   investor_summary?: InvestorDecisionSummary | null;
+  /** Full 7-layer confidence — included in ticker detail to avoid a second API round-trip. */
+  confidence?: ConfidenceData | null;
   /** PE/EPS/FMP data are latest vendor snapshot — not point-in-time historical fundamentals. */
   fundamentals_snapshot?: {
     point_in_time: boolean;
@@ -380,6 +381,7 @@ export function TickerDetailModal({
   const [priceTargets, setPriceTargets]    = useState<PriceTargetsData | null>(null);
   const [loading, setLoading]              = useState(true);
   const [error, setError]                  = useState<string | null>(null);
+  const [reloadKey, setReloadKey]          = useState(0);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
@@ -424,37 +426,99 @@ export function TickerDetailModal({
     setCatalystExpanded(false);
     setLoading(true);
     setError(null);
+    setDetail(null);
     setConfidence(null);
     setUnified(null);
     setPriceTargets(null);
 
-    const base = (path: string) => API_BASE ? `${API_BASE}${path}` : path;
+    const ac = new AbortController();
+    let cancelled = false;
 
-    // Main ticker detail (required)
-    fetch(base(`/api/ticker/${ticker}`))
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then(setDetail)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+    (async () => {
+      try {
+        const d = await fetchJsonWithRetry<TickerDetail>(`/api/ticker/${ticker}`, {
+          signal: ac.signal,
+          retries: 2,
+        });
+        if (cancelled) return;
+        setDetail(d);
+        if (d.confidence) {
+          setConfidence(d.confidence);
+        } else {
+          fetch(apiUrl(`/api/confidence/${ticker}`), { signal: ac.signal, cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((c) => c && setConfidence(c as ConfidenceData))
+            .catch(() => {/* optional — older backend without embedded confidence */});
+        }
+      } catch (e) {
+        if (cancelled || (e instanceof DOMException && e.name === "AbortError")) return;
+        setError(formatFetchError(e, "Ticker detail"));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-    // Confidence engine (optional — runs in background, shows when ready)
-    fetch(base(`/api/confidence/${ticker}`))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setConfidence(d))
-      .catch(() => {/* graceful — confidence unavailable */});
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [ticker, initialTab, reloadKey]);
 
-    // Unified signal engine (optional — runs in background)
-    fetch(base(`/api/unified-signal/${ticker}`))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setUnified(d))
-      .catch(() => {/* graceful — unified signal unavailable */});
+  /** Unified signal + price targets are heavy — load only when Why/Levels tabs are opened. */
+  useEffect(() => {
+    if (!ticker || !detail) return;
+    if (modalTab !== "why" && modalTab !== "levels") return;
 
-    // Price targets + scenario analysis (optional — runs in background)
-    fetch(base(`/api/price-targets/${ticker}`))
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && !d.error && setPriceTargets(d))
-      .catch(() => {/* graceful — price targets unavailable */});
-  }, [ticker, initialTab]);
+    const ac = new AbortController();
+    const delay = isMobileLikeBrowser() ? 400 : 0;
+
+    const loadUnified = () => {
+      if (unified) return;
+      fetch(apiUrl(`/api/unified-signal/${ticker}`), { signal: ac.signal, cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => d && setUnified(d as UnifiedSignalData))
+        .catch(() => {});
+    };
+
+    const loadPriceTargets = () => {
+      if (priceTargets) return;
+      fetch(apiUrl(`/api/price-targets/${ticker}`), { signal: ac.signal, cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const pt = d as PriceTargetsData & { error?: string };
+          if (pt && !pt.error) setPriceTargets(pt);
+        })
+        .catch(() => {});
+    };
+
+    const t1 = window.setTimeout(loadUnified, delay);
+    const t2 = window.setTimeout(loadPriceTargets, delay + (isMobileLikeBrowser() ? 800 : 300));
+
+    return () => {
+      ac.abort();
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [ticker, detail, modalTab, reloadKey, unified, priceTargets]);
+
+  /** Scenario teaser on Today tab — prefetch after paint (non-blocking). */
+  useEffect(() => {
+    if (!ticker || !detail || priceTargets) return;
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      fetch(apiUrl(`/api/price-targets/${ticker}`), { signal: ac.signal, cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const pt = d as PriceTargetsData & { error?: string };
+          if (pt && !pt.error) setPriceTargets(pt);
+        })
+        .catch(() => {});
+    }, isMobileLikeBrowser() ? 2500 : 1200);
+    return () => {
+      ac.abort();
+      window.clearTimeout(t);
+    };
+  }, [ticker, detail, priceTargets, reloadKey]);
 
   const periods = ["1m", "3m", "6m", "1y"];
 
@@ -792,12 +856,24 @@ export function TickerDetailModal({
 
         <div className="p-4 sm:p-6 space-y-6">
           {loading && (
-            <div className="flex justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-12 gap-3 px-4">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-emerald-500 border-t-transparent" />
+              <p className="text-sm text-slate-400 text-center max-w-sm leading-snug">
+                Loading {ticker}… first open builds the full decision deck (usually 20–60s).
+              </p>
             </div>
           )}
           {error && (
-            <p className="text-red-400 py-4">Failed to load: {error}</p>
+            <div className="py-4 space-y-3">
+              <p className="text-red-400 text-sm leading-snug">Failed to load: {error}</p>
+              <button
+                type="button"
+                onClick={() => setReloadKey((k) => k + 1)}
+                className="text-sm px-4 py-2 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30"
+              >
+                Retry
+              </button>
+            </div>
           )}
           {detail && !loading && (
             <>

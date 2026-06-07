@@ -3003,9 +3003,15 @@ async def get_confidence(ticker: str):
     """
     ticker = ticker.upper().strip()
     try:
+        from signals.cache import cached_run_confidence
         from signals.confidence_engine import run_confidence
         config = _load_config()
-        result = run_confidence(ticker, config=config)
+        period = config.get("data", {}).get("period", "2y") or "2y"
+        result = cached_run_confidence(
+            ticker,
+            period,
+            lambda: run_confidence(ticker, period=period, config=config),
+        )
         return result
     except ImportError as e:
         raise HTTPException(status_code=503, detail=f"Confidence engine unavailable: {e}")

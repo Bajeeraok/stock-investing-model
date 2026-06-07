@@ -28,12 +28,13 @@ def compute_cross_asset_sensitivity(
     *,
     window: int = 60,
     period: str = "2y",
+    close_series: pd.Series | None = None,
 ) -> dict:
     """
     Returns {badges: list[str], correlations: dict[str, float | None]}.
     Badges: gold-sensitive, USD-sensitive, volatility-sensitive (|ρ| ≥ 0.25).
     """
-    px = fetch_ohlcv_safe(ticker, period)
+    px = close_series if close_series is not None and len(close_series) >= 30 else fetch_ohlcv_safe(ticker, period)
     gld = fetch_ohlcv_safe("GLD", period)
     uup = fetch_ohlcv_safe("UUP", period)
     vix = fetch_ohlcv_safe("^VIX", period)
