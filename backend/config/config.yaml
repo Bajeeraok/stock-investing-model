@@ -442,6 +442,9 @@ retail:
 # Alerts (optional) - leave user/password/from_addr/to_addrs empty to skip; alerts still print to console
 # Email (SMTP): fill in your details. For Gmail: enable 2FA, create App Password at myaccount.google.com
 alerts:
+  # Chained to Dashboard Refresh (~15m): bands/gates from fresh signal rows + audit cohort price-only
+  evaluate_on_dashboard_refresh: true
+  include_audit_cohort_on_refresh: true
   # Optional per-alert cooldown (minutes) for retail band/earnings/ML alerts — overrides scanner defaults
   retail_cooldown_min:
     EARNINGS_SOON: 360

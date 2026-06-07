@@ -315,16 +315,6 @@ def _build_hunter_panel_payload(
         return {"candidate_count": 0, "candidates": [], "message": str(e)}
 
 
-def _build_scanner_home_lite_payload(data_root) -> dict:
-    try:
-        from signals.hunter_panel import build_scanner_home_lite
-
-        return build_scanner_home_lite(data_root, limit=12)
-    except Exception as e:
-        logger.debug("scanner_home_lite build failed: %s", e)
-        return {"alerts": [], "alert_count": 0, "message": str(e)}
-
-
 def _opportunities_bundle_enabled(config: dict) -> bool:
     """When false: skip lazy opportunity scan; Portfolio Doctor add ideas disabled."""
     v = config.get("opportunities_bundle_enabled", True)
@@ -894,6 +884,17 @@ def _compute_full_dashboard_sync() -> dict:
     portfolio_tickers = [h.get("ticker") if isinstance(h, dict) else h for h in holdings]
     opportunity_universe = config.get("opportunity_universe") or []
     all_quote_tickers = list(dict.fromkeys([t for t in signal_universe + portfolio_tickers + opportunity_universe if t]))
+    # Alert-only audit cohort (~100): batch quotes on Refresh so cohort band checks use fresh prices
+    _alert_cfg = config.get("alerts") or {}
+    if _alert_cfg.get("include_audit_cohort_on_refresh", True) is not False:
+        try:
+            from config_loader import get_audit_cohort_tickers
+
+            all_quote_tickers = list(
+                dict.fromkeys([t for t in all_quote_tickers + get_audit_cohort_tickers(config) if t])
+            )
+        except Exception as e:
+            logger.debug("audit cohort quote expansion: %s", e)
     prices_by_ticker = None
     prices_from_fmp_batch = False
     has_fmp_key = bool(get_fmp_api_key(config))
@@ -2003,21 +2004,23 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("enrich_results_catalysts: %s", e)
 
+    _vix_level = None
+    for item in cross_asset or []:
+        if isinstance(item, dict) and str(item.get("label") or item.get("ticker") or "").upper() in ("VIX", "^VIX"):
+            try:
+                _vix_level = float(item.get("close") or item.get("value") or item.get("last"))
+            except (TypeError, ValueError):
+                pass
+            break
+
     try:
         from signals.signal_event_modifiers import enrich_results_event_modifiers
 
-        _vix_level = None
-        for item in cross_asset or []:
-            if isinstance(item, dict) and str(item.get("label") or item.get("ticker") or "").upper() in ("VIX", "^VIX"):
-                try:
-                    _vix_level = float(item.get("close") or item.get("value") or item.get("last"))
-                except (TypeError, ValueError):
-                    pass
-                break
         enrich_results_event_modifiers(results, config, vix=_vix_level)
     except Exception as e:
         logger.debug("enrich_results_event_modifiers: %s", e)
 
+    retail_alerts_refresh = None
     try:
         from scanner.horizon_levels import sync_horizon_levels_from_signal_results
 
@@ -2025,6 +2028,19 @@ def _compute_full_dashboard_sync() -> dict:
         logger.info("[dashboard] scanner horizon_levels synced (%d tickers with bands/ML)", _nhl)
     except Exception as e:
         logger.debug("horizon_levels sync: %s", e)
+
+    try:
+        from scanner.dashboard_alerts import run_retail_alerts_from_dashboard_refresh
+
+        retail_alerts_refresh = run_retail_alerts_from_dashboard_refresh(
+            results,
+            config,
+            get_data_root(),
+            prices_by_ticker=prices_by_ticker,
+            vix=_vix_level,
+        )
+    except Exception as e:
+        logger.warning("[dashboard] retail alerts after refresh failed: %s", e)
 
     save_last_run(results)  # Save AFTER building what_changed
     try:
@@ -2392,7 +2408,7 @@ def _compute_full_dashboard_sync() -> dict:
             signal_universe=signal_universe,
             as_of=as_of_date,
         ),
-        "scanner_home_lite": _build_scanner_home_lite_payload(data_root),
+        "retail_alerts_refresh": retail_alerts_refresh,
         "config": {
             "watchlist": config.get("watchlist", []),
             "score": config.get("score", {}),

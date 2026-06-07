@@ -764,7 +764,6 @@ export interface DashboardData {
   tactical_breakouts?: import("@/components/dashboard/index").TacticalBreakoutRow[];
   event_risk_strip?: import("@/components/dashboard/index").EventRiskStripPayload;
   hunter_panel?: import("@/components/dashboard/index").HunterPanelPayload;
-  scanner_home_lite?: import("@/components/dashboard/index").ScannerHomeLitePayload;
   /** Paper realized returns vs forward-tracking 20d population mean (smoke test; Analysis tab) */
   paper_vs_backtest_drift?: PaperVsBacktestDriftPayload | null;
   /** EOD freshness, accuracy report, forward ADD hit rate, optional weekly backtest (data/model_health.json) */

@@ -128,7 +128,7 @@ export function HunterPanel({
           </p>
           <p className="text-[11px] text-slate-500 mt-1 max-w-2xl leading-relaxed">
             {panel?.methodology ??
-              "Live from dashboard signal universe — readiness tiers or tactical velocity. Updates when cache warms (~25 min market hours)."}
+              "Your book (watchlist + portfolio) — tactical velocity or readiness tiers. Updates on Dashboard Refresh."}
           </p>
         </div>
         {panel?.as_of && (

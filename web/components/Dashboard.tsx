@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Crosshair, Database, Info, Radio, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Crosshair, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -78,7 +78,6 @@ import {
   TacticalBreakoutStrip,
   EventRiskStrip,
   HunterPanel,
-  ScannerHomeLite,
   InstitutionalInsightsPanel,
   TradingViewWidget,
   CopyTradePlanButton,
@@ -921,18 +920,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 />
               </ToggleSection>
               <ToggleSection
-                id="overview-scanner-lite"
-                title="Scanner highlights"
-                icon={<Radio />}
-                badge={data.scanner_home_lite?.alert_count ?? 0}
-                defaultOpen={false}
-              >
-                <ScannerHomeLite
-                  data={data.scanner_home_lite}
-                  onTickerClick={openTickerDetail}
-                />
-              </ToggleSection>
-              <ToggleSection
                 id="overview-alerts"
                 title="Alerts"
                 icon={<AlertTriangle />}
@@ -948,6 +935,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               >
                 <AlertsPanel
                   onTickerClick={openTickerDetail}
+                  dashboardRefreshedAt={
+                    lastRefreshedAt?.toISOString() ?? data.as_of_date ?? data.data_freshness?.snapshot_updated_at ?? null
+                  }
                   onLoaded={(total, actionRequired) => {
                     setOverviewAlertCount(total);
                     setOverviewAlertActionCount(actionRequired);

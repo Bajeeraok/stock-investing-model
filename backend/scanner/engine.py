@@ -465,6 +465,88 @@ class SignalEvaluator:
         )
 
 
+def _typical_range_line(*, price: float, atr_pct: float) -> str:
+    """Expected 1-day range from ATR — not a buy/hold verdict."""
+    exp_move_pct = max(float(atr_pct or 0.0) * 0.65, 0.6)
+    lo = float(price) * (1.0 - exp_move_pct / 100.0)
+    hi = float(price) * (1.0 + exp_move_pct / 100.0)
+    return f"Typical 1d range ${lo:.2f}–${hi:.2f}"
+
+
+def _entry_zone_alert_copy(
+    ticker: str,
+    band_key: str,
+    label: str,
+    el: float,
+    eh: float,
+    price: float,
+    stop: float,
+    target: float,
+    snap: MarketSnapshot,
+    readiness: dict[str, Any] | None,
+) -> tuple[str, str, str, str, ScanPriority, str, dict[str, Any]]:
+    """
+    Distinguish price-in-band (location) from gates-clear (execution GO).
+    Returns headline, body, actionable, one_liner, priority, emoji, extra_signals.
+    """
+    rd = readiness if isinstance(readiness, dict) else {}
+    gt = int(rd.get("gates_total") or 4)
+    gp_raw = rd.get("gates_passed")
+    gp: int | None
+    try:
+        gp = int(gp_raw) if gp_raw is not None else None
+    except (TypeError, ValueError):
+        gp = None
+    go = bool(rd.get("go_ready")) or str(rd.get("go_no_go") or "").lower() == "go"
+    gates_clear = go or (gp is not None and gp >= gt)
+    range_line = _typical_range_line(price=price, atr_pct=snap.atr_pct)
+    gate_txt = f"{gp}/{gt} gates" if gp is not None else "gates — check ticker detail"
+    extra = {
+        "gatesPassed": gp,
+        "gatesTotal": gt,
+        "gateCleared": gates_clear,
+        "zoneOnly": not gates_clear,
+        "goNoGo": rd.get("go_no_go"),
+        "readinessTier": rd.get("readiness_tier"),
+    }
+
+    if gates_clear:
+        headline = f"{ticker} in {label} band — {gate_txt}, staged add OK"
+        body = (
+            f"Price is in the {label.lower()} entry band and primary gates pass. "
+            f"Staged add is allowed per your plan — still use stop/target discipline."
+        )
+        if stop and target:
+            actionable = (
+                f"Staged add in ${el:.2f}–${eh:.2f} (spot ${price:.2f}). "
+                f"Stop ${stop:.2f}, target ${target:.2f}. Size in tranches, not all-in."
+            )
+        else:
+            actionable = (
+                f"Staged add in ${el:.2f}–${eh:.2f} (spot ${price:.2f}). "
+                f"Use your plan stop and target."
+            )
+        one_liner = f"{gate_txt} · {range_line}"
+        return headline, body, actionable, one_liner, ScanPriority.HIGH, "✅", extra
+
+    stop_note = (
+        f" Plan levels if you add later: stop ${stop:.2f}, target ${target:.2f}."
+        if stop and target
+        else ""
+    )
+    headline = f"{ticker} — in {label} band ${el:.2f}–${eh:.2f} (zone only, not GO)"
+    body = (
+        f"Spot is inside the planned {label.lower()} entry band. "
+        f"This is a location alert — band ≠ buy signal until 4/4 primary gates pass."
+    )
+    actionable = (
+        f"Zone only: ${price:.2f} is inside ${el:.2f}–${eh:.2f} ({label.lower()} band). "
+        f"Open ticker detail — {gate_txt} must clear before adding.{stop_note}"
+    )
+    one_liner = f"{gate_txt} · {range_line}"
+    return headline, body, actionable, one_liner, ScanPriority.MEDIUM, "📍", extra
+
+
 def _build_retail_alert(
     ticker: str,
     alert_type: AlertType,
@@ -475,6 +557,9 @@ def _build_retail_alert(
     actionable: Optional[str] = None,
     one_liner: Optional[str] = None,
     dedupe_extra: Optional[str] = None,
+    *,
+    priority_override: ScanPriority | None = None,
+    emoji_override: str | None = None,
 ) -> ScanAlert:
     """Build a retail quick-decision alert with one-line plain English and optional actionable text."""
     pr = ScanPriority.HIGH if alert_type in (
@@ -486,6 +571,9 @@ def _build_retail_alert(
         pr = ScanPriority.MEDIUM
     if alert_type == AlertType.TACTICAL_VELOCITY:
         pr = ScanPriority.HIGH
+    if priority_override is not None:
+        pr = priority_override
+    emoji = emoji_override or ALERT_EMOJIS.get(alert_type, "🔔")
     sig_out = {**(signals or {}), "track": alert_track_for_type(alert_type)}
     return ScanAlert(
         id=_alert_id(ticker, alert_type, dedupe_extra or ""),
@@ -496,7 +584,7 @@ def _build_retail_alert(
         body=body,
         risk_level="MODERATE",
         color=ALERT_COLORS.get(alert_type, "#94A3B8"),
-        emoji=ALERT_EMOJIS.get(alert_type, "🔔"),
+        emoji=emoji,
         timestamp=datetime.now().isoformat(),
         signals=sig_out,
         scan_tier=scan_tier,
@@ -514,6 +602,7 @@ def evaluate_retail_alerts(
     ml_probs: dict[str, float],
     watchlist: set[str],
     *,
+    readiness_cache: dict[str, dict[str, Any]] | None = None,
     enable_band: bool = True,
     enable_earnings: bool = True,
     enable_ml_prob: bool = True,
@@ -595,18 +684,26 @@ def evaluate_retail_alerts(
             dex = band_key
 
             if el and eh and actionable_zone and not was_in_zone:
-                act = (
-                    f"Entry: buy in range ${el:.2f}–${eh:.2f} (current ${price:.2f}). "
-                    f"Exit: use stop ${stop:.2f} and target ${target:.2f}. "
-                    f"Duration: hold until target or stop hit."
-                ) if (stop and target) else (
-                    f"Entry: buy in range ${el:.2f}–${eh:.2f} (current ${price:.2f}). Set your own stop and target."
+                rd = None
+                if readiness_cache:
+                    rd = readiness_cache.get(ticker.upper()) or readiness_cache.get(ticker)
+                headline, body, act, one_l, pr, em, gate_sig = _entry_zone_alert_copy(
+                    ticker,
+                    band_key,
+                    label,
+                    el,
+                    eh,
+                    price,
+                    stop,
+                    target,
+                    snap,
+                    rd,
                 )
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.ENTRY_ZONE_ENTERED,
-                    f"{ticker} in {label} buy zone ${el:.2f}–${eh:.2f}",
-                    f"Price in buy zone ({band_key}). Consider adding per your plan.",
+                    headline,
+                    body,
                     snap.scan_tier,
                     {
                         "band": band_key,
@@ -615,16 +712,13 @@ def evaluate_retail_alerts(
                         "price": price,
                         "stopLoss": stop,
                         "target": target,
+                        **gate_sig,
                     },
                     actionable=act,
-                    one_liner=_bias_prob_range_line(
-                        price=price,
-                        atr_pct=snap.atr_pct,
-                        regime=snap.regime,
-                        regime_confidence=snap.regime_confidence,
-                        prob_override=snap.ml_prob_short,
-                    ),
+                    one_liner=one_l,
                     dedupe_extra=dex,
+                    priority_override=pr,
+                    emoji_override=em,
                 ))
             if stop and price < stop:
                 alerts.append(_build_retail_alert(
@@ -1080,6 +1174,7 @@ class ScanEngine:
                     state,
                     ml_probs,
                     watchlist,
+                    readiness_cache=readiness,
                     enable_band=enable_band,
                     enable_earnings=enable_earnings,
                     enable_ml_prob=enable_ml,

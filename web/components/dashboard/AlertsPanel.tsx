@@ -61,6 +61,52 @@ function isActionRequired(p: number): boolean {
   return p === 1 || p === 2;
 }
 
+function readEntryZoneSignals(signals: Record<string, unknown> | undefined): {
+  gatesPassed: number | null;
+  gatesTotal: number;
+  gateCleared: boolean;
+  zoneOnly: boolean;
+  bandLabel: string;
+} {
+  const s = signals ?? {};
+  const band = String(s.band ?? "").toLowerCase();
+  const bandLabel =
+    band === "long" ? "Long-term" : band === "medium" ? "Medium-term" : band === "short" ? "Short-term" : "Entry";
+  const gpRaw = s.gatesPassed ?? s.gates_passed;
+  const gtRaw = s.gatesTotal ?? s.gates_total ?? 4;
+  let gatesPassed: number | null = null;
+  if (typeof gpRaw === "number") gatesPassed = gpRaw;
+  else if (typeof gpRaw === "string" && gpRaw.trim()) gatesPassed = parseInt(gpRaw, 10);
+  const gatesTotal = typeof gtRaw === "number" ? gtRaw : 4;
+  const gateCleared =
+    s.gateCleared === true ||
+    s.gate_cleared === true ||
+    String(s.goNoGo ?? s.go_no_go ?? "").toLowerCase() === "go" ||
+    (gatesPassed !== null && gatesPassed >= gatesTotal);
+  const zoneOnly = s.zoneOnly === true || s.zone_only === true || !gateCleared;
+  return { gatesPassed, gatesTotal, gateCleared, zoneOnly, bandLabel };
+}
+
+function entryZonePrimaryCopy(a: ScanAlert): string {
+  const sig = readEntryZoneSignals(a.signals);
+  const lo = a.signals?.entryLow ?? a.signals?.entry_low;
+  const hi = a.signals?.entryHigh ?? a.signals?.entry_high;
+  const price = a.signals?.price;
+  if (
+    sig.zoneOnly &&
+    typeof lo === "number" &&
+    typeof hi === "number"
+  ) {
+    const gateTxt =
+      sig.gatesPassed != null ? `${sig.gatesPassed}/${sig.gatesTotal} gates` : "4/4 gates";
+    return `Zone only: price is in ${sig.bandLabel.toLowerCase()} band $${Number(lo).toFixed(2)}–$${Number(hi).toFixed(2)}${
+      typeof price === "number" ? ` (spot $${Number(price).toFixed(2)})` : ""
+    }. Open ticker detail — ${gateTxt} must clear before adding.`;
+  }
+  if (a.actionable?.trim()) return a.actionable.trim();
+  return a.body;
+}
+
 function sortAlerts(list: ScanAlert[]): ScanAlert[] {
   return [...list].sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority;
@@ -152,8 +198,12 @@ function AlertCard({
 }) {
   const buyZone =
     a.type === "ENTRY_ZONE_ENTERED" ||
-    String(a.headline || "").toLowerCase().includes("buy zone");
+    String(a.headline || "").toLowerCase().includes("buy zone") ||
+    String(a.headline || "").toLowerCase().includes(" band ");
   const almostReady = a.type === "SETUP_ALMOST_READY";
+  const zoneSig = buyZone ? readEntryZoneSignals(a.signals) : null;
+  const zoneOnly = Boolean(zoneSig?.zoneOnly);
+  const gatesClear = Boolean(zoneSig?.gateCleared);
 
   return (
     <div className="rounded-lg border border-slate-700/60 bg-slate-950/30 px-3 py-2.5">
@@ -173,6 +223,15 @@ function AlertCard({
               <span className="font-mono text-slate-200 text-sm">MACRO</span>
             )}
             <span className="text-sm text-slate-200 font-semibold">{a.headline}</span>
+            {zoneOnly && buyZone ? (
+              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-amber-500/15 text-amber-200 border-amber-500/35 font-semibold uppercase tracking-wide">
+                Zone only
+              </span>
+            ) : gatesClear && buyZone ? (
+              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-emerald-500/15 text-emerald-200 border-emerald-500/35 font-semibold uppercase tracking-wide">
+                Gates OK
+              </span>
+            ) : null}
             <span
               className={clsx(
                 "text-[10px] px-2 py-0.5 rounded border shrink-0",
@@ -198,10 +257,18 @@ function AlertCard({
               </span>
             ) : null}
           </div>
-          <p className="text-xs text-slate-400 mt-1 leading-snug">{a.actionable ?? a.body}</p>
-          {buyZone && (
-            <p className="text-[11px] text-violet-300/80 mt-1 leading-snug">
-              Price in zone — open ticker detail and confirm GO/NO-GO gates before adding.
+          <p className="text-xs text-slate-300 mt-1 leading-relaxed">{entryZonePrimaryCopy(a)}</p>
+          {buyZone && zoneOnly && (
+            <p className="text-[11px] text-amber-200/90 mt-1.5 leading-snug rounded-md border border-amber-500/25 bg-amber-950/30 px-2 py-1.5">
+              <span className="font-semibold">Not a buy signal yet.</span> Band = where you&apos;d add if gates pass.
+              {zoneSig?.gatesPassed != null
+                ? ` Currently ${zoneSig.gatesPassed}/${zoneSig.gatesTotal} primary gates — open ticker detail for the blocker.`
+                : " Open ticker detail and confirm 4/4 primary gates before sizing."}
+            </p>
+          )}
+          {buyZone && gatesClear && (
+            <p className="text-[11px] text-emerald-200/90 mt-1.5 leading-snug">
+              Gates clear — staged add allowed. Still use stop/target and tranche sizing.
             </p>
           )}
           {almostReady && (
@@ -210,7 +277,14 @@ function AlertCard({
             </p>
           )}
           {a.one_liner && (
-            <p className="text-[11px] text-emerald-300/90 mt-1 leading-snug">{a.one_liner}</p>
+            <p
+              className={clsx(
+                "text-[11px] mt-1 leading-snug tabular-nums",
+                zoneOnly && buyZone ? "text-slate-500" : "text-slate-400",
+              )}
+            >
+              {a.one_liner}
+            </p>
           )}
           {a.actionable && a.body && (
             <p className="text-[11px] text-slate-500 mt-1 leading-snug" title="Context">
@@ -290,10 +364,13 @@ function AlertGroup({
 export function AlertsPanel({
   onTickerClick,
   onLoaded,
+  dashboardRefreshedAt,
 }: {
   onTickerClick?: (ticker: string) => void;
   /** Total alerts + action-required (HIGH/CRITICAL) count for Overview badge. */
   onLoaded?: (total: number, actionRequired: number) => void;
+  /** When dashboard Refresh completes — bands/gates update; reload alert list. */
+  dashboardRefreshedAt?: string | null;
 }) {
   const [alerts, setAlerts] = useState<ScanAlert[]>([]);
   const [loading, setLoading] = useState(false);
@@ -329,7 +406,13 @@ export function AlertsPanel({
   }, [fetchAlerts]);
 
   useEffect(() => {
-    const minutes = isScannerHours() ? 1 : 0;
+    if (!dashboardRefreshedAt) return;
+    fetchAlerts({ silent: true });
+  }, [dashboardRefreshedAt, fetchAlerts]);
+
+  /** Match backend scanner cadence (15–30m) — 1m poll only re-reads the same JSONL cache. */
+  useEffect(() => {
+    const minutes = isScannerHours() ? 15 : 0;
     if (!minutes) return;
     const id = setInterval(() => fetchAlerts({ silent: true }), minutes * 60 * 1000);
     return () => clearInterval(id);
@@ -377,8 +460,13 @@ export function AlertsPanel({
 
   const headerNote = useMemo(() => {
     const hrs = isScannerHours();
-    if (!hrs) return "Scanner idle outside 8:00–16:00 ET weekdays (manual refresh works).";
-    return "Auto-refreshing during scan hours (1m).";
+    if (!hrs) {
+      return "Outside 8:00–16:00 ET scan window. Band/gate context updates on Dashboard Refresh; alert list reloads then.";
+    }
+    return (
+      "Event inbox for your book plus the 100-name audit cohort — entry/stop/target, earnings, zone vs gates. " +
+      "Re-evaluates on Dashboard Refresh (~15m); reloads every 15m and after each Refresh."
+    );
   }, []);
 
   const actionCount = grouped.actionRequired.length;

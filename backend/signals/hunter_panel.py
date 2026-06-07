@@ -1,8 +1,8 @@
 """
-Hunter panel (Phase B): candidates from dashboard signal rows after gates + readiness + velocity.
+Hunter panel: tactical / readiness setups in your book (watchlist + portfolio).
 
-Included in full dashboard cache — refreshed with signal universe (~watchlist + portfolio + demo),
-not the 100-ticker audit cohort (EOD-only).
+Included in full dashboard cache — refreshed with dashboard signal universe on each Refresh.
+Audit cohort band events surface in Alerts, not here.
 """
 from __future__ import annotations
 
@@ -130,46 +130,8 @@ def build_hunter_panel(
         },
         "candidates": items,
         "methodology": (
-            "Filtered from dashboard signal universe after each cache warm "
-            "(readiness go_ready / almost_ready / warming, or tactical velocity track). "
-            "Audit cohort (100) updates at EOD only."
+            "Your book (watchlist + portfolio) after each Dashboard Refresh — "
+            "tactical velocity or readiness go_ready / almost_ready / warming. "
+            "Use Alerts below for band/gate events across the 100-name audit cohort too."
         ),
-    }
-
-
-def build_scanner_home_lite(data_root, *, limit: int = 12) -> dict[str, Any]:
-    """Top recent scanner alerts from file store (no extra scan)."""
-    from pathlib import Path
-
-    from scanner.store import ScannerStore
-
-    root = Path(data_root)
-    store = ScannerStore(root)
-    dismissed = store.load_dismissed()
-    alerts = store.load_alerts(limit=limit * 3)
-    rows: list[dict[str, Any]] = []
-    for a in alerts:
-        aid = str(a.get("id") or "")
-        if aid and aid in dismissed:
-            continue
-        sym = str(a.get("ticker") or a.get("symbol") or "").upper()
-        if not sym:
-            continue
-        rows.append({
-            "id": aid or None,
-            "ticker": sym,
-            "alert_type": a.get("alert_type") or a.get("type"),
-            "priority": a.get("priority"),
-            "message": a.get("message") or a.get("headline"),
-            "created_at": a.get("created_at") or a.get("ts"),
-        })
-        if len(rows) >= limit:
-            break
-    stats = store.read_stats()
-    return {
-        "alerts": rows,
-        "alert_count": len(rows),
-        "universe_size": stats.get("universe_size"),
-        "as_of": stats.get("as_of"),
-        "message": None if rows else "No scanner alerts yet — scanner runs on its own schedule.",
     }

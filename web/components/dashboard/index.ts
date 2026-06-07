@@ -36,7 +36,6 @@ export { SessionStrip } from "./SessionStrip";
 export { TriggerLevelChips } from "./TriggerLevelChips";
 export { ScoutPlaybook } from "./ScoutPlaybook";
 export { HunterPanel, type HunterPanelPayload } from "./HunterPanel";
-export { ScannerHomeLite, type ScannerHomeLitePayload } from "./ScannerHomeLite";
 export { PossessionBadge, type PositionStatus } from "./PossessionBadge";
 export { ExternalContextChip, type ExternalContextPayload } from "./ExternalContextChip";
 export { TacticalEntryPanel, type TacticalEntryPayload } from "./TacticalEntryPanel";
