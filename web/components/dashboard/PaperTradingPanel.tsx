@@ -85,7 +85,17 @@ function filteredPaperStats(rows: any[]) {
 
 export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const pt = data.paper_trading;
-  if (!pt) return null;
+  if (!pt) {
+    return (
+      <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
+        <p className="text-sm font-medium text-slate-300 mb-1">Paper trading</p>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Paper trade data has not loaded yet. Refresh the dashboard, wait for Analysis sections to load,
+          then return here. Trades log when GO signals (4/4 gates) fire on your watchlist or portfolio.
+        </p>
+      </div>
+    );
+  }
 
   const summary = pt.summary ?? null;
   const allRecent = pt.recent ?? [];

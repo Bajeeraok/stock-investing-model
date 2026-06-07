@@ -195,17 +195,16 @@ export function ForwardTracking({
 
   const filterStats = useMemo(() => filteredForwardStats(records), [records]);
 
-  if (!allRecords?.length && message) {
+  if (!allRecords?.length) {
     return (
-      <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
-        <p className="text-sm font-medium text-slate-400 mb-1">Forward tracking</p>
-        <p className="text-slate-500 text-sm">{message}</p>
+      <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-2">
+        <p className="text-sm font-medium text-slate-400">Forward tracking</p>
+        <p className="text-slate-500 text-sm leading-relaxed">
+          {message ??
+            "No forward-tracking rows yet. Save at least 2 EOD snapshots, then refresh the dashboard."}
+        </p>
       </div>
     );
-  }
-
-  if (!allRecords?.length) {
-    return null;
   }
 
   const horizons = Object.keys(summary_by_horizon || {})

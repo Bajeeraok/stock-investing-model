@@ -58,6 +58,8 @@ import {
   MorningNewsletter,
   PaperTradingPanel,
   PaperVsBacktestDrift,
+  AnalysisSectionEmpty,
+  ANALYSIS_LOAD_HINTS,
   PreMarketPanel,
   PreMarketStrip,
   type PreMarketData,
@@ -252,6 +254,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [analysisBundle, setAnalysisBundle] = useState<Partial<DashboardData> | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisFetchErr, setAnalysisFetchErr] = useState<string | null>(null);
+  const [analysisRetryKey, setAnalysisRetryKey] = useState(0);
   const [advancedMode, setAdvancedMode] = useState(false);
 
   useEffect(() => {
@@ -411,7 +414,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     if (data.warming) return;
     if (data.analysis_deferred !== true) return;
     if (analysisBundle !== null) return;
-    // D1: preload on Overview so track record strip has forward stats without visiting Analysis
     if (activeTab !== "overview" && activeTab !== "analysis" && activeTab !== "markets") return;
     let cancelled = false;
     setAnalysisLoading(true);
@@ -442,7 +444,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.warming, data.analysis_deferred, data.as_of_date, activeTab, analysisBundle]);
+  }, [data.warming, data.analysis_deferred, data.as_of_date, activeTab, analysisBundle, analysisRetryKey]);
+
+  const analysisBundlePending =
+    data.analysis_deferred === true && analysisBundle === null && !analysisFetchErr;
+  const analysisSectionLoading = data.analysis_deferred === true && analysisLoading && analysisBundle === null;
 
   const effectiveSignals = useMemo(() => {
     if (!data.signals_deferred) return data.signals ?? [];
@@ -1553,8 +1559,19 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 </div>
               )}
               {data.analysis_deferred === true && analysisFetchErr && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
-                  {analysisFetchErr}
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm space-y-2">
+                  <p>{analysisFetchErr}</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnalysisBundle(null);
+                      setAnalysisFetchErr(null);
+                      setAnalysisRetryKey((k) => k + 1);
+                    }}
+                    className="text-xs px-3 py-1.5 rounded border border-amber-500/40 text-amber-100 hover:bg-amber-500/10"
+                  >
+                    Retry analysis load
+                  </button>
                 </div>
               )}
               <TrackRecordFramework />
@@ -1605,31 +1622,75 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </div>
                 </ToggleSection>
               )}
-              {(modelAudit?.enabled || modelAudit?.message) && (
-                <ToggleSection
-                  id="analysis-model-audit"
-                  title="(B) Live gate clearance — audit"
-                  icon={<ClipboardCheck />}
-                  badge={modelAudit?.cohort_size ?? modelAudit?.pilot?.total_events ?? undefined}
-                  defaultOpen
-                >
+              <ToggleSection
+                id="analysis-model-audit"
+                title="(B) 100-ticker gate audit"
+                icon={<ClipboardCheck />}
+                badge={
+                  modelAudit?.pilot?.total_events ??
+                  modelAudit?.cohort_size ??
+                  (analysisSectionLoading ? "…" : undefined)
+                }
+                defaultOpen
+              >
+                {analysisSectionLoading ? (
+                  <AnalysisSectionEmpty loading message="" />
+                ) : analysisFetchErr ? (
+                  <AnalysisSectionEmpty
+                    title="Could not load audit data"
+                    message={analysisFetchErr}
+                    hints={[...ANALYSIS_LOAD_HINTS.bundle, ...ANALYSIS_LOAD_HINTS.audit100]}
+                  />
+                ) : analysisBundlePending ? (
+                  <AnalysisSectionEmpty
+                    title="Waiting for analysis bundle"
+                    message="Open Overview or click Refresh once, then return here."
+                    hints={ANALYSIS_LOAD_HINTS.bundle}
+                  />
+                ) : (
                   <ModelAuditPanel audit={modelAudit ?? null} />
-                </ToggleSection>
-              )}
-              {(forwardTracking?.records?.length ?? 0) > 0 && (
-                <ToggleSection id="analysis-forward" title="(C) Forward outcomes — tracking" icon={<RefreshCw />} badge={forwardTracking?.records?.length ?? 0} defaultOpen>
+                )}
+              </ToggleSection>
+              <ToggleSection
+                id="analysis-forward"
+                title="(C) Forward outcomes — tracking"
+                icon={<RefreshCw />}
+                badge={
+                  (forwardTracking?.records?.length ?? 0) > 0
+                    ? forwardTracking!.records!.length
+                    : analysisSectionLoading
+                      ? "…"
+                      : undefined
+                }
+                defaultOpen
+              >
+                {analysisSectionLoading ? (
+                  <AnalysisSectionEmpty loading message="" />
+                ) : analysisFetchErr ? (
+                  <AnalysisSectionEmpty
+                    title="Could not load forward tracking"
+                    message={analysisFetchErr}
+                    hints={[...ANALYSIS_LOAD_HINTS.bundle, ...ANALYSIS_LOAD_HINTS.forward]}
+                  />
+                ) : analysisBundlePending ? (
+                  <AnalysisSectionEmpty
+                    title="Waiting for analysis bundle"
+                    message="Forward tracking loads with the rest of the Analysis tab."
+                    hints={ANALYSIS_LOAD_HINTS.bundle}
+                  />
+                ) : (
                   <ForwardTracking
-                    records={forwardTracking!.records}
-                    summary_by_horizon={forwardTracking!.summary_by_horizon ?? {}}
-                    summary_by_signal={forwardTracking!.summary_by_signal ?? {}}
-                    summary_by_go_no_go={forwardTracking!.summary_by_go_no_go ?? {}}
-                    summary_by_gates={forwardTracking!.summary_by_gates ?? {}}
-                    data_source_note={forwardTracking!.data_source_note ?? null}
-                    message={forwardTracking?.message}
+                    records={forwardTracking?.records ?? []}
+                    summary_by_horizon={forwardTracking?.summary_by_horizon ?? {}}
+                    summary_by_signal={forwardTracking?.summary_by_signal ?? {}}
+                    summary_by_go_no_go={forwardTracking?.summary_by_go_no_go ?? {}}
+                    summary_by_gates={forwardTracking?.summary_by_gates ?? {}}
+                    data_source_note={forwardTracking?.data_source_note ?? null}
+                    message={forwardTracking?.message ?? undefined}
                     meta={forwardTracking?.meta ?? null}
                   />
-                </ToggleSection>
-              )}
+                )}
+              </ToggleSection>
               <ToggleSection id="analysis-calibration" title="Calibration curve" icon={<Activity />} defaultOpen>
                 <CalibrationCurvePanel
                   calibration={(confidenceCalibration ?? null) as Parameters<typeof CalibrationCurvePanel>[0]["calibration"]}
@@ -1650,31 +1711,37 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <ToggleSection id="analysis-browser-push" title="Browser push" icon={<Bell />} defaultOpen={false}>
                 <BrowserPushPanel />
               </ToggleSection>
-              {(paperTrading || paperVsBacktestDrift) && (
-                <ToggleSection
-                  id="analysis-paper"
-                  title="(C) Paper trading — forward outcomes"
-                  icon={<FlaskConical />}
-                  badge={paperTrading?.summary?.completed ?? undefined}
-                  defaultOpen={false}
-                >
-                  {paperVsBacktestDrift && (
-                    <PaperVsBacktestDrift drift={paperVsBacktestDrift} />
-                  )}
-                  {paperTrading && <PaperTradingPanel data={analysisPanelData} />}
-                </ToggleSection>
-              )}
-              {forwardTracking?.message && !forwardTracking?.records?.length && (
-                <ToggleSection id="analysis-forward-msg" title="(C) Forward outcomes — tracking" icon={<RefreshCw />} defaultOpen>
-                  <ForwardTracking
-                    records={[]}
-                    summary_by_horizon={{}}
-                    summary_by_signal={{}}
-                    summary_by_gates={{}}
-                    message={forwardTracking.message}
+              <ToggleSection
+                id="analysis-paper"
+                title="(C) Paper trading — forward outcomes"
+                icon={<FlaskConical />}
+                badge={
+                  paperTrading?.summary?.completed ??
+                  (analysisSectionLoading ? "…" : undefined)
+                }
+                defaultOpen={false}
+              >
+                {analysisSectionLoading ? (
+                  <AnalysisSectionEmpty loading message="" />
+                ) : analysisFetchErr ? (
+                  <AnalysisSectionEmpty
+                    title="Could not load paper trading"
+                    message={analysisFetchErr}
+                    hints={[...ANALYSIS_LOAD_HINTS.bundle, ...ANALYSIS_LOAD_HINTS.paper]}
                   />
-                </ToggleSection>
-              )}
+                ) : analysisBundlePending ? (
+                  <AnalysisSectionEmpty
+                    title="Waiting for analysis bundle"
+                    message="Paper trading stats load with the Analysis bundle (after dashboard Refresh)."
+                    hints={ANALYSIS_LOAD_HINTS.bundle}
+                  />
+                ) : (
+                  <>
+                    {paperVsBacktestDrift && <PaperVsBacktestDrift drift={paperVsBacktestDrift} />}
+                    <PaperTradingPanel data={analysisPanelData} />
+                  </>
+                )}
+              </ToggleSection>
               {modelValidation && (modelValidation.records?.length ?? 0) > 0 && (
                 <ToggleSection id="analysis-model" title="Model validation" icon={<Activity />} badge={modelValidation?.records?.length ?? 0} defaultOpen>
                   <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
