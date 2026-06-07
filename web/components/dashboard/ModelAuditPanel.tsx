@@ -228,9 +228,14 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
   );
 
   if (!audit?.enabled) {
+    const msg =
+      audit?.message ??
+      (audit == null
+        ? "Analysis data not loaded — open Overview or click Refresh, then return to Analysis."
+        : "Model audit not enabled.");
     return (
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
-        <p className="text-sm text-slate-400">{audit?.message ?? "Model audit not enabled."}</p>
+        <p className="text-sm text-slate-400">{msg}</p>
       </div>
     );
   }

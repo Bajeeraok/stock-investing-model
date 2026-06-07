@@ -122,6 +122,14 @@ def build_shell_from_full(full: dict, *, include_full_signals: bool = False) -> 
         out["signal_scores"] = scores or []
         out["signals"] = []
         out["signals_deferred"] = True
+    # After analysis-bundle merge, Redis holds model_audit / forward_tracking etc. but they are
+    # not in SHELL_KEYS — pass them through so clients are not stuck with analysis_deferred=false
+    # and an empty Analysis tab (no second fetch).
+    for key in ANALYSIS_BUNDLE_KEYS:
+        if key in full:
+            out[key] = full[key]
+    if any(k in full for k in ANALYSIS_BUNDLE_KEYS):
+        out["analysis_deferred"] = bool(full.get("analysis_deferred", False))
     return out
 
 

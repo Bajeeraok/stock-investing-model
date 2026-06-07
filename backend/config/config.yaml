@@ -571,7 +571,7 @@ signal_audit:
   merge_into_signal_universe: true       # audit cohort on EOD/run_daily only (not dashboard refresh)
   use_cohort_for_forward_tracking: false       # forward tracking = your book; audit panel = cohort
   log_on_run_daily: true
-  log_on_dashboard: false
+  log_on_dashboard: true
   pilot_target_days: 30
   resolve_outcomes_on_read: true   # Analysis tab auto-resolves when enough EOD history exists
   outcomes:

@@ -410,10 +410,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     };
   }, [data.warming, data.opportunities_bundle_enabled, data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
 
+  const analysisInShell = useMemo(() => {
+    if (data.model_audit != null) return true;
+    const ft = data.forward_tracking;
+    if (ft == null) return false;
+    return (ft.records?.length ?? 0) > 0 || Boolean(ft.message);
+  }, [data.model_audit, data.forward_tracking]);
+
   useEffect(() => {
     if (data.warming) return;
-    if (data.analysis_deferred !== true) return;
     if (analysisBundle !== null) return;
+    if (analysisInShell) return;
     if (activeTab !== "overview" && activeTab !== "analysis" && activeTab !== "markets") return;
     let cancelled = false;
     setAnalysisLoading(true);
@@ -444,11 +451,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.warming, data.analysis_deferred, data.as_of_date, activeTab, analysisBundle, analysisRetryKey]);
+  }, [data.warming, data.analysis_deferred, data.as_of_date, activeTab, analysisBundle, analysisRetryKey, analysisInShell]);
 
-  const analysisBundlePending =
-    data.analysis_deferred === true && analysisBundle === null && !analysisFetchErr;
-  const analysisSectionLoading = data.analysis_deferred === true && analysisLoading && analysisBundle === null;
+  const analysisNeedsFetch =
+    analysisBundle === null && !analysisInShell && !analysisFetchErr;
+  const analysisBundlePending = analysisNeedsFetch && !analysisLoading;
+  const analysisSectionLoading = analysisNeedsFetch && analysisLoading;
 
   const effectiveSignals = useMemo(() => {
     if (!data.signals_deferred) return data.signals ?? [];

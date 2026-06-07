@@ -512,7 +512,9 @@ def compute_analysis_bundle() -> dict | None:
         if not cached or not isinstance(cached.get("signals"), list):
             return None
         if cached.get("analysis_deferred") is False:
-            return build_analysis_bundle(cached)
+            partial = build_analysis_bundle(cached)
+            if partial.get("model_audit") is not None and partial.get("forward_tracking") is not None:
+                return partial
     except Exception as e:
         logger.debug("analysis-bundle: cache read failed: %s", e)
         return None
