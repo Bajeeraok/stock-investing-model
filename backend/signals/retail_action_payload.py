@@ -518,6 +518,7 @@ def build_unlock_summary(
     stock_bull_pct: float | None,
     zone_context: dict[str, Any] | None = None,
     st_band: dict | None = None,
+    current_price: float | None = None,
 ) -> str | None:
     """One-line 'what flips WAIT → BUY' for Today tab."""
     parts: list[str] = []
@@ -533,8 +534,45 @@ def build_unlock_summary(
         label = str(top.get("label") or "gate").title()
         parts.append(f"{label} clears")
 
+    def _in_range(lo: float | None, hi: float | None) -> bool:
+        if current_price is None or lo is None or hi is None:
+            return False
+        return float(min(lo, hi)) <= float(current_price) <= float(max(lo, hi))
+
     zc = zone_context or {}
-    if zc.get("in_bridge_band") and zc.get("bridge_low") is not None:
+    st_lo = (st_band or {}).get("low")
+    st_hi = (st_band or {}).get("high")
+    in_st = _in_range(
+        float(st_lo) if st_lo is not None else None,
+        float(st_hi) if st_hi is not None else None,
+    )
+    in_bridge = bool(zc.get("in_bridge_band")) and _in_range(
+        float(zc["bridge_low"]) if zc.get("bridge_low") is not None else None,
+        float(zc["bridge_high"]) if zc.get("bridge_high") is not None else None,
+    )
+    in_gap = _in_range(
+        float(zc["gap_low"]) if zc.get("gap_low") is not None else None,
+        float(zc["gap_high"]) if zc.get("gap_high") is not None else None,
+    )
+    in_band_state = (zc.get("state") or "") == "in_band"
+
+    if in_st or in_bridge or in_gap or in_band_state:
+        if st_lo is not None and st_hi is not None:
+            band_note = f"in ST band ${float(st_lo):.0f}–${float(st_hi):.0f}"
+        elif in_bridge and zc.get("bridge_low") is not None:
+            band_note = (
+                f"in bridge ${float(zc['bridge_low']):.0f}–${float(zc['bridge_high']):.0f}"
+            )
+        elif zc.get("gap_low") is not None and zc.get("gap_high") is not None:
+            band_note = (
+                f"in zone ${float(zc['gap_low']):.0f}–${float(zc['gap_high']):.0f}"
+            )
+        else:
+            band_note = "in entry band"
+        if parts:
+            return f"Already {band_note} — unlock when: " + " + ".join(parts)
+        return f"Already {band_note} — waiting on gate confirmation."
+    elif zc.get("in_bridge_band") and zc.get("bridge_low") is not None:
         parts.append(
             f"price in bridge ${float(zc['bridge_low']):.0f}–${float(zc['bridge_high']):.0f}"
         )
@@ -716,6 +754,7 @@ def enrich_investor_summary_retail_action(
         stock_bull_pct=investor_out.get("regime_bull_pct"),
         zone_context=zone_ctx,
         st_band=st_band,
+        current_price=float(current_price) if current_price is not None else None,
     )
     if unlock:
         ra["unlock_summary"] = unlock

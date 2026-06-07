@@ -43,11 +43,25 @@ import { HorizonReconcileStrip } from "./zoneContextUX";
 const STRENGTH_CONVICTION_HINT =
   "Strength = how strong the technical read is on this horizon. Conviction = how much the model trusts that read (gates, ML, pattern).";
 
-function entryBandPct(price: number, low: number, high: number): { inside: boolean; line: string } {
+function entryBandPct(
+  price: number,
+  low: number,
+  high: number,
+  opts?: { holdDespiteInBand?: boolean; bandLabel?: string },
+): { inside: boolean; line: string } {
   const lo = Math.min(low, high);
   const hi = Math.max(low, high);
+  const label = opts?.bandLabel ?? "short-term band";
   if (!(lo > 0 && hi > lo)) return { inside: false, line: "Entry band unavailable." };
-  if (price >= lo && price <= hi) return { inside: true, line: "Price is inside the buy zone now." };
+  if (price >= lo && price <= hi) {
+    if (opts?.holdDespiteInBand) {
+      return {
+        inside: true,
+        line: `In ${label} ($${lo.toFixed(0)}–$${hi.toFixed(0)}) — hold until gates clear; band is where you'd add if conditions improve.`,
+      };
+    }
+    return { inside: true, line: `In ${label} — favorable for staged adds when execution says enter.` };
+  }
   if (price > hi) {
     const pct = ((price - hi) / hi) * 100;
     return { inside: false, line: `${pct.toFixed(1)}% above band — wait for pullback.` };
@@ -212,9 +226,6 @@ export function DecisionDeck({
     rsi ?? null
   );
 
-  const ez = resolveEntryZone(mode, short, medium, long, currentPrice);
-  const band = ez ? entryBandPct(currentPrice, ez.low, ez.high) : null;
-
   const warnings = Array.isArray(primary.warnings)
     ? primary.warnings.filter((w) => w && String(w).trim())
     : [];
@@ -234,6 +245,14 @@ export function DecisionDeck({
     actionToday === "hold" ||
     actionToday === "wait_for_pullback" ||
     actionToday === "no_new_position";
+
+  const ez = resolveEntryZone(mode, short, medium, long, currentPrice);
+  const band = ez
+    ? entryBandPct(currentPrice, ez.low, ez.high, {
+        holdDespiteInBand: executionBlocksChase,
+        bandLabel: mode === "owner" ? "long-term tier" : mode === "swing" ? "swing band" : "short-term band",
+      })
+    : null;
 
   return (
     <section
@@ -388,6 +407,7 @@ export function DecisionDeck({
               touchForecast={primary.entry_touch_forecast}
               spotPosition={primary.entry_zone?.spot_position}
               levels={primary.entry_zone?.levels}
+              holdDespiteInBand={executionBlocksChase}
             />
           )
         )}

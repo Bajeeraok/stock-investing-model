@@ -1034,6 +1034,7 @@ export function EntryZonePriceBar({
   touchForecast,
   spotPosition,
   levels: levelsProp,
+  holdDespiteInBand = false,
   className,
 }: {
   entryLow: number;
@@ -1047,6 +1048,8 @@ export function EntryZonePriceBar({
   touchForecast?: HorizonSignalPayload["entry_touch_forecast"];
   spotPosition?: HorizonSignalPayload["entry_zone"]["spot_position"];
   levels?: HorizonSignalPayload["entry_zone"]["levels"];
+  /** When true, price is in band but execution says hold — don't imply "buy now". */
+  holdDespiteInBand?: boolean;
   className?: string;
 }) {
   const low = Math.min(entryLow, entryHigh);
@@ -1094,7 +1097,15 @@ export function EntryZonePriceBar({
       </>
     );
   } else if (inside) {
-    statusLine = (
+    statusLine = holdDespiteInBand ? (
+      <>
+        <span className="text-amber-300 font-semibold">In band — hold for gates</span>
+        <span className="text-slate-500">
+          {" "}
+          — price is in the {bandLabel.toLowerCase()} but execution is hold/watch until regime and gates confirm.
+        </span>
+      </>
+    ) : (
       <>
         <span className="text-emerald-300 font-semibold">Inside buy zone</span>
         <span className="text-slate-500"> — favorable for staged adds per your plan.</span>

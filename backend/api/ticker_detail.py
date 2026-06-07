@@ -1956,6 +1956,11 @@ def _build_trade_roadmap(
         and display_verdict not in ("REDUCE", "AVOID")
     )
 
+    in_st_band = bool(s_lo and s_hi and float(s_lo) <= float(current_price) <= float(s_hi))
+    in_mt_band = bool(m_lo and m_hi and float(m_lo) <= float(current_price) <= float(m_hi))
+    # Spot in ST band: Today / Days / Week show tactical ST prices even when core ladder is lower.
+    near_term_use_st_band = in_st_band and s_lo is not None and s_hi is not None
+
     zone_core_lo = round(c6_lo, 2) if c6_lo is not None else None
     zone_core_hi = round(c6_hi, 2) if c6_hi is not None else None
     core_zone_fmt = (
@@ -1973,7 +1978,7 @@ def _build_trade_roadmap(
         cond = f"Regime {regime_label} — {display_verdict} today"
         conv = "None"
         pos = 0
-    elif align_buy_rows_to_core:
+    elif align_buy_rows_to_core and not near_term_use_st_band:
         when = "Watch only"
         cond = (
             f"Spot is above preferred adds at {core_zone_fmt} (MA200 / core tier — same ladder as summary). "
@@ -1981,9 +1986,16 @@ def _build_trade_roadmap(
         )
         conv = "None"
         pos = 0
+    elif near_term_use_st_band and align_buy_rows_to_core:
+        when = "Watch only"
+        cond = (
+            f"In short-term band ${float(s_lo):.2f}–${float(s_hi):.2f} (tactical). "
+            f"Core accumulation is lower at {core_zone_fmt} — hold for gates before sizing."
+        )
+        conv = (short.get("conviction") or "").strip() or "Low-Medium"
+        pos = 0
     else:
         when = "Start small" if s_lo and current_price <= (s_hi or current_price) else "Watch only"
-        in_st_band = bool(s_lo and s_hi and s_lo <= current_price <= s_hi)
         st_conv = (short.get("conviction") or "").strip()
         st_conv_l = st_conv.lower()
         if not in_st_band:
@@ -1997,12 +2009,12 @@ def _build_trade_roadmap(
         else:
             conv = "None"
         pos = 25 if when == "Start small" else 0
-    if align_buy_rows_to_core:
+    if align_buy_rows_to_core and not near_term_use_st_band:
         today_lo = zone_core_lo
         today_hi = zone_core_hi
     else:
-        today_lo = round(s_lo, 2) if s_lo else round(current_price, 2)
-        today_hi = round(s_hi, 2) if s_hi else round(current_price, 2)
+        today_lo = round(float(s_lo), 2) if s_lo else round(current_price, 2)
+        today_hi = round(float(s_hi), 2) if s_hi else round(current_price, 2)
 
     # Cumulative % is staged deployment (legacy: 25 → 25 → 60 → 85 → 100), not a raw sum of rows.
     if align_buy_rows_to_core:
@@ -2027,7 +2039,7 @@ def _build_trade_roadmap(
     # Days 1–10 — use the same price ladder as Today (ST band or core zone). A raw ±2% envelope
     # around spot used to dip below the ST low, so "Watch only" looked like a better fill than
     # "Start small" on the row above (confusing).
-    if align_buy_rows_to_core:
+    if align_buy_rows_to_core and not near_term_use_st_band:
         days_lo = zone_core_lo if zone_core_lo is not None else today_lo
         days_hi = zone_core_hi if zone_core_hi is not None else today_hi
         days_cond = (
@@ -2035,11 +2047,15 @@ def _build_trade_roadmap(
             "or you get a clear regime-shift confirmation (same zone as Today / summary)."
         )
     else:
-        days_lo = round(s_lo, 2) if s_lo else (round((current_price * 0.98), 2) if current_price else None)
-        days_hi = round(s_hi, 2) if s_hi else (round((current_price * 1.02), 2) if current_price else None)
+        days_lo = round(float(s_lo), 2) if s_lo else (round((current_price * 0.98), 2) if current_price else None)
+        days_hi = round(float(s_hi), 2) if s_hi else (round((current_price * 1.02), 2) if current_price else None)
         days_cond = (
-            "Near-term tape — keep Today’s starter only; wait for regime shift before scaling "
-            "(same ST band as Today — not a separate ‘cheaper’ dip zone below it)."
+            "Near-term tape — same short-term band as Today (not a separate dip zone below it)."
+            if near_term_use_st_band
+            else (
+                "Near-term tape — keep Today’s starter only; wait for regime shift before scaling "
+                "(same ST band as Today — not a separate ‘cheaper’ dip zone below it)."
+            )
         )
     buy_stages.append({
         "timeline_key": "days_1_10",
@@ -2054,17 +2070,21 @@ def _build_trade_roadmap(
     })
 
     # Week 2–4 (short entry) — align zone to core ladder when extended (no separate ST band as entry).
-    if align_buy_rows_to_core:
+    if align_buy_rows_to_core and not near_term_use_st_band:
         w_pos = 0
         w_when = "Watch only"
         w_cond = f"Same preferred zone {core_zone_fmt} — wait for price into band (aligned with 3–6 mo row)."
         w_lo, w_hi = zone_core_lo, zone_core_hi
     else:
-        w_pos = 25
-        w_when = "Start small"
-        w_cond = f"Price touches MA50 + ML crosses 25%"
-        w_lo = round(s_lo, 2) if s_lo else None
-        w_hi = round(s_hi, 2) if s_hi else None
+        w_pos = 25 if not near_term_use_st_band else 0
+        w_when = "Start small" if not near_term_use_st_band else "Watch only"
+        w_cond = (
+            f"Same ST band as Today (${float(s_lo):.2f}–${float(s_hi):.2f}) — tactical only."
+            if near_term_use_st_band
+            else "Price touches MA50 + ML crosses 25%"
+        )
+        w_lo = round(float(s_lo), 2) if s_lo else None
+        w_hi = round(float(s_hi), 2) if s_hi else None
     buy_stages.append({
         "timeline_key": "week_2_4",
         "label": "Week 2–4",
@@ -2081,8 +2101,13 @@ def _build_trade_roadmap(
     if align_buy_rows_to_core:
         m13_lo, m13_hi = zone_core_lo, zone_core_hi
         m13_cond = (
-            f"Adds when price reaches {core_zone_fmt} over this window (MA50/HMM context). "
-            f"Same entry ladder as Today / Week 2–4 / 3–6 mo — not a different price story."
+            f"Swing/core ladder {core_zone_fmt} — separate from short-term band "
+            f"(${float(s_lo):.2f}–${float(s_hi):.2f} tactical)."
+            if near_term_use_st_band and s_lo and s_hi
+            else (
+                f"Adds when price reaches {core_zone_fmt} over this window (MA50/HMM context). "
+                f"Same entry ladder as Today / Week 2–4 / 3–6 mo — not a different price story."
+            )
         )
     else:
         m13_lo = round(m_lo, 2) if m_lo else None
@@ -2646,6 +2671,12 @@ def _build_trade_roadmap(
         hi = float(anchor) + half
         return round(lo, 2), round(hi, 2)
 
+    execution_plan_lines: list[str] = []
+    st_fmt = (
+        f"${float(s_lo):.2f}–${float(s_hi):.2f}"
+        if s_lo is not None and s_hi is not None
+        else None
+    )
     row_today = next((r for r in buy_stages if r.get("timeline_key") == "today"), {}) or {}
     row_13 = next((r for r in buy_stages if r.get("timeline_key") == "1_3_months"), {}) or {}
     row_36 = next((r for r in buy_stages if r.get("timeline_key") == "3_6_months"), {}) or {}
@@ -2654,8 +2685,46 @@ def _build_trade_roadmap(
     z_36 = _fmt_zone(_safe_float(row_36.get("price_zone_low")), _safe_float(row_36.get("price_zone_high")))
     z_13_mid = _mid(_safe_float(row_13.get("price_zone_low")), _safe_float(row_13.get("price_zone_high")))
     z_36_mid = _mid(_safe_float(row_36.get("price_zone_low")), _safe_float(row_36.get("price_zone_high")))
+    today_when = str(row_today.get("when_to_act") or "")
 
-    execution_plan_lines: list[str] = []
+    if in_st_band and st_fmt:
+        if near_term_use_st_band and align_buy_rows_to_core:
+            execution_plan_lines.append(
+                f"Short-term band {st_fmt} (tactical) · core builds at {core_zone_fmt} — "
+                f"hold for gates before sizing (Today row: {today_when.lower()})."
+            )
+        elif today_when == "Start small":
+            execution_plan_lines.append(
+                f"Scale in staged inside short-term band {st_fmt} — don't all-in at once."
+            )
+        else:
+            execution_plan_lines.append(
+                f"In short-term band {st_fmt} — hold until gates/regime confirm before adding."
+            )
+    else:
+        starter_anchor = None
+        if _safe_float(row_today.get("price_zone_low")) is not None and _safe_float(row_today.get("price_zone_high")) is not None:
+            rlo = float(_safe_float(row_today.get("price_zone_low")))
+            rhi = float(_safe_float(row_today.get("price_zone_high")))
+            starter_anchor = (
+                float(current_price)
+                if rlo <= float(current_price) <= rhi
+                else rhi
+            )
+        tight_starter = _tight_zone(starter_anchor, float(current_price))
+        if tight_starter is not None and today_when == "Start small":
+            execution_plan_lines.append(
+                f"Scale in, don't all-in at once: start partial near ${tight_starter[0]:.2f}–${tight_starter[1]:.2f}."
+            )
+        elif z_today and today_when == "Start small":
+            execution_plan_lines.append(
+                f"Scale in, don't all-in at once: start partial near {z_today}."
+            )
+        elif z_today and align_buy_rows_to_core:
+            execution_plan_lines.append(
+                f"Wait for pullback into core ladder {z_today} before scaling in (spot above preferred adds)."
+            )
+
     starter_anchor = None
     if _safe_float(row_today.get("price_zone_low")) is not None and _safe_float(row_today.get("price_zone_high")) is not None:
         rlo = float(_safe_float(row_today.get("price_zone_low")))
@@ -2664,15 +2733,6 @@ def _build_trade_roadmap(
             float(current_price)
             if rlo <= float(current_price) <= rhi
             else rhi
-        )
-    tight_starter = _tight_zone(starter_anchor, float(current_price))
-    if tight_starter is not None:
-        execution_plan_lines.append(
-            f"Scale in, don't all-in at once: start partial near ${tight_starter[0]:.2f}-${tight_starter[1]:.2f}."
-        )
-    elif z_today:
-        execution_plan_lines.append(
-            f"Scale in, don't all-in at once: start partial near {z_today}."
         )
 
     lower_add_anchor = None
@@ -3338,6 +3398,11 @@ def _build_one_answer_roadmaps(
             f"Bottom line: constructive setup, but wait for pullback toward {short_zone} "
             f"(fallback: {medium_zone}) before adding."
         )
+    elif action_today == "hold" and in_short:
+        bottom_line = (
+            f"Bottom line: price is in short-term band {short_zone} but gates/regime haven't cleared — "
+            "hold/watch; don't treat the band alone as a buy signal."
+        )
     else:
         bottom_line = "Bottom line: hold/watch for now - setup is not clean enough for a new add at current price."
 
@@ -3361,6 +3426,37 @@ def _build_one_answer_roadmaps(
     why_this_call = why_this_call[:3]
     next_trigger = (short.get("trigger_buy") or medium.get("trigger_buy") or "").strip() or None
 
+    buy_stages = (
+        ((investor_out.get("trade_roadmap") or {}).get("buy_stages") or [])
+        if isinstance(investor_out.get("trade_roadmap"), dict)
+        else []
+    )
+    core_row = next((r for r in buy_stages if r.get("timeline_key") == "3_6_months"), {}) or {}
+    entry_bands = {
+        "short": (
+            {"low": round(float(s_lo), 2), "high": round(float(s_hi), 2)}
+            if s_lo is not None and s_hi is not None
+            else None
+        ),
+        "medium": (
+            {"low": round(float(m_lo), 2), "high": round(float(m_hi), 2)}
+            if m_lo is not None and m_hi is not None
+            else None
+        ),
+        "core": (
+            {
+                "low": _safe_float(core_row.get("price_zone_low")),
+                "high": _safe_float(core_row.get("price_zone_high")),
+            }
+            if _safe_float(core_row.get("price_zone_low")) is not None
+            and _safe_float(core_row.get("price_zone_high")) is not None
+            else None
+        ),
+        "in_short_band": in_short,
+        "in_medium_band": in_medium,
+        "near_term_shows_st_when_in_band": in_short,
+    }
+
     one_answer = {
         "headline": headline,
         "subline": subline if display_verdict in ("REDUCE", "AVOID") else None,
@@ -3383,6 +3479,7 @@ def _build_one_answer_roadmaps(
             regime_bull_pct=regime_bull_pct if isinstance(regime_bull_pct, (int, float)) else None,
         ),
         "horizon_zone_reconciliation": horizon_zone_reconciliation,
+        "entry_bands": entry_bands,
     }
     try:
         from signals.external_context_chip import build_external_context_from_response

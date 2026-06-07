@@ -39,6 +39,26 @@ def test_unlock_summary_regime():
     assert "317" in line
 
 
+def test_unlock_summary_already_in_st_band():
+    gates = [
+        {"id": "regime", "label": "MARKET WEATHER", "pass": False, "blocker_weight": 40},
+        {"id": "momentum", "label": "Momentum Chop", "pass": False, "blocker_weight": 20},
+    ]
+    st = {"low": 202.0, "high": 206.0}
+    line = build_unlock_summary(
+        gates,
+        stock_bull_pct=0.0,
+        st_band=st,
+        current_price=205.1,
+    )
+    assert line is not None
+    assert "Already" in line
+    assert "202" in line
+    assert "206" in line
+    assert "HMM bull" in line
+    assert "price enters" not in line.lower()
+
+
 def test_build_zone_context_between_tiers():
     inv = {
         "horizons": {

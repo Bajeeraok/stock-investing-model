@@ -10,7 +10,7 @@ export function AnalysisSectionEmpty({
   loading?: boolean;
   title?: string;
   message: string;
-  hints?: string[];
+  hints?: readonly string[];
 }) {
   return (
     <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 p-4 space-y-2">
