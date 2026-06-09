@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from signals.time_et import now_iso_et, today_est
 from pathlib import Path
 
 
@@ -31,7 +31,7 @@ class AlertEvent:
         payload: dict | None = None,
         dedupe_key: str | None = None,
     ) -> "AlertEvent":
-        ts = datetime.now(tz=timezone.utc).isoformat()
+        ts = now_iso_et()
         return cls(
             id=str(uuid.uuid4()),
             ts=ts,

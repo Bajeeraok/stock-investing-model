@@ -415,7 +415,7 @@ def build_market_flip_stats(*, period: str = "13y") -> dict[str, Any]:
 
     return {
         "version": 1,
-        "built_at": datetime.utcnow().isoformat() + "Z",
+        "built_at": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
         "period": period,
         "symbol": "SPY",
         "events": events,

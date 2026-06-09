@@ -368,12 +368,9 @@ class PreMarketEngine:
     """Runs all 6 categories, 15 sources; returns PreMarketReport with confidence-weighted composite."""
 
     def run(self, verbose: bool = True) -> PreMarketReport:
-        from datetime import datetime
-        try:
-            import pytz
-            ts = datetime.now(pytz.timezone("America/New_York"))
-        except Exception:
-            ts = __import__("datetime").datetime.utcnow()
+    from signals.time_et import now_et
+
+    ts = now_et()
 
         all_signals: list[PreMarketSignal] = []
         fetchers = [

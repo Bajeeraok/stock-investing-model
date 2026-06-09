@@ -65,7 +65,7 @@ class ThriveAlphaPhase2:
         result: dict[str, Any] = {
             "ticker": ticker,
             "profile": profile,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
         }
 
         _log(verbose, "\n[1/5] Fetching intraday data (%s)...", interval)

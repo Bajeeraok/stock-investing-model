@@ -169,6 +169,7 @@ def fetch_edgar_13f_snapshot(
     use_cache: bool = True,
     config: dict | None = None,
     top_holders: list[dict] | None = None,
+    allow_live_fetch: bool | None = None,
 ) -> dict[str, Any]:
     """
     Quarterly 13F holder-change snapshot via edgartools.
@@ -191,6 +192,52 @@ def fetch_edgar_13f_snapshot(
         except Exception:
             pass
 
+    cfg = config or {}
+    inst_cfg = cfg.get("institutional") or {}
+    live_ok = inst_cfg.get("edgar_13f_live_on_request", True) if allow_live_fetch is None else allow_live_fetch
+    if not live_ok:
+        return {
+            "ticker": sym,
+            "source": "sec_edgar_13f",
+            "trend": "UNKNOWN",
+            "skipped_live": True,
+            "source_note": "13F live fetch skipped (cache miss). Yahoo holder trend still available.",
+            "error": None,
+        }
+
+    timeout_sec = float(inst_cfg.get("edgar_13f_live_timeout_sec") or 25.0)
+
+    def _live_fetch() -> dict[str, Any]:
+        return _fetch_edgar_13f_live(sym, config=config, top_holders=top_holders)
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(_live_fetch)
+            try:
+                return fut.result(timeout=timeout_sec)
+            except FuturesTimeout:
+                logger.warning("13F live fetch timed out for %s after %.0fs", sym, timeout_sec)
+                return {
+                    "ticker": sym,
+                    "source": "sec_edgar_13f",
+                    "trend": "UNKNOWN",
+                    "timed_out": True,
+                    "source_note": "13F fetch timed out — retry later (results cache 24h once built).",
+                    "error": f"Timed out after {timeout_sec:.0f}s",
+                }
+    except Exception as exc:
+        logger.debug("13F fetch failed for %s: %s", sym, exc)
+        return {"ticker": sym, "error": str(exc), "source": "sec_edgar_13f", "trend": "UNKNOWN"}
+
+
+def _fetch_edgar_13f_live(
+    sym: str,
+    *,
+    config: dict | None = None,
+    top_holders: list[dict] | None = None,
+) -> dict[str, Any]:
     try:
         ensure_edgar_identity(config)
     except ImportError as exc:
@@ -267,6 +314,7 @@ def fetch_edgar_13f_snapshot(
     if not filer_rows:
         payload["error"] = "No 13F positions found for ticker in sampled filers"
 
+    cache_path = _snapshot_cache_path(sym)
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(

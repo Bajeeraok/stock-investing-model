@@ -150,7 +150,9 @@ def build_monthly_signal_report(
         max_pairs_per_horizon=max_pairs_per_horizon,
     )
     agg = aggregate_monthly_by_bucket(records, horizons=hr)
-    agg["generated_at_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from signals.time_et import now_iso_et
+
+    agg["generated_at"] = now_iso_et()
     agg["methodology"] = (
         "Buckets from composite_buy vs config score.buy_min / score.sell_max (HOLD/ADD, HOLD, CONSIDER TRIM). "
         "Forward returns use EOD snapshot closes; horizon N = N snapshot steps forward (not calendar days if snapshots are missing)."

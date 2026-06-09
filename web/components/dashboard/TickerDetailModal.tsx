@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronRight, Activity, LayoutGrid, Target, Layers, Zap, Ban, Eye, CheckCircle, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
@@ -466,6 +466,14 @@ export function TickerDetailModal({
   }, [ticker, initialTab, reloadKey]);
 
   /** Unified signal + price targets are heavy — load only when Why/Levels tabs are opened. */
+  const unifiedFetchStarted = useRef(false);
+  const targetsFetchStarted = useRef(false);
+
+  useEffect(() => {
+    unifiedFetchStarted.current = false;
+    targetsFetchStarted.current = false;
+  }, [ticker, reloadKey]);
+
   useEffect(() => {
     if (!ticker || !detail) return;
     if (modalTab !== "why" && modalTab !== "levels") return;
@@ -474,22 +482,29 @@ export function TickerDetailModal({
     const delay = isMobileLikeBrowser() ? 400 : 0;
 
     const loadUnified = () => {
-      if (unified) return;
+      if (unifiedFetchStarted.current) return;
+      unifiedFetchStarted.current = true;
       fetch(apiUrl(`/api/unified-signal/${ticker}`), { signal: ac.signal, cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => d && setUnified(d as UnifiedSignalData))
-        .catch(() => {});
+        .catch(() => {
+          unifiedFetchStarted.current = false;
+        });
     };
 
     const loadPriceTargets = () => {
-      if (priceTargets) return;
+      if (targetsFetchStarted.current) return;
+      targetsFetchStarted.current = true;
       fetch(apiUrl(`/api/price-targets/${ticker}`), { signal: ac.signal, cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           const pt = d as PriceTargetsData & { error?: string };
           if (pt && !pt.error) setPriceTargets(pt);
+          else targetsFetchStarted.current = false;
         })
-        .catch(() => {});
+        .catch(() => {
+          targetsFetchStarted.current = false;
+        });
     };
 
     const t1 = window.setTimeout(loadUnified, delay);
@@ -500,7 +515,7 @@ export function TickerDetailModal({
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [ticker, detail, modalTab, reloadKey, unified, priceTargets]);
+  }, [ticker, detail, modalTab, reloadKey]);
 
   /** Scenario teaser on Today tab — prefetch after paint (non-blocking). */
   useEffect(() => {
@@ -1377,7 +1392,11 @@ export function TickerDetailModal({
 
               {whySubTab === "context" && (
                 <div className="space-y-6">
-              <InstitutionalInsightsPanel ticker={detail.ticker} silentOnError={false} />
+              <InstitutionalInsightsPanel
+                ticker={detail.ticker}
+                enabled={whySubTab === "context"}
+                silentOnError={false}
+              />
               {/* ── Story & catalysts ─────── */}
               {(detail.thesis || detail.exit_condition) && (
                 <section>

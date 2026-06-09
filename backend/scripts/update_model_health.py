@@ -51,7 +51,7 @@ def main() -> None:
     wf_rb = (wf or {}).get("regime_breakdown") or {}
 
     payload = {
-        "backtest_last_run": datetime.now(timezone.utc).isoformat(),
+        "backtest_last_run": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
         "backtest_ticker": ticker,
         "calibration_score": float(cal_score) if cal_score is not None else None,
         "calibration_ok": cal_ok,

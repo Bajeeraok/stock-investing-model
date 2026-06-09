@@ -72,8 +72,10 @@ def run_premarket_snapshot(*, force: bool = False) -> dict | None:
     """
     from datetime import datetime
 
-    now = datetime.now(EST) if EST else datetime.utcnow()
-    hour, minute = (now.hour, now.minute) if EST else (now.hour, now.minute)
+    from signals.time_et import now_et
+
+    now = now_et()
+    hour, minute = now.hour, now.minute
     is_premarket = (hour >= 4 and hour < 9) or (hour == 9 and minute < 30)
     is_weekday = now.weekday() < 5
 
@@ -168,8 +170,10 @@ def main() -> None:
     if not args.json and not args.force:
         from datetime import datetime
 
-        now = datetime.now(EST) if EST else datetime.utcnow()
-        hour, minute = (now.hour, now.minute) if EST else (now.hour, now.minute)
+        from signals.time_et import now_et
+
+    now = now_et()
+        hour, minute = now.hour, now.minute
         is_premarket = (hour >= 4 and hour < 9) or (hour == 9 and minute < 30)
         is_weekday = now.weekday() < 5
         if not is_weekday or not is_premarket:

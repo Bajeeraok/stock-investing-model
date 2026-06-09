@@ -100,9 +100,11 @@ def _article_age_hours(published_at: str | None, now: datetime | None = None) ->
     if not published_at:
         return 999.0
     try:
+        from signals.time_et import now_et, parse_iso_to_et
+
         if now is None:
-            now = datetime.now(timezone.utc)
-        pub = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+            now = now_et()
+        pub = parse_iso_to_et(published_at)
         return max(0.0, (now - pub).total_seconds() / 3600)
     except (ValueError, TypeError, OSError):
         return 999.0

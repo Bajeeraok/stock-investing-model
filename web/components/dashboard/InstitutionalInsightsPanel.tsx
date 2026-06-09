@@ -3,8 +3,7 @@
 import { useEffect, useState } from "react";
 import { Building2, TrendingDown, TrendingUp, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+import { apiUrl } from "@/lib/apiBase";
 
 export interface InstitutionalOwnership {
   institutional_pct?: number | null;
@@ -38,6 +37,7 @@ export interface Edgar13fSnapshot {
   filings_analyzed?: number;
   cusip?: string | null;
   source_note?: string;
+  timed_out?: boolean;
   top_holder_changes?: Array<{
     filer?: string;
     shares?: number;
@@ -80,6 +80,8 @@ export interface InstitutionalBundle {
 
 interface Props {
   ticker: string;
+  /** Only fetch when tab is visible — avoids blocking ticker modal on open. */
+  enabled?: boolean;
 }
 
 function trendColor(trend: string | undefined): string {
@@ -95,18 +97,31 @@ function sourceLabel(source: string | undefined): string {
   return source ?? "—";
 }
 
-export function InstitutionalInsightsPanel({ ticker, silentOnError = true }: Props & { silentOnError?: boolean }) {
+const INSIGHTS_TIMEOUT_MS = 90000;
+
+export function InstitutionalInsightsPanel({
+  ticker,
+  enabled = true,
+  silentOnError = true,
+}: Props & { silentOnError?: boolean }) {
   const [data, setData] = useState<InstitutionalBundle | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!enabled || !ticker) {
+      return;
+    }
     let cancelled = false;
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), INSIGHTS_TIMEOUT_MS);
+
     setLoading(true);
     setError(null);
+    setData(null);
+
     const sym = ticker.toUpperCase();
-    const url = API_BASE ? `${API_BASE}/api/insights/${sym}` : `/api/insights/${sym}`;
-    fetch(url)
+    fetch(apiUrl(`/api/insights/${sym}`), { signal: ac.signal, cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -121,21 +136,31 @@ export function InstitutionalInsightsPanel({ ticker, silentOnError = true }: Pro
         setData((j?.institutional as InstitutionalBundle) || null);
       })
       .catch((e) => {
+        if (cancelled || (e instanceof DOMException && e.name === "AbortError")) {
+          if (!cancelled) setError("Institutional data timed out — Yahoo % may still load on retry.");
+          return;
+        }
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
       })
       .finally(() => {
+        window.clearTimeout(timer);
         if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
+      ac.abort();
+      window.clearTimeout(timer);
     };
-  }, [ticker]);
+  }, [ticker, enabled]);
+
+  if (!enabled) return null;
 
   if (loading) {
     if (silentOnError) return null;
     return (
       <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-xs text-slate-500">
-        Loading institutional ownership & positioning…
+        Loading institutional ownership & positioning… (first load may take up to 60s)
       </div>
     );
   }
@@ -169,7 +194,6 @@ export function InstitutionalInsightsPanel({ ticker, silentOnError = true }: Pro
         <span className="text-[10px] text-slate-600">Yahoo 13F-derived + SEC EDGAR · not live flow</span>
       </div>
 
-      {/* Institutional % headline */}
       <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
         <p className="text-[10px] uppercase text-slate-500 mb-0.5">Institutional % (Yahoo, delayed)</p>
         {instPct != null ? (
@@ -288,6 +312,12 @@ export function InstitutionalInsightsPanel({ ticker, silentOnError = true }: Pro
             ))}
           </ul>
         </div>
+      )}
+
+      {e13?.timed_out && (
+        <p className="text-[10px] text-amber-400/90">
+          SEC 13F sample timed out — institutional % and Yahoo holder trend above are still valid.
+        </p>
       )}
     </div>
   );

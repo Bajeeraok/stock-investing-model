@@ -651,8 +651,10 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             if r.get(k) is not None:
                 row[k] = r.get(k)
         run_results.append(row)
+    from signals.time_et import now_iso_et
+
     return {
-        "run_date": datetime.now().isoformat(),
+        "run_date": now_iso_et(),
         "run_results": run_results,
     }
 

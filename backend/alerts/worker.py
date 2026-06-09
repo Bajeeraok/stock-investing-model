@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from signals.time_et import now_iso_et, today_est
 from pathlib import Path
 
 from alerts.engine import OptionsAlertsEngine
@@ -151,7 +151,7 @@ def run_worker(data_root: Path) -> None:
                             title="IV extreme",
                             message=f"IV Rank {ivr} (extreme) — premium rich; covered calls/spreads attractive.",
                             payload=s,
-                            dedupe_key=f"{s.get('ticker')}:IV_EXTREME:{datetime.now(tz=timezone.utc).strftime('%Y-%m-%d')}",
+                            dedupe_key=f"{s.get('ticker')}:IV_EXTREME:{today_est()}",
                         )
                     )
 
@@ -159,7 +159,7 @@ def run_worker(data_root: Path) -> None:
 
             elapsed_ms = int((time.time() - start) * 1000)
             status = {
-                "as_of": datetime.now(tz=timezone.utc).isoformat(),
+                "as_of": now_iso_et(),
                 "symbols_scanned": len(symbols),
                 "events_written": len(events),
                 "elapsed_ms": elapsed_ms,

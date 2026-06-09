@@ -309,6 +309,7 @@ insights:
 institutional:
   edgar_identity: "ThriveAlpha/1.0 (SEC EDGAR; mailto:support@example.com)"
   edgar_13f_max_filers: 5
+  edgar_13f_live_timeout_sec: 25
   # Filer CIKs resolved dynamically from Yahoo top_holders (keyword map + edgartools find).
   # Override manually if needed:
   # edgar_13f_filers:
@@ -584,7 +585,8 @@ signal_audit:
   merge_into_signal_universe: true       # audit cohort on EOD/run_daily only (not dashboard refresh)
   use_cohort_for_forward_tracking: false       # forward tracking = your book; audit panel = cohort
   log_on_run_daily: true
-  log_on_dashboard: true
+  log_on_dashboard: false   # full cohort (~97/100) only from run_daily / EOD scheduler — not dashboard refresh (~25/100)
+  min_cohort_capture_ratio: 0.90   # skip audit log when run has fewer than 90% of cohort tickers present
   pilot_target_days: 30
   resolve_outcomes_on_read: true   # Analysis tab auto-resolves when enough EOD history exists
   outcomes:

@@ -288,7 +288,9 @@ def run_retail_alerts_from_dashboard_refresh(
         enable_options_alerts=False,
     )
 
-    now = datetime.now().isoformat()
+    from signals.time_et import now_iso_et
+
+    now = now_iso_et()
     store.write_stats(
         {
             "as_of": now,

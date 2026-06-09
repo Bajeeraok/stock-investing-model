@@ -9,12 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:  # pragma: no cover
-    from backports.zoneinfo import ZoneInfo  # type: ignore
-
-from scanner.store import ScannerStore
+from signals.time_et import ET, now_iso_et
 from scanner.ticker_universe import (
     AlertType,
     RELATED_TICKERS,
@@ -25,7 +20,6 @@ from scanner.ticker_universe import (
 )
 
 logger = logging.getLogger("scanner")
-ET = ZoneInfo("America/New_York")
 
 
 @dataclass
@@ -46,7 +40,7 @@ class MarketSnapshot:
     in_watchlist: bool
     scan_tier: ScanTier
     sector: str
-    as_of: str = field(default_factory=lambda: datetime.now().isoformat())
+    as_of: str = field(default_factory=now_iso_et)
     # Optional: short-term ML prob (0-100) for ML_PROB_CROSSED alert
     ml_prob_short: Optional[float] = None
 
@@ -443,7 +437,7 @@ class SignalEvaluator:
             risk_level=risk,
             color=ALERT_COLORS.get(alert_type, "#94A3B8"),
             emoji=ALERT_EMOJIS.get(alert_type, "🔔"),
-            timestamp=datetime.now().isoformat(),
+            timestamp=now_iso_et(),
             signals={
                 "ivRank": snap.iv_rank,
                 "flowRatio": snap.call_put_flow_ratio,
@@ -585,7 +579,7 @@ def _build_retail_alert(
         risk_level="MODERATE",
         color=ALERT_COLORS.get(alert_type, "#94A3B8"),
         emoji=emoji,
-        timestamp=datetime.now().isoformat(),
+        timestamp=now_iso_et(),
         signals=sig_out,
         scan_tier=scan_tier,
         surface_to_all=True,
@@ -1216,7 +1210,7 @@ class ScanEngine:
         self._stats["total_scans"] += 1
         self._stats["total_alerts"] += generated
         self._stats["total_surfaced"] += surfaced
-        self._stats["last_scan_at"] = datetime.now().isoformat()
+        self._stats["last_scan_at"] = now_iso_et()
         if errs:
             self._stats["errors"] = (self._stats.get("errors") or [])[-50:] + errs
         return {

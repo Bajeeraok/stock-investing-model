@@ -127,8 +127,9 @@ def compute_performance_vs_benchmark(
             "vs_qqq": vs_qqq,
         })
 
-    from datetime import datetime as _dt
+    from signals.time_et import now_iso_et
+
     return {
         "periods": periods_out,
-        "as_of": _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "as_of": now_iso_et(),
     }

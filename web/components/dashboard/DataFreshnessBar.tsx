@@ -6,7 +6,6 @@ import { clsx } from "clsx";
 import { formatSnapshotAge, formatSnapshotEt, snapshotAgeTone } from "@/lib/dashboardCache";
 
 export type DataFreshness = {
-  as_of_utc: string;
   as_of_et?: string;
   snapshot_updated_at?: string | null;
   snapshot_updated_et?: string | null;
@@ -35,7 +34,7 @@ function SnapshotMetaLine({
   data: DataFreshness;
   compact?: boolean;
 }) {
-  const snapshotIso = data.snapshot_updated_at ?? data.as_of_utc;
+  const snapshotIso = data.snapshot_updated_at ?? data.as_of_et;
   const [age, setAge] = useState(() => formatSnapshotAge(snapshotIso));
   const [tone, setTone] = useState(() => snapshotAgeTone(snapshotIso));
 

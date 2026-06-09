@@ -1159,7 +1159,7 @@ def run_price_targets(
 
     return {
         "ticker":          ticker,
-        "analysis_date":   datetime.utcnow().strftime("%Y-%m-%d"),
+        "analysis_date": __import__("signals.time_et", fromlist=["today_est"]).today_est(),
         "current_price":   price,
         "market_regime":   market_regime,
         "asset_type":      asset_type,

@@ -11,10 +11,12 @@ const BACKEND = process.env.BACKEND_API_URL || "http://localhost:8002";
 const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes default
 const DASHBOARD_TIMEOUT_MS = 15 * 60 * 1000; // 15 min – cold start + full run; shared use
 const TICKER_TIMEOUT_MS = 12 * 60 * 1000;   // 12 min – ticker detail (many fetches)
+const INSIGHTS_TIMEOUT_MS = 3 * 60 * 1000;  // 3 min – Yahoo + SEC 13F on cache miss
 
 function getTimeoutMs(apiPath: string): number {
   if (apiPath === "dashboard" || apiPath.startsWith("dashboard/")) return DASHBOARD_TIMEOUT_MS;
   if (apiPath.startsWith("ticker/")) return TICKER_TIMEOUT_MS;
+  if (apiPath.startsWith("insights/")) return INSIGHTS_TIMEOUT_MS;
   if (apiPath === "roadmaps") return 8 * 60 * 1000; // 8 min – N ticker details
   return TIMEOUT_MS;
 }

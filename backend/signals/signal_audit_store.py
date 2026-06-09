@@ -146,21 +146,15 @@ def compute_config_hash(config: dict) -> str:
 
 
 def _today_est() -> str:
-    try:
-        from zoneinfo import ZoneInfo
+    from signals.time_et import today_est
 
-        return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-    except Exception:
-        return datetime.now().strftime("%Y-%m-%d")
+    return today_est()
 
 
 def _now_iso() -> str:
-    try:
-        from zoneinfo import ZoneInfo
+    from signals.time_et import now_iso_et
 
-        return datetime.now(ZoneInfo("America/New_York")).isoformat(timespec="seconds")
-    except Exception:
-        return datetime.now().isoformat(timespec="seconds")
+    return now_iso_et()
 
 
 def _band_high(band: dict | None) -> float | None:
@@ -1197,6 +1191,18 @@ def log_signal_audit_from_results(
     if not cohort:
         return {"enabled": True, "appended": 0, "skipped": 0, "missing": 0, "error": "empty cohort"}
 
+    if run_source == "dashboard" and not audit_cfg.get("log_on_dashboard", False):
+        return {
+            "enabled": True,
+            "skipped": True,
+            "reason": "log_on_dashboard false",
+            "run_source": run_source,
+            "appended": 0,
+            "skipped_duplicate": 0,
+            "missing_from_run": len(cohort),
+            "cohort_size": len(cohort),
+        }
+
     cohort_tag = get_audit_cohort_tag(config)
     meta = get_audit_cohort_meta(config)
     signal_date = date_str or _today_est()
@@ -1210,6 +1216,31 @@ def log_signal_audit_from_results(
         for r in results
         if isinstance(r, dict) and r.get("ticker") and not r.get("error")
     }
+
+    cohort_size = len(cohort)
+    present_in_run = sum(1 for sym in cohort if sym in by_ticker)
+    try:
+        min_ratio = float(audit_cfg.get("min_cohort_capture_ratio", 0.90))
+    except (TypeError, ValueError):
+        min_ratio = 0.90
+    min_ratio = max(0.0, min(1.0, min_ratio))
+    capture_ratio = present_in_run / cohort_size if cohort_size else 0.0
+    if capture_ratio < min_ratio:
+        return {
+            "enabled": True,
+            "skipped": True,
+            "reason": (
+                f"cohort capture {present_in_run}/{cohort_size} "
+                f"({capture_ratio:.0%}) below min {min_ratio:.0%}"
+            ),
+            "run_source": run_source,
+            "present_in_run": present_in_run,
+            "cohort_size": cohort_size,
+            "capture_ratio": round(capture_ratio, 3),
+            "appended": 0,
+            "skipped_duplicate": 0,
+            "missing_from_run": cohort_size - present_in_run,
+        }
 
     appended = 0
     skipped = 0
@@ -1277,7 +1308,7 @@ def persist_daily_signal_logs(
 
     if run_source == "run_daily" and not audit_cfg.get("log_on_run_daily", True):
         out["signal_audit"] = {"enabled": False, "skipped": "log_on_run_daily false"}
-    elif run_source == "dashboard" and not audit_cfg.get("log_on_dashboard", True):
+    elif run_source == "dashboard" and not audit_cfg.get("log_on_dashboard", False):
         out["signal_audit"] = {"enabled": False, "skipped": "log_on_dashboard false"}
     else:
         try:

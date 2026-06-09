@@ -594,7 +594,7 @@ def run_full_engine(signals: SignalInput) -> FullEngineResult:
     if not classification.is_scoreable:
         return FullEngineResult(
             ticker=signals.ticker,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=__import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
             classification=classification,
             pre_flight_flags=classification.flags,
             is_scoreable=False,
@@ -638,7 +638,7 @@ def run_full_engine(signals: SignalInput) -> FullEngineResult:
 
     return FullEngineResult(
         ticker=signals.ticker,
-        timestamp=datetime.utcnow().isoformat(),
+        timestamp=__import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
         classification=classification,
         pre_flight_flags=classification.flags,
         is_scoreable=True,

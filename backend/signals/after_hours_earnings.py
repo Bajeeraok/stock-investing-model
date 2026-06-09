@@ -175,15 +175,11 @@ def run_after_hours_earnings_snapshot(*, slot: str = "6pm", config: dict | None 
 
     config = config or load_config()
     session_date = _today_et()
-    try:
-        from zoneinfo import ZoneInfo
-    except ImportError:
-        from backports.zoneinfo import ZoneInfo  # type: ignore
-    as_of_utc = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
+    from signals.time_et import now_iso_et
 
     reporting = tickers_reporting_today(config)
     base: dict[str, Any] = {
-        "as_of_utc": as_of_utc,
+        "as_of_et": now_iso_et(),
         "session_date_et": session_date,
         "slot": slot,
         "skipped": False,

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime, timedelta, timezone
+from signals.time_et import now_iso_et
 from pathlib import Path
 from typing import Any
 
@@ -112,7 +112,7 @@ def record_trim_cooldown(ticker: str, config: dict, *, note: str | None = None) 
         "until": until.isoformat(),
         "reason": "trim",
         "note": (note or "").strip()[:500] or None,
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "recorded_at": now_iso_et(),
     }
     _save(data)
     append_journal(t, "trim", note or f"Trim logged — {days}d re-add cooldown", config)
@@ -134,7 +134,7 @@ def append_journal(ticker: str, action: str, note: str, config: dict) -> dict[st
             "ticker": t,
             "action": (action or "add").lower()[:16],
             "note": text[:500],
-            "at": datetime.now(timezone.utc).isoformat(),
+            "at": now_iso_et(),
         },
     )
     max_n = _journal_max(config)

@@ -12,8 +12,11 @@ from signals.catalyst_detector import (
 )
 
 
+from signals.time_et import now_et
+
+
 def _make_article(title: str, hours_ago: float = 2.0, url: str = "https://reuters.com/x") -> dict:
-    pub = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
+    pub = now_et() - timedelta(hours=hours_ago)
     return {
         "title": title,
         "publishedDate": pub.isoformat(),

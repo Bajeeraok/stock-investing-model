@@ -10,6 +10,7 @@ from signals.signal_audit_store import (
     SignalAuditStore,
     compute_config_hash,
     log_signal_audit_from_results,
+    persist_daily_signal_logs,
     row_to_signal_event,
 )
 
@@ -35,6 +36,7 @@ categories:
             "enabled": True,
             "cohort_file": str(cohort_file),
             "merge_into_signal_universe": True,
+            "min_cohort_capture_ratio": 0.0,
         },
         "score": {"buy_min": 65, "sell_max": 35},
         "watchlist": ["SPY"],
@@ -205,6 +207,48 @@ def test_gate_blocker_breakdown(audit_config, tmp_path, monkeypatch):
     store = SignalAuditStore(data_root=tmp_path)
     blockers = store.gate_blocker_breakdown("test_cohort")
     assert any(b["gate"] in ("regime", "momentum") for b in blockers)
+
+
+def test_dashboard_partial_cohort_skipped(audit_config, tmp_path, monkeypatch):
+    """Dashboard refresh (~25/100 overlap) must not write partial audit rows."""
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    cfg = {
+        **audit_config,
+        "signal_audit": {
+            **audit_config["signal_audit"],
+            "log_on_dashboard": True,
+            "min_cohort_capture_ratio": 0.90,
+        },
+    }
+    results = [_sample_row("SPY"), _sample_row("QQQ")]
+    out = log_signal_audit_from_results(
+        results,
+        cfg,
+        date_str="2026-06-08",
+        run_source="dashboard",
+        data_root=tmp_path,
+    )
+    assert out.get("skipped") is True
+    assert "below min" in (out.get("reason") or "")
+    store = SignalAuditStore(data_root=tmp_path)
+    assert store.count_events(cohort_tag="test_cohort", signal_date="2026-06-08") == 0
+
+
+def test_persist_dashboard_respects_log_on_dashboard_false(audit_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    cfg = {
+        **audit_config,
+        "signal_audit": {**audit_config["signal_audit"], "log_on_dashboard": False},
+    }
+    out = persist_daily_signal_logs(
+        [_sample_row("SPY"), _sample_row("QQQ"), _sample_row("AAPL")],
+        cfg,
+        date_str="2026-06-08",
+        run_source="dashboard",
+        data_root=tmp_path,
+    )
+    sa = out.get("signal_audit") or {}
+    assert sa.get("skipped") is True or sa.get("skipped") == "log_on_dashboard false"
 
 
 def test_duplicate_run_skips(audit_config, tmp_path, monkeypatch):

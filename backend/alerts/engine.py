@@ -122,7 +122,7 @@ class OptionsAlertsEngine:
         Intraday scan: uses stored IV metrics + current quotes. Avoids per-symbol chain calls.
         """
         quotes = self._get_quotes_map(symbols)
-        now = datetime.now().isoformat()
+        now = __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et()
         signals: list[dict[str, Any]] = []
 
         for sym in symbols:

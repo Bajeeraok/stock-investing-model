@@ -151,9 +151,11 @@ def _recency_weight_publication(published_at: str | None, now: datetime | None =
     if not published_at:
         return 0.7
     try:
+        from signals.time_et import now_et, parse_iso_to_et
+
         if now is None:
-            now = datetime.now(timezone.utc)
-        pub = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+            now = now_et()
+        pub = parse_iso_to_et(published_at)
         age_hours = (now - pub).total_seconds() / 3600
         if age_hours < 6:
             return 1.0

@@ -76,7 +76,7 @@ def stats():
     return {
         **(get_adapter().stats or {}),
         "universe_size": len(TIER1_SYMBOLS),
-        "as_of": datetime.now().isoformat(),
+        "as_of": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
     }
 
 

@@ -53,7 +53,9 @@ def main() -> None:
     reports_dir = Path(data_root) / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    from signals.time_et import format_et_compact, now_iso_et
+
+    stamp = format_et_compact()
     out_rows: list[dict] = []
     for t in tickers:
         out = run_macro_gate_ablation(
@@ -66,7 +68,7 @@ def main() -> None:
         out_rows.append({"ticker": t, "result": out})
 
     payload = {
-        "generated_at_utc": stamp,
+        "generated_at": now_iso_et(),
         "period": args.period,
         "min_macro_score": args.min_macro_score,
         "exclude_macro_bear": not args.no_exclude_bear,

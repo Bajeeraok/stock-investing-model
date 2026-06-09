@@ -167,7 +167,7 @@ def apply_universe_config(
             logger.warning("backtest.universe.membership_csv missing: %s", raw_path)
             return list(tickers), meta
         ranges = load_membership_ranges_csv(path)
-        ref = as_of or pd.Timestamp.utcnow().normalize()
+        ref = as_of or pd.Timestamp(__import__("signals.time_et", fromlist=["now_et"]).now_et().date())
         # Align with typical backtest window start: "honest" for batch = eligible at ref
         ref_cfg = u.get("as_of_date")
         if ref_cfg:

@@ -110,6 +110,7 @@ export default function Home() {
     else setIsRefreshing(true);
     if (!isAutoRetry) setError(null);
     let succeeded = false;
+    let keepRefreshing = false;
     try {
       const shellBase = API_BASE ? `${API_BASE}/api/dashboard/shell` : "/api/dashboard/shell";
       const refreshUrl = API_BASE ? `${API_BASE}/api/dashboard?refresh=true` : "/api/dashboard?refresh=true";
@@ -135,7 +136,7 @@ export default function Home() {
       retryCountRef.current = 0;
       succeeded = true;
       if (forceRefresh && (json.refresh_coalesced || json.refresh_status === "running")) {
-        setIsRefreshing(true);
+        keepRefreshing = true;
       }
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Failed to load";
@@ -148,7 +149,7 @@ export default function Home() {
       lastDashboardFetchStart = 0;
     } finally {
       setLoading(false);
-      setIsRefreshing(false);
+      setIsRefreshing(keepRefreshing);
       dashboardFetchInProgress = false;
       if (pendingForceRefresh) {
         pendingForceRefresh = false;
@@ -218,7 +219,7 @@ export default function Home() {
         const statusUrl = API_BASE ? `${API_BASE}/api/dashboard/status` : "/api/dashboard/status";
         const st = await fetch(statusUrl).then((r) => r.json());
         if (st?.cache_fresh || st?.status === "done") {
-          void refresh(false, false);
+          void refresh(false, true);
         }
       } catch {
         // ignore poll errors
@@ -638,7 +639,7 @@ export interface DashboardData {
   refresh_coalesced?: boolean;
   /** After-hours marks for tickers reporting earnings today (4:30 PM / 6 PM ET job). */
   after_hours_earnings?: {
-    as_of_utc?: string;
+    as_of_et?: string;
     session_date_et?: string;
     slot?: string;
     skipped?: boolean;
@@ -984,7 +985,6 @@ export interface DashboardData {
   retail_market_decisions?: import("@/components/dashboard/RetailMarketDecisionsPanel").RetailMarketDecisions | null;
   /** As-of timestamp + data limitation copy for retail trust */
   data_freshness?: {
-    as_of_utc: string;
     as_of_et?: string;
     snapshot_updated_at?: string | null;
     snapshot_updated_et?: string | null;

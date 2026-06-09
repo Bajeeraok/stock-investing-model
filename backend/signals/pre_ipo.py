@@ -114,18 +114,17 @@ def _parse_published_ts(item: dict[str, Any]) -> float:
     pub = item.get("publishedDate") or item.get("published_at") or item.get("date")
     if not pub:
         return 0.0
+    from signals.time_et import ET, parse_iso_to_et
+
     s = str(pub).strip().replace("Z", "+00:00")
     try:
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.timestamp()
+        return parse_iso_to_et(s).timestamp()
     except ValueError:
         pass
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
             dt = datetime.strptime(s[:19] if fmt != "%Y-%m-%d" else s[:10], fmt)
-            return dt.replace(tzinfo=timezone.utc).timestamp()
+            return dt.replace(tzinfo=ET).timestamp()
         except ValueError:
             continue
     return 0.0

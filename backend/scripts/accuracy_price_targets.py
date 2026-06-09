@@ -146,7 +146,7 @@ def run_accuracy_and_save(results: list[dict], config: dict, out_dir: Path | Non
         out_dir = out_dir or ROOT / "data"
         out_dir.mkdir(parents=True, exist_ok=True)
         report = {
-            "as_of": datetime.now().isoformat(),
+            "as_of": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
             "per_ticker": per_ticker,
             "summary": {
                 k: {"label": v["label"], "count": v["count"], "mape": v["mape"], "within_1pct": v["within_1pct"], "within_2pct": v["within_2pct"], "within_5pct": v["within_5pct"]}
@@ -308,7 +308,7 @@ def main() -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w") as f:
             json.dump({
-                "as_of": datetime.now().isoformat(),
+                "as_of": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
                 "prior_eod_date": eod_date,
                 "per_ticker": per_ticker,
                 "summary": summary,
@@ -394,7 +394,7 @@ def main() -> None:
     out_dir = ROOT / "data"
     out_dir.mkdir(parents=True, exist_ok=True)
     report = {
-        "as_of": datetime.now().isoformat(),
+        "as_of": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
         "per_ticker": per_ticker,
         "summary": {
             k: {"label": v["label"], "count": v["count"], "mape": v["mape"], "within_1pct": v["within_1pct"], "within_2pct": v["within_2pct"], "within_5pct": v["within_5pct"]}

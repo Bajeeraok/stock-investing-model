@@ -157,9 +157,11 @@ def _run_insider_flow_edgartools(
     from signals.edgar_common import ensure_edgar_identity
 
     ensure_edgar_identity(config)
+    from signals.time_et import now_et
+
     cutoff = None
     if days_lookback:
-        cutoff = (datetime.utcnow() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+        cutoff = (now_et() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
 
     ticker_activities: list[dict] = []
     insider_buys: list[dict] = []
@@ -319,9 +321,11 @@ def _run_insider_flow_legacy(
             "message": "Could not load SEC ticker→CIK mapping.",
             "parser": "legacy_xml",
         }
+    from signals.time_et import now_et
+
     cutoff = None
     if days_lookback:
-        cutoff = (datetime.utcnow() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+        cutoff = (now_et() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
     ticker_activities = []
     insider_buys = []
     insider_sells = []

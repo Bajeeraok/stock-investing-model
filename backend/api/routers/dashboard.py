@@ -2180,13 +2180,10 @@ def _compute_full_dashboard_sync() -> dict:
         except Exception as e:
             logger.debug("[dashboard] Tier 1 fallback failed: %s", e)
 
-    from datetime import datetime as _dt
-    from zoneinfo import ZoneInfo
+    from signals.time_et import format_et_display, now_iso_et
 
-    _now_et = _dt.now(ZoneInfo("America/New_York"))
-    as_of_date = _now_et.isoformat(timespec="seconds")
-    as_of_utc = _now_et.astimezone(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H:%M:%SZ")
-    as_of_et = _now_et.strftime("%Y-%m-%d %H:%M:%S EST")
+    as_of_date = now_iso_et()
+    as_of_et = format_et_display()
 
     ohlcv_dates: list[str] = []
     for r in results or []:
@@ -2202,7 +2199,6 @@ def _compute_full_dashboard_sync() -> dict:
             eod_saved_at = e0.get("run_date") or e0.get("saved_at")
 
     data_freshness = {
-        "as_of_utc": as_of_utc,
         "as_of_et": as_of_et,
         "snapshot_updated_at": as_of_date,
         "snapshot_updated_et": as_of_et,
@@ -3017,12 +3013,19 @@ async def get_market_state():
 @router.get("/ticker/{ticker}")
 async def get_ticker_detail(ticker: str):
     """Ticker detail: thesis, earnings, sector, peers, benchmark vs SPY/industry/peers."""
+    from starlette.concurrency import run_in_threadpool
+
     from api.ticker_detail import get_ticker_detail as _get
+
     config = _load_config()
+    t0 = time.perf_counter()
     try:
-        return _get(ticker, config)
+        out = await run_in_threadpool(_get, ticker, config)
+        logger.info("[ticker-detail] %s done in %.0fms", (ticker or "").upper(), (time.perf_counter() - t0) * 1000)
+        return out
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("ticker-detail failed for %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/roadmaps")
@@ -3100,6 +3103,8 @@ async def get_insights(ticker: str):
     Institutional proxies (Yahoo 13F-derived ownership, SEC EDGAR 13F changes, optional FMP insider/short)
     and earnings-quality heuristics. Optional in config: insights.enabled.
     """
+    from starlette.concurrency import run_in_threadpool
+
     ticker_u = (ticker or "").upper().strip()
     if not ticker_u:
         raise HTTPException(status_code=400, detail="Ticker required")
@@ -3107,15 +3112,21 @@ async def get_insights(ticker: str):
     ins_cfg = config.get("insights") or {}
     if not ins_cfg.get("enabled", True):
         return {"disabled": True, "message": "insights.disabled in config"}
+    t0 = time.perf_counter()
     try:
         from signals.earnings_quality import analyze_earnings_quality
         from signals.institutional_signals import build_institutional_bundle
 
-        return {
-            "ticker": ticker_u,
-            "institutional": build_institutional_bundle(config, ticker_u),
-            "earnings_quality": analyze_earnings_quality(config, ticker_u),
-        }
+        def _build() -> dict[str, Any]:
+            return {
+                "ticker": ticker_u,
+                "institutional": build_institutional_bundle(config, ticker_u),
+                "earnings_quality": analyze_earnings_quality(config, ticker_u),
+            }
+
+        payload = await run_in_threadpool(_build)
+        logger.info("[insights] %s done in %.0fms", ticker_u, (time.perf_counter() - t0) * 1000)
+        return payload
     except Exception as e:
         logger.exception("insights error for %s: %s", ticker_u, e)
         raise HTTPException(status_code=500, detail=str(e))

@@ -23,7 +23,9 @@ def fetch_last_close(config: dict, ticker: str) -> float | None:
     api_key = get_api_key(config)
     if not api_key or not str(api_key).strip():
         return None
-    to_dt = datetime.now(timezone.utc)
+    from signals.time_et import now_et
+
+    to_dt = now_et()
     from_dt = to_dt - timedelta(days=10)
     to_str = to_dt.strftime("%Y-%m-%d")
     from_str = from_dt.strftime("%Y-%m-%d")

@@ -155,4 +155,6 @@ def shutdown():
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+    from signals.time_et import now_iso_et
+
+    return {"status": "ok", "timestamp": now_iso_et()}
