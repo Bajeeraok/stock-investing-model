@@ -78,22 +78,85 @@ def _returns_over_periods(close: pd.Series, periods_days: dict) -> dict:
     return out
 
 
+def _signal_row_from_dashboard_cache(ticker: str) -> dict | None:
+    """Reuse latest dashboard signal row to skip duplicate multi_horizon_scores work."""
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+        for payload in (get_cached_dashboard(), get_last_dashboard_snapshot()):
+            if not isinstance(payload, dict):
+                continue
+            for r in payload.get("signals") or []:
+                if not isinstance(r, dict) or r.get("error"):
+                    continue
+                if str(r.get("ticker") or "").upper() == ticker.upper():
+                    return r
+    except Exception:
+        pass
+    return None
+
+
+def _signal_data_from_dashboard_row(row: dict) -> dict:
+    comp = row.get("composite_buy")
+    return {
+        "short_suggestion": row.get("short_suggestion") or row.get("short_term"),
+        "medium_suggestion": row.get("medium_suggestion") or row.get("medium_term"),
+        "long_suggestion": row.get("long_suggestion") or row.get("long_term"),
+        "short_reason": row.get("short_reason"),
+        "medium_reason": row.get("medium_reason"),
+        "long_reason": row.get("long_reason"),
+        "suggested_buy_price": row.get("suggested_buy_price"),
+        "suggested_sell_price": row.get("suggested_sell_price"),
+        "support_level": row.get("support_level"),
+        "rsi": row.get("rsi"),
+        "ma20": row.get("ma20"),
+        "ma50": row.get("ma50"),
+        "ma200": row.get("ma200"),
+        "score_breakdown": {
+            "trend": row.get("trend_score"),
+            "rsi": row.get("rsi_contrib"),
+            "macd": row.get("macd_contrib"),
+            "composite": comp,
+        },
+        "regime": row.get("regime"),
+        "score": comp,
+        "velocity_triggered": row.get("velocity_triggered"),
+        "velocity_score": row.get("velocity_score"),
+        "track": row.get("track"),
+        "readiness_tier": row.get("readiness_tier"),
+        "gates_passed": row.get("gates_passed"),
+    }
+
+
 def get_ticker_detail(ticker: str, config: dict) -> dict:
     """
     Full ticker detail: thesis, earnings, sector, peers, benchmark comparison.
     Uses 5-min cache (Redis) and parallel fetches to reduce timeout risk.
+    Live quote is always overlaid on return (fast FMP/yfinance) so header price stays current.
     """
     period = config.get("data", {}).get("period", "2y") or "2y"
     config_hash = period
+    ticker = ticker.upper()
     try:
         from signals.cache import cached_ticker_detail
-        return cached_ticker_detail(
-            ticker.upper(),
+
+        out = cached_ticker_detail(
+            ticker,
             config_hash,
             lambda: _fetch_ticker_detail_impl(ticker, config),
         )
     except Exception:
-        return _fetch_ticker_detail_impl(ticker, config)
+        out = _fetch_ticker_detail_impl(ticker, config)
+    try:
+        from signals.live_quotes import fetch_live_quotes, overlay_detail_current_price
+
+        prices, src = fetch_live_quotes(config, [ticker])
+        live = prices.get(ticker)
+        if live is not None and src and isinstance(out, dict):
+            overlay_detail_current_price(out, live, source=src)
+    except Exception:
+        pass
+    return out
 
 
 def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
@@ -316,56 +379,73 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     # Signal reasoning (HOLD/BUY/SELL with brief why)
     signal_data = {}
     price_reasoning: dict[str, str] = {}
+    dashboard_row = _signal_row_from_dashboard_cache(ticker)
     if close_ticker is not None and not close_ticker.empty and pd is not None:
         try:
-            from signals.score_interpretation import detect_interpretation_style
+            if dashboard_row and dashboard_row.get("composite_buy") is not None:
+                signal_data = _signal_data_from_dashboard_row(dashboard_row)
+            else:
+                from signals.score_interpretation import detect_interpretation_style
 
-            _sty, _meta = detect_interpretation_style(close_ticker, volume, config, ticker=ticker)
-            sig = multi_horizon_scores(close_ticker, interpretation_style=_sty)
-            buy_p = sig.get("suggested_buy_price")
-            sell_p = sig.get("suggested_sell_price")
-            supp = sig.get("support_level")
-            rsi = sig.get("rsi")
-            score = sig.get("composite_buy")
-            buy_conf = sig.get("buy_target_confidence_pct")
-            sell_conf = sig.get("sell_target_confidence_pct")
-            model_confidence_pct = None
-            if conf_snapshot_for_request and conf_snapshot_for_request.get("confidence") is not None:
-                model_confidence_pct = int(round(float(conf_snapshot_for_request["confidence"]) * 100))
+                _sty, _meta = detect_interpretation_style(close_ticker, volume, config, ticker=ticker)
+                sig = multi_horizon_scores(close_ticker, interpretation_style=_sty)
+                buy_p = sig.get("suggested_buy_price")
+                sell_p = sig.get("suggested_sell_price")
+                supp = sig.get("support_level")
+                rsi = sig.get("rsi")
+                score = sig.get("composite_buy")
+                buy_conf = sig.get("buy_target_confidence_pct")
+                sell_conf = sig.get("sell_target_confidence_pct")
+                model_confidence_pct = None
+                if conf_snapshot_for_request and conf_snapshot_for_request.get("confidence") is not None:
+                    model_confidence_pct = int(round(float(conf_snapshot_for_request["confidence"]) * 100))
 
-            signal_data = {
-                "score_interpretation_style": _sty,
-                "score_interpretation_meta": _meta,
-                "short_suggestion": sig.get("short_suggestion"),
-                "medium_suggestion": sig.get("medium_suggestion"),
-                "long_suggestion": sig.get("long_suggestion"),
-                "short_reason": sig.get("short_reason"),
-                "medium_reason": sig.get("medium_reason"),
-                "long_reason": sig.get("long_reason"),
-                "suggested_buy_price": buy_p,
-                "suggested_sell_price": sell_p,
-                "support_level": supp,
-                "rsi": sig.get("rsi"),
-                "buy_target_confidence_pct": buy_conf,
-                "sell_target_confidence_pct": sell_conf,
-                "model_confidence_pct": model_confidence_pct,
-                "ma20": sig.get("ma20"),
-                "ma50": sig.get("ma50"),
-                "ma200": sig.get("ma200"),
-                "score_breakdown": {
-                    "trend": sig.get("trend_score"),
-                    "rsi": sig.get("rsi_contrib"),
-                    "macd": sig.get("macd_contrib"),
-                    "composite": sig.get("composite_buy"),
-                },
-            }
+                signal_data = {
+                    "score_interpretation_style": _sty,
+                    "score_interpretation_meta": _meta,
+                    "short_suggestion": sig.get("short_suggestion"),
+                    "medium_suggestion": sig.get("medium_suggestion"),
+                    "long_suggestion": sig.get("long_suggestion"),
+                    "short_reason": sig.get("short_reason"),
+                    "medium_reason": sig.get("medium_reason"),
+                    "long_reason": sig.get("long_reason"),
+                    "suggested_buy_price": buy_p,
+                    "suggested_sell_price": sell_p,
+                    "support_level": supp,
+                    "rsi": sig.get("rsi"),
+                    "buy_target_confidence_pct": buy_conf,
+                    "sell_target_confidence_pct": sell_conf,
+                    "model_confidence_pct": model_confidence_pct,
+                    "ma20": sig.get("ma20"),
+                    "ma50": sig.get("ma50"),
+                    "ma200": sig.get("ma200"),
+                    "score_breakdown": {
+                        "trend": sig.get("trend_score"),
+                        "rsi": sig.get("rsi_contrib"),
+                        "macd": sig.get("macd_contrib"),
+                        "composite": sig.get("composite_buy"),
+                    },
+                }
+            if not signal_data.get("velocity_triggered") and dashboard_row:
+                for k in ("velocity_triggered", "velocity_score", "track", "readiness_tier", "gates_passed"):
+                    if dashboard_row.get(k) is not None:
+                        signal_data[k] = dashboard_row.get(k)
             try:
                 from signals.velocity_engine import attach_velocity_to_row
 
-                attach_velocity_to_row(signal_data, close=close_ticker, volume=volume, config=config)
+                if not signal_data.get("velocity_triggered"):
+                    attach_velocity_to_row(signal_data, close=close_ticker, volume=volume, config=config)
             except Exception:
                 pass
-            # Human-readable reasoning — distinguish model (7-layer) vs technical composite (rule-based)
+            buy_p = signal_data.get("suggested_buy_price")
+            sell_p = signal_data.get("suggested_sell_price")
+            supp = signal_data.get("support_level")
+            buy_conf = signal_data.get("buy_target_confidence_pct")
+            sell_conf = signal_data.get("sell_target_confidence_pct")
+            model_confidence_pct = signal_data.get("model_confidence_pct")
+            if model_confidence_pct is None and conf_snapshot_for_request and conf_snapshot_for_request.get("confidence") is not None:
+                model_confidence_pct = int(round(float(conf_snapshot_for_request["confidence"]) * 100))
+                signal_data["model_confidence_pct"] = model_confidence_pct
             if buy_p is not None:
                 tech_b = int(buy_conf) if buy_conf is not None else None
                 parts_buy: list[str] = [
@@ -393,12 +473,14 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                     parts_sell.append(f"Technical exit signal strength ~{tech_s}% (rule-based).")
                 price_reasoning["sell"] = " ".join(parts_sell)
             else:
+                rsi = signal_data.get("rsi")
+                score = (signal_data.get("score_breakdown") or {}).get("composite")
                 rsi_s = f"RSI {rsi:.0f}" if rsi is not None else "RSI n/a"
                 score_s = f"score {score:.0f}" if score is not None else "score n/a"
                 price_reasoning["sell"] = f"Sell: – (no sell signal; {rsi_s}, {score_s})"
 
-            supp_primary = sig.get("support_primary")
-            supp_secondary = sig.get("support_secondary")
+            supp_primary = signal_data.get("support_primary")
+            supp_secondary = signal_data.get("support_secondary")
             if supp_primary is not None and supp_secondary is not None:
                 price_reasoning["support"] = f"Support: primary ~${supp_primary:.2f} (MA50), secondary ~${supp_secondary:.2f} (MA200)"
             elif supp is not None:
@@ -1228,14 +1310,25 @@ def _build_investor_summary(
         "fmp_consensus_median_usd": round(fmp_med, 2) if fmp_med is not None else None,
         "fmp_median_is_range_midpoint": fmp_median_is_range_midpoint,
         "pct_model_vs_fmp_median": _fv_pct_vs_ref(fair_value, fmp_med),
+        "street_anchor_usd": round(analyst_target, 2) if analyst_target else None,
+        "street_anchor_source": (
+            "fmp_median"
+            if analyst_target_fmp and analyst_target_fmp > 0 and not fmp_median_is_range_midpoint
+            else (
+                "fmp_range_midpoint"
+                if analyst_target_fmp and analyst_target_fmp > 0 and fmp_median_is_range_midpoint
+                else ("yahoo_12m_mean" if analyst_target_yahoo else None)
+            )
+        ),
         "street_primary_source": (
             "fmp"
             if fmp_med is not None
             else ("yahoo" if analyst_target_yahoo else None)
         ),
         "note": (
-            "Street primary: FMP price-target consensus when configured; Yahoo 12m mean as cross-check/fallback. "
-            "Model FV caps at +10% vs street anchor in estimator. Gap >20% → review inputs; >40% → caution."
+            "FV math uses one street anchor: FMP consensus median when present, else Yahoo 12m mean "
+            "(not an average of both). Yahoo and FMP are shown separately for comparison. "
+            "Caps/blends use the same anchor — if FMP is missing, anchor can shift to Yahoo and move FV."
         ),
     }
     out["fair_value_vs_external"] = fv_ext
@@ -1250,6 +1343,11 @@ def _build_investor_summary(
             "method_used": fv_result.method_used,
             "methodology_summary": getattr(fv_result, "methodology_summary", None),
             "notes": list(getattr(fv_result, "notes", []) or []),
+            "growth_raw_pct": getattr(fv_result, "growth_raw_pct", None),
+            "growth_used_pct": getattr(fv_result, "growth_used_pct", None),
+            "growth_was_capped": getattr(fv_result, "growth_was_capped", False),
+            "street_anchor_usd": round(analyst_target, 2) if analyst_target else None,
+            "street_anchor_source": fv_ext.get("street_anchor_source"),
         }
         fv_meta["notes"] = list(fv_meta.get("notes") or [])
         if forward_pe_used is not None and forward_pe_used < 22.0:

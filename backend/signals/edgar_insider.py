@@ -1,7 +1,7 @@
 """
 Insider & Institutional Flow Tracker — SEC EDGAR (free, no API key).
-Form 4 filings: insider buys/sells. Flags when an insider at a watched ticker buys shares.
-Uses data.sec.gov (company tickers, submissions) and Archives for Form 4 documents.
+
+Form 4 filings: insider buys/sells via edgartools (primary) with legacy XML fallback.
 SEC requires User-Agent identifying the application; stay under 10 requests/second.
 """
 from __future__ import annotations
@@ -10,35 +10,32 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
-# SEC requires User-Agent; use app name + contact
 USER_AGENT = "ThriveAlpha/1.0 (Insider flow tracker; mailto:support@example.com)"
 
-# Transaction codes: P = purchase, S = sale (open market). Others: G = gift, A = grant, etc.
-PURCHASE_CODES = {"P", "A", "G", "M"}  # P=open market purchase; A=grant; G=gift; M=exercise
-SALE_CODES = {"S", "D", "F"}  # S=open market sale; D=disposition; F=tax
+PURCHASE_CODES = {"P", "A", "G", "M"}
+SALE_CODES = {"S", "D", "F"}
 
 SEC_DATA_BASE = "https://data.sec.gov"
 SEC_ARCHIVES_BASE = "https://www.sec.gov/Archives/edgar/data"
 COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 
-# Cache TTLs (seconds)
 TTL_TICKERS_JSON = 24 * 3600
-TTL_SUBMISSIONS = 12 * 3600
-TTL_FORM4_DOC = 6 * 3600
 MAX_FORM4_PER_TICKER = 5
-REQUEST_DELAY = 0.12  # ~8 req/s to stay under 10
+REQUEST_DELAY = 0.12
 
 
 def _sec_request(url: str) -> tuple[str | None, str | None]:
     """GET with SEC-required User-Agent. Returns (body, error)."""
     try:
         import urllib.request
+
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=20) as resp:
             return resp.read().decode("utf-8", errors="replace"), None
@@ -51,9 +48,7 @@ def _tickers_path() -> Path:
 
 
 def get_ticker_to_cik(tickers: list[str]) -> dict[str, str]:
-    """
-    Map ticker -> CIK (zero-padded 10 digits). Uses SEC company_tickers.json; caches to disk.
-    """
+    """Map ticker -> CIK (zero-padded 10 digits). Uses SEC company_tickers.json; caches to disk."""
     want = {t.upper().strip() for t in tickers if t and t.strip()}
     if not want:
         return {}
@@ -81,7 +76,6 @@ def get_ticker_to_cik(tickers: list[str]) -> dict[str, str]:
             logger.debug("EDGAR company_tickers parse failed: %s", e)
             return {}
         time.sleep(REQUEST_DELAY)
-    # company_tickers.json format: {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}, ...}
     out = {}
     raw = cache_data.get("data")
     if isinstance(raw, dict):
@@ -95,16 +89,150 @@ def get_ticker_to_cik(tickers: list[str]) -> dict[str, str]:
     return out
 
 
-def _submissions_url(cik: str) -> str:
-    return f"{SEC_DATA_BASE}/submissions/CIK{cik}.json"
+def _classify_transaction(code: str, transaction_type: str) -> str:
+    code_u = (code or "").strip().upper()
+    ttype = (transaction_type or "").lower()
+    if code_u in PURCHASE_CODES or "purchase" in ttype:
+        return "buy"
+    if code_u in SALE_CODES or "sale" in ttype or ttype == "sell":
+        return "sell"
+    return "other"
+
+
+def _buys_sells_from_form4(form4: Any) -> tuple[int, int, int]:
+    """Return (buy_shares, sell_shares, transaction_count) from edgartools Form4 object."""
+    buys = 0
+    sells = 0
+    count = 0
+    activities = []
+    if hasattr(form4, "get_transaction_activities"):
+        activities = form4.get_transaction_activities() or []
+    for act in activities:
+        code = getattr(act, "code", "") or ""
+        ttype = getattr(act, "transaction_type", "") or ""
+        try:
+            shares = int(getattr(act, "shares", 0) or 0)
+        except (TypeError, ValueError):
+            shares = 0
+        kind = _classify_transaction(code, ttype)
+        count += 1
+        if kind == "buy":
+            buys += shares
+        elif kind == "sell":
+            sells += shares
+    if count == 0:
+        try:
+            p = form4.common_stock_purchases
+            if p is not None and not getattr(p, "empty", True) and "Shares" in p.columns:
+                buys = int(p["Shares"].astype(float).sum())
+                count += len(p)
+        except Exception:
+            pass
+        try:
+            s = form4.common_stock_sales
+            if s is not None and not getattr(s, "empty", True) and "Shares" in s.columns:
+                sells = int(s["Shares"].astype(float).sum())
+                count += len(s)
+        except Exception:
+            pass
+    return buys, sells, count
+
+
+def _filing_edgar_url(filing: Any) -> str:
+    for attr in ("homepage_url", "filing_url", "url"):
+        val = getattr(filing, attr, None)
+        if val:
+            return str(val)
+    return ""
+
+
+def _run_insider_flow_edgartools(
+    tickers: list[str],
+    max_form4_per_ticker: int = MAX_FORM4_PER_TICKER,
+    days_lookback: int | None = 90,
+    config: dict | None = None,
+) -> dict[str, Any]:
+    from edgar import Company
+
+    from signals.edgar_common import ensure_edgar_identity
+
+    ensure_edgar_identity(config)
+    cutoff = None
+    if days_lookback:
+        cutoff = (datetime.utcnow() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+
+    ticker_activities: list[dict] = []
+    insider_buys: list[dict] = []
+    insider_sells: list[dict] = []
+
+    for ticker in tickers[:50]:
+        sym = (ticker or "").upper().strip()
+        if not sym:
+            continue
+        try:
+            filings = Company(sym).get_filings(form="4")
+        except Exception as exc:
+            logger.debug("Form 4 filings %s: %s", sym, exc)
+            continue
+        if filings is None or len(filings) == 0:
+            continue
+        n = 0
+        for filing in filings:
+            if n >= max_form4_per_ticker:
+                break
+            fdate = str(getattr(filing, "filing_date", "") or "")[:10]
+            if cutoff and fdate and fdate < cutoff:
+                continue
+            try:
+                form4 = filing.obj()
+            except Exception as exc:
+                logger.debug("Form 4 parse %s %s: %s", sym, fdate, exc)
+                continue
+            if form4 is None:
+                continue
+            buys, sells, tx_count = _buys_sells_from_form4(form4)
+            edgar_url = _filing_edgar_url(filing)
+            ticker_activities.append({
+                "ticker": sym,
+                "filing_date": fdate,
+                "edgar_url": edgar_url,
+                "buys_shares": buys,
+                "sells_shares": sells,
+                "transaction_count": tx_count,
+                "parser": "edgartools",
+            })
+            if buys > 0:
+                insider_buys.append({
+                    "ticker": sym,
+                    "filing_date": fdate,
+                    "shares": buys,
+                    "edgar_url": edgar_url,
+                })
+            if sells > 0:
+                insider_sells.append({
+                    "ticker": sym,
+                    "filing_date": fdate,
+                    "shares": sells,
+                    "edgar_url": edgar_url,
+                })
+            n += 1
+
+    return {
+        "ticker_activities": ticker_activities[:100],
+        "insider_buys": insider_buys[:80],
+        "insider_sells": insider_sells[:80],
+        "message": None,
+        "parser": "edgartools",
+    }
+
+
+# ── Legacy XML fallback (used when edgartools unavailable) ───────────────────
 
 
 def get_form4_filings_for_cik(cik: str, max_filings: int = MAX_FORM4_PER_TICKER) -> list[dict]:
-    """Fetch submissions for CIK and return list of Form 4 filing info (accessionNumber, filingDate, primaryDocument)."""
-    url = _submissions_url(cik)
+    url = f"{SEC_DATA_BASE}/submissions/CIK{cik}.json"
     body, err = _sec_request(url)
     if err or not body:
-        logger.debug("EDGAR submissions %s failed: %s", cik, err)
         return []
     time.sleep(REQUEST_DELAY)
     try:
@@ -120,7 +248,6 @@ def get_form4_filings_for_cik(cik: str, max_filings: int = MAX_FORM4_PER_TICKER)
     out = []
     for i in range(n):
         if forms[i] == "4":
-            # accessionNumber has dashes; we need sans-dashes for URL
             an = (acc[i] or "").replace("-", "")
             out.append({
                 "accessionNumber": acc[i],
@@ -134,16 +261,11 @@ def get_form4_filings_for_cik(cik: str, max_filings: int = MAX_FORM4_PER_TICKER)
 
 
 def _document_url(cik: str, accession_sans_dashes: str, primary_document: str) -> str:
-    # SEC path: /Archives/edgar/data/{cik_int}/{accession_no_dashes}/{filename}
     cik_int = int(cik) if cik else 0
     return f"{SEC_ARCHIVES_BASE}/{cik_int}/{accession_sans_dashes}/{primary_document}"
 
 
 def _parse_form4_xml_for_transactions(xml_body: str) -> list[dict]:
-    """
-    Parse Form 4 XML for transactions: transactionCode, transactionShares.
-    Returns list of {code, shares, type: 'buy'|'sell'}. Regex-first for namespace robustness.
-    """
     results = []
     code_pattern = re.compile(r"<[^>]*[Tt]ransaction[Cc]ode[^>]*>\s*([A-Z])\s*</", re.IGNORECASE)
     share_pattern = re.compile(r"<[^>]*[Tt]ransaction[Ss]hares[^>]*>\s*([\d.]+)\s*</", re.IGNORECASE)
@@ -151,7 +273,7 @@ def _parse_form4_xml_for_transactions(xml_body: str) -> list[dict]:
     shares_list = [int(float(m)) for m in share_pattern.findall(xml_body)]
     for i, code in enumerate(codes):
         shares = shares_list[i] if i < len(shares_list) else 0
-        tx_type = "buy" if code in PURCHASE_CODES else ("sell" if code in SALE_CODES else "other")
+        tx_type = _classify_transaction(code, "")
         results.append({"code": code, "shares": shares, "type": tx_type})
     if not results:
         try:
@@ -162,7 +284,7 @@ def _parse_form4_xml_for_transactions(xml_body: str) -> list[dict]:
                     code = elem.text.strip().upper()
                     results.append({
                         "code": code, "shares": 0,
-                        "type": "buy" if code in PURCHASE_CODES else ("sell" if code in SALE_CODES else "other"),
+                        "type": _classify_transaction(code, ""),
                     })
                 elif tag == "transactionShares" and elem.text and results:
                     try:
@@ -175,30 +297,19 @@ def _parse_form4_xml_for_transactions(xml_body: str) -> list[dict]:
 
 
 def fetch_form4_transactions(cik: str, filing: dict) -> tuple[list[dict], str | None]:
-    """
-    Fetch one Form 4 document and parse transactions. Returns (list of {code, shares, type}, error).
-    """
     url = _document_url(cik, filing["accessionNumberSansDashes"], filing["primaryDocument"])
     body, err = _sec_request(url)
     if err or not body:
         return [], err or "Empty response"
     time.sleep(REQUEST_DELAY)
-    transactions = _parse_form4_xml_for_transactions(body)
-    return transactions, None
+    return _parse_form4_xml_for_transactions(body), None
 
 
-def run_insider_flow(
+def _run_insider_flow_legacy(
     tickers: list[str],
     max_form4_per_ticker: int = MAX_FORM4_PER_TICKER,
     days_lookback: int | None = 90,
 ) -> dict[str, Any]:
-    """
-    For each ticker, get recent Form 4 filings and classify buys/sells.
-    Returns:
-      ticker_activities: list of {ticker, filing_date, edgar_url, buys_shares, sells_shares, transactions}
-      insider_buys: list of {ticker, filing_date, shares, edgar_url} for quick "insider bought" flags
-      message: optional error/summary
-    """
     ticker_to_cik = get_ticker_to_cik(tickers)
     if not ticker_to_cik:
         return {
@@ -206,15 +317,15 @@ def run_insider_flow(
             "insider_buys": [],
             "insider_sells": [],
             "message": "Could not load SEC ticker→CIK mapping.",
+            "parser": "legacy_xml",
         }
-    from datetime import datetime, timedelta
     cutoff = None
     if days_lookback:
         cutoff = (datetime.utcnow() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
     ticker_activities = []
     insider_buys = []
     insider_sells = []
-    for ticker, cik in list(ticker_to_cik.items())[:50]:  # cap tickers to avoid timeout
+    for ticker, cik in list(ticker_to_cik.items())[:50]:
         filings = get_form4_filings_for_cik(cik, max_filings=max_form4_per_ticker)
         for f in filings:
             if cutoff and (f.get("filingDate") or "") < cutoff:
@@ -224,7 +335,9 @@ def run_insider_flow(
             sells = sum(t["shares"] for t in transactions if t.get("type") == "sell")
             acc = f.get("accessionNumber") or ""
             primary = f.get("primaryDocument") or ""
-            edgar_url = _document_url(cik, f.get("accessionNumberSansDashes", acc.replace("-", "")), primary) if primary else ""
+            edgar_url = _document_url(
+                cik, f.get("accessionNumberSansDashes", acc.replace("-", "")), primary,
+            ) if primary else ""
             ticker_activities.append({
                 "ticker": ticker,
                 "filing_date": f.get("filingDate"),
@@ -232,6 +345,7 @@ def run_insider_flow(
                 "buys_shares": buys,
                 "sells_shares": sells,
                 "transaction_count": len(transactions),
+                "parser": "legacy_xml",
             })
             if buys > 0:
                 insider_buys.append({
@@ -252,4 +366,34 @@ def run_insider_flow(
         "insider_buys": insider_buys[:80],
         "insider_sells": insider_sells[:80],
         "message": None,
+        "parser": "legacy_xml",
     }
+
+
+def run_insider_flow(
+    tickers: list[str],
+    max_form4_per_ticker: int = MAX_FORM4_PER_TICKER,
+    days_lookback: int | None = 90,
+    config: dict | None = None,
+) -> dict[str, Any]:
+    """
+    For each ticker, get recent Form 4 filings and classify buys/sells.
+    Uses edgartools when installed; falls back to legacy XML parsing.
+    """
+    try:
+        from signals.edgar_common import edgartools_available
+
+        if edgartools_available():
+            return _run_insider_flow_edgartools(
+                tickers,
+                max_form4_per_ticker=max_form4_per_ticker,
+                days_lookback=days_lookback,
+                config=config,
+            )
+    except Exception as exc:
+        logger.debug("edgartools insider flow failed, using legacy: %s", exc)
+    return _run_insider_flow_legacy(
+        tickers,
+        max_form4_per_ticker=max_form4_per_ticker,
+        days_lookback=days_lookback,
+    )

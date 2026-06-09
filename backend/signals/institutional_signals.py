@@ -1,5 +1,6 @@
 """
 Institutional-style proxies: FMP insider list (role/size weighted), short float, holder trend.
+Free fallbacks: Yahoo institutional_holders + SEC EDGAR 13F-HR (no FMP Ultimate required).
 Complements SEC Form 4 flow in edgar_insider — not real-time options flow.
 """
 from __future__ import annotations
@@ -118,11 +119,36 @@ def get_short_interest_signal(config: dict, ticker: str) -> dict[str, Any]:
     return {"short_float_pct": round(pct, 2), "signal": label, "source": "fmp"}
 
 
-def get_institutional_trend_proxy(config: dict, ticker: str) -> dict[str, Any]:
-    rows, err = fetch_institutional_holder_summary(config, ticker)
-    if err or not rows or len(rows) < 2:
-        return {"trend": "UNKNOWN", "error": err, "total_institutions": len(rows or [])}
+def get_institutional_ownership(ticker: str) -> dict[str, Any]:
+    """Institutional ownership % and top holders from Yahoo (13F-derived, delayed)."""
+    try:
+        from signals.yahoo_institutional import fetch_yahoo_institutional
 
+        return fetch_yahoo_institutional(ticker)
+    except Exception as exc:
+        logger.debug("yahoo institutional %s: %s", ticker, exc)
+        return {"error": str(exc), "source": "yfinance_delayed"}
+
+
+def get_edgar_13f_holder_snapshot(
+    ticker: str,
+    config: dict | None = None,
+    *,
+    top_holders: list[dict] | None = None,
+) -> dict[str, Any]:
+    """Quarterly top-holder changes from SEC EDGAR 13F-HR via edgartools."""
+    try:
+        from signals.edgar_13f import fetch_edgar_13f_snapshot
+
+        return fetch_edgar_13f_snapshot(
+            ticker, config=config, top_holders=top_holders,
+        )
+    except Exception as exc:
+        logger.debug("edgar 13f %s: %s", ticker, exc)
+        return {"error": str(exc), "source": "sec_edgar_13f"}
+
+
+def _trend_from_fmp_rows(rows: list[dict]) -> dict[str, Any]:
     increasing = 0
     for h in rows:
         ch = h.get("change") or h.get("changeInShares") or h.get("changeInHoldings")
@@ -142,15 +168,75 @@ def get_institutional_trend_proxy(config: dict, ticker: str) -> dict[str, Any]:
         "pct_institutions_increasing": round(pct_inc, 3),
         "trend": trend,
         "total_institutions": total,
+        "source": "fmp",
+    }
+
+
+def get_institutional_trend_proxy(
+    config: dict,
+    ticker: str,
+    *,
+    yahoo: dict[str, Any] | None = None,
+    edgar: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Holder trend: FMP institutional-holder feed when available, else Yahoo pctChange,
+    else SEC EDGAR 13F sample comparison.
+    """
+    rows, err = fetch_institutional_holder_summary(config, ticker)
+    if rows and len(rows) >= 2 and not err:
+        out = _trend_from_fmp_rows(rows)
+        out["error"] = None
+        return out
+
+    yahoo = yahoo if yahoo is not None else get_institutional_ownership(ticker)
+    yahoo_trend = yahoo.get("holder_trend") or {}
+    if yahoo_trend.get("trend") and yahoo_trend.get("trend") != "UNKNOWN":
+        return {
+            **yahoo_trend,
+            "source": "yfinance_delayed",
+            "as_of": yahoo.get("as_of"),
+            "error": yahoo.get("error"),
+        }
+
+    edgar = edgar if edgar is not None else get_edgar_13f_holder_snapshot(ticker, config=config)
+    if edgar.get("trend") and edgar.get("trend") != "UNKNOWN":
+        return {
+            "trend": edgar["trend"],
+            "pct_institutions_increasing": edgar.get("pct_filings_increasing"),
+            "total_institutions": edgar.get("filers_comparable") or edgar.get("filers_sampled"),
+            "source": "sec_edgar_13f",
+            "period_ending": edgar.get("period_ending"),
+            "error": edgar.get("error"),
+        }
+
+    return {
+        "trend": "UNKNOWN",
+        "error": err or yahoo.get("error") or edgar.get("error"),
+        "total_institutions": yahoo_trend.get("total_institutions", 0),
+        "source": None,
     }
 
 
 def build_institutional_bundle(config: dict, ticker: str) -> dict[str, Any]:
     """Single-ticker snapshot for API / insights."""
     t = (ticker or "").upper().strip()
+    yahoo = get_institutional_ownership(t)
+    edgar = get_edgar_13f_holder_snapshot(t, config=config, top_holders=yahoo.get("top_holders"))
     return {
         "ticker": t,
         "insider_weighted": get_weighted_insider_signal(config, t),
         "short_interest": get_short_interest_signal(config, t),
-        "institutional_trend": get_institutional_trend_proxy(config, t),
+        "institutional_ownership": {
+            "institutional_pct": yahoo.get("institutional_pct"),
+            "institutional_pct_label": yahoo.get("institutional_pct_label"),
+            "source": yahoo.get("source", "yfinance_delayed"),
+            "source_note": yahoo.get("source_note"),
+            "as_of": yahoo.get("as_of"),
+            "major_holders": yahoo.get("major_holders"),
+            "top_holders": yahoo.get("top_holders"),
+            "error": yahoo.get("error"),
+        },
+        "institutional_trend": get_institutional_trend_proxy(config, t, yahoo=yahoo, edgar=edgar),
+        "edgar_13f": edgar,
     }

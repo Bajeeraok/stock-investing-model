@@ -36,6 +36,7 @@ import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
 import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
 import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
+import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
 import {
   GateProgressBar,
@@ -1376,6 +1377,7 @@ export function TickerDetailModal({
 
               {whySubTab === "context" && (
                 <div className="space-y-6">
+              <InstitutionalInsightsPanel ticker={detail.ticker} silentOnError={false} />
               {/* ── Story & catalysts ─────── */}
               {(detail.thesis || detail.exit_condition) && (
                 <section>

@@ -185,7 +185,7 @@ def _fetch_prices_for_tickers(tickers: list[str], config: dict, existing: dict[s
     except Exception as e:
         logger.debug("cohort alert batch quote: %s", e)
     try:
-        from signals.live_prices import fetch_yfinance_latest_prices
+        from signals.fetcher import fetch_yfinance_latest_prices
 
         yf = fetch_yfinance_latest_prices(missing)
         for k, v in (yf or {}).items():

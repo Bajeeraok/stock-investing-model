@@ -177,11 +177,62 @@ def classify_stock_type(
 # YoY growth from feeds can be 100%+ (e.g. NVDA EPS). Uncapped PEG math then implies
 # fair P/E > 150 and multiplies fair value far above analyst consensus.
 MAX_GROWTH_PCT_FOR_VALUATION = 42.0
+MAX_GROWTH_PCT_HIGH_GROWTH = 65.0
 
 
-def _growth_for_valuation(revenue_growth_pct: float, earnings_growth_pct: float) -> float:
-    g = max(revenue_growth_pct, earnings_growth_pct)
-    return min(g, MAX_GROWTH_PCT_FOR_VALUATION)
+def _growth_cap_from_guardrails(guardrails: Optional[dict[str, Any]], *, high_growth: bool) -> float:
+    g = guardrails or {}
+    if high_growth:
+        return float(g.get("max_growth_pct_high_growth", MAX_GROWTH_PCT_HIGH_GROWTH))
+    return float(g.get("max_growth_pct_for_valuation", MAX_GROWTH_PCT_FOR_VALUATION))
+
+
+def _growth_for_valuation(
+    revenue_growth_pct: float,
+    earnings_growth_pct: float,
+    *,
+    max_cap: float = MAX_GROWTH_PCT_FOR_VALUATION,
+) -> tuple[float, float, bool]:
+    """Return (growth_used, growth_raw, was_capped)."""
+    raw = max(revenue_growth_pct, earnings_growth_pct)
+    used = min(raw, max_cap)
+    return used, raw, raw > max_cap + 1e-6
+
+
+def _reconcile_high_growth_vs_street(
+    fv: float,
+    analyst_target: Optional[float],
+    stock_type: StockType,
+    guardrails: Optional[dict[str, Any]] = None,
+) -> tuple[float, list[str]]:
+    """
+    When model FV is far below street on HIGH_GROWTH names, blend toward consensus so
+    retail UI does not show e.g. NVDA FV $236 vs street $309 without explanation.
+    """
+    notes: list[str] = []
+    if stock_type != StockType.HIGH_GROWTH or not analyst_target or analyst_target <= 0 or fv <= 0:
+        return fv, notes
+    g = guardrails or {}
+    trigger = float(g.get("street_blend_trigger_below_pct", 0.20))  # model >20% below street
+    street_weight = float(g.get("street_blend_weight", 0.55))
+    floor_pct = float(g.get("street_floor_min_pct", 0.72))  # never show below 72% of street
+    if fv >= analyst_target * (1.0 - trigger):
+        return fv, notes
+    model_weight = 1.0 - street_weight
+    blended = round(fv * model_weight + analyst_target * street_weight, 2)
+    floor = round(analyst_target * floor_pct, 2)
+    out = max(blended, floor)
+    notes.append(
+        "High-growth FV was {:.0f}% below street (${:.2f}); blended {:.0f}% model / {:.0f}% consensus "
+        "(floor {:.0f}% of street). Raw PEG inputs still capped — see growth_used_pct.".format(
+            100 * (1 - fv / analyst_target),
+            analyst_target,
+            model_weight * 100,
+            street_weight * 100,
+            floor_pct * 100,
+        )
+    )
+    return out, notes
 
 
 def _apply_fair_value_guardrails(
@@ -264,6 +315,8 @@ def _method_peg_blend(
     de_ratio: float,
     forward_pe: Optional[float] = None,
     sector_forward_pe: Optional[float] = None,
+    *,
+    max_growth_cap: float = MAX_GROWTH_PCT_FOR_VALUATION,
 ) -> float:
     """
     For GROWTH stocks (PE 25-50).
@@ -276,7 +329,9 @@ def _method_peg_blend(
     # Weight: 40% PE-relative, 60% PEG-normalized
     pe_fv = _method_pe_relative(current_price, ttm_pe, sector_pe, net_margin_pct, de_ratio)
 
-    growth = _growth_for_valuation(revenue_growth_pct, earnings_growth_pct)
+    growth, _, _ = _growth_for_valuation(
+        revenue_growth_pct, earnings_growth_pct, max_cap=max_growth_cap
+    )
     fair_peg_pe = growth * 1.0   # PEG=1 → fair PE ≈ growth rate
     quality = _quality_premium(net_margin_pct, de_ratio)
 
@@ -315,6 +370,8 @@ def _method_forward_pe_blend(
     de_ratio: float,
     fcf_per_share: Optional[float] = None,
     current_eps: Optional[float] = None,
+    *,
+    max_growth_cap: float = MAX_GROWTH_PCT_HIGH_GROWTH,
 ) -> float:
     """
     For HIGH_GROWTH stocks (PE 50+): AVGO, NVDA, META, etc.
@@ -338,7 +395,9 @@ def _method_forward_pe_blend(
 
     # Signal 2: PEG using forward earnings growth
     # Fair PEG for high-quality semis/tech ~1.25 — 1.5 overstates vs consensus when growth is capped high
-    growth      = _growth_for_valuation(revenue_growth_pct, earnings_growth_pct)
+    growth, _, _ = _growth_for_valuation(
+        revenue_growth_pct, earnings_growth_pct, max_cap=max_growth_cap
+    )
     fair_peg    = 1.25
     fair_fwd_pe = growth * fair_peg
     peg_adj     = fair_fwd_pe / forward_pe if forward_pe > 0 else 1.0
@@ -391,6 +450,9 @@ class FairValueResult:
     # Transparency: bear case and one-line methodology so users can interrogate FV vs lt_band
     bear_case: Optional[float] = None   # e.g. FV * 0.60; conservative downside
     methodology_summary: Optional[str] = None
+    growth_raw_pct: Optional[float] = None
+    growth_used_pct: Optional[float] = None
+    growth_was_capped: bool = False
 
 
 def estimate_fair_value(
@@ -438,6 +500,16 @@ def estimate_fair_value(
     )
 
     notes = list(classification.notes)
+    is_hg = classification.stock_type == StockType.HIGH_GROWTH
+    growth_cap = _growth_cap_from_guardrails(guardrails, high_growth=is_hg)
+    growth_used, growth_raw, growth_capped = _growth_for_valuation(
+        revenue_growth_pct, earnings_growth_pct, max_cap=growth_cap
+    )
+    if growth_capped:
+        notes.append(
+            "PEG growth input capped {:.0f}% → {:.0f}% (feeds can show 100%+ YoY on AI names; "
+            "uncapped PEG overstates fair P/E).".format(growth_raw, growth_used)
+        )
 
     if classification.stock_type == StockType.UNKNOWN:
         return FairValueResult(
@@ -466,6 +538,7 @@ def estimate_fair_value(
             net_margin_pct, de_ratio,
             forward_pe=forward_pe,
             sector_forward_pe=sector_forward_pe,
+            max_growth_cap=growth_cap,
         )
         if forward_pe is not None and forward_pe > 0 and sector_forward_pe is not None and sector_forward_pe > 0:
             method = "peg_blend (40% TTM PE-relative + 60% PEG on forward P/E)"
@@ -474,18 +547,29 @@ def estimate_fair_value(
 
     else:  # HIGH_GROWTH
         if forward_pe is None or sector_forward_pe is None:
-            # Fall back to PEG blend if forward PE not provided
             notes.append(
-                "WARNING: forward_pe or sector_forward_pe not provided. "
-                "Using PEG blend — pass forward PE for better accuracy on high-growth stocks.")
-            fv = _method_peg_blend(
-                current_price, ttm_pe, sector_pe,
-                revenue_growth_pct, earnings_growth_pct,
-                net_margin_pct, de_ratio,
-                forward_pe=None,
-                sector_forward_pe=None,
+                "WARNING: forward_pe missing or discarded — TTM peg_blend understates megacap AI FV. "
+                "Prefer forward EPS from yfinance/FMP; street blend may apply."
             )
-            method = "peg_blend_fallback (forward_pe missing)"
+            if analyst_target and analyst_target > 0:
+                fv = round(analyst_target * float((guardrails or {}).get("street_floor_min_pct", 0.72)), 2)
+                method = "analyst_floor (forward_pe unavailable)"
+                notes.append(
+                    "Using {:.0f}% of street (${:.2f}) as interim FV — not 52w high or spot.".format(
+                        float((guardrails or {}).get("street_floor_min_pct", 0.72)) * 100,
+                        analyst_target,
+                    )
+                )
+            else:
+                fv = _method_peg_blend(
+                    current_price, ttm_pe, sector_pe,
+                    revenue_growth_pct, earnings_growth_pct,
+                    net_margin_pct, de_ratio,
+                    forward_pe=None,
+                    sector_forward_pe=None,
+                    max_growth_cap=growth_cap,
+                )
+                method = "peg_blend_fallback (forward_pe missing)"
             classification = StockClassification(
                 stock_type=classification.stock_type,
                 method_used=classification.method_used,
@@ -496,9 +580,16 @@ def estimate_fair_value(
             fv = _method_forward_pe_blend(
                 current_price, ttm_pe, forward_pe, sector_forward_pe,
                 revenue_growth_pct, earnings_growth_pct,
-                net_margin_pct, de_ratio, fcf_per_share, current_eps)
+                net_margin_pct, de_ratio, fcf_per_share, current_eps,
+                max_growth_cap=growth_cap,
+            )
             method = "forward_pe_blend (40% fwd PE + 40% PEG + 20% FCF)" if fcf_per_share else \
                      "forward_pe_blend (50% fwd PE + 50% PEG)"
+
+    fv, street_notes = _reconcile_high_growth_vs_street(
+        fv, analyst_target, classification.stock_type, guardrails
+    )
+    notes.extend(street_notes)
 
     fv, guard_notes = _apply_fair_value_guardrails(fv, current_price, analyst_target, guardrails)
     notes.extend(guard_notes)
@@ -534,6 +625,9 @@ def estimate_fair_value(
         notes=notes,
         bear_case=bear_case,
         methodology_summary=methodology_summary,
+        growth_raw_pct=round(growth_raw, 1),
+        growth_used_pct=round(growth_used, 1),
+        growth_was_capped=growth_capped,
     )
 
 

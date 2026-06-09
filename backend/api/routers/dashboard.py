@@ -781,6 +781,48 @@ def _dashboard_response_for_client(full: dict, *, include_full_signals: bool) ->
     return out
 
 
+def _shell_while_compute_running(*, coalesced: bool = False) -> dict:
+    """Best-effort shell while a full dashboard compute is already in flight."""
+    from api.dashboard_shell import build_shell_from_full, build_warming_shell, enrich_shell_snapshot_meta
+    from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+    try:
+        cached = get_cached_dashboard()
+        if cached is not None:
+            shell = build_shell_from_full(cached, include_full_signals=False)
+            shell["stale"] = True
+            shell["refresh_status"] = "running"
+            if coalesced:
+                shell["refresh_coalesced"] = True
+            df = shell.get("data_freshness") or {}
+            if isinstance(df, dict):
+                df["snapshot_source"] = "cache"
+            return enrich_shell_snapshot_meta(shell)
+    except Exception as e:
+        logger.debug("[dashboard] coalesced cache read: %s", e)
+
+    try:
+        stale = get_last_dashboard_snapshot()
+        if stale is not None:
+            shell = build_shell_from_full(stale, include_full_signals=False)
+            shell["stale"] = True
+            shell["refresh_status"] = "running"
+            if coalesced:
+                shell["refresh_coalesced"] = True
+            df = shell.get("data_freshness") or {}
+            if isinstance(df, dict):
+                df["snapshot_source"] = "last_snapshot"
+            return enrich_shell_snapshot_meta(shell)
+    except Exception as e:
+        logger.debug("[dashboard] coalesced snapshot read: %s", e)
+
+    shell = build_warming_shell(_load_config())
+    shell["refresh_status"] = "running"
+    if coalesced:
+        shell["refresh_coalesced"] = True
+    return enrich_shell_snapshot_meta(shell)
+
+
 @router.get("/dashboard")
 async def get_dashboard(
     refresh: bool = Query(False, description="Bypass cache; recompute full dashboard (manual Refresh)."),
@@ -791,9 +833,19 @@ async def get_dashboard(
     from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
     if refresh:
-        logger.info("[dashboard] refresh=true: synchronous full compute")
+        from api.dashboard_job import finish_compute, try_begin_compute
         from starlette.concurrency import run_in_threadpool
-        out = await run_in_threadpool(_compute_full_dashboard_sync)
+
+        if not try_begin_compute():
+            logger.info("[dashboard] refresh=true coalesced — full compute already running")
+            return _shell_while_compute_running(coalesced=True)
+        logger.info("[dashboard] refresh=true: synchronous full compute")
+        try:
+            out = await run_in_threadpool(_compute_full_dashboard_sync)
+            finish_compute(success=True)
+        except Exception as exc:
+            finish_compute(success=False, error=str(exc))
+            raise
         shell = build_shell_from_full(out, include_full_signals=False)
         shell["stale"] = False
         shell["refresh_status"] = "done"
@@ -980,20 +1032,12 @@ def _compute_full_dashboard_sync() -> dict:
                 market_reversal_overlay = r.get("market_overlay")
             r.pop("market_overlay", None)
 
-    # Paper trading entry price: prefer live quote (FMP batch or Yahoo) so entry matches portfolio marks;
-    # signal row close remains OHLCV last bar (used for indicators / accuracy).
+    # Live quotes for UI display (indicators still computed from OHLCV series above).
     if prices_by_ticker:
-        _paper_src = "fmp_batch" if prices_from_fmp_batch else "yfinance_latest"
-        for r in results or []:
-            if not isinstance(r, dict) or r.get("error"):
-                continue
-            sym = (r.get("ticker") or "").upper().strip()
-            if sym and sym in prices_by_ticker:
-                try:
-                    r["paper_entry_price"] = float(prices_by_ticker[sym])
-                    r["paper_entry_source"] = _paper_src
-                except (TypeError, ValueError):
-                    pass
+        from signals.live_quotes import apply_live_quotes_to_results
+
+        _quote_src = "fmp_batch" if prices_from_fmp_batch else "yfinance_latest"
+        apply_live_quotes_to_results(results, prices_by_ticker, source=_quote_src)
 
     # Paper trading + signal audit log (idempotent by date+ticker)
     try:
@@ -1093,16 +1137,28 @@ def _compute_full_dashboard_sync() -> dict:
         if prices_by_ticker:
             total_value = rep.get("total_value") or 0.0
             filled_value = 0.0
+            recalc_total = False
             for h in rep.get("per_holding", []):
-                if h.get("price") is None and h.get("ticker") in prices_by_ticker:
-                    price = prices_by_ticker[h["ticker"]]
-                    qty = h.get("quantity") or 1
-                    value = qty * price
-                    h["price"] = price
-                    h["value"] = value
-                    filled_value += value
-            if filled_value > 0:
-                total_value += filled_value
+                t = str(h.get("ticker") or "").upper()
+                if t not in prices_by_ticker:
+                    continue
+                try:
+                    price = float(prices_by_ticker[t])
+                except (TypeError, ValueError):
+                    continue
+                qty = h.get("quantity") or 1
+                old_val = h.get("value")
+                h["price"] = price
+                h["value"] = qty * price
+                h["live_price_source"] = "fmp_batch" if prices_from_fmp_batch else "yfinance_latest"
+                if old_val != h["value"]:
+                    recalc_total = True
+                if h.get("price") is None:
+                    filled_value += h["value"] or 0
+            if recalc_total or filled_value > 0:
+                total_value = sum(
+                    float(x.get("value") or 0) for x in rep.get("per_holding", []) if x.get("value") is not None
+                )
                 rep["total_value"] = total_value
                 for h in rep.get("per_holding", []):
                     if h.get("value") is not None and total_value > 0:
@@ -3041,8 +3097,8 @@ async def get_confidence(ticker: str):
 @router.get("/insights/{ticker}")
 async def get_insights(ticker: str):
     """
-    FMP-backed institutional proxies (weighted insider list, short float, holder trend) and
-    earnings-quality heuristics (OCF vs NI, margins, estimate revision). Optional in config: insights.enabled.
+    Institutional proxies (Yahoo 13F-derived ownership, SEC EDGAR 13F changes, optional FMP insider/short)
+    and earnings-quality heuristics. Optional in config: insights.enabled.
     """
     ticker_u = (ticker or "").upper().strip()
     if not ticker_u:

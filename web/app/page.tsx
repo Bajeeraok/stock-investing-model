@@ -28,6 +28,7 @@ const STALE_POLL_MS = 5000;
 // Module-level guards so they survive Strict Mode unmount/remount and prevent duplicate requests
 let dashboardFetchInProgress = false;
 let lastDashboardFetchStart = 0;
+let pendingForceRefresh = false;
 /** Time of last initial effect run; used to skip duplicate run from React Strict Mode (same ~tick). */
 let lastInitialEffectRun = 0;
 
@@ -76,7 +77,11 @@ export default function Home() {
     setData((prev) => (prev ? mergeDashboardData(prev, json) : json));
     if (fromNetwork) {
       saveCachedDashboard(json);
-      setLastRefreshedAt(new Date());
+      const stillRunning =
+        json.refresh_coalesced === true || json.refresh_status === "running" || json.warming === true;
+      if (!stillRunning) {
+        setLastRefreshedAt(new Date());
+      }
     }
     setStale(Boolean(json.stale));
   }, []);
@@ -86,7 +91,10 @@ export default function Home() {
     if (!forceRefresh && now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
     lastFetchRef.current = now;
 
-    if (dashboardFetchInProgress) return;
+    if (dashboardFetchInProgress) {
+      if (forceRefresh) pendingForceRefresh = true;
+      return;
+    }
     if (
       !forceRefresh &&
       lastDashboardFetchStart !== 0 &&
@@ -101,6 +109,7 @@ export default function Home() {
     if (!hasCached && !data) setLoading(true);
     else setIsRefreshing(true);
     if (!isAutoRetry) setError(null);
+    let succeeded = false;
     try {
       const shellBase = API_BASE ? `${API_BASE}/api/dashboard/shell` : "/api/dashboard/shell";
       const refreshUrl = API_BASE ? `${API_BASE}/api/dashboard?refresh=true` : "/api/dashboard?refresh=true";
@@ -124,6 +133,10 @@ export default function Home() {
       const json = (await res.json()) as DashboardData;
       applyDashboardJson(json);
       retryCountRef.current = 0;
+      succeeded = true;
+      if (forceRefresh && (json.refresh_coalesced || json.refresh_status === "running")) {
+        setIsRefreshing(true);
+      }
     } catch (e) {
       const raw = e instanceof Error ? e.message : "Failed to load";
       const msg =
@@ -137,6 +150,14 @@ export default function Home() {
       setLoading(false);
       setIsRefreshing(false);
       dashboardFetchInProgress = false;
+      if (pendingForceRefresh) {
+        pendingForceRefresh = false;
+        if (succeeded) {
+          window.setTimeout(() => {
+            void refresh(false, true);
+          }, 500);
+        }
+      }
     }
   }, [applyDashboardJson, data]);
 
@@ -183,7 +204,8 @@ export default function Home() {
     const shouldPoll =
       stale ||
       data?.warming === true ||
-      data?.refresh_status === "running";
+      data?.refresh_status === "running" ||
+      data?.refresh_coalesced === true;
     if (!shouldPoll || error) {
       if (stalePollRef.current) {
         clearInterval(stalePollRef.current);
@@ -206,7 +228,7 @@ export default function Home() {
     return () => {
       if (stalePollRef.current) clearInterval(stalePollRef.current);
     };
-  }, [stale, data?.warming, data?.refresh_status, error, refresh]);
+  }, [stale, data?.warming, data?.refresh_status, data?.refresh_coalesced, error, refresh]);
 
   if (loading && !data && !retrying) {
     return (
@@ -612,6 +634,8 @@ export interface DashboardData {
   /** First cold start: empty shell while background compute runs. */
   warming?: boolean;
   refresh_status?: string;
+  /** True when Refresh was coalesced because a full compute was already running. */
+  refresh_coalesced?: boolean;
   /** After-hours marks for tickers reporting earnings today (4:30 PM / 6 PM ET job). */
   after_hours_earnings?: {
     as_of_utc?: string;

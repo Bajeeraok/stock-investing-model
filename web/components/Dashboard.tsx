@@ -717,7 +717,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             </button>
             <button
               onClick={() => onRefresh(true)}
-              disabled={loading}
+            disabled={loading || isRefreshing}
               className={clsx(
                 "flex items-center gap-2 px-3 py-2.5 sm:px-4 rounded-lg font-medium transition min-h-[44px] sm:min-h-0",
                 "bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
@@ -795,15 +795,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
       {/* Compact alert strip - always visible */}
       <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
-        {(stale || isRefreshing || data.warming) && (
+        {(stale || isRefreshing || data.warming || data.refresh_coalesced) && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100 text-sm flex items-center gap-2">
-            <RefreshCw className={clsx("h-4 w-4 shrink-0", isRefreshing && "animate-spin")} />
+            <RefreshCw className={clsx("h-4 w-4 shrink-0", (isRefreshing || data.refresh_status === "running") && "animate-spin")} />
             <span>
               {data.warming
                 ? "First load in progress — usually 1–3 minutes. Data will appear automatically."
-                : isRefreshing
-                  ? "Refreshing dashboard in background…"
-                  : "Showing last saved snapshot — updating in background."}
+                : data.refresh_coalesced || data.refresh_status === "running"
+                  ? "Refresh already running — showing current data until it finishes."
+                  : isRefreshing
+                    ? "Refreshing dashboard…"
+                    : "Showing last saved snapshot — updating in background."}
             </span>
           </div>
         )}

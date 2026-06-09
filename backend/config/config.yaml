@@ -301,9 +301,19 @@ macro_regime:
   macro_weight: 0.60
 
 # Per-ticker institutional + earnings-quality API (/api/insights/{ticker})
-# Holder trend needs FMP Ultimate; keep off unless you want Analysis-tab deep dives.
+# Uses Yahoo institutional_holders + SEC EDGAR 13F via edgartools (free); FMP insider/short optional.
 insights:
-  enabled: false
+  enabled: true
+
+# Free institutional pipeline (Yahoo + SEC 13F via edgartools)
+institutional:
+  edgar_identity: "ThriveAlpha/1.0 (SEC EDGAR; mailto:support@example.com)"
+  edgar_13f_max_filers: 5
+  # Filer CIKs resolved dynamically from Yahoo top_holders (keyword map + edgartools find).
+  # Override manually if needed:
+  # edgar_13f_filers:
+  #   - name: BlackRock
+  #     cik: 2012383
 
 # Portfolio-level VaR / correlation (dashboard payload; equal-weight illustrative)
 portfolio_risk:
@@ -679,6 +689,11 @@ fair_value:
     analyst_mean_cap_enabled: true
     analyst_mean_cap_mult: 1.10          # max FV = street anchor (FMP median, else Yahoo) × this
     max_implied_upside_vs_spot: 0.52     # max implied upside vs spot; use null to disable
+    max_growth_pct_for_valuation: 42.0   # GROWTH peg_blend cap (YoY from feeds)
+    max_growth_pct_high_growth: 65.0     # HIGH_GROWTH forward_pe_blend PEG leg (NVDA-class)
+    street_blend_trigger_below_pct: 0.20  # blend when model FV >20% below street
+    street_blend_weight: 0.55             # weight on analyst mean in high-growth blend
+    street_floor_min_pct: 0.72           # never show HIGH_GROWTH FV below 72% of street
 
 # Phase 4: Data & earnings
 # See docs/data/DATA_SOURCES.md and docs/data/DATA_CONTRACT.md for FMP+FRED endpoint → module mapping
