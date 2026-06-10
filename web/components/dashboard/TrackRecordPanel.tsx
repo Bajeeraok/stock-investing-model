@@ -28,6 +28,8 @@ interface CalibrationData {
 }
 
 interface PaperTradingSummary {
+  /** backend uses 'completed' for overall count */
+  completed?: number;
   completed_n?: number;
   win_rate_pct?: number | null;
   avg_return_pct?: number | null;
@@ -171,7 +173,8 @@ export default function TrackRecordPanel({
   auditOutcomeSummary,
 }: Props) {
   const hasCalibration = calibration && calibration.buckets && calibration.buckets.length > 0;
-  const hasPaper = paperTrading && paperTrading.completed_n != null && paperTrading.completed_n > 0;
+  const completedN = paperTrading?.completed_n ?? paperTrading?.completed;
+  const hasPaper = paperTrading && completedN != null && completedN > 0;
   const hasForward = forwardSummary && Object.keys(forwardSummary).length > 0;
   const hasEquity = equityCurve && equityCurve.length >= 2;
   const hasAudit = (auditOutcomeSummary?.resolved_n ?? 0) > 0;
@@ -179,7 +182,7 @@ export default function TrackRecordPanel({
   const winRate = paperTrading?.accumulate_summary?.win_rate_pct ?? paperTrading?.win_rate_pct;
   const winRateSub = paperTrading?.accumulate_summary
     ? `${paperTrading.accumulate_summary.completed_n} accumulate trades`
-    : `${paperTrading?.completed_n ?? 0} trades`;
+    : `${completedN ?? 0} trades`;
   const avgReturn = paperTrading?.accumulate_summary?.avg_return_pct ?? paperTrading?.avg_return_pct;
   const fwdHitRate = modelHealth?.forward_hold_add_hit_rate_20d;
   const auditWin = auditOutcomeSummary?.win_rate_pct;
@@ -205,25 +208,25 @@ export default function TrackRecordPanel({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {winRate != null && (
           <StatCard
-            label="Paper trade win rate"
+            label="Accumulate win rate"
             value={`${winRate.toFixed(1)}%`}
-            sub={`${paperTrading!.completed_n} trades`}
+            sub={winRateSub}
             color={winRate >= 55 ? "text-emerald-400" : winRate >= 45 ? "text-yellow-400" : "text-red-400"}
           />
         )}
         {avgReturn != null && (
           <StatCard
-            label="Avg return per trade"
+            label="Avg return (accumulate)"
             value={`${avgReturn >= 0 ? "+" : ""}${avgReturn.toFixed(2)}%`}
             color={avgReturn >= 0 ? "text-emerald-400" : "text-red-400"}
           />
         )}
-        {dirAccuracy != null && (
+        {tacticalSummary && tacticalSummary.win_rate_pct != null && (
           <StatCard
-            label="Direction accuracy"
-            value={`${dirAccuracy.toFixed(1)}%`}
-            sub="Model validation"
-            color={dirAccuracy >= 55 ? "text-emerald-400" : dirAccuracy >= 50 ? "text-yellow-400" : "text-red-400"}
+            label="Tactical win rate (T+5)"
+            value={`${tacticalSummary.win_rate_pct.toFixed(1)}%`}
+            sub={`${tacticalSummary.completed_n} trades · return>0`}
+            color={tacticalSummary.win_rate_pct >= 55 ? "text-emerald-400" : tacticalSummary.win_rate_pct >= 45 ? "text-yellow-400" : "text-red-400"}
           />
         )}
         {fwdHitRate != null && (
@@ -243,6 +246,44 @@ export default function TrackRecordPanel({
           />
         )}
       </div>
+
+      {/* Gate-mode strip — shows if accumulate track has enough completed trades per mode */}
+      {byGateMode && Object.keys(byGateMode).length > 0 && (
+        <div className="rounded-lg border border-slate-700/50 bg-slate-900/30 px-3 py-2">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+            Accumulate track — by gate mode
+            <span className="ml-1 font-normal text-slate-600">(full_go = 4/4 gates · starter_only = value but stormy · hard_lock = no MOS)</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(["full_go", "starter_only", "hard_lock"] as const).map((gm) => {
+              const s = byGateMode[gm];
+              if (!s) return null;
+              const wr = s.win_rate_pct;
+              const ar = s.avg_return_pct;
+              return (
+                <div key={gm} className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+                  gm === "full_go" ? "border-emerald-500/35 bg-emerald-950/20"
+                    : gm === "starter_only" ? "border-amber-500/35 bg-amber-950/20"
+                    : "border-slate-600/50 bg-slate-800/40"
+                }`}>
+                  <span className={`font-bold text-[10px] uppercase tracking-wider ${
+                    gm === "full_go" ? "text-emerald-300" : gm === "starter_only" ? "text-amber-300" : "text-slate-400"
+                  }`}>{gm.replace("_", " ")}</span>
+                  <span className="text-slate-500 text-[10px]">n={s.n}</span>
+                  {wr != null && <span className={wr >= 55 ? "text-emerald-300" : wr >= 45 ? "text-yellow-300" : "text-red-300"}>Win {wr.toFixed(0)}%</span>}
+                  {ar != null && <span className={ar >= 0 ? "text-emerald-400" : "text-red-400"}>{ar >= 0 ? "+" : ""}{ar.toFixed(2)}%</span>}
+                </div>
+              );
+            })}
+          </div>
+          {byGateMode.full_go && byGateMode.hard_lock &&
+           (byGateMode.full_go.win_rate_pct ?? 0) > (byGateMode.hard_lock.win_rate_pct ?? 0) + 10 && (
+            <p className="text-[9px] text-emerald-600/80 mt-1">
+              Gates are predictive — full_go wins meaningfully more than hard_lock. Keep thresholds.
+            </p>
+          )}
+        </div>
+      )}
 
       {summaryByLens && Object.keys(summaryByLens).length > 0 && (
         <div className="rounded-lg border border-violet-500/20 bg-violet-950/10 px-3 py-2">
@@ -272,7 +313,9 @@ export default function TrackRecordPanel({
         <div>
           <p className="text-[11px] text-slate-400 mb-1 font-medium">Paper trade equity curve</p>
           <p className="text-[10px] text-slate-500 mb-2">
-            Index starts at 100; each completed trade updates by (1 + return%). Chronological by exit date.
+            Index starts at 100; each completed trade updates by (1&nbsp;+&nbsp;return%).{" "}
+            Chronological by exit date. Early curve decline is from tactical-track trades that were
+            re-classified by a logic fix — they will reset to correct outcomes on the next EOD run.
           </p>
           <div className="h-[200px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -333,7 +376,7 @@ export default function TrackRecordPanel({
         </div>
       )}
 
-      {/* Paper trading breakdown */}
+      {/* Paper trading breakdown — accumulate-track detail */}
       {hasPaper && (
         <div>
           <p className="text-[11px] text-slate-400 mb-1.5 font-medium">Paper trade breakdown</p>
