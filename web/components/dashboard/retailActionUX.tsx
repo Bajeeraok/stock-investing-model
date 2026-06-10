@@ -76,6 +76,23 @@ export type RetailActionPayload = {
   }>;
   primary_gate_ids?: string[];
   unlock_summary?: string | null;
+  unlock_sequence?: string | null;
+  institutional_conviction?: {
+    role?: string;
+    verdict?: string;
+    conviction_score?: number;
+    detail?: string;
+    lag_note?: string;
+    buy_the_dip?: boolean;
+  };
+  /** Conditional sizing: hard_lock | starter_only | full_go */
+  entry_mode?: "hard_lock" | "starter_only" | "full_go";
+  entry_mode_label?: string;
+  entry_mode_headline?: string;
+  entry_mode_detail?: string;
+  max_sizing_pct?: number;
+  valuation_tier?: "full_mos" | "partial_mos" | "none";
+  tech_gates_pass?: boolean;
   zone_context?: {
     zone_name?: string;
     state?: string;
@@ -124,6 +141,11 @@ export type GlobalActionHeaderProps = {
   rsi?: number | null;
   coherentStory?: string | null;
   nextTrigger?: RetailActionPayload["next_trigger"];
+  entryMode?: RetailActionPayload["entry_mode"];
+  entryModeHeadline?: string | null;
+  entryModeDetail?: string | null;
+  maxSizingPct?: number | null;
+  unlockSequence?: string | null;
   /** Skip ticker/price/status hero — gates + next trigger only (command card already shown). */
   contextOnly?: boolean;
 };
@@ -420,6 +442,43 @@ function statusEmoji(light: GlobalActionHeaderProps["statusLight"]): string {
   return "⚠️";
 }
 
+export function EntryModeBanner({
+  mode,
+  headline,
+  detail,
+  maxSizingPct,
+  className,
+}: {
+  mode?: RetailActionPayload["entry_mode"];
+  headline?: string | null;
+  detail?: string | null;
+  maxSizingPct?: number | null;
+  className?: string;
+}) {
+  if (!mode || !headline) return null;
+  const styles =
+    mode === "full_go"
+      ? "border-emerald-500/40 bg-emerald-950/35 text-emerald-100"
+      : mode === "starter_only"
+        ? "border-amber-500/40 bg-amber-950/30 text-amber-100"
+        : "border-red-500/40 bg-red-950/30 text-red-100";
+  const badge =
+    mode === "full_go" ? "FULL GO" : mode === "starter_only" ? "STARTER ONLY" : "HARD LOCK";
+  return (
+    <div className={clsx("rounded-lg border px-3 py-2.5 space-y-1", styles, className)}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-90">Entry mode</p>
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-white/15">
+          {badge}
+          {maxSizingPct != null && maxSizingPct > 0 && maxSizingPct < 100 ? ` · ≤${maxSizingPct}%` : null}
+        </span>
+      </div>
+      <p className="text-sm font-semibold leading-snug">{headline}</p>
+      {detail ? <p className="text-xs opacity-90 leading-snug">{detail}</p> : null}
+    </div>
+  );
+}
+
 export function GlobalActionHeader({
   ticker,
   companyName,
@@ -433,6 +492,11 @@ export function GlobalActionHeader({
   rsi,
   coherentStory,
   nextTrigger,
+  entryMode,
+  entryModeHeadline,
+  entryModeDetail,
+  maxSizingPct,
+  unlockSequence,
   contextOnly = false,
 }: GlobalActionHeaderProps) {
   const primaryGates = filterPrimaryTradingGates(gates);
@@ -446,6 +510,12 @@ export function GlobalActionHeader({
 
   const gatesBlock = (
     <div className={contextOnly ? "p-4 space-y-3" : "px-3 sm:px-5 pb-4"}>
+      <EntryModeBanner
+        mode={entryMode}
+        headline={entryModeHeadline}
+        detail={entryModeDetail}
+        maxSizingPct={maxSizingPct}
+      />
       {contextOnly && nextTrigger && (
         <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/25 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
@@ -467,6 +537,11 @@ export function GlobalActionHeader({
           </span>
         </p>
       )}
+      {unlockSequence && entryMode !== "full_go" ? (
+        <p className={clsx("text-xs text-slate-400 leading-snug", contextOnly ? "px-1" : "px-1")}>
+          {unlockSequence}
+        </p>
+      ) : null}
     </div>
   );
 

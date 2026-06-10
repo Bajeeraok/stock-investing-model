@@ -35,6 +35,8 @@ class AlertType(str, Enum):
     SETUP_ALMOST_READY = "SETUP_ALMOST_READY"
     # Tactical: velocity breakout + partial gate support
     TACTICAL_VELOCITY = "TACTICAL_VELOCITY"
+    # Buy-side: RSI oversold (< threshold) on watchlist ticker — works even above entry bands
+    RSI_OVERSOLD = "RSI_OVERSOLD"
 
 
 class ScanTier(str, Enum):

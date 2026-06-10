@@ -76,6 +76,19 @@ export interface InstitutionalBundle {
     error?: string | null;
   };
   edgar_13f?: Edgar13fSnapshot;
+  conviction_filter?: {
+    role?: string;
+    verdict?: "supports" | "concerns" | "neutral" | "unknown";
+    conviction_score?: number;
+    net_shares_active?: number | null;
+    pct_of_float?: number | null;
+    pct_of_adv?: number | null;
+    passive_filers_excluded?: number;
+    buy_the_dip?: boolean;
+    lag_note?: string;
+    detail?: string;
+    period_ending?: string | null;
+  };
 }
 
 interface Props {
@@ -182,6 +195,7 @@ export function InstitutionalInsightsPanel({
   const io = data.institutional_ownership;
   const it = data.institutional_trend;
   const e13 = data.edgar_13f;
+  const cf = data.conviction_filter;
   const instPct = io?.institutional_pct;
 
   return (
@@ -211,6 +225,52 @@ export function InstitutionalInsightsPanel({
           <p className="text-slate-500 text-xs">{io?.error || "Institutional % unavailable"}</p>
         )}
       </div>
+
+      {cf && cf.verdict && cf.verdict !== "unknown" && (
+        <div
+          className={clsx(
+            "rounded-md border px-3 py-2.5",
+            cf.verdict === "supports"
+              ? "border-emerald-500/30 bg-emerald-500/5"
+              : cf.verdict === "concerns"
+                ? "border-red-500/30 bg-red-500/5"
+                : "border-slate-600/60 bg-slate-900/40",
+          )}
+        >
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <p className="text-[10px] uppercase text-slate-500">13F conviction filter (Layer 3)</p>
+            <span
+              className={clsx(
+                "text-[10px] font-bold uppercase tracking-wider",
+                cf.verdict === "supports"
+                  ? "text-emerald-400"
+                  : cf.verdict === "concerns"
+                    ? "text-red-400"
+                    : "text-slate-400",
+              )}
+            >
+              {cf.verdict}
+              {cf.conviction_score != null ? ` · ${cf.conviction_score}/100` : ""}
+            </span>
+          </div>
+          {cf.net_shares_active != null && (
+            <p className="text-sm font-mono text-slate-200 mt-1">
+              Active-manager net Δ {cf.net_shares_active >= 0 ? "+" : ""}
+              {cf.net_shares_active.toLocaleString()} shares
+              {cf.passive_filers_excluded != null && cf.passive_filers_excluded > 0
+                ? ` (${cf.passive_filers_excluded} passive filers excluded)`
+                : ""}
+            </p>
+          )}
+          <p className="text-[10px] text-slate-500 leading-snug mt-1">
+            {cf.pct_of_float != null && <>Float {cf.pct_of_float >= 0 ? "+" : ""}{cf.pct_of_float}% · </>}
+            {cf.pct_of_adv != null && <>ADV {cf.pct_of_adv >= 0 ? "+" : ""}{cf.pct_of_adv}% · </>}
+            {cf.buy_the_dip ? "Buy-the-dip pattern · " : ""}
+            {cf.lag_note ?? "Quarterly 13F — not a daily entry trigger."}
+          </p>
+          {cf.detail && <p className="text-[10px] text-slate-400 mt-1 leading-snug">{cf.detail}</p>}
+        </div>
+      )}
 
       <div className="grid gap-2 sm:grid-cols-3 text-xs">
         <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">

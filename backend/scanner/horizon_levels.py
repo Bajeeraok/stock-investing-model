@@ -121,14 +121,18 @@ def merge_horizon_band_for_ticker(
     if not isinstance(entry, dict):
         entry = {}
         levels[ticker] = entry
-    entry[bk] = {
+    old_ticker_levels = dict(entry)  # snapshot before mutation
+    new_band = {
         "entry_low": round(entry_low, 2),
         "entry_high": round(entry_high, 2),
         "stop_loss": round(stop_loss, 2),
         "target": round(target, 2),
         "horizon_label": horizon_label,
     }
+    entry[bk] = new_band
     write_horizon_levels(data_root, levels)
+    # Fix 4: clear stale zone-entry state when user explicitly sets new levels
+    reset_zone_state_if_bands_shifted(data_root, ticker, old_ticker_levels, entry)
 
 
 def merge_horizon_levels_for_ticker(
@@ -152,6 +156,74 @@ def merge_horizon_levels_for_ticker(
         target=target,
         horizon_label=horizon_label,
     )
+
+
+def reset_zone_state_if_bands_shifted(
+    data_root: Path,
+    ticker: str,
+    old_levels: dict[str, Any] | None,
+    new_levels: dict[str, Any],
+    *,
+    shift_threshold_pct: float = 3.0,
+) -> bool:
+    """
+    Clear `was_in_entry_zone_*` and `zone_entered_at_*` from the retail alert state
+    for *ticker* when the midpoint of any band has shifted by ≥ shift_threshold_pct.
+
+    This prevents stale zone-entry state causing edge-triggered alerts to silently
+    skip the next genuine entry after the user updates their levels (e.g. post-EOD
+    re-computation or modal edit).
+
+    Returns True if state was cleared.
+    """
+    ticker = ticker.upper()
+
+    def _band_midpoint(band_dict: dict) -> float | None:
+        el = band_dict.get("entry_low")
+        eh = band_dict.get("entry_high")
+        if el and eh:
+            return (float(el) + float(eh)) / 2.0
+        return None
+
+    old_norm = normalize_ticker_levels(old_levels) if old_levels else {}
+    new_norm = normalize_ticker_levels(new_levels) if new_levels else {}
+
+    shifted_keys: list[str] = []
+    for bk, new_band in new_norm.items():
+        new_mid = _band_midpoint(new_band)
+        if new_mid is None:
+            continue
+        old_band = old_norm.get(bk, {})
+        old_mid = _band_midpoint(old_band)
+        if old_mid is None:
+            # New band that didn't exist before — always reset
+            shifted_keys.append(bk)
+            continue
+        pct_shift = abs(new_mid - old_mid) / old_mid * 100.0
+        if pct_shift >= shift_threshold_pct:
+            shifted_keys.append(bk)
+
+    if not shifted_keys:
+        return False
+
+    state = read_retail_alert_state(data_root)
+    ticker_st = dict(state.get(ticker) or {})
+    changed = False
+    for bk in shifted_keys:
+        zone_key = f"was_in_entry_zone_{bk}"
+        entered_key = f"zone_entered_at_{bk}"
+        if zone_key in ticker_st or entered_key in ticker_st:
+            ticker_st.pop(zone_key, None)
+            ticker_st.pop(entered_key, None)
+            changed = True
+    if changed:
+        state[ticker] = ticker_st
+        write_retail_alert_state(data_root, state)
+        logger.info(
+            "reset zone state for %s (band keys: %s shifted ≥ %.1f%%)",
+            ticker, shifted_keys, shift_threshold_pct,
+        )
+    return changed
 
 
 def read_retail_alert_state(data_root: Path) -> dict[str, dict[str, Any]]:

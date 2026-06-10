@@ -21,10 +21,19 @@ const config: Config = {
           card: "#1e293b",
           hover: "#334155",
         },
+        /** Fintech semantic palette — desaturated, easy on eyes during long sessions */
+        fintech: {
+          green:  "#00C896",   // matte emerald — confirmed trades, bull
+          red:    "#FF6B6B",   // soft muted red — stops, bear
+          amber:  "#F59E0B",   // transition / caution
+          cyan:   "#22D3EE",   // anchor / MOS reference
+          violet: "#A78BFA",   // long-term tiers
+        },
       },
       fontFamily: {
         sans: ["system-ui", "sans-serif"],
-        mono: ["ui-monospace", "monospace"],
+        /** JetBrains Mono → ui-monospace fallback for all price figures */
+        mono: ["var(--font-mono)", "JetBrains Mono", "ui-monospace", "monospace"],
       },
     },
   },

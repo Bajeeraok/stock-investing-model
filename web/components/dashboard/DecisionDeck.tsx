@@ -23,6 +23,7 @@ import {
   filterPrimaryTradingGates,
   buildGatesFromInvestorSummary,
   resolveLongHorizonEntryZone,
+  EntryModeBanner,
 } from "./retailActionUX";
 import {
   type DecisionMode,
@@ -214,6 +215,7 @@ export function DecisionDeck({
 
   const gates = filterPrimaryTradingGates(buildGatesFromInvestorSummary(summary, currentPrice));
   const passed = gates.filter((g) => g.pass).length;
+  const ra = summary.retail_action;
 
   const badge = modeHeroBadge(
     mode,
@@ -308,6 +310,15 @@ export function DecisionDeck({
         )}
 
         {reconcileText && <HorizonReconcileStrip text={reconcileText} mode={mode} />}
+
+        {ra?.entry_mode && (
+          <EntryModeBanner
+            mode={ra.entry_mode}
+            headline={ra.entry_mode_headline}
+            detail={ra.entry_mode_detail}
+            maxSizingPct={ra.max_sizing_pct}
+          />
+        )}
 
         <p
           className={clsx(

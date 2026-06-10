@@ -123,14 +123,16 @@ def run_signals(
         if close_spy is not None and len(close_spy) >= 200:
             global_market_regime = get_global_market_regime(close_spy, min_days_confirm=min_days)
 
-    # VIX: for score multiplier and hit-rate gate; fetch if not provided
+    # VIX: for score multiplier and hit-rate gate; fetch if not provided.
+    # Fetch "2y" once so the tail also satisfies the "1mo" / current-value need — avoids two downloads.
+    vix_close_2y = None
     mr_cfg_vix = (config.get("market_regime") or {}).get("use_vix_multiplier", True)
     mr_cfg_gate = (config.get("market_regime") or {}).get("use_hit_rate_gate", True)
     if vix is None and (mr_cfg_vix or mr_cfg_gate):
         try:
-            vix_close = fetch_ohlcv_safe("^VIX", "1mo")
-            if vix_close is not None and len(vix_close) > 0:
-                vix = float(vix_close.iloc[-1])
+            vix_close_2y = fetch_ohlcv_safe("^VIX", "2y")
+            if vix_close_2y is not None and len(vix_close_2y) > 0:
+                vix = float(vix_close_2y.iloc[-1])
         except Exception:
             pass
 
@@ -140,7 +142,7 @@ def run_signals(
     if mro_cfg.get("enabled", True):
         try:
             spy_for_mro = close_spy if close_spy is not None else fetch_ohlcv_safe(mr_cfg.get("index_ticker", "SPY"), period)
-            vix_for_mro = fetch_ohlcv_safe("^VIX", "2y")
+            vix_for_mro = vix_close_2y if vix_close_2y is not None else fetch_ohlcv_safe("^VIX", "2y")
             ry_mro = None
             try:
                 from signals.fred_client import get_real_yield_proxy
@@ -190,17 +192,14 @@ def run_signals(
     for ticker in watchlist:
         close = None
         volume = None
+        ohlcv_df = None  # OHLCV DataFrame (high/low/volume) — fetched once, reused for ATR
         if use_fmp:
             close, volume = fetch_ohlcv_close_and_volume(ticker, period, config)
             if close is None:
+                # Single yfinance call returns both close and volume; no second fallback needed
                 close, volume = fetch_ohlcv_with_volume(ticker, period)
-            if close is None:
-                close = fetch_ohlcv_safe(ticker, period)
-                volume = None
         else:
             close, volume = fetch_ohlcv_with_volume(ticker, period)
-            if close is None:
-                close = fetch_ohlcv_safe(ticker, period)
         if close is None:
             results.append({
                 "ticker": ticker,
@@ -355,13 +354,15 @@ def run_signals(
             if high_52w and high_52w > 0:
                 drawdown_52w = round(100 * (float(close.iloc[-1]) - high_52w) / high_52w, 1)
         # Proper daily ATR(14) using True Range (requires high/low/close).
+        # Reuse ohlcv_df if already fetched; only download if it's still None.
         # Falls back to prior proxy only if OHLC is unavailable.
         bar_high = None
         bar_low = None
         try:
             from signals.fetcher import fetch_ohlcv_dataframe
             from signals.volatility import atr14_from_ohlcv_df
-            ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
+            if ohlcv_df is None:
+                ohlcv_df = fetch_ohlcv_dataframe(ticker, period)
             atr_14 = atr14_from_ohlcv_df(ohlcv_df)
             if ohlcv_df is not None and len(ohlcv_df) > 0:
                 last = ohlcv_df.iloc[-1]

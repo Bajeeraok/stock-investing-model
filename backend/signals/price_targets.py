@@ -1015,8 +1015,13 @@ def run_price_targets(
     from signals.fetcher import fetch_ohlcv_dataframe, fetch_ohlcv_safe
     from signals.indicators import multi_horizon_scores
 
-    df    = fetch_ohlcv_dataframe(ticker, period)
-    close = fetch_ohlcv_safe(ticker, period)
+    df = fetch_ohlcv_dataframe(ticker, period)
+    # Derive close from df to avoid a second identical download; fall back only when df is None.
+    if df is not None and "close" in df.columns and len(df) >= 20:
+        close = df["close"]
+    else:
+        close = fetch_ohlcv_safe(ticker, period)
+        df = None  # df was unusable; keep it None so downstream skips OHLCV-only steps
 
     if close is None or len(close) < 20:
         return {"ticker": ticker, "error": "Insufficient price history", "horizons": {}, "scenarios": []}

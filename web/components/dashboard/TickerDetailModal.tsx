@@ -38,6 +38,11 @@ import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
+import { LevelsPageHeader } from "./levels/LevelsPageHeader";
+import { AnchorBentoGrid, anchorsFromTechnicalLevels } from "./levels/AnchorBentoGrid";
+import { TierThermometerPanel } from "./levels/TierThermometerPanel";
+import { RegimeGauge } from "./levels/RegimeGauge";
+import { DensityProvider, DensityToggle, Comfort } from "./levels/DensityToggle";
 import {
   GateProgressBar,
   NewsSentimentRail,
@@ -714,7 +719,13 @@ export function TickerDetailModal({
           <div className="flex items-center gap-2 shrink-0">
             {detail && !loading && detail.current_price != null && (
               <div className="text-right hidden sm:block">
-                <p className="text-lg font-bold text-white tabular-nums">${detail.current_price.toFixed(2)}</p>
+                <div className="flex items-center justify-end gap-1.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/60 opacity-60" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white/70" />
+                  </span>
+                  <p className="text-lg font-mono font-bold text-white tabular-nums">${detail.current_price.toFixed(2)}</p>
+                </div>
                 {detail.investor_summary && (
                   <p
                     className={clsx(
@@ -1014,6 +1025,11 @@ export function TickerDetailModal({
                       insideBuyBand={buyBandContext.insideBuyBand}
                       rsi={buyBandContext.rsi}
                       nextTrigger={detail.investor_summary.retail_action?.next_trigger}
+                      entryMode={detail.investor_summary.retail_action?.entry_mode}
+                      entryModeHeadline={detail.investor_summary.retail_action?.entry_mode_headline}
+                      entryModeDetail={detail.investor_summary.retail_action?.entry_mode_detail}
+                      maxSizingPct={detail.investor_summary.retail_action?.max_sizing_pct}
+                      unlockSequence={detail.investor_summary.retail_action?.unlock_sequence}
                       contextOnly
                     />
                   )}
@@ -1090,7 +1106,12 @@ export function TickerDetailModal({
                 />
               ) : null}
 
-              <UnlockWhenStrip text={detail.investor_summary?.retail_action?.unlock_summary} />
+              <UnlockWhenStrip
+                text={
+                  detail.investor_summary?.retail_action?.unlock_summary ??
+                  detail.investor_summary?.retail_action?.unlock_sequence
+                }
+              />
 
               {!detail.investor_summary && (
                 <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
@@ -1152,22 +1173,102 @@ export function TickerDetailModal({
                 </div>
               )}
 
-              {/* ── Roadmaps tab: only Trade Roadmap card ──────────────────── */}
+              {/* ── Levels tab ──────────────────────────────────────────────── */}
               {modalTab === "levels" && (
+                <DensityProvider>
                 <>
-                <p className="text-xs text-slate-500 -mt-2 mb-2 leading-snug">
-                  Staged entries, playbooks, technical anchors, and trader/investor roadmaps.
-                </p>
-                {priceTargets?.technical_levels && detail.current_price != null && (
-                  <TechnicalLevelsBar
-                    lv={priceTargets.technical_levels}
-                    price={detail.current_price}
+                {/* Top bar: at-a-glance + density toggle */}
+                <div className="flex items-center justify-between gap-2 -mt-2 mb-3">
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    Staged entries · playbooks · technical anchors · roadmaps
+                  </p>
+                  <DensityToggle />
+                </div>
+
+                {/* ── At-a-glance summary header ─── */}
+                {detail.investor_summary && detail.current_price != null && (() => {
+                  const ra = detail.investor_summary.retail_action;
+                  const long = detail.investor_summary.horizons?.long;
+                  const nextTier = long?.entry_tiers?.tiers?.find(
+                    t => detail.current_price! > t.high
+                  );
+                  const nextLevel = nextTier?.low ?? long?.entry_zone?.low ?? null;
+                  return (
+                    <LevelsPageHeader
+                      action={ra?.action_title ?? detail.investor_summary.overall_verdict ?? null}
+                      nextLevel={nextLevel}
+                      fairValue={detail.investor_summary.fair_value}
+                      entryMode={ra?.entry_mode ?? null}
+                      unlockSequence={ra?.unlock_sequence ?? null}
+                    />
+                  );
+                })()}
+
+                {/* ── Technical Level Anchors — Bento grid ─── */}
+                {priceTargets?.technical_levels && detail.current_price != null && (() => {
+                  const anchors = anchorsFromTechnicalLevels(
+                    priceTargets.technical_levels,
+                    detail.current_price,
+                  );
+                  return (
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                        Technical Level Anchors
+                      </p>
+                      <AnchorBentoGrid anchors={anchors} />
+                      <Comfort>
+                        {priceTargets.technical_levels.note && (
+                          <p className="text-[10px] text-slate-500 leading-snug mt-1.5 px-0.5">
+                            {priceTargets.technical_levels.note}
+                          </p>
+                        )}
+                      </Comfort>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Regime gauge strip ─── */}
+                {detail.investor_summary?.regime_bull_pct != null && (() => {
+                  const bull = detail.investor_summary!.regime_bull_pct!;
+                  const trans = Math.min(100 - bull, 20);
+                  const bear = Math.max(0, 100 - bull - trans);
+                  return (
+                    <Comfort>
+                      <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm p-3 flex flex-col sm:flex-row items-center gap-4">
+                        <RegimeGauge bullPct={bull} transPct={trans} bearPct={bear} size={130} />
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Ticker Regime (HMM)
+                          </p>
+                          <p className="text-xs text-slate-300 leading-snug">
+                            {detail.investor_summary?.regime_hmm_label ?? "Regime data available"}
+                          </p>
+                          <p className="text-[10px] text-slate-500 leading-snug mt-1">
+                            Bull threshold for Full Go: 60%. Current: {bull.toFixed(0)}% bull probability.
+                          </p>
+                        </div>
+                      </div>
+                    </Comfort>
+                  );
+                })()}
+
+                {/* ── Price Thermometer + Tier Ladder ─── */}
+                {detail.investor_summary?.horizons?.long?.entry_tiers?.tiers?.length && detail.current_price != null && (
+                  <TierThermometerPanel
+                    entryTiers={detail.investor_summary.horizons.long.entry_tiers}
+                    currentPrice={detail.current_price}
+                    structuralStop={detail.investor_summary.horizons.long.entry_tiers?.structural_invalidation?.price ?? null}
+                    ma200={priceTargets?.technical_levels?.ma200 ?? null}
                   />
                 )}
+
+                {/* ── Roadmap summaries ─── */}
                 <RoadmapSummaries
                   traderRoadmap={detail.investor_summary?.trader_roadmap}
                   investorRoadmap={detail.investor_summary?.investor_roadmap}
                 />
+
+                {/* ── Horizon playbooks ─── */}
                 {horizonPlaybooksBundle && (
                   <HorizonPlaybooksPanel
                     ticker={detail.ticker}
@@ -1186,6 +1287,8 @@ export function TickerDetailModal({
                     }}
                   />
                 )}
+
+                {/* ── Staged entry roadmap timeline ─── */}
                 {executionVm && executionVm.buyStages.length > 0 && (
                   <RoadmapTimeline
                     stages={executionVm.buyStages}
@@ -1193,9 +1296,11 @@ export function TickerDetailModal({
                     currentPrice={detail.current_price}
                   />
                 )}
+
+                {/* ── Trade roadmap card ─── */}
                 {detail.investor_summary?.trade_roadmap ? (
                   <TradeRoadmapCard data={detail.investor_summary.trade_roadmap} ticker={detail.ticker} />
-                ) : !horizonPlaybooksBundle ? (
+                ) : !horizonPlaybooksBundle && !detail.investor_summary?.horizons?.long?.entry_tiers ? (
                   <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center text-slate-400">
                     <p className="text-sm">Levels not available for this ticker.</p>
                     <button
@@ -1208,6 +1313,7 @@ export function TickerDetailModal({
                   </div>
                 ) : null}
                 </>
+                </DensityProvider>
               )}
 
               {/* ── Why tab: valuation / proof / context sub-tabs ── */}

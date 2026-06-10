@@ -12,6 +12,8 @@ Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
   - target_bands (4–24h, move-dependent) – prior ST/MT/LT for optional trailing re-anchor
   - ticker_detail (5 min), edgar_insider_flow (12h)
   - thrive_phase2 (15 min) – GET /api/thrive-phase2
+  - earnings_quality (14d; 1d when earnings ≤7 days away) – statements move quarterly
+  - institutional_bundle (12h) – insider weighted, short float %, ownership %, 13F trend
 
 Recommended TTL bands (override per env where noted):
   - Short (2–15 min): dashboard bundle, ticker_detail, thrive_phase2 – intraday-ish freshness
@@ -42,6 +44,9 @@ TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat
 TTL_CONFIDENCE = 5 * 60  # 5 min – 7-layer confidence (shared by ticker detail + /confidence route)
 TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
 TTL_NEWS_GENERAL = 3600  # 1h – FMP general news for pre-IPO keyword filter
+TTL_EARNINGS_QUALITY = 14 * 24 * 3600  # 14d – statements/revisions move quarterly
+TTL_EARNINGS_QUALITY_NEAR = 24 * 3600  # 1d – earnings nearby: re-fetch daily to catch new report
+TTL_INSTITUTIONAL_BUNDLE = 12 * 3600  # 12h – 13F quarterly, short interest bi-weekly, insiders daily at most
 
 
 def _dashboard_ttl_seconds() -> int:
@@ -376,6 +381,56 @@ def cached_key_metrics(ticker: str, fetch_fn) -> dict | None:
         set_cached(key, out, TTL_FUNDAMENTALS)
         return out
     return None
+
+
+def cached_earnings_quality(
+    ticker: str,
+    fetch_fn,
+    days_to_earnings: int | None = None,
+    near_earnings_days: int = 7,
+) -> dict | None:
+    """Cache earnings-quality analysis per ticker.
+
+    TTL 14d normally; 1d when earnings are within `near_earnings_days` so the
+    post-report statements and EPS revisions are picked up quickly.
+    """
+    key = cache_key("earnings_quality", "v1", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict) and not out.get("error"):
+        near = days_to_earnings is not None and days_to_earnings <= near_earnings_days
+        ttl = TTL_EARNINGS_QUALITY_NEAR if near else TTL_EARNINGS_QUALITY
+        set_cached(key, out, ttl)
+    return out
+
+
+def cached_institutional_bundle(ticker: str, fetch_fn) -> dict | None:
+    """Cache institutional bundle (insider weighted, short float %, ownership %, 13F trend). TTL 12h.
+
+    Underlying sources move slowly: 13F quarterly, FINRA short interest bi-weekly,
+    Form 4 insiders at most daily. Bundles where every section errored are not cached.
+    """
+    key = cache_key("institutional_bundle", "v1", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict) and out.get("ticker"):
+        sections = (
+            out.get("insider_weighted"),
+            out.get("short_interest"),
+            out.get("institutional_ownership"),
+            out.get("institutional_trend"),
+            out.get("edgar_13f"),
+        )
+        any_ok = any(
+            isinstance(s, dict) and not s.get("error") for s in sections
+        )
+        if any_ok:
+            set_cached(key, out, TTL_INSTITUTIONAL_BUNDLE)
+    return out
 
 
 def cached_long_horizon_risk(ticker: str, period: str, fetch_fn) -> dict | None:

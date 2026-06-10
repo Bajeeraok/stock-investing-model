@@ -1,0 +1,107 @@
+"""
+fv_eps_history.py — Quarterly EPS history counts for FV data-sanity gates.
+
+Used by fv_router to suppress model FV when:
+  - Recent spinoff has < 4 clean post-event quarters (§4/§6)
+  - Recent IPO / stub history has < 8 total quarterly records (§6)
+
+Fetches FMP quarterly income statements (same source as earnings_quality).
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import requests
+
+from signals.fmp_client import BASE_V3, get_api_key
+
+logger = logging.getLogger(__name__)
+
+MIN_CLEAN_QUARTERS_SPINOFF = 4
+MIN_TOTAL_QUARTERS_IPO = 8
+
+
+def _parse_quarter_eps(row: dict[str, Any]) -> float | None:
+    """Extract diluted/ basic EPS from one quarterly income row."""
+    for key in ("epsdiluted", "eps", "netIncomePerShare"):
+        v = row.get(key)
+        if v is None:
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    ni = row.get("netIncome")
+    sh = row.get("weightedAverageShsOutDil") or row.get("weightedAverageShsOut")
+    try:
+        if ni is not None and sh and float(sh) > 0:
+            return float(ni) / float(sh)
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _is_clean_eps_quarter(row: dict[str, Any]) -> bool:
+    """
+    A quarter is 'clean' when revenue and EPS are present and finite.
+    Does not detect restatements — only filters empty/stub rows.
+    """
+    try:
+        rev = row.get("revenue")
+        if rev is None or float(rev) <= 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    eps = _parse_quarter_eps(row)
+    return eps is not None
+
+
+def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> list[dict[str, Any]] | None:
+    """FMP quarterly income-statement rows, newest first. None on failure."""
+    api_key = get_api_key(config)
+    if not api_key:
+        return None
+    sym = (ticker or "").upper().split("-")[0]
+    params = {"period": "quarter", "limit": limit, "apikey": api_key}
+    try:
+        r = requests.get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        logger.debug("fetch_quarterly_income failed %s: %s", ticker, e)
+        return None
+    if not isinstance(data, list):
+        return None
+    return [row for row in data if isinstance(row, dict)]
+
+
+def count_eps_quarter_history(
+    config: dict,
+    ticker: str,
+    *,
+    limit: int = 12,
+) -> tuple[int | None, int | None]:
+    """
+    Return (total_quarters, clean_quarters).
+
+    total_quarters: rows returned with a parseable date/period
+    clean_quarters: rows passing _is_clean_eps_quarter
+
+    Both None if fetch failed.
+    """
+    rows = fetch_quarterly_income(config, ticker, limit=limit)
+    if rows is None:
+        return None, None
+    total = len(rows)
+    clean = sum(1 for row in rows if _is_clean_eps_quarter(row))
+    return total, clean
+
+
+def get_eps_history_counts(config: dict, ticker: str) -> dict[str, int | None]:
+    """Convenience dict for route_fair_value call sites."""
+    total, clean = count_eps_quarter_history(config, ticker)
+    return {
+        "total_quarters": total,
+        "clean_quarters": clean,
+    }

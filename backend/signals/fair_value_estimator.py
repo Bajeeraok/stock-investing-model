@@ -453,6 +453,16 @@ class FairValueResult:
     growth_raw_pct: Optional[float] = None
     growth_used_pct: Optional[float] = None
     growth_was_capped: bool = False
+    # §8 routing metadata (from fv_router)
+    fv_suppressed: bool = False                 # True → show "FV UNAVAILABLE — reason" badge
+    fv_suppressed_reason: str = ""              # e.g. "REIT — P/FFO required"
+    fv_street_anchored: bool = False            # True when bands use street, not model FV
+    fv_street_anchor_usd: Optional[float] = None
+    fv_street_anchor_source: Optional[str] = None
+    fv_route_method_label: Optional[str] = None # e.g. "forward_pe (cyclical — divergence 312%)"
+    gap_badge_type: str = "METHOD"              # "METHOD" | "OPINION"
+    geopolitical_cap: bool = False              # True for China ADRs — cap buy-signal bullishness
+    divergence_pct: Optional[float] = None     # NTM/TTM EPS divergence %
 
 
 def estimate_fair_value(
@@ -470,6 +480,9 @@ def estimate_fair_value(
     current_eps: Optional[float] = None,
     analyst_target: Optional[float] = None,
     guardrails: Optional[dict[str, Any]] = None,
+    # §0/§1 routing from fv_router.route_fair_value()
+    force_forward_pe: bool = False,
+    fv_route_metadata: Optional[dict[str, Any]] = None,
 ) -> FairValueResult:
     """
     Classify the stock and apply the appropriate valuation method.
@@ -492,6 +505,9 @@ def estimate_fair_value(
     Returns:
         FairValueResult with fair_value, method, confidence, and discount %
     """
+    _route_meta = fv_route_metadata or {}
+    _route_notes: list[str] = list(_route_meta.get("notes") or [])
+
     classification = classify_stock_type(
         ttm_pe=ttm_pe,
         revenue_growth_pct=revenue_growth_pct,
@@ -499,7 +515,17 @@ def estimate_fair_value(
         net_margin_pct=net_margin_pct,
     )
 
-    notes = list(classification.notes)
+    # §0/§1: If router forced forward_pe method, elevate classification to HIGH_GROWTH
+    # so the correct estimation branch runs — regardless of TTM PE bucket.
+    if force_forward_pe and forward_pe is not None and forward_pe > 0:
+        classification = StockClassification(
+            stock_type=StockType.HIGH_GROWTH,
+            method_used="forward_pe_blend",
+            confidence=classification.confidence,
+            notes=classification.notes,
+        )
+
+    notes = list(classification.notes) + _route_notes
     is_hg = classification.stock_type == StockType.HIGH_GROWTH
     growth_cap = _growth_cap_from_guardrails(guardrails, high_growth=is_hg)
     growth_used, growth_raw, growth_capped = _growth_for_valuation(
@@ -615,6 +641,15 @@ def estimate_fair_value(
         f"Bear case ${bear_case:.2f} (FV×0.6) vs fair ${fv:.2f} — gap reflects method assumptions."
     ) if bear_case is not None else None
 
+    # §8 routing transparency fields from fv_router
+    _route_method_label = _route_meta.get("method_label") or None
+    _gap_badge = _route_meta.get("gap_badge_type") or "METHOD"
+    _geo_cap = bool(_route_meta.get("geopolitical_cap", False))
+    _div_pct = _route_meta.get("divergence_pct")
+    if _route_method_label:
+        # Overlay router label on the method string so UI shows context
+        method = _route_method_label
+
     return FairValueResult(
         fair_value=fv,
         stock_type=classification.stock_type.value,
@@ -628,6 +663,12 @@ def estimate_fair_value(
         growth_raw_pct=round(growth_raw, 1),
         growth_used_pct=round(growth_used, 1),
         growth_was_capped=growth_capped,
+        fv_suppressed=False,
+        fv_suppressed_reason="",
+        fv_route_method_label=_route_method_label,
+        gap_badge_type=_gap_badge,
+        geopolitical_cap=_geo_cap,
+        divergence_pct=round(float(_div_pct), 1) if _div_pct is not None else None,
     )
 
 

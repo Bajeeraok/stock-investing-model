@@ -310,6 +310,26 @@ institutional:
   edgar_identity: "ThriveAlpha/1.0 (SEC EDGAR; mailto:support@example.com)"
   edgar_13f_max_filers: 5
   edgar_13f_live_timeout_sec: 25
+  # Passive index filers excluded from "smart money" 13F delta (rebalancing ≠ conviction)
+  passive_filer_patterns:
+    - vanguard
+    - blackrock
+    - ishares
+    - state street
+    - geode
+    - schwab
+    - fidelity
+    - invesco
+    - spdr
+  # Active managers get higher weight in net delta (optional regex, case-insensitive)
+  active_manager_patterns:
+    - berkshire
+    - baupost
+    - citadel
+    - renaissance
+    - tiger global
+    - coatue
+    - pershing square
   # Filer CIKs resolved dynamically from Yahoo top_holders (keyword map + edgartools find).
   # Override manually if needed:
   # edgar_13f_filers:

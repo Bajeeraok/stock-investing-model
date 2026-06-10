@@ -327,6 +327,11 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         if avg_vol and avg_vol > 0:
             volume_ratio = round(today_vol / avg_vol, 2)
             volume_unusual = volume_ratio >= 2.0
+            response_avg_volume_20d = round(avg_vol, 0)
+        else:
+            response_avg_volume_20d = None
+    else:
+        response_avg_volume_20d = None
 
     # 52-week range and drawdown from price history (252 trading days)
     range_low = range_high = high_52w = low_52w = drawdown_52w = None
@@ -578,6 +583,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "price_reasoning": price_reasoning,
         "volume_ratio": volume_ratio,
         "volume_unusual": volume_unusual,
+        "avg_volume_20d": response_avg_volume_20d,
         "drawdown_52w": drawdown_52w,
         "high_52w": round(high_52w, 2) if high_52w is not None else None,
         "low_52w": round(low_52w, 2) if low_52w is not None else None,
@@ -671,6 +677,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 response.get("current_price"),
                 ticker=ticker,
                 market_regime_bull_pct=ctx.get("hmm_bull_pct"),
+                volume_ratio=_safe_float(response.get("volume_ratio")),
+                institutional_conviction=inv.get("institutional_conviction"),
             )
         except Exception:
             pass
@@ -837,6 +845,55 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = 
     }
 
 
+def _institutional_conviction_context(
+    ticker: str,
+    config: dict,
+    response: dict,
+    *,
+    close_ticker=None,
+) -> dict | None:
+    """13F conviction filter (Layer 3) — quarterly lag, not an entry gate."""
+    try:
+        from signals.cache import cached_institutional_bundle
+        from signals.institutional_signals import build_institutional_bundle
+
+        float_shares = None
+        try:
+            import yfinance as yf
+
+            info = yf.Ticker(ticker).info or {}
+            float_shares = _safe_float(info.get("floatShares") or info.get("sharesOutstanding"))
+        except Exception:
+            pass
+
+        quarter_price_change_pct = None
+        if close_ticker is not None and len(close_ticker) >= 63:
+            try:
+                p0 = float(close_ticker.iloc[-63])
+                p1 = float(close_ticker.iloc[-1])
+                if p0 > 0:
+                    quarter_price_change_pct = round((p1 - p0) / p0 * 100.0, 2)
+            except (TypeError, ValueError, IndexError):
+                pass
+
+        avg_vol = _safe_float(response.get("avg_volume_20d"))
+        bundle = cached_institutional_bundle(
+            ticker.upper(),
+            lambda: build_institutional_bundle(
+                config,
+                ticker,
+                float_shares=float_shares,
+                avg_daily_volume=avg_vol,
+                quarter_price_change_pct=quarter_price_change_pct,
+            ),
+        )
+        if not bundle:
+            return None
+        return bundle.get("conviction_filter")
+    except Exception:
+        return None
+
+
 def _build_investor_summary(
     ticker: str,
     config: dict,
@@ -957,6 +1014,8 @@ def _build_investor_summary(
     ttm_pe_used: float | None = None
     forward_pe_used: float | None = None
     forward_pe_discarded = False  # set True when fwd << ttm and we exclude from FV
+    _eps_total: int | None = None
+    _eps_clean: int | None = None
     analyst_target_yahoo: float | None = None  # yfinance targetMeanPrice — cross-check / fallback
     analyst_target_fmp: float | None = _safe_float(response.get("consensus_median"))
     if analyst_target_fmp is None:
@@ -1083,9 +1142,95 @@ def _build_investor_summary(
             ttm_pe_used = ttm_pe
         if forward_pe is not None and forward_pe > 0:
             forward_pe_used = forward_pe
-        # Guardrail: do not treat forward P/E as a TTM P/E substitute for names with
-        # negative trailing earnings. That can produce unrealistically low "fair value"
-        # (e.g. high-growth software names with GAAP-negative EPS).
+
+        # ── §0/§1/§4/§5/§6: Method routing via fv_router ─────────────────────
+        # Derive EPS values for the divergence trigger.
+        # ttm_eps from trailingEps (already fetched); ntm_eps from forwardEps.
+        _ntm_eps: float | None = None
+        _fwd_eps_raw = _safe_float(info.get("forwardEps"))
+        if _fwd_eps_raw and _fwd_eps_raw > 0:
+            _ntm_eps = _fwd_eps_raw
+        elif forward_pe and forward_pe > 0 and current_price:
+            _ntm_eps = current_price / forward_pe  # implied
+
+        _sector_str: str | None = str(info["sector"]) if info.get("sector") else None
+
+        # Quarterly EPS history for spinoff / recent-IPO data-sanity gates (§4/§6)
+        try:
+            from signals.fv_eps_history import get_eps_history_counts
+
+            _eps_hist = get_eps_history_counts(config, ticker)
+            _eps_total = _eps_hist.get("total_quarters")
+            _eps_clean = _eps_hist.get("clean_quarters")
+        except Exception:
+            pass
+
+        _fv_route = None
+        try:
+            from signals.fv_router import route_fair_value as _route_fv
+
+            _fv_route = _route_fv(
+                ticker=ticker,
+                ttm_eps=trailing_eps,
+                ntm_eps=_ntm_eps,
+                ttm_pe=ttm_pe,
+                quarters_of_clean_history=_eps_clean,
+                total_quarters_history=_eps_total,
+                sector=_sector_str,
+            )
+        except Exception:
+            pass
+
+        _street_anchor_source = (
+            "fmp_consensus"
+            if analyst_target_fmp and analyst_target_fmp > 0
+            else "yahoo_12m_mean"
+            if analyst_target_yahoo and analyst_target_yahoo > 0
+            else None
+        )
+
+        # If suppressed, build a FairValueResult that surfaces the reason instead of a price
+        if _fv_route and _fv_route.fv_suppressed and fv_result is None:
+            _suppressed_fv = float(analyst_target) if analyst_target and analyst_target > 0 else 0.0
+            _street_anchored = _suppressed_fv > 0
+            fv_result = FairValueResult(
+                fair_value=_suppressed_fv,
+                stock_type="suppressed",
+                method_used=_fv_route.fv_suppressed_reason or "suppressed",
+                confidence="Low",
+                discount_pct=(
+                    round((_suppressed_fv - current_price) / current_price * 100, 1)
+                    if _suppressed_fv > 0 and current_price else 0.0
+                ),
+                analyst_target=analyst_target,
+                notes=list(_fv_route.notes or []),
+                bear_case=round(_suppressed_fv * 0.75, 2) if _suppressed_fv > 0 else None,
+                methodology_summary=_fv_route.fv_suppressed_reason,
+                fv_suppressed=True,
+                fv_suppressed_reason=_fv_route.fv_suppressed_reason,
+                fv_street_anchored=_street_anchored,
+                fv_street_anchor_usd=_suppressed_fv if _street_anchored else None,
+                fv_street_anchor_source=_street_anchor_source if _street_anchored else None,
+                gap_badge_type=_fv_route.gap_badge_type,
+                geopolitical_cap=_fv_route.geopolitical_cap,
+                divergence_pct=_fv_route.divergence_pct,
+            )
+            # Suppressed: keep fair_value as analyst_target for downstream band calcs
+            # (better than 0 — avoid killing all bands), but flag it prominently.
+            if _suppressed_fv > 0:
+                fair_value = _suppressed_fv
+
+        _route_meta_dict: dict = {}
+        if _fv_route:
+            _route_meta_dict = {
+                "notes": list(_fv_route.notes or []),
+                "method_label": _fv_route.method_label,
+                "gap_badge_type": _fv_route.gap_badge_type,
+                "geopolitical_cap": _fv_route.geopolitical_cap,
+                "divergence_pct": _fv_route.divergence_pct,
+            }
+
+        # Negative TTM EPS with positive analyst consensus — anchor to street
         if (
             fv_result is None
             and (ttm_pe is None or ttm_pe <= 0)
@@ -1094,24 +1239,30 @@ def _build_investor_summary(
             and analyst_target is not None
             and analyst_target > 0
         ):
+            _neg_notes = [
+                "Trailing EPS is non-positive; skipped PE-based fair value to avoid distorted outputs.",
+                "Using analyst consensus as interim fair-value anchor until positive TTM earnings normalize PE math.",
+            ] + list(_route_meta_dict.get("notes") or [])
             fv_result = FairValueResult(
                 fair_value=float(analyst_target),
                 stock_type="growth_no_ttm_earnings",
-                method_used="analyst_consensus_anchor",
+                method_used=_route_meta_dict.get("method_label") or "analyst_consensus_anchor",
                 confidence="Low",
                 discount_pct=round((float(analyst_target) - current_price) / current_price * 100, 1),
                 analyst_target=analyst_target,
-                notes=[
-                    "Trailing EPS is non-positive; skipped PE-based fair value to avoid distorted outputs.",
-                    "Using Yahoo analyst 12m mean as interim fair-value anchor until positive TTM earnings normalize PE math.",
-                ],
+                notes=_neg_notes,
                 bear_case=round(float(analyst_target) * 0.75, 2),
                 methodology_summary="Consensus anchor for loss-making growth names (PE model bypassed).",
+                fv_suppressed=False,
+                gap_badge_type=_route_meta_dict.get("gap_badge_type") or "METHOD",
+                divergence_pct=_route_meta_dict.get("divergence_pct"),
             )
             fair_value = float(analyst_target)
 
+        # Main FV estimation path (route may force forward_pe method)
         if fv_result is None and ttm_pe is not None and ttm_pe > 0 and margin is not None:
             _fv_gr = (config.get("fair_value") or {}).get("guardrails")
+            _force_fwd = bool(_fv_route and _fv_route.force_forward_pe)
             fv_result = estimate_fair_value_full(
                 current_price=current_price,
                 ttm_pe=ttm_pe,
@@ -1125,6 +1276,8 @@ def _build_investor_summary(
                 fcf_per_share=fcf_per_share,
                 analyst_target=analyst_target,
                 guardrails=dict(_fv_gr) if isinstance(_fv_gr, dict) else None,
+                force_forward_pe=_force_fwd,
+                fv_route_metadata=_route_meta_dict,
             )
             if fv_result and fv_result.fair_value and fv_result.fair_value > 0:
                 fair_value = fv_result.fair_value
@@ -1277,6 +1430,26 @@ def _build_investor_summary(
                 f"Valuation supports entry — but regime/ML say {display_verdict.upper()}."
             )
 
+    # Tag house tiers when model FV suppressed but bands use street consensus anchor
+    if fv_result is not None and getattr(fv_result, "fv_suppressed", False):
+        try:
+            from signals.fv_house_tiers import tag_entry_tiers_street_anchor
+
+            long_h = payload.get("long") or {}
+            et = long_h.get("entry_tiers")
+            tagged = tag_entry_tiers_street_anchor(
+                et,
+                fv_suppressed=True,
+                fv_suppressed_reason=getattr(fv_result, "fv_suppressed_reason", "") or "",
+                street_anchor_usd=getattr(fv_result, "fv_street_anchor_usd", None),
+                street_anchor_source=getattr(fv_result, "fv_street_anchor_source", None),
+            )
+            if tagged is not None:
+                payload["long"] = dict(long_h)
+                payload["long"]["entry_tiers"] = tagged
+        except Exception:
+            pass
+
     out: dict = {
         "fair_value": round(fair_value, 2),
         "overall_verdict": overall,
@@ -1348,6 +1521,18 @@ def _build_investor_summary(
             "growth_was_capped": getattr(fv_result, "growth_was_capped", False),
             "street_anchor_usd": round(analyst_target, 2) if analyst_target else None,
             "street_anchor_source": fv_ext.get("street_anchor_source"),
+            # §8 routing metadata
+            "fv_suppressed": bool(getattr(fv_result, "fv_suppressed", False)),
+            "fv_suppressed_reason": getattr(fv_result, "fv_suppressed_reason", "") or "",
+            "fv_street_anchored": bool(getattr(fv_result, "fv_street_anchored", False)),
+            "fv_street_anchor_usd": getattr(fv_result, "fv_street_anchor_usd", None),
+            "fv_street_anchor_source": getattr(fv_result, "fv_street_anchor_source", None),
+            "eps_quarters_total": _eps_total,
+            "eps_quarters_clean": _eps_clean,
+            "fv_route_method_label": getattr(fv_result, "fv_route_method_label", None),
+            "gap_badge_type": getattr(fv_result, "gap_badge_type", "METHOD") or "METHOD",
+            "geopolitical_cap": bool(getattr(fv_result, "geopolitical_cap", False)),
+            "divergence_pct": getattr(fv_result, "divergence_pct", None),
         }
         fv_meta["notes"] = list(fv_meta.get("notes") or [])
         if forward_pe_used is not None and forward_pe_used < 22.0:
@@ -1360,15 +1545,26 @@ def _build_investor_summary(
             )
         out["fair_value_metadata"] = fv_meta
 
-    # Commodity ETFs: no P/E; fair value from band/consensus — add clarity so users compare to spot
+    # Commodity ETFs: no P/E; anchor is technical (MA200 / LT band) — not DCF fair value
     _COMMODITY_ETFS = _GOLD_ETFS | frozenset({"SLV", "USO", "GDX", "GDXJ", "SIL", "PSLV"})
     if ticker.upper() in _COMMODITY_ETFS:
         fv_meta = out.get("fair_value_metadata") or {"notes": []}
         fv_meta["notes"] = list(fv_meta.get("notes") or [])
         fv_meta["notes"].append(
-            "Commodity ETF — no P/E. Fair value from band/consensus; compare to spot (e.g. gold ~$2,900/oz, GLD ≈ 1/10)."
+            "Commodity ETF — no earnings-based FV. Display anchor is MA200 / long-term band "
+            "(technical reference), not DCF fair value. Compare to spot and macro (real rates, DXY)."
+        )
+        fv_meta["method_used"] = "technical_anchor (commodity ETF)"
+        fv_meta["methodology_summary"] = (
+            "Technical anchor from MA200 / long-term band — not PE or DCF fair value."
         )
         out["fair_value_metadata"] = fv_meta
+        if fv_result is not None:
+            fv_result.method_used = "technical_anchor (commodity ETF)"
+            fv_result.methodology_summary = fv_meta["methodology_summary"]
+            if not getattr(fv_result, "notes", None):
+                fv_result.notes = []
+            fv_result.notes = list(fv_result.notes) + [fv_meta["notes"][-1]]
 
     # Trade roadmap first: canonical scenario_target (post RC-1 alignment) is single source of truth.
     retail_cfg = (config.get("retail") or {})
@@ -1440,19 +1636,27 @@ def _build_investor_summary(
         from signals.valuation_deck import build_valuation_deck
 
         long_h = (out.get("horizons") or {}).get("long") or {}
+        # Pass §8 routing metadata from fv_result into valuation_deck
+        _fv_meta = out.get("fair_value_metadata") or {}
         deck = build_valuation_deck(
             ticker=ticker,
             config=config,
             fair_value=float(out.get("fair_value") or fair_value),
             current_price=current_price,
             fair_value_vs_external=out.get("fair_value_vs_external"),
-            fair_value_metadata=out.get("fair_value_metadata"),
+            fair_value_metadata=_fv_meta,
             entry_tiers=(long_h.get("entry_tiers") if isinstance(long_h, dict) else None),
             ttm_pe=out.get("ttm_pe_used"),
             forward_pe=out.get("forward_pe_used"),
             one_answer=out.get("one_answer"),
             eps_fwd=_safe_float(response.get("eps_fwd")),
             eps_dispersion=_safe_float(response.get("eps_dispersion")),
+            fv_suppressed=bool(_fv_meta.get("fv_suppressed", False)),
+            fv_suppressed_reason=str(_fv_meta.get("fv_suppressed_reason") or ""),
+            fv_route_method_label=_fv_meta.get("fv_route_method_label") or None,
+            gap_badge_type=str(_fv_meta.get("gap_badge_type") or "METHOD"),
+            geopolitical_cap=bool(_fv_meta.get("geopolitical_cap", False)),
+            divergence_pct=_fv_meta.get("divergence_pct"),
         )
         if deck:
             out["valuation_deck"] = deck
@@ -1462,7 +1666,18 @@ def _build_investor_summary(
     try:
         from signals.retail_action_payload import enrich_investor_summary_retail_action
 
-        enrich_investor_summary_retail_action(out, current_price, ticker=ticker)
+        inst_conv = _institutional_conviction_context(
+            ticker, config, response, close_ticker=close_ticker,
+        )
+        if inst_conv:
+            out["institutional_conviction"] = inst_conv
+        enrich_investor_summary_retail_action(
+            out,
+            current_price,
+            ticker=ticker,
+            volume_ratio=_safe_float(response.get("volume_ratio")),
+            institutional_conviction=inst_conv,
+        )
     except Exception:
         pass
 
@@ -1924,6 +2139,8 @@ def _roadmap_buy_row_risk_reward(
     ma50: float | None,
     ma200: float | None,
     stop_52w: float,
+    ref_stop_override: float | None = None,
+    ref_stop_kind_override: str | None = None,
 ) -> dict:
     if zone_lo is None or zone_hi is None:
         return {}
@@ -1931,7 +2148,10 @@ def _roadmap_buy_row_risk_reward(
     if mid <= 0:
         return {}
     upside_pct = max(0.0, (float(fair_value) - mid) / mid * 100.0) if fair_value else None
-    if horizon_key in ("today", "days_1_10", "week_2_4"):
+    if ref_stop_override is not None and ref_stop_override > 0:
+        ref_stop = float(ref_stop_override)
+        stop_kind = ref_stop_kind_override or "long-term tactical stop"
+    elif horizon_key in ("today", "days_1_10", "week_2_4"):
         ref_stop = float(ma50) * 0.97 if ma50 else stop_52w
         stop_kind = "technical (≈ MA50×0.97)"
     elif horizon_key in ("1_3_months", "3_6_months"):
@@ -2293,8 +2513,12 @@ def _build_trade_roadmap(
         tranche_policy = None
         _road_note_fn = None
 
+    lt_stop = _safe_float(long_h.get("stop_loss"))
+    lt_stop_kind = long_h.get("stop_loss_kind") or "tactical_tier"
+
     for s in buy_stages:
         tk = str(s.get("timeline_key") or "")
+        use_lt_stop = tk in ("1_3_months", "3_6_months", "6_12_months") and lt_stop is not None
         s["risk_reward_context"] = _roadmap_buy_row_risk_reward(
             horizon_key=tk,
             zone_lo=s.get("price_zone_low"),
@@ -2304,6 +2528,8 @@ def _build_trade_roadmap(
             ma50=ma50,
             ma200=ma200,
             stop_52w=float(stop_52w),
+            ref_stop_override=lt_stop if use_lt_stop else None,
+            ref_stop_kind_override=f"long-term ({lt_stop_kind})" if use_lt_stop else None,
         )
         if tranche_policy and _road_note_fn:
             note = _road_note_fn(tk, tranche_policy)

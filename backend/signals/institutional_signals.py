@@ -13,6 +13,7 @@ from signals.fmp_client import (
     fetch_insider_trading_list,
     fetch_short_float_summary,
 )
+from signals.institutional_conviction import compute_institutional_conviction_filter
 
 logger = logging.getLogger(__name__)
 
@@ -218,15 +219,14 @@ def get_institutional_trend_proxy(
     }
 
 
-def build_institutional_bundle(config: dict, ticker: str) -> dict[str, Any]:
+def build_institutional_bundle(config: dict, ticker: str, **conviction_kwargs: Any) -> dict[str, Any]:
     """Single-ticker snapshot for API / insights."""
     t = (ticker or "").upper().strip()
     yahoo = get_institutional_ownership(t)
     edgar = get_edgar_13f_holder_snapshot(t, config=config, top_holders=yahoo.get("top_holders"))
-    return {
+    trend = get_institutional_trend_proxy(config, t, yahoo=yahoo, edgar=edgar)
+    partial = {
         "ticker": t,
-        "insider_weighted": get_weighted_insider_signal(config, t),
-        "short_interest": get_short_interest_signal(config, t),
         "institutional_ownership": {
             "institutional_pct": yahoo.get("institutional_pct"),
             "institutional_pct_label": yahoo.get("institutional_pct_label"),
@@ -237,6 +237,18 @@ def build_institutional_bundle(config: dict, ticker: str) -> dict[str, Any]:
             "top_holders": yahoo.get("top_holders"),
             "error": yahoo.get("error"),
         },
-        "institutional_trend": get_institutional_trend_proxy(config, t, yahoo=yahoo, edgar=edgar),
+        "institutional_trend": trend,
         "edgar_13f": edgar,
+    }
+    conviction = compute_institutional_conviction_filter(
+        partial,
+        config=config,
+        **conviction_kwargs,
+    )
+    return {
+        "ticker": t,
+        "insider_weighted": get_weighted_insider_signal(config, t),
+        "short_interest": get_short_interest_signal(config, t),
+        **partial,
+        "conviction_filter": conviction,
     }

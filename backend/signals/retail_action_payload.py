@@ -13,6 +13,8 @@ ST_ML_GATE = 25
 ML_MARGINAL_ABS = 55  # pass vs threshold but low absolute conviction
 REGIME_GATE = 60
 CONFIDENCE_GATE = 55
+VALUATION_GATE_PASS_PCT = 25.0   # align with House LT_REQUIRED_MOS_PCT
+VALUATION_GATE_PARTIAL_PCT = 15.0
 PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
 
 RsiStatus = Literal["hot", "neutral", "oversold"]
@@ -20,6 +22,10 @@ RegimeWeatherStatus = Literal["bull", "stormy", "mixed"]
 RrStatus = Literal["tight", "balanced", "favorable"]
 GateVisualStatus = Literal["cleared", "blocked", "marginal"]
 ActionLight = Literal["green", "yellow", "red"]
+EntryMode = Literal["hard_lock", "starter_only", "full_go"]
+
+BRIDGE_MAX_SIZING_PCT = 10
+STARTER_MAX_SIZING_PCT = 25
 
 
 def rsi_status(rsi: float | None) -> RsiStatus:
@@ -128,16 +134,27 @@ def _momentum_gate_detail(
     rsi_val: float,
     pattern_score: float | None,
     momentum_ok: bool,
+    volume_ratio: float | None = None,
 ) -> str:
+    vol_note = ""
+    if volume_ratio is not None and volume_ratio > 0:
+        if volume_ratio < 0.75 and rsi_val < 50:
+            vol_note = " · volume drying up (participation low — chop may be exhaustion)"
+        elif volume_ratio >= 1.5 and rsi_val >= 45:
+            vol_note = " · high-volume chop (distribution risk if support breaks)"
+        elif volume_ratio >= 2.0:
+            vol_note = " · unusual volume (≥2× 20d avg — confirm direction)"
     if momentum_ok:
-        return f"RSI {rsi_val:.0f} · pattern {round(pattern_score or 0)}/100"
+        base = f"RSI {rsi_val:.0f} · pattern {round(pattern_score or 0)}/100"
+        return base + vol_note if vol_note else base
     if rsi_val >= 70:
-        return f"RSI extended ({rsi_val:.0f}/100) — overbought; wait for cooldown"
+        return f"RSI extended ({rsi_val:.0f}/100) — overbought; wait for cooldown{vol_note}"
     if rsi_val >= 50:
         return (
             f"RSI above neutral ({rsi_val:.0f}/100) — model prefers RSI < 50 for optimal entry timing"
+            f"{vol_note}"
         )
-    return f"Pattern weak ({round(pattern_score or 0)}/100)"
+    return f"Pattern weak ({round(pattern_score or 0)}/100){vol_note}"
 
 
 def _ml_gate_detail(short_ml_prob: float | None) -> tuple[str, str, bool]:
@@ -265,6 +282,21 @@ def build_next_trigger(
     }
 
 
+def _valuation_gate_detail(assessment_pct: float) -> tuple[bool, str]:
+    """Valuation gate aligned with House MOS — full entry requires ~25% discount."""
+    if assessment_pct >= VALUATION_GATE_PASS_PCT:
+        return True, f"Sufficient MOS (+{assessment_pct:.1f}% vs fair value)"
+    if assessment_pct >= VALUATION_GATE_PARTIAL_PCT:
+        return False, (
+            f"Partial MOS (+{assessment_pct:.1f}% — need {VALUATION_GATE_PASS_PCT:.0f}% for full entry)"
+        )
+    if assessment_pct >= 0:
+        return False, (
+            f"Modest discount (+{assessment_pct:.1f}% — need {VALUATION_GATE_PASS_PCT:.0f}% MOS)"
+        )
+    return False, f"Rich vs fair value ({assessment_pct:.1f}%)"
+
+
 def build_trading_gates(
     *,
     assessment_pct: float,
@@ -278,13 +310,14 @@ def build_trading_gates(
     regime_hmm_label: str | None = None,
     regime_transition_pct: float | None = None,
     market_regime_bull_pct: float | None = None,
+    volume_ratio: float | None = None,
 ) -> list[dict[str, Any]]:
     """Primary + optional confidence gates with pass flags and visual_status tokens."""
     rb = regime_bull_pct if regime_bull_pct is not None else 50.0
     rsi_val = float(rsi) if rsi is not None else 50.0
     weather = regime_weather_status(regime_bull_pct)
 
-    valuation_ok = assessment_pct >= 5
+    valuation_ok, valuation_detail = _valuation_gate_detail(assessment_pct)
     regime_ok = regime_bull_pct is not None and regime_bull_pct >= REGIME_GATE
     momentum_ok = rsi_val < 50 and (pattern_score or 0) >= 45
     ml_detail, ml_visual, ml_ok = _ml_gate_detail(short_ml_prob)
@@ -294,15 +327,7 @@ def build_trading_gates(
         {
             "id": "valuation",
             "label": "VALUATION",
-            "detail": (
-                f"Deeply Undervalued (+{abs(assessment_pct):.1f}% Fair Value)"
-                if valuation_ok
-                else (
-                    f"Modest discount (+{assessment_pct:.1f}% Fair Value)"
-                    if assessment_pct >= 0
-                    else f"Rich vs Fair Value ({assessment_pct:.1f}%)"
-                )
-            ),
+            "detail": valuation_detail,
             "pass": valuation_ok,
             "gate_cleared": valuation_ok,
             "visual_status": "cleared" if valuation_ok else "blocked",
@@ -334,6 +359,7 @@ def build_trading_gates(
                 rsi_val=rsi_val,
                 pattern_score=pattern_score,
                 momentum_ok=momentum_ok,
+                volume_ratio=volume_ratio,
             ),
             "pass": momentum_ok,
             "gate_cleared": momentum_ok,
@@ -415,6 +441,173 @@ def build_dynamic_subtitle(
         f"{passed} of {len(primary)} gates pass · top blocker: "
         f"{str(top.get('label', '')).lower()} ({top.get('detail', '')})."
     )
+
+
+def _gate_pass(gates: list[dict[str, Any]], gate_id: str) -> bool:
+    g = next((x for x in gates if x.get("id") == gate_id), None)
+    return bool(g and g.get("pass"))
+
+
+def _tech_gates_pass(gates: list[dict[str, Any]]) -> bool:
+    return all(_gate_pass(gates, gid) for gid in ("regime", "momentum", "ml"))
+
+
+def _spot_in_actionable_zone(
+    *,
+    zone_context: dict[str, Any] | None,
+    inside_buy_band: bool,
+    long_spot: dict[str, Any] | None,
+) -> bool:
+    if inside_buy_band:
+        return True
+    if long_spot and long_spot.get("state") == "in_tier":
+        return True
+    if not zone_context:
+        return False
+    if zone_context.get("in_bridge_band"):
+        return True
+    return zone_context.get("state") in ("in_tier", "in_band")
+
+
+def derive_entry_mode(
+    *,
+    gates: list[dict[str, Any]],
+    assessment_pct: float,
+    gate_cleared: bool,
+    overall_verdict: str | None = None,
+    zone_context: dict[str, Any] | None = None,
+    inside_buy_band: bool = False,
+    long_spot: dict[str, Any] | None = None,
+    institutional_conviction: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Conditional sizing from gate matrix (valuation × tech × zone).
+
+    hard_lock     — no new entries (rich / no MOS / stormy + no value support)
+    starter_only  — bridge or tier starter (~10–25% max) when value OK but tech gates fail
+    full_go       — all primary gates pass → roadmap tranche sizing unlocked
+    """
+    val_full = _gate_pass(gates, "valuation")
+    val_starter = assessment_pct >= VALUATION_GATE_PARTIAL_PCT
+    tech_ok = _tech_gates_pass(gates)
+    in_zone = _spot_in_actionable_zone(
+        zone_context=zone_context,
+        inside_buy_band=inside_buy_band,
+        long_spot=long_spot,
+    )
+    verdict = (overall_verdict or "").upper()
+
+    if assessment_pct < 0 or verdict in ("AVOID", "REDUCE", "SELL"):
+        mode: EntryMode = "hard_lock"
+    elif not val_starter and not in_zone:
+        mode = "hard_lock"
+    elif gate_cleared and val_full and tech_ok:
+        mode = "full_go"
+    elif val_starter or val_full or in_zone:
+        mode = "starter_only"
+    else:
+        mode = "hard_lock"
+
+    if mode == "full_go":
+        max_pct = 100
+        label = "FULL GO"
+        headline = "All gates clear — roadmap sizing unlocked"
+        detail = "Confirm tranche plan on Roadmaps before adding risk."
+        light: ActionLight = "green"
+    elif mode == "starter_only":
+        in_bridge = bool(zone_context and zone_context.get("in_bridge_band"))
+        in_tier = bool(
+            (long_spot and long_spot.get("state") == "in_tier")
+            or (zone_context and zone_context.get("state") == "in_tier")
+        )
+        if in_bridge:
+            max_pct = BRIDGE_MAX_SIZING_PCT
+            headline = f"Bridge / starter only (~{max_pct}% max)"
+        elif in_tier or inside_buy_band:
+            max_pct = STARTER_MAX_SIZING_PCT
+            headline = f"Starter sizing only (~{max_pct}% max tranche)"
+        else:
+            max_pct = BRIDGE_MAX_SIZING_PCT
+            headline = f"Patience phase — starter only when price reaches band (~{max_pct}% max)"
+        label = "STARTER ONLY"
+        failed = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS and not g.get("pass")]
+        top = sorted(failed, key=lambda x: -(x.get("blocker_weight") or 0))[0] if failed else None
+        blocker = str(top.get("label") or "tech gates").title() if top else "tech gates"
+        detail = (
+            f"Value supports a small sleeve, but {blocker} still blocks full size. "
+            "Use bridge/tier plan — not roadmap cumulative %."
+        )
+        light = "yellow"
+    else:
+        max_pct = 0
+        label = "HARD LOCK"
+        headline = "No new entries"
+        if assessment_pct < 0:
+            detail = "Rich vs model fair value — hold or trim only; no adds at this price."
+        else:
+            detail = (
+                "Insufficient margin of safety and no actionable band at spot — "
+                "wait for pullback or better MOS."
+            )
+        light = "red"
+
+    inst = institutional_conviction or {}
+    inst_verdict = str(inst.get("verdict") or "unknown")
+    inst_note = ""
+    if inst_verdict == "supports" and mode in ("starter_only", "full_go"):
+        inst_note = (
+            " Active-manager 13F delta supports the valuation floor "
+            "(quarterly snapshot, ~45d lag — conviction filter, not a timing trigger)."
+        )
+        if inst.get("buy_the_dip"):
+            inst_note = (
+                " Active managers accumulated during a down quarter (buy-the-dip on 13F) — "
+                "strong conviction filter; still wait for Market Weather / Momentum gates."
+            )
+    elif inst_verdict == "concerns" and mode == "starter_only":
+        inst_note = (
+            " Active-manager 13F delta is distributing — cap starter size; "
+            "do not treat as a full-size signal."
+        )
+        max_pct = min(max_pct, BRIDGE_MAX_SIZING_PCT)
+    if inst_note:
+        detail = detail.rstrip(".") + "." + inst_note
+
+    return {
+        "entry_mode": mode,
+        "entry_mode_label": label,
+        "entry_mode_headline": headline,
+        "entry_mode_detail": detail,
+        "max_sizing_pct": max_pct,
+        "action_light": light,
+        "valuation_tier": (
+            "full_mos" if val_full else "partial_mos" if val_starter else "none"
+        ),
+        "tech_gates_pass": tech_ok,
+        "institutional_conviction_verdict": inst_verdict if inst else None,
+    }
+
+
+def build_unlock_sequence(
+    gates: list[dict[str, Any]],
+    *,
+    stock_bull_pct: float | None,
+) -> str:
+    """Ordered unlock path for full-size entry."""
+    steps: list[str] = []
+    if not _gate_pass(gates, "regime"):
+        bull = round(float(stock_bull_pct or 0))
+        steps.append(f"Market Weather ≥{REGIME_GATE}% (now {bull}%)")
+    if not _gate_pass(gates, "momentum"):
+        steps.append(f"Momentum Chop pass (RSI <50, pattern ≥45)")
+    if not _gate_pass(gates, "ml"):
+        steps.append(f"ML probability ≥{ST_ML_GATE}%")
+    if not _gate_pass(gates, "valuation"):
+        steps.append(f"Valuation MOS ≥{VALUATION_GATE_PASS_PCT:.0f}%")
+    if not steps:
+        return "Full size unlocked — confirm roadmap tranches before adding."
+    numbered = " → ".join(f"({i + 1}) {s}" for i, s in enumerate(steps))
+    return f"Unlock full size when: {numbered}"
 
 
 def derive_action_title(overall_verdict: str | None, gate_cleared: bool) -> tuple[str, ActionLight]:
@@ -607,6 +800,8 @@ def build_retail_action_payload(
     regime_transition_pct: float | None = None,
     market_regime_bull_pct: float | None = None,
     regime_transition_days: int | None = None,
+    volume_ratio: float | None = None,
+    institutional_conviction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     assessment_pct = _assessment_pct(current_price, fair_value)
     gates = build_trading_gates(
@@ -621,6 +816,7 @@ def build_retail_action_payload(
         regime_hmm_label=regime_hmm_label,
         regime_transition_pct=regime_transition_pct,
         market_regime_bull_pct=market_regime_bull_pct,
+        volume_ratio=volume_ratio,
     )
     primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
     locked = sum(1 for g in primary if not g.get("pass"))
@@ -675,6 +871,8 @@ def build_retail_action_payload(
         payload["rr_status"] = rr
     if risk_reward is not None:
         payload["rr_ratio"] = round(float(risk_reward), 2)
+    if institutional_conviction:
+        payload["institutional_conviction"] = institutional_conviction
     return payload
 
 
@@ -684,6 +882,8 @@ def enrich_investor_summary_retail_action(
     *,
     ticker: str | None = None,
     market_regime_bull_pct: float | None = None,
+    volume_ratio: float | None = None,
+    institutional_conviction: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Attach retail_action block to investor_summary dict (mutates copy)."""
     horizons = investor_out.get("horizons") or {}
@@ -705,7 +905,16 @@ def enrich_investor_summary_retail_action(
     if ez.get("low") is not None and ez.get("high") is not None:
         st_band = {"low": ez["low"], "high": ez["high"]}
 
-    rr = short.get("risk_reward")
+    long_h = horizons.get("long") or {}
+    rr = long_h.get("risk_reward")
+    if rr is None and long_h.get("stop_loss") and long_h.get("target") and current_price:
+        stop = float(long_h["stop_loss"])
+        tgt = float(long_h["target"])
+        cp = float(current_price)
+        if cp > stop and tgt > cp:
+            rr = (tgt - cp) / (cp - stop)
+    if rr is None:
+        rr = short.get("risk_reward")
     if rr is None and short.get("stop_loss") and short.get("target") and current_price:
         stop = float(short["stop_loss"])
         tgt = float(short["target"])
@@ -731,9 +940,10 @@ def enrich_investor_summary_retail_action(
         if market_regime_bull_pct is not None
         else investor_out.get("market_regime_bull_pct"),
         regime_transition_days=investor_out.get("regime_transition_days_estimate"),
+        volume_ratio=volume_ratio,
+        institutional_conviction=institutional_conviction,
     )
 
-    long_h = horizons.get("long") or {}
     long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
     short_spot = (short.get("entry_zone") or {}).get("spot_position") or {}
     zone_ctx = build_zone_context(investor_out, current_price)
@@ -749,6 +959,29 @@ def enrich_investor_summary_retail_action(
         )
         ra["action_title"] = title
         ra["action_light"] = light
+
+    assessment_pct = float(ra.get("assessment_pct") or 0)
+    entry = derive_entry_mode(
+        gates=ra.get("gates") or [],
+        assessment_pct=assessment_pct,
+        gate_cleared=bool(ra.get("gate_cleared")),
+        overall_verdict=investor_out.get("overall_verdict"),
+        zone_context=zone_ctx,
+        inside_buy_band=bool(ra.get("inside_buy_band")),
+        long_spot=long_spot,
+        institutional_conviction=institutional_conviction or ra.get("institutional_conviction"),
+    )
+    ra.update(entry)
+    if entry["entry_mode"] == "full_go":
+        ra["action_light"] = entry["action_light"]
+    elif entry["entry_mode"] == "hard_lock" and not zone_ctx:
+        ra["action_title"] = entry["entry_mode_headline"]
+        ra["action_light"] = entry["action_light"]
+
+    ra["unlock_sequence"] = build_unlock_sequence(
+        ra.get("gates") or [],
+        stock_bull_pct=investor_out.get("regime_bull_pct"),
+    )
     unlock = build_unlock_summary(
         ra.get("gates") or [],
         stock_bull_pct=investor_out.get("regime_bull_pct"),
@@ -758,6 +991,8 @@ def enrich_investor_summary_retail_action(
     )
     if unlock:
         ra["unlock_summary"] = unlock
+    elif ra.get("entry_mode") != "full_go":
+        ra["unlock_summary"] = ra["unlock_sequence"]
 
     return investor_out
 
@@ -800,18 +1035,12 @@ def enrich_dashboard_signal_row(
     if assessment != 0:
         for g in payload["gates"]:
             if g["id"] == "valuation":
-                ok = assessment >= 5
+                ok, detail = _valuation_gate_detail(assessment)
                 g["pass"] = ok
                 g["gate_cleared"] = ok
                 g["visual_status"] = "cleared" if ok else "blocked"
                 g["icon"] = "✅" if ok else "❌"
-                g["detail"] = (
-                    f"Deeply Undervalued (+{abs(assessment):.1f}% vs LT band)"
-                    if ok
-                    else f"LT band discount (+{assessment:.1f}%)"
-                    if assessment >= 0
-                    else f"Above LT band ({assessment:.1f}%)"
-                )
+                g["detail"] = detail.replace("fair value", "LT band")
 
     primary = [g for g in payload["gates"] if g["id"] in PRIMARY_GATE_IDS]
     locked = sum(1 for g in primary if not g["pass"])
@@ -827,10 +1056,24 @@ def enrich_dashboard_signal_row(
     title, light = derive_action_title(row.get("plan_action") or row.get("signal"), payload["gate_cleared"])
     payload["action_title"] = title
     payload["action_light"] = light
+    entry = derive_entry_mode(
+        gates=payload.get("gates") or [],
+        assessment_pct=assessment,
+        gate_cleared=bool(payload.get("gate_cleared")),
+        overall_verdict=row.get("plan_action") or row.get("signal"),
+        inside_buy_band=bool(payload.get("inside_buy_band")),
+    )
+    payload.update(entry)
+    payload["unlock_sequence"] = build_unlock_sequence(
+        payload.get("gates") or [],
+        stock_bull_pct=rb,
+    )
 
     row["retail_status"] = payload
     row["rsi_status"] = payload["rsi_status"]
     row["gate_cleared"] = payload["gate_cleared"]
+    row["entry_mode"] = entry["entry_mode"]
+    row["max_sizing_pct"] = entry["max_sizing_pct"]
     try:
         from signals.trim_gates import attach_trim_gates_to_row
 

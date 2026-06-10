@@ -3114,14 +3114,19 @@ async def get_insights(ticker: str):
         return {"disabled": True, "message": "insights.disabled in config"}
     t0 = time.perf_counter()
     try:
+        from signals.cache import cached_earnings_quality, cached_institutional_bundle
         from signals.earnings_quality import analyze_earnings_quality
         from signals.institutional_signals import build_institutional_bundle
 
         def _build() -> dict[str, Any]:
             return {
                 "ticker": ticker_u,
-                "institutional": build_institutional_bundle(config, ticker_u),
-                "earnings_quality": analyze_earnings_quality(config, ticker_u),
+                "institutional": cached_institutional_bundle(
+                    ticker_u, lambda: build_institutional_bundle(config, ticker_u)
+                ),
+                "earnings_quality": cached_earnings_quality(
+                    ticker_u, lambda: analyze_earnings_quality(config, ticker_u)
+                ),
             }
 
         payload = await run_in_threadpool(_build)

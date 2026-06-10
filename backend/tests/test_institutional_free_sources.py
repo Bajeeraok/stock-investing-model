@@ -97,6 +97,8 @@ def test_build_institutional_bundle_shape(monkeypatch):
     assert bundle["institutional_trend"]["source"] == "yfinance_delayed"
     assert bundle["edgar_13f"]["period_ending"] == "2025-12-31"
     assert bundle["edgar_13f"]["parser"] == "edgartools"
+    assert "conviction_filter" in bundle
+    assert bundle["conviction_filter"]["role"] == "conviction_filter"
 
 
 def test_edgar_trend_from_filer_rows():

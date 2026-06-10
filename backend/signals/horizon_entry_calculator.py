@@ -24,7 +24,7 @@ _BACKEND = Path(__file__).resolve().parent.parent
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from typing import Any, Dict, Optional
 
 from signals.providers import MAJOR_INDEX_ETFS
@@ -451,6 +451,99 @@ def build_entry_band_levels(
     return sorted(out, key=lambda x: x["price"])
 
 
+def _refresh_tier_fv_metrics(tier: EntryTier, fv: float, price: float) -> EntryTier:
+    return replace(
+        tier,
+        upside_to_fv_pct=_r((fv - tier.high) / tier.high * 100, 1),
+        margin_of_safety_pct=_r((fv - tier.high) / fv * 100, 1),
+        reachable=price > tier.high,
+        drop_needed_pct=_r((price - tier.high) / price * 100, 1) if price > tier.high else None,
+    )
+
+
+def _enforce_strict_tier_ladder(
+    tier1: EntryTier,
+    tier2: EntryTier,
+    tier3: EntryTier,
+    fv: float,
+    price: float,
+    week52_low: float,
+) -> tuple[EntryTier, EntryTier, EntryTier]:
+    """
+    T3 (52w stress tail) must sit entirely below T2 (MOS band).
+    When 52w stress math lands above the MOS zone, pull T3 down under T2.
+    """
+    t1, t2, t3 = tier1, tier2, tier3
+    if t3.high >= t2.low - 1e-6:
+        new_hi = _r(t2.low * 0.97)
+        tail_anchor = _r(week52_low * LT_TIER3_LOW_MULT) if week52_low > 0 else t3.low
+        new_lo = _r(min(t3.low, tail_anchor, new_hi * 0.92))
+        if new_lo >= new_hi:
+            new_lo = _r(new_hi * 0.90)
+        t3 = _refresh_tier_fv_metrics(replace(t3, low=new_lo, high=new_hi), fv, price)
+    return t1, t2, t3
+
+
+def _tier_catch_levels(
+    tier: EntryTier,
+    fv: float,
+    mos_pct: float,
+    *,
+    anchors: list[tuple[str, str, float]] | None = None,
+) -> list[dict[str, Any]]:
+    """Limit-order levels inside a tier — never imply buying at/near FV without MOS."""
+    cap = tier.high
+    if mos_pct < LT_PARTIAL_MOS_PCT:
+        cap = min(cap, fv * (1 - LT_PARTIAL_MOS_PCT / 100))
+    elif mos_pct < LT_REQUIRED_MOS_PCT:
+        cap = min(cap, fv * (1 - LT_REQUIRED_MOS_PCT / 100))
+    levels = build_entry_band_levels(tier.low, tier.high, anchors=anchors)
+    capped = [row for row in levels if float(row["price"]) <= cap + 0.02]
+    if capped:
+        return capped
+    return [
+        {
+            "id": "mos_cap",
+            "label": f"MOS cap · max add ${cap:.2f}",
+            "price": _r(cap),
+            "role": "entry",
+            "sort": 1,
+        }
+    ]
+
+
+def _compute_long_tactical_stop(
+    *,
+    current_price: float,
+    tier_ref: EntryTier,
+    atr: float | None,
+    structural_stop: float,
+) -> tuple[float, str]:
+    """
+    Actionable stop for long accumulate — always below spot and tier support.
+    Structural invalidation (often MA200×0.97 on ETFs) is reference-only.
+    """
+    p = float(current_price)
+    lo = float(tier_ref.low)
+    atr_buf = (float(atr) if atr and atr > 0 else p * 0.02) * ST_ATR_STOP_MULT
+    min_buf = p * (ST_MIN_STOP_DISTANCE_PCT_OF_SPOT / 100.0)
+    buf = max(atr_buf, min_buf, lo * 0.025)
+    tactical = _r(lo - buf)
+    max_tactical = _r(p * (1 - 0.005))
+    if tactical >= p - 1e-6:
+        tactical = _r(min(lo * 0.97, p * 0.97))
+    tactical = min(tactical, max_tactical)
+    if tactical <= 0:
+        tactical = _r(p * 0.95)
+    dist_pct = abs((p - tactical) / p * 100)
+    framing = (
+        f"Tactical stop ${tactical:.2f} (~{dist_pct:.1f}% below spot) under "
+        f"{tier_ref.id} support ${lo:.2f}. Structural invalidation ${structural_stop:.2f} "
+        f"is thesis-broken only — not a day-to-day stop."
+    )
+    return tactical, framing
+
+
 def build_bridge_band(
     floor_high: float,
     ceiling_low: float,
@@ -612,14 +705,29 @@ def _enrich_horizon_entry_zone_extras(
     medium_ez["spot_position"] = mt_spot
 
     # Long primary entry zone catch levels (display tier band)
-    long_ez = payload.get("long", {}).get("entry_zone") or {}
+    long_h = payload.get("long") or {}
+    long_ez = long_h.get("entry_zone") or {}
     if long_ez:
         lt_lo = min(float(long_ez["low"]), float(long_ez["high"]))
         lt_hi = max(float(long_ez["low"]), float(long_ez["high"]))
-        long_ez["levels"] = build_entry_band_levels(lt_lo, lt_hi)
+        fv = float(long_h.get("fair_value") or long_h.get("target") or 0)
+        ca = (long_h.get("entry_tiers") or {}).get("current_assessment") or {}
+        mos_pct = float(ca.get("margin_of_safety_pct") or 0)
+        cap = lt_hi
+        if fv > 0 and mos_pct < LT_PARTIAL_MOS_PCT:
+            cap = min(lt_hi, fv * (1 - LT_PARTIAL_MOS_PCT / 100))
+        elif fv > 0 and mos_pct < LT_REQUIRED_MOS_PCT:
+            cap = min(lt_hi, fv * (1 - LT_REQUIRED_MOS_PCT / 100))
+        levels = build_entry_band_levels(lt_lo, lt_hi)
+        capped = [row for row in levels if float(row["price"]) <= cap + 0.02]
+        long_ez["levels"] = capped or [
+            {"id": "mos_cap", "label": f"MOS cap · max add ${cap:.2f}", "price": round(cap, 2), "role": "entry", "sort": 1}
+        ]
         long_ez["spot_position"] = classify_spot_band_position(
             current_price, lt_lo, lt_hi, band_label="long-term band"
         )
+        long_h["entry_zone"] = long_ez
+        payload["long"] = long_h
 
 
 def entry_zone_from_tier(tier: EntryTier, *, inside: bool) -> EntryZone:
@@ -1328,6 +1436,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         _r(inp.week52_low * LT_TIER3_HIGH_MULT),
         "~5x+", "Stress", "#64748b")
 
+    tier1, tier2, tier3 = _enforce_strict_tier_ladder(tier1, tier2, tier3, fv, p, float(inp.week52_low or 0))
+
     # ── Entry zone for HorizonSignal — sync with active / target tier ───────
     all_tiers = [tier1, tier2, tier3]
     active_tier = resolve_active_tier(all_tiers, p)
@@ -1376,12 +1486,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             quality_color=entry_zone.quality_color,
         )
 
-    # ── Structural invalidation (not a day-to-day stop) ────────────────────
+    # ── Structural invalidation (thesis-broken reference — not the displayed stop) ──
     tkey_lt = _norm_ticker_sym(inp.ticker)
     if tkey_lt in _STRUCTURAL_TAIL_ETFS:
         w52 = float(inp.week52_low) if inp.week52_low is not None else None
         fb = (w52 * 0.97) if w52 is not None else 0.0
-        stop_loss = _r(
+        structural_stop = _r(
             structural_invalidation_below(
                 float(inp.ma200) if inp.ma200 is not None else None,
                 w52,
@@ -1401,18 +1511,28 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             )
             inv_kind = "index_structural_floor"
     else:
-        stop_loss = _r(inp.week52_low * 0.95)
+        structural_stop = _r(inp.week52_low * 0.95)
         inv_note = (
             "Long-term floor ≈5% under the 52-week low — structural invalidation only, "
             "not a tight stop. Use nearer-term levels when you enter; treat this as a "
             "tail-stress / thesis-broken reference if price ever gets there."
         )
         inv_kind = "52w_stress_floor"
-    stop_loss_pct = _r((stop_loss - tier1.high) / tier1.high * 100, 1)
+
+    tier_ref = active_tier or display_tier or tier1
+    stop_loss, tactical_framing = _compute_long_tactical_stop(
+        current_price=p,
+        tier_ref=tier_ref,
+        atr=inp.atr,
+        structural_stop=structural_stop,
+    )
+    stop_loss_pct = _r((stop_loss - p) / p * 100, 1)
     target        = fv
-    target_pct    = _r((fv - tier1.high) / tier1.high * 100, 1)
-    risk          = tier1.high - stop_loss
-    rr            = _r((fv - tier1.high) / risk, 2) if risk > 0 else 0.0
+    target_pct    = _r((fv - p) / p * 100, 1) if p > 0 else 0.0
+    entry_ref     = p if active_tier else tier1.high
+    risk          = entry_ref - stop_loss
+    reward        = fv - entry_ref
+    rr            = _r(reward / risk, 2) if risk > 0 and reward > 0 else 0.0
 
     if inp.regime_bull_pct < 40 and target_pct > 12:
         warnings.append(
@@ -1528,8 +1648,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         stop_loss=stop_loss, stop_loss_pct=stop_loss_pct,
         risk_reward=rr, rationale=rationale, trigger_buy=trigger, warnings=warnings,
         fair_value=fv,
-        stop_loss_kind="structural_invalidation",
-        stop_loss_framing=inv_note,
+        stop_loss_kind="tactical_tier",
+        stop_loss_framing=tactical_framing,
         entry_tiers={
             "active_tier_id": active_tier.id if active_tier else None,
             "target_tier_id": target_tid,
@@ -1548,7 +1668,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                 "label": t2_profile_note,
             },
             "structural_invalidation": {
-                "price": stop_loss,
+                "price": structural_stop,
                 "kind": inv_kind,
                 "note": (
                     "≈5% below the 52-week low — thesis / tail-risk invalidation, "
@@ -1569,15 +1689,17 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             "tiers": [
                 {
                     **asdict(tier1),
-                    "levels": build_entry_band_levels(tier1.low, tier1.high, anchors=[("ma200", "MA200", inp.ma200)]),
+                    "levels": _tier_catch_levels(
+                        tier1, fv, mos_pct, anchors=[("ma200", "MA200", inp.ma200 or 0.0)]
+                    ),
                 },
                 {
                     **asdict(tier2),
-                    "levels": build_entry_band_levels(tier2.low, tier2.high),
+                    "levels": _tier_catch_levels(tier2, fv, mos_pct),
                 },
                 {
                     **asdict(tier3),
-                    "levels": build_entry_band_levels(tier3.low, tier3.high),
+                    "levels": _tier_catch_levels(tier3, fv, mos_pct),
                 },
             ],
             "position_sizing": position_sizing,

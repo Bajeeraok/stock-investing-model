@@ -93,7 +93,9 @@ def test_long_term_entry_index_etf_structural_stop_uses_ma200_cap():
         ticker="SPY",
     )
     sig = compute_long_term_entry(inp)
-    assert sig.stop_loss == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
+    structural = sig.entry_tiers["structural_invalidation"]["price"]
+    assert structural == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
+    assert sig.stop_loss < inp.current_price
     assert sig.entry_tiers["structural_invalidation"]["kind"] == "index_structural_floor"
 
 
@@ -109,7 +111,9 @@ def test_long_term_entry_commodity_etf_matches_index_structural_math():
         ticker="SLV",
     )
     sig = compute_long_term_entry(inp)
-    assert sig.stop_loss == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
+    structural = sig.entry_tiers["structural_invalidation"]["price"]
+    assert structural == round(max(480.0 * 0.97, 400.0 * 0.97), 2)
+    assert sig.stop_loss < inp.current_price
     assert sig.entry_tiers["structural_invalidation"]["kind"] == "commodity_structural_floor"
 
 
@@ -125,5 +129,7 @@ def test_long_term_entry_single_name_uses_52w_floor():
         ticker="NVDA",
     )
     sig = compute_long_term_entry(inp)
-    assert sig.stop_loss == round(140.0 * 0.95, 2)
+    structural = sig.entry_tiers["structural_invalidation"]["price"]
+    assert structural == round(140.0 * 0.95, 2)
+    assert sig.stop_loss < inp.current_price
     assert sig.entry_tiers["structural_invalidation"]["kind"] == "52w_stress_floor"

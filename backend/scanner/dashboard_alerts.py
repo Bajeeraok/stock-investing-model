@@ -3,6 +3,7 @@ Retail alerts chained to dashboard Refresh — same bands/gates as signals, one 
 
 - Action book (get_dashboard_signal_universe): fresh signal rows + synced horizon_levels.
 - Audit cohort (100): price-only snapshots + cached bands from last EOD/sync (no full recompute).
+- Cohort tickers without bands get ATR-based bands written so ENTRY_ZONE alerts can fire.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from scanner.engine import MarketSnapshot, ScanEngine
-from scanner.horizon_levels import read_horizon_levels
+from scanner.horizon_levels import read_horizon_levels, write_horizon_levels
 from scanner.store import ScannerStore
 from scanner.ticker_universe import ScanTier, TICKER_META
 
@@ -92,6 +93,13 @@ def snapshot_from_signal_row(row: dict, *, watchlist: set[str], vix: float = 18.
             ml_short = pv * 100.0 if pv <= 1.0 else pv
         except (TypeError, ValueError):
             pass
+    rsi_raw = row.get("rsi") or row.get("rsi14")
+    rsi_val: float | None = None
+    if rsi_raw is not None:
+        try:
+            rsi_val = float(rsi_raw)
+        except (TypeError, ValueError):
+            pass
     return MarketSnapshot(
         symbol=ticker,
         price=price,
@@ -110,6 +118,7 @@ def snapshot_from_signal_row(row: dict, *, watchlist: set[str], vix: float = 18.
         scan_tier=meta.tier if meta else ScanTier.TIER1_CORE,
         sector=meta.sector if meta else "Unknown",
         ml_prob_short=ml_short,
+        rsi=rsi_val,
     )
 
 
@@ -146,6 +155,60 @@ def snapshot_from_price_only(
         sector=meta.sector if meta else "Unknown",
         ml_prob_short=None,
     )
+
+
+def _write_atr_bands_for_cohort(
+    tickers: list[str],
+    price_map: dict[str, float],
+    levels: dict[str, dict],
+    data_root: Path,
+    *,
+    atr_pct_default: float = 2.5,
+) -> int:
+    """
+    Write ATR-based ST bands into horizon_levels.json for cohort tickers that have
+    no cached bands (never opened in modal, never in signal universe).
+
+    Band method:
+      entry_low  = price * (1 - 0.5 * atr_pct)     — within half an ATR of spot
+      entry_high = price * (1 - 0.15 * atr_pct)    — just below spot (tight buy zone)
+      stop_loss  = price * (1 - 1.5 * atr_pct)     — 1.5× ATR below spot
+      target     = price * (1 + 2.0 * atr_pct)     — 2× ATR above spot (risk:reward ~2:1)
+
+    Only writes for tickers with a known price and no existing bands. Existing
+    modal-derived or signal-derived bands are never overwritten.
+    Returns count of tickers written.
+    """
+    updated = dict(levels)
+    written = 0
+    for t in tickers:
+        if t in updated and updated[t]:
+            continue  # already has bands — don't overwrite
+        p = price_map.get(t)
+        if not p or p <= 0:
+            continue
+        atr_frac = atr_pct_default / 100.0
+        el = round(p * (1 - 0.50 * atr_frac * 100 / 100), 2)
+        eh = round(p * (1 - 0.15 * atr_frac * 100 / 100), 2)
+        sl = round(p * (1 - 1.50 * atr_frac * 100 / 100), 2)
+        tgt = round(p * (1 + 2.00 * atr_frac * 100 / 100), 2)
+        if el >= eh or sl >= el:
+            continue
+        updated[t] = {
+            "short": {
+                "entry_low": el,
+                "entry_high": eh,
+                "stop_loss": sl,
+                "target": tgt,
+                "horizon_label": "Short-term (ATR proxy)",
+                "band_source": "atr_cohort",
+            }
+        }
+        written += 1
+    if written:
+        write_horizon_levels(data_root, updated)
+        levels.update(updated)
+    return written
 
 
 def _cohort_only_with_bands(
@@ -241,12 +304,23 @@ def run_retail_alerts_from_dashboard_refresh(
                 snaps.append(snap)
 
     levels = read_horizon_levels(data_root)
-    cohort_only = _cohort_only_with_bands(audit_universe, dashboard_universe, levels)
+
+    # Pre-fetch prices for the full audit cohort so ATR band writing and alert
+    # evaluation both share the same price call.
+    all_cohort = [t for t in sorted(audit_universe) if t not in dashboard_universe]
     price_map = _fetch_prices_for_tickers(
-        cohort_only,
+        all_cohort,
         config,
         {str(k).upper(): float(v) for k, v in (prices_by_ticker or {}).items()},
     )
+
+    # Write ATR-based bands for cohort tickers that have never had bands written.
+    # This ensures ENTRY_ZONE_ENTERED can fire for the full cohort, not just modal-visited tickers.
+    bands_written = _write_atr_bands_for_cohort(all_cohort, price_map, levels, data_root)
+    if bands_written:
+        logger.info("[dashboard] cohort ATR bands written for %d new tickers", bands_written)
+
+    cohort_only = _cohort_only_with_bands(audit_universe, dashboard_universe, levels)
     spy_row = rows_by_ticker.get("SPY")
     cohort_regime = str((spy_row or {}).get("regime") or "NEUTRAL")
     cohort_conf = float((spy_row or {}).get("composite_buy") or 50) if spy_row else 50.0

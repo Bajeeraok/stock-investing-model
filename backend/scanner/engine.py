@@ -43,6 +43,8 @@ class MarketSnapshot:
     as_of: str = field(default_factory=now_iso_et)
     # Optional: short-term ML prob (0-100) for ML_PROB_CROSSED alert
     ml_prob_short: Optional[float] = None
+    # Optional: RSI-14 value (0-100) for RSI_OVERSOLD alert
+    rsi: Optional[float] = None
 
 
 @dataclass
@@ -74,6 +76,7 @@ class ScanAlert:
 
 
 ALERT_COLORS = {
+    AlertType.RSI_OVERSOLD: "#6366F1",
     AlertType.MACRO_RISK_OFF: "#EF4444",
     AlertType.MACRO_RISK_ON: "#10B981",
     AlertType.ER_LOTTO: "#F59E0B",
@@ -97,6 +100,7 @@ ALERT_COLORS = {
 }
 
 ALERT_EMOJIS = {
+    AlertType.RSI_OVERSOLD: "📉",
     AlertType.MACRO_RISK_OFF: "🔴",
     AlertType.MACRO_RISK_ON: "🟢",
     AlertType.ER_LOTTO: "🟡",
@@ -128,6 +132,7 @@ ACCUMULATE_ALERT_TYPES = frozenset({
     AlertType.TARGET_APPROACHING,
     AlertType.ML_PROB_CROSSED,
     AlertType.SETUP_ALMOST_READY,
+    AlertType.RSI_OVERSOLD,
 })
 TACTICAL_ALERT_TYPES = frozenset({
     AlertType.EARNINGS_SOON,
@@ -665,6 +670,10 @@ def evaluate_retail_alerts(
         raw_levels = horizon_levels.get(ticker)
         bands = normalize_ticker_levels(raw_levels) if enable_band else {}
 
+        # Re-entry cooldown: re-alert when price stays in zone >4h so sustained
+        # buy setups surface again after the initial edge-trigger fired.
+        _reentry_cooldown_hours = 4
+
         for band_key, levels in bands.items():
             el = float(levels.get("entry_low") or 0)
             eh = float(levels.get("entry_high") or 0)
@@ -672,12 +681,29 @@ def evaluate_retail_alerts(
             target = float(levels.get("target") or 0)
             label = str(levels.get("horizon_label") or band_key.upper())
             zone_flag = f"was_in_entry_zone_{band_key}"
+            entered_at_flag = f"zone_entered_at_{band_key}"
             was_in_zone = bool(st.get(zone_flag, False))
             in_zone = el <= price <= eh if (el and eh) else False
             actionable_zone = in_zone and _entry_zone_actionable(band_key, el, eh, price)
             dex = band_key
 
-            if el and eh and actionable_zone and not was_in_zone:
+            # Determine whether to (re-)fire: either fresh entry or re-entry cooldown elapsed
+            _now_str = datetime.now().isoformat()
+            _first_fire = actionable_zone and not was_in_zone
+            _reentry_fire = False
+            if actionable_zone and was_in_zone:
+                entered_at = st.get(entered_at_flag)
+                if entered_at:
+                    try:
+                        elapsed_h = (datetime.now() - datetime.fromisoformat(entered_at)).total_seconds() / 3600
+                        if elapsed_h >= _reentry_cooldown_hours:
+                            _reentry_fire = True
+                    except (ValueError, TypeError):
+                        pass
+
+            if el and eh and actionable_zone and (_first_fire or _reentry_fire):
+                # Reset the entered_at timestamp on re-alert so the 4h window restarts
+                st = {**st, entered_at_flag: _now_str}
                 rd = None
                 if readiness_cache:
                     rd = readiness_cache.get(ticker.upper()) or readiness_cache.get(ticker)
@@ -799,6 +825,12 @@ def evaluate_retail_alerts(
                     dedupe_extra=dex,
                 ))
 
+            # Set entered_at on first zone entry (re-entry fires already reset it above)
+            if actionable_zone and not was_in_zone and entered_at_flag not in st:
+                st = {**st, entered_at_flag: _now_str}
+            elif not actionable_zone:
+                # Exited zone — clear the entered_at so next entry fires immediately
+                st = {k: v for k, v in st.items() if k != entered_at_flag}
             st = {**st, zone_flag: actionable_zone}
 
         st = {**st, "last_price": price}
@@ -831,6 +863,68 @@ def evaluate_retail_alerts(
                 ))
             st = {**new_state.get(ticker, st), "previous_ml_prob": ml_current}
             new_state[ticker] = st
+
+        # RSI_OVERSOLD — buy-side signal that works even when price is above entry bands.
+        # Only fires for watchlist tickers to keep alert volume manageable.
+        # Threshold: RSI-14 < 35 (oversold territory without requiring extreme < 30).
+        rsi_val = getattr(snap, "rsi", None)
+        if rsi_val is not None and in_wl:
+            RSI_OVERSOLD_THRESHOLD = 35.0
+            prev_rsi = st.get("previous_rsi")
+            try:
+                rsi_f = float(rsi_val)
+                prev_rsi_f = float(prev_rsi) if prev_rsi is not None else None
+            except (TypeError, ValueError):
+                rsi_f = None
+                prev_rsi_f = None
+            # Fire when RSI crosses DOWN into oversold (was above → now below threshold)
+            # OR was already oversold and still falling (deeper oversold = more actionable)
+            rsi_crossed_in = (
+                rsi_f is not None and rsi_f < RSI_OVERSOLD_THRESHOLD
+                and (prev_rsi_f is None or prev_rsi_f >= RSI_OVERSOLD_THRESHOLD)
+            )
+            rsi_deeper = (
+                rsi_f is not None and rsi_f < RSI_OVERSOLD_THRESHOLD
+                and prev_rsi_f is not None and rsi_f < prev_rsi_f - 3.0  # dropped ≥3 points deeper
+            )
+            if rsi_crossed_in or rsi_deeper:
+                support = snap.support_level
+                support_str = f"${support:.2f}" if support and support > 0 else "recent support"
+                alerts.append(_build_retail_alert(
+                    ticker,
+                    AlertType.RSI_OVERSOLD,
+                    f"{ticker} RSI oversold — {rsi_f:.0f} (< {RSI_OVERSOLD_THRESHOLD:.0f})",
+                    (
+                        f"RSI-14 is {rsi_f:.1f}, in oversold territory. "
+                        f"Regime: {snap.regime}. Consider watching for reversal or staged entry."
+                    ),
+                    snap.scan_tier,
+                    {
+                        "rsi": rsi_f,
+                        "previousRsi": prev_rsi_f,
+                        "threshold": RSI_OVERSOLD_THRESHOLD,
+                        "price": price,
+                        "regime": snap.regime,
+                        "crossedIn": rsi_crossed_in,
+                        "deeperOversold": rsi_deeper,
+                    },
+                    actionable=(
+                        f"RSI-14 oversold at {rsi_f:.0f} (spot ${price:.2f}). "
+                        f"Look for a reversal signal (bullish candle, volume uptick) before adding. "
+                        f"Initial support at {support_str}. Keep size small until regime confirms."
+                    ),
+                    one_liner=_bias_prob_range_line(
+                        price=price,
+                        atr_pct=snap.atr_pct,
+                        regime=snap.regime,
+                        regime_confidence=snap.regime_confidence,
+                        prob_override=snap.ml_prob_short,
+                    ),
+                    dedupe_extra="rsi_oversold",
+                ))
+            if rsi_f is not None:
+                st = {**new_state.get(ticker, st), "previous_rsi": rsi_f}
+                new_state[ticker] = st
 
         # Keep last_price for tickers that didn't have levels
         if ticker not in new_state and (last_price is not None or price):
@@ -1013,6 +1107,7 @@ class AlertDeduplicator:
             AlertType.ML_PROB_CROSSED: 180,
             AlertType.SETUP_ALMOST_READY: 360,
             AlertType.TACTICAL_VELOCITY: 180,
+            AlertType.RSI_OVERSOLD: 240,  # 4h — don't spam on every 15m scan
         }
 
     def is_dup(self, ticker: str, t: AlertType, extra: str = "") -> bool:

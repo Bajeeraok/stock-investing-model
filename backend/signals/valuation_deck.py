@@ -53,6 +53,13 @@ def build_valuation_deck(
     one_answer: dict | None = None,
     eps_fwd: float | None = None,
     eps_dispersion: float | None = None,
+    # §8 routing fields from FairValueResult
+    fv_suppressed: bool = False,
+    fv_suppressed_reason: str = "",
+    fv_route_method_label: str | None = None,
+    gap_badge_type: str = "METHOD",          # "METHOD" | "OPINION"
+    geopolitical_cap: bool = False,
+    divergence_pct: float | None = None,
 ) -> dict[str, Any] | None:
     """Build valuation_deck for investor_summary (UI ValuationDeck)."""
     fve = fair_value_vs_external if isinstance(fair_value_vs_external, dict) else {}
@@ -82,8 +89,12 @@ def build_valuation_deck(
     low_return_pct = _ret_pct(low_usd if low_usd else None)
 
     meta = fair_value_metadata if isinstance(fair_value_metadata, dict) else {}
-    method = meta.get("method_used")
+    # §8: prefer the router's method label (e.g. "forward_pe (cyclical — divergence 312%)")
+    # over the bare estimator method string when it's available
+    method = fv_route_method_label or meta.get("method_used")
     methodology = meta.get("methodology_summary")
+    if fv_suppressed and fv_suppressed_reason:
+        methodology = fv_suppressed_reason
     if methodology and len(str(methodology)) > 220:
         methodology = str(methodology)[:217] + "…"
 
@@ -92,12 +103,22 @@ def build_valuation_deck(
         ca = entry_tiers.get("current_assessment") or {}
         tiers = entry_tiers.get("tiers") or []
         active = entry_tiers.get("active_tier_id")
+        fv_anchor = entry_tiers.get("fv_anchor") if isinstance(entry_tiers.get("fv_anchor"), dict) else {}
         house = {
             "active_tier_id": active,
             "assessment_label": ca.get("label"),
             "min_price_to_buy": ca.get("min_price_to_buy"),
             "above_full_mos_ceiling": ca.get("above_full_mos_ceiling"),
             "margin_of_safety_pct": ca.get("margin_of_safety_pct"),
+            "fv_model_suppressed": bool(
+                fv_anchor.get("fv_model_suppressed") or ca.get("fv_model_suppressed") or fv_suppressed
+            ),
+            "fv_street_anchored": bool(
+                fv_anchor.get("source") == "street_consensus" or ca.get("fv_street_anchored")
+            ),
+            "fv_street_anchor_usd": fv_anchor.get("street_anchor_usd"),
+            "fv_street_anchor_source": fv_anchor.get("street_anchor_source"),
+            "band_anchor_note": fv_anchor.get("band_anchor_note"),
             "tiers_summary": [
                 {
                     "id": t.get("id"),
@@ -125,6 +146,19 @@ def build_valuation_deck(
     if not has_street and not has_model and not has_house:
         return None
 
+    # §8 gap-badge enrichment: distinguish METHOD errors from OPINION divergence
+    _gap_val = gap_badge(pct_vs_street)
+    _gap_type = gap_badge_type or "METHOD"
+    _gap_full: str | None = None
+    if _gap_val == "caution" and pct_vs_street is not None:
+        # "caution" = model FV is far from street — label the *kind* of gap
+        _gap_full = f"GAP:{_gap_type}"  # e.g. "GAP:METHOD" or "GAP:OPINION"
+
+    # When FV is suppressed, avoid showing a model price — show badge only
+    _model_fv_display = None
+    if not fv_suppressed and fair_value > 0:
+        _model_fv_display = round(fair_value, 2)
+
     return {
         "street": {
             "primary_usd": round(street_usd, 2) if street_usd else None,
@@ -142,15 +176,20 @@ def build_valuation_deck(
             "eps_dispersion": eps_dispersion,
         },
         "model": {
-            "fair_value_usd": round(fair_value, 2) if fair_value > 0 else None,
-            "pct_vs_street_primary": pct_vs_street,
-            "gap_badge": gap_badge(pct_vs_street),
+            "fair_value_usd": _model_fv_display,
+            "pct_vs_street_primary": pct_vs_street if not fv_suppressed else None,
+            "gap_badge": _gap_val if not fv_suppressed else None,
+            "gap_badge_full": _gap_full,          # "GAP:METHOD" | "GAP:OPINION" | None
+            "fv_suppressed": fv_suppressed,
+            "fv_suppressed_reason": fv_suppressed_reason or None,
             "method_used": method,
             "methodology_summary": methodology,
-            "relative_valuation_line": rel_line,
+            "relative_valuation_line": rel_line if not fv_suppressed else None,
             "ttm_pe": ttm_pe,
             "forward_pe": forward_pe,
             "sector_pe_reference": sector_pe,
+            "divergence_pct": divergence_pct,       # NTM/TTM EPS divergence % (§0)
+            "geopolitical_cap": geopolitical_cap,   # True for China ADRs (§6d)
         },
         "house": house,
         "scout_street_alert": scout_alert,
