@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sys
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 try:
     from zoneinfo import ZoneInfo
@@ -42,7 +44,31 @@ sys.path.insert(0, str(ROOT))
 logger.info("Backend: importing FastAPI and middleware...")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+
+def _sanitize_floats(obj: Any) -> Any:
+    """Recursively replace non-finite floats (inf, -inf, nan) with None so json.dumps never raises."""
+    if isinstance(obj, float):
+        return None if not math.isfinite(obj) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_floats(v) for v in obj]
+    return obj
+
+
+class SafeJSONResponse(JSONResponse):
+    """JSONResponse that strips inf/nan before serialization."""
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            _sanitize_floats(content),
+            ensure_ascii=False,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
 logger.info("Backend: importing dashboard router...")
 from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2, push
@@ -74,6 +100,7 @@ app = FastAPI(
     title="Stock Investing Model API",
     description="Decision-support dashboard for retail investors",
     version="1.0.0",
+    default_response_class=SafeJSONResponse,
 )
 
 _cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001")

@@ -1785,12 +1785,12 @@ export function RiskRewardThermometer({
 
 const TIER_RETAIL_COPY: Record<string, { zone: string; sizing: string; mode: string }> = {
   T1: {
-    zone: "Nibble Zone",
-    sizing: "Start with a small ~5% tester position.",
-    mode: "Starter tranche",
+    zone: "Core Accumulation Zone",
+    sizing: "Best-value zone — scale to full target allocation here.",
+    mode: "Full allocation zone",
   },
   T2: {
-    zone: "Core Accumulation Zone",
+    zone: "Nibble Zone",
     sizing: "Partial position only — scale to Tier 2 allocation on dips, not full MOS.",
     mode: "Partial position only",
   },

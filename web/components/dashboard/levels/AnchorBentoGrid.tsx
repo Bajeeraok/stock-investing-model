@@ -66,39 +66,33 @@ export function AnchorBentoGrid({
   className?: string;
 }) {
   return (
-    <div className={clsx("grid grid-cols-2 sm:grid-cols-3 gap-2", className)}>
-      {anchors.map((a) => (
-        <div
-          key={a.id}
-          className={clsx(
-            "rounded-xl border backdrop-blur-sm p-3 flex flex-col gap-1",
-            BORDER[a.color],
-            a.role === "current" && "sm:col-span-1 ring-1 ring-white/10",
+    <div className={clsx(
+      "flex items-center gap-x-3 gap-y-1 flex-wrap",
+      className,
+    )}>
+      {anchors.map((a, i) => (
+        <div key={a.id} className="flex items-center gap-1.5 min-w-0">
+          {/* Separator between items */}
+          {i > 0 && (
+            <span className="text-slate-700 text-[10px] select-none mr-1">·</span>
           )}
-        >
-          <div className="flex items-center gap-1.5">
-            <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", DOT[a.color])} />
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">{a.label}</span>
-          </div>
-          <span className={clsx("text-base font-mono font-bold tabular-nums", TEXT[a.color])}>
+          <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", DOT[a.color])} />
+          <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium shrink-0">
+            {a.label}
+          </span>
+          <span className={clsx("text-[11px] font-mono font-semibold tabular-nums", TEXT[a.color])}>
             {fmt(a.value)}
           </span>
-          {(a.distPct != null || a.sublabel) && (
-            <div className="flex items-center justify-between gap-1 mt-0.5">
-              {a.distPct != null && (
-                <span
-                  className={clsx(
-                    "text-[10px] font-mono tabular-nums",
-                    a.distPct > 0 ? "text-emerald-400/70" : a.distPct < 0 ? "text-red-400/70" : "text-slate-500",
-                  )}
-                >
-                  {fmtPct(a.distPct)} to current
-                </span>
-              )}
-              {a.sublabel && !a.distPct && (
-                <span className="text-[10px] text-slate-500">{a.sublabel}</span>
-              )}
-            </div>
+          {a.distPct != null && a.role !== "current" && (
+            <span className={clsx(
+              "text-[9px] font-mono tabular-nums",
+              a.distPct > 0 ? "text-emerald-400/60" : "text-red-400/60",
+            )}>
+              {fmtPct(a.distPct)}
+            </span>
+          )}
+          {a.role === "current" && (
+            <span className="text-[9px] text-slate-600 italic">live</span>
           )}
         </div>
       ))}

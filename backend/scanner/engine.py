@@ -123,6 +123,15 @@ ALERT_EMOJIS = {
     AlertType.TACTICAL_VELOCITY: "⚡",
 }
 
+# Alert types that are EOD-appropriate — fire at most once per day.
+# These don't need intraday delivery; batching them avoids notification spam.
+DIGEST_ALERT_TYPES = frozenset({
+    AlertType.REGIME_CHANGE,
+    AlertType.SETUP_ALMOST_READY,
+    AlertType.EARNINGS_SOON,
+    AlertType.KELLY_REDUCTION,
+})
+
 # UI filter tracks — accumulate = swing/build; tactical = quick in/out (velocity, earnings, flow)
 ACCUMULATE_ALERT_TYPES = frozenset({
     AlertType.ENTRY_ZONE_ENTERED,
@@ -573,7 +582,11 @@ def _build_retail_alert(
     if priority_override is not None:
         pr = priority_override
     emoji = emoji_override or ALERT_EMOJIS.get(alert_type, "🔔")
-    sig_out = {**(signals or {}), "track": alert_track_for_type(alert_type)}
+    sig_out = {
+        **(signals or {}),
+        "track": alert_track_for_type(alert_type),
+        "digest": alert_type in DIGEST_ALERT_TYPES,
+    }
     return ScanAlert(
         id=_alert_id(ticker, alert_type, dedupe_extra or ""),
         type=alert_type,
@@ -594,6 +607,35 @@ def _build_retail_alert(
     )
 
 
+def _resolve_entry_mode(
+    ticker: str,
+    readiness_cache: dict[str, dict[str, Any]] | None,
+) -> str:
+    """
+    Return entry_mode (full_go / starter_only / hard_lock) for a ticker.
+    Falls back to deriving from go_no_go for pre-entry_mode rows.
+    """
+    if not readiness_cache:
+        return "unknown"
+    rd = readiness_cache.get(ticker.upper()) or readiness_cache.get(ticker)
+    if not isinstance(rd, dict):
+        return "unknown"
+    em = rd.get("entry_mode")
+    if em in ("full_go", "starter_only", "hard_lock"):
+        return em
+    # Legacy fallback
+    gng = str(rd.get("go_no_go") or "").lower()
+    if gng == "go":
+        return "full_go"
+    if gng == "no_go":
+        gp = int(rd.get("gates_passed") or 0)
+        # Treat as starter_only if valuation gate passed (gp>=1 and valuation specifically)
+        gates = rd.get("gates") or []
+        val_pass = any(g.get("id") == "valuation" and g.get("pass") for g in gates) if gates else False
+        return "starter_only" if val_pass else "hard_lock"
+    return "unknown"
+
+
 def evaluate_retail_alerts(
     snaps: list[MarketSnapshot],
     horizon_levels: dict[str, dict[str, Any]],
@@ -602,6 +644,7 @@ def evaluate_retail_alerts(
     watchlist: set[str],
     *,
     readiness_cache: dict[str, dict[str, Any]] | None = None,
+    portfolio: set[str] | None = None,
     enable_band: bool = True,
     enable_earnings: bool = True,
     enable_ml_prob: bool = True,
@@ -620,17 +663,27 @@ def evaluate_retail_alerts(
     alerts: list[ScanAlert] = []
     new_state: dict[str, dict[str, Any]] = dict(state)
     tf = max(0.5, min(0.999, float(trim_approach_fraction)))
+    portfolio_set: set[str] = {str(t).upper() for t in (portfolio or [])}
 
     for snap in snaps:
         ticker = snap.symbol
         price = snap.price
         in_wl = ticker in watchlist
+        in_portfolio = ticker in portfolio_set
         st = new_state.get(ticker) or {}
         last_price = st.get("last_price")
         prev_ml = st.get("previous_ml_prob")
 
-        # EARNINGS_SOON — only for watchlist
-        if enable_earnings and in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS:
+        # Resolve entry_mode once per ticker — used to gate zone alerts
+        entry_mode = _resolve_entry_mode(ticker, readiness_cache)
+
+        # Watchlist-only tickers (not portfolio holdings) get reduced alert verbosity:
+        # only full_go zone entries are surfaced. Earnings/RSI/ML alerts are suppressed
+        # since you don't own the position yet and the gate isn't clear.
+        _wl_only_suppress = in_wl and not in_portfolio and entry_mode != "full_go"
+
+        # EARNINGS_SOON — only for watchlist; suppressed for watchlist-only unless full_go
+        if enable_earnings and in_wl and snap.er_days_away is not None and snap.er_days_away in EARNINGS_SOON_DAYS and not _wl_only_suppress:
             ed = snap.er_days_away
             et = _earnings_target_for_alert(ticker, snap, st)
             e_move = et.get("expected_move_pct")
@@ -702,12 +755,35 @@ def evaluate_retail_alerts(
                         pass
 
             if el and eh and actionable_zone and (_first_fire or _reentry_fire):
+                # ── Entry-mode gate ───────────────────────────────────────────
+                # hard_lock: no MOS or gates all blocked → suppress entirely.
+                # starter_only: value present but tech blocked → allow, but
+                #   only for portfolio holdings (you already own it) or
+                #   watchlist tickers where the dip is >3% below current spot.
+                # full_go: all gates clear → always fire.
+                # unknown: treat like starter_only (conservative default).
+                _suppress_zone = False
+                if entry_mode == "hard_lock":
+                    _suppress_zone = True
+                elif entry_mode in ("starter_only", "unknown"):
+                    # Watchlist-only (not portfolio): only alert if it's a meaningful dip
+                    if not in_portfolio:
+                        # "meaningful dip" = price is at least 2% below entry_high
+                        dip_pct = (eh - price) / eh if eh > 0 else 0
+                        if dip_pct < 0.02:
+                            _suppress_zone = True
+
+                if _suppress_zone:
+                    # Still update zone state so cooldown / re-entry logic stays accurate
+                    st = {**st, zone_flag: actionable_zone}
+                    continue
+
                 # Reset the entered_at timestamp on re-alert so the 4h window restarts
                 st = {**st, entered_at_flag: _now_str}
                 rd = None
                 if readiness_cache:
                     rd = readiness_cache.get(ticker.upper()) or readiness_cache.get(ticker)
-                headline, body, act, one_l, pr, em, gate_sig = _entry_zone_alert_copy(
+                headline, body, act, one_l, pr, em_override, gate_sig = _entry_zone_alert_copy(
                     ticker,
                     band_key,
                     label,
@@ -719,6 +795,15 @@ def evaluate_retail_alerts(
                     snap,
                     rd,
                 )
+
+                # Soften priority and copy for starter_only
+                if entry_mode == "starter_only":
+                    headline = headline.replace("staged add OK", "watch only — size small")
+                    pr = ScanPriority.MEDIUM
+                    em_override = "👀"
+                    act = f"[Starter only — valuation gate passes but tech blocked] {act}"
+
+                gate_sig = {**gate_sig, "entryMode": entry_mode}
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.ENTRY_ZONE_ENTERED,
@@ -738,7 +823,7 @@ def evaluate_retail_alerts(
                     one_liner=one_l,
                     dedupe_extra=dex,
                     priority_override=pr,
-                    emoji_override=em,
+                    emoji_override=em_override,
                 ))
             if stop and price < stop:
                 alerts.append(_build_retail_alert(
@@ -836,9 +921,9 @@ def evaluate_retail_alerts(
         st = {**st, "last_price": price}
         new_state[ticker] = st
 
-        # ML_PROB_CROSSED — need current and previous ML prob
+        # ML_PROB_CROSSED — suppress for watchlist-only tickers unless full_go
         ml_current = ml_probs.get(ticker) if ml_probs else (snap.ml_prob_short if getattr(snap, "ml_prob_short", None) is not None else None)
-        if enable_ml_prob and in_wl and ml_current is not None:
+        if enable_ml_prob and in_wl and ml_current is not None and not _wl_only_suppress:
             prev = prev_ml if prev_ml is not None else st.get("previous_ml_prob")
             if prev is not None and float(prev) < ML_PROB_CROSS_THRESHOLD <= float(ml_current):
                 alerts.append(_build_retail_alert(
@@ -867,8 +952,9 @@ def evaluate_retail_alerts(
         # RSI_OVERSOLD — buy-side signal that works even when price is above entry bands.
         # Only fires for watchlist tickers to keep alert volume manageable.
         # Threshold: RSI-14 < 35 (oversold territory without requiring extreme < 30).
+        # RSI_OVERSOLD — suppress for watchlist-only tickers unless full_go
         rsi_val = getattr(snap, "rsi", None)
-        if rsi_val is not None and in_wl:
+        if rsi_val is not None and in_wl and not _wl_only_suppress:
             RSI_OVERSOLD_THRESHOLD = 35.0
             prev_rsi = st.get("previous_rsi")
             try:
@@ -1094,20 +1180,21 @@ class AlertDeduplicator:
             AlertType.MOMENTUM_BREAKOUT: 30,
             AlertType.SUPPORT_BOUNCE: 60,
             AlertType.OPTIONS_FLOW_SPIKE: 45,
-            AlertType.REGIME_CHANGE: 240,
+            # Digest types → 24h cooldown (once per market day max)
+            AlertType.REGIME_CHANGE: 1440,
             AlertType.MACRO_RISK_OFF: 60,
             AlertType.MACRO_RISK_ON: 60,
-            AlertType.KELLY_REDUCTION: 120,
-            AlertType.EARNINGS_SOON: 360,  # 6h per ticker
+            AlertType.KELLY_REDUCTION: 1440,
+            AlertType.EARNINGS_SOON: 1440,
             AlertType.ENTRY_ZONE_ENTERED: 120,
             AlertType.STOP_HIT: 60,
             AlertType.STOP_APPROACHING: 60,
             AlertType.TARGET_HIT: 120,
             AlertType.TARGET_APPROACHING: 90,
             AlertType.ML_PROB_CROSSED: 180,
-            AlertType.SETUP_ALMOST_READY: 360,
+            AlertType.SETUP_ALMOST_READY: 1440,
             AlertType.TACTICAL_VELOCITY: 180,
-            AlertType.RSI_OVERSOLD: 240,  # 4h — don't spam on every 15m scan
+            AlertType.RSI_OVERSOLD: 240,
         }
 
     def is_dup(self, ticker: str, t: AlertType, extra: str = "") -> bool:
@@ -1202,6 +1289,7 @@ class ScanEngine:
         snaps: list[MarketSnapshot],
         macro_flag: str,
         watchlist: set[str],
+        portfolio: set[str] | None = None,
         on_alert: Callable[[ScanAlert], None],
         data_root: Optional[Path] = None,
         enable_options_alerts: Optional[bool] = None,
@@ -1264,6 +1352,7 @@ class ScanEngine:
                     ml_probs,
                     watchlist,
                     readiness_cache=readiness,
+                    portfolio=portfolio,
                     enable_band=enable_band,
                     enable_earnings=enable_earnings,
                     enable_ml_prob=enable_ml,

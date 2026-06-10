@@ -1211,13 +1211,15 @@ export function TickerDetailModal({
                   );
                   return (
                     <div>
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-                        Technical Level Anchors
-                      </p>
-                      <AnchorBentoGrid anchors={anchors} />
+                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                        <span className="text-[9px] font-semibold text-slate-600 uppercase tracking-widest shrink-0">
+                          Anchors
+                        </span>
+                        <AnchorBentoGrid anchors={anchors} />
+                      </div>
                       <Comfort>
                         {priceTargets.technical_levels.note && (
-                          <p className="text-[10px] text-slate-500 leading-snug mt-1.5 px-0.5">
+                          <p className="text-[10px] text-slate-500 leading-snug mt-1 px-0.5">
                             {priceTargets.technical_levels.note}
                           </p>
                         )}

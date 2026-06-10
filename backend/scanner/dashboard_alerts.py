@@ -28,13 +28,17 @@ def _alert_settings(config: dict) -> dict[str, Any]:
     }
 
 
-def _watchlist_set(config: dict) -> set[str]:
+def _watchlist_set(config: dict) -> tuple[set[str], set[str]]:
+    """Return (full_watchlist, portfolio_only).
+    full_watchlist includes portfolio + explicit watchlist tickers.
+    portfolio_only is just the holdings — used for verbosity split.
+    """
     from config_loader import portfolio_tickers_from_config
 
+    portfolio = {str(t).upper() for t in portfolio_tickers_from_config(config)}
     wl = {str(t).upper() for t in (config.get("watchlist") or []) if t}
-    for t in portfolio_tickers_from_config(config):
-        wl.add(str(t).upper())
-    return wl
+    wl.update(portfolio)
+    return wl, portfolio
 
 
 def _macro_flag_from_results(results: list[dict]) -> str:
@@ -277,7 +281,7 @@ def run_retail_alerts_from_dashboard_refresh(
     from config_loader import get_audit_cohort_tickers, get_dashboard_signal_universe
 
     data_root = Path(data_root)
-    watchlist = _watchlist_set(config)
+    watchlist, portfolio_tickers = _watchlist_set(config)
     dashboard_universe = {str(t).upper() for t in get_dashboard_signal_universe(config)}
     audit_universe: set[str] = set()
     if settings["include_audit_cohort"]:
@@ -357,6 +361,7 @@ def run_retail_alerts_from_dashboard_refresh(
         snaps=snaps,
         macro_flag=macro_flag,
         watchlist=watchlist,
+        portfolio=portfolio_tickers,
         on_alert=on_alert,
         data_root=data_root,
         enable_options_alerts=False,
