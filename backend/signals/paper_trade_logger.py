@@ -1913,3 +1913,27 @@ class PaperTradeLogger:
         out = list(reversed(rows))[:limit]
         return out
 
+    def purge_velocity_track(self, *, dry_run: bool = False) -> dict[str, Any]:
+        """
+        Remove all velocity-track rows from paper_trades.csv.
+        Safe to call after the target-inversion and dedup bugs were fixed (Jun 2026).
+        Accumulate-track rows are untouched — they were not affected by those bugs.
+
+        dry_run=True reports counts without writing.
+        """
+        rows = self._read_all()
+        velocity = [r for r in rows if str(r.get("track") or "") == "velocity"]
+        kept = [r for r in rows if str(r.get("track") or "") != "velocity"]
+        if not dry_run and velocity:
+            self._write_all(kept)
+        return {
+            "purged_n": len(velocity),
+            "kept_n": len(kept),
+            "dry_run": dry_run,
+            "message": (
+                f"Removed {len(velocity)} velocity-track rows; {len(kept)} accumulate rows kept."
+                if not dry_run
+                else f"Dry-run: would remove {len(velocity)} velocity rows, keep {len(kept)}."
+            ),
+        }
+

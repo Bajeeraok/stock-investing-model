@@ -52,7 +52,6 @@ export type ModelAuditRecord = {
   bb_pct_b?: number | null;
   readiness_tier?: string | null;
   readiness_score?: number | null;
-  entry_mode?: "full_go" | "starter_only" | "hard_lock" | null;
 };
 
 type ModeFilter = "ALL" | "full_go" | "starter_only" | "hard_lock";

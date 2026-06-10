@@ -3747,3 +3747,26 @@ async def get_accuracy():
     except Exception as e:
         logger.warning("Failed to load accuracy report: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/paper-trading/purge-velocity")
+async def purge_velocity_paper_trades(dry_run: bool = Query(True)):
+    """
+    One-time migration: remove contaminated velocity-track rows from paper_trades.csv.
+    These were logged with inverted target logic and dedup bugs (fixed Jun 2026).
+    Accumulate-track rows are NOT touched.
+
+    Call with ?dry_run=false to actually purge. Default is dry_run=true (safe preview).
+    """
+    try:
+        from signals.paper_trade_logger import PaperTradeLogger
+        from config_loader import get_config
+        config = get_config()
+        data_root = config.get("data_root") or "data"
+        pt = PaperTradeLogger(data_root=data_root)
+        result = pt.purge_velocity_track(dry_run=dry_run)
+        logger.info("[paper-trading] purge-velocity: %s", result)
+        return result
+    except Exception as e:
+        logger.warning("purge-velocity failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

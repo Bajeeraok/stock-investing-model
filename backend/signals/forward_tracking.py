@@ -297,6 +297,11 @@ def get_forward_tracking(
                     "actual_return_pct": ret_pct,
                     "gate_cleared": gate.get("gate_cleared"),
                     "go_no_go": gate.get("go_no_go"),
+                    "entry_mode": (
+                        gate.get("entry_mode")
+                        or row_work.get("entry_mode")
+                        or (row_work.get("retail_status") or {}).get("entry_mode")
+                    ),
                     "gates_passed": gate.get("gates_passed"),
                     "gates_total": gate.get("gates_total"),
                     "gates_frozen": bool(row_work.get("gates_frozen")),
@@ -347,6 +352,23 @@ def get_forward_tracking(
                 "win_rate_pct"
             )
 
+    summary_by_entry_mode: dict[str, dict[str, Any]] = {}
+    for em_key in ("full_go", "starter_only", "hard_lock"):
+        em_rows = [
+            r
+            for r in records
+            if r.get("horizon_days") == 20
+            and str(r.get("entry_mode") or "").lower() == em_key
+        ]
+        if em_rows:
+            summary_by_entry_mode[em_key] = aggregate_horizon_stats(em_rows)
+            summary_by_entry_mode[em_key]["avg_return_20d_pct"] = summary_by_entry_mode[em_key].get(
+                "avg_return_pct"
+            )
+            summary_by_entry_mode[em_key]["hit_rate_pct"] = summary_by_entry_mode[em_key].get(
+                "win_rate_pct"
+            )
+
     summary_by_gates = aggregate_by_gates([r for r in records if r.get("horizon_days") == 20])
     summary_by_trim_gates = aggregate_by_trim_gates(
         [r for r in records if r.get("horizon_days") == 20 and r.get("trim_score_triggered")]
@@ -373,6 +395,7 @@ def get_forward_tracking(
         "summary_by_horizon": summary_by_horizon,
         "summary_by_signal": summary_by_signal,
         "summary_by_go_no_go": summary_by_go_no_go,
+        "summary_by_entry_mode": summary_by_entry_mode,
         "summary_by_gates": summary_by_gates,
         "summary_by_trim_gates": summary_by_trim_gates,
         "signal_source_counts": signal_source_counts,

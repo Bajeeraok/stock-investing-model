@@ -23,6 +23,20 @@ from signals.retail_action_payload import (
 PRIMARY_GATE_COUNT = len(PRIMARY_GATE_IDS)
 
 
+def _derive_entry_mode_from_gates(per_gate: dict[str, bool], cleared: bool) -> str:
+    """
+    Lightweight entry_mode derivation for backtest rows where only gate pass/fail is known.
+    Full derivation (with assessment_pct, zone context) happens in retail_action_payload.
+    """
+    val_pass = per_gate.get("valuation", False)
+    tech_ok = all(per_gate.get(g, False) for g in ("regime", "momentum", "ml"))
+    if cleared and val_pass and tech_ok:
+        return "full_go"
+    if val_pass:
+        return "starter_only"
+    return "hard_lock"
+
+
 def _gate_summary(gates: list[dict[str, Any]]) -> dict[str, Any]:
     primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
     passed = sum(1 for g in primary if g.get("pass"))
@@ -35,6 +49,7 @@ def _gate_summary(gates: list[dict[str, Any]]) -> dict[str, Any]:
         "gates_total": total,
         "gate_cleared": cleared,
         "go_no_go": "go" if cleared else "no_go",
+        "entry_mode": _derive_entry_mode_from_gates(per_gate, cleared),
         "valuation_pass": per_gate.get("valuation"),
         "regime_pass": per_gate.get("regime"),
         "momentum_pass": per_gate.get("momentum"),
@@ -181,17 +196,24 @@ def enrich_row_with_gates(
 def enrich_eod_row_with_gates_from_snapshot(row: dict[str, Any]) -> dict[str, Any]:
     """
     Read gates from EOD row if run_daily already enriched retail_status; else recompute.
+    Also reads entry_mode from retail_status when present.
     """
     rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
     gates = rs.get("gates") if isinstance(rs.get("gates"), list) else None
     if gates:
         summary = _gate_summary(gates)
         row.update({k: v for k, v in summary.items() if k != "gates"})
+        # Prefer explicit entry_mode from retail_status over the derived value
+        if rs.get("entry_mode"):
+            row["entry_mode"] = rs["entry_mode"]
         return row
     if row.get("gate_cleared") is not None:
         row.setdefault("gates_passed", row.get("gates_passed"))
         row.setdefault("gates_total", row.get("gates_total") or 4)
         row.setdefault("go_no_go", "go" if row.get("gate_cleared") else "no_go")
+        # Propagate entry_mode from top-level row if already set (e.g. run_daily wrote it)
+        if not row.get("entry_mode") and rs.get("entry_mode"):
+            row["entry_mode"] = rs["entry_mode"]
         return row
     try:
         from signals.retail_action_payload import enrich_dashboard_signal_row
@@ -201,6 +223,8 @@ def enrich_eod_row_with_gates_from_snapshot(row: dict[str, Any]) -> dict[str, An
         if rs2.get("gates"):
             summary = _gate_summary(rs2["gates"])
             row.update({k: v for k, v in summary.items() if k != "gates"})
+        if rs2.get("entry_mode") and not row.get("entry_mode"):
+            row["entry_mode"] = rs2["entry_mode"]
     except Exception:
         pass
     return row
@@ -262,6 +286,26 @@ def summarize_gate_backtest(
             return True
         return str(r.get("go_no_go") or "").lower() == "go"
 
+    def _entry_mode_is(mode: str) -> Callable[[dict[str, Any]], bool]:
+        def _f(r: dict[str, Any]) -> bool:
+            em = str(r.get("entry_mode") or "")
+            if em == mode:
+                return True
+            # Fallback for rows that pre-date entry_mode: derive from gate fields.
+            if not em:
+                pg = {
+                    "valuation": r.get("valuation_pass"),
+                    "regime": r.get("regime_pass"),
+                    "momentum": r.get("momentum_pass"),
+                    "ml": r.get("ml_pass"),
+                }
+                em = _derive_entry_mode_from_gates(
+                    {k: bool(v) for k, v in pg.items()},
+                    bool(r.get("gate_cleared")),
+                )
+            return em == mode
+        return _f
+
     def _composite_buy(r: dict[str, Any]) -> bool:
         return float(r.get("composite_buy") or 0) >= buy_min
 
@@ -273,6 +317,9 @@ def summarize_gate_backtest(
         "composite_ge_buy_min": _composite_buy,
         "gates_ge_min": _ge_gates,
         "gate_cleared_4of4": _cleared,
+        "entry_mode_full_go": _entry_mode_is("full_go"),
+        "entry_mode_starter_only": _entry_mode_is("starter_only"),
+        "entry_mode_hard_lock": _entry_mode_is("hard_lock"),
         "composite_and_gate_cleared": lambda r: _composite_buy(r) and _cleared(r),
         "composite_sell": _composite_sell,
     }

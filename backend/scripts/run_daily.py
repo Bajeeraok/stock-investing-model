@@ -628,6 +628,8 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
         rs = r.get("retail_status") if isinstance(r.get("retail_status"), dict) else {}
         if rs.get("go_no_go"):
             row["go_no_go"] = rs.get("go_no_go")
+        if rs.get("entry_mode"):
+            row["entry_mode"] = rs.get("entry_mode")
         try:
             from signals.forward_tracking_metrics import freeze_gate_fields_from_row, freeze_trim_gate_fields_from_row
 
@@ -653,6 +655,8 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
                     row["gates_total"] = snap["gates_total"]
                 if row.get("go_no_go") is None and snap.get("go_no_go"):
                     row["go_no_go"] = snap["go_no_go"]
+                if row.get("entry_mode") is None and snap.get("entry_mode"):
+                    row["entry_mode"] = snap["entry_mode"]
             except Exception:
                 pass
         for k in (

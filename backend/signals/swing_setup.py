@@ -91,6 +91,10 @@ def build_swing_setup(
     total = len(primary) or 4
     go_no_go = retail.get("go_no_go") or ("go" if passed == total else "no_go")
     all_go = go_no_go == "go"
+    # entry_mode from retail payload; fall back to gate-derived value
+    from signals.gate_backtest import _derive_entry_mode_from_gates as _dem
+    per_gate_map = {str(g.get("id")): bool(g.get("pass")) for g in primary}
+    entry_mode = retail.get("entry_mode") or _dem(per_gate_map, all_go)
 
     regime_bull = _safe_float(investor_out.get("regime_bull_pct"))
     rsi = _safe_float(investor_out.get("rsi"))
@@ -230,6 +234,7 @@ def build_swing_setup(
         "active": True,
         "ticker": ticker,
         "go_no_go": go_no_go,
+        "entry_mode": entry_mode,
         "setup_quality": {
             "passed": passed,
             "total": total,
