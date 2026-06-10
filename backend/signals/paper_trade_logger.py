@@ -115,6 +115,8 @@ _FIELDS = [
     "reference_entry_price",
     "limit_fill_date",
     "entry_mode",
+    # Gate-mode: full_go / starter_only / hard_lock (distinct from entry_mode execution mode)
+    "gate_mode",
 ]
 
 
@@ -313,6 +315,16 @@ def _result_to_paper_record(
         entry_src = str(r.get("paper_entry_source") or "live_quote")
     elif entry is not None:
         entry_src = "ohlcv_last_bar"
+
+    # Target must be ABOVE entry for a long trade — if inverted (e.g. T1 tier stored as
+    # target on a velocity trade entered above the tier), null it out so fill_outcomes
+    # falls back to the return-direction criterion (return > 0 = HIT).
+    if target_1 is not None and entry is not None and target_1 <= entry:
+        target_1 = None
+    # Hard stop must be BELOW entry.
+    if hard_stop is not None and entry is not None and hard_stop >= entry:
+        hard_stop = None
+
     atr_14 = _safe_float(r.get("atr_14"))
     score = _safe_float(r.get("composite_buy"))
     from signals.tracking_gate import gate_snapshot_from_row
@@ -339,6 +351,11 @@ def _result_to_paper_record(
         if v is not None:
             row[k] = v
     row["track"] = track
+    # Gate-level entry mode (full_go / starter_only / hard_lock) — different from the
+    # execution entry_mode (limit_touch / market).  Sourced from enrich_dashboard_signal_row.
+    gm = r.get("entry_mode")
+    if gm in ("full_go", "starter_only", "hard_lock"):
+        row["gate_mode"] = gm
     return row
 
 
@@ -784,6 +801,26 @@ class PaperTradeLogger:
         date_str = date_str or _today_str()
         rows = self._read_all()
         existing = {self._dedupe_key(r) for r in rows}
+
+        # Velocity-specific dedup: same (ticker, entry_price) within a 3-day window
+        # prevents the same breakout being re-logged on consecutive daily runs while
+        # the velocity_triggered flag stays True in the EOD snapshot.
+        _vel_window_days = int((vt_cfg.get("dedup_window_days") or 3))
+        try:
+            from datetime import date as _date, timedelta as _td
+            _cutoff = (
+                _date.fromisoformat(date_str) - _td(days=_vel_window_days)
+            ).isoformat()
+        except Exception:
+            _cutoff = ""
+        _recent_vel: set[tuple[str, str]] = set()
+        for _r in rows:
+            if str(_r.get("track") or "") == "velocity" and str(_r.get("date") or "") >= _cutoff:
+                _ep = str(_r.get("entry_price") or "")
+                _tk = str(_r.get("ticker") or "").upper()
+                if _tk and _ep:
+                    _recent_vel.add((_tk, _ep))
+
         appended = 0
         skipped = 0
 
@@ -801,12 +838,19 @@ class PaperTradeLogger:
                     continue
                 rec["entry_mode"] = "market"
                 rec["entry_price_source"] = rec.get("entry_price_source") or "ohlcv_last_bar"
+                # Standard date/signal dedup
                 key = self._dedupe_key(rec)
                 if key in existing:
                     skipped += 1
                     continue
+                # Rolling window dedup by (ticker, entry_price)
+                vel_key = (t, str(rec.get("entry_price") or ""))
+                if vel_key in _recent_vel:
+                    skipped += 1
+                    continue
                 rows.append(rec)
                 existing.add(key)
+                _recent_vel.add(vel_key)
                 appended += 1
             except Exception:
                 continue
@@ -1184,6 +1228,10 @@ class PaperTradeLogger:
         """
         Backfill outcomes using EOD snapshots (no extra API calls).
         Uses horizon_trading_days to find the next snapshot date.
+
+        Velocity track rows with outcomes are also re-evaluated: the win/loss criterion
+        changed from target-touch to return > 0, so old misclassified outcomes are reset
+        and re-resolved on this run.
         """
         rows = self._read_all()
         if not rows:
@@ -1192,6 +1240,34 @@ class PaperTradeLogger:
         dates = self._list_eod_dates()
         if len(dates) < 2:
             return {"updated": 0, "message": "Need at least 2 EOD snapshots (Redis or data/eod) to fill outcomes."}
+
+        # Reset outcomes for velocity rows that were classified with the old (inverted-target)
+        # logic: those have hit_target=1 but avg_return negative, or target_1 ≤ entry_price.
+        reclassified = 0
+        for row in rows:
+            if str(row.get("track") or "") != "velocity":
+                continue
+            if not row.get("outcome"):
+                continue
+            # Re-check: if stored target_1 ≤ entry_price → old inverted-target outcome; reset.
+            tgt = _safe_float(row.get("target_1"))
+            ent = _safe_float(row.get("entry_price"))
+            ret = _safe_float(row.get("return_pct"))
+            if tgt is not None and ent is not None and tgt <= ent:
+                # Target was below entry — outcome was mis-classified; reset for re-resolution.
+                for _f in ("outcome", "hit_target", "hit_stop", "next_date",
+                           "actual_price", "actual_price_net", "return_pct"):
+                    row[_f] = None
+                reclassified += 1
+            elif ret is not None:
+                # Even if target looks ok: re-verify outcome matches return direction.
+                oc = str(row.get("outcome") or "").upper()
+                ht = _safe_float(row.get("hit_target"))
+                expected_hit = 1 if ret >= 0 else 0
+                if ht is not None and int(ht) != expected_hit:
+                    for _f in ("outcome", "hit_target", "hit_stop"):
+                        row[_f] = None
+                    reclassified += 1
 
         updated = 0
         entry_synced = 0
@@ -1262,7 +1338,14 @@ class PaperTradeLogger:
                     else:
                         hit_stop = 1 if actual <= stop else 0
 
-                if hit_stop == 1:
+                is_velocity = str(row.get("track") or "").lower() == "velocity"
+                if is_velocity:
+                    # Velocity T+N: win = positive return at horizon; no stop-hit scoring
+                    # since the hold-to-horizon design doesn't use intraday stop triggers.
+                    outcome = "HIT" if ret_pct >= 0 else "MISS"
+                    hit_target = 1 if ret_pct >= 0 else 0
+                    hit_stop = None
+                elif hit_stop == 1:
                     outcome = "STOP_HIT"
                 elif hit_target is not None:
                     outcome = "HIT" if hit_target == 1 else "MISS"
@@ -1281,9 +1364,9 @@ class PaperTradeLogger:
             except Exception:
                 continue
 
-        if updated or entry_synced:
+        if updated or entry_synced or reclassified:
             self._write_all(rows)
-        return {"updated": updated, "entry_synced": entry_synced, "message": None}
+        return {"updated": updated, "entry_synced": entry_synced, "reclassified": reclassified, "message": None}
 
     def mark_to_market(self, max_rows: int = 5000) -> dict[str, Any]:
         """
@@ -1640,6 +1723,20 @@ class PaperTradeLogger:
         losses = [float(r["return_pct"]) for r in completed if str(r.get("hit_target")) == "0" and _safe_float(r.get("return_pct")) is not None]
         avg_win = round(sum(wins) / len(wins), 2) if wins else None
         avg_loss = round(sum(losses) / len(losses), 2) if losses else None
+
+        # Gate-mode breakdown: full_go vs starter_only vs hard_lock
+        _gm_stats: dict[str, dict[str, Any]] = {}
+        for gm in ("full_go", "starter_only", "hard_lock"):
+            gm_rows = [r for r in completed if r.get("gate_mode") == gm]
+            if not gm_rows:
+                continue
+            gm_rets = [float(r["return_pct"]) for r in gm_rows if _safe_float(r.get("return_pct")) is not None]
+            gm_hits = [int(float(r.get("hit_target") or 0)) for r in gm_rows if str(r.get("hit_target") or "") != ""]
+            _gm_stats[gm] = {
+                "n": len(gm_rows),
+                "win_rate_pct": round(100 * sum(gm_hits) / len(gm_hits), 1) if gm_hits else None,
+                "avg_return_pct": round(sum(gm_rets) / len(gm_rets), 2) if gm_rets else None,
+            }
         excesses: list[float] = []
         for r in completed:
             br = self._benchmark_return_pct_between(
@@ -1651,7 +1748,7 @@ class PaperTradeLogger:
             if br is not None and tr is not None:
                 excesses.append(tr - br)
         avg_excess = round(sum(excesses) / len(excesses), 2) if excesses else None
-        return {
+        out: dict[str, Any] = {
             "completed_n": len(completed),
             "win_rate_pct": win_rate,
             "avg_return_pct": avg_return,
@@ -1660,6 +1757,9 @@ class PaperTradeLogger:
             "avg_excess_vs_spy_pct": avg_excess,
             "n_with_benchmark": len(excesses),
         }
+        if _gm_stats:
+            out["by_gate_mode"] = _gm_stats
+        return out
 
     def get_performance_summary(
         self,
@@ -1766,6 +1866,12 @@ class PaperTradeLogger:
                 "avg_return_pct": tac_stats["avg_return_pct"],
                 "label": "Tactical velocity track (T+5)",
             }
+
+        # Gate-mode tiered breakdown (full_go vs starter_only vs hard_lock)
+        # Only meaningful for accumulate track where gates apply.
+        if stats.get("by_gate_mode"):
+            out["by_gate_mode"] = stats["by_gate_mode"]
+
         out["marketing_note"] = (
             "Headline marketing stats should use accumulate GO cohort only; "
             "tactical track is labeled separately."

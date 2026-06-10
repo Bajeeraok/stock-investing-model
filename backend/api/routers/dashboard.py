@@ -72,7 +72,6 @@ from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_bac
 from signals.premarket import run_premarket_snapshot
 from signals.indicator_validation import validate_indicators_vs_external
 from signals.indicator_comparison import run_indicator_comparison
-from signals.validation import get_validation_records
 from signals.forward_tracking import get_forward_tracking
 from signals.model_health import build_model_health
 from signals.fmp_client import (
@@ -541,13 +540,6 @@ def compute_analysis_bundle() -> dict | None:
         except Exception:
             return ("fmp_plan_status", {"has_key": False, "available": [], "unavailable": []})
 
-    def _task_model_validation():
-        try:
-            recs, summary = get_validation_records(data_root=data_root, max_records=60, tickers=["SPY", "QQQ"])
-            return ("model_validation", {"records": recs, "summary": summary})
-        except Exception:
-            return ("model_validation", {"records": [], "summary": {}})
-
     def _task_forward_tracking():
         try:
             ft_tickers = get_forward_tracking_tickers(config, watchlist, portfolio_tickers)
@@ -680,7 +672,7 @@ def compute_analysis_bundle() -> dict | None:
             return ("model_audit", {"enabled": False, "message": str(e)})
 
     specs = [
-        _task_insider, _task_fmp_plan, _task_model_validation, _task_forward_tracking,
+        _task_insider, _task_fmp_plan, _task_forward_tracking,
         _task_paper_trading_async, _task_regime_validation, _task_confidence_calibration,
         _task_model_audit,
     ]
@@ -742,7 +734,6 @@ def compute_analysis_bundle() -> dict | None:
         logger.debug("analysis-bundle indicator_comparisons: %s", e)
 
     bundle = {
-        "model_validation": parallel_results.get("model_validation", {"records": [], "summary": {}}),
         "forward_tracking": forward_tracking,
         "regime_validation": parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"}),
         "confidence_calibration": parallel_results.get("confidence_calibration", {"buckets": [], "note": "Not computed"}),
@@ -1303,14 +1294,6 @@ def _compute_full_dashboard_sync() -> dict:
         except Exception:
             return ("fmp_plan_status", {"has_key": False, "available": [], "unavailable": []})
 
-    def _task_model_validation():
-        try:
-            recs, summary = get_validation_records(data_root=data_root, max_records=60, tickers=["SPY", "QQQ"])
-            return ("model_validation", {"records": recs, "summary": summary})
-        except Exception as e:
-            logger.debug("Model validation failed: %s", e)
-            return ("model_validation", {"records": [], "summary": {}})
-
     def _task_forward_tracking():
         try:
             ft_tickers = get_forward_tracking_tickers(config, watchlist, portfolio_tickers)
@@ -1482,7 +1465,6 @@ def _compute_full_dashboard_sync() -> dict:
     parallel_task_specs_deferred = [
         ("insider_flow", _task_insider),
         ("fmp_plan_status", _task_fmp_plan),
-        ("model_validation", _task_model_validation),
         ("forward_tracking", _task_forward_tracking),
         ("paper_trading_async", _task_paper_trading_async),
         ("regime_validation", _task_regime_validation),
@@ -1515,7 +1497,6 @@ def _compute_full_dashboard_sync() -> dict:
     redis_status_out = eod_redis[1] if isinstance(eod_redis, tuple) and len(eod_redis) > 1 else {"configured": False, "connected": False}
     insider_flow = parallel_results.get("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
     fmp_plan_status = parallel_results.get("fmp_plan_status", {})
-    model_validation = parallel_results.get("model_validation", {"records": [], "summary": {}})
     forward_tracking = parallel_results.get("forward_tracking", {"records": [], "summary_by_horizon": {}, "summary_by_signal": {}, "summary_by_gates": {}, "message": None})
     regime_validation = parallel_results.get("regime_validation", {"validated": None, "summary": "Not computed"})
     confidence_calibration = parallel_results.get("confidence_calibration", {"buckets": [], "note": "Not computed"})
@@ -1824,7 +1805,7 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("Indicator comparison failed: %s", e)
 
-    # (model_validation, forward_tracking, paper_trading sync, pre_market, pre_market_full, eod_snapshots, redis_status, insider_flow, fmp_plan_status loaded in parallel above)
+    # (forward_tracking, paper_trading sync, pre_market, pre_market_full, eod_snapshots, redis_status, insider_flow, fmp_plan_status loaded in parallel above)
 
     # Opportunities scan: lazy via GET /api/dashboard/opportunities-bundle when enabled.
     opp_bundle_on = _opportunities_bundle_enabled(config)
@@ -2344,7 +2325,6 @@ def _compute_full_dashboard_sync() -> dict:
             config,
             forward_tracking,
             eod_snapshots,
-            model_validation=model_validation,
         )
     except Exception as e:
         logger.debug("model_health failed: %s", e)
@@ -2417,7 +2397,6 @@ def _compute_full_dashboard_sync() -> dict:
         "typical_move": typical_move,
         "indicator_validation": indicator_validation,
         "indicator_comparisons": indicator_comparisons,
-        "model_validation": model_validation,
         "forward_tracking": forward_tracking,
         "regime_validation": regime_validation,
         "confidence_calibration": confidence_calibration,

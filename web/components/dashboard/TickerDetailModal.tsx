@@ -41,7 +41,6 @@ import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
 import { LevelsPageHeader } from "./levels/LevelsPageHeader";
 import { AnchorBentoGrid, anchorsFromTechnicalLevels } from "./levels/AnchorBentoGrid";
 import { TierThermometerPanel } from "./levels/TierThermometerPanel";
-import { RegimeGauge } from "./levels/RegimeGauge";
 import { DensityProvider, DensityToggle, Comfort } from "./levels/DensityToggle";
 import {
   GateProgressBar,
@@ -1227,38 +1226,14 @@ export function TickerDetailModal({
                   );
                 })()}
 
-                {/* ── Regime gauge strip ─── */}
-                {detail.investor_summary?.regime_bull_pct != null && (() => {
-                  const bull = detail.investor_summary!.regime_bull_pct!;
-                  const trans = Math.min(100 - bull, 20);
-                  const bear = Math.max(0, 100 - bull - trans);
-                  return (
-                    <Comfort>
-                      <div className="rounded-xl border border-slate-700/40 bg-slate-900/60 backdrop-blur-sm p-3 flex flex-col sm:flex-row items-center gap-4">
-                        <RegimeGauge bullPct={bull} transPct={trans} bearPct={bear} size={130} />
-                        <div className="flex flex-col gap-1 min-w-0 flex-1">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            Ticker Regime (HMM)
-                          </p>
-                          <p className="text-xs text-slate-300 leading-snug">
-                            {detail.investor_summary?.regime_hmm_label ?? "Regime data available"}
-                          </p>
-                          <p className="text-[10px] text-slate-500 leading-snug mt-1">
-                            Bull threshold for Full Go: 60%. Current: {bull.toFixed(0)}% bull probability.
-                          </p>
-                        </div>
-                      </div>
-                    </Comfort>
-                  );
-                })()}
-
-                {/* ── Price Thermometer + Tier Ladder ─── */}
+                {/* ── Price Thermometer + Tier Ladder (collapsed by default) ─── */}
                 {detail.investor_summary?.horizons?.long?.entry_tiers?.tiers?.length && detail.current_price != null && (
                   <TierThermometerPanel
                     entryTiers={detail.investor_summary.horizons.long.entry_tiers}
                     currentPrice={detail.current_price}
                     structuralStop={detail.investor_summary.horizons.long.entry_tiers?.structural_invalidation?.price ?? null}
                     ma200={priceTargets?.technical_levels?.ma200 ?? null}
+                    defaultThermometerOpen={false}
                   />
                 )}
 

@@ -123,7 +123,6 @@ interface Props {
   onTickerClick?: (ticker: string) => void;
   forwardTracking?: DashboardData["forward_tracking"];
   modelHealth?: DashboardData["model_health"];
-  modelValidation?: DashboardData["model_validation"];
   paperTrading?: DashboardData["paper_trading"];
 }
 
@@ -153,7 +152,6 @@ export function OverviewAtAGlance({
   onTickerClick,
   forwardTracking,
   modelHealth,
-  modelValidation,
   paperTrading,
 }: Props) {
   const [analogOpen, setAnalogOpen] = useState(false);
@@ -321,7 +319,6 @@ export function OverviewAtAGlance({
               forwardHitRate={holdAddHit}
               forwardObservations={forwardObs}
               gateCohortEdge={gateCohortEdge}
-              directionAccuracy={modelValidation?.summary?.direction_accuracy_pct ?? null}
               paperWinRate={paperTrading?.summary?.win_rate_pct ?? null}
             />
             <MiniEquityCurve

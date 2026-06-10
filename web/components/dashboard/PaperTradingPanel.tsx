@@ -50,6 +50,23 @@ const DATE_RANGES: { label: string; value: DateRange }[] = [
 ];
 
 type StatusFilter = "ALL" | "OPEN" | "DONE";
+type ModeFilter = "ALL" | "full_go" | "starter_only" | "hard_lock";
+
+const ENTRY_MODE_CONFIG = {
+  full_go:      { label: "FULL GO",      cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-200" },
+  starter_only: { label: "STARTER",      cls: "border-amber-500/40  bg-amber-500/10  text-amber-200"   },
+  hard_lock:    { label: "HARD LOCK",    cls: "border-red-500/35    bg-red-500/10    text-red-300"      },
+} as const;
+
+function EntryModePill({ mode }: { mode?: string | null }) {
+  const cfg = ENTRY_MODE_CONFIG[mode as keyof typeof ENTRY_MODE_CONFIG];
+  if (!cfg) return <span className="text-slate-600 text-[10px]">—</span>;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
 
 function cutoffDate(range: DateRange): string | null {
   if (range === "ALL") return null;
@@ -104,6 +121,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [signalFilter, setSignalFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [modeFilter, setModeFilter] = useState<ModeFilter>("ALL");
 
   const uniqueTickers = useMemo(
     () => Array.from(new Set(allRecent.map((r: any) => (r.ticker || "").toUpperCase()))).sort(),
@@ -125,9 +143,10 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
       if (sf && !String(r.signal || "").toUpperCase().includes(sf)) return false;
       if (statusFilter === "OPEN" && r.outcome) return false;
       if (statusFilter === "DONE" && !r.outcome) return false;
+      if (modeFilter !== "ALL" && (r.entry_mode || "") !== modeFilter) return false;
       return true;
     });
-  }, [allRecent, tickerFilter, dateRange, signalFilter, statusFilter]);
+  }, [allRecent, tickerFilter, dateRange, signalFilter, statusFilter, modeFilter]);
 
   const filterStats = useMemo(() => filteredPaperStats(recent), [recent]);
 
@@ -186,6 +205,16 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           <option value="ALL">Open + done</option>
           <option value="OPEN">Open only</option>
           <option value="DONE">Completed only</option>
+        </select>
+        <select
+          value={modeFilter}
+          onChange={(e) => setModeFilter(e.target.value as ModeFilter)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="ALL">All entry modes</option>
+          <option value="full_go">Full Go only</option>
+          <option value="starter_only">Starter Only</option>
+          <option value="hard_lock">Hard Lock</option>
         </select>
         <div className="flex rounded border border-slate-600 overflow-hidden">
           {DATE_RANGES.map((dr) => (
@@ -338,6 +367,45 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               )}
             </div>
           )}
+          {/* Gate-mode tiered breakdown */}
+          {summary.by_gate_mode && Object.keys(summary.by_gate_mode).length > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                By gate mode (accumulate track)
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {(["full_go", "starter_only", "hard_lock"] as const).map((gm) => {
+                  const s = summary.by_gate_mode![gm];
+                  if (!s) return null;
+                  return (
+                    <div
+                      key={gm}
+                      className={clsx(
+                        "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
+                        gm === "full_go" ? "border-emerald-500/35 bg-emerald-950/20 text-emerald-300"
+                          : gm === "starter_only" ? "border-amber-500/35 bg-amber-950/20 text-amber-300"
+                          : "border-slate-600/50 bg-slate-800/40 text-slate-400",
+                      )}
+                    >
+                      <span className="font-medium uppercase text-[10px] tracking-wide">{gm.replace("_", " ")}</span>
+                      <span className="text-slate-500 text-[10px]">n={s.n}</span>
+                      {s.win_rate_pct != null && (
+                        <span>Win {s.win_rate_pct.toFixed(0)}%</span>
+                      )}
+                      {s.avg_return_pct != null && (
+                        <span className={s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                          {s.avg_return_pct >= 0 ? "+" : ""}{s.avg_return_pct.toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[9px] text-slate-600 mt-1">
+                Gates required for accumulate track. Tactical track uses return &gt; 0 as win (no gate requirement).
+              </p>
+            </div>
+          )}
           {summary.marketing_note && (
             <p className="text-[11px] text-slate-600 leading-snug">{summary.marketing_note}</p>
           )}
@@ -372,6 +440,9 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <th className="py-1.5 pr-2 font-medium">Signal</th>
                 <th className="py-1.5 pr-2 font-medium" title="4 primary gates at signal time (valuation, regime, momentum, ML)">
                   Gates
+                </th>
+                <th className="py-1.5 pr-2 font-medium" title="full_go = 4/4 gates · starter_only = value OK but tech gates fail · hard_lock = no MOS or overvalued">
+                  Entry Mode
                 </th>
                 <th
                   className="py-1.5 pr-2 font-medium"
@@ -430,13 +501,15 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <td className="py-1.5 pr-2 text-slate-400">{r.signal}</td>
                   <td className="py-1.5 pr-2 text-slate-400 text-xs">
                     {r.gates_passed != null && r.gates_total != null ? (
-                      <span className={r.go_no_go === "go" || r.gate_cleared === true ? "text-emerald-400" : "text-amber-300"}>
+                      <span className={r.entry_mode === "full_go" ? "text-emerald-400" : r.entry_mode === "starter_only" ? "text-amber-300" : "text-slate-500"}>
                         {r.gates_passed}/{r.gates_total}
-                        {r.go_no_go ? ` · ${String(r.go_no_go).toUpperCase()}` : ""}
                       </span>
                     ) : (
                       "—"
                     )}
+                  </td>
+                  <td className="py-1.5 pr-2">
+                    <EntryModePill mode={r.entry_mode} />
                   </td>
                   <td className="py-1.5 pr-2 text-slate-300">
                     {r.reference_entry_price != null ? `$${Number(r.reference_entry_price).toFixed(2)}` : "—"}

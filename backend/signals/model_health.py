@@ -17,7 +17,6 @@ def build_model_health(
     config: dict | None,
     forward_tracking: dict | None,
     eod_snapshots: list[dict] | None,
-    model_validation: dict | None = None,
 ) -> dict[str, Any]:
     """
     Single object for ModelHealthStrip + API. Merges live data with optional data/model_health.json
@@ -28,7 +27,6 @@ def build_model_health(
         "eod_latest_date": None,
         "forward_hold_add_hit_rate_20d": None,
         "forward_observations_20d": None,
-        "validation_direction_accuracy_pct": None,
         "calibration_ok": None,
         "calibration_score": None,
         "walk_forward_ok": None,
@@ -57,10 +55,6 @@ def build_model_health(
     if isinstance(ha, dict):
         out["forward_hold_add_hit_rate_20d"] = ha.get("hit_rate_pct")
         out["forward_observations_20d"] = ha.get("n_observations")
-
-    mv_sum = (model_validation or {}).get("summary") or {}
-    if isinstance(mv_sum, dict) and mv_sum.get("direction_accuracy_pct") is not None:
-        out["validation_direction_accuracy_pct"] = mv_sum.get("direction_accuracy_pct")
 
     mh_path = data_root / "model_health.json"
     if mh_path.exists():

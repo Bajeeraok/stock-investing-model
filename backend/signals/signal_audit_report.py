@@ -149,9 +149,13 @@ def build_audit_report(
         "outcome_summary": outcome,
         "breakdown_by_gates": panel.get("breakdown_by_gates"),
         "breakdown_by_go_no_go": panel.get("breakdown_by_go_no_go"),
+        "breakdown_by_entry_mode": panel.get("breakdown_by_entry_mode"),
         "breakdown_by_category": panel.get("breakdown_by_category"),
         "breakdown_by_signal": panel.get("breakdown_by_signal"),
         "breakdown_by_regime": panel.get("breakdown_by_regime"),
+        "breakdown_by_track": panel.get("breakdown_by_track"),
+        "breakdown_by_readiness": panel.get("breakdown_by_readiness"),
+        "gate_blocker_breakdown": panel.get("gate_blocker_breakdown"),
         "outcome_resolve": resolve_result,
     }
 

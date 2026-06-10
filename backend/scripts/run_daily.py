@@ -189,19 +189,19 @@ def run_signals(
         except Exception:
             pass
 
-    for ticker in watchlist:
+    # ── Per-ticker processing extracted so ThreadPoolExecutor can run tickers in parallel ──
+    def _process_single_ticker(ticker: str) -> dict:  # noqa: C901 — long but self-contained
         close = None
         volume = None
-        ohlcv_df = None  # OHLCV DataFrame (high/low/volume) — fetched once, reused for ATR
+        ohlcv_df = None  # OHLCV DataFrame (high/low/close/volume) — fetched once, reused for ATR
         if use_fmp:
             close, volume = fetch_ohlcv_close_and_volume(ticker, period, config)
             if close is None:
-                # Single yfinance call returns both close and volume; no second fallback needed
                 close, volume = fetch_ohlcv_with_volume(ticker, period)
         else:
             close, volume = fetch_ohlcv_with_volume(ticker, period)
         if close is None:
-            results.append({
+            return {
                 "ticker": ticker,
                 "error": "Insufficient data or fetch failed",
                 "close": None,
@@ -219,8 +219,7 @@ def run_signals(
                 "story_change_trigger": None,
                 "story_change_horizon": None,
                 "story_change_horizon_flips": None,
-            })
-            continue
+            }
 
         buy_min = effective_buy_min(ticker, score_cfg)
 
@@ -563,7 +562,32 @@ def run_signals(
                 row["model_confidence_pct"] = round(float(row["composite_buy"]), 1)
             except (TypeError, ValueError):
                 pass
-        results.append(row)
+        return row
+    # end _process_single_ticker
+
+    # ── Parallel execution: network I/O dominates (~5-8 s/ticker); 12 workers cuts
+    # 37-ticker wall-time from ~5 min → ~15-25 s.  CPU-bound compute (MAs, RSI,
+    # MACD, LightGBM inference) is fast per ticker and won't saturate the pool.
+    _workers = min(12, len(watchlist)) if watchlist else 1
+    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
+    with _TPE(max_workers=_workers) as pool:
+        futures = {pool.submit(_process_single_ticker, t): t for t in watchlist}
+        for fut in _ac(futures):
+            try:
+                row = fut.result()
+                if row is not None:
+                    results.append(row)
+            except Exception as _exc:
+                ticker_failed = futures[fut]
+                logger.warning("run_signals: ticker %s failed: %s", ticker_failed, _exc)
+                results.append({
+                    "ticker": ticker_failed,
+                    "error": f"Processing exception: {_exc}",
+                    "close": None,
+                    "composite_buy": None,
+                    "regime": None,
+                    "signal": None,
+                })
     return results
 
 

@@ -2,9 +2,25 @@
 
 import { clsx } from "clsx";
 import { Rows3, LayoutGrid } from "lucide-react";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 
 type Density = "compact" | "comfort";
+
+const LS_KEY = "thrive_levels_density";
+
+function readLS(): Density {
+  if (typeof window === "undefined") return "comfort";
+  try {
+    const v = window.localStorage.getItem(LS_KEY);
+    return v === "compact" || v === "comfort" ? v : "comfort";
+  } catch {
+    return "comfort";
+  }
+}
+
+function writeLS(d: Density) {
+  try { window.localStorage.setItem(LS_KEY, d); } catch { /* ignore */ }
+}
 
 const DensityCtx = createContext<{ density: Density; toggle: () => void }>({
   density: "comfort",
@@ -13,7 +29,19 @@ const DensityCtx = createContext<{ density: Density; toggle: () => void }>({
 
 export function DensityProvider({ children }: { children: ReactNode }) {
   const [density, setDensity] = useState<Density>("comfort");
-  const toggle = () => setDensity(d => (d === "comfort" ? "compact" : "comfort"));
+
+  // Hydrate from localStorage after mount (avoids SSR mismatch)
+  useEffect(() => {
+    setDensity(readLS());
+  }, []);
+
+  const toggle = () =>
+    setDensity(prev => {
+      const next = prev === "comfort" ? "compact" : "comfort";
+      writeLS(next);
+      return next;
+    });
+
   return <DensityCtx.Provider value={{ density, toggle }}>{children}</DensityCtx.Provider>;
 }
 

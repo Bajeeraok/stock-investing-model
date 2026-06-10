@@ -284,14 +284,12 @@ export function TrustMetricsStrip({
   forwardHitRate,
   forwardObservations,
   gateCohortEdge,
-  directionAccuracy,
   paperWinRate,
   className,
 }: {
   forwardHitRate?: number | null;
   forwardObservations?: number | null;
   gateCohortEdge?: string | null;
-  directionAccuracy?: number | null;
   paperWinRate?: number | null;
   className?: string;
 }) {
@@ -302,13 +300,6 @@ export function TrustMetricsStrip({
       value: `${forwardHitRate.toFixed(0)}%`,
       sub: forwardObservations ? `${forwardObservations} obs` : undefined,
       tone: forwardHitRate >= 55 ? "good" : forwardHitRate >= 50 ? "neutral" : "warn",
-    });
-  }
-  if (directionAccuracy != null) {
-    items.push({
-      label: "Direction acc.",
-      value: `${directionAccuracy.toFixed(0)}%`,
-      tone: directionAccuracy >= 55 ? "good" : "neutral",
     });
   }
   if (paperWinRate != null) {

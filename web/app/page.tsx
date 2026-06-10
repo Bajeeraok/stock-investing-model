@@ -854,6 +854,11 @@ export interface DashboardData {
         avg_return_pct?: number | null;
         label: string;
       } | null;
+      by_gate_mode?: Record<string, {
+        n: number;
+        win_rate_pct?: number | null;
+        avg_return_pct?: number | null;
+      }> | null;
       marketing_note?: string | null;
     } | null;
     mtm_history?: Record<string, Array<{ mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null }>> | null;
@@ -900,6 +905,7 @@ export interface DashboardData {
       reference_entry_price?: number | null;
       limit_fill_date?: string | null;
       entry_mode?: string | null;
+      gate_mode?: "full_go" | "starter_only" | "hard_lock" | null;
     }>;
     /** Cumulative equity index from completed paper trades (for track record chart) */
     equity_curve?: Array<{
@@ -912,28 +918,6 @@ export interface DashboardData {
       cumulative_return_pct?: number;
       trade_n?: number;
     }>;
-  };
-  model_validation?: {
-    records: {
-      as_of_date: string;
-      next_date: string;
-      ticker: string;
-      prior_close: number;
-      actual_close: number;
-      actual_return_pct: number;
-      our_bias: string | null;
-      our_pct_green: number | null;
-      our_typical_range_pct: number | null;
-      direction_hit: boolean | null;
-      within_range: boolean | null;
-    }[];
-    summary: {
-      n_records: number;
-      direction_accuracy_pct: number | null;
-      direction_n: number;
-      range_hit_rate_pct: number | null;
-      range_n: number;
-    };
   };
   regime_validation?: {
     validated?: unknown;

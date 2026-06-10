@@ -38,6 +38,23 @@ interface PaperTradingSummary {
     completed_n?: number;
     win_rate_pct?: number | null;
   } | null;
+  accumulate_summary?: {
+    completed_n: number;
+    win_rate_pct?: number | null;
+    avg_return_pct?: number | null;
+    label: string;
+  } | null;
+  tactical_summary?: {
+    completed_n: number;
+    win_rate_pct?: number | null;
+    avg_return_pct?: number | null;
+    label: string;
+  } | null;
+  by_gate_mode?: Record<string, {
+    n: number;
+    win_rate_pct?: number | null;
+    avg_return_pct?: number | null;
+  }> | null;
 }
 
 interface ForwardSummary {
@@ -51,7 +68,6 @@ interface ForwardSummary {
 interface ModelHealth {
   forward_hold_add_hit_rate_20d?: number | null;
   forward_observations_20d?: number | null;
-  validation_direction_accuracy_pct?: number | null;
   calibration_ok?: boolean | null;
   calibration_score?: number | null;
   walk_forward_ok?: boolean | null;
@@ -160,13 +176,17 @@ export default function TrackRecordPanel({
   const hasEquity = equityCurve && equityCurve.length >= 2;
   const hasAudit = (auditOutcomeSummary?.resolved_n ?? 0) > 0;
 
-  const winRate = paperTrading?.win_rate_pct;
-  const avgReturn = paperTrading?.avg_return_pct;
-  const dirAccuracy = modelHealth?.validation_direction_accuracy_pct;
+  const winRate = paperTrading?.accumulate_summary?.win_rate_pct ?? paperTrading?.win_rate_pct;
+  const winRateSub = paperTrading?.accumulate_summary
+    ? `${paperTrading.accumulate_summary.completed_n} accumulate trades`
+    : `${paperTrading?.completed_n ?? 0} trades`;
+  const avgReturn = paperTrading?.accumulate_summary?.avg_return_pct ?? paperTrading?.avg_return_pct;
   const fwdHitRate = modelHealth?.forward_hold_add_hit_rate_20d;
   const auditWin = auditOutcomeSummary?.win_rate_pct;
+  const tacticalSummary = paperTrading?.tactical_summary;
+  const byGateMode = paperTrading?.by_gate_mode;
 
-  if (!hasCalibration && !hasPaper && !hasForward && !hasEquity && !dirAccuracy && !fwdHitRate && !hasAudit) {
+  if (!hasCalibration && !hasPaper && !hasForward && !hasEquity && !fwdHitRate && !hasAudit) {
     return (
       <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-4 text-center">
         <p className="text-sm text-slate-400">

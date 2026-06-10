@@ -22,6 +22,7 @@ export type ModelAuditRecord = {
   retail_verdict?: string | null;
   ml_signal?: string | null;
   go_no_go?: string | null;
+  entry_mode?: "full_go" | "starter_only" | "hard_lock" | null;
   gates_passed?: number | null;
   gates_total?: number | null;
   gates_failed?: string | null;
@@ -51,7 +52,26 @@ export type ModelAuditRecord = {
   bb_pct_b?: number | null;
   readiness_tier?: string | null;
   readiness_score?: number | null;
+  entry_mode?: "full_go" | "starter_only" | "hard_lock" | null;
 };
+
+type ModeFilter = "ALL" | "full_go" | "starter_only" | "hard_lock";
+
+const ENTRY_MODE_CFG = {
+  full_go:      { label: "FULL GO",   cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-200" },
+  starter_only: { label: "STARTER",   cls: "border-amber-500/40  bg-amber-500/10  text-amber-200"   },
+  hard_lock:    { label: "HARD LOCK", cls: "border-red-500/35    bg-red-500/10    text-red-300"      },
+} as const;
+
+function EntryModePill({ mode }: { mode?: string | null }) {
+  const cfg = ENTRY_MODE_CFG[mode as keyof typeof ENTRY_MODE_CFG];
+  if (!cfg) return <span className="text-slate-600 text-[9px]">—</span>;
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+}
 
 export type ModelAuditOutcomeSummary = {
   events_total?: number;
@@ -97,6 +117,7 @@ export type ModelAuditPayload = {
   breakdown_by_regime?: ModelAuditBreakdownRow[];
   breakdown_by_track?: ModelAuditBreakdownRow[];
   breakdown_by_readiness?: ModelAuditBreakdownRow[];
+  breakdown_by_entry_mode?: ModelAuditBreakdownRow[];
   gate_blocker_breakdown?: { gate: string; n: number; pct_of_events?: number }[];
   eod_snapshot_count?: number;
   batch_queues?: {
@@ -186,6 +207,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [gatesFilter, setGatesFilter] = useState<string>("");
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
+  const [modeFilter, setModeFilter] = useState<ModeFilter>("ALL");
   const [page, setPage] = useState(0);
 
   const records = audit?.enabled ? audit.recent_records ?? [] : [];
@@ -205,9 +227,10 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       const track = (r.track || "accumulate").toLowerCase();
       if (trk === "accumulate" && track === "velocity") return false;
       if (trk === "velocity" && track !== "velocity") return false;
+      if (modeFilter !== "ALL" && (r.entry_mode || "") !== modeFilter) return false;
       return true;
     });
-  }, [records, tickerFilter, dateRange, gatesFilter, trackFilter]);
+  }, [records, tickerFilter, dateRange, gatesFilter, trackFilter, modeFilter]);
 
   const gateOptions = useMemo(() => {
     const set = new Set(records.map((r) => r.gates_passed).filter((g) => g != null));
@@ -220,7 +243,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
   useEffect(() => {
     setPage(0);
-  }, [tickerFilter, dateRange, gatesFilter, trackFilter]);
+  }, [tickerFilter, dateRange, gatesFilter, trackFilter, modeFilter]);
 
   const pagedRows = useMemo(
     () => paginateRows(filtered, page, AUDIT_PAGE_SIZE),
@@ -391,20 +414,44 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       )}
 
       {(audit.gate_blocker_breakdown?.length ?? 0) > 0 && (
-        <div className="rounded-lg border border-amber-500/25 bg-amber-950/20 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-amber-200/80 mb-1.5">
-            Why GO % is 0 — primary gates failing most often
+        <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            Gate blocker attribution — which gate fails most
+            <span className="ml-1 font-normal text-slate-600">(% of all captured events where this gate was blocking)</span>
           </p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-300">
-            {audit.gate_blocker_breakdown!.map((g) => (
-              <span key={g.gate}>
-                <span className="text-amber-300/90 font-medium">{g.gate}</span>: {g.n}
-                {g.pct_of_events != null ? ` (${g.pct_of_events}%)` : ""}
-              </span>
-            ))}
+          <div className="flex flex-wrap gap-2">
+            {audit.gate_blocker_breakdown!.map((b) => {
+              const isValuation = b.gate === "valuation";
+              const isRegime = b.gate === "regime";
+              const isMomentum = b.gate === "momentum";
+              return (
+                <div
+                  key={b.gate}
+                  className={clsx(
+                    "flex items-center gap-2 rounded-lg border px-3 py-2",
+                    isValuation ? "border-amber-500/40 bg-amber-950/20"
+                      : isRegime ? "border-sky-500/35 bg-sky-950/20"
+                      : isMomentum ? "border-violet-500/35 bg-violet-950/20"
+                      : "border-slate-700/50 bg-slate-900/30",
+                  )}
+                >
+                  <span className={clsx(
+                    "text-[10px] font-bold uppercase tracking-wider",
+                    isValuation ? "text-amber-300" : isRegime ? "text-sky-300" : isMomentum ? "text-violet-300" : "text-slate-400",
+                  )}>
+                    {b.gate}
+                  </span>
+                  <span className="text-xs font-mono tabular-nums text-slate-200">
+                    {b.pct_of_events != null ? `${b.pct_of_events.toFixed(1)}%` : ""}
+                  </span>
+                  <span className="text-[9px] text-slate-500">n={b.n}</span>
+                </div>
+              );
+            })}
           </div>
-          <p className="text-[10px] text-slate-500 mt-1.5">
-            GO requires all 4 primary gates (valuation, regime, momentum, ML). Retail TACTICAL/BUY labels can still show when gates block.
+          <p className="text-[9px] text-slate-600 mt-2 leading-snug">
+            If <span className="text-sky-400/70">regime</span> dominates: gates are filtering macro risk, not stock fundamentals — consider whether stormy-tape blocks are too aggressive for accumulation setups.
+            If <span className="text-amber-400/70">valuation</span> dominates: most names are richly priced relative to model FV — correct behavior in an elevated market.
           </p>
         </div>
       )}
@@ -472,7 +519,9 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         <BreakdownTable title="By ML signal" rows={audit.breakdown_by_signal ?? []} bucketLabel="Signal" />
         <BreakdownTable title="By track" rows={audit.breakdown_by_track ?? []} bucketLabel="Track" />
         <BreakdownTable title="By readiness" rows={audit.breakdown_by_readiness ?? []} bucketLabel="Tier" />
+        <BreakdownTable title="By entry mode" rows={audit.breakdown_by_entry_mode ?? []} bucketLabel="Mode" hint="full_go = 4/4 · starter_only = value present, tech blocked · hard_lock = no MOS" />
       </div>
+
 
       {/* Recent captures table */}
       <div>
@@ -513,6 +562,16 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               </button>
             ))}
           </div>
+          <select
+            value={modeFilter}
+            onChange={(e) => setModeFilter(e.target.value as ModeFilter)}
+            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+          >
+            <option value="ALL">All entry modes</option>
+            <option value="full_go">Full Go</option>
+            <option value="starter_only">Starter Only</option>
+            <option value="hard_lock">Hard Lock</option>
+          </select>
           <span className="text-[10px] text-slate-600">{filtered.length} rows</span>
         </div>
 
@@ -531,7 +590,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <th className="py-1.5 pr-2 font-medium">Gates</th>
                   <th className="py-1.5 pr-2 font-medium">Conf</th>
                   <th className="py-1.5 pr-2 font-medium">Track</th>
-                  <th className="py-1.5 pr-2 font-medium">GO?</th>
+                  <th className="py-1.5 pr-2 font-medium" title="full_go = 4/4 · starter_only = value OK, tech gates blocked · hard_lock = no MOS / overvalued">Entry Mode</th>
                   <th className="py-1.5 pr-2 font-medium">Price</th>
                   <th className="py-1.5 pr-2 font-medium">Score</th>
                   <th className="py-1.5 pr-2 font-medium">RSI</th>
@@ -578,18 +637,19 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                       </span>
                     </td>
                     <td className="py-1 pr-2">
-                      <span
-                        className={clsx(
-                          "px-1.5 py-0.5 rounded text-[10px] uppercase",
-                          r.go_no_go === "go"
-                            ? "bg-emerald-500/15 text-emerald-300"
-                            : r.go_no_go === "no_go"
-                              ? "bg-red-500/15 text-red-300"
-                              : "bg-slate-700 text-slate-400",
-                        )}
-                      >
-                        {r.go_no_go ?? "—"}
-                      </span>
+                      {r.entry_mode ? (
+                        <EntryModePill mode={r.entry_mode} />
+                      ) : (
+                        /* fallback to legacy go_no_go for old rows that predate entry_mode */
+                        <span className={clsx(
+                          "px-1.5 py-0.5 rounded text-[9px] uppercase",
+                          r.go_no_go === "go" ? "bg-emerald-500/15 text-emerald-300"
+                            : r.go_no_go === "no_go" ? "bg-slate-700/50 text-slate-500"
+                            : "bg-slate-700 text-slate-400",
+                        )}>
+                          {r.go_no_go ?? "—"}
+                        </span>
+                      )}
                     </td>
                     <td className="py-1 pr-2 tabular-nums">${Number(r.price_at_signal ?? 0).toFixed(2)}</td>
                     <td className="py-1 pr-2 tabular-nums">{r.composite_score?.toFixed(0) ?? "—"}</td>

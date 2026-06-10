@@ -535,15 +535,48 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         if ticker in _GOLD_ETFS
         else "Dividend yield = last 12-month dividends / current price."
     )
+    # Phase 3: run_confidence (if not already done), long_horizon_risk, fmp_data,
+    # and cross_asset_sensitivity are independent — run them in parallel.
     lhr = None
     period_long_risk = config.get("data", {}).get("period_long_risk", "13y") or "13y"
-    try:
-        from signals.long_horizon_risk import compute_long_horizon_risk
-        from signals.cache import cached_long_horizon_risk
-        lhr = cached_long_horizon_risk(ticker, period_long_risk, lambda: compute_long_horizon_risk(ticker, period_long_risk))
-    except Exception:
-        pass
-    fmp_data = _get_fmp_data(ticker, config, current_price, signal_data, close_ticker, range_low=range_low, range_high=range_high, long_horizon_risk=lhr)
+
+    def _p3_lhr():
+        try:
+            from signals.long_horizon_risk import compute_long_horizon_risk
+            from signals.cache import cached_long_horizon_risk
+            return cached_long_horizon_risk(ticker, period_long_risk, lambda: compute_long_horizon_risk(ticker, period_long_risk))
+        except Exception:
+            return None
+
+    def _p3_fmp():
+        return _get_fmp_data(ticker, config, current_price, signal_data, close_ticker, range_low=range_low, range_high=range_high)
+
+    def _p3_cross():
+        try:
+            from signals.cross_asset_sensitivity import compute_cross_asset_sensitivity
+            return compute_cross_asset_sensitivity(ticker, close_series=close_ticker)
+        except Exception:
+            return None
+
+    fmp_data: dict = {}
+    cross_asset_result = None
+    with ThreadPoolExecutor(max_workers=3) as _p3ex:
+        _f_lhr   = _p3ex.submit(_p3_lhr)
+        _f_fmp   = _p3ex.submit(_p3_fmp)
+        _f_cross = _p3ex.submit(_p3_cross)
+        for _f in as_completed([_f_lhr, _f_fmp, _f_cross]):
+            try:
+                if _f is _f_lhr:
+                    lhr = _f.result()
+                elif _f is _f_fmp:
+                    fmp_data = _f.result() or {}
+                elif _f is _f_cross:
+                    cross_asset_result = _f.result()
+            except Exception:
+                pass
+    # Attach lhr to fmp_data if present (preserves downstream logic)
+    if lhr and not fmp_data.get("long_horizon_risk"):
+        fmp_data["long_horizon_risk"] = lhr
     if fmp_data.get("lt_scenarios"):
         lt = fmp_data["lt_scenarios"]
         bear, base, bull = lt.get("bear"), lt.get("base"), lt.get("bull")
@@ -595,12 +628,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **signal_data,
         **fmp_data,
     }
-    try:
-        from signals.cross_asset_sensitivity import compute_cross_asset_sensitivity
-
-        response["cross_asset"] = compute_cross_asset_sensitivity(ticker, close_series=close_ticker)
-    except Exception:
-        response["cross_asset"] = None
+    # cross_asset was fetched in Phase 3 parallel block above
+    response["cross_asset"] = cross_asset_result
     response["investor_summary"] = _build_investor_summary(
         ticker,
         config,
@@ -4395,9 +4424,23 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
         if not get_api_key(config):
             return out
 
-        cons = cached_price_target_consensus(ticker, lambda: fetch_price_target_consensus(config, ticker))
-        eps_data = cached_financial_estimates(ticker, lambda: fetch_analyst_estimates(config, ticker))
-        insider = cached_insider_stats(ticker, lambda: fetch_insider_stats(config, ticker))
+        # Fetch the three FMP datasets in parallel — each is an independent cached API call
+        from concurrent.futures import ThreadPoolExecutor as _FmpTPE, as_completed as _fmp_ac
+        cons = eps_data = insider = None
+        with _FmpTPE(max_workers=3) as _fex:
+            _fc = _fex.submit(lambda: cached_price_target_consensus(ticker, lambda: fetch_price_target_consensus(config, ticker)))
+            _fe = _fex.submit(lambda: cached_financial_estimates(ticker, lambda: fetch_analyst_estimates(config, ticker)))
+            _fi = _fex.submit(lambda: cached_insider_stats(ticker, lambda: fetch_insider_stats(config, ticker)))
+            for _ff in _fmp_ac([_fc, _fe, _fi]):
+                try:
+                    if _ff is _fc:
+                        cons = _ff.result()
+                    elif _ff is _fe:
+                        eps_data = _ff.result()
+                    elif _ff is _fi:
+                        insider = _ff.result()
+                except Exception:
+                    pass
 
         consensus_median = None
         if cons and isinstance(cons, dict):

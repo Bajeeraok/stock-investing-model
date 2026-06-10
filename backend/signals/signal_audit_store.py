@@ -35,6 +35,8 @@ _VELOCITY_COLUMNS: list[tuple[str, str]] = [
     ("tactical_t2", "REAL"),
     ("tactical_stop", "REAL"),
     ("horizon_trading_days", "INTEGER DEFAULT 20"),
+    # entry_mode: full_go / starter_only / hard_lock — finer-grained than binary go_no_go
+    ("entry_mode", "TEXT"),
 ]
 
 _CREATE_SIGNAL_EVENTS = """
@@ -194,6 +196,26 @@ def _go_no_go(row: dict) -> str:
     if row.get("gate_cleared") is False:
         return "no_go"
     return "mixed"
+
+
+def _entry_mode(row: dict) -> str | None:
+    """Extract entry_mode (full_go / starter_only / hard_lock) from signal row."""
+    rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
+    # retail_action may be nested under retail_status or directly on row
+    ra = rs.get("retail_action") or {}
+    if isinstance(ra, dict):
+        em = ra.get("entry_mode")
+        if em in ("full_go", "starter_only", "hard_lock"):
+            return em
+    # Direct field (set by enrich_dashboard_signal_row)
+    em = row.get("entry_mode")
+    if em in ("full_go", "starter_only", "hard_lock"):
+        return em
+    # Derive from go_no_go as fallback for pre-existing rows
+    gng = _go_no_go(row)
+    if gng == "go":
+        return "full_go"
+    return None  # can't distinguish starter vs hard_lock without retail_action
 
 
 def _gates_from_row(row: dict) -> tuple[int, int, str | None]:
@@ -387,6 +409,7 @@ def row_to_signal_event(
         "bb_pct_b": _safe_float(row.get("bb_pct_b")),
         "velocity_detail_json": vel_json,
         "readiness_tier": row.get("readiness_tier"),
+        "entry_mode": _entry_mode(row),
         "readiness_score": _safe_float(row.get("readiness_score")),
         "tactical_t1": tactical_t1,
         "tactical_t2": tactical_t2,
@@ -482,6 +505,7 @@ class SignalAuditStore:
             "velocity_detail_json",
             "readiness_tier",
             "readiness_score",
+            "entry_mode",
             "tactical_t1",
             "tactical_t2",
             "tactical_stop",
@@ -593,6 +617,7 @@ class SignalAuditStore:
             {
                 "gates_passed",
                 "go_no_go",
+                "entry_mode",
                 "market_cap_bucket",
                 "ml_signal",
                 "retail_verdict",
@@ -960,7 +985,7 @@ class SignalAuditStore:
     ) -> list[dict[str, Any]]:
         q = """
             SELECT e.id, e.signal_date, e.signal_ts, e.ticker, e.market_cap_bucket, e.retail_verdict, e.ml_signal,
-                   e.go_no_go, e.gates_passed, e.gates_total, e.price_at_signal, e.st_target, e.stop_swing, e.mt_target,
+                   e.go_no_go, e.entry_mode, e.gates_passed, e.gates_total, e.price_at_signal, e.st_target, e.stop_swing, e.mt_target,
                    e.composite_score, e.rsi, e.regime_label, e.temperature, e.ml_short_prob, e.confidence_low,
                    e.confidence_high, e.run_source, e.gate_detail_json,
                    e.track, e.velocity_triggered, e.velocity_score, e.rvol, e.bb_pct_b,
@@ -1146,6 +1171,7 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
         "breakdown_by_regime": store.breakdown_rows(cohort_tag, "regime_label"),
         "breakdown_by_track": store.breakdown_rows(cohort_tag, "track"),
         "breakdown_by_readiness": store.breakdown_rows(cohort_tag, "readiness_tier"),
+        "breakdown_by_entry_mode": store.breakdown_rows(cohort_tag, "entry_mode"),
         "gate_blocker_breakdown": store.gate_blocker_breakdown(cohort_tag),
         "batch_queues": store.batch_queue_summary(cohort_tag, last_date),
         "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),

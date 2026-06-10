@@ -476,7 +476,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const forwardTracking = analysisBundle?.forward_tracking ?? data.forward_tracking;
   const paperTrading = analysisBundle?.paper_trading ?? data.paper_trading;
   const paperVsBacktestDrift = analysisBundle?.paper_vs_backtest_drift ?? data.paper_vs_backtest_drift;
-  const modelValidation = analysisBundle?.model_validation ?? data.model_validation;
   const regimeValidation = analysisBundle?.regime_validation ?? data.regime_validation;
   const confidenceCalibration = analysisBundle?.confidence_calibration ?? data.confidence_calibration;
   const indicatorValidation = analysisBundle?.indicator_validation ?? data.indicator_validation;
@@ -514,7 +513,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       forward_tracking: forwardTracking,
       paper_trading: paperTrading,
       paper_vs_backtest_drift: paperVsBacktestDrift,
-      model_validation: modelValidation,
       regime_validation: regimeValidation,
       confidence_calibration: confidenceCalibration,
       indicator_validation: indicatorValidation,
@@ -528,7 +526,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       forwardTracking,
       paperTrading,
       paperVsBacktestDrift,
-      modelValidation,
       regimeValidation,
       confidenceCalibration,
       indicatorValidation,
@@ -875,7 +872,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   tradingLens={tradingLens}
                   forwardTracking={data.forward_tracking}
                   modelHealth={data.model_health}
-                  modelValidation={data.model_validation}
+
                   paperTrading={data.paper_trading}
                   guestUniverseNote={data.universe_meta?.note ?? null}
                   tacticalSlot={
@@ -1742,46 +1739,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </>
                 )}
               </ToggleSection>
-              {modelValidation && (modelValidation.records?.length ?? 0) > 0 && (
-                <ToggleSection id="analysis-model" title="Model validation" icon={<Activity />} badge={modelValidation?.records?.length ?? 0} defaultOpen>
-                  <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3">
-                    {modelValidation.summary && (
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-300 mb-2">
-                        {modelValidation.summary.direction_accuracy_pct != null && (
-                          <span>Direction: <strong className="text-emerald-400">{modelValidation.summary.direction_accuracy_pct}%</strong></span>
-                        )}
-                        {modelValidation.summary.range_hit_rate_pct != null && (
-                          <span>Range: <strong className="text-emerald-400">{modelValidation.summary.range_hit_rate_pct}%</strong></span>
-                        )}
-                      </div>
-                    )}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-left">
-                        <thead>
-                          <tr className="text-slate-500 border-b border-slate-600">
-                            <th className="py-1.5 pr-2">As of</th>
-                            <th className="py-1.5 pr-2">Ticker</th>
-                            <th className="py-1.5 pr-2">Bias</th>
-                            <th className="py-1.5 pr-2">Actual %</th>
-                            <th className="py-1.5 pr-2">Hit</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(modelValidation.records ?? []).slice(0, 20).map((r) => (
-                            <tr key={`${r.as_of_date}-${r.ticker}`} className="border-b border-slate-700/50">
-                              <td className="py-2 pr-2 text-slate-400">{r.as_of_date}</td>
-                              <td className="py-2 pr-2 font-medium text-slate-300">{r.ticker}</td>
-                              <td className="py-2 pr-2 text-slate-400">{r.our_bias ?? "—"}</td>
-                              <td className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>{r.actual_return_pct >= 0 ? "+" : ""}{r.actual_return_pct.toFixed(2)}%</td>
-                              <td className="py-2 pr-2">{r.direction_hit === true ? "Yes" : r.direction_hit === false ? "No" : "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </ToggleSection>
-              )}
               <ToggleSection id="analysis-test-suite" title="Signal test suite" icon={<FlaskConical />} defaultOpen={false}>
                 <SignalTestSuite />
               </ToggleSection>
