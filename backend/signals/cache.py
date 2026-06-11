@@ -545,6 +545,23 @@ def merge_dashboard_cache_updates(updates: dict) -> bool:
     return set_cached_dashboard(merged)
 
 
+# Dedicated compact signal-universe key — written after every dashboard run.
+# Much smaller than the full dashboard payload so it survives Redis memory pressure.
+UNIVERSE_SIGNALS_KEY = "dashboard:universe_signals"
+UNIVERSE_SIGNALS_TTL = 25 * 3600  # 25 hours — survives overnight + weekend
+
+
+def set_universe_signals(rows: list[dict], as_of: str | None = None) -> bool:
+    """Store compact signal rows for the universe panel. TTL 25h."""
+    payload = {"rows": rows, "as_of": as_of}
+    return set_cached(UNIVERSE_SIGNALS_KEY, payload, UNIVERSE_SIGNALS_TTL)
+
+
+def get_universe_signals() -> dict | None:
+    """Return {rows, as_of} from the universe signal cache, or None on miss."""
+    return get_cached(UNIVERSE_SIGNALS_KEY)
+
+
 # Store in Redis so EOD survives restarts when no persistent volume (Railway/Docker).
 # Read path: Redis first, then file. Write path: both Redis and file when possible.
 

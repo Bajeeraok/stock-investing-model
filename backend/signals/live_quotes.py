@@ -10,23 +10,27 @@ def fetch_live_quotes(config: dict, tickers: list[str]) -> tuple[dict[str, float
     if not syms:
         return {}, None
     out: dict[str, float] = {}
-    try:
-        from signals.fmp_client import fetch_batch_quote, get_fmp_api_key
+    # Respect use_fmp_batch_quote config flag (false on FMP Starter — batch endpoint needs Premium).
+    # When false, skip FMP entirely to avoid stale EOD prices being returned as "live" data.
+    use_fmp = config.get("data", {}).get("use_fmp_batch_quote", True)
+    if use_fmp:
+        try:
+            from signals.fmp_client import fetch_batch_quote, get_fmp_api_key
 
-        if get_fmp_api_key(config):
-            batch, err = fetch_batch_quote(config, syms)
-            if batch and not err:
-                for sym, row in batch.items():
-                    p = row.get("price") if isinstance(row, dict) else None
-                    if p is not None:
-                        try:
-                            out[str(sym).upper()] = float(p)
-                        except (TypeError, ValueError):
-                            pass
-                if out:
-                    return out, "fmp_batch"
-    except Exception:
-        pass
+            if get_fmp_api_key(config):
+                batch, err = fetch_batch_quote(config, syms)
+                if batch and not err:
+                    for sym, row in batch.items():
+                        p = row.get("price") if isinstance(row, dict) else None
+                        if p is not None:
+                            try:
+                                out[str(sym).upper()] = float(p)
+                            except (TypeError, ValueError):
+                                pass
+                    if out:
+                        return out, "fmp_batch"
+        except Exception:
+            pass
     try:
         from signals.fetcher import fetch_yfinance_latest_prices
 

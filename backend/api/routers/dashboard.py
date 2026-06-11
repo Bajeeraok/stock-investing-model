@@ -2519,6 +2519,16 @@ def _compute_full_dashboard_sync() -> dict:
         cache_ok = bool(set_cached_dashboard(out))
     except Exception as e:
         logger.debug("[dashboard] cache set skipped: %s", e)
+
+    # Write compact signal rows to a dedicated key for the universe panel.
+    # Separate from the large dashboard payload — more reliable on memory-constrained Redis.
+    try:
+        from signals.cache import set_universe_signals
+        set_universe_signals(results, as_of=as_of_date)
+        logger.debug("[dashboard] universe_signals cached (%d rows)", len(results))
+    except Exception as e:
+        logger.debug("[dashboard] universe_signals cache skipped: %s", e)
+
     logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
     return out
 
@@ -3951,7 +3961,18 @@ async def get_eod_universe(date: str = Query("latest")):
             except Exception:
                 pass
 
-        # Fallback 2: live dashboard cache (available after any dashboard refresh, even on ephemeral storage)
+        # Fallback 2: dedicated compact universe-signals Redis key (written after every dashboard run)
+        if target_path is None:
+            try:
+                from signals.cache import get_universe_signals
+                uni = get_universe_signals()
+                if uni and uni.get("rows"):
+                    logger.info("[eod-universe] using universe_signals cache (%d rows)", len(uni["rows"]))
+                    return _shape_universe_rows(uni["rows"], uni.get("as_of"))
+            except Exception:
+                pass
+
+        # Fallback 3: full dashboard cache signals (may be absent if large payload failed to cache)
         if target_path is None:
             try:
                 from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
