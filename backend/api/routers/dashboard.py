@@ -25,6 +25,10 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
+
+# Circuit breaker: after a 402 on FMP batch-quote, skip retries for 2 hours.
+# Resets on process restart or when the 2-hour window expires.
+_fmp_batch_quote_disabled_until: float = 0.0  # monotonic timestamp
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 
@@ -941,15 +945,28 @@ def _compute_full_dashboard_sync() -> dict:
     prices_by_ticker = None
     prices_from_fmp_batch = False
     has_fmp_key = bool(get_fmp_api_key(config))
-    use_fmp_batch_quote = config.get("data", {}).get("use_fmp_batch_quote", True) and has_fmp_key
+    global _fmp_batch_quote_disabled_until
+    _circuit_open = time.monotonic() < _fmp_batch_quote_disabled_until
+    use_fmp_batch_quote = (
+        config.get("data", {}).get("use_fmp_batch_quote", True)
+        and has_fmp_key
+        and not _circuit_open
+    )
+    if _circuit_open:
+        remaining = int((_fmp_batch_quote_disabled_until - time.monotonic()) / 60)
+        logger.info("[dashboard] FMP batch-quote circuit open (402 cooldown, %d min remaining) — using yfinance batch", remaining)
     logger.info("[dashboard] Batch quote check: use_fmp_batch_quote=%s, all_quote_tickers=%d", use_fmp_batch_quote, len(all_quote_tickers))
     if use_fmp_batch_quote and all_quote_tickers:
         logger.info("[dashboard] FMP batch quote: requesting %d symbols...", len(all_quote_tickers))
         batch_quotes, batch_err = fetch_batch_quote(config, all_quote_tickers)
         if batch_err:
-            logger.warning("[dashboard] FMP batch quote error: %s (falling back to per-ticker data)", batch_err)
+            logger.warning("[dashboard] FMP batch quote error: %s (falling back to yfinance batch)", batch_err)
             if "402" in str(batch_err) or "Payment" in str(batch_err):
-                logger.warning("[dashboard] FMP batch-quote may require a paid plan; using yfinance/FMP historical per ticker")
+                _fmp_batch_quote_disabled_until = time.monotonic() + 7200  # 2-hour cooldown
+                logger.warning(
+                    "[dashboard] FMP batch-quote 402: requires Premium plan. "
+                    "Circuit breaker engaged for 2 hours. Set use_fmp_batch_quote: false in config.yaml to suppress."
+                )
         elif batch_quotes:
             prices_by_ticker = {}
             for sym, row in batch_quotes.items():

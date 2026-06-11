@@ -726,7 +726,9 @@ data:
   period: 5y         # Live signals, indicators, ATR, vol, MA (short-term); keep 5y for responsiveness
   period_long: 20y   # What-if only: event scenarios (FOMC/CPI reaction stats); NOT used for live signals
   period_long_risk: 20y   # Long-horizon risk: max drawdown, stress bear, worst 3y (monthly data; 2007-present = 2008 crisis included)
-  use_fmp_batch_quote: true  # Use FMP batch-quote for primary latest-price marks
+  use_fmp_batch_quote: false  # FMP /quote batch endpoint requires Premium ($59/mo) — 402 on Starter.
+                              # Signals still use FMP historical OHLCV as primary (Starter supported).
+                              # Live price marks fall back to yfinance batch (one call, ~5s for 100+ tickers).
   # Set via environment (FMP_API_KEY, FRED_API_KEY, …) in production — see config_loader.py. Do not commit real keys.
   #fmp_api_key: "6aRwanR4sXBzOicYLIHXIeIutlaTpmZz"
   #fred_api_key: "35b8f3e904ea9e4fdb6f2b7a67622cc6"
