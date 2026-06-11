@@ -96,6 +96,7 @@ import {
 } from "@/lib/tradingLens";
 import { saveSignalsPreset } from "@/lib/signalPresets";
 import { TradingLensSelector } from "./dashboard/TradingLensSelector";
+import { LivePricesProvider } from "@/lib/LivePriceContext";
 
 const AUTO_REFRESH_MIN = 30;
 
@@ -601,6 +602,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const watchlistTickerList = useMemo(() => data.watchlist ?? [], [data.watchlist]);
 
+  // All tickers visible in the current dashboard session — deduped for live-price polling
+  const livePriceTickers = useMemo(() => {
+    const seen: Record<string, true> = {};
+    const out: string[] = [];
+    const add = (t: string) => { if (t && !seen[t]) { seen[t] = true; out.push(t); } };
+    for (const s of effectiveSignals) s.ticker && add(String(s.ticker).toUpperCase());
+    for (const t of portfolioTickerList) t && add(t.toUpperCase());
+    for (const o of mergedOpportunities) o.ticker && add(String(o.ticker).toUpperCase());
+    return out;
+  }, [effectiveSignals, portfolioTickerList, mergedOpportunities]);
+
   const signalsByTicker = useMemo(() => {
     const m = new Map<string, (typeof effectiveSignals)[number]>();
     for (const s of effectiveSignals) {
@@ -656,6 +668,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   }, [snapshotIso]);
 
   return (
+    <LivePricesProvider tickers={livePriceTickers}>
     <div className="min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950">
@@ -1771,5 +1784,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
       <ChatCopilot data={dataForCopilot} />
     </div>
+    </LivePricesProvider>
   );
 }

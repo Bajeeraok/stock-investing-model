@@ -43,6 +43,11 @@ interface Props {
   /** Optional reference lines from the Levels tab (MA200, T1 low, etc.) */
   levelLines?: Array<{ label: string; value: number; color?: string }>;
   className?: string;
+  /**
+   * Called after every successful 1D fetch with the latest bar's close and
+   * change-from-open-pct. Use in parent to keep header price current at 1-min cadence.
+   */
+  onLivePrice?: (price: number, changePct: number) => void;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -53,8 +58,12 @@ const PERIODS: Array<{ key: PeriodKey; label: string; interval: string; desc: st
   { key: "1mo", label: "1M",  interval: "1h",  desc: "30 days · 1-hour bars" },
 ];
 
-/** Refresh every 15 min during market hours */
-const REFRESH_MS = 15 * 60 * 1000;
+/** Refresh cadence per period */
+const REFRESH_MS: Record<PeriodKey, number> = {
+  "1d":  1 * 60 * 1000,   // 1-min bars → refresh every 1 min
+  "5d":  15 * 60 * 1000,  // 15-min bars → refresh every 15 min
+  "1mo": 15 * 60 * 1000,  // 1-hour bars → refresh every 15 min
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,13 +150,15 @@ function CustomTooltip({
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function IntradayChart({ ticker, levelLines = [], className }: Props) {
+export function IntradayChart({ ticker, levelLines = [], className, onLivePrice }: Props) {
   const [period, setPeriod] = useState<PeriodKey>("5d");
   const [data, setData] = useState<IntradayData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onLivePriceRef = useRef(onLivePrice);
+  onLivePriceRef.current = onLivePrice;
 
   const fetchData = useCallback(
     async (p: PeriodKey, signal?: AbortSignal) => {
@@ -163,6 +174,14 @@ export function IntradayChart({ ticker, levelLines = [], className }: Props) {
         } else {
           setData(json);
           setFetchedAt(new Date());
+          // Emit live price on 1D fetches so parent can update header price
+          if (p === "1d" && json.bars?.length) {
+            const bars = json.bars;
+            const last = bars[bars.length - 1].c;
+            const first = bars[0].c;
+            const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+            onLivePriceRef.current?.(last, pct);
+          }
         }
       } catch (e: unknown) {
         if ((e as Error)?.name !== "AbortError") {
@@ -175,13 +194,13 @@ export function IntradayChart({ ticker, levelLines = [], className }: Props) {
     [ticker],
   );
 
-  // Fetch on mount + period change, then auto-refresh every 15 min
+  // Fetch on mount + period change, then auto-refresh at cadence for that period
   useEffect(() => {
     const ac = new AbortController();
     fetchData(period, ac.signal);
 
     if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => fetchData(period), REFRESH_MS);
+    timerRef.current = setInterval(() => fetchData(period), REFRESH_MS[period]);
 
     return () => {
       ac.abort();

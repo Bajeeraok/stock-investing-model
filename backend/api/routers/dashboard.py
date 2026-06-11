@@ -2524,10 +2524,10 @@ def _compute_full_dashboard_sync() -> dict:
     # Separate from the large dashboard payload — more reliable on memory-constrained Redis.
     try:
         from signals.cache import set_universe_signals
-        set_universe_signals(results, as_of=as_of_date)
-        logger.debug("[dashboard] universe_signals cached (%d rows)", len(results))
+        ok = set_universe_signals(results, as_of=as_of_date)
+        logger.info("[dashboard] universe_signals cached: %s (%d rows)", "ok" if ok else "FAILED", len(results))
     except Exception as e:
-        logger.debug("[dashboard] universe_signals cache skipped: %s", e)
+        logger.warning("[dashboard] universe_signals cache error: %s", e)
 
     logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
     return out
@@ -3062,6 +3062,40 @@ async def get_ticker_detail(ticker: str):
     except Exception as e:
         logger.exception("ticker-detail failed for %s: %s", ticker, e)
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get("/live-prices")
+async def get_live_prices(tickers: str = Query(..., description="Comma-separated list of tickers")):
+    """
+    Return latest delayed prices for a set of tickers in one call.
+    yfinance batch (free, ~15-min delay). Used by the frontend 1-min price polling loop.
+    Response: { prices: {TICKER: price}, as_of: ISO, source: "yfinance_latest" }
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    syms = [t.strip().upper() for t in (tickers or "").split(",") if t.strip()]
+    if not syms:
+        return {"prices": {}, "as_of": None, "source": None}
+    syms = syms[:150]  # cap to avoid abuse
+
+    def _fetch():
+        config = _load_config()
+        from signals.live_quotes import fetch_live_quotes
+        prices, source = fetch_live_quotes(config, syms)
+        return prices, source
+
+    try:
+        prices, source = await run_in_threadpool(_fetch)
+    except Exception as e:
+        logger.warning("[live-prices] fetch failed: %s", e)
+        prices, source = {}, None
+
+    return {
+        "prices": prices,
+        "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "source": source,
+        "count": len(prices),
+    }
 
 
 @router.get("/ticker/{ticker}/intraday")
@@ -3943,23 +3977,32 @@ async def get_eod_universe(date: str = Query("latest")):
             files = sorted(eod_dir.glob("*.json"), reverse=True) if eod_dir.exists() else []
             if files:
                 target_path = files[0]
+                logger.info("[eod-universe] using disk file: %s", target_path.name)
         else:
             candidate = eod_dir / f"{date}.json"
             if candidate.exists():
                 target_path = candidate
+                logger.info("[eod-universe] using disk file: %s", target_path.name)
+
+        if target_path is None:
+            logger.info("[eod-universe] no disk file — checking Redis fallbacks")
 
         # Fallback 1: Redis EOD snapshot
         if target_path is None:
             try:
                 from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
                 dates = list_eod_dates_redis()
+                logger.info("[eod-universe] fallback-1 Redis EOD: %d dates available", len(dates) if dates else 0)
                 if dates:
                     snap = get_eod_snapshot_redis(sorted(dates)[-1])
                     if snap:
                         rows = snap.get("signals") or snap.get("results") or []
+                        logger.info("[eod-universe] fallback-1 hit (%d rows)", len(rows))
                         return _shape_universe_rows(rows, snap.get("run_date") or sorted(dates)[-1])
-            except Exception:
-                pass
+                    else:
+                        logger.info("[eod-universe] fallback-1 snap empty for latest date")
+            except Exception as e:
+                logger.warning("[eod-universe] fallback-1 error: %s", e)
 
         # Fallback 2: dedicated compact universe-signals Redis key (written after every dashboard run)
         if target_path is None:
@@ -3967,30 +4010,61 @@ async def get_eod_universe(date: str = Query("latest")):
                 from signals.cache import get_universe_signals
                 uni = get_universe_signals()
                 if uni and uni.get("rows"):
-                    logger.info("[eod-universe] using universe_signals cache (%d rows)", len(uni["rows"]))
+                    logger.info("[eod-universe] fallback-2 universe_signals hit (%d rows)", len(uni["rows"]))
                     return _shape_universe_rows(uni["rows"], uni.get("as_of"))
-            except Exception:
-                pass
+                else:
+                    logger.info("[eod-universe] fallback-2 universe_signals miss (key absent or empty)")
+            except Exception as e:
+                logger.warning("[eod-universe] fallback-2 error: %s", e)
 
-        # Fallback 3: full dashboard cache signals (may be absent if large payload failed to cache)
+        # Fallback 3: full dashboard cache — extract signals from the live payload
         if target_path is None:
             try:
                 from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
-                dash = get_cached_dashboard() or get_last_dashboard_snapshot()
+                dash = get_cached_dashboard()
+                snap_label = "fresh"
+                if dash is None:
+                    dash = get_last_dashboard_snapshot()
+                    snap_label = "last_snapshot"
                 if dash:
                     rows = dash.get("signals") or []
                     as_of = dash.get("as_of_date") or dash.get("run_date")
+                    logger.info(
+                        "[eod-universe] fallback-3 dashboard cache (%s): %d signal rows, as_of=%s",
+                        snap_label, len(rows), as_of,
+                    )
                     if rows:
-                        logger.info("[eod-universe] using dashboard cache signals (%d rows)", len(rows))
+                        # Also populate universe_signals so next call uses fallback-2 directly
+                        try:
+                            from signals.cache import set_universe_signals
+                            set_universe_signals(rows, as_of=as_of)
+                        except Exception:
+                            pass
                         return _shape_universe_rows(rows, as_of)
-            except Exception:
-                pass
+                    # Dashboard cache exists but signals empty (signals_deferred path) — trigger background refresh
+                    logger.info("[eod-universe] fallback-3 dashboard signals empty — triggering background refresh")
+                    try:
+                        from api.dashboard_job import is_refresh_running, trigger_background_refresh
+                        if not is_refresh_running():
+                            trigger_background_refresh(_compute_full_dashboard_sync)
+                    except Exception:
+                        pass
+                else:
+                    logger.info("[eod-universe] fallback-3 no dashboard cache at all")
+            except Exception as e:
+                logger.warning("[eod-universe] fallback-3 error: %s", e)
 
-            return {"rows": [], "as_of": None, "total": 0, "message": "No EOD snapshot found. Run a dashboard refresh to populate."}
+            return {
+                "rows": [],
+                "as_of": None,
+                "total": 0,
+                "message": "Refresh in progress — data will appear shortly. Click Refresh if not populated in 5 min.",
+            }
 
         raw = _json.loads(target_path.read_text(encoding="utf-8"))
         rows = raw.get("signals") or raw.get("results") or []
         as_of = raw.get("run_date") or target_path.stem
+        logger.info("[eod-universe] disk file loaded: %d rows, as_of=%s", len(rows), as_of)
         return _shape_universe_rows(rows, as_of)
 
     except Exception as e:

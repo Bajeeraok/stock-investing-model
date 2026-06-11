@@ -387,6 +387,9 @@ export function TickerDetailModal({
   const [loading, setLoading]              = useState(true);
   const [error, setError]                  = useState<string | null>(null);
   const [reloadKey, setReloadKey]          = useState(0);
+  /** Live price lifted from IntradayChart (1-min cadence on 1D view) */
+  const [livePrice, setLivePrice]          = useState<number | null>(null);
+  const [liveChangePct, setLiveChangePct]  = useState<number | null>(null);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
@@ -435,6 +438,8 @@ export function TickerDetailModal({
     setConfidence(null);
     setUnified(null);
     setPriceTargets(null);
+    setLivePrice(null);
+    setLiveChangePct(null);
 
     const ac = new AbortController();
     let cancelled = false;
@@ -604,16 +609,23 @@ export function TickerDetailModal({
     return { light: "yellow", title: "WATCH OR HOLD", subtitle: "Mixed setup — wait for locked gates to clear." };
   }, [retailActionStatus, detail?.investor_summary?.retail_action, detail?.investor_summary?.overall_verdict]);
 
+  // Live price from IntradayChart (1-min cadence) overrides the detail snapshot price.
+  // Falls back to detail.current_price when the chart hasn't emitted yet.
+  const effectivePrice = livePrice ?? detail?.current_price ?? null;
+
   const tradingGates = useMemo(() => {
     const inv = detail?.investor_summary;
-    const cp = detail?.current_price;
+    const cp = effectivePrice;
     if (!inv || cp == null || !(cp > 0)) return [];
     return buildGatesFromInvestorSummary(inv, cp);
-  }, [detail]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, effectivePrice]);
 
   const gatesPassedCount = tradingGates.filter((g) => g.pass).length;
 
   const quoteDailyMovePct = useMemo(() => {
+    // Prefer live intraday change pct (1D chart, from open) when available
+    if (liveChangePct != null) return liveChangePct;
     if (detail?.daily_move_pct != null) return detail.daily_move_pct;
     const hist = detail?.price_history;
     if (!hist || hist.length < 2) return null;
@@ -621,7 +633,7 @@ export function TickerDetailModal({
     const c1 = hist[hist.length - 1]?.close;
     if (c0 == null || c1 == null || c0 <= 0) return null;
     return ((c1 - c0) / c0) * 100;
-  }, [detail?.daily_move_pct, detail?.price_history]);
+  }, [liveChangePct, detail?.daily_move_pct, detail?.price_history]);
 
   const modalNewsRail = useMemo(() => {
     const roadmapNews = detail?.investor_summary?.trade_roadmap?.news_sentiment_layer;
@@ -637,7 +649,7 @@ export function TickerDetailModal({
 
   const buyBandContext = useMemo(() => {
     const inv = detail?.investor_summary;
-    const cp = detail?.current_price;
+    const cp = effectivePrice;
     const ez = inv?.horizons?.short?.entry_zone;
     if (!cp || !ez?.low || !ez?.high) {
       return { insideBuyBand: false, rsi: inv?.rsi ?? null };
@@ -645,21 +657,24 @@ export function TickerDetailModal({
     const low = Math.min(ez.low, ez.high);
     const high = Math.max(ez.low, ez.high);
     return { insideBuyBand: cp >= low && cp <= high, rsi: inv?.rsi ?? null };
-  }, [detail]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, effectivePrice]);
 
   const assessmentPctForHeader = useMemo(() => {
     const inv = detail?.investor_summary;
-    const cp = detail?.current_price;
+    const cp = effectivePrice;
     if (!inv || !cp) return 0;
     return ((inv.fair_value - cp) / cp) * 100;
-  }, [detail]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, effectivePrice]);
 
   const executionVm = useMemo(() => {
     const inv = detail?.investor_summary;
-    const cp = detail?.current_price ?? 0;
+    const cp = effectivePrice ?? 0;
     if (!inv || cp <= 0) return null;
     return buildExecutionPlanViewModel(inv, cp, decisionMode);
-  }, [detail?.investor_summary, detail?.current_price, decisionMode]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.investor_summary, effectivePrice, decisionMode]);
 
   const streetVsExecutionText = useMemo(() => {
     const inv = detail?.investor_summary;
@@ -716,14 +731,24 @@ export function TickerDetailModal({
             </h2>
           )}
           <div className="flex items-center gap-2 shrink-0">
-            {detail && !loading && detail.current_price != null && (
+            {detail && !loading && effectivePrice != null && (
               <div className="text-right hidden sm:block">
                 <div className="flex items-center justify-end gap-1.5">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/60 opacity-60" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white/70" />
-                  </span>
-                  <p className="text-lg font-mono font-bold text-white tabular-nums">${detail.current_price.toFixed(2)}</p>
+                  {livePrice != null ? (
+                    <>
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                      </span>
+                      <span className="text-[9px] font-medium text-emerald-500 uppercase tracking-wider">live</span>
+                    </>
+                  ) : (
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/60 opacity-60" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white/70" />
+                    </span>
+                  )}
+                  <p className="text-lg font-mono font-bold text-white tabular-nums">${effectivePrice.toFixed(2)}</p>
                 </div>
                 {detail.investor_summary && (
                   <p
@@ -800,7 +825,7 @@ export function TickerDetailModal({
           <>
             <StickyTickerQuoteBar
               ticker={ticker}
-              price={detail.current_price}
+              price={effectivePrice}
               dailyMovePct={quoteDailyMovePct}
               score={detail.score_breakdown?.composite ?? detail.investor_summary?.pattern_score}
               regime={
@@ -953,13 +978,13 @@ export function TickerDetailModal({
                   {detail.investor_summary.retail_action?.zone_context?.in_watch_zone && (
                     <WatchZoneCallout
                       zone={detail.investor_summary.retail_action.zone_context}
-                      currentPrice={detail.current_price}
+                      currentPrice={effectivePrice}
                       regimeBullPct={detail.investor_summary.regime_bull_pct}
                     />
                   )}
                   <TickerCommandCard
                     summary={detail.investor_summary}
-                    currentPrice={detail.current_price ?? 0}
+                    currentPrice={effectivePrice ?? 0}
                     mode={decisionMode}
                     actionTitle={headerActionStatus.title}
                     actionLight={headerActionStatus.light}
@@ -982,14 +1007,14 @@ export function TickerDetailModal({
                     <CopyTradePlanButton
                       ticker={detail.ticker}
                       summary={detail.investor_summary}
-                      currentPrice={detail.current_price ?? 0}
+                      currentPrice={effectivePrice ?? 0}
                       mode={decisionMode}
                     />
                   </div>
                   {detail.price_history && detail.price_history.length >= 3 && (
                     <HorizonProjectionChart
                       ticker={detail.ticker}
-                      currentPrice={detail.current_price ?? 0}
+                      currentPrice={effectivePrice ?? 0}
                       priceHistory={detail.price_history}
                       short={detail.investor_summary.horizons.short}
                       medium={detail.investor_summary.horizons.medium}
@@ -1016,7 +1041,7 @@ export function TickerDetailModal({
                       ticker={detail.ticker}
                       companyName={detail.company_name}
                       sector={detail.sector}
-                      currentPrice={detail.current_price}
+                      currentPrice={effectivePrice}
                       statusTitle={headerActionStatus.title}
                       statusLight={headerActionStatus.light}
                       assessmentPct={assessmentPctForHeader}
@@ -1223,6 +1248,10 @@ export function TickerDetailModal({
                       ticker={ticker}
                       levelLines={levelLines}
                       className="mb-3"
+                      onLivePrice={(p, pct) => {
+                        setLivePrice(p);
+                        setLiveChangePct(pct);
+                      }}
                     />
                   );
                 })()}

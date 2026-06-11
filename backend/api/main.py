@@ -140,6 +140,69 @@ def _warm_dashboard_background():
         logger.warning("Warm dashboard failed (%s): %s", url[:80], e)
 
 
+def _startup_background_refresh(delay_s: float = 10.0, max_age_min: float = 20.0) -> None:
+    """
+    In-process startup refresh.  Runs after `delay_s` seconds so the app is
+    fully listening before the heavy compute starts.
+
+    Skips the refresh when the cached dashboard is fresher than `max_age_min`
+    minutes (env: STARTUP_REFRESH_MAX_AGE_MIN, default 20) — avoids a
+    redundant recompute on rapid restarts / health-check bounces.
+
+    Set STARTUP_REFRESH_ENABLED=0 to disable entirely.
+    """
+    enabled = (os.getenv("STARTUP_REFRESH_ENABLED") or "1").strip().lower()
+    if enabled in ("0", "false", "no", "off"):
+        return
+
+    override_age = os.getenv("STARTUP_REFRESH_MAX_AGE_MIN")
+    if override_age:
+        try:
+            max_age_min = float(override_age)
+        except ValueError:
+            pass
+
+    time.sleep(max(1.0, delay_s))
+
+    # Check cache freshness before triggering
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+        if cached and isinstance(cached, dict):
+            as_of = cached.get("as_of_date") or cached.get("run_date")
+            if as_of:
+                import datetime as _dt
+                try:
+                    ts = _dt.datetime.fromisoformat(str(as_of).rstrip("Z"))
+                    age_min = (_dt.datetime.utcnow() - ts).total_seconds() / 60.0
+                    if age_min < max_age_min:
+                        logger.info(
+                            "[startup] dashboard cache is %.0f min old (< %.0f min threshold) — skipping auto-refresh",
+                            age_min, max_age_min,
+                        )
+                        return
+                    logger.info(
+                        "[startup] dashboard cache is %.0f min old — triggering background refresh",
+                        age_min,
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    try:
+        from api.routers.dashboard import _compute_full_dashboard_sync
+        from api.dashboard_job import trigger_background_refresh
+
+        started = trigger_background_refresh(_compute_full_dashboard_sync)
+        if started:
+            logger.info("[startup] background dashboard refresh triggered")
+        else:
+            logger.info("[startup] background dashboard refresh already running — skipped")
+    except Exception as e:
+        logger.warning("[startup] background refresh failed to start: %s", e)
+
+
 @app.on_event("startup")
 def startup():
     logger.info("FastAPI server startup complete. Listening for requests on /api/*")
@@ -147,6 +210,10 @@ def startup():
         scanner.startup_scanner()
     except Exception as e:
         logger.warning("Scanner startup failed: %s", e)
+    # Always trigger in-process background refresh on startup (if cache is stale).
+    # Falls back to no-op when cache is fresh (<20 min) or already running.
+    threading.Thread(target=_startup_background_refresh, name="startup-refresh", daemon=True).start()
+    # Legacy HTTP-based warm (optional, requires WARM_DASHBOARD_ON_STARTUP=1 + WARM_DASHBOARD_URL)
     if (os.getenv("WARM_DASHBOARD_ON_STARTUP") or "").strip().lower() in ("1", "true", "yes", "on"):
         t = threading.Thread(target=_warm_dashboard_background, name="warm-dashboard", daemon=True)
         t.start()

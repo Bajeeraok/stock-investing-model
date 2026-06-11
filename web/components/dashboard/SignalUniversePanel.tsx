@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { clsx } from "clsx";
 import { Search, RefreshCw, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "";
+import { apiUrl } from "@/lib/apiBase";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,23 +124,33 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const load = useCallback(async (isRetry = false) => {
+    if (!isRetry) setLoading(true);
     setError(null);
     try {
-      const url = `${API_BASE}/api/dashboard/eod-universe`;
-      const res = await fetch(url);
+      const url = apiUrl("/api/dashboard/eod-universe");
+      const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: UniversePayload = await res.json();
       setData(json);
+      // Auto-retry after 30s if the backend is still refreshing (no rows yet)
+      if (json.rows.length === 0 && json.message?.includes("progress")) {
+        if (retryRef.current) clearTimeout(retryRef.current);
+        retryRef.current = setTimeout(() => load(true), 30_000);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (!isRetry) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { if (retryRef.current) clearTimeout(retryRef.current); };
+  }, [load]);
 
   const allRegimes = useMemo(() => {
     if (!data) return [];
@@ -479,8 +488,18 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
         </div>
       )}
 
-      {data?.message && (
-        <p className="text-xs text-slate-500">{data.message}</p>
+      {data?.rows?.length === 0 && data?.message && (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
+          <p className="text-sm text-slate-400">{data.message}</p>
+          <button
+            type="button"
+            onClick={() => load()}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Retry
+          </button>
+        </div>
       )}
     </div>
   );

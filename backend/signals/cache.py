@@ -176,9 +176,21 @@ def redis_status() -> dict:
         return {"configured": False, "connected": False, "source": None, "scheme": None, "error": None}
 
 
+def _sanitize_for_json(obj: Any) -> Any:
+    """Recursively replace non-finite floats with None so json.dumps never raises."""
+    import math
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
+
 def _serialize(val: Any) -> str:
     if isinstance(val, (dict, list)):
-        return json.dumps(val, default=str)
+        return json.dumps(_sanitize_for_json(val), default=str)
     return str(val)
 
 
@@ -551,9 +563,34 @@ UNIVERSE_SIGNALS_KEY = "dashboard:universe_signals"
 UNIVERSE_SIGNALS_TTL = 25 * 3600  # 25 hours — survives overnight + weekend
 
 
+_UNIVERSE_KEEP_KEYS = frozenset({
+    "ticker", "close", "change_pct", "composite_buy", "composite_score",
+    "rsi", "rsi14", "regime", "signal", "entry_mode", "go_no_go",
+    "retail_status", "model_confidence_pct", "confidence_mid",
+    "sector", "market_cap_bucket", "price_change_pct", "gates_total", "error",
+})
+
+
 def set_universe_signals(rows: list[dict], as_of: str | None = None) -> bool:
-    """Store compact signal rows for the universe panel. TTL 25h."""
-    payload = {"rows": rows, "as_of": as_of}
+    """
+    Store compact signal rows for the universe panel. TTL 25h.
+    Only keeps the fields needed by _shape_universe_rows — strips heavy nested
+    objects (investor_summary, horizons_detail, etc.) that contain inf/nan floats.
+    """
+    compact: list[dict] = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        row: dict = {k: v for k, v in r.items() if k in _UNIVERSE_KEEP_KEYS}
+        # Keep retail_status but only the gates sub-key to minimise payload
+        rs = r.get("retail_status")
+        if isinstance(rs, dict):
+            row["retail_status"] = {
+                "entry_mode": rs.get("entry_mode"),
+                "gates": rs.get("gates"),
+            }
+        compact.append(row)
+    payload = {"rows": compact, "as_of": as_of}
     return set_cached(UNIVERSE_SIGNALS_KEY, payload, UNIVERSE_SIGNALS_TTL)
 
 

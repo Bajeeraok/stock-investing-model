@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useCallback, Fragment } from "react";
 import type { Signal } from "@/app/page";
 import { clsx } from "clsx";
+import { useLivePrice } from "@/lib/LivePriceContext";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   CompactSignalActionStrip,
@@ -345,6 +346,17 @@ function listStatusTone(light: "green" | "yellow" | "red" | "neutral"): string {
   return "text-amber-200";
 }
 
+/** Displays price, preferring live quote from context over the OHLCV snapshot close. */
+function PriceCell({ ticker, close, className }: { ticker: string; close: number | null | undefined; className?: string }) {
+  const live = useLivePrice(ticker ?? "");
+  const display = live ?? close;
+  return (
+    <span className={clsx("tabular-nums", live != null ? "text-emerald-300" : "text-slate-300", className)}>
+      {display != null ? `$${display.toFixed(2)}` : "—"}
+    </span>
+  );
+}
+
 function SignalsQuickTickerRow({
   r,
   gateContext,
@@ -425,9 +437,7 @@ function SignalsQuickTickerRow({
           )}
         >
           <div className="flex flex-col items-end gap-0.5">
-            <span className="text-slate-300 tabular-nums">
-              {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
-            </span>
+            <PriceCell ticker={r.ticker} close={r.close} />
             <SignalSparklineCell signal={r} />
           </div>
         </td>
@@ -591,9 +601,7 @@ function SignalsMobileQuickCard({
           <CatalystBadge catalyst={r.catalyst} />
         </div>
         <div className="flex flex-col items-end gap-0.5 shrink-0">
-          <span className="text-slate-300 text-sm tabular-nums">
-            {r.close != null ? `$${r.close.toFixed(2)}` : "—"}
-          </span>
+          <PriceCell ticker={r.ticker} close={r.close} className="text-sm" />
           {r.sparkline_closes && r.sparkline_closes.length >= 3 && (
             <MiniPriceSparkline closes={r.sparkline_closes} width={64} height={22} />
           )}
@@ -671,6 +679,7 @@ function SignalsMobileFullCard({
   onSwipeKeyChange?: (key: string | null) => void;
 }) {
   const levelsOpen = openMobileTicker === r.ticker;
+
   const swipeActions: SwipeRevealAction[] = [
     {
       id: "levels",
@@ -721,7 +730,7 @@ function SignalsMobileFullCard({
                 {tickerActions[r.ticker].action}
               </span>
             ) : null}
-            <span className="text-slate-400 text-sm">{r.close != null ? `$${r.close.toFixed(2)}` : "-"}</span>
+            <PriceCell ticker={r.ticker} close={r.close} className="text-sm" />
           </div>
           {r.sparkline_closes && r.sparkline_closes.length >= 3 && (
             <MiniPriceSparkline closes={r.sparkline_closes} width={72} height={24} />
@@ -1501,7 +1510,7 @@ export function SignalsTable({
                   )}
                   title="Last close from daily data"
                 >
-                  {r.close != null ? `$${r.close.toFixed(2)}` : "-"}
+                  <PriceCell ticker={r.ticker} close={r.close} />
                 </td>
                 <td className="px-3 py-2.5 align-top">
                   <CompactSignalActionStrip
