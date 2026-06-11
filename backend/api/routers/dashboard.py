@@ -2564,7 +2564,10 @@ async def get_dashboard_analysis_bundle():
 
 @router.get("/dashboard/signals-panel")
 async def get_dashboard_signals_panel():
-    """Full per-ticker signal rows from the last dashboard run (Redis). Used when main GET /dashboard omits heavy `signals`."""
+    """Per-ticker signal rows for the Signals table (strips heavy investor_summary to keep response lean)."""
+    # Fields only needed in TickerDetailModal — strip them here to avoid 502 on large payloads.
+    _HEAVY_KEYS = frozenset({"investor_summary", "horizons_detail", "valuation_deck"})
+
     try:
         from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
@@ -2579,7 +2582,16 @@ async def get_dashboard_signals_panel():
         sigs = cached.get("signals")
         if not isinstance(sigs, list):
             raise HTTPException(status_code=503, detail="No signals in dashboard cache.")
-        return {"signals": sigs}
+
+        # Strip large nested objects not needed by the signals table
+        slim = []
+        for row in sigs:
+            if not isinstance(row, dict):
+                slim.append(row)
+                continue
+            slim.append({k: v for k, v in row.items() if k not in _HEAVY_KEYS})
+        logger.info("[signals-panel] returning %d rows (heavy keys stripped)", len(slim))
+        return {"signals": slim}
     except HTTPException:
         raise
     except Exception as e:
@@ -3922,7 +3934,7 @@ async def get_eod_universe(date: str = Query("latest")):
             if candidate.exists():
                 target_path = candidate
 
-        # Fallback: try Redis latest
+        # Fallback 1: Redis EOD snapshot
         if target_path is None:
             try:
                 from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
@@ -3934,7 +3946,22 @@ async def get_eod_universe(date: str = Query("latest")):
                         return _shape_universe_rows(rows, snap.get("run_date") or sorted(dates)[-1])
             except Exception:
                 pass
-            return {"rows": [], "as_of": None, "total": 0, "message": "No EOD snapshot found"}
+
+        # Fallback 2: live dashboard cache (available after any dashboard refresh, even on ephemeral storage)
+        if target_path is None:
+            try:
+                from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+                dash = get_cached_dashboard() or get_last_dashboard_snapshot()
+                if dash:
+                    rows = dash.get("signals") or []
+                    as_of = dash.get("as_of_date") or dash.get("run_date")
+                    if rows:
+                        logger.info("[eod-universe] using dashboard cache signals (%d rows)", len(rows))
+                        return _shape_universe_rows(rows, as_of)
+            except Exception:
+                pass
+
+            return {"rows": [], "as_of": None, "total": 0, "message": "No EOD snapshot found. Run a dashboard refresh to populate."}
 
         raw = _json.loads(target_path.read_text(encoding="utf-8"))
         rows = raw.get("signals") or raw.get("results") or []

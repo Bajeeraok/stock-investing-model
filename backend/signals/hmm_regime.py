@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import pickle
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +37,22 @@ logger = logging.getLogger(__name__)
 
 MODELS_DIR = Path(__file__).resolve().parent.parent / "data" / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── In-process model cache ───────────────────────────────────────────────────
+# Keeps fitted HMM models in memory so re-calls within the same process skip
+# disk I/O and re-fitting entirely. Critical on Railway where the models dir
+# may not be writable (save silently fails → every call would re-fit without this).
+_MODEL_MEMORY_CACHE: dict[str, object] = {}
+_MODEL_FIT_LOCKS: dict[str, threading.Lock] = {}
+_MODEL_CACHE_LOCK = threading.Lock()  # protects _MODEL_FIT_LOCKS dict
+
+
+def _get_fit_lock(cache_key: str) -> threading.Lock:
+    """Return (creating if needed) a per-model lock to prevent concurrent refits."""
+    with _MODEL_CACHE_LOCK:
+        if cache_key not in _MODEL_FIT_LOCKS:
+            _MODEL_FIT_LOCKS[cache_key] = threading.Lock()
+        return _MODEL_FIT_LOCKS[cache_key]
 
 # Broad equity index ETFs: HMM on price returns alone lags macro shocks; blend with stress context.
 _MAJOR_INDEX_ETF_MACRO = frozenset(MAJOR_INDEX_ETFS) | frozenset({"VOO", "VTI"})
@@ -837,79 +854,110 @@ def _load_or_fit(
     from hmmlearn.hmm import GaussianHMM
 
     path = _model_path(ticker, suffix=model_suffix)
-    if path.exists() and not force_refit:
-        try:
-            with open(path, "rb") as f:
-                cached = pickle.load(f)
-            means = getattr(cached, "means_", None)
-            if means is not None and getattr(means, "shape", None):
-                if int(means.shape[1]) != int(features.shape[1]):
-                    logger.info(
-                        "HMM cached model %s dim %s vs features %s — refitting",
-                        path.name,
-                        means.shape[1],
-                        features.shape[1],
-                    )
+    cache_key = f"{ticker.upper()}{model_suffix}"
+    n_features = int(features.shape[1])
+
+    # ── 1. Check in-process memory cache first ───────────────────────────────
+    # Avoids disk I/O and re-fitting on every call within the same process.
+    # Critical on Railway where data/models may not be writable.
+    if not force_refit and cache_key in _MODEL_MEMORY_CACHE:
+        mem_model = _MODEL_MEMORY_CACHE[cache_key]
+        mem_means = getattr(mem_model, "means_", None)
+        if mem_means is not None and int(getattr(mem_means, "shape", [0, 0])[1]) == n_features:
+            return mem_model
+        # Dimension changed since last fit — drop stale in-memory entry
+        _MODEL_MEMORY_CACHE.pop(cache_key, None)
+
+    # ── 2. Serialise to one fit per ticker at a time ─────────────────────────
+    fit_lock = _get_fit_lock(cache_key)
+    with fit_lock:
+        # Re-check memory cache after acquiring the lock (another thread may have just fitted)
+        if not force_refit and cache_key in _MODEL_MEMORY_CACHE:
+            mem_model = _MODEL_MEMORY_CACHE[cache_key]
+            mem_means = getattr(mem_model, "means_", None)
+            if mem_means is not None and int(getattr(mem_means, "shape", [0, 0])[1]) == n_features:
+                return mem_model
+
+        # ── 3. Try loading from disk ─────────────────────────────────────────
+        if path.exists() and not force_refit:
+            try:
+                with open(path, "rb") as f:
+                    cached = pickle.load(f)
+                means = getattr(cached, "means_", None)
+                if means is not None and getattr(means, "shape", None):
+                    if int(means.shape[1]) != n_features:
+                        logger.info(
+                            "HMM cached model %s dim %d vs features %d — deleting stale pkl and refitting",
+                            path.name, means.shape[1], n_features,
+                        )
+                        # Delete stale file so future process starts don't reload wrong dims
+                        try:
+                            path.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    else:
+                        _MODEL_MEMORY_CACHE[cache_key] = cached
+                        return cached
                 else:
+                    _MODEL_MEMORY_CACHE[cache_key] = cached
                     return cached
-            else:
-                return cached
-        except Exception:
-            logger.debug("HMM cache corrupt for %s — refitting", ticker)
+            except Exception:
+                logger.debug("HMM cache corrupt for %s — refitting", ticker)
+                try:
+                    path.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
-    # Fit on all bars except last RECENT_BARS to avoid future peeking
-    train = features[:-RECENT_BARS] if len(features) > RECENT_BARS + 100 else features
+        # ── 4. Fit a fresh model ─────────────────────────────────────────────
+        # Fit on all bars except last RECENT_BARS to avoid future peeking
+        train = features[:-RECENT_BARS] if len(features) > RECENT_BARS + 100 else features
 
-    # ── Silence hmmlearn's logger during fitting ───────────────────────────
-    # hmmlearn emits "Model is not converging" via logging.warning() (not via
-    # warnings.warn), so warnings.simplefilter("ignore") does NOT suppress it.
-    # We temporarily raise the hmmlearn logger to CRITICAL so no WARNING-level
-    # messages reach the application log. The model output is still usable.
-    _hmm_log = _std_logging.getLogger("hmmlearn")
-    _hmm_prev_level = _hmm_log.level
-    _hmm_log.setLevel(_std_logging.CRITICAL)
+        # Silence hmmlearn's logger during fitting
+        _hmm_log = _std_logging.getLogger("hmmlearn")
+        _hmm_prev_level = _hmm_log.level
+        _hmm_log.setLevel(_std_logging.CRITICAL)
 
-    best_model, best_score = None, -np.inf
-    # Five random restarts — keep the model with the highest log-likelihood.
-    # HMM EM is sensitive to initialisation; more restarts reduce the chance of
-    # landing in a poor local optimum that produces unstable covariances.
-    for seed in (42, 7, 123, 17, 99):
+        best_model, best_score = None, -np.inf
+        for seed in (42, 7, 123, 17, 99):
+            try:
+                candidate = GaussianHMM(
+                    n_components=3,
+                    covariance_type="diag",
+                    n_iter=500,
+                    random_state=seed,
+                    tol=1e-3,
+                    min_covar=1e-2,
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    candidate.fit(train)
+                score = candidate.score(train)
+                if score > best_score:
+                    best_score, best_model = score, candidate
+            except Exception as exc:
+                logger.debug("HMM fit attempt seed=%s failed for %s: %s", seed, ticker, exc)
+
+        _hmm_log.setLevel(_hmm_prev_level)
+
+        if best_model is None:
+            logger.warning("All HMM fit attempts failed for %s", ticker)
+            return None
+
+        # Store in memory cache immediately — even if disk save fails, subsequent
+        # calls within this process skip re-fitting entirely.
+        _MODEL_MEMORY_CACHE[cache_key] = best_model
+
         try:
-            candidate = GaussianHMM(
-                n_components=3,
-                covariance_type="diag",   # fewer params than "full" → more stable
-                n_iter=500,
-                random_state=seed,
-                tol=1e-3,                 # slightly relaxed — avoids false "not converging"
-                min_covar=1e-2,           # floor on diagonal covariance entries;
-                                          # prevents near-zero variance that causes
-                                          # the EM log-likelihood to step backwards
+            with open(path, "wb") as f:
+                pickle.dump(best_model, f)
+            logger.info("HMM model %s fitted and saved (dim=%d)", path.name, n_features)
+        except Exception as e:
+            logger.warning(
+                "HMM model %s fitted but disk save failed (%s) — cached in memory only",
+                path.name, e,
             )
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")   # belt-and-suspenders for ConvergenceWarning
-                candidate.fit(train)
-            score = candidate.score(train)
-            if score > best_score:
-                best_score, best_model = score, candidate
-        except Exception as exc:
-            logger.debug("HMM fit attempt seed=%s failed for %s: %s", seed, ticker, exc)
-        finally:
-            pass  # logger level restored after the loop
 
-    # Restore hmmlearn logger level
-    _hmm_log.setLevel(_hmm_prev_level)
-
-    if best_model is None:
-        logger.warning("All HMM fit attempts failed for %s", ticker)
-        return None
-
-    try:
-        with open(path, "wb") as f:
-            pickle.dump(best_model, f)
-    except Exception:
-        pass   # model still usable in memory even if persist fails
-
-    return best_model
+        return best_model
 
 
 def _error_result(msg: str) -> dict:
