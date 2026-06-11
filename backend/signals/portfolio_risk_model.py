@@ -17,11 +17,12 @@ logger = logging.getLogger(__name__)
 
 def compute_correlation_matrix(
     tickers: list[str],
-    lookback_days: int = 252,
+    lookback_days: int = 1260,
     fetch_close=None,
 ) -> tuple[pd.DataFrame | None, str | None]:
     """
     Pairwise correlation of daily returns. fetch_close(ticker, period) -> Series or None.
+    Uses 5-year history by default for more diverse regime coverage.
     """
     if fetch_close is None:
         from signals.fetcher import fetch_ohlcv_safe
@@ -30,7 +31,9 @@ def compute_correlation_matrix(
             s = fetch_ohlcv_safe(t, period)
             return s
 
-    period = "2y" if lookback_days <= 504 else "5y"
+    # 5y: ~1,260 data points — stable correlation estimates spanning 2020 crash + 2022 bear.
+    # run_signals fetches "5y" for every ticker, so this hits the in-process cache at ~0 ms.
+    period = "5y"
 
     prices: dict[str, pd.Series] = {}
     for t in tickers:
@@ -107,7 +110,8 @@ def compute_var_cvar(
         def fetch_close(t: str, period: str) -> pd.Series | None:
             return fetch_ohlcv_safe(t, period)
 
-    period = "2y"
+    # 5y: includes 2020 crash + 2022 bear for realistic VaR/CVaR tail estimates
+    period = "5y"
     rets: dict[str, pd.Series] = {}
     for t in tickers:
         sym = (t or "").upper().strip()
@@ -181,13 +185,14 @@ def compute_portfolio_beta_metrics(
     *,
     sector_allocation: list[dict] | None = None,
     benchmark: str = "SPY",
-    lookback_days: int = 252,
+    lookback_days: int = 1260,
     fetch_close=None,
 ) -> dict[str, Any]:
     """
     Per-holding, sector, and portfolio-weighted beta vs benchmark (default SPY).
 
     Portfolio beta = sum(weight_i × beta_i) over holdings with valid beta.
+    Uses 5-year history (~1,260 bars) for stable beta estimates that span multiple regimes.
     """
     if fetch_close is None:
         from signals.fetcher import fetch_ohlcv_safe
@@ -212,7 +217,8 @@ def compute_portfolio_beta_metrics(
     if not holdings:
         return {"error": "No holdings with allocation"}
 
-    period = "2y" if lookback_days <= 504 else "5y"
+    # 5y: more stable beta estimates (~1,260 data points) + free cache hit from run_signals
+    period = "5y"
     bm_sym = (benchmark or "SPY").upper()
     spy_close = fetch_close(bm_sym, period)
     if spy_close is None or len(spy_close) < 63:

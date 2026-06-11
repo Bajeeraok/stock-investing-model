@@ -674,28 +674,25 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <Activity className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">Pre-market</span>
             </button>
-            {/* Timestamp — always visible, compact on mobile */}
-            <div className="flex flex-col items-end gap-0.5 min-w-0">
-              {lastRefreshedAt && (
-                <span
-                  className="text-[10px] sm:text-xs text-slate-500 font-mono leading-none"
-                  title={`Browser fetched: ${formatLastRefresh(lastRefreshedAt)}`}
-                >
-                  {refreshAgo || formatLastRefresh(lastRefreshedAt)}
-                </span>
-              )}
-              {snapshotIso && (
-                <span
-                  className={clsx(
-                    "text-[10px] sm:text-xs font-mono leading-none",
-                    data.data_freshness?.serving_stale || stale ? "text-amber-400" : "text-slate-600",
-                  )}
-                  title={`Server snapshot saved ${formatSnapshotEt(snapshotIso)}`}
-                >
-                  Snapshot {snapshotAge || formatSnapshotAge(snapshotIso)}
-                </span>
-              )}
-            </div>
+            {lastRefreshedAt && (
+              <span
+                className="text-xs sm:text-sm text-slate-500 hidden md:inline"
+                title={`Browser fetched: ${formatLastRefresh(lastRefreshedAt)}`}
+              >
+                Fetched {refreshAgo || formatLastRefresh(lastRefreshedAt)}
+              </span>
+            )}
+            {snapshotIso && (
+              <span
+                className={clsx(
+                  "text-xs hidden sm:inline font-mono",
+                  data.data_freshness?.serving_stale || stale ? "text-amber-400" : "text-slate-500",
+                )}
+                title={`Server snapshot saved ${formatSnapshotEt(snapshotIso)}`}
+              >
+                Snapshot {snapshotAge || formatSnapshotAge(snapshotIso)}
+              </span>
+            )}
             <TradingLensSelector
               lens={tradingLens}
               onChange={handleTradingLensChange}
@@ -724,9 +721,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 "bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
               )}
             >
-              <RefreshCw className={clsx("h-4 w-4 shrink-0", (loading || isRefreshing) && "animate-spin")} />
-              <span className="hidden sm:inline">{loading || isRefreshing ? "Refreshing..." : "Refresh"}</span>
-              <span className="sm:hidden">{loading || isRefreshing ? "…" : "↺"}</span>
+              <RefreshCw className={clsx("h-4 w-4 shrink-0", loading && "animate-spin")} />
+              <span className="hidden sm:inline">{loading ? "Refreshing..." : "Refresh"}</span>
+              <span className="sm:hidden">{loading ? "…" : "Refresh"}</span>
             </button>
             <button
               onClick={() => {

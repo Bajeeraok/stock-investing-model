@@ -41,6 +41,7 @@ import { LevelsPageHeader } from "./levels/LevelsPageHeader";
 import { AnchorBentoGrid, anchorsFromTechnicalLevels } from "./levels/AnchorBentoGrid";
 import { TierThermometerPanel } from "./levels/TierThermometerPanel";
 import { DensityProvider, DensityToggle, Comfort } from "./levels/DensityToggle";
+import { IntradayChart } from "./IntradayChart";
 import {
   GateProgressBar,
   NewsSentimentRail,
@@ -1201,6 +1202,27 @@ export function TickerDetailModal({
                       fairValue={detail.investor_summary.fair_value}
                       entryMode={ra?.entry_mode ?? null}
                       unlockSequence={ra?.unlock_sequence ?? null}
+                    />
+                  );
+                })()}
+
+                {/* ── Intraday price chart (lazy, auto-refreshes every 15 min) ── */}
+                {(() => {
+                  // Build level reference lines from available data
+                  const levelLines: Array<{ label: string; value: number; color?: string }> = [];
+                  const tl = priceTargets?.technical_levels;
+                  if (tl?.ma200 != null) levelLines.push({ label: "MA200", value: tl.ma200, color: "#f59e0b" });
+                  if (tl?.ma50  != null) levelLines.push({ label: "MA50",  value: tl.ma50,  color: "#818cf8" });
+                  const long = detail.investor_summary?.horizons?.long;
+                  const tiers = long?.entry_tiers?.tiers ?? [];
+                  const t1 = tiers.find((t: { id?: string }) => t.id === "t1");
+                  if (t1?.low  != null) levelLines.push({ label: "T1",  value: t1.low,  color: "#34d399" });
+                  if (long?.entry_zone?.low != null) levelLines.push({ label: "Entry", value: long.entry_zone.low, color: "#22d3ee" });
+                  return (
+                    <IntradayChart
+                      ticker={ticker}
+                      levelLines={levelLines}
+                      className="mb-3"
                     />
                   );
                 })()}

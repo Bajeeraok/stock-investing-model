@@ -1519,18 +1519,22 @@ def _compute_full_dashboard_sync() -> dict:
         pass
 
     # Market scenarios (what-if): upcoming events + historical reaction stats (13y)
+    t0 = time.perf_counter()
     market_scenarios = []
     try:
         market_scenarios = get_upcoming_event_scenarios(economic_calendar, period_long=period_long, symbol="SPY")
     except Exception as e:
         logger.debug("Market scenarios failed: %s", e)
+    logger.info("[dashboard] section: market_scenarios %.0f ms", (time.perf_counter() - t0) * 1000)
 
     # Cross-asset guidelines (macro + calendar + real yield + COT) — uses parallel-loaded data
+    t0 = time.perf_counter()
     guidelines = compute_cross_asset_guidelines(
         cross_asset, economic_calendar,
         real_yield=real_yield,
         cot_extremes=cot_extremes,
     )
+    logger.info("[dashboard] section: cross_asset_guidelines %.0f ms", (time.perf_counter() - t0) * 1000)
 
     # COT by ticker for table (GLD, SLV, USO)
     cot_by_ticker = {}
@@ -1559,6 +1563,7 @@ def _compute_full_dashboard_sync() -> dict:
     else:
         macro_regime = "Neutral"
 
+    t0 = time.perf_counter()
     macro_regime_bundle: dict = {}
     try:
         mr_cfg = config.get("macro_regime") or {}
@@ -1570,6 +1575,7 @@ def _compute_full_dashboard_sync() -> dict:
                 try:
                     from signals.hmm_regime import get_hmm_regime
 
+                    # Reuse SPY close from run_signals pre-fetch (already in cache as "2y" or "5y")
                     close_spy_hmm = fetch_ohlcv_safe("SPY", "2y")
                     if close_spy_hmm is not None and len(close_spy_hmm) >= 252:
                         hmm = get_hmm_regime("SPY", close_spy_hmm, vix=vix_val)
@@ -1586,7 +1592,9 @@ def _compute_full_dashboard_sync() -> dict:
             )
     except Exception as e:
         logger.debug("macro_regime_bundle: %s", e)
+    logger.info("[dashboard] section: macro_regime_bundle %.0f ms", (time.perf_counter() - t0) * 1000)
 
+    t0 = time.perf_counter()
     portfolio_risk_metrics: dict = {}
     try:
         pr_cfg = config.get("portfolio_risk") or {}
@@ -1619,6 +1627,9 @@ def _compute_full_dashboard_sync() -> dict:
                     logger.debug("portfolio beta metrics: %s", be)
 
             if len(tickers_pr) >= 2:
+                # portfolio_risk_model uses "5y" — same period as run_signals above.
+                # All holdings tickers are already in the in-process OHLCV cache; no extra
+                # network calls needed here.
                 n = len(tickers_pr)
                 eq_w = {t: 1.0 / n for t in tickers_pr}
                 corr_df, c_err = compute_correlation_matrix(tickers_pr)
@@ -1637,8 +1648,10 @@ def _compute_full_dashboard_sync() -> dict:
                 )
     except Exception as e:
         logger.debug("portfolio_risk_metrics: %s", e)
+    logger.info("[dashboard] section: portfolio_risk_metrics %.0f ms", (time.perf_counter() - t0) * 1000)
 
     # ── Portfolio Doctor v2: health score, MCTR, stress tests, earnings cal, priority queue ──
+    t0 = time.perf_counter()
     portfolio_doctor_v2: dict = {}
     try:
         if holdings and portfolios_out:
@@ -1732,6 +1745,7 @@ def _compute_full_dashboard_sync() -> dict:
                 }
     except Exception as e:
         logger.debug("portfolio_doctor_v2: %s", e)
+    logger.info("[dashboard] section: portfolio_doctor_v2 %.0f ms", (time.perf_counter() - t0) * 1000)
 
     # Macro analog: historical one-liner when VIX + real yield match current state
     macro_analog = None
@@ -3007,6 +3021,99 @@ async def get_ticker_detail(ticker: str):
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.get("/ticker/{ticker}/intraday")
+async def get_ticker_intraday(
+    ticker: str,
+    period: str = Query("1mo", description="1d | 5d | 1mo"),
+    interval: str = Query("", description="auto-selected per period if blank"),
+):
+    """
+    Intraday / recent OHLCV bars for the price chart in ticker detail.
+
+    period=1d  → interval=1m   (today only, ~390 bars)
+    period=5d  → interval=15m  (~130 bars)
+    period=1mo → interval=1h   (~195 bars)
+
+    Data via yfinance (free, 15-min delayed). Returns:
+      { ticker, period, interval, bars: [{t, o, h, l, c, v}], last_price, as_of }
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    def _fetch() -> dict:
+        try:
+            import yfinance as yf
+        except ImportError:
+            return {"error": "yfinance not installed", "bars": []}
+
+        sym = (ticker or "").upper().strip()
+        if not sym:
+            return {"error": "ticker required", "bars": []}
+
+        # Auto-select interval per period
+        period_map = {"1d": "1m", "5d": "15m", "1mo": "1h"}
+        resolved_interval = interval.strip() if interval.strip() else period_map.get(period, "1h")
+
+        try:
+            t0_fetch = time.perf_counter()
+            df = yf.download(
+                sym,
+                period=period,
+                interval=resolved_interval,
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+            )
+            logger.info(
+                "[intraday] %s period=%s interval=%s rows=%d in %.0fms",
+                sym, period, resolved_interval, len(df) if df is not None else 0,
+                (time.perf_counter() - t0_fetch) * 1000,
+            )
+        except Exception as e:
+            logger.warning("[intraday] yfinance failed %s: %s", sym, e)
+            return {"error": str(e), "bars": [], "ticker": sym}
+
+        if df is None or df.empty:
+            return {"ticker": sym, "period": period, "interval": resolved_interval, "bars": [], "error": "No data"}
+
+        # Flatten MultiIndex columns if present (yfinance 0.2.x)
+        if hasattr(df.columns, "levels"):
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+
+        bars = []
+        for ts, row in df.iterrows():
+            try:
+                t_iso = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+                o = float(row.get("Open") or row.get("open") or 0)
+                h = float(row.get("High") or row.get("high") or 0)
+                lo = float(row.get("Low") or row.get("low") or 0)
+                c = float(row.get("Close") or row.get("close") or 0)
+                v = int(row.get("Volume") or row.get("volume") or 0)
+                if c > 0:
+                    bars.append({"t": t_iso, "o": round(o, 4), "h": round(h, 4), "l": round(lo, 4), "c": round(c, 4), "v": v})
+            except Exception:
+                continue
+
+        last_price = bars[-1]["c"] if bars else None
+        as_of = bars[-1]["t"] if bars else None
+
+        return {
+            "ticker": sym,
+            "period": period,
+            "interval": resolved_interval,
+            "bars": bars,
+            "last_price": last_price,
+            "as_of": as_of,
+            "delayed_note": "Prices delayed ~15 min (yfinance). Not for execution.",
+        }
+
+    try:
+        result = await run_in_threadpool(_fetch)
+        return result
+    except Exception as e:
+        logger.exception("[intraday] unexpected error %s: %s", ticker, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/roadmaps")
 async def get_roadmaps(tickers: str = ""):
     """
@@ -3772,7 +3879,7 @@ async def purge_velocity_paper_trades(dry_run: bool = Query(True)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/eod-universe")
+@router.get("/dashboard/eod-universe")
 async def get_eod_universe(date: str = Query("latest")):
     """
     Return the full signal row array from the latest (or specified) EOD snapshot.
