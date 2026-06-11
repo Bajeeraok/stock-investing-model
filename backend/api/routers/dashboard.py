@@ -1592,10 +1592,14 @@ def _compute_full_dashboard_sync() -> dict:
                 try:
                     from signals.hmm_regime import get_hmm_regime
 
-                    # Reuse SPY close from run_signals pre-fetch (already in cache as "2y" or "5y")
-                    close_spy_hmm = fetch_ohlcv_safe("SPY", "2y")
+                    # Reuse SPY close+volume from run_signals pre-fetch (already in cache as "5y")
+                    # Pass volume so _build_features always uses 3 features — consistent with
+                    # price_targets.py / confidence_engine.py which also pass volume.
+                    # Inconsistent volume presence across call sites caused a 2 vs 3 dim mismatch.
+                    from signals.fetcher import fetch_ohlcv_with_volume as _fwv
+                    close_spy_hmm, vol_spy_hmm = _fwv("SPY", "2y")
                     if close_spy_hmm is not None and len(close_spy_hmm) >= 252:
-                        hmm = get_hmm_regime("SPY", close_spy_hmm, vix=vix_val)
+                        hmm = get_hmm_regime("SPY", close_spy_hmm, volume=vol_spy_hmm, vix=vix_val)
                         if hmm and hmm.get("bear_probability") is not None:
                             hmm_bear_pct = float(hmm["bear_probability"]) * 100.0
                 except Exception as e:
