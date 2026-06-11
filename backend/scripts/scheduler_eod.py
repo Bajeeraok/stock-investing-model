@@ -15,12 +15,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from backports.zoneinfo import ZoneInfo  # type: ignore
-
-
 def main() -> None:
     from config_loader import load_config
     from scripts.run_daily import run_eod_snapshot_only
@@ -29,10 +23,21 @@ def main() -> None:
     # e.g. "20:00" for 8pm
     schedule_time = config.get("eod_schedule_time", "20:00")
     tz_name = config.get("eod_schedule_tz", "America/New_York")
+
+    # Use pytz for timezone resolution — works on slim Docker images without
+    # system tzdata. ZoneInfo requires system /usr/share/zoneinfo or Python
+    # tzdata package; pytz bundles its own database.
+    import pytz
     try:
-        tz = ZoneInfo(tz_name)
+        tz = pytz.timezone(tz_name)
     except Exception:
-        tz = ZoneInfo("America/New_York")
+        tz_name = "America/New_York"
+        tz = pytz.timezone(tz_name)
+        print(f"[scheduler_eod] WARNING: unrecognised tz in config; falling back to {tz_name}")
+
+    from datetime import datetime as _dt
+    print(f"[scheduler_eod] Timezone resolved: {tz_name} (system UTC; local now = {_dt.now(tz).strftime('%Y-%m-%d %H:%M %Z')})")
+
     target_hour, target_min = 20, 0
     if ":" in schedule_time:
         parts = schedule_time.strip().split(":")
@@ -64,4 +69,4 @@ def main() -> None:
         now = datetime.now(tz)
         if now.hour == target_hour and now.minute == target_min:
             job()
-        time.sleep(60)
+        time.sleep(55)  # slightly under 60s to avoid drifting past the target minute

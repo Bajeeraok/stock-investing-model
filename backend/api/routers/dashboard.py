@@ -3770,3 +3770,132 @@ async def purge_velocity_paper_trades(dry_run: bool = Query(True)):
     except Exception as e:
         logger.warning("purge-velocity failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/eod-universe")
+async def get_eod_universe(date: str = Query("latest")):
+    """
+    Return the full signal row array from the latest (or specified) EOD snapshot.
+    Each row is shaped into a compact summary suitable for the Signal Universe table.
+    No extra computation — purely a read of the saved EOD JSON.
+    """
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+
+        config = _load_config()
+        data_root = _Path(get_data_root())
+        eod_dir = data_root / "eod"
+
+        # Resolve which file to read
+        target_path: _Path | None = None
+        if date == "latest":
+            files = sorted(eod_dir.glob("*.json"), reverse=True) if eod_dir.exists() else []
+            if files:
+                target_path = files[0]
+        else:
+            candidate = eod_dir / f"{date}.json"
+            if candidate.exists():
+                target_path = candidate
+
+        # Fallback: try Redis latest
+        if target_path is None:
+            try:
+                from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+                dates = list_eod_dates_redis()
+                if dates:
+                    snap = get_eod_snapshot_redis(sorted(dates)[-1])
+                    if snap:
+                        rows = snap.get("signals") or snap.get("results") or []
+                        return _shape_universe_rows(rows, snap.get("run_date") or sorted(dates)[-1])
+            except Exception:
+                pass
+            return {"rows": [], "as_of": None, "total": 0, "message": "No EOD snapshot found"}
+
+        raw = _json.loads(target_path.read_text(encoding="utf-8"))
+        rows = raw.get("signals") or raw.get("results") or []
+        as_of = raw.get("run_date") or target_path.stem
+        return _shape_universe_rows(rows, as_of)
+
+    except Exception as e:
+        logger.warning("eod-universe failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _shape_universe_rows(raw_rows: list, as_of: str | None) -> dict:
+    """Shape raw EOD signal rows into compact universe table rows."""
+    out = []
+    for r in raw_rows:
+        if not isinstance(r, dict) or not r.get("ticker"):
+            continue
+        ticker = str(r.get("ticker", "")).upper()
+        if not ticker or r.get("error"):
+            continue
+
+        # Gate counts
+        rs = r.get("retail_status") if isinstance(r.get("retail_status"), dict) else {}
+        gates = rs.get("gates") if isinstance(rs.get("gates"), list) else []
+        from signals.retail_action_payload import PRIMARY_GATE_IDS
+        primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
+        gates_passed = sum(1 for g in primary if g.get("pass"))
+        gates_total = len(primary) if primary else int(r.get("gates_total") or 4)
+
+        # entry_mode — prefer stored, derive if missing
+        entry_mode = (
+            rs.get("entry_mode")
+            or r.get("entry_mode")
+            or r.get("go_no_go")
+        )
+        if entry_mode == "go":
+            entry_mode = "full_go"
+        elif entry_mode == "no_go":
+            entry_mode = "hard_lock" if gates_passed == 0 else "starter_only"
+
+        # Confidence
+        conf = r.get("model_confidence_pct") or r.get("confidence_mid")
+        try:
+            conf = round(float(conf), 1) if conf is not None else None
+        except (TypeError, ValueError):
+            conf = None
+
+        try:
+            score = round(float(r.get("composite_buy") or r.get("composite_score") or 0), 1)
+        except (TypeError, ValueError):
+            score = None
+
+        try:
+            rsi = round(float(r.get("rsi") or r.get("rsi14") or 0), 1)
+        except (TypeError, ValueError):
+            rsi = None
+
+        try:
+            close = round(float(r.get("close") or 0), 2) or None
+        except (TypeError, ValueError):
+            close = None
+
+        try:
+            change_pct = round(float(r.get("change_pct") or r.get("price_change_pct") or 0), 2)
+        except (TypeError, ValueError):
+            change_pct = None
+
+        out.append({
+            "ticker": ticker,
+            "close": close,
+            "change_pct": change_pct,
+            "score": score,
+            "regime": str(r.get("regime") or "NEUTRAL").upper(),
+            "rsi": rsi,
+            "signal": str(r.get("signal") or r.get("suggestion") or "HOLD").upper(),
+            "entry_mode": entry_mode,
+            "gates_passed": gates_passed,
+            "gates_total": gates_total,
+            "confidence": conf,
+            "sector": str(r.get("sector") or ""),
+            "market_cap_bucket": str(r.get("market_cap_bucket") or ""),
+        })
+
+    out.sort(key=lambda x: (
+        {"full_go": 0, "starter_only": 1, "hard_lock": 2}.get(str(x.get("entry_mode") or ""), 3),
+        -(x.get("score") or 0),
+    ))
+    return {"rows": out, "as_of": as_of, "total": len(out)}

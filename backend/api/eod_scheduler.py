@@ -52,18 +52,25 @@ def start() -> None:
         return
 
     tz_name = (os.environ.get("EOD_SCHEDULER_TZ") or "America/New_York").strip()
-    from zoneinfo import ZoneInfo
 
+    # Validate the timezone name before passing to APScheduler.
+    # APScheduler 3.x resolves timezone strings via pytz internally — pass the
+    # name string directly so pytz handles it. Passing a ZoneInfo object can
+    # silently fall back to UTC on slim images where system tzdata is absent.
+    import pytz as _pytz
     try:
-        tz = ZoneInfo(tz_name)
+        _pytz.timezone(tz_name)  # validate; raises UnknownTimeZoneError if bad
     except Exception:
-        tz = ZoneInfo("America/New_York")
+        tz_name = "America/New_York"
+        logger.warning("EOD_SCHEDULER_TZ unrecognised; falling back to America/New_York")
 
     minute, hour, day, month, day_of_week = parts
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    _scheduler = BackgroundScheduler(timezone=tz)
+    # Pass tz_name string — APScheduler 3.x resolves it via pytz regardless of
+    # whether system tzdata or the Python tzdata package is installed.
+    _scheduler = BackgroundScheduler(timezone=tz_name)
     _scheduler.add_job(
         _run_eod_job,
         "cron",
@@ -79,7 +86,17 @@ def start() -> None:
         misfire_grace_time=3600,
     )
     _scheduler.start()
-    logger.info("EOD scheduler on: %s (%s)", cron, tz_name)
+    # Log resolved timezone so Railway logs make it obvious if UTC crept in
+    import pytz as _pytz2
+    _tz_obj = _pytz2.timezone(tz_name)
+    from datetime import datetime as _dt
+    _now_local = _dt.now(_tz_obj)
+    logger.info(
+        "EOD scheduler on: cron=%s tz=%s (now=%s — next fire ~%s:00)",
+        cron, tz_name,
+        _now_local.strftime("%Y-%m-%d %H:%M %Z"),
+        hour,
+    )
 
 
 def shutdown() -> None:

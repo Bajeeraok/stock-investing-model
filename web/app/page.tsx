@@ -77,11 +77,10 @@ export default function Home() {
     setData((prev) => (prev ? mergeDashboardData(prev, json) : json));
     if (fromNetwork) {
       saveCachedDashboard(json);
-      const stillRunning =
-        json.refresh_coalesced === true || json.refresh_status === "running" || json.warming === true;
-      if (!stillRunning) {
-        setLastRefreshedAt(new Date());
-      }
+      // Always record fetch time — stale flag already signals EOD data age.
+      // Previously only set when !stillRunning, which caused timestamp to freeze
+      // on mobile when coalesced responses never completed the stale-poll cycle.
+      setLastRefreshedAt(new Date());
     }
     setStale(Boolean(json.stale));
   }, []);

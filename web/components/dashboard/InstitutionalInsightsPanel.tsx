@@ -198,33 +198,99 @@ export function InstitutionalInsightsPanel({
   const cf = data.conviction_filter;
   const instPct = io?.institutional_pct;
 
+  const topHolders = (io?.top_holders ?? []).slice(0, 5);
+
   return (
     <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 p-3 space-y-3">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Building2 className="h-4 w-4 text-slate-400 shrink-0" />
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Institutional positioning
-        </p>
-        <span className="text-[10px] text-slate-600">Yahoo 13F-derived + SEC EDGAR · not live flow</span>
+      {/* ── Header row ── */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Institutional positioning
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {instPct != null && (
+            <span className="text-[11px] font-mono font-semibold text-emerald-300">
+              {instPct.toFixed(1)}% held
+            </span>
+          )}
+          {io?.major_holders?.institutions_count != null && (
+            <span className="text-[10px] text-slate-500">
+              {Math.round(io.major_holders.institutions_count).toLocaleString()} institutions
+            </span>
+          )}
+          <span className="text-[9px] text-slate-700">Yahoo 13F · quarterly lag</span>
+        </div>
       </div>
 
-      <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
-        <p className="text-[10px] uppercase text-slate-500 mb-0.5">Institutional % (Yahoo, delayed)</p>
-        {instPct != null ? (
-          <>
-            <p className="text-lg font-semibold text-emerald-300 font-mono">{instPct.toFixed(1)}%</p>
-            <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
-              {io?.source_note ?? "Aggregated from quarterly 13F filings via Yahoo Finance"}
-              {io?.as_of ? ` · as of ${io.as_of}` : ""}
-              {io?.major_holders?.institutions_count != null
-                ? ` · ${Math.round(io.major_holders.institutions_count).toLocaleString()} institutions`
-                : ""}
-            </p>
-          </>
-        ) : (
-          <p className="text-slate-500 text-xs">{io?.error || "Institutional % unavailable"}</p>
-        )}
-      </div>
+      {/* ── Top 5 holders — primary data point ── */}
+      {topHolders.length > 0 ? (
+        <div>
+          <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-1.5 font-semibold">
+            Top holders · % of shares outstanding · Q/Q change
+          </p>
+          <div className="space-y-1">
+            {topHolders.map((h, i) => {
+              const chg = h.pct_change_qoq;
+              const isUp = chg != null && chg > 0.5;
+              const isDown = chg != null && chg < -0.5;
+              return (
+                <div key={`${h.holder}-${i}`} className="flex items-center gap-2">
+                  {/* Rank */}
+                  <span className="text-[9px] text-slate-700 w-3 shrink-0 text-right">{i + 1}</span>
+                  {/* Name */}
+                  <span className="text-[11px] text-slate-300 truncate flex-1">{h.holder ?? "—"}</span>
+                  {/* % held */}
+                  <span className="text-[11px] font-mono text-slate-200 tabular-nums shrink-0 w-10 text-right">
+                    {h.pct_held != null ? `${h.pct_held.toFixed(1)}%` : "—"}
+                  </span>
+                  {/* Q/Q bar + label */}
+                  <div className="flex items-center gap-1 w-20 shrink-0 justify-end">
+                    {chg != null ? (
+                      <>
+                        <div className="flex-1 flex justify-center">
+                          <div className={clsx(
+                            "h-1 rounded-full",
+                            isUp ? "bg-emerald-500/70" : isDown ? "bg-red-500/70" : "bg-slate-600/60",
+                          )} style={{ width: `${Math.min(Math.abs(chg) * 8, 32)}px`, minWidth: "4px" }} />
+                        </div>
+                        <span className={clsx(
+                          "text-[10px] font-mono tabular-nums shrink-0 w-12 text-right",
+                          isUp ? "text-emerald-400" : isDown ? "text-red-400" : "text-slate-500",
+                        )}>
+                          {chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-slate-700 w-12 text-right">—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {io?.as_of && (
+            <p className="text-[9px] text-slate-700 mt-1.5">As of {io.as_of} · 13F quarterly</p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
+          <p className="text-[10px] uppercase text-slate-500 mb-0.5">Institutional % (Yahoo, delayed)</p>
+          {instPct != null ? (
+            <>
+              <p className="text-lg font-semibold text-emerald-300 font-mono">{instPct.toFixed(1)}%</p>
+              <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
+                {io?.source_note ?? "Aggregated from quarterly 13F filings via Yahoo Finance"}
+                {io?.as_of ? ` · as of ${io.as_of}` : ""}
+              </p>
+            </>
+          ) : (
+            <p className="text-slate-500 text-xs">{io?.error || "Institutional % unavailable"}</p>
+          )}
+        </div>
+      )}
 
       {cf && cf.verdict && cf.verdict !== "unknown" && (
         <div
@@ -326,27 +392,7 @@ export function InstitutionalInsightsPanel({
         </div>
       </div>
 
-      {(io?.top_holders?.length ?? 0) > 0 && (
-        <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">
-          <p className="text-[10px] uppercase text-slate-500 mb-1.5">Top institutional holders (Yahoo)</p>
-          <ul className="space-y-1">
-            {io!.top_holders!.slice(0, 5).map((h, i) => (
-              <li key={`${h.holder}-${i}`} className="flex items-center justify-between gap-2 text-[11px]">
-                <span className="text-slate-300 truncate">{h.holder}</span>
-                <span className="text-slate-500 shrink-0 font-mono">
-                  {h.pct_held != null ? `${h.pct_held.toFixed(1)}%` : "—"}
-                  {h.pct_change_qoq != null && (
-                    <span className={clsx("ml-1", h.pct_change_qoq >= 0 ? "text-emerald-400" : "text-red-400")}>
-                      ({h.pct_change_qoq >= 0 ? "+" : ""}
-                      {h.pct_change_qoq.toFixed(1)}% q/q)
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* top_holders now shown at top of panel — removed duplicate here */}
 
       {e13 && !e13.error && (e13.top_holder_changes?.length ?? 0) > 0 && (
         <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">
