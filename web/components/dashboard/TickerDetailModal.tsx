@@ -34,7 +34,6 @@ import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActio
 import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
 import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
 import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
-import { RoadmapTimeline } from "./tickerDetail/RoadmapTimeline";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
@@ -1188,9 +1187,12 @@ export function TickerDetailModal({
                 {detail.investor_summary && detail.current_price != null && (() => {
                   const ra = detail.investor_summary.retail_action;
                   const long = detail.investor_summary.horizons?.long;
-                  const nextTier = long?.entry_tiers?.tiers?.find(
-                    t => detail.current_price! > t.high
-                  );
+                  // Use backend-computed next_add_tier_id as primary — avoids
+                  // disagreeing with LongTermTierLadder which uses the same field.
+                  const nextAddTierId = long?.entry_tiers?.spot_position?.next_add_tier_id;
+                  const nextTier = nextAddTierId
+                    ? long?.entry_tiers?.tiers?.find((t: { id?: string }) => t.id === nextAddTierId)
+                    : long?.entry_tiers?.tiers?.find((t: { high: number }) => detail.current_price! > t.high);
                   const nextLevel = nextTier?.low ?? long?.entry_zone?.low ?? null;
                   return (
                     <LevelsPageHeader
@@ -1239,11 +1241,15 @@ export function TickerDetailModal({
                   />
                 )}
 
-                {/* ── Roadmap summaries ─── */}
-                <RoadmapSummaries
-                  traderRoadmap={detail.investor_summary?.trader_roadmap}
-                  investorRoadmap={detail.investor_summary?.investor_roadmap}
-                />
+                {/* ── Roadmap summaries (fallback only — hidden when horizon playbooks
+                    are present because playbooks show the same short/medium/long data
+                    in a richer format from the same horizons.* source) ─── */}
+                {!horizonPlaybooksBundle && (
+                  <RoadmapSummaries
+                    traderRoadmap={detail.investor_summary?.trader_roadmap}
+                    investorRoadmap={detail.investor_summary?.investor_roadmap}
+                  />
+                )}
 
                 {/* ── Horizon playbooks ─── */}
                 {horizonPlaybooksBundle && (
@@ -1262,15 +1268,6 @@ export function TickerDetailModal({
                         }
                       }
                     }}
-                  />
-                )}
-
-                {/* ── Staged entry roadmap timeline ─── */}
-                {executionVm && executionVm.buyStages.length > 0 && (
-                  <RoadmapTimeline
-                    stages={executionVm.buyStages}
-                    title="Staged entry roadmap"
-                    currentPrice={detail.current_price}
                   />
                 )}
 
