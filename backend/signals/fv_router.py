@@ -65,9 +65,16 @@ _BANKS: frozenset[str] = frozenset({
     "ZION", "WAL", "EWBC", "PACW", "FRC", "SIVB",
 })
 
-# Insurers — P/B vs ROE
+# Asset managers / alt managers — fee-based earnings; P/E vs tech sector is misleading.
+_ASSET_MANAGERS: frozenset[str] = frozenset({
+    "BLK", "BX", "KKR", "APO", "CG", "BEN", "IVZ", "TROW", "AMG", "APAM",
+    "OWL", "STEP", "HLNE", "ARES", "TPG", "BAM", "FHI", "JHG", "VCTR", "AB",
+    "MORN", "SEIC",
+})
+
+# Insurers — P/B vs ROE (normalize BRK.B → BRK-B before lookup)
 _INSURERS: frozenset[str] = frozenset({
-    "BRK-B", "BRK.B", "PGR", "ALL", "AIG", "MET", "PRU", "LNC", "AFL", "UNM",
+    "BRK-B", "PGR", "ALL", "AIG", "MET", "PRU", "LNC", "AFL", "UNM",
     "TRV", "CB", "HIG", "WRB", "RNR", "AWH",
 })
 
@@ -77,7 +84,6 @@ _MLPS: frozenset[str] = frozenset({
 })
 
 # Pre-revenue biotech — pipeline/cash-runway only; PE meaningless.
-_PREBIOTECH_KEYWORDS = ("BIOP", "PHAS", "ACAD", "SGEN", "NVAX", "MRNA", "BNTX")
 _PREBIOTECH: frozenset[str] = frozenset({
     "MRNA", "NVAX", "BNTX", "VRTX", "BLUE", "FATE", "EDIT", "NTLA",
     "CRSP", "BEAM", "AGEN", "IMVT", "ALDX", "APLD", "ALLK", "ARCT",
@@ -180,8 +186,14 @@ def _calc_divergence(ttm_eps: Optional[float], ntm_eps: Optional[float]) -> Opti
     return abs(float(ntm_eps) - float(ttm_eps)) / denom * 100.0
 
 
+def normalize_ticker_key(ticker: str) -> str:
+    """Uppercase ticker for static-set lookups; dots → hyphens (BRK.B → BRK-B)."""
+    t = str(ticker or "").upper().strip()
+    return t.replace(".", "-")
+
+
 def is_recent_spinoff(ticker: str) -> bool:
-    return str(ticker).upper().strip() in _RECENT_SPINOFFS
+    return normalize_ticker_key(ticker) in _RECENT_SPINOFFS
 
 
 def route_fair_value(
@@ -212,7 +224,7 @@ def route_fair_value(
     sector                   : Optional sector string (from FMP/yfinance) for fallback
                                REIT / bank classification when ticker not in static sets.
     """
-    t = str(ticker).upper().strip()
+    t = normalize_ticker_key(ticker)
     notes: list[str] = []
 
     # ── §6a: Acquisition target — suppress everything ──────────────────────────
@@ -318,6 +330,24 @@ def route_fair_value(
                 f"{t} is a bank. P/E vs 'tech sector' P/E comps are meaningless. "
                 "Correct metric: P/Tangible Book Value vs Return on Equity. "
                 "Model FV suppressed; show street consensus."
+            ],
+            gap_badge_type="METHOD",
+        )
+
+    # ── §5b2: Asset managers — fee/AUM earnings, not product P/E growth ───────
+    is_asset_manager = t in _ASSET_MANAGERS or (
+        sector and "asset management" in str(sector).lower()
+    )
+    if is_asset_manager:
+        return FvRoute(
+            fv_suppressed=True,
+            fv_suppressed_reason="ASSET MANAGER — P/E vs sector misstates fee-based earnings",
+            is_sector_override=True,
+            notes=[
+                f"{t} is an asset / alt manager. Trailing P/E vs technology-sector comps "
+                "overstates fair value when flows and fee rates drive EPS. "
+                "Use street consensus (P/E on forward EPS × fee growth) or P/TBV vs ROE. "
+                "Model FV suppressed; house tiers use analyst consensus."
             ],
             gap_badge_type="METHOD",
         )

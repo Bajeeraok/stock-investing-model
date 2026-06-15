@@ -1407,6 +1407,7 @@ def _build_investor_summary(
     tier2_mos_pct_by_ticker = h_cfg.get("tier2_mos_pct_by_ticker")
 
     try:
+        _fv_suppressed = bool(fv_result and getattr(fv_result, "fv_suppressed", False))
         payload = build_all_horizons_payload(
             current_price=current_price,
             rsi=rsi,
@@ -1434,9 +1435,16 @@ def _build_investor_summary(
             model_confidence_pct=float(model_confidence_pct_summary)
             if model_confidence_pct_summary is not None
             else None,
-        st_confidence_pct=st_confidence_pct,
-        mt_confidence_pct=mt_confidence_pct,
-        lt_confidence_pct=lt_confidence_pct,
+            st_confidence_pct=st_confidence_pct,
+            mt_confidence_pct=mt_confidence_pct,
+            lt_confidence_pct=lt_confidence_pct,
+            fv_model_suppressed=_fv_suppressed,
+            fv_street_anchor_usd=(
+                getattr(fv_result, "fv_street_anchor_usd", None) if _fv_suppressed else None
+            ),
+            fv_suppressed_reason=(
+                getattr(fv_result, "fv_suppressed_reason", "") or "" if _fv_suppressed else ""
+            ),
         )
     except Exception:
         return None
@@ -1550,6 +1558,19 @@ def _build_investor_summary(
             "growth_was_capped": getattr(fv_result, "growth_was_capped", False),
             "street_anchor_usd": round(analyst_target, 2) if analyst_target else None,
             "street_anchor_source": fv_ext.get("street_anchor_source"),
+            "ttm_eps": round(float(trailing_eps), 4) if trailing_eps is not None else None,
+            "forward_eps": (
+                round(float(_ntm_eps), 4)
+                if _ntm_eps is not None
+                else (round(float(_fe), 4) if (_fe := _safe_float(info.get("forwardEps"))) else None)
+            ),
+            "sector_pe_used": round(float(sector_pe), 2) if sector_pe else None,
+            "sector_forward_pe_used": round(float(sector_forward_pe), 2) if sector_forward_pe else None,
+            "model_fair_value_usd": (
+                round(float(fv_result.fair_value), 2)
+                if not getattr(fv_result, "fv_suppressed", False) and fv_result.fair_value
+                else None
+            ),
             # §8 routing metadata
             "fv_suppressed": bool(getattr(fv_result, "fv_suppressed", False)),
             "fv_suppressed_reason": getattr(fv_result, "fv_suppressed_reason", "") or "",

@@ -10,6 +10,7 @@ import { PriceTargetsPanel, TechnicalLevelsBar, type PriceTargetsData } from "./
 import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { HorizonProjectionChart } from "./HorizonProjectionChart";
 import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
+import { FairValueDebugPanel } from "./FairValueDebugPanel";
 import { TickerDetailWhyNav, type WhySubTab } from "./TickerDetailWhyNav";
 import { ScenarioTeaser } from "./ScenarioTeaser";
 import { RoadmapSummaries } from "./RoadmapSummaries";
@@ -1372,6 +1373,16 @@ export function TickerDetailModal({
                       external={detail.investor_summary.fair_value_vs_external}
                       decisionMode={decisionMode}
                       showFullDeck
+                    />
+                  )}
+                  {detail.investor_summary && (detail.current_price ?? 0) > 0 && (
+                    <FairValueDebugPanel
+                      currentPrice={detail.current_price ?? 0}
+                      displayFairValue={detail.investor_summary.fair_value}
+                      ttmPeUsed={detail.investor_summary.ttm_pe_used}
+                      forwardPeUsed={detail.investor_summary.forward_pe_used}
+                      metadata={detail.investor_summary.fair_value_metadata}
+                      external={detail.investor_summary.fair_value_vs_external}
                     />
                   )}
                   {priceTargets ? (

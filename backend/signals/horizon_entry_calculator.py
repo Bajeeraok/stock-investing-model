@@ -1301,6 +1301,10 @@ class LongTermInputs:
     model_confidence_pct: Optional[float] = None
     horizon_confidence_pct: Optional[float] = None  # 0-100, per-horizon 7-layer fused score
     ma50: Optional[float] = None
+    # When model FV is suppressed (banks, REITs, asset managers, pre-revenue biotech)
+    fv_model_suppressed: bool = False
+    fv_street_anchor_usd: Optional[float] = None
+    fv_suppressed_reason: str = ""
 
 
 def _harmonize_long_entry_zone_with_short(
@@ -1340,8 +1344,30 @@ def _harmonize_long_entry_zone_with_short(
 
 
 def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
-    p, fv = inp.current_price, inp.fair_value
-    warnings = []
+    p = inp.current_price
+    fv = inp.fair_value
+    warnings: list[str] = []
+
+    fv_anchor_label = "fair value"
+    if inp.fv_model_suppressed:
+        street = float(inp.fv_street_anchor_usd or 0)
+        if street > 0:
+            fv = street
+            fv_anchor_label = "street consensus"
+            warnings.append(
+                "Model FV unavailable ({}). Tier 2 MOS uses street consensus ${:.2f}, not intrinsic model FV.".format(
+                    (inp.fv_suppressed_reason or "suppressed").split("—")[0].strip(),
+                    street,
+                )
+            )
+        elif inp.ma200 and inp.ma200 > 0:
+            fv = float(inp.ma200)
+            fv_anchor_label = "MA200 technical"
+            warnings.append(
+                "Model FV unavailable and no street consensus — Tier 2 MOS uses MA200 technical anchor."
+            )
+        else:
+            warnings.append("Model FV unavailable — tier MOS uses fallback anchor; treat tiers as indicative only.")
 
     mos_t2, mos_class = resolve_tier2_mos_pct(
         inp.ticker,
@@ -1361,16 +1387,16 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
 
     if mos_pct >= LT_REQUIRED_MOS_PCT:
         assess_verdict = "BUY"
-        assess_label   = "Sufficient MOS ({:.1f}%) — entry justified".format(mos_pct)
+        assess_label   = "Sufficient MOS ({:.1f}%) vs {} — entry justified".format(mos_pct, fv_anchor_label)
         assess_color   = "#00e5a0"
     elif mos_pct >= LT_PARTIAL_MOS_PCT:
         assess_verdict = "PARTIAL"
-        assess_label   = "Marginal discount ({:.1f}%) — partial position only".format(mos_pct)
+        assess_label   = "Marginal discount ({:.1f}%) vs {} — partial position only".format(mos_pct, fv_anchor_label)
         assess_color   = "#f5a623"
     else:
         assess_verdict = "WAIT"
-        assess_label   = "Only {:.1f}% discount — need {:.0f}% MOS for long-term entry".format(
-            mos_pct, LT_REQUIRED_MOS_PCT)
+        assess_label   = "Only {:.1f}% discount vs {} — need {:.0f}% MOS for long-term entry".format(
+            mos_pct, fv_anchor_label, LT_REQUIRED_MOS_PCT)
         assess_color   = "#ff6b6b"
         warnings.append(
             "Need price <= ${:.2f} for {:.0f}% margin of safety. "
@@ -1420,11 +1446,19 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         "~2.5x", "Medium", "#f5a623")
 
     t2_center = fv * (1 - mos_t2 / 100)
-    tier2 = make_tier(
-        "T2", "Tier 2 — {} Margin of Safety".format(t2_label_suffix),
-        (
+    if inp.fv_model_suppressed:
+        t2_title = "Tier 2 — {:.0f}% MOS (street-anchored)".format(mos_t2)
+        t2_desc = (
+            "Street consensus minus {:.0f}% MOS ({}) — core zone; model FV unavailable"
+        ).format(mos_t2, t2_profile_note)
+    else:
+        t2_title = "Tier 2 — {} Margin of Safety".format(t2_label_suffix)
+        t2_desc = (
             "Fair value minus {:.0f}% MOS ({}) — core accumulation zone"
-        ).format(mos_t2, t2_profile_note),
+        ).format(mos_t2, t2_profile_note)
+    tier2 = make_tier(
+        "T2", t2_title,
+        t2_desc,
         _r(t2_center * (1 - LT_TIER2_BAND_PCT / 100)),
         _r(t2_center * (1 + LT_TIER2_BAND_PCT / 100)),
         "~3.5x", "High", "#00e5a0")
@@ -1783,6 +1817,9 @@ def build_all_horizons_payload(
     st_confidence_pct: Optional[float] = None,
     mt_confidence_pct: Optional[float] = None,
     lt_confidence_pct: Optional[float] = None,
+    fv_model_suppressed: bool = False,
+    fv_street_anchor_usd: Optional[float] = None,
+    fv_suppressed_reason: str = "",
 ) -> dict:
     """
     Builds all three horizon signals and returns a dict ready to attach
@@ -1836,6 +1873,9 @@ def build_all_horizons_payload(
         model_confidence_pct=model_confidence_pct,
         horizon_confidence_pct=lt_confidence_pct,
         ma50=ma50,
+        fv_model_suppressed=fv_model_suppressed,
+        fv_street_anchor_usd=fv_street_anchor_usd,
+        fv_suppressed_reason=fv_suppressed_reason,
     ))
 
     payload = {

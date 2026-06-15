@@ -713,8 +713,10 @@ fair_value:
     max_implied_upside_vs_spot: 0.52     # max implied upside vs spot; use null to disable
     max_growth_pct_for_valuation: 42.0   # GROWTH peg_blend cap (YoY from feeds)
     max_growth_pct_high_growth: 65.0     # HIGH_GROWTH forward_pe_blend PEG leg (NVDA-class)
-    street_blend_trigger_below_pct: 0.20  # blend when model FV >20% below street
-    street_blend_weight: 0.55             # weight on analyst mean in high-growth blend
+    street_blend_trigger_below_pct: 0.20  # blend when model FV >20% below street (HIGH_GROWTH)
+    street_blend_trigger_above_pct: 0.12  # blend when model FV >12% above street (all types)
+    street_blend_weight: 0.55             # weight on analyst mean when model below street
+    street_blend_above_weight: 0.45      # weight on analyst mean when model above street
     street_floor_min_pct: 0.72           # never show HIGH_GROWTH FV below 72% of street
 
 # Phase 4: Data & earnings

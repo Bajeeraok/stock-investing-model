@@ -79,6 +79,25 @@ export interface FairValueMetadata {
   method_used?: string | null;
   methodology_summary?: string | null;
   notes?: string[] | null;
+  ttm_eps?: number | null;
+  forward_eps?: number | null;
+  sector_pe_used?: number | null;
+  sector_forward_pe_used?: number | null;
+  model_fair_value_usd?: number | null;
+  street_anchor_usd?: number | null;
+  street_anchor_source?: string | null;
+  growth_raw_pct?: number | null;
+  growth_used_pct?: number | null;
+  growth_was_capped?: boolean;
+  fv_suppressed?: boolean;
+  fv_suppressed_reason?: string | null;
+  fv_street_anchored?: boolean;
+  fv_street_anchor_usd?: number | null;
+  fv_street_anchor_source?: string | null;
+  fv_route_method_label?: string | null;
+  gap_badge_type?: string | null;
+  divergence_pct?: number | null;
+  geopolitical_cap?: boolean;
 }
 
 /** One sentence answer: "Should I buy/sell today, and if not, at what price and when?" */

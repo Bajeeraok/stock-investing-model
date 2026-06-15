@@ -199,40 +199,68 @@ def _growth_for_valuation(
     return used, raw, raw > max_cap + 1e-6
 
 
-def _reconcile_high_growth_vs_street(
+def _reconcile_model_vs_street(
     fv: float,
     analyst_target: Optional[float],
     stock_type: StockType,
     guardrails: Optional[dict[str, Any]] = None,
 ) -> tuple[float, list[str]]:
     """
-    When model FV is far below street on HIGH_GROWTH names, blend toward consensus so
-    retail UI does not show e.g. NVDA FV $236 vs street $309 without explanation.
+    Blend model FV toward street when divergence is large — symmetric handling:
+
+    - Model far **below** street on HIGH_GROWTH: pull up (PEG caps can crush AI names).
+    - Model far **above** street on any type: pull down (optimistic growth/multiple inputs).
     """
     notes: list[str] = []
-    if stock_type != StockType.HIGH_GROWTH or not analyst_target or analyst_target <= 0 or fv <= 0:
+    if not analyst_target or analyst_target <= 0 or fv <= 0:
         return fv, notes
+
     g = guardrails or {}
-    trigger = float(g.get("street_blend_trigger_below_pct", 0.20))  # model >20% below street
-    street_weight = float(g.get("street_blend_weight", 0.55))
-    floor_pct = float(g.get("street_floor_min_pct", 0.72))  # never show below 72% of street
-    if fv >= analyst_target * (1.0 - trigger):
-        return fv, notes
-    model_weight = 1.0 - street_weight
-    blended = round(fv * model_weight + analyst_target * street_weight, 2)
-    floor = round(analyst_target * floor_pct, 2)
-    out = max(blended, floor)
-    notes.append(
-        "High-growth FV was {:.0f}% below street (${:.2f}); blended {:.0f}% model / {:.0f}% consensus "
-        "(floor {:.0f}% of street). Raw PEG inputs still capped — see growth_used_pct.".format(
-            100 * (1 - fv / analyst_target),
-            analyst_target,
-            model_weight * 100,
-            street_weight * 100,
-            floor_pct * 100,
+    trigger_below = float(g.get("street_blend_trigger_below_pct", 0.20))
+    trigger_above = float(g.get("street_blend_trigger_above_pct", 0.12))
+    street_weight_below = float(g.get("street_blend_weight", 0.55))
+    street_weight_above = float(g.get("street_blend_above_weight", 0.45))
+    floor_pct = float(g.get("street_floor_min_pct", 0.72))
+
+    gap_pct = (fv - analyst_target) / analyst_target
+
+    # Model materially below street (HIGH_GROWTH only — existing NVDA-class behavior)
+    if stock_type == StockType.HIGH_GROWTH and gap_pct < -trigger_below:
+        model_weight = 1.0 - street_weight_below
+        blended = round(fv * model_weight + analyst_target * street_weight_below, 2)
+        floor = round(analyst_target * floor_pct, 2)
+        out = max(blended, floor)
+        notes.append(
+            "High-growth FV was {:.0f}% below street (${:.2f}); blended {:.0f}% model / {:.0f}% consensus "
+            "(floor {:.0f}% of street).".format(
+                100 * abs(gap_pct),
+                analyst_target,
+                model_weight * 100,
+                street_weight_below * 100,
+                floor_pct * 100,
+            )
         )
-    )
-    return out, notes
+        return out, notes
+
+    # Model materially above street (all stock types — e.g. BLK peg_blend vs ~26x forward P/E street)
+    if gap_pct > trigger_above:
+        model_weight = 1.0 - street_weight_above
+        blended = round(fv * model_weight + analyst_target * street_weight_above, 2)
+        notes.append(
+            "Model FV was {:.0f}% above street (${:.2f}); blended {:.0f}% model / {:.0f}% consensus.".format(
+                100 * gap_pct,
+                analyst_target,
+                model_weight * 100,
+                street_weight_above * 100,
+            )
+        )
+        return blended, notes
+
+    return fv, notes
+
+
+# Backward-compatible alias
+_reconcile_high_growth_vs_street = _reconcile_model_vs_street
 
 
 def _apply_fair_value_guardrails(
@@ -612,7 +640,7 @@ def estimate_fair_value(
             method = "forward_pe_blend (40% fwd PE + 40% PEG + 20% FCF)" if fcf_per_share else \
                      "forward_pe_blend (50% fwd PE + 50% PEG)"
 
-    fv, street_notes = _reconcile_high_growth_vs_street(
+    fv, street_notes = _reconcile_model_vs_street(
         fv, analyst_target, classification.stock_type, guardrails
     )
     notes.extend(street_notes)

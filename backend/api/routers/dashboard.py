@@ -503,6 +503,122 @@ def _eod_snapshot_signal_rows(snap: dict | None) -> list[dict]:
     return []
 
 
+def _min_full_eod_rows(config: dict) -> int:
+    """Minimum row count for a full 8pm EOD cohort (~100 tickers), not dashboard refresh (~43)."""
+    try:
+        from config_loader import get_eod_signal_universe
+
+        eod_n = len(get_eod_signal_universe(config))
+        return max(50, int(eod_n * 0.75))
+    except Exception:
+        return 75
+
+
+def _is_thin_eod_snapshot(snap: dict | None, min_full: int) -> bool:
+    """True when snapshot is a dashboard-only refresh, not the full EOD universe."""
+    if not isinstance(snap, dict):
+        return True
+    meta = snap.get("metadata") or {}
+    if meta.get("dashboard_only"):
+        return True
+    if str(snap.get("universe") or "").lower() == "dashboard":
+        return True
+    rows = _eod_snapshot_signal_rows(snap)
+    tc = snap.get("tickers_count")
+    count = int(tc) if tc is not None else len(rows)
+    return count < min_full
+
+
+def _snap_as_of(snap: dict, fallback: str | None = None) -> str | None:
+    return snap.get("run_date") or snap.get("snapshot_date") or fallback
+
+
+def _pick_best_eod_snapshot(
+    config: dict,
+    *,
+    date: str = "latest",
+    allow_thin: bool = False,
+) -> tuple[list[dict], str | None, str]:
+    """
+    Pick the richest EOD snapshot for the universe panel.
+    Skips thin dashboard-only files (e.g. Sunday Refresh) when a fuller snapshot exists.
+    """
+    import json as _json
+    from pathlib import Path
+
+    min_full = _min_full_eod_rows(config)
+
+    if date != "latest":
+        eod_dir = Path(get_data_root()) / "eod"
+        candidate = eod_dir / f"{date}.json"
+        if candidate.exists():
+            try:
+                raw = _json.loads(candidate.read_text(encoding="utf-8"))
+                rows = _eod_snapshot_signal_rows(raw)
+                if rows:
+                    return rows, _snap_as_of(raw, date), f"eod_disk:{candidate.name}"
+            except Exception:
+                pass
+        try:
+            from signals.cache import get_eod_snapshot_redis
+
+            snap = get_eod_snapshot_redis(date)
+            rows = _eod_snapshot_signal_rows(snap)
+            if rows:
+                return rows, _snap_as_of(snap, date), f"eod_redis:{date}"
+        except Exception:
+            pass
+        return [], None, "none"
+
+    best_rows: list[dict] = []
+    best_as_of: str | None = None
+    best_source = "none"
+    thin_best: tuple[list[dict], str | None, str] = ([], None, "none")
+
+    def _consider(snap: dict | None, source: str, date_hint: str | None = None) -> None:
+        nonlocal best_rows, best_as_of, best_source, thin_best
+        if not isinstance(snap, dict):
+            return
+        rows = _eod_snapshot_signal_rows(snap)
+        if not rows:
+            return
+        as_of = _snap_as_of(snap, date_hint)
+        if _is_thin_eod_snapshot(snap, min_full):
+            if len(rows) > len(thin_best[0]):
+                thin_best = (rows, as_of, source)
+            return
+        if len(rows) > len(best_rows):
+            best_rows = rows
+            best_as_of = as_of
+            best_source = source
+
+    try:
+        from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+
+        for d in sorted(list_eod_dates_redis() or []):
+            _consider(get_eod_snapshot_redis(d), f"eod_redis:{d}", d)
+    except Exception as e:
+        logger.debug("[eod-pick] redis scan: %s", e)
+
+    try:
+        eod_dir = Path(get_data_root()) / "eod"
+        if eod_dir.exists():
+            for path in sorted(eod_dir.glob("*.json"), reverse=True):
+                try:
+                    raw = _json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                _consider(raw, f"eod_disk:{path.name}", path.stem)
+    except Exception as e:
+        logger.debug("[eod-pick] disk scan: %s", e)
+
+    if best_rows:
+        return best_rows, best_as_of, best_source
+    if allow_thin and thin_best[0]:
+        return thin_best
+    return [], None, "none"
+
+
 def _resolve_universe_cache_rows(config: dict, dashboard_results: list[dict]) -> tuple[list[dict], str]:
     """
     Universe panel (~100 tickers) should come from the EOD snapshot when available.
@@ -511,36 +627,10 @@ def _resolve_universe_cache_rows(config: dict, dashboard_results: list[dict]) ->
     best_rows: list[dict] = list(dashboard_results or [])
     best_source = "dashboard"
 
-    try:
-        from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
-
-        dates = list_eod_dates_redis()
-        if dates:
-            snap = get_eod_snapshot_redis(sorted(dates)[-1])
-            rows = _eod_snapshot_signal_rows(snap)
-            if len(rows) > len(best_rows):
-                best_rows = rows
-                best_source = "eod_redis"
-    except Exception as e:
-        logger.debug("[dashboard] universe_signals eod redis: %s", e)
-
-    try:
-        import json as _json
-        from pathlib import Path
-
-        eod_dir = Path(get_data_root()) / "eod"
-        if eod_dir.exists():
-            for path in sorted(eod_dir.glob("*.json"), reverse=True):
-                try:
-                    raw = _json.loads(path.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-                rows = _eod_snapshot_signal_rows(raw)
-                if len(rows) > len(best_rows):
-                    best_rows = rows
-                    best_source = f"eod_disk:{path.name}"
-    except Exception as e:
-        logger.debug("[dashboard] universe_signals eod disk: %s", e)
+    eod_rows, _, eod_source = _pick_best_eod_snapshot(config, allow_thin=False)
+    if len(eod_rows) > len(best_rows):
+        best_rows = eod_rows
+        best_source = eod_source
 
     return best_rows, best_source
 
@@ -4381,81 +4471,44 @@ async def get_eod_universe(date: str = Query("latest")):
     No extra computation — purely a read of the saved EOD JSON.
     """
     try:
-        import json as _json
-        from pathlib import Path as _Path
-
         config = _load_config()
-        data_root = _Path(get_data_root())
-        eod_dir = data_root / "eod"
 
-        # Resolve which file to read
-        target_path: _Path | None = None
-        if date == "latest":
-            files = sorted(eod_dir.glob("*.json"), reverse=True) if eod_dir.exists() else []
-            if files:
-                target_path = files[0]
-                logger.info("[eod-universe] using disk file: %s", target_path.name)
-        else:
-            candidate = eod_dir / f"{date}.json"
-            if candidate.exists():
-                target_path = candidate
-                logger.info("[eod-universe] using disk file: %s", target_path.name)
-
-        # Try disk snapshot first (Railway ephemeral disk may hold an empty stub file).
-        if target_path is not None:
-            raw = _json.loads(target_path.read_text(encoding="utf-8"))
-            rows = _eod_snapshot_signal_rows(raw)
-            as_of = raw.get("run_date") or raw.get("snapshot_date") or target_path.stem
-            if rows:
-                logger.info("[eod-universe] disk file loaded: %d rows, as_of=%s", len(rows), as_of)
-                return _shape_universe_rows(rows, as_of)
+        rows, as_of, source = _pick_best_eod_snapshot(config, date=date, allow_thin=False)
+        if rows:
             logger.info(
-                "[eod-universe] disk file %s empty (0 rows) — checking Redis fallbacks",
-                target_path.name,
+                "[eod-universe] picked %d rows from %s, as_of=%s",
+                len(rows),
+                source,
+                as_of,
             )
-        else:
-            logger.info("[eod-universe] no disk file — checking Redis fallbacks")
+            shaped = _shape_universe_rows(rows, as_of)
+            shaped["source"] = source
+            return shaped
 
-        # Fallback 1: Redis EOD snapshot
-        try:
-            from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
-            dates = list_eod_dates_redis()
-            logger.info("[eod-universe] fallback-1 Redis EOD: %d dates available", len(dates) if dates else 0)
-            if dates:
-                snap = get_eod_snapshot_redis(sorted(dates)[-1])
-                if snap:
-                    rows = _eod_snapshot_signal_rows(snap)
-                    if rows:
-                        logger.info("[eod-universe] fallback-1 hit (%d rows)", len(rows))
-                        return _shape_universe_rows(
-                            rows,
-                            snap.get("run_date") or snap.get("snapshot_date") or sorted(dates)[-1],
-                        )
-                logger.info("[eod-universe] fallback-1 snap empty for latest date")
-        except Exception as e:
-            logger.warning("[eod-universe] fallback-1 error: %s", e)
-
-        # Fallback 2a: dedicated signals-panel key (full rows, written after every dashboard run)
-        try:
-            from signals.cache import get_signals_panel
-            sp = get_signals_panel()
-            if sp and isinstance(sp.get("signals"), list) and len(sp["signals"]) > 0:
-                logger.info("[eod-universe] fallback-2a signals_panel hit (%d rows)", len(sp["signals"]))
-                return _shape_universe_rows(sp["signals"], sp.get("as_of"))
-            logger.info("[eod-universe] fallback-2a signals_panel miss")
-        except Exception as e:
-            logger.warning("[eod-universe] fallback-2a error: %s", e)
-
-        # Fallback 2b: dedicated compact universe-signals Redis key
+        logger.info("[eod-universe] no full EOD snapshot — checking Redis fallbacks")
+        # Prefer universe_signals (written on dashboard refresh from best EOD on disk/Redis)
         try:
             from signals.cache import get_universe_signals
             uni = get_universe_signals()
             if uni and uni.get("rows"):
-                logger.info("[eod-universe] fallback-2b universe_signals hit (%d rows)", len(uni["rows"]))
-                return _shape_universe_rows(uni["rows"], uni.get("as_of"))
-            logger.info("[eod-universe] fallback-2b universe_signals miss (key absent or empty)")
+                logger.info("[eod-universe] fallback universe_signals hit (%d rows)", len(uni["rows"]))
+                shaped = _shape_universe_rows(uni["rows"], uni.get("as_of"))
+                shaped["source"] = "universe_signals"
+                return shaped
         except Exception as e:
-            logger.warning("[eod-universe] fallback-2b error: %s", e)
+            logger.warning("[eod-universe] universe_signals error: %s", e)
+
+        try:
+            from signals.cache import get_signals_panel
+            sp = get_signals_panel()
+            if sp and isinstance(sp.get("signals"), list) and len(sp["signals"]) > 0:
+                logger.info("[eod-universe] fallback signals_panel hit (%d rows)", len(sp["signals"]))
+                shaped = _shape_universe_rows(sp["signals"], sp.get("as_of"))
+                shaped["source"] = "signals_panel"
+                return shaped
+            logger.info("[eod-universe] fallback signals_panel miss")
+        except Exception as e:
+            logger.warning("[eod-universe] signals_panel error: %s", e)
 
         # Fallback 3: full dashboard cache
         try:
@@ -4490,6 +4543,24 @@ async def get_eod_universe(date: str = Query("latest")):
                 logger.info("[eod-universe] fallback-3 no dashboard cache at all")
         except Exception as e:
             logger.warning("[eod-universe] fallback-3 error: %s", e)
+
+        rows, as_of, source = _pick_best_eod_snapshot(config, date=date, allow_thin=True)
+        if rows:
+            min_full = _min_full_eod_rows(config)
+            logger.info(
+                "[eod-universe] thin fallback %d rows from %s (min full=%d)",
+                len(rows),
+                source,
+                min_full,
+            )
+            shaped = _shape_universe_rows(rows, as_of)
+            shaped["source"] = source
+            if len(rows) < min_full:
+                shaped["message"] = (
+                    f"Dashboard-only snapshot ({len(rows)} tickers). "
+                    f"Full EOD cohort is ~{min_full}+ — refresh on a trading day or run POST /api/eod/run?force=true."
+                )
+            return shaped
 
         return {
             "rows": [],
