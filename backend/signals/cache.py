@@ -562,6 +562,13 @@ def merge_dashboard_cache_updates(updates: dict) -> bool:
 UNIVERSE_SIGNALS_KEY = "dashboard:universe_signals"
 UNIVERSE_SIGNALS_TTL = 25 * 3600  # 25 hours — survives overnight + weekend
 
+# Signals-panel key: full signal rows with heavy nested objects stripped.
+# Written after every dashboard run so /api/dashboard/signals-panel always has data.
+SIGNALS_PANEL_KEY = "dashboard:signals_panel"
+SIGNALS_PANEL_TTL = 25 * 3600  # 25 hours
+
+_SIGNALS_PANEL_STRIP = frozenset({"investor_summary", "horizons_detail", "valuation_deck"})
+
 
 _UNIVERSE_KEEP_KEYS = frozenset({
     "ticker", "close", "change_pct", "composite_buy", "composite_score",
@@ -597,6 +604,63 @@ def set_universe_signals(rows: list[dict], as_of: str | None = None) -> bool:
 def get_universe_signals() -> dict | None:
     """Return {rows, as_of} from the universe signal cache, or None on miss."""
     return get_cached(UNIVERSE_SIGNALS_KEY)
+
+
+def set_signals_panel(rows: list[dict], as_of: str | None = None) -> bool:
+    """
+    Store full signal rows (heavy keys stripped) for the signals-panel endpoint. TTL 25h.
+    These are the complete signal rows minus investor_summary/horizons_detail/valuation_deck,
+    suitable for direct use by the SignalsTable component.
+    """
+    slim: list[dict] = []
+    for r in rows or []:
+        if not isinstance(r, dict):
+            continue
+        slim.append({k: v for k, v in r.items() if k not in _SIGNALS_PANEL_STRIP})
+    payload = {"signals": slim, "as_of": as_of}
+    return set_cached(SIGNALS_PANEL_KEY, payload, SIGNALS_PANEL_TTL)
+
+
+def get_signals_panel() -> dict | None:
+    """Return {signals, as_of} from the signals-panel cache, or None on miss."""
+    return get_cached(SIGNALS_PANEL_KEY)
+
+
+# Analysis tab bundle — separate from the large dashboard payload (paper trading is heavy).
+ANALYSIS_BUNDLE_KEY = "dashboard:analysis_bundle"
+ANALYSIS_BUNDLE_TTL = 6 * 3600  # 6 hours
+
+_PAPER_TRADING_STRIP = frozenset({
+    "backfill", "sync_targets", "mtm_history_sync", "mtm_history_log", "fill", "mtm",
+})
+
+
+def _slim_analysis_bundle(bundle: dict) -> dict:
+    """Drop verbose paper-trading internals; keep summary/recent/equity_curve for UI."""
+    out = dict(bundle)
+    pt = out.get("paper_trading")
+    if isinstance(pt, dict):
+        slim_pt = {k: v for k, v in pt.items() if k not in _PAPER_TRADING_STRIP}
+        out["paper_trading"] = slim_pt
+    return _sanitize_for_json(out)
+
+
+def set_analysis_bundle(bundle: dict, refresh_ts: str | None = None) -> bool:
+    """Store Analysis tab payload in Redis. TTL 6h; keyed to dashboard refresh_ts."""
+    payload = {"bundle": _slim_analysis_bundle(bundle), "refresh_ts": refresh_ts}
+    return set_cached(ANALYSIS_BUNDLE_KEY, payload, ANALYSIS_BUNDLE_TTL)
+
+
+def get_analysis_bundle(*, refresh_ts: str | None = None) -> dict | None:
+    """Return cached analysis bundle, or None on miss / refresh_ts mismatch."""
+    cached = get_cached(ANALYSIS_BUNDLE_KEY)
+    if not cached or not isinstance(cached, dict):
+        return None
+    cached_ts = cached.get("refresh_ts")
+    if refresh_ts and cached_ts and cached_ts != refresh_ts:
+        return None
+    bundle = cached.get("bundle")
+    return bundle if isinstance(bundle, dict) else None
 
 
 # Store in Redis so EOD survives restarts when no persistent volume (Railway/Docker).

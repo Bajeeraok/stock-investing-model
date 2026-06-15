@@ -72,6 +72,8 @@ SHELL_KEYS: tuple[str, ...] = (
     "stale",
     "refresh_status",
     "warming",
+    "refresh_ts",
+    "signals_count",
 )
 
 # Loaded when user opens Analysis tab.
@@ -230,8 +232,11 @@ def enrich_shell_snapshot_meta(shell: dict) -> dict:
         return shell
     df = dict(shell.get("data_freshness") or {})
     as_of = shell.get("as_of_date")
-    if as_of and not df.get("snapshot_updated_at"):
-        df["snapshot_updated_at"] = as_of
+    refresh_ts = shell.get("refresh_ts")
+    # Prefer per-run ISO timestamp over date-only as_of_date for staleness display.
+    snapshot_at = refresh_ts or as_of
+    if snapshot_at and (not df.get("snapshot_updated_at") or refresh_ts):
+        df["snapshot_updated_at"] = snapshot_at
     if as_of and not df.get("snapshot_updated_et"):
         df["snapshot_updated_et"] = df.get("as_of_et")
     if shell.get("stale"):

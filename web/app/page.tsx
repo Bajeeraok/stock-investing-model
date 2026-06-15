@@ -77,12 +77,12 @@ export default function Home() {
     setData((prev) => (prev ? mergeDashboardData(prev, json) : json));
     if (fromNetwork) {
       saveCachedDashboard(json);
-      // Always record fetch time — stale flag already signals EOD data age.
-      // Previously only set when !stillRunning, which caused timestamp to freeze
-      // on mobile when coalesced responses never completed the stale-poll cycle.
       setLastRefreshedAt(new Date());
     }
     setStale(Boolean(json.stale));
+    if (fromNetwork && json.stale === false) {
+      setIsRefreshing(false);
+    }
   }, []);
 
   const refresh = useCallback(async (isAutoRetry = false, forceRefresh = false) => {
@@ -217,13 +217,20 @@ export default function Home() {
       try {
         const statusUrl = API_BASE ? `${API_BASE}/api/dashboard/status` : "/api/dashboard/status";
         const st = await fetch(statusUrl).then((r) => r.json());
-        if (st?.cache_fresh || st?.status === "done") {
-          void refresh(false, true);
+        // Cache is ready and no compute in flight — pull fresh shell only.
+        // Do NOT use ?refresh=true here; that would restart a 5-min full recompute.
+        const ready =
+          st?.ready === true ||
+          (st?.cache_fresh === true && st?.is_running === false && st?.status !== "running");
+        if (ready) {
+          await refresh(false, false);
+          setIsRefreshing(false);
         }
       } catch {
         // ignore poll errors
       }
     };
+    void poll();
     stalePollRef.current = setInterval(poll, STALE_POLL_MS);
     return () => {
       if (stalePollRef.current) clearInterval(stalePollRef.current);

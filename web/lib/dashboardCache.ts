@@ -29,7 +29,21 @@ export function mergeDashboardData(
   base: DashboardData,
   patch: Partial<DashboardData>
 ): DashboardData {
-  return { ...base, ...patch };
+  const merged: DashboardData = { ...base, ...patch };
+  // Explicitly clear transient refresh flags when server says data is fresh.
+  if (patch.stale === false) {
+    merged.stale = false;
+    merged.refresh_coalesced = false;
+    merged.warming = false;
+    if (patch.refresh_status === "idle" || patch.refresh_status === "done") {
+      merged.refresh_status = "idle";
+    }
+    const df = patch.data_freshness ?? merged.data_freshness;
+    if (df && typeof df === "object") {
+      merged.data_freshness = { ...df, serving_stale: false };
+    }
+  }
+  return merged;
 }
 
 /** Parse ISO snapshot timestamp for staleness display. */

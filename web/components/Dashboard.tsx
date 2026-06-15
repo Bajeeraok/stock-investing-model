@@ -323,6 +323,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const handleTabChange = setActiveTab;
 
+  // Use refresh_ts (per-run ISO timestamp) as the primary cache-bust key; fall back to
+  // as_of_date for older cache payloads that predate the refresh_ts field.
+  const refreshCacheKey = (data as unknown as Record<string, unknown>).refresh_ts as string | undefined ?? data.as_of_date;
+
   useEffect(() => {
     setLazySignals(null);
     setSignalsFetchErr(null);
@@ -330,7 +334,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     setOppFetchErr(null);
     setAnalysisBundle(null);
     setAnalysisFetchErr(null);
-  }, [data.as_of_date, data.signals_deferred, data.opportunities_deferred, data.analysis_deferred]);
+  }, [refreshCacheKey, data.signals_deferred, data.opportunities_deferred, data.analysis_deferred]);
 
   useEffect(() => {
     if (data.warming) return;
@@ -355,6 +359,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       .then((j) => {
         if (cancelled || !j || typeof j !== "object") return;
         if (j.warming) return;
+        // Empty response with message → show error so user knows to Refresh
+        if (Array.isArray(j.signals) && j.signals.length === 0 && (j as unknown as Record<string, unknown>).message) {
+          setSignalsFetchErr((j as unknown as Record<string, unknown>).message as string);
+          return;
+        }
         if (Array.isArray(j.signals)) setLazySignals(j.signals);
       })
       .catch((e) => {
@@ -366,7 +375,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.warming, data.signals_deferred, data.as_of_date, activeTab, lazySignals]);
+  }, [data.warming, data.signals_deferred, refreshCacheKey, activeTab, lazySignals]);
 
   useEffect(() => {
     if (data.warming) return;
@@ -424,6 +433,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     if (analysisInShell) return;
     if (activeTab !== "overview" && activeTab !== "analysis" && activeTab !== "markets") return;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let awaitingWarm = false;
     setAnalysisLoading(true);
     setAnalysisFetchErr(null);
     const url = API_BASE ? `${API_BASE}/api/dashboard/analysis-bundle` : "/api/dashboard/analysis-bundle";
@@ -440,19 +451,25 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       })
       .then((j) => {
         if (cancelled || !j || typeof j !== "object") return;
-        if (j.warming) return;
+        if (j.warming) {
+          // Backend is computing in background — poll until ready (avoids 502 from long sync compute).
+          awaitingWarm = true;
+          retryTimer = setTimeout(() => setAnalysisRetryKey((k) => k + 1), 15_000);
+          return;
+        }
         setAnalysisBundle(j as Partial<DashboardData>);
       })
       .catch((e) => {
         if (!cancelled) setAnalysisFetchErr(e instanceof Error ? e.message : "Failed to load analysis");
       })
       .finally(() => {
-        if (!cancelled) setAnalysisLoading(false);
+        if (!cancelled && !awaitingWarm) setAnalysisLoading(false);
       });
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [data.warming, data.analysis_deferred, data.as_of_date, activeTab, analysisBundle, analysisRetryKey, analysisInShell]);
+  }, [data.warming, data.analysis_deferred, refreshCacheKey, activeTab, analysisBundle, analysisRetryKey, analysisInShell]);
 
   const analysisNeedsFetch =
     analysisBundle === null && !analysisInShell && !analysisFetchErr;

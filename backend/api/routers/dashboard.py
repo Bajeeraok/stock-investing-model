@@ -492,22 +492,47 @@ def compute_opportunities_bundle() -> dict | None:
     }
 
 
-def compute_analysis_bundle() -> dict | None:
+def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
     """
     Lazy Analysis tab: insider, forward tracking, paper trading summary, model validation, etc.
     Uses cached dashboard signals; merges results back into Redis when computed.
+
+    When allow_heavy=False (HTTP fast path), only returns data already in Redis — never runs
+    the multi-minute paper-trading backfill synchronously.
     """
     try:
-        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot, merge_dashboard_cache_updates
+        from signals.cache import (
+            get_analysis_bundle,
+            get_cached_dashboard,
+            get_last_dashboard_snapshot,
+            merge_dashboard_cache_updates,
+            set_analysis_bundle,
+        )
         from api.dashboard_shell import build_analysis_bundle, empty_analysis_bundle
 
         cached = get_cached_dashboard() or get_last_dashboard_snapshot()
         if not cached or not isinstance(cached.get("signals"), list):
             return None
+
+        refresh_ts = cached.get("refresh_ts") if isinstance(cached, dict) else None
+        dedicated = get_analysis_bundle(refresh_ts=refresh_ts)
+        if dedicated:
+            logger.info("[analysis-bundle] dedicated cache hit")
+            return dedicated
+
         if cached.get("analysis_deferred") is False:
             partial = build_analysis_bundle(cached)
-            if partial.get("model_audit") is not None and partial.get("forward_tracking") is not None:
+            pt = partial.get("paper_trading") if isinstance(partial.get("paper_trading"), dict) else {}
+            if pt.get("summary") is not None and partial.get("forward_tracking") is not None:
+                logger.info("[analysis-bundle] dashboard cache hit")
+                try:
+                    set_analysis_bundle(partial, refresh_ts=refresh_ts)
+                except Exception:
+                    pass
                 return partial
+
+        if not allow_heavy:
+            return None
     except Exception as e:
         logger.debug("analysis-bundle: cache read failed: %s", e)
         return None
@@ -572,12 +597,17 @@ def compute_analysis_bundle() -> dict | None:
             pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
             pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
             paper_universe = set(get_dashboard_signal_universe(config))
-            backfill = pt.backfill_from_eod_snapshots(
-                allowed_tickers=paper_universe,
-                max_days=backfill_days,
-                horizon_trading_days=horizon_days,
-                config=config,
-            )
+            existing_pt = cached.get("paper_trading") if isinstance(cached.get("paper_trading"), dict) else {}
+            has_summary = isinstance(existing_pt.get("summary"), dict)
+            if has_summary:
+                backfill = {"skipped": True, "reason": "summary already in cache"}
+            else:
+                backfill = pt.backfill_from_eod_snapshots(
+                    allowed_tickers=paper_universe,
+                    max_days=backfill_days,
+                    horizon_trading_days=horizon_days,
+                    config=config,
+                )
             sync = pt.sync_targets_stops_from_results(results)
             mtm = pt.mark_to_market()
             mtm_history_sync = pt.sync_mtm_history_from_eod(max_days=backfill_days)
@@ -755,6 +785,12 @@ def compute_analysis_bundle() -> dict | None:
         merge_dashboard_cache_updates(bundle)
     except Exception as e:
         logger.debug("analysis-bundle cache merge failed: %s", e)
+    try:
+        from signals.cache import set_analysis_bundle
+
+        set_analysis_bundle(bundle, refresh_ts=cached.get("refresh_ts") if isinstance(cached, dict) else None)
+    except Exception as e:
+        logger.debug("analysis-bundle dedicated cache set failed: %s", e)
     return bundle if bundle else empty_analysis_bundle()
 
 
@@ -855,7 +891,8 @@ async def get_dashboard(
             logger.info("[dashboard] serving fresh Redis cache (shell payload)")
             shell = build_shell_from_full(cached, include_full_signals=False)
             shell["stale"] = False
-            shell["refresh_status"] = get_refresh_status().get("status", "idle")
+            shell["refresh_status"] = "running" if is_refresh_running() else "idle"
+            shell["refresh_coalesced"] = False
             df = shell.get("data_freshness") or {}
             if isinstance(df, dict):
                 df["snapshot_source"] = "cache"
@@ -904,11 +941,16 @@ async def get_dashboard_shell():
 @router.get("/dashboard/status")
 async def get_dashboard_status():
     """Background refresh job status for stale-while-revalidate polling."""
-    from api.dashboard_job import get_refresh_status
+    from api.dashboard_job import get_refresh_status, is_refresh_running
     from signals.cache import get_cached_dashboard
 
     status = get_refresh_status()
-    status["cache_fresh"] = get_cached_dashboard() is not None
+    cache_fresh = get_cached_dashboard() is not None
+    running = is_refresh_running()
+    status["cache_fresh"] = cache_fresh
+    status["is_running"] = running
+    # Client should fetch /dashboard/shell (not ?refresh=true) when ready.
+    status["ready"] = cache_fresh and not running
     return status
 
 
@@ -2508,6 +2550,14 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("[dashboard] web push digest skipped: %s", e)
     cache_ok = False
+    # Stamp a per-refresh ISO timestamp + signal count so the frontend can detect new runs on
+    # the same day (as_of_date alone is a date string — unchanged between same-day refreshes).
+    import time as _time
+    out["refresh_ts"] = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+    out["signals_count"] = len(results)
+    df = out.get("data_freshness")
+    if isinstance(df, dict):
+        df["snapshot_updated_at"] = out["refresh_ts"]
     try:
         from signals.overnight_delta import save_overnight_baseline, snapshot_for_baseline
 
@@ -2520,14 +2570,19 @@ def _compute_full_dashboard_sync() -> dict:
     except Exception as e:
         logger.debug("[dashboard] cache set skipped: %s", e)
 
-    # Write compact signal rows to a dedicated key for the universe panel.
-    # Separate from the large dashboard payload — more reliable on memory-constrained Redis.
+    # Write dedicated per-panel Redis keys — separate from the large dashboard payload.
+    # More reliable on memory-constrained Redis; survives TTL expiry of the main cache.
     try:
-        from signals.cache import set_universe_signals
-        ok = set_universe_signals(results, as_of=as_of_date)
-        logger.info("[dashboard] universe_signals cached: %s (%d rows)", "ok" if ok else "FAILED", len(results))
+        from signals.cache import set_universe_signals, set_signals_panel
+        ok_uni = set_universe_signals(results, as_of=as_of_date)
+        ok_sig = set_signals_panel(results, as_of=as_of_date)
+        logger.info(
+            "[dashboard] panel caches: universe_signals=%s (%d rows), signals_panel=%s (%d rows)",
+            "ok" if ok_uni else "FAILED", len(results),
+            "ok" if ok_sig else "FAILED", len(results),
+        )
     except Exception as e:
-        logger.warning("[dashboard] universe_signals cache error: %s", e)
+        logger.warning("[dashboard] panel cache error: %s", e)
 
     logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
     return out
@@ -2557,23 +2612,50 @@ async def get_dashboard_opportunities_bundle():
 @router.get("/dashboard/analysis-bundle")
 async def get_dashboard_analysis_bundle():
     """Lazy load: Analysis tab sections (paper trading, forward tracking, insider, validation)."""
+    from api.analysis_bundle_job import is_analysis_running, trigger_background_analysis
+    from api.dashboard_shell import empty_analysis_bundle
+
     try:
-        out = compute_analysis_bundle()
+        out = compute_analysis_bundle(allow_heavy=False)
     except Exception as e:
         logger.exception("analysis-bundle compute failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e)) from e
-    if out is None:
-        if _is_dashboard_warming():
-            from api.dashboard_shell import empty_analysis_bundle
 
-            warm = empty_analysis_bundle()
-            warm["warming"] = True
-            return jsonable_encoder(warm)
+    if out is not None:
+        return jsonable_encoder(out)
+
+    if _is_dashboard_warming():
+        warm = empty_analysis_bundle()
+        warm["warming"] = True
+        return jsonable_encoder(warm)
+
+    cached = None
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+    except Exception:
+        pass
+    if cached is None or not isinstance(cached.get("signals"), list):
         raise HTTPException(
             status_code=503,
             detail="Dashboard cache unavailable. Load the dashboard or click Refresh, then open Analysis.",
         )
-    return jsonable_encoder(out)
+
+    if not is_analysis_running():
+        started = trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True))
+        if started:
+            logger.info("[analysis-bundle] background compute triggered")
+        else:
+            logger.info("[analysis-bundle] background compute already running")
+
+    warm = empty_analysis_bundle()
+    warm["warming"] = True
+    warm["message"] = (
+        "Paper trading and forward tracking are computing in the background "
+        "(usually 1–3 minutes). This panel will update automatically."
+    )
+    return jsonable_encoder(warm)
 
 
 @router.get("/dashboard/signals-panel")
@@ -2582,29 +2664,62 @@ async def get_dashboard_signals_panel():
     # Fields only needed in TickerDetailModal — strip them here to avoid 502 on large payloads.
     _HEAVY_KEYS = frozenset({"investor_summary", "horizons_detail", "valuation_deck"})
 
+    def _slim(rows: list) -> list:
+        out = []
+        for row in rows:
+            if not isinstance(row, dict):
+                out.append(row)
+                continue
+            out.append({k: v for k, v in row.items() if k not in _HEAVY_KEYS})
+        return out
+
     try:
+        from signals.cache import get_signals_panel
+
+        # Priority 1: dedicated signals-panel key (written after every dashboard run, already stripped)
+        sp = get_signals_panel()
+        if sp and isinstance(sp.get("signals"), list) and len(sp["signals"]) > 0:
+            logger.info("[signals-panel] signals_panel key hit: %d rows", len(sp["signals"]))
+            return {"signals": sp["signals"]}
+
+        logger.info("[signals-panel] signals_panel key miss — falling back to dashboard cache")
+
         from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
         cached = get_cached_dashboard() or get_last_dashboard_snapshot()
         if cached is None:
             if _is_dashboard_warming():
+                logger.info("[signals-panel] dashboard warming — returning empty")
                 return {"signals": [], "warming": True}
             raise HTTPException(
                 status_code=503,
                 detail="Dashboard cache unavailable. Load the dashboard once or click Refresh, then open Signals again.",
             )
-        sigs = cached.get("signals")
-        if not isinstance(sigs, list):
-            raise HTTPException(status_code=503, detail="No signals in dashboard cache.")
 
-        # Strip large nested objects not needed by the signals table
-        slim = []
-        for row in sigs:
-            if not isinstance(row, dict):
-                slim.append(row)
-                continue
-            slim.append({k: v for k, v in row.items() if k not in _HEAVY_KEYS})
-        logger.info("[signals-panel] returning %d rows (heavy keys stripped)", len(slim))
+        sigs = cached.get("signals")
+        cache_label = "dashboard_cache"
+
+        # Fallback: dashboard cache signals empty → try universe_signals (compact but has key fields)
+        if not isinstance(sigs, list) or len(sigs) == 0:
+            logger.info("[signals-panel] dashboard cache signals empty — trying universe_signals")
+            try:
+                from signals.cache import get_universe_signals
+                uni = get_universe_signals()
+                if uni and uni.get("rows"):
+                    sigs = uni["rows"]
+                    cache_label = "universe_signals"
+                    logger.info("[signals-panel] universe_signals fallback: %d rows", len(sigs))
+            except Exception as e:
+                logger.warning("[signals-panel] universe_signals fallback error: %s", e)
+
+        if not isinstance(sigs, list) or len(sigs) == 0:
+            if _is_dashboard_warming():
+                return {"signals": [], "warming": True}
+            logger.warning("[signals-panel] all sources empty; dashboard may need a full Refresh")
+            return {"signals": [], "warming": False, "message": "No signals found. Click Refresh to populate."}
+
+        slim = _slim(sigs)
+        logger.info("[signals-panel] returning %d rows (source=%s)", len(slim), cache_label)
         return {"signals": slim}
     except HTTPException:
         raise
@@ -3984,88 +4099,99 @@ async def get_eod_universe(date: str = Query("latest")):
                 target_path = candidate
                 logger.info("[eod-universe] using disk file: %s", target_path.name)
 
-        if target_path is None:
+        # Try disk snapshot first (Railway ephemeral disk may hold an empty stub file).
+        if target_path is not None:
+            raw = _json.loads(target_path.read_text(encoding="utf-8"))
+            rows = raw.get("signals") or raw.get("results") or []
+            as_of = raw.get("run_date") or target_path.stem
+            if rows:
+                logger.info("[eod-universe] disk file loaded: %d rows, as_of=%s", len(rows), as_of)
+                return _shape_universe_rows(rows, as_of)
+            logger.info(
+                "[eod-universe] disk file %s empty (0 rows) — checking Redis fallbacks",
+                target_path.name,
+            )
+        else:
             logger.info("[eod-universe] no disk file — checking Redis fallbacks")
 
         # Fallback 1: Redis EOD snapshot
-        if target_path is None:
-            try:
-                from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
-                dates = list_eod_dates_redis()
-                logger.info("[eod-universe] fallback-1 Redis EOD: %d dates available", len(dates) if dates else 0)
-                if dates:
-                    snap = get_eod_snapshot_redis(sorted(dates)[-1])
-                    if snap:
-                        rows = snap.get("signals") or snap.get("results") or []
+        try:
+            from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+            dates = list_eod_dates_redis()
+            logger.info("[eod-universe] fallback-1 Redis EOD: %d dates available", len(dates) if dates else 0)
+            if dates:
+                snap = get_eod_snapshot_redis(sorted(dates)[-1])
+                if snap:
+                    rows = snap.get("signals") or snap.get("results") or []
+                    if rows:
                         logger.info("[eod-universe] fallback-1 hit (%d rows)", len(rows))
                         return _shape_universe_rows(rows, snap.get("run_date") or sorted(dates)[-1])
-                    else:
-                        logger.info("[eod-universe] fallback-1 snap empty for latest date")
-            except Exception as e:
-                logger.warning("[eod-universe] fallback-1 error: %s", e)
+                logger.info("[eod-universe] fallback-1 snap empty for latest date")
+        except Exception as e:
+            logger.warning("[eod-universe] fallback-1 error: %s", e)
 
-        # Fallback 2: dedicated compact universe-signals Redis key (written after every dashboard run)
-        if target_path is None:
-            try:
-                from signals.cache import get_universe_signals
-                uni = get_universe_signals()
-                if uni and uni.get("rows"):
-                    logger.info("[eod-universe] fallback-2 universe_signals hit (%d rows)", len(uni["rows"]))
-                    return _shape_universe_rows(uni["rows"], uni.get("as_of"))
-                else:
-                    logger.info("[eod-universe] fallback-2 universe_signals miss (key absent or empty)")
-            except Exception as e:
-                logger.warning("[eod-universe] fallback-2 error: %s", e)
+        # Fallback 2a: dedicated signals-panel key (full rows, written after every dashboard run)
+        try:
+            from signals.cache import get_signals_panel
+            sp = get_signals_panel()
+            if sp and isinstance(sp.get("signals"), list) and len(sp["signals"]) > 0:
+                logger.info("[eod-universe] fallback-2a signals_panel hit (%d rows)", len(sp["signals"]))
+                return _shape_universe_rows(sp["signals"], sp.get("as_of"))
+            logger.info("[eod-universe] fallback-2a signals_panel miss")
+        except Exception as e:
+            logger.warning("[eod-universe] fallback-2a error: %s", e)
 
-        # Fallback 3: full dashboard cache — extract signals from the live payload
-        if target_path is None:
-            try:
-                from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
-                dash = get_cached_dashboard()
-                snap_label = "fresh"
-                if dash is None:
-                    dash = get_last_dashboard_snapshot()
-                    snap_label = "last_snapshot"
-                if dash:
-                    rows = dash.get("signals") or []
-                    as_of = dash.get("as_of_date") or dash.get("run_date")
-                    logger.info(
-                        "[eod-universe] fallback-3 dashboard cache (%s): %d signal rows, as_of=%s",
-                        snap_label, len(rows), as_of,
-                    )
-                    if rows:
-                        # Also populate universe_signals so next call uses fallback-2 directly
-                        try:
-                            from signals.cache import set_universe_signals
-                            set_universe_signals(rows, as_of=as_of)
-                        except Exception:
-                            pass
-                        return _shape_universe_rows(rows, as_of)
-                    # Dashboard cache exists but signals empty (signals_deferred path) — trigger background refresh
-                    logger.info("[eod-universe] fallback-3 dashboard signals empty — triggering background refresh")
+        # Fallback 2b: dedicated compact universe-signals Redis key
+        try:
+            from signals.cache import get_universe_signals
+            uni = get_universe_signals()
+            if uni and uni.get("rows"):
+                logger.info("[eod-universe] fallback-2b universe_signals hit (%d rows)", len(uni["rows"]))
+                return _shape_universe_rows(uni["rows"], uni.get("as_of"))
+            logger.info("[eod-universe] fallback-2b universe_signals miss (key absent or empty)")
+        except Exception as e:
+            logger.warning("[eod-universe] fallback-2b error: %s", e)
+
+        # Fallback 3: full dashboard cache
+        try:
+            from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+            dash = get_cached_dashboard()
+            snap_label = "fresh"
+            if dash is None:
+                dash = get_last_dashboard_snapshot()
+                snap_label = "last_snapshot"
+            if dash:
+                rows = dash.get("signals") or []
+                as_of = dash.get("as_of_date") or dash.get("run_date")
+                logger.info(
+                    "[eod-universe] fallback-3 dashboard cache (%s): %d signal rows, as_of=%s",
+                    snap_label, len(rows), as_of,
+                )
+                if rows:
                     try:
-                        from api.dashboard_job import is_refresh_running, trigger_background_refresh
-                        if not is_refresh_running():
-                            trigger_background_refresh(_compute_full_dashboard_sync)
+                        from signals.cache import set_universe_signals
+                        set_universe_signals(rows, as_of=as_of)
                     except Exception:
                         pass
-                else:
-                    logger.info("[eod-universe] fallback-3 no dashboard cache at all")
-            except Exception as e:
-                logger.warning("[eod-universe] fallback-3 error: %s", e)
+                    return _shape_universe_rows(rows, as_of)
+                logger.info("[eod-universe] fallback-3 dashboard signals empty — triggering background refresh")
+                try:
+                    from api.dashboard_job import is_refresh_running, trigger_background_refresh
+                    if not is_refresh_running():
+                        trigger_background_refresh(_compute_full_dashboard_sync)
+                except Exception:
+                    pass
+            else:
+                logger.info("[eod-universe] fallback-3 no dashboard cache at all")
+        except Exception as e:
+            logger.warning("[eod-universe] fallback-3 error: %s", e)
 
-            return {
-                "rows": [],
-                "as_of": None,
-                "total": 0,
-                "message": "Refresh in progress — data will appear shortly. Click Refresh if not populated in 5 min.",
-            }
-
-        raw = _json.loads(target_path.read_text(encoding="utf-8"))
-        rows = raw.get("signals") or raw.get("results") or []
-        as_of = raw.get("run_date") or target_path.stem
-        logger.info("[eod-universe] disk file loaded: %d rows, as_of=%s", len(rows), as_of)
-        return _shape_universe_rows(rows, as_of)
+        return {
+            "rows": [],
+            "as_of": None,
+            "total": 0,
+            "message": "Refresh in progress — data will appear shortly. Click Refresh if not populated in 5 min.",
+        }
 
     except Exception as e:
         logger.warning("eod-universe failed: %s", e)
