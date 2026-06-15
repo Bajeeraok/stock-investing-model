@@ -13,12 +13,12 @@ import {
   XCircle,
 } from "lucide-react";
 import type { InvestorDecisionSummary, HorizonSignalPayload } from "./InvestorDecisionSummary";
+import { MaxBuyPricePillow } from "./levels/MaxBuyPricePillow";
 import {
   BehavioralActionBadge,
   deriveLongTermBehavioralBadge,
   deriveShortTermBehavioralBadge,
   EntryZonePriceBar,
-  LongTermAccumulationScale,
   LongTermTierLadder,
   filterPrimaryTradingGates,
   buildGatesFromInvestorSummary,
@@ -395,13 +395,12 @@ export function DecisionDeck({
         )}
 
         {showOwnerTierLadder && currentPrice > 0 ? (
-          <LongTermAccumulationScale
+          <MaxBuyPricePillow
             horizon={long}
             entryTiers={long.entry_tiers!}
             currentPrice={currentPrice}
             stopLoss={primary.stop_loss > 0 ? primary.stop_loss : null}
             target={primary.target > 0 ? primary.target : null}
-            variant="deck"
           />
         ) : (
           ez &&

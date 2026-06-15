@@ -1347,7 +1347,9 @@ export function LongTermAccumulationScale({
   stopLoss,
   target,
   className,
+  barClassName,
   variant = "full",
+  hideCatchLevels = false,
 }: {
   horizon: Pick<HorizonSignalPayload, "entry_zone">;
   entryTiers: NonNullable<HorizonSignalPayload["entry_tiers"]>;
@@ -1355,8 +1357,11 @@ export function LongTermAccumulationScale({
   stopLoss?: number | null;
   target?: number | null;
   className?: string;
+  barClassName?: string;
   /** deck = Today hero (bar labels only); full = horizon card + extra copy */
   variant?: "full" | "deck";
+  /** Omit catch-level chips (Today hero / max-buy pillow). */
+  hideCatchLevels?: boolean;
 }) {
   const tiers = [...(entryTiers.tiers ?? [])].sort((a, b) => a.low - b.low);
   if (!tiers.length || !(currentPrice > 0)) return null;
@@ -1498,7 +1503,12 @@ export function LongTermAccumulationScale({
         <span className="shrink-0 tabular-nums">${scaleMax.toFixed(2)}</span>
       </div>
       <div className="relative">
-        <div className="relative h-8 rounded-lg overflow-hidden border border-slate-600 bg-slate-900">
+        <div
+          className={clsx(
+            "relative rounded-lg overflow-hidden border border-slate-600 bg-slate-900",
+            barClassName ?? "h-8",
+          )}
+        >
           <div className="absolute inset-0 bg-slate-800/90" />
           {tiers.map((t) => {
             const lo = Math.min(t.low, t.high);
@@ -1605,7 +1615,7 @@ export function LongTermAccumulationScale({
           )}
         </p>
       )}
-      {catchLevels.length > 0 && (
+      {!hideCatchLevels && variant !== "deck" && catchLevels.length > 0 && (
         <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-2.5 py-2 space-y-1.5">
           <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
             Catch levels · {primaryId ?? "band"} ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
