@@ -298,7 +298,7 @@ export function DecisionDeck({
           </span>
         </div>
 
-        <p className="text-xs text-slate-500 flex items-center gap-1.5 flex-wrap -mt-1">
+        <p className="text-sm text-slate-400 flex items-center gap-1.5 flex-wrap -mt-1">
           <span title={STRENGTH_CONVICTION_HINT} className="cursor-help border-b border-dotted border-slate-500/50">
             {primary.signal} strength · {primary.conviction} conviction
           </span>

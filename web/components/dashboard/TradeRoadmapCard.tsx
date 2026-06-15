@@ -10,6 +10,7 @@ import {
   Newspaper,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { TD } from "./tickerDetailTypography";
 
 export interface BuyRoadmapStage {
   timeline_key: string;
@@ -234,6 +235,29 @@ function tickerNote(ticker: string | undefined): string | null {
   return null;
 }
 
+/** Readable condition copy — long API strings collapse with expand. */
+function ConditionText({ text, className }: { text: string; className?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  const long = trimmed.length > 200;
+  const shown = long && !expanded ? `${trimmed.slice(0, 200).trim()}…` : trimmed;
+  return (
+    <div className={clsx(TD.body, className)}>
+      <p>{shown}</p>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setExpanded((o) => !o)}
+          className="mt-1 text-xs font-medium text-emerald-400 hover:text-emerald-300"
+        >
+          {expanded ? "Show less" : "Show full detail"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Mobile-only card row — key columns + expandable tranche / condition text */
 function BuyRoadmapMobileCard({
   row,
@@ -320,9 +344,9 @@ function BuyRoadmapMobileCard({
           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
           Condition & tranche detail (T1/T2/T3 text)
         </summary>
-        <div className="mt-2 space-y-2 text-sm text-slate-400 leading-relaxed pl-1">
-          <p className="text-slate-300">{row.condition}</p>
-          {row.allocation_note && <p className="text-slate-500 font-mono text-xs leading-snug">{row.allocation_note}</p>}
+        <div className="mt-2 space-y-2 pl-1">
+          <ConditionText text={row.condition} />
+          {row.allocation_note && <p className={TD.footnote}>{row.allocation_note}</p>}
         </div>
       </details>
     </div>
@@ -495,12 +519,6 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   </>
                 )}
               </span>
-              <p
-                className="text-xs text-slate-500 mt-1.5 max-w-xl leading-snug"
-                title="If both lines look good but the verdict is watch or reduce, treat it as timing and risk control — not a contradiction in the math."
-              >
-                Fair value ≈ “cheap vs expensive?” · Regime ≈ “risk-on or risk-off backdrop?” — they often disagree until the tape confirms.
-              </p>
             </div>
           </div>
           {(data.score_interpretation_style || "").toUpperCase() === "MEAN_REVERTING" && (
@@ -811,12 +829,12 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
           )}
 
           <div className="p-4 space-y-4">
-            {/* Trader summary one-liner */}
-            <div className="rounded-lg bg-slate-800/80 border border-slate-600/50 px-3 py-2">
-              <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Summary for your horizon</p>
-              <p className="text-sm text-slate-200">{currentSummary}</p>
+            {/* Trader summary */}
+            <div className={TD.summaryCard}>
+              <p className={TD.sectionLabel}>Summary for your horizon</p>
+              <p className={clsx(TD.body, "mt-2")}>{currentSummary}</p>
               {((data.execution_plan_lines?.length ?? 0) > 0 || (data.tldr?.execution_plan_lines?.length ?? 0) > 0) && (
-                <ul className="mt-2 space-y-1 text-xs text-slate-300 leading-snug list-disc list-inside border-t border-slate-600/40 pt-2">
+                <ul className="mt-3 space-y-1.5 text-sm text-slate-300 leading-relaxed list-disc list-inside border-t border-slate-600/40 pt-3">
                   {(data.execution_plan_lines && data.execution_plan_lines.length > 0
                     ? data.execution_plan_lines
                     : (data.tldr?.execution_plan_lines ?? [])
@@ -825,18 +843,18 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   ))}
                 </ul>
               )}
-              {data.trader_summary.horizon_note && (
-                <p className="text-sm text-slate-500 mt-2 leading-snug border-t border-slate-600/40 pt-2">
+              {advancedRoadmap && data.trader_summary.horizon_note && (
+                <p className={clsx(TD.bodyMuted, "mt-3 border-t border-slate-600/40 pt-3")}>
                   {data.trader_summary.horizon_note}
                 </p>
               )}
-              {tickerNote(ticker) && (
-                <p className="text-xs text-slate-500 mt-1.5 border-t border-slate-600/50 pt-1.5">{tickerNote(ticker)}</p>
+              {advancedRoadmap && tickerNote(ticker) && (
+                <p className={clsx(TD.footnote, "mt-2 border-t border-slate-600/50 pt-2")}>{tickerNote(ticker)}</p>
               )}
-              {(data.consistency_notes?.length ?? 0) > 0 && (
-                <ul className="text-sm text-slate-500 mt-2 space-y-1 border-t border-slate-600/40 pt-2 list-disc list-inside">
+              {advancedRoadmap && (data.consistency_notes?.length ?? 0) > 0 && (
+                <ul className="text-sm text-slate-400 mt-3 space-y-1 border-t border-slate-600/40 pt-3 list-disc list-inside">
                   {(data.consistency_notes ?? []).map((n, i) => (
-                    <li key={i} className="leading-snug">
+                    <li key={i} className="leading-relaxed">
                       {n}
                     </li>
                   ))}
@@ -1061,18 +1079,18 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                               </div>
                             )}
                           </td>
-                          <td className="py-2 pr-2 text-slate-400 text-sm leading-snug align-top break-words">
+                          <td className="py-2 pr-2 align-top break-words min-w-[200px] max-w-[360px]">
                             {row.priority_note && (
-                              <span className="block text-amber-200/90 text-xs mb-1">{row.priority_note}</span>
+                              <span className="block text-amber-200/90 text-xs font-medium mb-1.5">{row.priority_note}</span>
                             )}
-                            {row.condition}
+                            <ConditionText text={row.condition} />
                             {row.risk_reward_context?.risk_reward != null && (
-                              <span className="block text-slate-500 mt-1 text-xs">
-                                R:R (vs model FV / ref stop): ~{row.risk_reward_context.risk_reward}× · upside ~{row.risk_reward_context.upside_to_model_fv_pct ?? "—"}% / downside ~{row.risk_reward_context.downside_to_ref_stop_pct ?? "—"}% (ref {row.risk_reward_context.ref_stop_kind})
-                              </span>
+                              <p className={clsx(TD.footnote, "mt-2")}>
+                                R:R ~{row.risk_reward_context.risk_reward}× · upside ~{row.risk_reward_context.upside_to_model_fv_pct ?? "—"}% / downside ~{row.risk_reward_context.downside_to_ref_stop_pct ?? "—"}%
+                              </p>
                             )}
                             {row.allocation_note && (
-                              <span className="block text-slate-500 mt-1 text-xs leading-snug">{row.allocation_note}</span>
+                              <p className={clsx(TD.footnote, "mt-1")}>{row.allocation_note}</p>
                             )}
                           </td>
                           <td className={clsx("py-2 pr-2 align-top", conv ? horizonRoleColor(row.conviction) : "")}>
@@ -1084,11 +1102,9 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-slate-500 mt-2 leading-snug max-w-3xl">
-                  <strong className="text-slate-400">How to read this:</strong> Horizon role describes the scenario for that
-                  row (not “bigger % = higher conviction”). Tranche % is the slice of your planned position for that leg of
-                  the staged entry ladder—risk-budget style—not a sort order by the role labels. Repeating dollar bands across
-                  timelines are intentional when the model uses one accumulation zone with different time roles.
+                <p className={clsx(TD.footnote, "mt-3 max-w-3xl")}>
+                  <span className="text-slate-400 font-medium">How to read this: </span>
+                  Horizon role is the scenario for that row. Tranche % is your planned slice for that leg—not a sort order.
                 </p>
               </div>
             )}

@@ -1204,8 +1204,8 @@ export function TickerDetailModal({
                 <>
                 {/* Top bar: at-a-glance + density toggle */}
                 <div className="flex items-center justify-between gap-2 -mt-2 mb-3">
-                  <p className="text-[10px] text-slate-500 leading-snug">
-                    Staged entries · playbooks · technical anchors · roadmaps
+                  <p className="text-xs text-slate-400 leading-snug">
+                    Staged entries · playbooks · anchors · roadmaps
                   </p>
                   <DensityToggle />
                 </div>

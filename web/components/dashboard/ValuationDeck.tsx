@@ -56,7 +56,7 @@ function StreetColumn({ deck }: { deck: ValuationDeckPayload }) {
       )}
       {s.ratings && <AnalystRatingBar ratings={s.ratings} />}
       {s.eps_fwd != null && (
-        <p className="text-[10px] text-slate-500">
+        <p className="text-xs text-slate-400">
           Fwd EPS consensus ~{s.eps_fwd.toFixed(2)}
           {s.eps_dispersion != null && s.eps_dispersion > 0.2
             ? ` · high dispersion (${(s.eps_dispersion * 100).toFixed(0)}%)`
@@ -85,9 +85,9 @@ function ModelColumn({ deck }: { deck: ValuationDeckPayload }) {
       {m.relative_valuation_line && (
         <p className="text-[11px] text-slate-400 leading-snug">{m.relative_valuation_line}</p>
       )}
-      {m.method_used && <p className="text-[10px] text-slate-500">Method: {m.method_used}</p>}
+      {m.method_used && <p className="text-xs text-slate-400">Method: {m.method_used}</p>}
       {m.methodology_summary && (
-        <p className="text-[10px] text-slate-500 leading-snug">{m.methodology_summary}</p>
+        <p className="text-sm text-slate-300 leading-relaxed">{m.methodology_summary}</p>
       )}
     </div>
   );
@@ -192,7 +192,7 @@ export function ValuationDeck({
             Full size ≤ {fmtUsd(deck.house.min_price_to_buy)} · see Owner for tiers
           </p>
         )}
-        {deck.disclaimer && <p className="text-[10px] text-slate-500">{deck.disclaimer}</p>}
+        {deck.disclaimer && <p className="text-xs text-slate-500 leading-snug">{deck.disclaimer}</p>}
       </div>
     );
   }
@@ -203,7 +203,7 @@ export function ValuationDeck({
         <h4 className="text-xs font-semibold uppercase tracking-wide text-sky-300/90">
           Valuation deck
         </h4>
-        <span className="text-[10px] text-slate-500">Street · Model · House</span>
+        <span className="text-xs text-slate-400">Street · Model · House</span>
       </div>
       <div
         className={clsx(
@@ -212,14 +212,14 @@ export function ValuationDeck({
         )}
       >
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-violet-300/80 font-semibold mb-2">
+          <p className="text-xs uppercase tracking-wide text-violet-300/90 font-semibold mb-2">
             Street (ANR / EE)
           </p>
           <StreetColumn deck={deck} />
         </div>
         {showModelFull && (
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-emerald-300/80 font-semibold mb-2">
+            <p className="text-xs uppercase tracking-wide text-emerald-300/90 font-semibold mb-2">
               Model (RV / FA)
             </p>
             <ModelColumn deck={deck} />
@@ -227,7 +227,7 @@ export function ValuationDeck({
         )}
         {showHouse && (
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-emerald-300/80 font-semibold mb-2">
+            <p className="text-xs uppercase tracking-wide text-emerald-300/90 font-semibold mb-2">
               House (what we do)
             </p>
             <HouseColumn deck={deck} currentPrice={currentPrice} />
@@ -244,7 +244,7 @@ export function ValuationDeck({
         </div>
       )}
       {deck.disclaimer && (
-        <p className="px-4 pb-3 text-[10px] text-slate-500 border-t border-slate-700/50 pt-2">
+        <p className="px-4 pb-3 text-xs text-slate-500 leading-snug border-t border-slate-700/50 pt-2">
           {deck.disclaimer}
         </p>
       )}

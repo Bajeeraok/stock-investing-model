@@ -109,7 +109,7 @@ export function FairValueDebugPanel({
           <ChevronRight className="h-3.5 w-3.5 text-slate-500 shrink-0" />
         )}
         <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-300">
           FV inputs (debug)
         </span>
         {meta.fv_suppressed && (
@@ -125,7 +125,7 @@ export function FairValueDebugPanel({
             <p className="text-[11px] text-amber-200/80 leading-snug">{meta.fv_suppressed_reason}</p>
           )}
 
-          <div className="text-[11px] space-y-0.5">
+          <div className="text-xs space-y-0.5">
             <Row label="Spot" value={fmtUsd(currentPrice)} />
             <Row
               label="Display FV"
@@ -148,8 +148,8 @@ export function FairValueDebugPanel({
             )}
           </div>
 
-          <div className="border-t border-slate-700/40 pt-2 text-[11px] space-y-0.5">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">EPS / multiples</p>
+          <div className="border-t border-slate-700/40 pt-2 text-xs space-y-0.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">EPS / multiples</p>
             <Row label="TTM EPS" value={meta.ttm_eps != null ? fmtNum(meta.ttm_eps, 4) : "—"} />
             <Row label="Forward EPS (NTM)" value={meta.forward_eps != null ? fmtNum(meta.forward_eps, 4) : "—"} />
             <Row label="TTM P/E" value={fmtNum(ttmPeUsed ?? null, 1)} />
@@ -164,8 +164,8 @@ export function FairValueDebugPanel({
           </div>
 
           {(meta.growth_used_pct != null || meta.method_used) && (
-            <div className="border-t border-slate-700/40 pt-2 text-[11px] space-y-0.5">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Method</p>
+            <div className="border-t border-slate-700/40 pt-2 text-xs space-y-0.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">Method</p>
               {meta.fv_route_method_label && (
                 <Row label="Route" value={meta.fv_route_method_label} mono={false} />
               )}
@@ -193,7 +193,7 @@ export function FairValueDebugPanel({
           )}
 
           {external?.yahoo_12m_mean_usd != null && external?.fmp_consensus_median_usd != null && (
-            <div className="border-t border-slate-700/40 pt-2 text-[10px] text-slate-500 leading-snug">
+            <div className="border-t border-slate-700/40 pt-2 text-xs text-slate-400 leading-relaxed">
               Yahoo ${external.yahoo_12m_mean_usd.toFixed(2)} · FMP median $
               {external.fmp_consensus_median_usd.toFixed(2)}
               {external.fmp_median_is_range_midpoint ? " (range midpoint)" : ""}
