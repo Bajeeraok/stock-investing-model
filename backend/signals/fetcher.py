@@ -32,8 +32,241 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# yfinance logs HTTP 401 at ERROR before retry succeeds — keep our logs readable.
-logging.getLogger("yfinance").setLevel(logging.WARNING)
+_YFINANCE_NOISE_CONFIGURED = False
+
+
+class _YahooFinanceNoiseFilter(logging.Filter):
+    """Drop per-ticker Yahoo 401 / rate-limit ERROR lines (we log summaries instead)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.ERROR:
+            return True
+        msg = record.getMessage()
+        if "Invalid Crumb" in msg or ("HTTP Error 401" in msg and "Unauthorized" in msg):
+            return False
+        if "Too Many Requests" in msg or "Rate limited" in msg or "YFRateLimitError" in msg:
+            return False
+        if msg.strip().startswith("Failed download:"):
+            return False
+        return True
+
+
+def configure_yfinance_log_noise() -> None:
+    """Call once at app startup — yfinance emits ERROR per failed crumb before retry."""
+    global _YFINANCE_NOISE_CONFIGURED
+    if _YFINANCE_NOISE_CONFIGURED:
+        return
+    _YFINANCE_NOISE_CONFIGURED = True
+    flt = _YahooFinanceNoiseFilter()
+    for name in (
+        "yfinance",
+        "yfinance.base",
+        "yfinance.data",
+        "yfinance.utils",
+        "yfinance.scrapers",
+        "urllib3.connectionpool",
+    ):
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.WARNING)
+        lg.addFilter(flt)
+    for handler in logging.root.handlers:
+        handler.addFilter(flt)
+
+
+configure_yfinance_log_noise()
+
+
+# ---------------------------------------------------------------------------
+# yfinance .info — rate-limited, cached, crumb-retry (FMP preferred via build_fundamentals_info)
+# ---------------------------------------------------------------------------
+
+_info_lock = threading.Lock()
+_info_last_call = 0.0
+_info_store: dict[str, _CacheEntry] = {}
+
+
+def _info_cache_ttl() -> int:
+    raw = os.environ.get("YFINANCE_INFO_CACHE_TTL_SECONDS", "").strip()
+    if raw:
+        try:
+            return max(300, min(86400, int(raw)))
+        except ValueError:
+            pass
+    return 3600
+
+
+def _info_min_interval() -> float:
+    raw = os.environ.get("YFINANCE_INFO_MIN_INTERVAL_SEC", "").strip()
+    if raw:
+        try:
+            return max(0.0, min(5.0, float(raw)))
+        except ValueError:
+            pass
+    return 0.2
+
+
+def _info_cache_get(key: str) -> tuple[bool, dict]:
+    with _info_lock:
+        entry = _info_store.get(key)
+    if entry is None:
+        return False, {}
+    if time.monotonic() - entry.ts > _info_cache_ttl():
+        return False, {}
+    val = entry.value
+    return True, val if isinstance(val, dict) else {}
+
+
+def _info_cache_set(key: str, value: dict) -> None:
+    with _info_lock:
+        _info_store[key] = _CacheEntry(value=value, ts=time.monotonic())
+
+
+def _is_rate_limit_error(exc: BaseException | str) -> bool:
+    s = str(exc)
+    return "Too Many Requests" in s or "Rate limited" in s or "YFRateLimitError" in s
+
+
+def fetch_yfinance_info(symbol: str) -> dict:
+    """
+    Cached yfinance Ticker.info with crumb refresh + gentle rate limit.
+    Prefer build_fundamentals_info() when FMP key is available.
+    """
+    if yf is None:
+        return {}
+    sym = (symbol or "").upper().strip()
+    if not sym:
+        return {}
+    key = f"info:{sym}"
+    hit, cached = _info_cache_get(key)
+    if hit and cached:
+        return dict(cached)
+
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            with _info_lock:
+                global _info_last_call
+                wait = _info_min_interval() - (time.monotonic() - _info_last_call)
+                if wait > 0:
+                    time.sleep(wait)
+                _info_last_call = time.monotonic()
+            if attempt > 0:
+                _clear_yfinance_crumb()
+            raw = getattr(yf.Ticker(sym), "info", None) or {}
+            info = dict(raw) if isinstance(raw, dict) else {}
+            _info_cache_set(key, info)
+            return info
+        except Exception as e:
+            last_err = e
+            if _is_rate_limit_error(e):
+                logger.warning("[yfinance] rate limited on info for %s — using cache/FMP fallback", sym)
+                break
+            if attempt == 0 and _is_yahoo_auth_error(e):
+                logger.info("[yfinance] auth error on info %s — refreshing crumb and retrying once", sym)
+                continue
+            logger.debug("[yfinance] info failed %s: %s", sym, e)
+            break
+    if last_err and _is_yahoo_auth_error(last_err):
+        logger.warning("[yfinance] info still unauthorized for %s after crumb refresh", sym)
+    return {}
+
+
+def build_fundamentals_info(
+    config: dict | None,
+    ticker: str,
+    *,
+    current_price: float | None = None,
+    allow_yahoo: bool = True,
+) -> tuple[dict, dict | None]:
+    """
+    yfinance-shaped fundamentals dict. Uses FMP profile + key metrics + analyst estimates
+    when keyed; Yahoo .info only fills remaining gaps (reduces Invalid Crumb / 429 spam).
+    Returns (info_dict, fmp_key_metrics_or_none).
+    """
+    info: dict = {}
+    fmp_km: dict | None = None
+    cfg = config or {}
+    try:
+        from signals.fmp_client import fetch_analyst_estimates, fetch_key_metrics_ttm, fetch_profile
+
+        profile, _ = fetch_profile(cfg, ticker)
+        if isinstance(profile, dict):
+            for yk, fk in (
+                ("sector", "sector"),
+                ("industry", "industry"),
+                ("beta", "beta"),
+                ("marketCap", "mktCap"),
+                ("sharesOutstanding", "sharesOutstanding"),
+                ("floatShares", "floatShares"),
+            ):
+                v = profile.get(fk)
+                if v is not None:
+                    info[yk] = v
+
+        km, _ = fetch_key_metrics_ttm(cfg, ticker)
+        if isinstance(km, dict):
+            fmp_km = km
+            ttm_pe = km.get("peRatioTTM") or km.get("peRatio") or km.get("priceEarningsRatio")
+            fwd_pe = km.get("forwardPE")
+            if ttm_pe is not None:
+                info["trailingPE"] = ttm_pe
+            if fwd_pe is not None:
+                info["forwardPE"] = fwd_pe
+            for yk, fk in (
+                ("profitMargins", "netProfitMarginTTM"),
+                ("debtToEquity", "debtToEquityTTM"),
+            ):
+                v = km.get(fk)
+                if v is not None:
+                    info[yk] = v
+            fcf_ps = km.get("freeCashFlowPerShareTTM")
+            shares = profile.get("sharesOutstanding") if isinstance(profile, dict) else None
+            if fcf_ps is not None and shares:
+                try:
+                    info["freeCashflow"] = float(fcf_ps) * float(shares)
+                except (TypeError, ValueError):
+                    pass
+            eps = km.get("netIncomePerShareTTM") or km.get("epsTTM")
+            if eps is not None:
+                info["trailingEps"] = eps
+            elif current_price and ttm_pe:
+                try:
+                    pe_f = float(ttm_pe)
+                    if pe_f > 0:
+                        info["trailingEps"] = current_price / pe_f
+                except (TypeError, ValueError):
+                    pass
+            rev_g = km.get("revenueGrowthTTM") or km.get("threeYRevenueGrowthPerShareTTM")
+            if rev_g is not None:
+                info["revenueGrowth"] = rev_g
+
+        ae, _ = fetch_analyst_estimates(cfg, ticker)
+        if isinstance(ae, dict) and ae.get("eps_avg"):
+            info["forwardEps"] = ae["eps_avg"]
+        elif current_price and info.get("forwardPE"):
+            try:
+                fpe = float(info["forwardPE"])
+                if fpe > 0:
+                    info["forwardEps"] = current_price / fpe
+            except (TypeError, ValueError):
+                pass
+    except Exception as e:
+        logger.debug("[fundamentals] FMP build failed %s: %s", ticker, e)
+
+    if allow_yahoo:
+        need_yahoo = (
+            info.get("trailingPE") is None
+            or info.get("forwardPE") is None
+            or info.get("trailingEps") is None
+            or info.get("profitMargins") is None
+        )
+        if need_yahoo:
+            yinfo = fetch_yfinance_info(ticker)
+            for k, v in yinfo.items():
+                if v is not None and info.get(k) in (None, 0, ""):
+                    info[k] = v
+
+    return info, fmp_km
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +496,9 @@ def _download_with_crumb_retry(tickers, **kwargs) -> "pd.DataFrame | None":
             return result
         except Exception as e:
             last_err = e
+            if _is_rate_limit_error(e):
+                logger.warning("[yfinance] rate limited on download — skipping batch")
+                return None
             if attempt == 0 and _is_yahoo_auth_error(e):
                 logger.info("[yfinance] auth error on download — refreshing crumb and retrying once")
                 continue
@@ -288,6 +524,9 @@ def _history_with_crumb_retry(sym: str, **history_kw) -> "pd.DataFrame | None":
             return hist
         except Exception as e:
             last_err = e
+            if _is_rate_limit_error(e):
+                logger.warning("[yfinance] rate limited on history %s", sym)
+                return None
             if attempt == 0 and _is_yahoo_auth_error(e):
                 logger.info("[yfinance] auth error on history %s — refreshing crumb and retrying once", sym)
                 continue

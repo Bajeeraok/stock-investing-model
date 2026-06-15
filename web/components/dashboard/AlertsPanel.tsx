@@ -9,6 +9,13 @@ import {
   saveAlertTrackPrefs,
   type AlertTrackPrefs,
 } from "@/lib/alertTrackPrefs";
+import {
+  alertMatchesSideFilter,
+  alertSideFromAlert,
+  loadAlertSideFilter,
+  saveAlertSideFilter,
+  type AlertSideFilter,
+} from "@/lib/alertSideFilter";
 import { formatSnapshotAge, formatSnapshotEt } from "@/lib/dashboardCache";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -204,6 +211,7 @@ function AlertCard({
   const zoneSig = buyZone ? readEntryZoneSignals(a.signals) : null;
   const zoneOnly = Boolean(zoneSig?.zoneOnly);
   const gatesClear = Boolean(zoneSig?.gateCleared);
+  const side = alertSideFromAlert(a);
 
   return (
     <div className="rounded-lg border border-slate-700/60 bg-slate-950/30 px-3 py-2.5">
@@ -223,6 +231,15 @@ function AlertCard({
               <span className="font-mono text-slate-200 text-sm">MACRO</span>
             )}
             <span className="text-sm text-slate-200 font-semibold">{a.headline}</span>
+            {side === "buy" ? (
+              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-semibold uppercase tracking-wide">
+                Buy
+              </span>
+            ) : side === "sell" ? (
+              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-red-500/10 text-red-300 border-red-500/30 font-semibold uppercase tracking-wide">
+                Sell
+              </span>
+            ) : null}
             {zoneOnly && buyZone ? (
               <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-amber-500/15 text-amber-200 border-amber-500/35 font-semibold uppercase tracking-wide">
                 Zone only
@@ -378,6 +395,7 @@ export function AlertsPanel({
   const [lastAt, setLastAt] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("action");
   const [trackPrefs, setTrackPrefs] = useState<AlertTrackPrefs>(() => loadAlertTrackPrefs());
+  const [sideFilter, setSideFilter] = useState<AlertSideFilter>(() => loadAlertSideFilter());
   const onLoadedRef = useRef(onLoaded);
   onLoadedRef.current = onLoaded;
 
@@ -432,9 +450,17 @@ export function AlertsPanel({
   );
 
   const visibleAlerts = useMemo(
-    () => alerts.filter((a) => alertMatchesTrackPrefs(a, trackPrefs)),
-    [alerts, trackPrefs],
+    () =>
+      alerts.filter(
+        (a) => alertMatchesTrackPrefs(a, trackPrefs) && alertMatchesSideFilter(a, sideFilter),
+      ),
+    [alerts, trackPrefs, sideFilter],
   );
+
+  const applySideFilter = useCallback((filter: AlertSideFilter) => {
+    setSideFilter(filter);
+    saveAlertSideFilter(filter);
+  }, []);
 
   const updateTrackPref = useCallback((key: keyof AlertTrackPrefs, value: boolean) => {
     setTrackPrefs((prev) => {
@@ -471,6 +497,14 @@ export function AlertsPanel({
 
   const actionCount = grouped.actionRequired.length;
   const watchCount = grouped.medium.length + grouped.low.length;
+  const buyCount = useMemo(
+    () => alerts.filter((a) => alertMatchesTrackPrefs(a, trackPrefs) && alertSideFromAlert(a) === "buy").length,
+    [alerts, trackPrefs],
+  );
+  const sellCount = useMemo(
+    () => alerts.filter((a) => alertMatchesTrackPrefs(a, trackPrefs) && alertSideFromAlert(a) === "sell").length,
+    [alerts, trackPrefs],
+  );
 
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-900 p-4 space-y-3">
@@ -487,7 +521,9 @@ export function AlertsPanel({
             )}
             <span className="text-xs text-slate-600 tabular-nums">
               ({visibleAlerts.length} shown
-              {alerts.length > visibleAlerts.length ? ` · ${alerts.length - visibleAlerts.length} hidden by track filter` : ""}
+              {alerts.length > visibleAlerts.length
+                ? ` · ${alerts.length - visibleAlerts.length} hidden by filters`
+                : ""}
               )
             </span>
           </div>
@@ -537,6 +573,43 @@ export function AlertsPanel({
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-2 items-center">
+        <span className="text-[10px] uppercase tracking-wide text-slate-500 shrink-0">Side</span>
+        {(
+          [
+            ["all", "All", null] as const,
+            ["buy", "Buy / Add", buyCount] as const,
+            ["sell", "Sell / Trim", sellCount] as const,
+          ] as const
+        ).map(([id, label, count]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => applySideFilter(id)}
+            className={clsx(
+              "px-2.5 py-1 rounded border text-[11px] font-medium touch-manipulation",
+              sideFilter === id
+                ? id === "buy"
+                  ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
+                  : id === "sell"
+                    ? "border-red-500/40 bg-red-500/15 text-red-200"
+                    : "border-slate-500/50 bg-slate-700/40 text-slate-200"
+                : "border-slate-600 text-slate-500 hover:border-slate-500",
+            )}
+            title={
+              id === "buy"
+                ? "Entry zones, almost ready, breakouts, ML support"
+                : id === "sell"
+                  ? "Stops, targets, trim, risk-off"
+                  : "All alert sides"
+            }
+          >
+            {label}
+            {count != null && count > 0 ? ` (${count})` : ""}
+          </button>
+        ))}
+      </div>
+
       <div className="flex rounded border border-slate-600 overflow-hidden w-fit max-w-full">
         <button
           type="button"
@@ -571,7 +644,7 @@ export function AlertsPanel({
         <div className="text-sm text-slate-500 flex items-center gap-2">
           <Check className="h-4 w-4 text-emerald-400" />
           {alerts.length > 0
-            ? "No alerts match the selected tracks — toggle Accumulate or Tactical above."
+            ? "No alerts match the selected filters — adjust Tracks or Side above."
             : "No actionable alerts right now."}
         </div>
       )}

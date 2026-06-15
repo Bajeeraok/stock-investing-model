@@ -37,6 +37,13 @@ _handler.setFormatter(ESTFormatter("%(asctime)s [%(levelname)s] %(message)s", da
 logging.basicConfig(level=logging.INFO, handlers=[_handler])
 logger = logging.getLogger("api")
 
+try:
+    from signals.fetcher import configure_yfinance_log_noise
+
+    configure_yfinance_log_noise()
+except Exception:
+    pass
+
 logger.info("Backend starting: setting up paths...")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))

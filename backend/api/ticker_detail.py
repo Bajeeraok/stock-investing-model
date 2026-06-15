@@ -888,10 +888,15 @@ def _institutional_conviction_context(
 
         float_shares = None
         try:
-            import yfinance as yf
+            from signals.fetcher import build_fundamentals_info
 
-            info = yf.Ticker(ticker).info or {}
-            float_shares = _safe_float(info.get("floatShares") or info.get("sharesOutstanding"))
+            finfo, _ = build_fundamentals_info(config, ticker, allow_yahoo=False)
+            float_shares = _safe_float(finfo.get("floatShares") or finfo.get("sharesOutstanding"))
+            if float_shares is None:
+                from signals.fetcher import fetch_yfinance_info
+
+                yinfo = fetch_yfinance_info(ticker)
+                float_shares = _safe_float(yinfo.get("floatShares") or yinfo.get("sharesOutstanding"))
         except Exception:
             pass
 
@@ -1062,15 +1067,12 @@ def _build_investor_summary(
     sector_pe = 28.0
     sector_forward_pe = 25.0
     try:
-        import yfinance as yf
-        from signals.fmp_client import fetch_key_metrics_ttm
+        from signals.fetcher import build_fundamentals_info
 
-        t = yf.Ticker(ticker)
-        info = getattr(t, "info", None) or {}
+        info, fmp_km = build_fundamentals_info(config, ticker, current_price=current_price)
         # Resolve TTM PE with priority: FMP > computed (price/trailingEps) > yfinance trailingPE
         ttm_pe = None
         forward_pe = None
-        fmp_km, _ = fetch_key_metrics_ttm(config, ticker)
         if fmp_km and isinstance(fmp_km, dict):
             ttm_pe = _safe_float(
                 fmp_km.get("peRatioTTM") or fmp_km.get("peRatio") or fmp_km.get("trailingPE") or fmp_km.get("priceEarningsRatio")
