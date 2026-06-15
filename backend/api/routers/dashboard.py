@@ -492,6 +492,59 @@ def compute_opportunities_bundle() -> dict | None:
     }
 
 
+def _eod_snapshot_signal_rows(snap: dict | None) -> list[dict]:
+    """EOD JSON uses run_results; older paths may use signals/results."""
+    if not isinstance(snap, dict):
+        return []
+    for key in ("signals", "results", "run_results"):
+        rows = snap.get(key)
+        if isinstance(rows, list) and rows:
+            return [r for r in rows if isinstance(r, dict) and r.get("ticker")]
+    return []
+
+
+def _resolve_universe_cache_rows(config: dict, dashboard_results: list[dict]) -> tuple[list[dict], str]:
+    """
+    Universe panel (~100 tickers) should come from the EOD snapshot when available.
+    Dashboard refresh only runs get_dashboard_signal_universe() (~43 tickers).
+    """
+    best_rows: list[dict] = list(dashboard_results or [])
+    best_source = "dashboard"
+
+    try:
+        from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+
+        dates = list_eod_dates_redis()
+        if dates:
+            snap = get_eod_snapshot_redis(sorted(dates)[-1])
+            rows = _eod_snapshot_signal_rows(snap)
+            if len(rows) > len(best_rows):
+                best_rows = rows
+                best_source = "eod_redis"
+    except Exception as e:
+        logger.debug("[dashboard] universe_signals eod redis: %s", e)
+
+    try:
+        import json as _json
+        from pathlib import Path
+
+        eod_dir = Path(get_data_root()) / "eod"
+        if eod_dir.exists():
+            for path in sorted(eod_dir.glob("*.json"), reverse=True):
+                try:
+                    raw = _json.loads(path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                rows = _eod_snapshot_signal_rows(raw)
+                if len(rows) > len(best_rows):
+                    best_rows = rows
+                    best_source = f"eod_disk:{path.name}"
+    except Exception as e:
+        logger.debug("[dashboard] universe_signals eod disk: %s", e)
+
+    return best_rows, best_source
+
+
 def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
     """
     Lazy Analysis tab: insider, forward tracking, paper trading summary, model validation, etc.
@@ -848,6 +901,91 @@ def _ensure_analysis_background_compute() -> None:
         trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True))
 
 
+def _compute_analysis_slice(slice_key: str) -> Any | None:
+    """
+    Synchronous fast path for one Analysis panel (no multi-minute paper EOD backfill).
+    Used when Redis slice is missing but dashboard cache is warm.
+    """
+    if slice_key not in ("forward_tracking", "model_audit", "paper_trading"):
+        return None
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+    except Exception:
+        cached = None
+    if not cached or not isinstance(cached.get("signals"), list):
+        return None
+
+    config = _load_config()
+    data_root = get_data_root()
+    results = list(cached["signals"])
+    holdings = _holdings_from_config(config)
+    watchlist = config.get("watchlist", [])
+    portfolio_tickers = [h.get("ticker") if isinstance(h, dict) else h for h in holdings]
+
+    if slice_key == "model_audit":
+        try:
+            from signals.signal_audit_store import build_model_audit_payload
+
+            return build_model_audit_payload(config, data_root=data_root, resolve_outcomes=False)
+        except Exception as e:
+            logger.warning("[analysis-slice] model_audit sync failed: %s", e)
+            return {"enabled": False, "message": str(e)}
+
+    if slice_key == "forward_tracking":
+        try:
+            ft_tickers = get_forward_tracking_tickers(config, watchlist, portfolio_tickers)
+            ft_params = _forward_tracking_params(config)
+            return get_forward_tracking(
+                data_root=data_root,
+                tickers=ft_tickers,
+                horizons=[5, 20, 60],
+                max_pairs_per_horizon=ft_params["max_pairs_per_horizon"],
+                max_records=ft_params["max_records"],
+                config=config,
+            )
+        except Exception as e:
+            logger.warning("[analysis-slice] forward_tracking sync failed: %s", e)
+            return {
+                "records": [],
+                "summary_by_horizon": {},
+                "summary_by_signal": {},
+                "summary_by_gates": {},
+                "message": str(e),
+            }
+
+    if slice_key == "paper_trading":
+        try:
+            from config_loader import get_dashboard_signal_universe
+            from signals.paper_trade_logger import PaperTradeLogger
+
+            existing = dict(cached.get("paper_trading") or {}) if isinstance(cached.get("paper_trading"), dict) else {}
+            if existing.get("summary") is not None:
+                return existing
+            pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
+            min_done = int(pt_cfg.get("min_completed_for_summary", 60))
+            min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
+            bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
+            pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
+            pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
+            existing["sync_targets"] = pt.sync_targets_stops_from_results(results)
+            existing["mtm"] = pt.mark_to_market()
+            existing["fill"] = pt.fill_outcomes()
+            existing["summary"] = pt.get_performance_summary(
+                min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym
+            )
+            existing["recent"] = pt.enrich_trades_with_benchmark(pt.get_recent(limit=200), benchmark=bench_sym)
+            existing["equity_curve"] = pt.get_completed_equity_curve(max_points=400)
+            existing["data_root"] = str(data_root)
+            return existing
+        except Exception as e:
+            logger.warning("[analysis-slice] paper_trading sync failed: %s", e)
+            return {"message": str(e)}
+
+    return None
+
+
 def _analysis_warming_response(message: str | None = None) -> dict:
     from api.dashboard_shell import empty_analysis_bundle
 
@@ -861,14 +999,31 @@ def _analysis_warming_response(message: str | None = None) -> dict:
 
 
 def _analysis_slice_response(slice_key: str):
-    """Return one Analysis slice from Redis, or warming payload while compute runs."""
-    from signals.cache import get_analysis_bundle, get_analysis_slice, get_cached_dashboard, get_last_dashboard_snapshot
+    """Return one Analysis slice from Redis, or compute synchronously for core panels."""
+    from signals.cache import (
+        get_analysis_bundle,
+        get_analysis_slice,
+        get_cached_dashboard,
+        get_last_dashboard_snapshot,
+        set_analysis_slice,
+    )
 
     data = get_analysis_slice(slice_key)
     if data is None:
         bundle = get_analysis_bundle()
         if isinstance(bundle, dict):
             data = bundle.get(slice_key)
+
+    if data is None:
+        data = _compute_analysis_slice(slice_key)
+        if data is not None:
+            try:
+                dash = get_cached_dashboard() or get_last_dashboard_snapshot()
+                refresh_ts = dash.get("refresh_ts") if isinstance(dash, dict) else None
+                set_analysis_slice(slice_key, data, refresh_ts=refresh_ts)
+                logger.info("[analysis-slice] sync compute ok: %s", slice_key)
+            except Exception as e:
+                logger.debug("[analysis-slice] cache write failed %s: %s", slice_key, e)
 
     if data is not None:
         from signals.cache import _sanitize_for_json
@@ -1396,7 +1551,15 @@ def _compute_full_dashboard_sync() -> dict:
                     data = get_eod_snapshot_redis(date_str)
                     size_bytes = len(json.dumps(data, default=str)) if data else 0
                     run_date = data.get("run_date") or data.get("snapshot_date") if isinstance(data, dict) else None
-                    eod_snapshots_out.append({"date": date_str, "size_bytes": size_bytes, "run_date": run_date})
+                    tickers_count = len(data.get("run_results") or []) if isinstance(data, dict) else 0
+                    universe = data.get("universe") if isinstance(data, dict) else None
+                    eod_snapshots_out.append({
+                        "date": date_str,
+                        "size_bytes": size_bytes,
+                        "run_date": run_date,
+                        "tickers_count": tickers_count,
+                        "universe": universe,
+                    })
                 except Exception:
                     pass
             eod_dir = data_root / "eod"
@@ -1410,13 +1573,23 @@ def _compute_full_dashboard_sync() -> dict:
                             seen.add(stem)
                             size_bytes = p.stat().st_size
                             run_date = None
+                            tickers_count = 0
+                            universe = None
                             try:
                                 with open(p) as _f:
                                     data = json.load(_f)
                                 run_date = data.get("run_date") or data.get("snapshot_date")
+                                tickers_count = len(data.get("run_results") or [])
+                                universe = data.get("universe")
                             except Exception:
                                 pass
-                            eod_snapshots_out.append({"date": stem, "size_bytes": size_bytes, "run_date": run_date})
+                            eod_snapshots_out.append({
+                                "date": stem,
+                                "size_bytes": size_bytes,
+                                "run_date": run_date,
+                                "tickers_count": tickers_count,
+                                "universe": universe,
+                            })
                     except Exception:
                         pass
             eod_snapshots_out.sort(key=lambda x: x["date"], reverse=True)
@@ -2672,15 +2845,36 @@ def _compute_full_dashboard_sync() -> dict:
     # More reliable on memory-constrained Redis; survives TTL expiry of the main cache.
     try:
         from signals.cache import set_universe_signals, set_signals_panel
-        ok_uni = set_universe_signals(results, as_of=as_of_date)
+        from config_loader import get_eod_signal_universe
+
+        universe_rows, universe_source = _resolve_universe_cache_rows(config, results)
+        eod_uni_n = len(get_eod_signal_universe(config))
+        ok_uni = set_universe_signals(universe_rows, as_of=as_of_date)
         ok_sig = set_signals_panel(results, as_of=as_of_date)
         logger.info(
-            "[dashboard] panel caches: universe_signals=%s (%d rows), signals_panel=%s (%d rows)",
-            "ok" if ok_uni else "FAILED", len(results),
-            "ok" if ok_sig else "FAILED", len(results),
+            "[dashboard] panel caches: universe_signals=%s (%d rows, source=%s, eod_universe=%d), "
+            "signals_panel=%s (%d rows, source=dashboard)",
+            "ok" if ok_uni else "FAILED",
+            len(universe_rows),
+            universe_source,
+            eod_uni_n,
+            "ok" if ok_sig else "FAILED",
+            len(results),
         )
+        if universe_source == "dashboard" and len(universe_rows) < eod_uni_n:
+            logger.info(
+                "[dashboard] universe_signals is dashboard-only (%d/%d) — run EOD scheduler (8pm ET) "
+                "or POST /api/eod/run?force=true to populate full cohort",
+                len(universe_rows),
+                eod_uni_n,
+            )
     except Exception as e:
         logger.warning("[dashboard] panel cache error: %s", e)
+
+    try:
+        _ensure_analysis_background_compute()
+    except Exception as e:
+        logger.debug("[dashboard] analysis background trigger skipped: %s", e)
 
     logger.info("[dashboard] END loading dashboard - total %.0f ms", (time.perf_counter() - dashboard_start) * 1000)
     return out
@@ -3331,11 +3525,6 @@ async def get_ticker_intraday(
     from starlette.concurrency import run_in_threadpool
 
     def _fetch() -> dict:
-        try:
-            import yfinance as yf
-        except ImportError:
-            return {"error": "yfinance not installed", "bars": []}
-
         sym = (ticker or "").upper().strip()
         if not sym:
             return {"error": "ticker required", "bars": []}
@@ -3345,13 +3534,13 @@ async def get_ticker_intraday(
         resolved_interval = interval.strip() if interval.strip() else period_map.get(period, "1h")
 
         try:
+            from signals.fetcher import _download_with_crumb_retry
+
             t0_fetch = time.perf_counter()
-            df = yf.download(
+            df = _download_with_crumb_retry(
                 sym,
                 period=period,
                 interval=resolved_interval,
-                auto_adjust=True,
-                progress=False,
                 threads=False,
             )
             logger.info(
@@ -3857,7 +4046,21 @@ def run_eod_now(
         len(tickers),
         force,
     )
-    result = run_eod_snapshot_only(config, snapshot_date=date_str, tickers=tickers)
+    result = run_eod_snapshot_only(
+        config, snapshot_date=date_str, tickers=tickers, allow_non_trading_day=bool(force)
+    )
+    if result.get("skipped") and result.get("reason") == "non_trading_day":
+        return {
+            "ok": True,
+            "skipped": True,
+            "forced": bool(force),
+            "message": (
+                f"No EOD run for {date_str}: US market closed (weekend). "
+                "Pass force=true to snapshot anyway (stale Friday close)."
+            ),
+            "snapshot_date": date_str,
+            "dashboard_refresh": None,
+        }
     if result.get("error"):
         logger.warning("[eod/run] EOD snapshot failed: %s", result["error"])
         raise HTTPException(status_code=500, detail=result["error"])
@@ -4201,8 +4404,8 @@ async def get_eod_universe(date: str = Query("latest")):
         # Try disk snapshot first (Railway ephemeral disk may hold an empty stub file).
         if target_path is not None:
             raw = _json.loads(target_path.read_text(encoding="utf-8"))
-            rows = raw.get("signals") or raw.get("results") or []
-            as_of = raw.get("run_date") or target_path.stem
+            rows = _eod_snapshot_signal_rows(raw)
+            as_of = raw.get("run_date") or raw.get("snapshot_date") or target_path.stem
             if rows:
                 logger.info("[eod-universe] disk file loaded: %d rows, as_of=%s", len(rows), as_of)
                 return _shape_universe_rows(rows, as_of)
@@ -4221,10 +4424,13 @@ async def get_eod_universe(date: str = Query("latest")):
             if dates:
                 snap = get_eod_snapshot_redis(sorted(dates)[-1])
                 if snap:
-                    rows = snap.get("signals") or snap.get("results") or []
+                    rows = _eod_snapshot_signal_rows(snap)
                     if rows:
                         logger.info("[eod-universe] fallback-1 hit (%d rows)", len(rows))
-                        return _shape_universe_rows(rows, snap.get("run_date") or sorted(dates)[-1])
+                        return _shape_universe_rows(
+                            rows,
+                            snap.get("run_date") or snap.get("snapshot_date") or sorted(dates)[-1],
+                        )
                 logger.info("[eod-universe] fallback-1 snap empty for latest date")
         except Exception as e:
             logger.warning("[eod-universe] fallback-1 error: %s", e)

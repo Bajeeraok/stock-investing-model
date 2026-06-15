@@ -24,6 +24,8 @@ def _run_eod_job() -> None:
         result = run_eod_snapshot_only(config)
         if result.get("error"):
             logger.error("[eod-scheduler] %s", result["error"])
+        elif result.get("skipped") and result.get("reason") == "non_trading_day":
+            logger.info("[eod-scheduler] skipped — US market closed (weekend/holiday calendar)")
         else:
             logger.info(
                 "[eod-scheduler] ok date=%s path=%s tickers=%s",

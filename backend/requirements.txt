@@ -1,7 +1,7 @@
 # Stock Investing Model - dependencies
 # Python 3.10+ recommended
 
-yfinance>=0.2.36
+yfinance>=1.1.0
 pandas>=2.0.0
 numpy>=1.24.0
 pyyaml>=6.0

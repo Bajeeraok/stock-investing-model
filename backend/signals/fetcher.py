@@ -32,6 +32,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# yfinance logs HTTP 401 at ERROR before retry succeeds — keep our logs readable.
+logging.getLogger("yfinance").setLevel(logging.WARNING)
+
 
 # ---------------------------------------------------------------------------
 # In-process OHLCV cache — deduplicates repeated fetches within a single run
@@ -195,31 +198,104 @@ def _resolve_download_kwargs(period: str) -> dict:
     return {"period": p}
 
 
-def _download_with_crumb_retry(ticker: str, **kwargs) -> "pd.DataFrame | None":
+def _is_yahoo_auth_error(exc: BaseException | str) -> bool:
+    s = str(exc)
+    return (
+        "401" in s
+        or "Invalid Crumb" in s
+        or "Invalid Cookie" in s
+        or "Unauthorized" in s
+    )
+
+
+def _clear_yfinance_crumb() -> None:
+    """Force yfinance to fetch a fresh Yahoo cookie + crumb on the next request."""
+    if yf is None:
+        return
+    try:
+        from yfinance.data import YfData
+
+        inst = YfData()
+        inst._crumb = None
+        inst._cookie = None
+    except Exception:
+        pass
+    try:
+        import yfinance.base as _yfbase  # type: ignore
+
+        if hasattr(_yfbase, "_DFS"):
+            _yfbase._DFS.clear()
+    except Exception:
+        pass
+    try:
+        from yfinance import shared as _yfshared  # type: ignore
+
+        if hasattr(_yfshared, "_CACHE"):
+            _yfshared._CACHE.clear()
+    except Exception:
+        pass
+
+
+def _download_with_crumb_retry(tickers, **kwargs) -> "pd.DataFrame | None":
     """
     yfinance wrapper that retries once on 401 Invalid Crumb by clearing
     the session cache and forcing a fresh crumb fetch.
-    Yahoo Finance rotates crumbs ~every hour; a stale crumb causes 401s
+    Yahoo Finance rotates crumbs periodically; a stale crumb causes 401s
     that resolve automatically on the next request after a session reset.
     """
     if yf is None:
         return None
-    try:
-        return yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
-    except Exception as e:
-        if "401" in str(e) or "Invalid Crumb" in str(e) or "Unauthorized" in str(e):
-            try:
-                # Force yfinance to get a new session/crumb
-                import yfinance.base as _yfbase  # type: ignore
-                if hasattr(_yfbase, "_DFS"):
-                    _yfbase._DFS.clear()
-            except Exception:
-                pass
-            try:
-                return yf.download(ticker, progress=False, threads=False, auto_adjust=True, **kwargs)
-            except Exception:
-                return None
+    threads = kwargs.pop("threads", False)
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            if attempt > 0:
+                _clear_yfinance_crumb()
+            result = yf.download(
+                tickers,
+                progress=False,
+                threads=threads,
+                auto_adjust=True,
+                **kwargs,
+            )
+            if result is not None and not getattr(result, "empty", True):
+                return result
+            return result
+        except Exception as e:
+            last_err = e
+            if attempt == 0 and _is_yahoo_auth_error(e):
+                logger.info("[yfinance] auth error on download — refreshing crumb and retrying once")
+                continue
+            logger.debug("[yfinance] download failed: %s", e)
+            return None
+    if last_err and _is_yahoo_auth_error(last_err):
+        logger.warning("[yfinance] download still unauthorized after crumb refresh")
+    return None
+
+
+def _history_with_crumb_retry(sym: str, **history_kw) -> "pd.DataFrame | None":
+    """Ticker.history with one crumb-refresh retry on Yahoo 401."""
+    if yf is None:
         return None
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            if attempt > 0:
+                _clear_yfinance_crumb()
+            hist = yf.Ticker(sym).history(**history_kw)
+            if hist is not None and not hist.empty:
+                return hist
+            return hist
+        except Exception as e:
+            last_err = e
+            if attempt == 0 and _is_yahoo_auth_error(e):
+                logger.info("[yfinance] auth error on history %s — refreshing crumb and retrying once", sym)
+                continue
+            logger.debug("[yfinance] history failed %s: %s", sym, e)
+            return None
+    if last_err and _is_yahoo_auth_error(last_err):
+        logger.warning("[yfinance] history still unauthorized for %s after crumb refresh", sym)
+    return None
 
 
 def _min_bars_for_period(period: str) -> int:
@@ -248,7 +324,8 @@ def _fetch_index_etf_history_frame(sym: str, period: str) -> pd.DataFrame | None
         return None
     try:
         hkw = _history_kwargs_from_period(period)
-        hist = yf.Ticker(sym).history(
+        hist = _history_with_crumb_retry(
+            sym,
             auto_adjust=True,
             prepost=False,
             repair=True,
@@ -504,12 +581,10 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
     # --- All other tickers: single batch download ---
     if batch_syms:
         try:
-            data = yf.download(
+            data = _download_with_crumb_retry(
                 tickers=" ".join(batch_syms),
                 period="5d",
-                progress=False,
                 threads=True,
-                auto_adjust=True,
                 group_by="ticker",
             )
             if data is None or data.empty:
@@ -558,7 +633,7 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
                 if sym in out:
                     continue
                 try:
-                    data_s = yf.download(sym, period="5d", progress=False, threads=False, auto_adjust=True)
+                    data_s = _download_with_crumb_retry(sym, period="5d", threads=False)
                     if data_s is None or data_s.empty:
                         continue
                     for col in ("Close", "Adj Close"):

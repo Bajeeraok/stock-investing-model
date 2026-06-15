@@ -20,10 +20,10 @@ PREMARKET_VALUE = ["XLF", "XLE", "XLI"]
 
 def _fetch_prior_close_and_last(symbol: str) -> tuple[float | None, float | None]:
     """Returns (prior_close, last_price). Uses 5d to get prior close and latest."""
-    if not yf:
-        return None, None
     try:
-        data = yf.download(symbol, period="5d", progress=False, threads=False, auto_adjust=True)
+        from signals.fetcher import _download_with_crumb_retry
+
+        data = _download_with_crumb_retry(symbol, period="5d", threads=False)
         if data is None or data.empty or len(data) < 2:
             return None, None
         close_col = data.get("Close")

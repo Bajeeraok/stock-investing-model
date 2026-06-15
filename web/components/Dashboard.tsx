@@ -259,6 +259,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [modelAuditErr, setModelAuditErr] = useState<string | null>(null);
   const [paperTradingErr, setPaperTradingErr] = useState<string | null>(null);
   const [analysisRetryKey, setAnalysisRetryKey] = useState(0);
+  const [analysisWarmingMessage, setAnalysisWarmingMessage] = useState<string | null>(null);
   const [advancedMode, setAdvancedMode] = useState(false);
 
   useEffect(() => {
@@ -337,6 +338,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     setOppFetchErr(null);
     setAnalysisBundle(null);
     setAnalysisFetchErr(null);
+    setAnalysisWarmingMessage(null);
     setForwardTrackingErr(null);
     setModelAuditErr(null);
     setPaperTradingErr(null);
@@ -443,6 +445,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     let awaitingWarm = false;
     setAnalysisLoading(true);
     setAnalysisFetchErr(null);
+    setAnalysisWarmingMessage(null);
     const url = API_BASE ? `${API_BASE}/api/dashboard/analysis-bundle` : "/api/dashboard/analysis-bundle";
     fetch(url)
       .then((r) => {
@@ -458,18 +461,23 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       .then((j) => {
         if (cancelled || !j || typeof j !== "object") return;
         if (j.warming) {
-          // Backend is computing in background — poll until ready (avoids 502 from long sync compute).
           awaitingWarm = true;
-          retryTimer = setTimeout(() => setAnalysisRetryKey((k) => k + 1), 15_000);
+          setAnalysisWarmingMessage(
+            typeof j.message === "string"
+              ? j.message
+              : "Analysis sections are computing in the background (usually 1–3 min)…"
+          );
+          retryTimer = setTimeout(() => setAnalysisRetryKey((k) => k + 1), 5_000);
           return;
         }
+        setAnalysisWarmingMessage(null);
         setAnalysisBundle(j as Partial<DashboardData>);
       })
       .catch((e) => {
         if (!cancelled) setAnalysisFetchErr(e instanceof Error ? e.message : "Failed to load analysis");
       })
       .finally(() => {
-        if (!cancelled && !awaitingWarm) setAnalysisLoading(false);
+        if (!cancelled) setAnalysisLoading(false);
       });
     return () => {
       cancelled = true;
@@ -513,8 +521,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             if (cancelled) return;
             if (j.warming) {
               awaitingWarm = true;
+              setAnalysisWarmingMessage(
+                typeof j.message === "string"
+                  ? j.message
+                  : "Still computing analysis sections in the background…"
+              );
               return;
             }
+            setAnalysisWarmingMessage(null);
             if (j[key] != null) {
               setAnalysisBundle((prev) => ({ ...(prev ?? {}), [key]: j[key] }));
               setErr(null);
@@ -527,7 +541,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         })
       );
       if (!cancelled && awaitingWarm) {
-        retryTimer = setTimeout(() => setAnalysisRetryKey((k) => k + 1), 15_000);
+        retryTimer = setTimeout(() => setAnalysisRetryKey((k) => k + 1), 5_000);
       }
     })();
 
@@ -1656,6 +1670,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {/* Analysis tab */}
           {activeTab === "analysis" && (
             <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+              {analysisWarmingMessage && (
+                <div className="rounded-lg border border-slate-600 bg-slate-900/50 px-4 py-3 text-slate-400 text-sm animate-pulse">
+                  {analysisWarmingMessage}
+                </div>
+              )}
               {data.analysis_deferred === true && analysisLoading && (
                 <div className="rounded-lg border border-slate-700 bg-slate-900/50 px-4 py-3 text-slate-400 text-sm animate-pulse">
                   Loading analysis sections…

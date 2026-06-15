@@ -11,6 +11,8 @@ from typing import Any, Callable
 
 logger = logging.getLogger("api.analysis_bundle_job")
 
+_STALE_RUNNING_SEC = 600  # reset stuck "running" after 10 min
+
 _lock = threading.Lock()
 _state: dict[str, Any] = {
     "status": "idle",  # idle | running | done | error
@@ -20,17 +22,31 @@ _state: dict[str, Any] = {
 }
 
 
+def _reset_if_stale_running() -> None:
+    with _lock:
+        if _state.get("status") != "running":
+            return
+        started = _state.get("started_at")
+        if started is not None and (time.time() - float(started)) > _STALE_RUNNING_SEC:
+            logger.warning("[analysis-bundle-job] resetting stale running job (>%ds)", _STALE_RUNNING_SEC)
+            _state["status"] = "idle"
+            _state["started_at"] = None
+
+
 def get_analysis_job_status() -> dict[str, Any]:
+    _reset_if_stale_running()
     with _lock:
         return dict(_state)
 
 
 def is_analysis_running() -> bool:
+    _reset_if_stale_running()
     with _lock:
         return _state.get("status") == "running"
 
 
 def try_begin_analysis() -> bool:
+    _reset_if_stale_running()
     with _lock:
         if _state.get("status") == "running":
             return False
@@ -58,6 +74,7 @@ def trigger_background_analysis(compute_fn: Callable[[], dict | None]) -> bool:
         return False
 
     def _worker() -> None:
+        ok = False
         try:
             logger.info("[analysis-bundle-job] background compute START")
             bundle = compute_fn()
@@ -67,12 +84,14 @@ def trigger_background_analysis(compute_fn: Callable[[], dict | None]) -> bool:
 
                     dash = get_cached_dashboard()
                     refresh_ts = dash.get("refresh_ts") if isinstance(dash, dict) else None
-                    ok = set_analysis_bundle(bundle, refresh_ts=refresh_ts)
+                    ok = bool(set_analysis_bundle(bundle, refresh_ts=refresh_ts))
                     logger.info("[analysis-bundle-job] cache write: %s", "ok" if ok else "FAILED")
                 except Exception as cache_exc:
                     logger.warning("[analysis-bundle-job] cache write error: %s", cache_exc)
-            finish_analysis(success=True)
-            logger.info("[analysis-bundle-job] background compute DONE")
+            else:
+                logger.warning("[analysis-bundle-job] compute returned empty bundle")
+            finish_analysis(success=ok)
+            logger.info("[analysis-bundle-job] background compute DONE (success=%s)", ok)
         except Exception as exc:
             logger.exception("[analysis-bundle-job] failed: %s", exc)
             finish_analysis(success=False, error=str(exc))

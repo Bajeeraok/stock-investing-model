@@ -683,14 +683,19 @@ _ANALYSIS_SLICE_KEYS = (
 )
 
 
+def set_analysis_slice(key: str, data: Any, refresh_ts: str | None = None) -> bool:
+    """Write one Analysis section to Redis."""
+    payload = {"data": _sanitize_for_json(data), "refresh_ts": refresh_ts}
+    return set_cached(f"analysis:slice:{key}", payload, ANALYSIS_BUNDLE_TTL)
+
+
 def set_analysis_slices(bundle: dict, refresh_ts: str | None = None) -> bool:
     """Write each Analysis section to its own Redis key (avoids one giant payload)."""
     ok = True
     for key in _ANALYSIS_SLICE_KEYS:
         if key not in bundle:
             continue
-        payload = {"data": bundle[key], "refresh_ts": refresh_ts}
-        ok = set_cached(f"analysis:slice:{key}", _sanitize_for_json(payload), ANALYSIS_BUNDLE_TTL) and ok
+        ok = set_analysis_slice(key, bundle[key], refresh_ts=refresh_ts) and ok
     return ok
 
 
@@ -704,17 +709,28 @@ def get_analysis_slice(key: str, *, refresh_ts: str | None = None) -> Any | None
     return cached.get("data")
 
 
-def assemble_analysis_slices() -> dict | None:
-    """Merge all slice keys into one bundle dict, or None if any slice is missing."""
+_CORE_ANALYSIS_SLICES = ("forward_tracking", "model_audit", "paper_trading")
+
+
+def assemble_analysis_slices(*, require_all: bool = False) -> dict | None:
+    """Merge slice keys into one bundle dict. Core panels need only forward_tracking + model_audit + paper_trading."""
+    keys = _ANALYSIS_SLICE_KEYS if require_all else _CORE_ANALYSIS_SLICES
     out: dict[str, Any] = {"analysis_deferred": False}
     refresh_ts = None
-    for key in _ANALYSIS_SLICE_KEYS:
+    for key in keys:
         cached = get_cached(f"analysis:slice:{key}")
         if not cached or not isinstance(cached, dict) or "data" not in cached:
             return None
         out[key] = cached["data"]
         if cached.get("refresh_ts"):
             refresh_ts = cached["refresh_ts"]
+    if require_all:
+        for key in _ANALYSIS_SLICE_KEYS:
+            if key in out:
+                continue
+            cached = get_cached(f"analysis:slice:{key}")
+            if cached and isinstance(cached, dict) and "data" in cached:
+                out[key] = cached["data"]
     if refresh_ts:
         out["refresh_ts"] = refresh_ts
     return out

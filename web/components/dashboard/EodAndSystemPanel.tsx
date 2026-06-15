@@ -14,6 +14,8 @@ export interface EodSnapshotItem {
   date: string;
   size_bytes: number;
   run_date?: string | null;
+  tickers_count?: number;
+  universe?: string | null;
 }
 
 export interface RedisStatus {
@@ -154,15 +156,25 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefre
           <p className="text-sm text-slate-500">No EOD snapshots yet. Run EOD or upload below.</p>
         ) : (
           <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
-            {eodSnapshots.map((s) => (
+            {eodSnapshots.map((s) => {
+              const thin = (s.tickers_count ?? 0) > 0 && (s.tickers_count ?? 0) < 75;
+              return (
               <li key={s.date} className="flex items-center justify-between gap-2 py-0.5 text-slate-300">
-                <span className="font-mono">{s.date}.json</span>
+                <span className="font-mono flex items-center gap-2">
+                  {s.date}.json
+                  {(s.tickers_count ?? 0) > 0 && (
+                    <span className={`text-xs font-sans ${thin ? "text-amber-400" : "text-slate-500"}`}>
+                      {s.tickers_count} tickers{thin ? " (dashboard-only)" : ""}
+                    </span>
+                  )}
+                </span>
                 <span className="text-slate-500 text-xs">
                   {formatBytes(s.size_bytes)}
                   {s.run_date ? ` · ${formatRunDateEt(s.run_date)}` : ""}
                 </span>
               </li>
-            ))}
+            );
+            })}
           </ul>
         )}
       </div>

@@ -29,6 +29,18 @@ def _today_est() -> str:
     """Current date in Eastern (EST/EDT) as YYYY-MM-DD for EOD snapshot filename and 'today' check."""
     return datetime.now(EST).strftime("%Y-%m-%d")
 
+
+def is_us_equity_session_day(date_str: str | None = None) -> bool:
+    """True for Mon–Fri Eastern calendar days (exchange holidays not excluded)."""
+    if date_str:
+        try:
+            d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return False
+    else:
+        d = datetime.now(EST).date()
+    return d.weekday() < 5
+
 import yaml
 from config_loader import get_data_root, get_signal_universe, load_config
 from alerts.notifier import send_retail_digest
@@ -701,8 +713,17 @@ def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
     """
     Idempotent: archive today's last_run.json into data/eod/ + Redis when missing.
     Keeps forward tracking and paper-trade outcome chains advancing after dashboard Refresh.
+    Skips weekends and dashboard-only universes (~43 tickers) so thin refreshes do not
+    masquerade as full 8pm EOD cohort snapshots (~100 tickers).
     """
     date_str = snapshot_date or _today_est()
+    if not is_us_equity_session_day(date_str):
+        return {
+            "ok": True,
+            "skipped": True,
+            "snapshot_date": date_str,
+            "reason": "non_trading_day",
+        }
     eod_path = get_data_root() / "eod" / f"{date_str}.json"
     try:
         from signals.cache import get_eod_snapshot_redis
@@ -720,7 +741,24 @@ def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
     run_results = payload.get("run_results") or []
     if not run_results:
         return {"ok": False, "skipped": True, "snapshot_date": date_str, "reason": "empty_run_results"}
-    path = save_eod_snapshot(run_results, date_str=date_str)
+    try:
+        from config_loader import get_eod_signal_universe, load_config
+
+        config = load_config()
+        eod_n = len(get_eod_signal_universe(config))
+        min_full = max(50, int(eod_n * 0.75))
+        if len(run_results) < min_full:
+            return {
+                "ok": True,
+                "skipped": True,
+                "snapshot_date": date_str,
+                "reason": "dashboard_only_universe",
+                "tickers_count": len(run_results),
+                "expected_min": min_full,
+            }
+    except Exception:
+        pass
+    path = save_eod_snapshot(run_results, date_str=date_str, universe="dashboard_auto")
     return {
         "ok": True,
         "skipped": False,
@@ -735,6 +773,7 @@ def save_eod_snapshot(
     date_str: str | None = None,
     next_day_outlook: list[dict] | None = None,
     typical_move: list[dict] | None = None,
+    universe: str | None = None,
 ) -> Path | None:
     """Save daily EOD snapshot to data/eod/YYYY-MM-DD.json for historical tracking.
     Date is in Eastern (EST/EDT) so post-close US runs use the market date.
@@ -746,6 +785,9 @@ def save_eod_snapshot(
     path = eod_dir / f"{date_str}.json"
     payload = _eod_payload(results)
     payload["snapshot_date"] = date_str
+    payload["tickers_count"] = len(payload.get("run_results") or [])
+    if universe:
+        payload["universe"] = universe
     if next_day_outlook is not None:
         payload["next_day_outlook"] = next_day_outlook
     if typical_move is not None:
@@ -821,6 +863,7 @@ def run_eod_snapshot_only(
     config: dict | None = None,
     snapshot_date: str | None = None,
     tickers: list[str] | None = None,
+    allow_non_trading_day: bool = False,
 ) -> dict:
     """
     Run signals and save EOD snapshot only (no console report, no alerts).
@@ -831,15 +874,22 @@ def run_eod_snapshot_only(
     """
     if config is None:
         config = load_config()
+    date_str = snapshot_date or _today_est()
     result = {
         "snapshot_path": None,
-        "snapshot_date": None,
+        "snapshot_date": date_str,
         "tickers_count": 0,
         "pruned": 0,
         "error": None,
+        "skipped": False,
+        "reason": None,
         "universe": None,
         "universe_count": 0,
     }
+    if not allow_non_trading_day and not is_us_equity_session_day(date_str):
+        result["skipped"] = True
+        result["reason"] = "non_trading_day"
+        return result
     try:
         results = run_signals(config, tickers=tickers)
         if tickers is not None:
@@ -867,12 +917,12 @@ def run_eod_snapshot_only(
             typical_move_eod = typical_move_for_symbols(["SPY", "QQQ"])
         except Exception:
             pass
-        date_str = snapshot_date or _today_est()
         snapshot_path = save_eod_snapshot(
             results,
             date_str=date_str,
             next_day_outlook=next_day_outlook_eod,
             typical_move=typical_move_eod,
+            universe=result.get("universe"),
         )
         try:
             from scanner.horizon_levels import sync_horizon_levels_from_signal_results
