@@ -1070,7 +1070,12 @@ def _audit_outcomes_note(
     return " · ".join(parts) + "."
 
 
-def build_model_audit_payload(config: dict, data_root: Path | None = None) -> dict[str, Any]:
+def build_model_audit_payload(
+    config: dict,
+    data_root: Path | None = None,
+    *,
+    resolve_outcomes: bool | None = None,
+) -> dict[str, Any]:
     """Analysis-tab payload for the fixed cohort pilot (signal_audit.db)."""
     audit_cfg = config.get("signal_audit") or {}
     if not audit_cfg.get("enabled"):
@@ -1125,7 +1130,7 @@ def build_model_audit_payload(config: dict, data_root: Path | None = None) -> di
     except Exception:
         pass
 
-    if audit_cfg.get("resolve_outcomes_on_read", True):
+    if resolve_outcomes if resolve_outcomes is not None else audit_cfg.get("resolve_outcomes_on_read", True):
         try:
             from signals.signal_audit_outcomes import resolve_signal_audit_outcomes
 

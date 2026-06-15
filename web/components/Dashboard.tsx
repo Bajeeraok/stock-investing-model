@@ -255,6 +255,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [analysisBundle, setAnalysisBundle] = useState<Partial<DashboardData> | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisFetchErr, setAnalysisFetchErr] = useState<string | null>(null);
+  const [forwardTrackingErr, setForwardTrackingErr] = useState<string | null>(null);
+  const [modelAuditErr, setModelAuditErr] = useState<string | null>(null);
+  const [paperTradingErr, setPaperTradingErr] = useState<string | null>(null);
   const [analysisRetryKey, setAnalysisRetryKey] = useState(0);
   const [advancedMode, setAdvancedMode] = useState(false);
 
@@ -334,6 +337,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     setOppFetchErr(null);
     setAnalysisBundle(null);
     setAnalysisFetchErr(null);
+    setForwardTrackingErr(null);
+    setModelAuditErr(null);
+    setPaperTradingErr(null);
   }, [refreshCacheKey, data.signals_deferred, data.opportunities_deferred, data.analysis_deferred]);
 
   useEffect(() => {
@@ -470,6 +476,66 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [data.warming, data.analysis_deferred, refreshCacheKey, activeTab, analysisBundle, analysisRetryKey, analysisInShell]);
+
+  // Heavy Analysis panels — separate lightweight endpoints (avoid monolithic bundle 502).
+  useEffect(() => {
+    if (data.warming) return;
+    if (activeTab !== "analysis") return;
+
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let awaitingWarm = false;
+
+    const slices: Array<{
+      path: string;
+      key: keyof DashboardData;
+      setErr: (msg: string | null) => void;
+    }> = [
+      { path: "analysis/forward-tracking", key: "forward_tracking", setErr: setForwardTrackingErr },
+      { path: "analysis/model-audit", key: "model_audit", setErr: setModelAuditErr },
+      { path: "analysis/paper-trading", key: "paper_trading", setErr: setPaperTradingErr },
+    ];
+
+    void (async () => {
+      await Promise.all(
+        slices.map(async ({ path, key, setErr }) => {
+          try {
+            const url = API_BASE ? `${API_BASE}/api/dashboard/${path}` : `/api/dashboard/${path}`;
+            const r = await fetch(url);
+            if (!r.ok) {
+              throw new Error(
+                r.status === 503
+                  ? "Analysis data unavailable — refresh the dashboard, then open Analysis again."
+                  : `HTTP ${r.status}`
+              );
+            }
+            const j = (await r.json()) as Record<string, unknown>;
+            if (cancelled) return;
+            if (j.warming) {
+              awaitingWarm = true;
+              return;
+            }
+            if (j[key] != null) {
+              setAnalysisBundle((prev) => ({ ...(prev ?? {}), [key]: j[key] }));
+              setErr(null);
+            }
+          } catch (e) {
+            if (!cancelled) {
+              setErr(e instanceof Error ? e.message : "Failed to load section");
+            }
+          }
+        })
+      );
+      if (!cancelled && awaitingWarm) {
+        retryTimer = setTimeout(() => setAnalysisRetryKey((k) => k + 1), 15_000);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [data.warming, refreshCacheKey, activeTab, analysisRetryKey]);
 
   const analysisNeedsFetch =
     analysisBundle === null && !analysisInShell && !analysisFetchErr;
@@ -1670,19 +1736,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 }
                 defaultOpen
               >
-                {analysisSectionLoading ? (
-                  <AnalysisSectionEmpty loading message="" />
-                ) : analysisFetchErr ? (
+                {modelAudit == null && !modelAuditErr ? (
+                  <AnalysisSectionEmpty loading message="Loading 100-ticker audit (background compute may take 1–3 min)…" />
+                ) : modelAuditErr ? (
                   <AnalysisSectionEmpty
                     title="Could not load audit data"
-                    message={analysisFetchErr}
+                    message={modelAuditErr}
                     hints={[...ANALYSIS_LOAD_HINTS.bundle, ...ANALYSIS_LOAD_HINTS.audit100]}
-                  />
-                ) : analysisBundlePending ? (
-                  <AnalysisSectionEmpty
-                    title="Waiting for analysis bundle"
-                    message="Open Overview or click Refresh once, then return here."
-                    hints={ANALYSIS_LOAD_HINTS.bundle}
                   />
                 ) : (
                   <ModelAuditPanel audit={modelAudit ?? null} />
@@ -1701,19 +1761,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 }
                 defaultOpen
               >
-                {analysisSectionLoading ? (
-                  <AnalysisSectionEmpty loading message="" />
-                ) : analysisFetchErr ? (
+                {forwardTracking == null && !forwardTrackingErr ? (
+                  <AnalysisSectionEmpty loading message="Loading forward tracking…" />
+                ) : forwardTrackingErr ? (
                   <AnalysisSectionEmpty
                     title="Could not load forward tracking"
-                    message={analysisFetchErr}
+                    message={forwardTrackingErr}
                     hints={[...ANALYSIS_LOAD_HINTS.bundle, ...ANALYSIS_LOAD_HINTS.forward]}
-                  />
-                ) : analysisBundlePending ? (
-                  <AnalysisSectionEmpty
-                    title="Waiting for analysis bundle"
-                    message="Forward tracking loads with the rest of the Analysis tab."
-                    hints={ANALYSIS_LOAD_HINTS.bundle}
                   />
                 ) : (
                   <ForwardTracking
@@ -1758,19 +1812,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 }
                 defaultOpen={false}
               >
-                {analysisSectionLoading ? (
-                  <AnalysisSectionEmpty loading message="" />
-                ) : analysisFetchErr ? (
+                {paperTrading == null && !paperTradingErr ? (
+                  <AnalysisSectionEmpty loading message="Loading paper trading stats…" />
+                ) : paperTradingErr ? (
                   <AnalysisSectionEmpty
                     title="Could not load paper trading"
-                    message={analysisFetchErr}
+                    message={paperTradingErr}
                     hints={[...ANALYSIS_LOAD_HINTS.bundle, ...ANALYSIS_LOAD_HINTS.paper]}
-                  />
-                ) : analysisBundlePending ? (
-                  <AnalysisSectionEmpty
-                    title="Waiting for analysis bundle"
-                    message="Paper trading stats load with the Analysis bundle (after dashboard Refresh)."
-                    hints={ANALYSIS_LOAD_HINTS.bundle}
                   />
                 ) : (
                   <>

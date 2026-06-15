@@ -502,6 +502,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
     """
     try:
         from signals.cache import (
+            assemble_analysis_slices,
             get_analysis_bundle,
             get_cached_dashboard,
             get_last_dashboard_snapshot,
@@ -510,6 +511,17 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
         )
         from api.dashboard_shell import build_analysis_bundle, empty_analysis_bundle
 
+        # Fast path — dedicated Redis keys (never deserialize the full dashboard blob).
+        assembled = assemble_analysis_slices()
+        if assembled:
+            logger.info("[analysis-bundle] slice cache hit (assembled)")
+            return assembled
+
+        dedicated = get_analysis_bundle()
+        if dedicated:
+            logger.info("[analysis-bundle] dedicated cache hit")
+            return dedicated
+
         cached = get_cached_dashboard() or get_last_dashboard_snapshot()
         if not cached or not isinstance(cached.get("signals"), list):
             return None
@@ -517,7 +529,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
         refresh_ts = cached.get("refresh_ts") if isinstance(cached, dict) else None
         dedicated = get_analysis_bundle(refresh_ts=refresh_ts)
         if dedicated:
-            logger.info("[analysis-bundle] dedicated cache hit")
+            logger.info("[analysis-bundle] dedicated cache hit (refresh_ts match)")
             return dedicated
 
         if cached.get("analysis_deferred") is False:
@@ -700,7 +712,8 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
     def _task_model_audit():
         try:
             from signals.signal_audit_store import build_model_audit_payload
-            return ("model_audit", build_model_audit_payload(config, data_root=data_root))
+            # Outcome resolution scans EOD history — defer to EOD cron; too slow for HTTP/background bundle.
+            return ("model_audit", build_model_audit_payload(config, data_root=data_root, resolve_outcomes=False))
         except Exception as e:
             logger.debug("analysis-bundle model_audit: %s", e)
             return ("model_audit", {"enabled": False, "message": str(e)})
@@ -792,6 +805,91 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
     except Exception as e:
         logger.debug("analysis-bundle dedicated cache set failed: %s", e)
     return bundle if bundle else empty_analysis_bundle()
+
+
+def _slim_analysis_for_http(bundle: dict) -> dict:
+    """Cap large arrays before JSON encode — prevents gateway 502 on oversized responses."""
+    from signals.cache import _sanitize_for_json
+
+    out = dict(bundle)
+    ft = out.get("forward_tracking")
+    if isinstance(ft, dict):
+        ft = dict(ft)
+        records = ft.get("records")
+        if isinstance(records, list) and len(records) > 500:
+            ft["records"] = records[:500]
+            meta = dict(ft.get("meta") or {})
+            meta["records_truncated"] = True
+            meta["records_total"] = len(records)
+            ft["meta"] = meta
+        out["forward_tracking"] = ft
+    ma = out.get("model_audit")
+    if isinstance(ma, dict):
+        ma = dict(ma)
+        recent = ma.get("recent_records")
+        if isinstance(recent, list) and len(recent) > 80:
+            ma["recent_records"] = recent[:80]
+        out["model_audit"] = ma
+    pt = out.get("paper_trading")
+    if isinstance(pt, dict):
+        pt = dict(pt)
+        recent = pt.get("recent")
+        if isinstance(recent, list) and len(recent) > 150:
+            pt["recent"] = recent[:150]
+        out["paper_trading"] = pt
+    return _sanitize_for_json(out)
+
+
+def _ensure_analysis_background_compute() -> None:
+    """Start background analysis-bundle job if not already running."""
+    from api.analysis_bundle_job import is_analysis_running, trigger_background_analysis
+
+    if not is_analysis_running():
+        trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True))
+
+
+def _analysis_warming_response(message: str | None = None) -> dict:
+    from api.dashboard_shell import empty_analysis_bundle
+
+    warm = empty_analysis_bundle()
+    warm["warming"] = True
+    warm["message"] = message or (
+        "Analysis sections are computing in the background (usually 1–3 minutes). "
+        "This panel will update automatically."
+    )
+    return warm
+
+
+def _analysis_slice_response(slice_key: str):
+    """Return one Analysis slice from Redis, or warming payload while compute runs."""
+    from signals.cache import get_analysis_bundle, get_analysis_slice, get_cached_dashboard, get_last_dashboard_snapshot
+
+    data = get_analysis_slice(slice_key)
+    if data is None:
+        bundle = get_analysis_bundle()
+        if isinstance(bundle, dict):
+            data = bundle.get(slice_key)
+
+    if data is not None:
+        from signals.cache import _sanitize_for_json
+
+        return jsonable_encoder(_sanitize_for_json({slice_key: data, "analysis_deferred": False}))
+
+    if _is_dashboard_warming():
+        return jsonable_encoder(_analysis_warming_response())
+
+    try:
+        dash = get_cached_dashboard() or get_last_dashboard_snapshot()
+    except Exception:
+        dash = None
+    if dash is None or not isinstance(dash.get("signals"), list):
+        raise HTTPException(
+            status_code=503,
+            detail="Dashboard cache unavailable. Load the dashboard or click Refresh, then open Analysis.",
+        )
+
+    _ensure_analysis_background_compute()
+    return jsonable_encoder(_analysis_warming_response())
 
 
 def _dashboard_response_for_client(full: dict, *, include_full_signals: bool) -> dict:
@@ -2612,9 +2710,6 @@ async def get_dashboard_opportunities_bundle():
 @router.get("/dashboard/analysis-bundle")
 async def get_dashboard_analysis_bundle():
     """Lazy load: Analysis tab sections (paper trading, forward tracking, insider, validation)."""
-    from api.analysis_bundle_job import is_analysis_running, trigger_background_analysis
-    from api.dashboard_shell import empty_analysis_bundle
-
     try:
         out = compute_analysis_bundle(allow_heavy=False)
     except Exception as e:
@@ -2622,40 +2717,44 @@ async def get_dashboard_analysis_bundle():
         raise HTTPException(status_code=500, detail=str(e)) from e
 
     if out is not None:
-        return jsonable_encoder(out)
+        return jsonable_encoder(_slim_analysis_for_http(out))
 
     if _is_dashboard_warming():
-        warm = empty_analysis_bundle()
-        warm["warming"] = True
-        return jsonable_encoder(warm)
+        return jsonable_encoder(_analysis_warming_response())
 
-    cached = None
     try:
         from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
         cached = get_cached_dashboard() or get_last_dashboard_snapshot()
     except Exception:
-        pass
+        cached = None
     if cached is None or not isinstance(cached.get("signals"), list):
         raise HTTPException(
             status_code=503,
             detail="Dashboard cache unavailable. Load the dashboard or click Refresh, then open Analysis.",
         )
 
-    if not is_analysis_running():
-        started = trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True))
-        if started:
-            logger.info("[analysis-bundle] background compute triggered")
-        else:
-            logger.info("[analysis-bundle] background compute already running")
+    _ensure_analysis_background_compute()
+    logger.info("[analysis-bundle] returning warming shell (background compute triggered or running)")
+    return jsonable_encoder(_analysis_warming_response())
 
-    warm = empty_analysis_bundle()
-    warm["warming"] = True
-    warm["message"] = (
-        "Paper trading and forward tracking are computing in the background "
-        "(usually 1–3 minutes). This panel will update automatically."
-    )
-    return jsonable_encoder(warm)
+
+@router.get("/dashboard/analysis/forward-tracking")
+async def get_analysis_forward_tracking():
+    """Forward outcomes panel — small dedicated cache (avoids monolithic bundle 502)."""
+    return _analysis_slice_response("forward_tracking")
+
+
+@router.get("/dashboard/analysis/model-audit")
+async def get_analysis_model_audit():
+    """100-ticker gate audit panel — small dedicated cache."""
+    return _analysis_slice_response("model_audit")
+
+
+@router.get("/dashboard/analysis/paper-trading")
+async def get_analysis_paper_trading():
+    """Paper trading panel — small dedicated cache."""
+    return _analysis_slice_response("paper_trading")
 
 
 @router.get("/dashboard/signals-panel")

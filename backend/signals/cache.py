@@ -648,7 +648,12 @@ def _slim_analysis_bundle(bundle: dict) -> dict:
 def set_analysis_bundle(bundle: dict, refresh_ts: str | None = None) -> bool:
     """Store Analysis tab payload in Redis. TTL 6h; keyed to dashboard refresh_ts."""
     payload = {"bundle": _slim_analysis_bundle(bundle), "refresh_ts": refresh_ts}
-    return set_cached(ANALYSIS_BUNDLE_KEY, payload, ANALYSIS_BUNDLE_TTL)
+    ok = set_cached(ANALYSIS_BUNDLE_KEY, payload, ANALYSIS_BUNDLE_TTL)
+    try:
+        set_analysis_slices(bundle, refresh_ts=refresh_ts)
+    except Exception:
+        pass
+    return ok
 
 
 def get_analysis_bundle(*, refresh_ts: str | None = None) -> dict | None:
@@ -661,6 +666,58 @@ def get_analysis_bundle(*, refresh_ts: str | None = None) -> dict | None:
         return None
     bundle = cached.get("bundle")
     return bundle if isinstance(bundle, dict) else None
+
+
+# Per-section slices — smaller Redis keys so each Analysis panel can load independently.
+_ANALYSIS_SLICE_KEYS = (
+    "forward_tracking",
+    "model_audit",
+    "paper_trading",
+    "insider_flow",
+    "regime_validation",
+    "confidence_calibration",
+    "paper_vs_backtest_drift",
+    "indicator_validation",
+    "indicator_comparisons",
+    "fmp_plan_status",
+)
+
+
+def set_analysis_slices(bundle: dict, refresh_ts: str | None = None) -> bool:
+    """Write each Analysis section to its own Redis key (avoids one giant payload)."""
+    ok = True
+    for key in _ANALYSIS_SLICE_KEYS:
+        if key not in bundle:
+            continue
+        payload = {"data": bundle[key], "refresh_ts": refresh_ts}
+        ok = set_cached(f"analysis:slice:{key}", _sanitize_for_json(payload), ANALYSIS_BUNDLE_TTL) and ok
+    return ok
+
+
+def get_analysis_slice(key: str, *, refresh_ts: str | None = None) -> Any | None:
+    cached = get_cached(f"analysis:slice:{key}")
+    if not cached or not isinstance(cached, dict) or "data" not in cached:
+        return None
+    cached_ts = cached.get("refresh_ts")
+    if refresh_ts and cached_ts and cached_ts != refresh_ts:
+        return None
+    return cached.get("data")
+
+
+def assemble_analysis_slices() -> dict | None:
+    """Merge all slice keys into one bundle dict, or None if any slice is missing."""
+    out: dict[str, Any] = {"analysis_deferred": False}
+    refresh_ts = None
+    for key in _ANALYSIS_SLICE_KEYS:
+        cached = get_cached(f"analysis:slice:{key}")
+        if not cached or not isinstance(cached, dict) or "data" not in cached:
+            return None
+        out[key] = cached["data"]
+        if cached.get("refresh_ts"):
+            refresh_ts = cached["refresh_ts"]
+    if refresh_ts:
+        out["refresh_ts"] = refresh_ts
+    return out
 
 
 # Store in Redis so EOD survives restarts when no persistent volume (Railway/Docker).
