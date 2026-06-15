@@ -81,7 +81,9 @@ export function LivePricesProvider({
   });
 
   // Stable sorted key so the effect only re-runs when the ticker list actually changes
-  const tickerKey = [...new Set(tickers.map((t) => t.toUpperCase()).filter(Boolean))]
+  const tickerKey = Array.from(
+    new Set(tickers.map((t) => t.toUpperCase()).filter(Boolean)),
+  )
     .sort()
     .slice(0, MAX_TICKERS)
     .join(",");
