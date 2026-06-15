@@ -247,7 +247,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
           )}
         </div>
         <button
-          onClick={load}
+          onClick={() => void load()}
           disabled={loading}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-slate-200 hover:border-slate-500 transition disabled:opacity-50"
         >
