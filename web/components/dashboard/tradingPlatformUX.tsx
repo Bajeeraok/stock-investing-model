@@ -159,7 +159,7 @@ export function SignalDetailRail({
 }) {
   if (!signal) {
     return (
-      <div className="hidden lg:flex flex-col items-center justify-center h-full min-h-[280px] text-slate-500 text-sm border-l border-slate-700/60 bg-slate-900/40 p-6">
+      <div className="hidden lg:flex flex-col items-center justify-center min-h-[280px] text-slate-500 text-sm border-l border-slate-700/60 bg-slate-900/40 p-6 sticky top-20 self-start w-full">
         Select a ticker from the list
       </div>
     );
@@ -170,7 +170,7 @@ export function SignalDetailRail({
   const move = formatDailyMovePct(signal.daily_move_pct);
 
   return (
-    <aside className="hidden lg:flex flex-col border-l border-slate-700/60 bg-slate-900/50 min-h-0 overflow-y-auto">
+    <aside className="hidden lg:flex flex-col border-l border-slate-700/60 bg-slate-900/50 sticky top-20 self-start max-h-[calc(100vh-5.5rem)] overflow-y-auto w-full">
       <div className="p-4 space-y-4 sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-700/50 z-10">
         <div className="flex items-start justify-between gap-2">
           <div>

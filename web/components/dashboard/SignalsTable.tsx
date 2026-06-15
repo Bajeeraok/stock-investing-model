@@ -1101,7 +1101,7 @@ export function SignalsTable({
         <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate flex-1">
           {isQuick
-            ? "Quick view — compact rows; click a ticker to expand gates. Identical actions are grouped."
+            ? "Quick view — grouped by action. Expand groups with the chevron · switch to Full detail for a flat list."
             : showModelDetail
               ? sortHint
               : "Full detail — Now · Action + gate pills (official read)."}
@@ -1239,11 +1239,11 @@ export function SignalsTable({
             ))}
       </div>
 
-      {/* Desktop: table with sticky header + optional lg split detail rail */}
-      <div className="hidden md:block lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-stretch lg:max-h-[min(72vh,900px)]">
-      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch] lg:overflow-y-auto lg:min-h-0">
-        <p className="hidden lg:block px-3 py-1.5 text-[10px] text-slate-500 border-b border-slate-800/80">
-          Click a row to preview · Open full detail from the rail
+      {/* Desktop: table + sticky detail rail (no height lock — groups show all rows) */}
+      <div className="hidden md:block lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start lg:gap-0">
+      <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <p className="hidden lg:block px-3 py-1.5 text-xs text-slate-500 border-b border-slate-800/80">
+          Click a row to preview · Open full detail from the rail · Use chevrons on groups to expand/collapse
         </p>
         <table
           className={clsx(
@@ -1426,8 +1426,8 @@ export function SignalsTable({
                             <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(deriveListActionStatus(group.rows[0]).light))}>
                               {group.title}
                             </span>
-                            <span className="text-[10px] text-slate-500 font-mono">
-                              ({group.rows.length} tickers)
+                            <span className="text-xs text-slate-500 font-mono shrink-0">
+                              ({group.rows.length} tickers{collapsed ? " — click to expand" : ""})
                             </span>
                             {group.subtitle && (
                               <span className="text-xs text-slate-400 truncate flex-1 min-w-0">
@@ -1455,6 +1455,13 @@ export function SignalsTable({
                             watchlistSet={watchlistSet}
                           />
                         ))}
+                      {!collapsed && group.rows.length > 1 && (
+                        <tr className="border-b border-slate-700/40 bg-slate-900/30">
+                          <td colSpan={3 + (showEarningsCol ? 1 : 0)} className="px-3 py-1.5 text-xs text-slate-500 text-center">
+                            End of {group.title} · {group.rows.length} tickers
+                          </td>
+                        </tr>
+                      )}
                     </Fragment>
                   );
                 })

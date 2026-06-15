@@ -1052,6 +1052,15 @@ def _build_investor_summary(
         _ch0 = _safe_float(response.get("cons_high"))
         if _cl0 is not None and _ch0 is not None and _cl0 > 0 and _ch0 > 0:
             analyst_target_fmp = (_cl0 + _ch0) / 2.0
+    # Initialized before yfinance try — used in fv_ext even when fetch fails
+    analyst_target: float | None = (
+        float(analyst_target_fmp) if analyst_target_fmp and analyst_target_fmp > 0 else None
+    )
+    trailing_eps: float | None = None
+    _ntm_eps: float | None = None
+    info: dict = {}
+    sector_pe = 28.0
+    sector_forward_pe = 25.0
     try:
         import yfinance as yf
         from signals.fmp_client import fetch_key_metrics_ttm
