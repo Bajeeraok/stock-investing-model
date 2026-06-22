@@ -45,6 +45,46 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 _MODEL_MEMORY_CACHE: dict[str, object] = {}
 _MODEL_FIT_LOCKS: dict[str, threading.Lock] = {}
 _MODEL_CACHE_LOCK = threading.Lock()  # protects _MODEL_FIT_LOCKS dict
+_HMM_MODEL_CACHE_MAX = 64  # in-memory fitted models; override via HMM_MODEL_CACHE_MAX
+
+
+def _hmm_cache_max() -> int:
+    import os
+
+    raw = (os.environ.get("HMM_MODEL_CACHE_MAX") or "").strip()
+    if raw:
+        try:
+            return max(8, min(256, int(raw)))
+        except ValueError:
+            pass
+    return _HMM_MODEL_CACHE_MAX
+
+
+def hmm_model_cache_stats() -> dict[str, int]:
+    with _MODEL_CACHE_LOCK:
+        return {"size": len(_MODEL_MEMORY_CACHE), "max_entries": _hmm_cache_max()}
+
+
+def trim_hmm_model_cache(*, keep: int | None = None) -> dict[str, int]:
+    """Trim in-memory HMM models (disk .pkl still available). keep=0 clears all."""
+    cap = _hmm_cache_max() if keep is None else max(0, keep)
+    with _MODEL_CACHE_LOCK:
+        before = len(_MODEL_MEMORY_CACHE)
+        if cap == 0:
+            _MODEL_MEMORY_CACHE.clear()
+        elif len(_MODEL_MEMORY_CACHE) > cap:
+            # dict preserves insertion order (Py3.7+); drop oldest
+            while len(_MODEL_MEMORY_CACHE) > cap:
+                _MODEL_MEMORY_CACHE.pop(next(iter(_MODEL_MEMORY_CACHE)))
+        return {"before": before, "after": len(_MODEL_MEMORY_CACHE), "max_entries": cap}
+
+
+def _store_hmm_in_cache(cache_key: str, model: object) -> None:
+    with _MODEL_CACHE_LOCK:
+        _MODEL_MEMORY_CACHE[cache_key] = model
+        cap = _hmm_cache_max()
+        while len(_MODEL_MEMORY_CACHE) > cap:
+            _MODEL_MEMORY_CACHE.pop(next(iter(_MODEL_MEMORY_CACHE)))
 
 
 def _get_fit_lock(cache_key: str) -> threading.Lock:
@@ -896,10 +936,10 @@ def _load_or_fit(
                         except Exception:
                             pass
                     else:
-                        _MODEL_MEMORY_CACHE[cache_key] = cached
+                        _store_hmm_in_cache(cache_key, cached)
                         return cached
                 else:
-                    _MODEL_MEMORY_CACHE[cache_key] = cached
+                    _store_hmm_in_cache(cache_key, cached)
                     return cached
             except Exception:
                 logger.debug("HMM cache corrupt for %s — refitting", ticker)
@@ -945,7 +985,7 @@ def _load_or_fit(
 
         # Store in memory cache immediately — even if disk save fails, subsequent
         # calls within this process skip re-fitting entirely.
-        _MODEL_MEMORY_CACHE[cache_key] = best_model
+        _store_hmm_in_cache(cache_key, best_model)
 
         try:
             with open(path, "wb") as f:

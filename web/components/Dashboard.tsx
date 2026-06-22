@@ -795,12 +795,18 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             {snapshotIso && (
               <span
                 className={clsx(
-                  "text-xs hidden sm:inline font-mono",
+                  "text-xs hidden lg:inline font-mono",
                   data.data_freshness?.serving_stale || stale ? "text-amber-400" : "text-slate-500",
                 )}
-                title={`Server snapshot saved ${formatSnapshotEt(snapshotIso)}`}
+                title={
+                  data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
+                    ? `Prices ${formatSnapshotEt(data.data_freshness?.quotes_updated_at ?? undefined) ?? "—"} · Signals ${formatSnapshotEt(data.data_freshness?.signals_updated_at ?? undefined) ?? "—"}`
+                    : `Server snapshot saved ${formatSnapshotEt(snapshotIso)}`
+                }
               >
-                Snapshot {snapshotAge || formatSnapshotAge(snapshotIso)}
+                {data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
+                  ? `Prices ${formatSnapshotAge(data.data_freshness?.quotes_updated_at ?? undefined) || "—"} · Signals ${formatSnapshotAge(data.data_freshness?.signals_updated_at ?? undefined) || "—"}`
+                  : `Snapshot ${snapshotAge || formatSnapshotAge(snapshotIso)}`}
               </span>
             )}
             <TradingLensSelector

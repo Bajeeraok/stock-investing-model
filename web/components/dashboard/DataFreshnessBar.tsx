@@ -15,6 +15,9 @@ export type DataFreshness = {
   refresh_status?: string;
   status?: string;
   message?: string;
+  /** ISO timestamps for split quote vs signal freshness (Phase 1 retail refresh) */
+  quotes_updated_at?: string | null;
+  signals_updated_at?: string | null;
   prices?: string;
   fundamentals?: string;
   macro?: string;
@@ -50,6 +53,30 @@ function SnapshotMetaLine({
 
   if (data.status === "warming") {
     return <p className="text-amber-200/90">{data.message ?? "First dashboard compute in progress…"}</p>;
+  }
+
+  const quotesIso = data.quotes_updated_at ?? null;
+  const signalsIso = data.signals_updated_at ?? null;
+  const hasSplitFreshness = Boolean(quotesIso || signalsIso);
+
+  if (hasSplitFreshness) {
+    const quotesLabel = formatSnapshotEt(quotesIso) || "—";
+    const signalsLabel = formatSnapshotEt(signalsIso) || "—";
+    return (
+      <div className={clsx("flex flex-wrap items-center gap-x-2 gap-y-1", compact ? "text-xs" : "text-sm")}>
+        <Clock className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden />
+        <span className="text-slate-400">Prices as of</span>
+        <span className="font-mono text-slate-200">{quotesLabel}</span>
+        <span className="text-slate-600">·</span>
+        <span className="text-slate-400">Signals as of</span>
+        <span className="font-mono text-slate-200">{signalsLabel}</span>
+        {data.serving_stale && (
+          <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 rounded">
+            Stale — refreshing
+          </span>
+        )}
+      </div>
+    );
   }
 
   const timeLabel = data.snapshot_updated_et ?? formatSnapshotEt(snapshotIso);

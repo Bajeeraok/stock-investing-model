@@ -990,6 +990,8 @@ export interface DashboardData {
     disclaimer?: string;
     price_last_bar_date?: string | null;
     eod_snapshot_latest_date?: string | null;
+    quotes_updated_at?: string | null;
+    signals_updated_at?: string | null;
     precision_note?: string | null;
     degraded_mode?: boolean;
     degraded_sources?: import("@/components/dashboard/index").DegradedSource[];

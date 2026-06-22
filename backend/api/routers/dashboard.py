@@ -1269,25 +1269,24 @@ async def get_dashboard(
     from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
     if refresh:
-        from api.dashboard_job import finish_compute, try_begin_compute
-        from starlette.concurrency import run_in_threadpool
+        from api.dashboard_warm import compute_for_background_refresh
 
-        if not try_begin_compute():
-            logger.info("[dashboard] refresh=true coalesced — full compute already running")
+        started = trigger_background_refresh(compute_for_background_refresh)
+        if not started:
+            logger.info("[dashboard] refresh=true coalesced — compute already running")
             return _shell_while_compute_running(coalesced=True)
-        logger.info("[dashboard] refresh=true: synchronous full compute")
-        try:
-            out = await run_in_threadpool(_compute_full_dashboard_sync)
-            finish_compute(success=True)
-        except Exception as exc:
-            finish_compute(success=False, error=str(exc))
-            raise
-        shell = build_shell_from_full(out, include_full_signals=False)
-        shell["stale"] = False
-        shell["refresh_status"] = "done"
+        logger.info("[dashboard] refresh=true: async signal warm started")
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+        if cached is not None:
+            shell = build_shell_from_full(cached, include_full_signals=False)
+            shell["stale"] = True
+        else:
+            shell = build_warming_shell(_load_config())
+        shell["refresh_status"] = "running"
+        shell["refresh_coalesced"] = False
         df = shell.get("data_freshness") or {}
         if isinstance(df, dict):
-            df["snapshot_source"] = "live"
+            df["snapshot_source"] = "cache" if cached else "warming"
         return enrich_shell_snapshot_meta(shell)
 
     try:
@@ -1312,8 +1311,10 @@ async def get_dashboard(
         logger.debug("[dashboard] last snapshot read failed: %s", e)
 
     if stale is not None:
-        logger.info("[dashboard] serving stale snapshot; triggering background refresh")
-        trigger_background_refresh(_compute_full_dashboard_sync)
+        logger.info("[dashboard] serving stale snapshot; triggering background signal warm")
+        from api.dashboard_warm import compute_for_background_refresh
+
+        trigger_background_refresh(compute_for_background_refresh)
         shell = build_shell_from_full(stale, include_full_signals=False)
         shell["stale"] = True
         shell["refresh_status"] = "running" if is_refresh_running() else get_refresh_status().get("status", "idle")
@@ -1330,7 +1331,9 @@ async def get_dashboard(
         )
 
     if not is_refresh_running():
-        trigger_background_refresh(_compute_full_dashboard_sync)
+        from api.dashboard_warm import compute_for_background_refresh
+
+        trigger_background_refresh(compute_for_background_refresh)
     logger.info("[dashboard] serving warming shell (no cache yet; compute in progress)")
     shell = build_warming_shell(_load_config())
     shell["refresh_status"] = "running" if is_refresh_running() else job_status.get("status", "running")
@@ -2683,6 +2686,8 @@ def _compute_full_dashboard_sync() -> dict:
         "as_of_et": as_of_et,
         "snapshot_updated_at": as_of_date,
         "snapshot_updated_et": as_of_et,
+        "signals_updated_at": as_of_date,
+        "quotes_updated_at": as_of_date,
         "eod_snapshot_saved_at": eod_saved_at,
         "prices": "Daily adjusted close from the data pipeline (typically prior session close vs. run time).",
         "fundamentals": "FMP / estimates can lag filings; not point-in-time perfect for backtests.",

@@ -1,13 +1,14 @@
 """
-Weekday ET schedules for pre-market engine + dashboard cache warm (APScheduler).
+Weekday ET schedules for pre-market engine + retail dashboard refresh (APScheduler).
 
 Enable: MARKET_SCHEDULER_ON=1 (or true/yes/on)
 
 Pre-market (Mon–Fri ET): 4:00, 6:00, 7:00, 8:00, 8:30, 9:00, 9:15
   → writes pre_market_latest.json under DATA_ROOT
 
-Dashboard warm (Mon–Fri ET): 8:30, then every N min from 9:30 through 15:45 (N = DASHBOARD_WARM_INTERVAL_MIN, default 25)
-  → runs full pipeline in-process (same as GET /api/dashboard?refresh=true)
+Retail refresh (Mon–Fri ET):
+  - Quote tick every DASHBOARD_QUOTE_TICK_MIN (default 5) during regular session (9:30–16:00)
+  - Signal warm every DASHBOARD_WARM_INTERVAL_MIN (default 30) from 8:30 through 16:00
 
 After-hours earnings (Mon–Fri ET): 4:30 PM and 6:00 PM — only if portfolio∪watchlist has earnings today
   → writes after_hours_latest.json + merges after_hours_earnings into dashboard cache
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, time
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -41,29 +43,46 @@ PREMARKET_TIMES_ET: tuple[tuple[int, int], ...] = (
 
 
 def _dashboard_warm_interval_min() -> int:
-    """Minutes between dashboard warm runs (9:30–15:45 ET). Env DASHBOARD_WARM_INTERVAL_MIN, default 25."""
+    """Minutes between signal warm runs (8:30–16:00 ET weekdays). Env DASHBOARD_WARM_INTERVAL_MIN, default 30."""
     raw = (os.environ.get("DASHBOARD_WARM_INTERVAL_MIN") or "").strip()
     if raw:
         try:
             return max(10, min(60, int(raw)))
         except ValueError:
             pass
-    return 25
+    return 30
 
 
-def _dashboard_warm_times_et() -> list[tuple[int, int]]:
-    """8:30 AM + every N minutes from 9:30 through 15:45 ET."""
-    step = _dashboard_warm_interval_min()
-    times: list[tuple[int, int]] = [(8, 30)]
-    hour, minute = 9, 30
-    while (hour, minute) <= (15, 45):
-        if (hour, minute) not in times:
-            times.append((hour, minute))
-        minute += step
-        if minute >= 60:
-            hour += minute // 60
-            minute = minute % 60
-    return times
+def _dashboard_quote_tick_min() -> int:
+    """Minutes between quote ticks during regular session. Env DASHBOARD_QUOTE_TICK_MIN, default 5."""
+    raw = (os.environ.get("DASHBOARD_QUOTE_TICK_MIN") or "").strip()
+    if raw:
+        try:
+            return max(1, min(15, int(raw)))
+        except ValueError:
+            pass
+    return 5
+
+
+def _scheduler_tz():
+    tz_name = (os.environ.get("MARKET_SCHEDULER_TZ") or "America/New_York").strip()
+    from zoneinfo import ZoneInfo
+
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("America/New_York")
+
+
+def _is_signal_warm_window() -> bool:
+    """Weekday 8:30–16:00 ET — includes pre-open warm at 8:30."""
+    from alerts.market_hours import ET, is_weekday
+
+    dt = datetime.now(ET)
+    if not is_weekday(dt):
+        return False
+    t = dt.timetz().replace(tzinfo=None)
+    return time(8, 30) <= t < time(16, 0)
 
 
 def _run_premarket_job() -> None:
@@ -84,18 +103,47 @@ def _run_premarket_job() -> None:
         logger.exception("[market-scheduler] pre-market job failed")
 
 
-def _run_dashboard_warm_job() -> None:
+def _run_signal_warm_job() -> None:
+    if not _is_signal_warm_window():
+        logger.info("[market-scheduler] signal warm skipped (outside 8:30–16:00 ET weekday window)")
+        return
     try:
-        from api.routers.dashboard import _compute_full_dashboard_sync
+        from api.dashboard_job import is_refresh_running, trigger_background_refresh
+        from api.dashboard_warm import compute_signal_warm_sync
 
+        if is_refresh_running():
+            logger.info("[market-scheduler] signal warm skipped — refresh already running")
+            return
         t0 = __import__("time").perf_counter()
-        _compute_full_dashboard_sync()
+        started = trigger_background_refresh(compute_signal_warm_sync)
+        if not started:
+            logger.info("[market-scheduler] signal warm coalesced — refresh already running")
+            return
         logger.info(
-            "[market-scheduler] dashboard warm ok (%.0f ms)",
+            "[market-scheduler] signal warm job started (async, %.0f ms to dispatch)",
             (__import__("time").perf_counter() - t0) * 1000,
         )
     except Exception:
-        logger.exception("[market-scheduler] dashboard warm job failed")
+        logger.exception("[market-scheduler] signal warm job failed")
+
+
+def _run_quote_tick_job() -> None:
+    try:
+        from alerts.market_hours import is_us_market_hours
+
+        if not is_us_market_hours():
+            return
+        t0 = __import__("time").perf_counter()
+        from api.dashboard_warm import compute_quote_tick_sync
+
+        result = compute_quote_tick_sync()
+        if result is not None:
+            logger.info(
+                "[market-scheduler] quote tick ok (%.0f ms)",
+                (__import__("time").perf_counter() - t0) * 1000,
+            )
+    except Exception:
+        logger.exception("[market-scheduler] quote tick job failed")
 
 
 def _run_after_hours_earnings_job(slot: str) -> None:
@@ -143,13 +191,8 @@ def start() -> None:
         )
         return
 
-    tz_name = (os.environ.get("MARKET_SCHEDULER_TZ") or "America/New_York").strip()
-    from zoneinfo import ZoneInfo
-
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = ZoneInfo("America/New_York")
+    tz = _scheduler_tz()
+    tz_name = str(getattr(tz, "key", tz))
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -169,19 +212,30 @@ def start() -> None:
             misfire_grace_time=900,
         )
 
-    for hour, minute in _dashboard_warm_times_et():
-        _scheduler.add_job(
-            _run_dashboard_warm_job,
-            "cron",
-            minute=minute,
-            hour=hour,
-            day_of_week="mon-fri",
-            id=f"dashboard_warm_{hour:02d}{minute:02d}",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=1800,
-        )
+    warm_step = _dashboard_warm_interval_min()
+    quote_step = _dashboard_quote_tick_min()
+
+    _scheduler.add_job(
+        _run_signal_warm_job,
+        "interval",
+        minutes=warm_step,
+        id="dashboard_signal_warm",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=1800,
+    )
+
+    _scheduler.add_job(
+        _run_quote_tick_job,
+        "interval",
+        minutes=quote_step,
+        id="dashboard_quote_tick",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
 
     for slot, hour, minute in AFTER_HOURS_EARNINGS_TIMES_ET:
         _scheduler.add_job(
@@ -198,14 +252,13 @@ def start() -> None:
         )
 
     _scheduler.start()
-    warm_times = _dashboard_warm_times_et()
-    warm_step = _dashboard_warm_interval_min()
     logger.info(
-        "Market scheduler on (%s): pre-market %s; dashboard warm every %d min (%d slots); after-hours earnings %s ET",
+        "Market scheduler on (%s): pre-market %s; quote tick every %d min (session); "
+        "signal warm every %d min (8:30–16:00 ET); after-hours earnings %s ET",
         tz_name,
         ", ".join(f"{h}:{m:02d}" for h, m in PREMARKET_TIMES_ET),
+        quote_step,
         warm_step,
-        len(warm_times),
         ", ".join(f"{h}:{m:02d}" for _, h, m in AFTER_HOURS_EARNINGS_TIMES_ET),
     )
 

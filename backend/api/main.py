@@ -198,10 +198,10 @@ def _startup_background_refresh(delay_s: float = 10.0, max_age_min: float = 20.0
         pass
 
     try:
-        from api.routers.dashboard import _compute_full_dashboard_sync
+        from api.dashboard_warm import compute_for_background_refresh
         from api.dashboard_job import trigger_background_refresh
 
-        started = trigger_background_refresh(_compute_full_dashboard_sync)
+        started = trigger_background_refresh(compute_for_background_refresh)
         if started:
             logger.info("[startup] background dashboard refresh triggered")
         else:
@@ -271,3 +271,15 @@ def health():
     from signals.time_et import now_iso_et
 
     return {"status": "ok", "timestamp": now_iso_et()}
+
+
+@app.get("/api/health/memory")
+def health_memory():
+    """Process RSS + in-process cache sizes (Railway memory debugging)."""
+    from signals.process_memory import memory_snapshot
+    from signals.time_et import now_iso_et
+
+    snap = memory_snapshot()
+    snap["status"] = "ok"
+    snap["timestamp"] = now_iso_et()
+    return snap

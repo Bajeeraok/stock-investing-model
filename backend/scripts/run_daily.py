@@ -577,10 +577,19 @@ def run_signals(
         return row
     # end _process_single_ticker
 
-    # ── Parallel execution: network I/O dominates (~5-8 s/ticker); 12 workers cuts
-    # 37-ticker wall-time from ~5 min → ~15-25 s.  CPU-bound compute (MAs, RSI,
-    # MACD, LightGBM inference) is fast per ticker and won't saturate the pool.
-    _workers = min(12, len(watchlist)) if watchlist else 1
+    # ── Parallel execution: network I/O dominates (~5-8 s/ticker); workers tunable
+    # via RUN_SIGNALS_MAX_WORKERS (default 6). Lower on memory-constrained hosts
+    # (Railway): 111 tickers × 12 workers can spike RSS into many GB of pandas frames.
+    import os as _os
+
+    _max_w = 6
+    _raw_w = (_os.environ.get("RUN_SIGNALS_MAX_WORKERS") or "").strip()
+    if _raw_w:
+        try:
+            _max_w = max(1, min(16, int(_raw_w)))
+        except ValueError:
+            pass
+    _workers = min(_max_w, len(watchlist)) if watchlist else 1
     from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
     with _TPE(max_workers=_workers) as pool:
         futures = {pool.submit(_process_single_ticker, t): t for t in watchlist}

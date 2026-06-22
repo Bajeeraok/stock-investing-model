@@ -11,6 +11,7 @@ In-process OHLCV cache:
   Daily bar history doesn't change intraday.  A short TTL (10 min by default,
   overridden via OHLCV_CACHE_TTL_SECONDS env var) deduplicates repeated calls
   for the same ticker+period within a single dashboard refresh or signal run.
+  Expired entries are evicted; LRU cap via OHLCV_CACHE_MAX_ENTRIES (default 400).
   SPY/VIX are the most-fetched tickers and benefit most from this.
   Cache is per-process (not shared between workers); Redis is not required.
 """
@@ -284,6 +285,17 @@ def _ohlcv_cache_ttl() -> int:
     return 600  # 10 min default
 
 
+def _ohlcv_cache_max_entries() -> int:
+    """Hard cap on in-process OHLCV entries. Env OHLCV_CACHE_MAX_ENTRIES (default 400)."""
+    raw = os.environ.get("OHLCV_CACHE_MAX_ENTRIES", "").strip()
+    if raw:
+        try:
+            return max(50, min(5000, int(raw)))
+        except ValueError:
+            pass
+    return 400
+
+
 class _CacheEntry(NamedTuple):
     value: object  # pd.Series or pd.DataFrame or None
     ts: float
@@ -293,8 +305,36 @@ _ohlcv_lock = threading.Lock()
 _ohlcv_store: dict[str, _CacheEntry] = {}
 
 
+def _cache_prune_locked(*, now: float | None = None) -> dict[str, int]:
+    """Remove expired entries; LRU-trim to max size. Caller must hold _ohlcv_lock."""
+    t = now if now is not None else time.monotonic()
+    ttl = _ohlcv_cache_ttl()
+    max_entries = _ohlcv_cache_max_entries()
+    expired = [k for k, e in _ohlcv_store.items() if t - e.ts > ttl]
+    for k in expired:
+        del _ohlcv_store[k]
+    if len(_ohlcv_store) > max_entries:
+        # Drop oldest entries first (LRU by cache timestamp)
+        sorted_keys = sorted(_ohlcv_store.items(), key=lambda kv: kv[1].ts)
+        for k, _ in sorted_keys[: len(_ohlcv_store) - max_entries]:
+            del _ohlcv_store[k]
+    return {"expired_removed": len(expired), "size": len(_ohlcv_store), "max_entries": max_entries}
+
+
+def prune_ohlcv_cache() -> dict[str, int]:
+    """Public: evict stale / excess OHLCV cache entries."""
+    with _ohlcv_lock:
+        return _cache_prune_locked()
+
+
+def ohlcv_cache_stats() -> dict[str, int]:
+    with _ohlcv_lock:
+        return {"size": len(_ohlcv_store), "max_entries": _ohlcv_cache_max_entries()}
+
+
 def _cache_get(key: str) -> tuple[bool, object]:
     with _ohlcv_lock:
+        _cache_prune_locked()
         entry = _ohlcv_store.get(key)
     if entry is None:
         return False, None
@@ -306,6 +346,7 @@ def _cache_get(key: str) -> tuple[bool, object]:
 def _cache_set(key: str, value: object) -> None:
     with _ohlcv_lock:
         _ohlcv_store[key] = _CacheEntry(value=value, ts=time.monotonic())
+        _cache_prune_locked()
 
 
 def _ohlcv_key(ticker: str, period: str, kind: str = "close") -> str:

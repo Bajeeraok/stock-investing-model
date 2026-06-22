@@ -70,6 +70,14 @@ def trigger_background_refresh(compute_fn: Callable[[], dict]) -> bool:
         except Exception as exc:
             logger.exception("[dashboard-job] background refresh failed: %s", exc)
             finish_compute(success=False, error=str(exc))
+        finally:
+            try:
+                from signals.process_memory import release_process_caches
+
+                stats = release_process_caches(aggressive=True)
+                logger.info("[dashboard-job] post-job memory release: %s", stats)
+            except Exception as mem_exc:
+                logger.debug("[dashboard-job] memory release skipped: %s", mem_exc)
 
     threading.Thread(target=_worker, daemon=True, name="dashboard-bg-refresh").start()
     return True
