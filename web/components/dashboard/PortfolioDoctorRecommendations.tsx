@@ -103,8 +103,11 @@ export function PortfolioDoctorRecommendations({
               <thead>
                 <tr className="bg-slate-800/80 text-left text-slate-400">
                   <th className="px-4 py-3 font-medium">Ticker</th>
-                  <th className="px-4 py-3 font-medium" title="Prefers 7-layer confidence when available; otherwise shows technical score.">
-                    Confidence
+                  <th className="px-4 py-3 font-medium" title="Composite chart score (0–100)">
+                    Score
+                  </th>
+                  <th className="px-4 py-3 font-medium" title="7-layer fused model confidence (0–100%)">
+                    Conf %
                   </th>
                   <th className="px-4 py-3 font-medium">Regime</th>
                   <th className="px-4 py-3 font-medium">Add %</th>
@@ -115,10 +118,6 @@ export function PortfolioDoctorRecommendations({
               </thead>
               <tbody>
                 {add.map((a) => (
-                  (() => {
-                    const val = (a.confidence ?? a.score);
-                    const action = (a.action ?? null);
-                    return (
                   <tr key={a.ticker} className="border-t border-slate-700/50 hover:bg-slate-800/30">
                     <td className="px-4 py-3">
                       {onTickerClick ? (
@@ -129,11 +128,14 @@ export function PortfolioDoctorRecommendations({
                         <span className="font-mono font-medium">{a.ticker}</span>
                       )}
                     </td>
-                    <td className={clsx("px-4 py-3", (val ?? 0) >= 65 ? "text-emerald-400" : (val ?? 0) >= 45 ? "text-slate-300" : "text-amber-300")}>
-                      {val != null ? val : "—"}
-                      {action && (
+                    <td className="px-4 py-3 font-mono tabular-nums text-slate-300">
+                      {a.score != null ? Math.round(a.score) : "—"}
+                    </td>
+                    <td className={clsx("px-4 py-3 font-mono tabular-nums", (a.confidence ?? 0) >= 65 ? "text-emerald-400" : (a.confidence ?? 0) >= 45 ? "text-slate-300" : "text-amber-300")}>
+                      {a.confidence != null ? `${Math.round(a.confidence)}%` : "—"}
+                      {a.action && (
                         <span className="ml-2 text-[11px] text-slate-500">
-                          ({action})
+                          ({a.action})
                         </span>
                       )}
                     </td>
@@ -146,9 +148,7 @@ export function PortfolioDoctorRecommendations({
                     <td className="px-4 py-3 text-emerald-400">${a.suggest_add_dollars.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td className="px-4 py-3 text-slate-300">{a.buy_price != null ? `$${a.buy_price.toFixed(2)}` : "—"}</td>
                     <td className="px-4 py-3 text-slate-500">{a.source}</td>
-              </tr>
-                    );
-                  })()
+                  </tr>
                 ))}
           </tbody>
         </table>

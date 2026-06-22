@@ -111,7 +111,12 @@ export function TrimCandidates({
                 )}
               </div>
               <div className="text-right text-sm">
-                <p className="text-amber-400">score {h.score?.toFixed(1)}</p>
+                <p className="text-slate-300">
+                  score {h.score?.toFixed(0) ?? "—"}
+                  {h.confidence != null && (
+                    <span className="text-slate-500"> · conf {Math.round(h.confidence)}%</span>
+                  )}
+                </p>
                 <p className="text-slate-400">{h.regime} • {h.suggestion}</p>
               </div>
             </div>

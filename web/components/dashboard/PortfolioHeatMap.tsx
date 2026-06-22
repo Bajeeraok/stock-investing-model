@@ -2,18 +2,44 @@
 
 import type { PortfolioHolding } from "@/app/page";
 import { clsx } from "clsx";
-
-function scoreColor(score: number | null | undefined): string {
-  if (score == null) return "bg-slate-700/80 border-slate-600 text-slate-300";
-  if (score >= 65) return "bg-emerald-600/35 border-emerald-500/45 text-emerald-100";
-  if (score <= 35) return "bg-red-600/30 border-red-500/40 text-red-100";
-  return "bg-slate-600/40 border-slate-500/40 text-slate-200";
-}
+import {
+  confidenceRingClass,
+  confidenceTextClass,
+  fmtConfidence,
+  fmtScore,
+  isScoreConfidenceMismatch,
+  mismatchHint,
+  scoreTileClass,
+} from "@/lib/scoreConfidenceDisplay";
 
 function regimeDot(regime: string | null | undefined): string {
   if (regime === "UP") return "bg-emerald-400";
   if (regime === "DOWN") return "bg-red-400";
   return "bg-slate-400";
+}
+
+function tileTooltip(h: PortfolioHolding, pct: number): string {
+  const parts = [
+    h.ticker,
+    `${pct.toFixed(1)}%`,
+    `score ${fmtScore(h.score)}`,
+    h.confidence != null ? `conf ${fmtScore(h.confidence)}%` : "conf —",
+    h.regime ?? "—",
+  ];
+  const hint = mismatchHint(h.score, h.confidence);
+  if (hint) parts.push(hint);
+  return parts.join(" · ");
+}
+
+function MismatchBadge() {
+  return (
+    <span
+      className="absolute top-1 left-1 z-10 text-[8px] font-black uppercase px-1 py-0.5 rounded bg-amber-500/90 text-amber-950 leading-none"
+      title="Chart score and model confidence disagree"
+    >
+      ⚠
+    </span>
+  );
 }
 
 export function PortfolioHeatMap({
@@ -29,6 +55,7 @@ export function PortfolioHeatMap({
   if (items.length === 0) return null;
 
   const sorted = [...items].sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0));
+  const mismatchCount = items.filter((h) => isScoreConfidenceMismatch(h.score, h.confidence)).length;
 
   return (
     <div className="rounded-xl border border-slate-700/90 bg-slate-900/40 overflow-hidden">
@@ -37,8 +64,13 @@ export function PortfolioHeatMap({
           <h3 className="text-sm font-semibold text-slate-200">Portfolio heat map</h3>
           <p className="text-[11px] text-slate-400 mt-1 md:hidden">Sorted by weight · tap a row for detail</p>
           <p className="text-[11px] text-slate-400 mt-1 hidden md:block">
-            Tile size = weight · color = score · dot = regime (green up, red down)
+            Size = weight · fill = composite score · ring = model confidence · dot = regime
           </p>
+          {mismatchCount > 0 && (
+            <p className="text-[10px] text-amber-300/90 mt-1">
+              {mismatchCount} holding{mismatchCount === 1 ? "" : "s"}: score vs confidence disagree (⚠)
+            </p>
+          )}
         </div>
         {regimeCounts && (
           <div className="flex flex-wrap gap-1.5 text-[10px] font-medium">
@@ -55,21 +87,25 @@ export function PortfolioHeatMap({
         )}
       </div>
       <div className="p-3 sm:p-4">
-        {/* Mobile: scannable list (heat map tiles don't scale to many holdings) */}
+        {/* Mobile: scannable list */}
         <div className="md:hidden divide-y divide-slate-700/60 rounded-lg border border-slate-700/50 overflow-hidden">
           {sorted.map((h) => {
             const pct = h.pct ?? 0;
+            const mismatch = isScoreConfidenceMismatch(h.score, h.confidence);
             const rowClass = clsx(
-              "w-full flex items-center gap-3 px-3 py-2.5 text-left touch-manipulation min-h-[44px]",
-              scoreColor(h.score),
+              "w-full flex items-center gap-2 px-3 py-2.5 text-left touch-manipulation min-h-[44px]",
+              scoreTileClass(h.score),
+              confidenceRingClass(h.confidence),
               onTickerClick && "hover:opacity-95 active:opacity-90",
             );
             const inner = (
               <>
-                <span className="font-mono text-sm font-semibold w-14 shrink-0 truncate">{h.ticker}</span>
+                {mismatch && <MismatchBadge />}
+                <span className="font-mono text-sm font-semibold w-12 shrink-0 truncate">{h.ticker}</span>
                 <span className="text-xs tabular-nums w-10 shrink-0 opacity-80">{pct.toFixed(1)}%</span>
-                <span className="text-xs font-medium tabular-nums w-8 shrink-0">
-                  {h.score != null ? Math.round(h.score) : "—"}
+                <span className="text-xs font-medium tabular-nums w-7 shrink-0">{fmtScore(h.score)}</span>
+                <span className={clsx("text-[10px] tabular-nums w-10 shrink-0", confidenceTextClass(h.confidence))}>
+                  {fmtConfidence(h.confidence)}
                 </span>
                 <span
                   className={clsx("ml-auto h-2.5 w-2.5 rounded-full shrink-0", regimeDot(h.regime))}
@@ -82,13 +118,13 @@ export function PortfolioHeatMap({
                 key={h.ticker}
                 type="button"
                 onClick={() => onTickerClick(h.ticker)}
-                className={rowClass}
-                title={`${h.ticker} · ${pct.toFixed(1)}% · score ${h.score ?? "—"} · ${h.regime ?? "—"}`}
+                className={clsx(rowClass, "relative")}
+                title={tileTooltip(h, pct)}
               >
                 {inner}
               </button>
             ) : (
-              <div key={h.ticker} className={rowClass}>
+              <div key={h.ticker} className={clsx(rowClass, "relative")}>
                 {inner}
               </div>
             );
@@ -97,60 +133,70 @@ export function PortfolioHeatMap({
 
         {/* Desktop: tile heat map */}
         <div className="hidden md:block">
-        <div className="flex flex-wrap gap-1.5 min-h-[5rem]">
-          {sorted.map((h) => {
-            const pct = Math.max(h.pct ?? 1, 1);
-            const flexGrow = Math.round(pct * 10);
-            const inner = (
-              <>
-                <span className="font-mono text-xs sm:text-sm font-semibold truncate">{h.ticker}</span>
-                <span className="text-[10px] opacity-80">{pct.toFixed(1)}%</span>
-                {h.score != null && (
-                  <span className="text-[10px] font-medium opacity-90">{Math.round(h.score)}</span>
-                )}
-                <span
-                  className={clsx("absolute top-1.5 right-1.5 h-2 w-2 rounded-full", regimeDot(h.regime))}
-                  title={h.regime ?? "Regime"}
-                />
-              </>
-            );
-            const className = clsx(
-              "relative rounded-lg border px-2 py-2 min-w-[4.5rem] min-h-[3.25rem] flex flex-col justify-center gap-0.5 transition-opacity hover:opacity-95",
-              scoreColor(h.score),
-              onTickerClick && "cursor-pointer hover:ring-1 hover:ring-emerald-500/40"
-            );
-            return onTickerClick ? (
-              <button
-                key={h.ticker}
-                type="button"
-                onClick={() => onTickerClick(h.ticker)}
-                className={className}
-                style={{ flex: `${flexGrow} 1 5rem` }}
-                title={`${h.ticker} · ${pct.toFixed(1)}% · score ${h.score ?? "—"} · ${h.regime ?? "—"}`}
-              >
-                {inner}
-              </button>
-            ) : (
-              <div
-                key={h.ticker}
-                className={className}
-                style={{ flex: `${flexGrow} 1 5rem` }}
-              >
-                {inner}
-              </div>
-            );
-          })}
+          <div className="flex flex-wrap gap-1.5 min-h-[5rem]">
+            {sorted.map((h) => {
+              const pct = Math.max(h.pct ?? 1, 1);
+              const flexGrow = Math.round(pct * 10);
+              const mismatch = isScoreConfidenceMismatch(h.score, h.confidence);
+              const inner = (
+                <>
+                  {mismatch && <MismatchBadge />}
+                  <span className="font-mono text-xs sm:text-sm font-semibold truncate">{h.ticker}</span>
+                  <span className="text-[10px] opacity-80">{pct.toFixed(1)}%</span>
+                  <div className="flex items-baseline gap-1.5 flex-wrap">
+                    {h.score != null && (
+                      <span className="text-[10px] font-semibold opacity-95">{fmtScore(h.score)}</span>
+                    )}
+                    <span className={clsx("text-[9px] font-mono tabular-nums", confidenceTextClass(h.confidence))}>
+                      {fmtConfidence(h.confidence)}
+                    </span>
+                  </div>
+                  <span
+                    className={clsx("absolute top-1.5 right-1.5 h-2 w-2 rounded-full", regimeDot(h.regime))}
+                    title={h.regime ?? "Regime"}
+                  />
+                </>
+              );
+              const className = clsx(
+                "relative rounded-lg border px-2 py-2 min-w-[4.75rem] min-h-[3.5rem] flex flex-col justify-center gap-0.5 transition-opacity hover:opacity-95",
+                scoreTileClass(h.score),
+                confidenceRingClass(h.confidence),
+                onTickerClick && "cursor-pointer hover:ring-1 hover:ring-emerald-500/40",
+              );
+              return onTickerClick ? (
+                <button
+                  key={h.ticker}
+                  type="button"
+                  onClick={() => onTickerClick(h.ticker)}
+                  className={className}
+                  style={{ flex: `${flexGrow} 1 5rem` }}
+                  title={tileTooltip(h, pct)}
+                >
+                  {inner}
+                </button>
+              ) : (
+                <div key={h.ticker} className={className} style={{ flex: `${flexGrow} 1 5rem` }}>
+                  {inner}
+                </div>
+              );
+            })}
+          </div>
         </div>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-500">
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-500">
           <span className="inline-flex items-center gap-1">
             <span className="h-2.5 w-4 rounded bg-emerald-600/40 border border-emerald-500/40" /> Score ≥65
           </span>
           <span className="inline-flex items-center gap-1">
-            <span className="h-2.5 w-4 rounded bg-slate-600/40 border border-slate-500/40" /> Mixed
+            <span className="h-2.5 w-4 rounded bg-slate-600/40 border border-slate-500/40" /> Mixed score
           </span>
           <span className="inline-flex items-center gap-1">
             <span className="h-2.5 w-4 rounded bg-red-600/30 border border-red-500/40" /> Score ≤35
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2.5 w-4 rounded border-2 border-emerald-400/70 bg-slate-800/80" /> Conf ≥70%
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2.5 w-4 rounded border-2 border-dashed border-slate-500/60 bg-slate-800/80" /> Conf &lt;40%
           </span>
         </div>
       </div>

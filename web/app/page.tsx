@@ -1262,8 +1262,19 @@ export interface PortfolioReport {
   per_holding: PortfolioHolding[];
   total_value: number;
   avg_score: number;
+  /** Weighted avg of 7-layer confidence when available on holdings */
+  avg_confidence?: number | null;
+  /** Holdings where chart score and model confidence materially disagree */
+  score_confidence_mismatch_count?: number;
   regime_counts: { UP: number; NEUTRAL: number; DOWN: number };
-  largest_position: { ticker: string; pct: number; value: number; score?: number; regime?: string } | null;
+  largest_position: {
+    ticker: string;
+    pct: number;
+    value: number;
+    score?: number;
+    confidence?: number | null;
+    regime?: string;
+  } | null;
   top3_pct?: number;
   concentration_alert: string[];
   cash_deployment: { ticker: string; score?: number | null; confidence?: number | null; action?: string | null; regime: string }[];

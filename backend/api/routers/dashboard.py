@@ -533,6 +533,9 @@ def _snap_as_of(snap: dict, fallback: str | None = None) -> str | None:
     return snap.get("run_date") or snap.get("snapshot_date") or fallback
 
 
+_EOD_SNAPSHOT_SCAN_LIMIT = 14
+
+
 def _pick_best_eod_snapshot(
     config: dict,
     *,
@@ -595,7 +598,7 @@ def _pick_best_eod_snapshot(
     try:
         from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
 
-        for d in sorted(list_eod_dates_redis() or []):
+        for d in sorted(list_eod_dates_redis() or [], reverse=True)[:_EOD_SNAPSHOT_SCAN_LIMIT]:
             _consider(get_eod_snapshot_redis(d), f"eod_redis:{d}", d)
     except Exception as e:
         logger.debug("[eod-pick] redis scan: %s", e)
@@ -603,7 +606,7 @@ def _pick_best_eod_snapshot(
     try:
         eod_dir = Path(get_data_root()) / "eod"
         if eod_dir.exists():
-            for path in sorted(eod_dir.glob("*.json"), reverse=True):
+            for path in sorted(eod_dir.glob("*.json"), reverse=True)[:_EOD_SNAPSHOT_SCAN_LIMIT]:
                 try:
                     raw = _json.loads(path.read_text(encoding="utf-8"))
                 except Exception:
@@ -657,11 +660,13 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
         # Fast path — dedicated Redis keys (never deserialize the full dashboard blob).
         assembled = assemble_analysis_slices()
         if assembled:
+            assembled = _patch_stale_paper_trading(assembled)
             logger.info("[analysis-bundle] slice cache hit (assembled)")
             return assembled
 
         dedicated = get_analysis_bundle()
         if dedicated:
+            dedicated = _patch_stale_paper_trading(dedicated)
             logger.info("[analysis-bundle] dedicated cache hit")
             return dedicated
 
@@ -672,13 +677,19 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
         refresh_ts = cached.get("refresh_ts") if isinstance(cached, dict) else None
         dedicated = get_analysis_bundle(refresh_ts=refresh_ts)
         if dedicated:
+            dedicated = _patch_stale_paper_trading(dedicated)
             logger.info("[analysis-bundle] dedicated cache hit (refresh_ts match)")
             return dedicated
 
         if cached.get("analysis_deferred") is False:
             partial = build_analysis_bundle(cached)
             pt = partial.get("paper_trading") if isinstance(partial.get("paper_trading"), dict) else {}
-            if pt.get("summary") is not None and partial.get("forward_tracking") is not None:
+            recent = pt.get("recent") if isinstance(pt.get("recent"), list) else []
+            if (
+                pt.get("summary") is not None
+                and partial.get("forward_tracking") is not None
+                and len(recent) > 0
+            ):
                 logger.info("[analysis-bundle] dashboard cache hit")
                 try:
                     set_analysis_bundle(partial, refresh_ts=refresh_ts)
@@ -991,6 +1002,71 @@ def _ensure_analysis_background_compute() -> None:
         trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True))
 
 
+def _paper_trading_slice_stale(pt: Any) -> bool:
+    """True when cached payload has aggregate stats but no trade rows (common cache bug)."""
+    if not isinstance(pt, dict):
+        return True
+    recent = pt.get("recent")
+    if isinstance(recent, list) and len(recent) > 0:
+        return False
+    summary = pt.get("summary")
+    if isinstance(summary, dict):
+        try:
+            completed = int(summary.get("completed_n") or summary.get("completed") or 0)
+        except (TypeError, ValueError):
+            completed = 0
+        if completed > 0:
+            return True
+    equity = pt.get("equity_curve")
+    if isinstance(equity, list) and len(equity) > 0:
+        return True
+    return False
+
+
+def _refresh_paper_trading_light(
+    existing: dict,
+    results: list,
+    config: dict,
+    data_root: Any,
+) -> dict:
+    """Fast paper-trading slice: read CSV + fill/mtm — no multi-minute EOD backfill."""
+    from signals.paper_trade_logger import PaperTradeLogger
+
+    pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
+    min_done = int(pt_cfg.get("min_completed_for_summary", 60))
+    min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
+    bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
+    pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
+    pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
+    out = dict(existing or {})
+    out["sync_targets"] = pt.sync_targets_stops_from_results(results)
+    out["mtm"] = pt.mark_to_market()
+    out["fill"] = pt.fill_outcomes()
+    out["summary"] = pt.get_performance_summary(
+        min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym
+    )
+    out["recent"] = pt.enrich_trades_with_benchmark(pt.get_recent(limit=200), benchmark=bench_sym)
+    out["equity_curve"] = pt.get_completed_equity_curve(max_points=400)
+    out["data_root"] = str(data_root)
+    out.setdefault(
+        "persistence_note",
+        "Set env DATA_ROOT to a persistent path (e.g. volume) so paper trades and EOD survive restarts.",
+    )
+    return out
+
+
+def _patch_stale_paper_trading(bundle: dict | None) -> dict | None:
+    """Replace paper_trading in a cached bundle when summary exists but recent[] is empty."""
+    if not isinstance(bundle, dict) or not _paper_trading_slice_stale(bundle.get("paper_trading")):
+        return bundle
+    fresh = _compute_analysis_slice("paper_trading")
+    if fresh is None:
+        return bundle
+    out = dict(bundle)
+    out["paper_trading"] = fresh
+    return out
+
+
 def _compute_analysis_slice(slice_key: str) -> Any | None:
     """
     Synchronous fast path for one Analysis panel (no multi-minute paper EOD backfill).
@@ -1047,28 +1123,8 @@ def _compute_analysis_slice(slice_key: str) -> Any | None:
 
     if slice_key == "paper_trading":
         try:
-            from config_loader import get_dashboard_signal_universe
-            from signals.paper_trade_logger import PaperTradeLogger
-
             existing = dict(cached.get("paper_trading") or {}) if isinstance(cached.get("paper_trading"), dict) else {}
-            if existing.get("summary") is not None:
-                return existing
-            pt_cfg = (config.get("paper_trading") or {}) if isinstance(config, dict) else {}
-            min_done = int(pt_cfg.get("min_completed_for_summary", 60))
-            min_buy = int(pt_cfg.get("min_actionable_buy_summary", 8))
-            bench_sym = str(pt_cfg.get("benchmark_ticker", "SPY"))
-            pt_exec_cfg = (pt_cfg.get("execution") or {}) if isinstance(pt_cfg, dict) else {}
-            pt = PaperTradeLogger(data_root=data_root, execution_cfg=pt_exec_cfg)
-            existing["sync_targets"] = pt.sync_targets_stops_from_results(results)
-            existing["mtm"] = pt.mark_to_market()
-            existing["fill"] = pt.fill_outcomes()
-            existing["summary"] = pt.get_performance_summary(
-                min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym
-            )
-            existing["recent"] = pt.enrich_trades_with_benchmark(pt.get_recent(limit=200), benchmark=bench_sym)
-            existing["equity_curve"] = pt.get_completed_equity_curve(max_points=400)
-            existing["data_root"] = str(data_root)
-            return existing
+            return _refresh_paper_trading_light(existing, results, config, data_root)
         except Exception as e:
             logger.warning("[analysis-slice] paper_trading sync failed: %s", e)
             return {"message": str(e)}
@@ -1104,16 +1160,22 @@ def _analysis_slice_response(slice_key: str):
         if isinstance(bundle, dict):
             data = bundle.get(slice_key)
 
-    if data is None:
+    computed = False
+    if slice_key == "paper_trading" and _paper_trading_slice_stale(data):
         data = _compute_analysis_slice(slice_key)
-        if data is not None:
-            try:
-                dash = get_cached_dashboard() or get_last_dashboard_snapshot()
-                refresh_ts = dash.get("refresh_ts") if isinstance(dash, dict) else None
-                set_analysis_slice(slice_key, data, refresh_ts=refresh_ts)
-                logger.info("[analysis-slice] sync compute ok: %s", slice_key)
-            except Exception as e:
-                logger.debug("[analysis-slice] cache write failed %s: %s", slice_key, e)
+        computed = data is not None
+    elif data is None:
+        data = _compute_analysis_slice(slice_key)
+        computed = data is not None
+
+    if data is not None and computed:
+        try:
+            dash = get_cached_dashboard() or get_last_dashboard_snapshot()
+            refresh_ts = dash.get("refresh_ts") if isinstance(dash, dict) else None
+            set_analysis_slice(slice_key, data, refresh_ts=refresh_ts)
+            logger.info("[analysis-slice] sync compute ok: %s", slice_key)
+        except Exception as e:
+            logger.debug("[analysis-slice] cache write failed %s: %s", slice_key, e)
 
     if data is not None:
         from signals.cache import _sanitize_for_json
@@ -2940,6 +3002,14 @@ def _compute_full_dashboard_sync() -> dict:
         universe_rows, universe_source = _resolve_universe_cache_rows(config, results)
         eod_uni_n = len(get_eod_signal_universe(config))
         ok_uni = set_universe_signals(universe_rows, as_of=as_of_date)
+        try:
+            from signals.cache import set_eod_universe_panel
+
+            shaped_uni = _shape_universe_rows(universe_rows, as_of_date)
+            shaped_uni["source"] = universe_source
+            set_eod_universe_panel(shaped_uni)
+        except Exception as e:
+            logger.debug("[dashboard] eod_universe_panel cache: %s", e)
         ok_sig = set_signals_panel(results, as_of=as_of_date)
         logger.info(
             "[dashboard] panel caches: universe_signals=%s (%d rows, source=%s, eod_universe=%d), "
@@ -4466,101 +4536,82 @@ async def purge_velocity_paper_trades(dry_run: bool = Query(True)):
 @router.get("/dashboard/eod-universe")
 async def get_eod_universe(date: str = Query("latest")):
     """
-    Return the full signal row array from the latest (or specified) EOD snapshot.
-    Each row is shaped into a compact summary suitable for the Signal Universe table.
-    No extra computation — purely a read of the saved EOD JSON.
+    Return compact Signal Universe rows for the EOD Universe table.
+    Fast path: shaped Redis cache → universe_signals → signals_panel → dashboard cache → EOD scan.
     """
     try:
+        from signals.cache import (
+            get_cached_dashboard,
+            get_eod_universe_panel,
+            get_last_dashboard_snapshot,
+            get_signals_panel,
+            get_universe_signals,
+            set_eod_universe_panel,
+        )
+
+        cached_panel = get_eod_universe_panel()
+        if cached_panel and isinstance(cached_panel.get("rows"), list) and cached_panel["rows"]:
+            logger.info("[eod-universe] panel cache hit (%d rows)", len(cached_panel["rows"]))
+            return cached_panel
+
         config = _load_config()
 
-        rows, as_of, source = _pick_best_eod_snapshot(config, date=date, allow_thin=False)
-        if rows:
-            logger.info(
-                "[eod-universe] picked %d rows from %s, as_of=%s",
-                len(rows),
-                source,
-                as_of,
-            )
-            shaped = _shape_universe_rows(rows, as_of)
+        def _finish(shaped: dict, source: str) -> dict:
+            shaped = dict(shaped)
             shaped["source"] = source
+            try:
+                set_eod_universe_panel(shaped)
+            except Exception:
+                pass
             return shaped
 
-        logger.info("[eod-universe] no full EOD snapshot — checking Redis fallbacks")
-        # Prefer universe_signals (written on dashboard refresh from best EOD on disk/Redis)
-        try:
-            from signals.cache import get_universe_signals
-            uni = get_universe_signals()
-            if uni and uni.get("rows"):
-                logger.info("[eod-universe] fallback universe_signals hit (%d rows)", len(uni["rows"]))
-                shaped = _shape_universe_rows(uni["rows"], uni.get("as_of"))
-                shaped["source"] = "universe_signals"
-                return shaped
-        except Exception as e:
-            logger.warning("[eod-universe] universe_signals error: %s", e)
+        if date != "latest":
+            rows, as_of, source = _pick_best_eod_snapshot(config, date=date, allow_thin=True)
+            if rows:
+                return _finish(_shape_universe_rows(rows, as_of), source)
+            return {
+                "rows": [],
+                "as_of": None,
+                "total": 0,
+                "message": f"No EOD snapshot for {date}.",
+            }
 
-        try:
-            from signals.cache import get_signals_panel
-            sp = get_signals_panel()
-            if sp and isinstance(sp.get("signals"), list) and len(sp["signals"]) > 0:
-                logger.info("[eod-universe] fallback signals_panel hit (%d rows)", len(sp["signals"]))
-                shaped = _shape_universe_rows(sp["signals"], sp.get("as_of"))
-                shaped["source"] = "signals_panel"
-                return shaped
-            logger.info("[eod-universe] fallback signals_panel miss")
-        except Exception as e:
-            logger.warning("[eod-universe] signals_panel error: %s", e)
+        uni = get_universe_signals()
+        if uni and isinstance(uni.get("rows"), list) and uni["rows"]:
+            logger.info("[eod-universe] universe_signals hit (%d rows)", len(uni["rows"]))
+            return _finish(_shape_universe_rows(uni["rows"], uni.get("as_of")), "universe_signals")
 
-        # Fallback 3: full dashboard cache
-        try:
-            from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
-            dash = get_cached_dashboard()
-            snap_label = "fresh"
-            if dash is None:
-                dash = get_last_dashboard_snapshot()
-                snap_label = "last_snapshot"
-            if dash:
-                rows = dash.get("signals") or []
-                as_of = dash.get("as_of_date") or dash.get("run_date")
-                logger.info(
-                    "[eod-universe] fallback-3 dashboard cache (%s): %d signal rows, as_of=%s",
-                    snap_label, len(rows), as_of,
-                )
-                if rows:
-                    try:
-                        from signals.cache import set_universe_signals
-                        set_universe_signals(rows, as_of=as_of)
-                    except Exception:
-                        pass
-                    return _shape_universe_rows(rows, as_of)
-                logger.info("[eod-universe] fallback-3 dashboard signals empty — triggering background refresh")
-                try:
-                    from api.dashboard_job import is_refresh_running, trigger_background_refresh
-                    if not is_refresh_running():
-                        trigger_background_refresh(_compute_full_dashboard_sync)
-                except Exception:
-                    pass
-            else:
-                logger.info("[eod-universe] fallback-3 no dashboard cache at all")
-        except Exception as e:
-            logger.warning("[eod-universe] fallback-3 error: %s", e)
+        sp = get_signals_panel()
+        if sp and isinstance(sp.get("signals"), list) and sp["signals"]:
+            logger.info("[eod-universe] signals_panel hit (%d rows)", len(sp["signals"]))
+            return _finish(_shape_universe_rows(sp["signals"], sp.get("as_of")), "signals_panel")
+
+        dash = get_cached_dashboard() or get_last_dashboard_snapshot()
+        if dash and isinstance(dash.get("signals"), list) and dash["signals"]:
+            as_of = dash.get("as_of_date") or dash.get("run_date")
+            logger.info("[eod-universe] dashboard cache hit (%d rows)", len(dash["signals"]))
+            return _finish(_shape_universe_rows(dash["signals"], as_of), "dashboard_cache")
 
         rows, as_of, source = _pick_best_eod_snapshot(config, date=date, allow_thin=True)
         if rows:
             min_full = _min_full_eod_rows(config)
-            logger.info(
-                "[eod-universe] thin fallback %d rows from %s (min full=%d)",
-                len(rows),
-                source,
-                min_full,
-            )
+            logger.info("[eod-universe] EOD scan %d rows from %s", len(rows), source)
             shaped = _shape_universe_rows(rows, as_of)
-            shaped["source"] = source
             if len(rows) < min_full:
                 shaped["message"] = (
                     f"Dashboard-only snapshot ({len(rows)} tickers). "
                     f"Full EOD cohort is ~{min_full}+ — refresh on a trading day or run POST /api/eod/run?force=true."
                 )
-            return shaped
+            return _finish(shaped, source)
+
+        if dash is None:
+            try:
+                from api.dashboard_job import is_refresh_running, trigger_background_refresh
+
+                if not is_refresh_running():
+                    trigger_background_refresh(_compute_full_dashboard_sync)
+            except Exception:
+                pass
 
         return {
             "rows": [],
@@ -4576,6 +4627,8 @@ async def get_eod_universe(date: str = Query("latest")):
 
 def _shape_universe_rows(raw_rows: list, as_of: str | None) -> dict:
     """Shape raw EOD signal rows into compact universe table rows."""
+    from signals.tracking_gate import gate_snapshot_from_row
+
     out = []
     for r in raw_rows:
         if not isinstance(r, dict) or not r.get("ticker"):
@@ -4584,27 +4637,48 @@ def _shape_universe_rows(raw_rows: list, as_of: str | None) -> dict:
         if not ticker or r.get("error"):
             continue
 
-        # Gate counts
-        rs = r.get("retail_status") if isinstance(r.get("retail_status"), dict) else {}
-        gates = rs.get("gates") if isinstance(rs.get("gates"), list) else []
-        from signals.retail_action_payload import PRIMARY_GATE_IDS
-        primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
-        gates_passed = sum(1 for g in primary if g.get("pass"))
-        gates_total = len(primary) if primary else int(r.get("gates_total") or 4)
+        # Already panel-shaped row (from eod_universe_panel cache)
+        if (
+            r.get("gates_passed") is not None
+            and r.get("score") is not None
+            and r.get("composite_buy") is None
+            and r.get("composite_score") is None
+        ):
+            out.append({
+                "ticker": ticker,
+                "close": r.get("close"),
+                "change_pct": r.get("change_pct"),
+                "score": r.get("score"),
+                "regime": str(r.get("regime") or "NEUTRAL").upper(),
+                "rsi": r.get("rsi"),
+                "signal": str(r.get("signal") or "HOLD").upper(),
+                "entry_mode": r.get("entry_mode"),
+                "gates_passed": int(r.get("gates_passed") or 0),
+                "gates_total": int(r.get("gates_total") or 4),
+                "confidence": r.get("confidence"),
+                "sector": str(r.get("sector") or ""),
+                "market_cap_bucket": str(r.get("market_cap_bucket") or ""),
+            })
+            continue
 
-        # entry_mode — prefer stored, derive if missing
-        entry_mode = (
-            rs.get("entry_mode")
-            or r.get("entry_mode")
-            or r.get("go_no_go")
-        )
+        rs = r.get("retail_status") if isinstance(r.get("retail_status"), dict) else {}
+        snap = gate_snapshot_from_row(r)
+        gates_passed = int(snap.get("gates_passed") or 0)
+        gates_total = int(snap.get("gates_total") or 4)
+
+        entry_mode = rs.get("entry_mode") or r.get("entry_mode") or r.get("go_no_go")
         if entry_mode == "go":
             entry_mode = "full_go"
         elif entry_mode == "no_go":
             entry_mode = "hard_lock" if gates_passed == 0 else "starter_only"
+        elif entry_mode in ("GO", "NO_GO"):
+            entry_mode = "full_go" if entry_mode == "GO" else ("hard_lock" if gates_passed == 0 else "starter_only")
 
-        # Confidence
         conf = r.get("model_confidence_pct") or r.get("confidence_mid")
+        if conf is None:
+            conf_block = r.get("confidence")
+            if isinstance(conf_block, dict):
+                conf = conf_block.get("confidence_pct") or conf_block.get("confidence")
         try:
             conf = round(float(conf), 1) if conf is not None else None
         except (TypeError, ValueError):

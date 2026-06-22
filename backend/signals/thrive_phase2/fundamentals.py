@@ -4,9 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-import requests
-
 from ..fmp_client import BASE_V3, get_api_key
+from ..http_session import get_requests_session
 
 from .models import EntryConviction, FundamentalMetrics
 
@@ -28,7 +27,7 @@ class FMPFundamentalGate:
         params["apikey"] = self._api_key
         url = f"{BASE_V3}/{endpoint.lstrip('/')}"
         try:
-            r = requests.get(url, params=params, timeout=15)
+            r = get_requests_session().get(url, params=params, timeout=15)
             r.raise_for_status()
             return r.json()
         except Exception as e:

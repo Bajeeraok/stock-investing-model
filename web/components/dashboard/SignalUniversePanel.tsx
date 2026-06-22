@@ -312,7 +312,8 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
           {gateChips.map(v => (
             <button
               key={v ?? "all"}
-              onClick={() => setMinGates(v)}
+              type="button"
+              onClick={() => setMinGates(minGates === v ? null : v)}
               className={clsx(
                 "px-1.5 py-0.5 rounded text-[10px] border transition",
                 minGates === v
@@ -320,7 +321,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                   : "text-slate-500 bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
               )}
             >
-              {v === null ? "—" : v}
+              {v === null ? "All" : v}
             </button>
           ))}
         </div>
@@ -331,7 +332,8 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
           {confChips.map(v => (
             <button
               key={v ?? "all"}
-              onClick={() => setMinConf(v)}
+              type="button"
+              onClick={() => setMinConf(minConf === v ? null : v)}
               className={clsx(
                 "px-1.5 py-0.5 rounded text-[10px] border transition",
                 minConf === v
@@ -339,7 +341,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                   : "text-slate-500 bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
               )}
             >
-              {v === null ? "—" : `${v}%`}
+              {v === null ? "All" : `${v}%`}
             </button>
           ))}
         </div>

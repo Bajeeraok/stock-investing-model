@@ -252,6 +252,18 @@ def shutdown():
         scanner.shutdown_scanner()
     except Exception:
         pass
+    try:
+        from signals.cache import close_redis_pool
+
+        close_redis_pool()
+    except Exception:
+        pass
+    try:
+        from signals.http_session import close_requests_session
+
+        close_requests_session()
+    except Exception:
+        pass
 
 
 @app.get("/api/health")

@@ -27,9 +27,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from typing import Any
 
 logger = logging.getLogger("signals.cache")
+
+_redis_pool: Any = None
+_redis_pool_lock = threading.Lock()
 
 # TTLs in seconds
 TTL_BACKTEST = 24 * 3600
@@ -120,24 +124,86 @@ def _try_connect(url: str):
     return r
 
 
-def _redis_client():
-    """Lazy Redis connection. Returns None if Redis unavailable or disabled."""
-    try:
+def _redis_max_connections() -> int:
+    raw = (os.environ.get("REDIS_MAX_CONNECTIONS") or "").strip()
+    if raw:
+        try:
+            return max(4, min(128, int(raw)))
+        except ValueError:
+            pass
+    return 32
+
+
+def _reset_redis_pool() -> None:
+    """Drop pooled connections (e.g. after connection errors)."""
+    global _redis_pool
+    with _redis_pool_lock:
+        pool = _redis_pool
+        _redis_pool = None
+    if pool is not None:
+        try:
+            pool.disconnect(inuse_connections=True)
+        except Exception:
+            pass
+
+
+def _get_redis_pool():
+    """Shared ConnectionPool — one TCP destination, reused across all cache ops."""
+    global _redis_pool
+    if _redis_pool is not None:
+        return _redis_pool
+    with _redis_pool_lock:
+        if _redis_pool is not None:
+            return _redis_pool
         url, _src = _redis_url()
         if not url:
             return None
+        import redis
+
         last_err = None
         for u in _redis_attempt_urls(url):
             try:
-                return _try_connect(u)
+                pool = redis.ConnectionPool.from_url(
+                    u,
+                    decode_responses=True,
+                    socket_connect_timeout=3,
+                    socket_timeout=3,
+                    retry_on_timeout=False,
+                    max_connections=_redis_max_connections(),
+                    health_check_interval=30,
+                )
+                redis.Redis(connection_pool=pool).ping()
+                _redis_pool = pool
+                return _redis_pool
             except Exception as e:
                 last_err = e
                 continue
-        logger.debug("Redis not available: %s", last_err)
+        logger.debug("Redis pool not available: %s", last_err)
         return None
-    except Exception as e:
-        logger.debug("Redis not available: %s", e)
+
+
+def close_redis_pool() -> None:
+    """Release pooled Redis connections on app shutdown."""
+    _reset_redis_pool()
+
+
+def _is_redis_connection_error(exc: BaseException) -> bool:
+    try:
+        import redis
+
+        return isinstance(exc, (redis.ConnectionError, redis.TimeoutError))
+    except Exception:
+        return False
+
+
+def _redis_client():
+    """Return a Redis client backed by the shared pool (no new TCP connect per call)."""
+    pool = _get_redis_pool()
+    if pool is None:
         return None
+    import redis
+
+    return redis.Redis(connection_pool=pool)
 
 
 def redis_status() -> dict:
@@ -152,15 +218,29 @@ def redis_status() -> dict:
 
         if configured and url:
             last_exc: Exception | None = None
-            for u in _redis_attempt_urls(url):
+            client = _redis_client()
+            if client is not None:
                 try:
-                    _ = _try_connect(u)
+                    client.ping()
                     connected = True
-                    used_scheme = _redis_scheme(u)
-                    last_exc = None
-                    break
+                    used_scheme = _redis_scheme(url)
                 except Exception as e:
                     last_exc = e
+                    _reset_redis_pool()
+            else:
+                for u in _redis_attempt_urls(url):
+                    try:
+                        probe = _try_connect(u)
+                        try:
+                            probe.close()
+                        except Exception:
+                            pass
+                        connected = True
+                        used_scheme = _redis_scheme(u)
+                        last_exc = None
+                        break
+                    except Exception as e:
+                        last_exc = e
             if not connected and last_exc is not None:
                 error = f"{type(last_exc).__name__}: {str(last_exc)[:180]}"
 
@@ -214,6 +294,8 @@ def get_cached(key: str, as_json: bool = True) -> Any | None:
         raw = r.get(key)
         return _deserialize(raw, as_json) if raw is not None else None
     except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
         logger.warning("Cache get failed for %s: %s", key[:50], e)
         return None
 
@@ -227,6 +309,8 @@ def set_cached(key: str, value: Any, ttl_seconds: int) -> bool:
         r.set(key, _serialize(value), ex=ttl_seconds)
         return True
     except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
         logger.warning("Cache set failed for %s: %s", key[:50], e)
         return False
 
@@ -240,6 +324,8 @@ def _set_persistent(key: str, value: Any) -> bool:
         r.set(key, _serialize(value))
         return True
     except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
         logger.warning("Redis set persistent failed for %s: %s", key[:50], e)
         return False
 
@@ -575,7 +661,20 @@ _UNIVERSE_KEEP_KEYS = frozenset({
     "rsi", "rsi14", "regime", "signal", "entry_mode", "go_no_go",
     "retail_status", "model_confidence_pct", "confidence_mid",
     "sector", "market_cap_bucket", "price_change_pct", "gates_total", "error",
+    "gates_passed", "gate_cleared", "gates_frozen",
 })
+
+EOD_UNIVERSE_PANEL_KEY = "dashboard:eod_universe_panel"
+EOD_UNIVERSE_PANEL_TTL = 5 * 60  # 5 min — shaped rows for Signal Universe table
+
+
+def get_eod_universe_panel() -> dict | None:
+    """Pre-shaped Signal Universe payload (avoids re-scanning all EOD snapshots per request)."""
+    return get_cached(EOD_UNIVERSE_PANEL_KEY)
+
+
+def set_eod_universe_panel(payload: dict) -> bool:
+    return set_cached(EOD_UNIVERSE_PANEL_KEY, payload, EOD_UNIVERSE_PANEL_TTL)
 
 
 def set_universe_signals(rows: list[dict], as_of: str | None = None) -> bool:
@@ -595,7 +694,19 @@ def set_universe_signals(rows: list[dict], as_of: str | None = None) -> bool:
             row["retail_status"] = {
                 "entry_mode": rs.get("entry_mode"),
                 "gates": rs.get("gates"),
+                "go_no_go": rs.get("go_no_go"),
+                "gates_locked_count": rs.get("gates_locked_count"),
             }
+        try:
+            from signals.tracking_gate import gate_snapshot_from_row
+
+            snap = gate_snapshot_from_row(row)
+            row["gates_passed"] = snap.get("gates_passed")
+            row["gates_total"] = snap.get("gates_total")
+            if snap.get("go_no_go"):
+                row["go_no_go"] = snap.get("go_no_go")
+        except Exception:
+            pass
         compact.append(row)
     payload = {"rows": compact, "as_of": as_of}
     return set_cached(UNIVERSE_SIGNALS_KEY, payload, UNIVERSE_SIGNALS_TTL)
@@ -754,6 +865,8 @@ def set_eod_snapshot_redis(date_str: str, payload: dict) -> bool:
         r.sadd(EOD_DATES_SET, date_str)
         return True
     except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
         logger.warning("Redis EOD set failed for %s: %s", date_str, e)
         return False
 
@@ -773,6 +886,8 @@ def list_eod_dates_redis() -> list[str]:
         members = r.smembers(EOD_DATES_SET)
         return sorted((m for m in members if isinstance(m, str)), reverse=True)
     except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
         logger.debug("Redis EOD list failed: %s", e)
         return []
 
@@ -787,5 +902,7 @@ def delete_eod_snapshot_redis(date_str: str) -> bool:
         r.srem(EOD_DATES_SET, date_str)
         return True
     except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
         logger.debug("Redis EOD delete failed for %s: %s", date_str, e)
         return False

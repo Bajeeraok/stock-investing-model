@@ -151,6 +151,8 @@ def build_warming_shell(config: dict | None = None) -> dict:
         "per_holding": [],
         "total_value": 0,
         "avg_score": 0,
+        "avg_confidence": None,
+        "score_confidence_mismatch_count": 0,
         "regime_counts": {"UP": 0, "NEUTRAL": 0, "DOWN": 0},
         "largest_position": None,
         "concentration_alert": [],

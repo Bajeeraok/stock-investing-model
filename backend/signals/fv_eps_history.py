@@ -12,9 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import requests
-
 from signals.fmp_client import BASE_V3, get_api_key
+from signals.http_session import get_requests_session
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> lis
     sym = (ticker or "").upper().split("-")[0]
     params = {"period": "quarter", "limit": limit, "apikey": api_key}
     try:
-        r = requests.get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
+        r = get_requests_session().get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
         r.raise_for_status()
         data = r.json()
     except Exception as e:

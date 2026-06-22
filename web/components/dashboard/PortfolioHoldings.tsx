@@ -2,6 +2,11 @@
 
 import type { PortfolioHolding } from "@/app/page";
 import { clsx } from "clsx";
+import {
+  confidenceTextClass,
+  isScoreConfidenceMismatch,
+  scoreTileClass,
+} from "@/lib/scoreConfidenceDisplay";
 
 export function PortfolioHoldings({
   holdings,
@@ -24,7 +29,7 @@ export function PortfolioHoldings({
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <table className={clsx("w-full border-collapse text-sm", hasActionToday ? "min-w-[880px]" : "min-w-[640px]")}>
+        <table className={clsx("w-full border-collapse text-sm", hasActionToday ? "min-w-[960px]" : "min-w-[720px]")}>
           <thead>
             <tr className="text-left text-slate-400">
               {hasAccounts && (
@@ -43,7 +48,18 @@ export function PortfolioHoldings({
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Value</th>
               {hasGainLoss && <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Gain/Loss</th>}
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">%</th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700" title="0-100 calibrated confidence (7-layer engine). Falls back to composite score when confidence is unavailable.">Confidence</th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700"
+                title="Composite score 0–100 from chart rules (MA / RSI / MACD). Heat map fill color."
+              >
+                Score
+              </th>
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700"
+                title="7-layer fused model confidence 0–100%. Used for ADD/TRIM sizing when available."
+              >
+                Conf %
+              </th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Regime</th>
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700">Suggestion</th>
               {hasActionToday && (
@@ -97,20 +113,37 @@ export function PortfolioHoldings({
                   {h.pct != null ? `${h.pct.toFixed(1)}%` : "-"}
                 </td>
                 <td className="px-3 py-2.5">
-                  {(() => {
-                    const val = (h.confidence ?? h.score);
-                    return (
                   <span
                     className={clsx(
-                      (val ?? 0) >= addMinConfidence && "text-emerald-400",
-                      (val ?? 0) < addMinConfidence && (val ?? 0) > trimMaxConfidence && "text-slate-300",
-                      (val ?? 0) <= trimMaxConfidence && "text-red-400"
+                      "inline-flex min-w-[2rem] justify-center px-1.5 py-0.5 rounded text-xs font-mono tabular-nums",
+                      scoreTileClass(h.score),
                     )}
+                    title="Composite chart score"
                   >
-                    {val != null ? val.toFixed(1) : "-"}
+                    {h.score != null ? Math.round(h.score) : "—"}
                   </span>
-                    );
-                  })()}
+                </td>
+                <td className="px-3 py-2.5">
+                  <span
+                    className={clsx(
+                      "font-mono tabular-nums",
+                      confidenceTextClass(h.confidence),
+                      (h.confidence ?? 0) >= addMinConfidence && "font-semibold",
+                      (h.confidence ?? 0) <= trimMaxConfidence && h.confidence != null && "font-semibold",
+                    )}
+                    title={
+                      isScoreConfidenceMismatch(h.score, h.confidence)
+                        ? "Score and model confidence disagree — check ticker detail before sizing"
+                        : "7-layer model confidence"
+                    }
+                  >
+                    {h.confidence != null ? `${h.confidence.toFixed(0)}%` : "—"}
+                    {isScoreConfidenceMismatch(h.score, h.confidence) && (
+                      <span className="ml-1 text-amber-400" aria-label="Score vs confidence mismatch">
+                        ⚠
+                      </span>
+                    )}
+                  </span>
                 </td>
                 <td className="px-3 py-2.5">
                   <span

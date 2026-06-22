@@ -7,9 +7,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import requests
-
 from signals.fmp_client import BASE_V3, fetch_analyst_estimates_quarterly, get_api_key
+from signals.http_session import get_requests_session
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +20,9 @@ def _income_and_cf(config: dict, ticker: str) -> tuple[list[dict] | None, list[d
     sym = (ticker or "").upper().split("-")[0]
     params = {"period": "quarter", "limit": 8, "apikey": api_key}
     try:
-        ri = requests.get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
-        rc = requests.get(f"{BASE_V3}/cash-flow-statement/{sym}", params=params, timeout=15)
+        session = get_requests_session()
+        ri = session.get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
+        rc = session.get(f"{BASE_V3}/cash-flow-statement/{sym}", params=params, timeout=15)
         ri.raise_for_status()
         rc.raise_for_status()
         inc = ri.json()

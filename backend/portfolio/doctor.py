@@ -201,12 +201,24 @@ def portfolio_report(
     # Regime counts
     regime_counts = {"UP": 0, "NEUTRAL": 0, "DOWN": 0}
     scores_for_avg = []
+    confidences_for_avg = []
+    score_confidence_mismatch_count = 0
     for h in per_holding:
         if h["regime"]:
             regime_counts[h["regime"]] = regime_counts.get(h["regime"], 0) + 1
         if h["score"] is not None:
             scores_for_avg.append(h["score"])
+        if h.get("confidence") is not None:
+            confidences_for_avg.append(float(h["confidence"]))
+        sc = h.get("score")
+        cf = h.get("confidence")
+        if sc is not None and cf is not None:
+            if (float(sc) >= 65 and float(cf) < 55) or (float(sc) <= 35 and float(cf) >= 55):
+                score_confidence_mismatch_count += 1
     avg_score = sum(scores_for_avg) / len(scores_for_avg) if scores_for_avg else 0.0
+    avg_confidence = (
+        round(sum(confidences_for_avg) / len(confidences_for_avg), 1) if confidences_for_avg else None
+    )
 
     # Largest position (include score/regime)
     largest = None
@@ -219,6 +231,7 @@ def portfolio_report(
                 "pct": largest_h["pct"],
                 "value": largest_h["value"],
                 "score": largest_h.get("score"),
+                "confidence": largest_h.get("confidence"),
                 "regime": largest_h.get("regime"),
             }
 
@@ -315,6 +328,8 @@ def portfolio_report(
         "per_holding": per_holding,
         "total_value": total_value,
         "avg_score": round(avg_score, 1),
+        "avg_confidence": avg_confidence,
+        "score_confidence_mismatch_count": score_confidence_mismatch_count,
         "regime_counts": regime_counts,
         "largest_position": largest,
         "top3_pct": top3_pct,

@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -22,6 +23,10 @@ from config_loader import load_config
 from scripts.run_daily import load_last_run
 
 router = APIRouter()
+
+_openai_client = None
+_openai_client_key: str | None = None
+_openai_lock = threading.Lock()
 
 SYSTEM_PROMPT = """You are a copilot for a stock investing model. You answer questions using ONLY the provided data.
 
@@ -104,7 +109,12 @@ def _call_llm(question: str, context: str) -> str:
     except ImportError:
         return "Install openai: pip install openai"
 
-    client = OpenAI(api_key=api_key)
+    global _openai_client, _openai_client_key
+    with _openai_lock:
+        if _openai_client is None or _openai_client_key != api_key:
+            _openai_client = OpenAI(api_key=api_key)
+            _openai_client_key = api_key
+        client = _openai_client
     full_context = f"{SYSTEM_PROMPT}\n\n```\n{context}\n```"
     messages = [
         {"role": "system", "content": full_context},

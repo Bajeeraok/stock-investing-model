@@ -1215,8 +1215,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             title={`Confidence = 7-layer score (regime, pattern, ML, options, insider, fundamental, NLP). ${LIVE_SCORE_LINE}`}
           >
             <strong className="text-slate-300">Model rules:</strong>{" "}
-            Add only when confidence ≥ {data.config?.model_rules?.add_min_confidence ?? 70} and regime {data.config?.model_rules?.add_min_regime ?? "UP"}. Trim when confidence ≤ {data.config?.model_rules?.trim_max_confidence ?? 30} or regime DOWN. When rotation risk High, tech suggestions step down. Rebalance review: quarterly.{" "}
-            <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Confidence = 7-layer score; open a ticker for details.</span>
+            Add when model confidence ≥ {data.config?.model_rules?.add_min_confidence ?? 70} and regime {data.config?.model_rules?.add_min_regime ?? "UP"}. Trim when confidence ≤ {data.config?.model_rules?.trim_max_confidence ?? 30} or regime DOWN. Portfolio heat map: tile color = composite chart score; ring = fused confidence (can disagree).{" "}
+            <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Open a ticker for confidence layers vs chart score.</span>
           </div>
           {(data.macro_regime || data.global_market_regime) && (
             <p

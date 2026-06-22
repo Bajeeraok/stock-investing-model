@@ -1,10 +1,12 @@
 "use client";
 
-import { DollarSign, BarChart3, PieChart, AlertCircle } from "lucide-react";
+import { DollarSign, BarChart3, PieChart, AlertCircle, Gauge } from "lucide-react";
 import type { PortfolioReport } from "@/app/page";
 import { DataMetricCard } from "./DataMetricCard";
 
 export function PortfolioSummary({ report }: { report: PortfolioReport }) {
+  const mismatch = report.score_confidence_mismatch_count ?? 0;
+
   return (
     <>
       <DataMetricCard
@@ -21,10 +23,32 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
         secondary="Simple stress: portfolio drops 10%"
       />
       <DataMetricCard
-        title="Avg confidence"
+        title="Avg composite score"
         icon={<BarChart3 />}
         primary={report.avg_score.toFixed(1)}
+        secondary="Chart rules (MA / RSI / MACD) — tile fill color"
       />
+      <DataMetricCard
+        title="Avg model confidence"
+        icon={<Gauge />}
+        primary={
+          report.avg_confidence != null ? (
+            <span className="text-xl font-semibold text-slate-100">{report.avg_confidence.toFixed(1)}%</span>
+          ) : (
+            "—"
+          )
+        }
+        secondary="7-layer fused model — tile ring; — if not computed for holdings"
+      />
+      {mismatch > 0 && (
+        <DataMetricCard
+          title="Score ≠ confidence"
+          icon={<AlertCircle />}
+          primary={<span className="text-xl font-semibold text-amber-300">{mismatch}</span>}
+          secondary="Holdings where chart score and model confidence disagree"
+          primaryClassName="text-amber-300"
+        />
+      )}
       <DataMetricCard
         title="Regime mix"
         icon={<PieChart />}
@@ -54,6 +78,8 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
             {report.largest_position?.score != null && (
               <span>
                 Score {report.largest_position.score.toFixed(0)}
+                {report.largest_position.confidence != null &&
+                  ` · Conf ${Math.round(report.largest_position.confidence)}%`}
                 {report.largest_position.regime && ` (${report.largest_position.regime})`}
               </span>
             )}
