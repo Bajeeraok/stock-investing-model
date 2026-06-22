@@ -21,8 +21,8 @@ def _long_inputs(**overrides) -> LongTermInputs:
 
 
 def test_spot_below_ceiling_full_mos_eligible():
-    """Spot well below FV → MOS BUY and within full-size ceiling."""
-    sig = compute_long_term_entry(_long_inputs(current_price=100.0, fair_value=200.0))
+    """Spot well below FV and below all tier bands → MOS BUY and within full-size ceiling."""
+    sig = compute_long_term_entry(_long_inputs(current_price=65.0, fair_value=200.0))
     ca = sig.entry_tiers["current_assessment"]
     assert ca["min_price_to_buy"] == 150.0  # 25% MOS to FV
     assert ca["within_full_mos_ceiling"] is True
@@ -32,13 +32,14 @@ def test_spot_below_ceiling_full_mos_eligible():
 
 
 def test_below_all_tiers_but_within_mos_ceiling():
-    """Crash below MA200 tiers but still under full-size ceiling — no chase-wait contradiction."""
+    """Crash below every tier band but still under full-size ceiling — tiers do not block full size."""
     sig = compute_long_term_entry(
         _long_inputs(
-            current_price=120.0,
+            current_price=65.0,
             fair_value=200.0,
             ma200=180.0,
             week52_low=70.0,
+            medium_entry_high=None,
         )
     )
     sp = sig.entry_tiers["spot_position"]
