@@ -22,6 +22,11 @@ out/
 # Data & secrets (do NOT commit API keys)
 data/last_run.json
 backend/data/last_run.json
+# Scanner runtime state (regenerated on dashboard/signal warm)
+backend/data/scanner/retail_alert_state.json
+backend/data/scanner/ml_probs.json
+backend/data/scanner/horizon_levels.json
+backend/data/scanner/alerts.jsonl
 *.key
 .env.local
 .env.*.local

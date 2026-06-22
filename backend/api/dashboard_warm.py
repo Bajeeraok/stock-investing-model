@@ -45,7 +45,7 @@ def fetch_live_prices(config: dict, tickers: list[str]) -> tuple[dict[str, float
     if not tickers:
         return None, False
 
-    from signals.fmp_client import fetch_batch_quote, get_fmp_api_key
+    from signals.fmp_client import fetch_batch_quote, get_api_key as get_fmp_api_key
     from signals.fetcher import fetch_yfinance_latest_prices
     from signals.providers import MAJOR_INDEX_ETFS
 

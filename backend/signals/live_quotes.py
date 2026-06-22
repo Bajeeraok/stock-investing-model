@@ -15,7 +15,7 @@ def fetch_live_quotes(config: dict, tickers: list[str]) -> tuple[dict[str, float
     use_fmp = config.get("data", {}).get("use_fmp_batch_quote", True)
     if use_fmp:
         try:
-            from signals.fmp_client import fetch_batch_quote, get_fmp_api_key
+            from signals.fmp_client import fetch_batch_quote, get_api_key as get_fmp_api_key
 
             if get_fmp_api_key(config):
                 batch, err = fetch_batch_quote(config, syms)

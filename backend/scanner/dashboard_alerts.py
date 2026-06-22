@@ -236,7 +236,7 @@ def _fetch_prices_for_tickers(tickers: list[str], config: dict, existing: dict[s
     if not missing:
         return prices
     try:
-        from signals.fmp_client import fetch_batch_quote, get_fmp_api_key
+        from signals.fmp_client import fetch_batch_quote, get_api_key as get_fmp_api_key
 
         if get_fmp_api_key(config):
             batch, err = fetch_batch_quote(config, missing)
