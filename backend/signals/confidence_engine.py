@@ -461,11 +461,20 @@ class ConfidenceEngine:
             )
             if hmm and not hmm.get("error"):
                 scores["regime_hmm"] = hmm["bull_probability"]
-                labels["regime_hmm"] = (
-                    f"Bull {hmm['bull_probability']*100:.0f}% / "
-                    f"Trans {hmm['transition_probability']*100:.0f}% / "
-                    f"Bear {hmm['bear_probability']*100:.0f}%"
-                )
+                me = hmm.get("momentum_extended")
+                if isinstance(me, dict) and me.get("active"):
+                    labels["regime_hmm"] = (
+                        f"Momentum extended · Bull {hmm['bull_probability']*100:.0f}% / "
+                        f"Trans {hmm['transition_probability']*100:.0f}% / "
+                        f"Bear {hmm['bear_probability']*100:.0f}% "
+                        "(pullback-risk at highs — not structural bear)"
+                    )
+                else:
+                    labels["regime_hmm"] = (
+                        f"Bull {hmm['bull_probability']*100:.0f}% / "
+                        f"Trans {hmm['transition_probability']*100:.0f}% / "
+                        f"Bear {hmm['bear_probability']*100:.0f}%"
+                    )
                 details["hmm"] = hmm
             else:
                 # Fall back to MA-based regime proxy

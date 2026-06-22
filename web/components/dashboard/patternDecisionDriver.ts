@@ -3,13 +3,24 @@
  * don't confuse "low score" with "bad company."
  */
 
-export type MarketWeather = "favorable" | "mixed" | "stormy" | "unknown";
+export type MarketWeather = "favorable" | "mixed" | "stormy" | "extended" | "unknown";
 
-export function marketWeatherFromRegimeBull(regimeBullPct: number | null | undefined): {
+export function marketWeatherFromRegimeBull(
+  regimeBullPct: number | null | undefined,
+  momentumExtended?: boolean | null,
+): {
   weather: MarketWeather;
   headline: string;
   detail: string;
 } {
+  if (momentumExtended) {
+    return {
+      weather: "extended",
+      headline: "Market weather: momentum extended",
+      detail:
+        "At/near highs with aligned MAs — HMM reads low bull % as pullback-risk, not a broken trend. Don't chase new entries.",
+    };
+  }
   if (regimeBullPct == null || Number.isNaN(Number(regimeBullPct))) {
     return { weather: "unknown", headline: "Market weather", detail: "Regime data unavailable." };
   }

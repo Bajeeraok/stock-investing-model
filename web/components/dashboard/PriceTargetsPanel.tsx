@@ -140,6 +140,16 @@ export interface EarningsTarget {
     abs_move_pct: number;
   }>;
   method_note?: string;
+  /** Set when spot is far above model FV — upside band is volatility only. */
+  valuation_context?: string;
+  is_tactical_only?: boolean;
+}
+
+export interface ValuationGuardSummary {
+  fair_value?: number | null;
+  premium_vs_fv_pct?: number | null;
+  upside_cap?: number | null;
+  valuation_note?: string | null;
 }
 
 export interface PriceTargetsData {
@@ -160,6 +170,7 @@ export interface PriceTargetsData {
     long?:   HorizonTargets;
   };
   scenarios: Scenario[];
+  valuation_guard?: ValuationGuardSummary;
   error?: string;
 }
 
@@ -455,6 +466,11 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
       {et.method_note && (
         <p className="text-[10px] text-slate-500 leading-snug">{et.method_note}</p>
       )}
+      {et.valuation_context && (
+        <p className="text-[10px] text-amber-300/90 leading-snug border border-amber-500/25 rounded-lg px-2.5 py-2 bg-amber-950/20">
+          {et.valuation_context}
+        </p>
+      )}
     </div>
   );
 }
@@ -679,6 +695,9 @@ function ScenarioRow({ s, price }: { s: Scenario; price: number }) {
             {s.analyst_anchored && (
               <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border text-purple-300 bg-purple-500/10 border-purple-500/30">ANALYST TARGET</span>
             )}
+            {(s as Scenario & { valuation_capped?: boolean }).valuation_capped && (
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border text-amber-300 bg-amber-500/10 border-amber-500/30">TACTICAL CAP</span>
+            )}
           </div>
           <p className="text-[11px] text-slate-400 truncate mt-0.5">{s.trigger}</p>
         </div>
@@ -832,6 +851,22 @@ export function PriceTargetsPanel({
       {/* ── Earnings timing ── */}
       {data.earnings_info && <EarningsBanner info={data.earnings_info} />}
       {data.earnings_target && <EarningsTargetCard et={data.earnings_target} price={data.current_price} />}
+
+      {data.valuation_guard?.valuation_note && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-500/35 bg-amber-950/25 px-3.5 py-2.5">
+          <AlertTriangle size={12} className="text-amber-400 mt-0.5 shrink-0" />
+          <div className="min-w-0 space-y-1">
+            <p className="text-[10px] font-semibold text-amber-200 uppercase tracking-wider">
+              Valuation vs tactical scenarios
+            </p>
+            <p className="text-xs text-amber-100/90 leading-relaxed">{data.valuation_guard.valuation_note}</p>
+            <p className="text-[10px] text-slate-500 leading-snug">
+              Model FV is a long-term fundamentals anchor. Earnings scenarios show short-term reaction ranges —
+              they are capped when spot is already above street targets.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* ── Technical level anchors ── */}
       {!hideTechnicalLevels && (

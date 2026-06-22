@@ -18,6 +18,15 @@ export function filterPrimaryTradingGates(gates: TradingGateRow[]): TradingGateR
   return gates.filter((g) => (PRIMARY_TRADING_GATE_IDS as readonly string[]).includes(g.id));
 }
 
+/** Buy-gate progress (4-of-4 rule) — excludes optional confidence gate from API payloads. */
+export function resolvePrimaryGatesCount(gates: TradingGateRow[]): { passed: number; total: number } {
+  const primary = filterPrimaryTradingGates(gates);
+  const display = primary.length > 0 ? primary : gates;
+  const total = display.length || PRIMARY_TRADING_GATE_IDS.length;
+  const passed = display.filter((g) => g.pass).length;
+  return { passed, total };
+}
+
 export type BehavioralBadge = {
   emoji: string;
   label: string;
@@ -1368,6 +1377,9 @@ export function LongTermAccumulationScale({
 
   const resolved = resolveLongHorizonEntryZone(horizon, entryTiers, currentPrice);
   const mos = entryTiers.current_assessment?.min_price_to_buy;
+  const withinMos =
+    entryTiers.current_assessment?.within_full_mos_ceiling === true ||
+    (mos != null && mos > 0 && currentPrice <= mos);
   const spotGap = entryTiers.spot_position;
   const primaryId = resolved.tierId;
   const primaryTier = tiers.find((t) => t.id === primaryId);
@@ -1407,6 +1419,7 @@ export function LongTermAccumulationScale({
   const abovePrimary = currentPrice > primaryHi;
   const mosP = mos != null && mos > 0 ? pct(mos) : null;
   const aboveMos = mos != null && mos > 0 && currentPrice > mos;
+  const belowAllWithinMos = spotGap?.below_all_within_mos === true;
   const bridge = spotGap?.bridge_band;
   const bridgeLo = bridge?.low;
   const bridgeHi = bridge?.high;
@@ -1422,7 +1435,12 @@ export function LongTermAccumulationScale({
 
   let statusHeadline: string;
   let statusDetail: string;
-  if (spotGap?.state === "between_tiers") {
+  if (belowAllWithinMos && withinMos) {
+    statusHeadline = spotGap?.label ?? "Below tier bands — full MOS at spot";
+    statusDetail =
+      spotGap?.detail ??
+      `Spot is below MA200/FV tier bands but at/below the full-size ceiling ($${mos?.toFixed(2) ?? "—"}) — valuation supports full size; tiers are scale-in guides.`;
+  } else if (spotGap?.state === "between_tiers") {
     const floor = spotGap.floor_tier_id ?? "T1";
     const ceiling = spotGap.ceiling_tier_id ?? "T2";
     const floorHi = spotGap.floor_band_high;
@@ -1606,10 +1624,13 @@ export function LongTermAccumulationScale({
           {mos != null && mos > 0 && (
             <>
               {" · "}
-              <span className="text-cyan-300 font-semibold">Full MOS</span>{" "}
+              <span className="text-cyan-300 font-semibold">Full-size ceiling</span>{" "}
               <span className="font-mono tabular-nums">${mos.toFixed(2)}</span>
+              {withinMos && !aboveMos && (
+                <span className="text-emerald-200"> — spot at/below ceiling (full size OK on valuation).</span>
+              )}
               {aboveMos && (
-                <span className="text-amber-100"> — above full-position ceiling (partial size only).</span>
+                <span className="text-amber-100"> — above ceiling (partial size only).</span>
               )}
             </>
           )}
@@ -2009,7 +2030,7 @@ export function LongTermTierLadder({
                     {isInside ? (
                       <span className="text-emerald-300/95">
                         {tier.id === "T2" || tier.id === "tier2"
-                          ? `Current price ($${currentPrice.toFixed(2)}) is inside Tier 2 — partial position only; full MOS is lower (see max buy price).`
+                          ? `Current price ($${currentPrice.toFixed(2)}) is inside Tier 2 — partial position only; full-size ceiling is lower (see tier header).`
                           : `Current price ($${currentPrice.toFixed(2)}) is inside this band — scale here first.`}
                       </span>
                     ) : isTarget && isAbove && spotGap?.state === "between_tiers" && tier.id === spotGap.ceiling_tier_id ? (

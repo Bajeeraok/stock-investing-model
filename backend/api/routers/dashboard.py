@@ -3908,7 +3908,11 @@ async def get_unified_signal(ticker: str):
 
 
 @router.get("/price-targets/{ticker}")
-async def get_price_targets(ticker: str, regime: str = "NEUTRAL"):
+async def get_price_targets(
+    ticker: str,
+    regime: str = "NEUTRAL",
+    fair_value: float | None = Query(None, description="Model fair value from ticker detail — aligns scenario caps"),
+):
     """
     Consolidated buy/sell zones, expected returns, and scenario analysis for a ticker.
 
@@ -3925,7 +3929,12 @@ async def get_price_targets(ticker: str, regime: str = "NEUTRAL"):
     try:
         from signals.price_targets import run_price_targets
         config = _load_config()
-        result = run_price_targets(ticker, market_regime=regime.upper(), config=config)
+        result = run_price_targets(
+            ticker,
+            market_regime=regime.upper(),
+            config=config,
+            fair_value=fair_value,
+        )
         return result
     except Exception as e:
         logger.exception("Price targets error for %s: %s", ticker, e)
@@ -3937,8 +3946,7 @@ async def get_classify(ticker: str):
     """
     Pre-flight asset classification for a single ticker.
     Returns asset type, weight profile, pre-flight flags, and scoreability.
-    Fast — no data fetching, just registry lookup + flag generation.
-    Call this when user types a new ticker to show asset type badge and warnings immediately.
+    Uses curated registry, then JSON cache, then live FMP/yfinance profile inference.
     """
     ticker = ticker.upper().strip()
     try:

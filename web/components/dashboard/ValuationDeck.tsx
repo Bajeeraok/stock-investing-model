@@ -107,14 +107,22 @@ function HouseColumn({
 
   const fullMos = h.min_price_to_buy;
   const active = h.active_tier_id;
+  const withinCeiling =
+    h.within_full_mos_ceiling === true ||
+    (fullMos != null && fullMos > 0 && currentPrice > 0 && currentPrice <= fullMos);
 
   return (
     <div className="space-y-2">
       {h.assessment_label && <p className="text-sm text-slate-200">{h.assessment_label}</p>}
       {fullMos != null && fullMos > 0 && (
         <p className="text-xs text-emerald-200/90">
-          Full size ≤ <span className="font-semibold tabular-nums">{fmtUsd(fullMos)}</span>
-          {h.above_full_mos_ceiling ? " (price above full MOS ceiling)" : " (25% MOS to model FV)"}
+          Full-size ceiling{" "}
+          <span className="font-semibold tabular-nums">{fmtUsd(fullMos)}</span>
+          {h.above_full_mos_ceiling
+            ? " (spot above — partial tiers only)"
+            : withinCeiling
+              ? " (spot at/below — full size OK on valuation)"
+              : " (25% MOS to model FV — upper bound, not entry target)"}
         </p>
       )}
       <ul className="space-y-1 text-[11px] text-slate-400">
@@ -136,6 +144,11 @@ function HouseColumn({
           </li>
         ))}
       </ul>
+      {currentPrice > 0 && fullMos != null && withinCeiling && h.full_size_eligible_at_spot && (
+        <p className="text-[10px] text-emerald-200/90">
+          Now {fmtUsd(currentPrice)} — at/below ceiling; tier bands are scale-in guides, not a higher min price.
+        </p>
+      )}
       {currentPrice > 0 && fullMos != null && currentPrice > fullMos && (
         <p className="text-[10px] text-amber-200/90">Now {fmtUsd(currentPrice)} — starter tiers only, not full book.</p>
       )}

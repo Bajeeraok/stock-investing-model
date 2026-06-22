@@ -21,6 +21,13 @@ import {
   type SignalsViewMode,
 } from "@/lib/signalsTableView";
 import { gatesForSignal, tradingGateSummaryLabel } from "@/lib/signalsTableViewGates";
+import {
+  entryModeLabel,
+  entryModeSortKey,
+  resolveConfidencePct,
+  resolveEntryMode,
+  resolveGatesCount,
+} from "@/lib/signalsTableAudit";
 import { TickerFilterBar } from "./TickerFilterBar";
 import {
   filterTickersBySource,
@@ -309,6 +316,7 @@ const DEFAULT_HORIZONS = {
 
 const SIGNALS_SORT_STORAGE_KEY = "thrive-signals-sort";
 const SIGNALS_MODEL_DETAIL_KEY = "thrive-signals-model-detail";
+const SIGNALS_AUDIT_COLS_KEY = "thrive-signals-audit-cols";
 
 function LiquidityCell({ signal: r }: { signal: Signal }) {
   const days = r.liquidity_days_to_exit;
@@ -332,7 +340,53 @@ function LiquidityCell({ signal: r }: { signal: Signal }) {
   );
 }
 
-export type SignalsSortKey = "ticker" | "score" | "regime" | "rsi";
+export type SignalsSortKey = "ticker" | "score" | "regime" | "rsi" | "gates" | "confidence" | "entry_mode";
+
+function AuditColumnCells({
+  r,
+  gateContext,
+  compact,
+}: {
+  r: Signal;
+  gateContext: SignalListContext;
+  compact?: boolean;
+}) {
+  const { passed, total } = resolveGatesCount(r, gateContext);
+  const { label, cls } = entryModeLabel(resolveEntryMode(r));
+  const conf = resolveConfidencePct(r);
+  const py = compact ? "py-1.5" : "py-2.5";
+  return (
+    <>
+      <td className={clsx("px-3 text-center font-mono text-xs align-middle", py)}>
+        <span
+          className={clsx(
+            passed === total ? "text-emerald-400" : passed >= 2 ? "text-amber-400" : "text-red-400/90",
+          )}
+          title="Primary buy gates passed / total"
+        >
+          {passed}/{total}
+        </span>
+      </td>
+      <td className={clsx("px-3 text-center align-middle", py)}>
+        <span
+          className={clsx(
+            "inline-flex px-1.5 py-0.5 rounded border text-[10px] font-semibold whitespace-nowrap",
+            cls,
+          )}
+          title="Entry sizing mode from gate stack"
+        >
+          {label}
+        </span>
+      </td>
+      <td
+        className={clsx("px-3 text-right font-mono text-xs text-slate-300 align-middle", py)}
+        title="Fused model confidence %"
+      >
+        {conf != null ? `${conf}%` : "—"}
+      </td>
+    </>
+  );
+}
 
 const POSITIONING_TOOLTIPS: Record<string, string> = {
   long: "Crowded long (CFTC): specs very long, reversal risk.",
@@ -368,6 +422,7 @@ function SignalsQuickTickerRow({
   onToggleExpand,
   muted,
   showEarningsCol,
+  showAuditColumns,
   portfolioSet,
   watchlistSet,
 }: {
@@ -381,12 +436,13 @@ function SignalsQuickTickerRow({
   onToggleExpand: (ticker: string, e: React.MouseEvent) => void;
   muted?: boolean;
   showEarningsCol: boolean;
+  showAuditColumns: boolean;
   portfolioSet: Set<string>;
   watchlistSet: Set<string>;
 }) {
   const gates = gatesForSignal(r, gateContext);
   const status = deriveListActionStatus(r);
-  const colSpan = 3 + (showEarningsCol ? 1 : 0);
+  const colSpan = 3 + (showEarningsCol ? 1 : 0) + (showAuditColumns ? 3 : 0);
 
   return (
     <>
@@ -454,6 +510,7 @@ function SignalsQuickTickerRow({
             <EarningsCell signal={r} />
           </td>
         )}
+        {showAuditColumns && <AuditColumnCells r={r} gateContext={gateContext} compact />}
       </tr>
       {expanded && (
         <tr className="border-t border-slate-800/80 bg-slate-950/50">
@@ -885,6 +942,9 @@ export function SignalsTable({
   const [scoreRsiDir, setScoreRsiDir] = useState<"asc" | "desc">("desc");
   const [openMobileTicker, setOpenMobileTicker] = useState<string | null>(null);
   const [showModelDetail, setShowModelDetail] = useState(false);
+  const [showAuditColumns, setShowAuditColumns] = useState(false);
+  const [minAuditGates, setMinAuditGates] = useState<number | null>(null);
+  const [minAuditConf, setMinAuditConf] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<SignalsViewMode>("quick");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(() => new Set());
@@ -920,6 +980,8 @@ export function SignalsTable({
     try {
       const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_MODEL_DETAIL_KEY) : null;
       if (raw === "1") setShowModelDetail(true);
+      const auditRaw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_AUDIT_COLS_KEY) : null;
+      if (auditRaw === "1") setShowAuditColumns(true);
     } catch {
       /* ignore */
     }
@@ -929,6 +991,22 @@ export function SignalsTable({
     setViewMode(mode);
     saveSignalsViewMode(mode);
     if (mode === "quick") setShowModelDetail(false);
+  };
+
+  const toggleAuditColumns = () => {
+    setShowAuditColumns((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(SIGNALS_AUDIT_COLS_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      if (!next) {
+        setMinAuditGates(null);
+        setMinAuditConf(null);
+      }
+      return next;
+    });
   };
 
   const toggleModelDetail = () => {
@@ -954,11 +1032,11 @@ export function SignalsTable({
 
   const applySort = (key: SignalsSortKey) => {
     setSortBy((prev) => {
-      if (prev === key && (key === "score" || key === "rsi")) {
+      if (prev === key && (key === "score" || key === "rsi" || key === "gates" || key === "confidence")) {
         setScoreRsiDir((d) => (d === "desc" ? "asc" : "desc"));
         return prev;
       }
-      if (prev !== key && (key === "score" || key === "rsi")) {
+      if (prev !== key && (key === "score" || key === "rsi" || key === "gates" || key === "confidence")) {
         setScoreRsiDir("desc");
       }
       if (prev !== key) {
@@ -986,10 +1064,20 @@ export function SignalsTable({
       watchlistSet,
     );
     const allowed = new Set(bySource.map((t) => t.toUpperCase()));
-    return signals.filter(
-      (s) => allowed.has(String(s.ticker).toUpperCase()) && matchesSignalPreset(s, preset),
-    );
-  }, [signals, preset, sourceFilter, portfolioTickers, watchlistTickers]);
+    return signals.filter((s) => {
+      if (!allowed.has(String(s.ticker).toUpperCase()) || !matchesSignalPreset(s, preset)) {
+        return false;
+      }
+      if (showAuditColumns && minAuditGates != null) {
+        if (resolveGatesCount(s, gateContext).passed < minAuditGates) return false;
+      }
+      if (showAuditColumns && minAuditConf != null) {
+        const c = resolveConfidencePct(s);
+        if (c == null || c < minAuditConf) return false;
+      }
+      return true;
+    });
+  }, [signals, preset, sourceFilter, portfolioTickers, watchlistTickers, showAuditColumns, minAuditGates, minAuditConf, gateContext]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -1004,10 +1092,19 @@ export function SignalsTable({
         return (ord[a.regime as keyof typeof ord] ?? 1) - (ord[b.regime as keyof typeof ord] ?? 1);
       }
       if (sortBy === "rsi") return dir * ((b.rsi ?? 0) - (a.rsi ?? 0));
+      if (sortBy === "gates") {
+        return dir * (resolveGatesCount(b, gateContext).passed - resolveGatesCount(a, gateContext).passed);
+      }
+      if (sortBy === "confidence") {
+        return dir * ((resolveConfidencePct(b) ?? -1) - (resolveConfidencePct(a) ?? -1));
+      }
+      if (sortBy === "entry_mode") {
+        return entryModeSortKey(resolveEntryMode(a)) - entryModeSortKey(resolveEntryMode(b));
+      }
       return 0;
     });
     return arr;
-  }, [filtered, sortBy, scoreRsiDir]);
+  }, [filtered, sortBy, scoreRsiDir, gateContext]);
 
   const showLiquidityCol = useMemo(() => sorted.some(signalHasLiquidity), [sorted]);
   const showEarningsCol = useMemo(() => sorted.some(signalHasEarningsInsight), [sorted]);
@@ -1082,6 +1179,8 @@ export function SignalsTable({
   }, []);
 
   const isQuick = viewMode === "quick";
+  const auditColCount = showAuditColumns ? 3 : 0;
+  const quickBaseCols = 3 + (showEarningsCol ? 1 : 0) + auditColCount;
 
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
@@ -1129,6 +1228,19 @@ export function SignalsTable({
               Full detail
             </button>
           </div>
+          <button
+            type="button"
+            onClick={toggleAuditColumns}
+            className={clsx(
+              "text-xs px-2.5 py-1.5 sm:py-1 rounded border min-h-[44px] sm:min-h-0 touch-manipulation",
+              showAuditColumns
+                ? "border-sky-500/40 bg-sky-500/10 text-sky-200"
+                : "border-slate-600 text-slate-400 hover:text-slate-200"
+            )}
+            title="Show gates count, entry mode, and model confidence columns (Signal Universe audit fields)"
+          >
+            {showAuditColumns ? "Audit cols on" : "Audit cols"}
+          </button>
           {!isQuick && (
           <button
             type="button"
@@ -1154,9 +1266,53 @@ export function SignalsTable({
           <option value="ticker">Ticker</option>
           <option value="regime">Regime</option>
           <option value="rsi">RSI</option>
+          {showAuditColumns && (
+            <>
+              <option value="gates">Gates</option>
+              <option value="entry_mode">Entry mode</option>
+              <option value="confidence">Confidence</option>
+            </>
+          )}
         </select>
         </div>
         </div>
+        {showAuditColumns && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-slate-500">Min gates:</span>
+            {[null, 2, 3, 4].map((g) => (
+              <button
+                key={g ?? "all"}
+                type="button"
+                onClick={() => setMinAuditGates(g)}
+                className={clsx(
+                  "px-2 py-0.5 rounded border touch-manipulation",
+                  minAuditGates === g
+                    ? "border-sky-500/50 bg-sky-500/15 text-sky-200"
+                    : "border-slate-600 text-slate-400 hover:text-slate-200",
+                )}
+              >
+                {g == null ? "All" : `${g}+`}
+              </button>
+            ))}
+            <span className="text-slate-600 ml-1">·</span>
+            <span className="text-slate-500">Min conf:</span>
+            {[null, 50, 70].map((c) => (
+              <button
+                key={c ?? "allc"}
+                type="button"
+                onClick={() => setMinAuditConf(c)}
+                className={clsx(
+                  "px-2 py-0.5 rounded border touch-manipulation",
+                  minAuditConf === c
+                    ? "border-sky-500/50 bg-sky-500/15 text-sky-200"
+                    : "border-slate-600 text-slate-400 hover:text-slate-200",
+                )}
+              >
+                {c == null ? "All" : `${c}%+`}
+              </button>
+            ))}
+          </div>
+        )}
         {earningsDataGap && (
           <p className="text-[11px] text-slate-500 border border-slate-600/60 rounded-md px-2.5 py-1.5 bg-slate-800/40">
             Earnings quality (EQ) is not available from the data source right now — column hidden to reduce noise.
@@ -1248,7 +1404,8 @@ export function SignalsTable({
         <table
           className={clsx(
             "w-full text-sm border-collapse",
-            showModelDetail ? "min-w-[1380px]" : isQuick ? "min-w-[520px]" : "min-w-[720px]"
+            showModelDetail ? "min-w-[1380px]" : isQuick ? "min-w-[520px]" : "min-w-[720px]",
+            showAuditColumns && (isQuick ? "min-w-[680px]" : "min-w-[860px]"),
           )}
         >
           <thead>
@@ -1286,6 +1443,28 @@ export function SignalsTable({
               >
                 Gates
               </th>
+              )}
+              {showAuditColumns && (
+                <>
+                  <th
+                    className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-center min-w-[3.5rem]"
+                    title="Primary gates passed / total (same as Signal Universe)"
+                  >
+                    Gates #
+                  </th>
+                  <th
+                    className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-center min-w-[5rem]"
+                    title="full_go · starter_only · hard_lock"
+                  >
+                    Entry
+                  </th>
+                  <th
+                    className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-right min-w-[3.5rem]"
+                    title="Fused model confidence %"
+                  >
+                    Conf%
+                  </th>
+                </>
               )}
               {!isQuick && showLiquidityCol && (
               <th
@@ -1404,6 +1583,7 @@ export function SignalsTable({
                         expanded={expandedTickers.has(r.ticker)}
                         onToggleExpand={toggleTickerExpand}
                         showEarningsCol={showEarningsCol}
+                        showAuditColumns={showAuditColumns}
                         portfolioSet={portfolioSet}
                         watchlistSet={watchlistSet}
                       />
@@ -1412,7 +1592,7 @@ export function SignalsTable({
                   return (
                     <Fragment key={group.key}>
                       <tr className="border-t border-slate-700/60 bg-slate-800/40">
-                        <td colSpan={3 + (showEarningsCol ? 1 : 0)} className="px-3 py-2">
+                        <td colSpan={quickBaseCols} className="px-3 py-2">
                           <button
                             type="button"
                             onClick={() => toggleGroup(group.key)}
@@ -1451,13 +1631,14 @@ export function SignalsTable({
                             onToggleExpand={toggleTickerExpand}
                             muted
                             showEarningsCol={showEarningsCol}
+                            showAuditColumns={showAuditColumns}
                             portfolioSet={portfolioSet}
                             watchlistSet={watchlistSet}
                           />
                         ))}
                       {!collapsed && group.rows.length > 1 && (
                         <tr className="border-b border-slate-700/40 bg-slate-900/30">
-                          <td colSpan={3 + (showEarningsCol ? 1 : 0)} className="px-3 py-1.5 text-xs text-slate-500 text-center">
+                          <td colSpan={quickBaseCols} className="px-3 py-1.5 text-xs text-slate-500 text-center">
                             End of {group.title} · {group.rows.length} tickers
                           </td>
                         </tr>
@@ -1531,6 +1712,7 @@ export function SignalsTable({
                 <td className="px-3 py-2.5 align-top">
                   <TradingGateMiniPills gates={gatesForSignal(r, gateContext)} />
                 </td>
+                {showAuditColumns && <AuditColumnCells r={r} gateContext={gateContext} />}
                 {showLiquidityCol && (
                 <td className="px-3 py-2.5 align-top">
                   <LiquidityCell signal={r} />

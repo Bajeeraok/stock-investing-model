@@ -970,6 +970,7 @@ def _build_investor_summary(
     regime_bull_pct = 50.0
     pattern_score = 50.0
     regime_hmm_label: str | None = None
+    regime_momentum_extended: bool = False
     regime_transition_pct: float | None = None
     regime_transition_days_estimate: int | None = None
     model_confidence_pct_summary: int | None = None
@@ -1015,6 +1016,17 @@ def _build_investor_summary(
             rh = b.get("regime_hmm")
             if isinstance(rh, dict) and rh.get("label"):
                 regime_hmm_label = str(rh["label"])
+            hmm_payload = conf_snapshot.get("hmm") or {}
+            regime_momentum_extended = bool(
+                isinstance(hmm_payload.get("momentum_extended"), dict)
+                and hmm_payload["momentum_extended"].get("active")
+            )
+            if regime_momentum_extended and isinstance(hmm_payload.get("momentum_extended"), dict):
+                me = hmm_payload["momentum_extended"]
+                regime_hmm_label = (
+                    f"Momentum Extended · Bull {regime_bull_pct:.0f}% "
+                    f"(HMM pullback-risk at highs — uptrend intact)"
+                )
             # Per-horizon 7-layer fused confidence
             hc = conf_snapshot.get("horizon_confidence") or {}
             if hc.get("short") is not None:
@@ -1506,6 +1518,7 @@ def _build_investor_summary(
         "pattern_score": round(pattern_score, 1) if pattern_score is not None else None,
         "regime_bull_pct": round(regime_bull_pct, 1),
         "regime_hmm_label": regime_hmm_label,
+        "regime_momentum_extended": regime_momentum_extended,
         "regime_transition_pct": regime_transition_pct,
         "regime_transition_days_estimate": regime_transition_days_estimate,
         "model_confidence_pct": model_confidence_pct_summary,

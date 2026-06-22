@@ -461,6 +461,62 @@ def _refresh_tier_fv_metrics(tier: EntryTier, fv: float, price: float) -> EntryT
     )
 
 
+def _enrich_mos_ceiling_context(
+    spot_position: dict[str, Any],
+    *,
+    price: float,
+    min_price_to_buy: float,
+    assess_verdict: str,
+    all_tiers: list[EntryTier],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    When spot is at/below the full-size MOS ceiling, tiers are NOT recomputed from spot —
+    they stay MA200 / FV×MOS / 52w-low anchors. This clarifies the common case where spot
+    sits below tier bands but still qualifies for full allocation on valuation.
+    """
+    sp = dict(spot_position)
+    flags: dict[str, Any] = {
+        "full_size_ceiling_label": "Full-size ceiling (25% MOS to fair value)",
+    }
+    if not (min_price_to_buy > 0 and price > 0):
+        return sp, flags
+
+    within = price <= min_price_to_buy + 1e-6
+    flags["within_full_mos_ceiling"] = within
+    if within:
+        flags["above_full_mos_ceiling"] = False
+        if assess_verdict == "BUY":
+            flags["full_size_eligible_at_spot"] = True
+            flags["position_mode"] = "full_size_ok"
+        elif assess_verdict == "PARTIAL":
+            flags["position_mode"] = "partial_ok"
+
+    if within and sp.get("state") == "below_all":
+        ceiling_tier = next(
+            (t for t in sorted(all_tiers, key=lambda x: x.low) if price < t.low),
+            all_tiers[0] if all_tiers else None,
+        )
+        sp["below_all_within_mos"] = True
+        sp["label"] = "Below tier bands — full MOS met at spot"
+        tid = ceiling_tier.id if ceiling_tier else "T2"
+        tlo = ceiling_tier.low if ceiling_tier else 0.0
+        thi = ceiling_tier.high if ceiling_tier else 0.0
+        sp["detail"] = (
+            "Spot ${:.2f} is below structural tier bands but at/below the full-size ceiling "
+            "${:.2f}. Full allocation is valuation-justified; tiers (MA200 / FV MOS / 52w stress) "
+            "are scale-in guides — not a higher minimum price. Nearest band: {} (${:.2f}–${:.2f})."
+        ).format(price, min_price_to_buy, tid, tlo, thi)
+        sp["next_add_tier_id"] = tid
+    elif within and sp.get("state") == "in_tier":
+        sp.setdefault(
+            "detail",
+            "Spot is inside a tier band and at/below the full-size ceiling ${:.2f} — scale per tier plan."
+            .format(min_price_to_buy),
+        )
+
+    return sp, flags
+
+
 def _enforce_strict_tier_ladder(
     tier1: EntryTier,
     tier2: EntryTier,
@@ -1476,6 +1532,16 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     all_tiers = [tier1, tier2, tier3]
     active_tier = resolve_active_tier(all_tiers, p)
     spot_position = classify_spot_tier_position(all_tiers, p)
+    spot_position, mos_ceiling_flags = _enrich_mos_ceiling_context(
+        spot_position,
+        price=p,
+        min_price_to_buy=min_price_to_buy,
+        assess_verdict=assess_verdict,
+        all_tiers=all_tiers,
+    )
+    if spot_position.get("below_all_within_mos") and assess_verdict == "BUY":
+        assess_label = spot_position.get("label") or assess_label
+        assess_color = "#00e5a0"
     target_tid = resolve_target_tier_id(all_tiers, p)
     display_tier = active_tier or next((t for t in all_tiers if t.id == target_tid), tier1)
     entry_zone = entry_zone_from_tier(display_tier, inside=active_tier is not None)
@@ -1634,6 +1700,18 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                 low=floor_t.low,
                 high=floor_t.high,
             )
+        elif spot_position.get("below_all_within_mos") and assess_verdict in ("BUY", "PARTIAL"):
+            trigger = (
+                "Full MOS at spot (${:.2f} ≤ ${:.2f} full-size ceiling) — {} on valuation; "
+                "scale tranches toward {} (${:.2f}–${:.2f}) when timing/regime confirm"
+            ).format(
+                p,
+                min_price_to_buy,
+                "full size justified" if assess_verdict == "BUY" else "partial size OK",
+                display_tier.id,
+                display_tier.low,
+                display_tier.high,
+            )
         else:
             trigger = (
                 "Price enters {label} (${low}–${high}) "
@@ -1695,6 +1773,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                 "margin_of_safety_pct": mos_pct,
                 "pct_above_ma200":     pct_above_ma200,
                 "min_price_to_buy":    min_price_to_buy,
+                **mos_ceiling_flags,
             },
             "tier2_profile": {
                 "class": mos_class,
@@ -1970,18 +2049,39 @@ def _harmonize_horizon_stop_framing(
     min_buy = ca.get("min_price_to_buy")
     active_id = et.get("active_tier_id")
     ca["reference_levels"] = ref
+    ca.setdefault(
+        "full_size_ceiling_label",
+        "Full-size ceiling (25% MOS to fair value)",
+    )
     if min_buy and current_price > float(min_buy):
         ca["above_full_mos_ceiling"] = True
+        ca["within_full_mos_ceiling"] = False
+        ca.pop("full_size_eligible_at_spot", None)
         if active_id == "T2":
             ca["position_mode"] = "partial_only"
             msg = (
-                "Inside Tier 2 band but above full-MOS ceiling ${:.2f} — "
-                "partial position only; max buy price is for full allocation, not this tier."
+                "Inside Tier 2 band but above full-size ceiling ${:.2f} — "
+                "partial position only; ceiling is for full allocation, not this tier band."
             ).format(float(min_buy))
             warnings = list(long_h.get("warnings") or [])
             if msg not in warnings:
                 warnings.append(msg)
                 long_h["warnings"] = warnings
+    elif min_buy and current_price <= float(min_buy):
+        ca["within_full_mos_ceiling"] = True
+        ca["above_full_mos_ceiling"] = False
+        if ca.get("verdict") == "BUY":
+            ca["full_size_eligible_at_spot"] = True
+            if ca.get("position_mode") not in ("partial_only", "hold_no_adds"):
+                ca["position_mode"] = "full_size_ok"
+        spot_pos = et.get("spot_position") or {}
+        if spot_pos.get("below_all_within_mos"):
+            detail = spot_pos.get("detail")
+            if detail:
+                warnings = list(long_h.get("warnings") or [])
+                if detail not in warnings:
+                    warnings.append(detail)
+                    long_h["warnings"] = warnings
     elif active_id == "T2":
         ca["position_mode"] = "partial_only"
     et["current_assessment"] = ca

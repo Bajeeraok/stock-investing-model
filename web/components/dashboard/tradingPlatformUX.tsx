@@ -115,6 +115,7 @@ export function StickyTickerQuoteBar({
               className={clsx(
                 "px-2 py-0.5 rounded border font-bold uppercase text-[10px]",
                 regime === "UP" && "border-emerald-500/40 text-emerald-300 bg-emerald-950/30",
+                regime === "EXTENDED" && "border-amber-500/40 text-amber-300 bg-amber-950/30",
                 regime === "DOWN" && "border-red-500/40 text-red-300 bg-red-950/30",
                 regime === "NEUTRAL" && "border-slate-600 text-slate-400"
               )}

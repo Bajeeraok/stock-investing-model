@@ -217,11 +217,16 @@ def validate_regime(
 
     elif hmm_dominant == "BEAR":
         if above_stack:
-            resolved = "TRANSITION"
+            resolved = "MOMENTUM_EXTENDED" if strong_bull_stack else "TRANSITION"
             conflict = True
-            severity = "MEDIUM"
+            severity = "MEDIUM" if strong_bull_stack else "MEDIUM"
             reason = "HMM_BEAR_BUT_ABOVE_STACK"
-            note = f"HMM overclaiming Bear: price {gap_ma50:+.2f}% vs MA50"
+            note = (
+                f"Momentum extended: price {gap_ma50:+.2f}% vs MA50 with aligned MAs — "
+                "HMM mean-reversion signal, not structural bear"
+                if strong_bull_stack
+                else f"HMM overclaiming Bear: price {gap_ma50:+.2f}% vs MA50"
+            )
 
     elif hmm_dominant == "STRONG_BULL":
         # Not currently emitted by our 3-state HMM, but kept for compatibility if added later.
@@ -245,6 +250,75 @@ def validate_regime(
         "moving_toward_ma50": moving_toward_ma50,
         "days_since_earnings": days_since_earnings,
         "post_earnings_return_pct": round(float(post_earnings_return_pct), 2) if post_earnings_return_pct is not None else None,
+        "strong_bull_stack": strong_bull_stack,
+        "above_stack": above_stack,
+    }
+
+
+def detect_momentum_extended(
+    *,
+    last_close: float,
+    ma20: float,
+    ma50: float,
+    ma200: float,
+    high_52w: float | None,
+    bull_prob: float,
+    bear_prob: float,
+    dominant_validated: str,
+    gap_ma200_pct: float | None,
+    recent_63d_return_pct: float | None,
+    rsi: float | None = None,
+) -> dict:
+    """
+    ATH + aligned MAs but low HMM bull % — mean-reversion warning, not structural bear.
+
+    The 3-state HMM labels states by average daily return. Parabolic runs often show
+    elevated |return| vol with mixed sign → mass shifts to transition/bear even while
+    price makes new highs. Retail copy should say "momentum extended", not "bear".
+    """
+    above_stack = last_close > ma50 > ma200
+    strong_stack = last_close > ma20 > ma50 > ma200
+    near_high = (
+        high_52w is not None
+        and high_52w > 0
+        and last_close >= high_52w * 0.94
+    )
+    extended_run = (
+        (recent_63d_return_pct is not None and recent_63d_return_pct >= 12.0)
+        or (gap_ma200_pct is not None and gap_ma200_pct >= 18.0)
+    )
+    low_hmm_bull = bull_prob < 0.42
+    elevated_rsi = rsi is not None and rsi >= 58
+
+    active = bool(
+        above_stack
+        and near_high
+        and low_hmm_bull
+        and (extended_run or elevated_rsi or strong_stack)
+    )
+
+    if not active:
+        return {"active": False}
+
+    pct_from_high = (
+        round((last_close / high_52w - 1) * 100, 1) if high_52w and high_52w > 0 else None
+    )
+    note = (
+        "Price is at/near 52-week highs with MAs stacked bullish, but HMM assigns "
+        f"{round(bull_prob * 100)}% bull — elevated pullback-risk (mean-reversion), "
+        "not a broken trend. Gate still blocks new entries until bull % clears."
+    )
+    return {
+        "active": True,
+        "label": "Momentum Extended",
+        "display_regime": "MOMENTUM_EXTENDED",
+        "note": note,
+        "pct_from_52w_high": pct_from_high,
+        "gap_ma200_pct": gap_ma200_pct,
+        "recent_63d_return_pct": recent_63d_return_pct,
+        "hmm_bull_pct": round(bull_prob * 100, 1),
+        "hmm_bear_pct": round(bear_prob * 100, 1),
+        "dominant_validated_before": dominant_validated,
     }
 
 
@@ -746,6 +820,56 @@ def get_hmm_regime(
         )
     dominant_display = _dominant_from_probs(bull_fin, tr_fin, br_fin)
 
+    momentum_extended: dict = {"active": False}
+    ma20_val: float | None = None
+    high_52w: float | None = None
+    rsi_val: float | None = None
+    try:
+        if close is not None:
+            cs = close.dropna()
+            if len(cs) >= 20:
+                ma20_val = float(cs.rolling(20, min_periods=20).mean().iloc[-1])
+            if len(cs) >= 60:
+                high_52w = float(cs.rolling(252, min_periods=60).max().iloc[-1])
+            if len(cs) >= 20:
+                try:
+                    import ta
+
+                    rsi_s = ta.momentum.RSIIndicator(cs).rsi()
+                    rv = float(rsi_s.iloc[-1])
+                    if rv == rv:
+                        rsi_val = rv
+                except Exception:
+                    pass
+            if len(cs) >= 200 and gap_ma200_pct is None:
+                last_close = float(cs.iloc[-1])
+                ma200_v = float(cs.rolling(200, min_periods=200).mean().iloc[-1])
+                if ma200_v > 0:
+                    gap_ma200_pct = (last_close - ma200_v) / ma200_v * 100.0
+            if len(cs) >= 50 and ma20_val is not None:
+                last_close = float(cs.iloc[-1])
+                ma50_v = float(cs.rolling(50, min_periods=50).mean().iloc[-1])
+                ma200_v = float(cs.rolling(200, min_periods=200).mean().iloc[-1])
+                momentum_extended = detect_momentum_extended(
+                    last_close=last_close,
+                    ma20=ma20_val,
+                    ma50=ma50_v,
+                    ma200=ma200_v,
+                    high_52w=high_52w,
+                    bull_prob=bull_fin,
+                    bear_prob=br_fin,
+                    dominant_validated=dominant_validated,
+                    gap_ma200_pct=gap_ma200_pct,
+                    recent_63d_return_pct=recent_63d_return_pct,
+                    rsi=rsi_val,
+                )
+                if momentum_extended.get("active"):
+                    dominant_display = "MOMENTUM_EXTENDED"
+                    if dominant_validated in ("BEAR", "TRANSITION"):
+                        dominant_validated = "MOMENTUM_EXTENDED"
+    except Exception:
+        pass
+
     # One-step transition matrix row for "transition" state — direction of next bar if latent state were transition
     transition_next: dict | None = None
     try:
@@ -818,6 +942,7 @@ def get_hmm_regime(
         "dominant_state":         dominant_display,
         "dominant_state_model_raw": dominant,
         "dominant_state_validated": dominant_validated,
+        "momentum_extended":      momentum_extended if momentum_extended.get("active") else None,
         "ma_conflict":           conflict,
         "earnings_context": {
             "most_recent_earnings_date": most_recent_earnings_date,

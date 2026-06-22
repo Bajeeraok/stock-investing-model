@@ -1225,8 +1225,13 @@ export interface Signal {
   /** 7-layer model action — aligned with Roadmaps / ticker detail */
   plan_action?: string | null;
   plan_confidence?: number | null;
-  /** Backend retail tokens for list-view gates (from FastAPI). */
+  /** Backend retail tokens + audit cohort fields (gates, entry mode). */
   retail_status?: import("@/components/dashboard/retailActionUX").RetailActionPayload | null;
+  entry_mode?: string | null;
+  gates_passed?: number | null;
+  gates_total?: number | null;
+  model_confidence_pct?: number | null;
+  confidence_mid?: number | null;
   rsi_status?: string | null;
   gate_cleared?: boolean | null;
   /** ADV-based days to exit at 20% participation (risk-sized or $5k probe). */

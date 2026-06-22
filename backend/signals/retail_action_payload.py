@@ -18,7 +18,7 @@ VALUATION_GATE_PARTIAL_PCT = 15.0
 PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
 
 RsiStatus = Literal["hot", "neutral", "oversold"]
-RegimeWeatherStatus = Literal["bull", "stormy", "mixed"]
+RegimeWeatherStatus = Literal["bull", "stormy", "mixed", "extended"]
 RrStatus = Literal["tight", "balanced", "favorable"]
 GateVisualStatus = Literal["cleared", "blocked", "marginal"]
 ActionLight = Literal["green", "yellow", "red"]
@@ -38,7 +38,13 @@ def rsi_status(rsi: float | None) -> RsiStatus:
     return "neutral"
 
 
-def regime_weather_status(regime_bull_pct: float | None) -> RegimeWeatherStatus:
+def regime_weather_status(
+    regime_bull_pct: float | None,
+    *,
+    momentum_extended: bool = False,
+) -> RegimeWeatherStatus:
+    if momentum_extended:
+        return "extended"
     if regime_bull_pct is None:
         return "mixed"
     if regime_bull_pct >= REGIME_GATE:
@@ -105,12 +111,22 @@ def _regime_gate_detail(
     regime_hmm_label: str | None = None,
     regime_transition_pct: float | None = None,
     market_bull_pct: float | None = None,
+    momentum_extended: bool = False,
 ) -> str:
     if regime_ok:
         sym = ticker or "Stock"
         return f"Bull tape · {sym} HMM bull {round(stock_bull_pct)}%"
 
     sym = ticker or "This name"
+    if momentum_extended:
+        line1 = (
+            f"Extended tape — {sym} near highs with aligned MAs; "
+            f"HMM bull {round(stock_bull_pct)}% (pullback-risk signal, not structural bear)"
+        )
+        if market_bull_pct is not None and market_bull_pct >= REGIME_GATE:
+            return f"{line1} · Broader market {round(market_bull_pct)}% bull"
+        return line1
+
     label = (regime_hmm_label or "non-bull").replace("_", " ").strip()
     trans = regime_transition_pct
     in_transition = trans is not None and trans >= 35
@@ -311,11 +327,12 @@ def build_trading_gates(
     regime_transition_pct: float | None = None,
     market_regime_bull_pct: float | None = None,
     volume_ratio: float | None = None,
+    momentum_extended: bool = False,
 ) -> list[dict[str, Any]]:
     """Primary + optional confidence gates with pass flags and visual_status tokens."""
     rb = regime_bull_pct if regime_bull_pct is not None else 50.0
     rsi_val = float(rsi) if rsi is not None else 50.0
-    weather = regime_weather_status(regime_bull_pct)
+    weather = regime_weather_status(regime_bull_pct, momentum_extended=momentum_extended)
 
     valuation_ok, valuation_detail = _valuation_gate_detail(assessment_pct)
     regime_ok = regime_bull_pct is not None and regime_bull_pct >= REGIME_GATE
@@ -344,12 +361,13 @@ def build_trading_gates(
                 regime_hmm_label=regime_hmm_label,
                 regime_transition_pct=regime_transition_pct,
                 market_bull_pct=market_regime_bull_pct,
+                momentum_extended=momentum_extended,
             ),
             "pass": regime_ok,
             "gate_cleared": regime_ok,
-            "visual_status": "bull" if regime_ok else "stormy",
+            "visual_status": "bull" if regime_ok else ("extended" if momentum_extended else "stormy"),
             "regime_weather_status": weather,
-            "icon": "☀️" if regime_ok else ("⚡" if weather == "stormy" else "🌧️"),
+            "icon": "☀️" if regime_ok else ("🔥" if momentum_extended else ("⚡" if weather == "stormy" else "🌧️")),
             "blocker_weight": 0 if regime_ok else 45,
         },
         {
@@ -802,6 +820,7 @@ def build_retail_action_payload(
     regime_transition_days: int | None = None,
     volume_ratio: float | None = None,
     institutional_conviction: dict[str, Any] | None = None,
+    momentum_extended: bool = False,
 ) -> dict[str, Any]:
     assessment_pct = _assessment_pct(current_price, fair_value)
     gates = build_trading_gates(
@@ -817,6 +836,7 @@ def build_retail_action_payload(
         regime_transition_pct=regime_transition_pct,
         market_regime_bull_pct=market_regime_bull_pct,
         volume_ratio=volume_ratio,
+        momentum_extended=momentum_extended,
     )
     primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
     locked = sum(1 for g in primary if not g.get("pass"))
@@ -854,7 +874,7 @@ def build_retail_action_payload(
         "gates_locked_count": locked,
         "go_no_go": "go" if all_go else "no_go",
         "rsi_status": rsi_status(rsi),
-        "regime_weather_status": regime_weather_status(regime_bull_pct),
+        "regime_weather_status": regime_weather_status(regime_bull_pct, momentum_extended=momentum_extended),
         "inside_buy_band": inside_buy_band,
         "assessment_pct": round(assessment_pct, 1),
         "action_title": title,
@@ -942,6 +962,7 @@ def enrich_investor_summary_retail_action(
         regime_transition_days=investor_out.get("regime_transition_days_estimate"),
         volume_ratio=volume_ratio,
         institutional_conviction=institutional_conviction,
+        momentum_extended=bool(investor_out.get("regime_momentum_extended")),
     )
 
     long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}

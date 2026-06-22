@@ -1002,6 +1002,7 @@ def run_price_targets(
     period: str = "2y",
     market_regime: str = "NEUTRAL",
     config: dict | None = None,
+    fair_value: float | None = None,
 ) -> dict:
     """
     Compute consolidated buy/sell zones, expected returns, and scenario analysis.
@@ -1162,6 +1163,30 @@ def run_price_targets(
         earnings_info=earnings_info,
     )
 
+    # ── Valuation-aware scenario guard (FV vs tactical targets) ─────────────
+    valuation_guard: dict = {}
+    try:
+        from signals.scenario_valuation_guard import (
+            apply_valuation_context_to_earnings_target,
+            apply_valuation_guards_to_scenarios,
+        )
+
+        model_fv = fair_value if fair_value and fair_value > 0 else None
+        scenarios, valuation_guard = apply_valuation_guards_to_scenarios(
+            scenarios,
+            price=price,
+            fair_value=model_fv,
+            analyst_targets=analyst_targets,
+        )
+        earnings_target = apply_valuation_context_to_earnings_target(
+            earnings_target,
+            price=price,
+            fair_value=model_fv,
+            analyst_targets=analyst_targets,
+        )
+    except Exception as _vg_exc:
+        logger.debug("Scenario valuation guard failed for %s: %s", ticker, _vg_exc)
+
     return {
         "ticker":          ticker,
         "analysis_date": __import__("signals.time_et", fromlist=["today_est"]).today_est(),
@@ -1208,6 +1233,7 @@ def run_price_targets(
             ),
         },
         "earnings_target": earnings_target,
+        "valuation_guard": valuation_guard,
         "horizons":  horizons_out,
         "scenarios": scenarios,
     }

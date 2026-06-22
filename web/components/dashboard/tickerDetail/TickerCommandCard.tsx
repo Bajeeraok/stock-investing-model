@@ -159,7 +159,7 @@ export function TickerCommandCard({
         </div>
       </div>
 
-      <RegimeBar bullPct={regime_bull_pct} />
+      <RegimeBar bullPct={regime_bull_pct} momentumExtended={summary.regime_momentum_extended} />
 
       {fair_value > 0 && (
         <div className="flex items-center gap-2 pt-1 border-t border-white/5">

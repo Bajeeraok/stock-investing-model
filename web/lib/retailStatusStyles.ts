@@ -8,6 +8,7 @@ export type RetailVisualStatus =
   | "blocked"
   | "bull"
   | "stormy"
+  | "extended"
   | "hot"
   | "marginal"
   | "neutral"
@@ -53,6 +54,12 @@ export const RETAIL_STATUS_STYLES: Record<string, RetailStatusStyle> = {
     text: "text-orange-400",
     border: "border-orange-800",
     badge: "bg-orange-500/15 text-orange-300 border-orange-800/60",
+  },
+  extended: {
+    bg: "bg-amber-950/35",
+    text: "text-amber-300",
+    border: "border-amber-600/50",
+    badge: "bg-amber-500/15 text-amber-200 border-amber-500/45",
   },
   hot: {
     bg: "bg-orange-950/40",

@@ -31,7 +31,11 @@ import {
 import { DecisionModeSelector } from "./DecisionModeSelector";
 import { DecisionDeck } from "./DecisionDeck";
 import { buildExecutionPlanViewModel } from "./executionPlanModel";
-import { GlobalActionHeader, buildGatesFromInvestorSummary } from "./retailActionUX";
+import {
+  GlobalActionHeader,
+  buildGatesFromInvestorSummary,
+  resolvePrimaryGatesCount,
+} from "./retailActionUX";
 import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
 import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
 import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
@@ -482,7 +486,7 @@ export function TickerDetailModal({
   useEffect(() => {
     unifiedFetchStarted.current = false;
     targetsFetchStarted.current = false;
-  }, [ticker, reloadKey]);
+  }, [ticker, reloadKey, detail?.investor_summary?.fair_value]);
 
   useEffect(() => {
     if (!ticker || !detail) return;
@@ -490,6 +494,9 @@ export function TickerDetailModal({
 
     const ac = new AbortController();
     const delay = isMobileLikeBrowser() ? 400 : 0;
+    const fv = detail.investor_summary?.fair_value;
+    const targetsQs =
+      fv != null && fv > 0 ? `?fair_value=${encodeURIComponent(String(fv))}` : "";
 
     const loadUnified = () => {
       if (unifiedFetchStarted.current) return;
@@ -505,7 +512,7 @@ export function TickerDetailModal({
     const loadPriceTargets = () => {
       if (targetsFetchStarted.current) return;
       targetsFetchStarted.current = true;
-      fetch(apiUrl(`/api/price-targets/${ticker}`), { signal: ac.signal, cache: "no-store" })
+      fetch(apiUrl(`/api/price-targets/${ticker}${targetsQs}`), { signal: ac.signal, cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           const pt = d as PriceTargetsData & { error?: string };
@@ -525,14 +532,17 @@ export function TickerDetailModal({
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [ticker, detail, modalTab, reloadKey]);
+  }, [ticker, detail, detail?.investor_summary?.fair_value, modalTab, reloadKey]);
 
   /** Scenario teaser on Today tab — prefetch after paint (non-blocking). */
   useEffect(() => {
     if (!ticker || !detail || priceTargets) return;
     const ac = new AbortController();
+    const fv = detail.investor_summary?.fair_value;
+    const targetsQs =
+      fv != null && fv > 0 ? `?fair_value=${encodeURIComponent(String(fv))}` : "";
     const t = window.setTimeout(() => {
-      fetch(apiUrl(`/api/price-targets/${ticker}`), { signal: ac.signal, cache: "no-store" })
+      fetch(apiUrl(`/api/price-targets/${ticker}${targetsQs}`), { signal: ac.signal, cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           const pt = d as PriceTargetsData & { error?: string };
@@ -544,7 +554,7 @@ export function TickerDetailModal({
       ac.abort();
       window.clearTimeout(t);
     };
-  }, [ticker, detail, priceTargets, reloadKey]);
+  }, [ticker, detail, detail?.investor_summary?.fair_value, priceTargets, reloadKey]);
 
   const periods = ["1m", "3m", "6m", "1y"];
 
@@ -622,7 +632,10 @@ export function TickerDetailModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail, effectivePrice]);
 
-  const gatesPassedCount = tradingGates.filter((g) => g.pass).length;
+  const { passed: gatesPassedCount, total: gatesTotal } = useMemo(
+    () => resolvePrimaryGatesCount(tradingGates),
+    [tradingGates],
+  );
 
   const quoteDailyMovePct = useMemo(() => {
     // Prefer live intraday change pct (1D chart, from open) when available
@@ -829,15 +842,17 @@ export function TickerDetailModal({
               price={effectivePrice}
               dailyMovePct={quoteDailyMovePct}
               score={detail.score_breakdown?.composite ?? detail.investor_summary?.pattern_score}
-              regime={
-                detail.investor_summary?.regime_hmm_label?.toUpperCase().includes("BULL")
-                  ? "UP"
-                  : detail.investor_summary?.regime_hmm_label?.toUpperCase().includes("BEAR")
-                    ? "DOWN"
-                    : "NEUTRAL"
-              }
+              regime={(() => {
+                const inv = detail.investor_summary;
+                if (inv?.regime_momentum_extended) return "EXTENDED";
+                const rb = inv?.regime_bull_pct;
+                if (rb != null && rb >= 60) return "UP";
+                if (rb != null && rb <= 40) return "DOWN";
+                return "NEUTRAL";
+              })()}
               actionTitle={headerActionStatus.title}
               gatesPassed={tradingGates.length ? gatesPassedCount : null}
+              gatesTotal={gatesTotal}
               earningsLabel={
                 detail.earnings?.days_until != null && detail.earnings.days_until <= 14
                   ? `Earnings T+${detail.earnings.days_until}d`
@@ -1001,7 +1016,7 @@ export function TickerDetailModal({
                   </div>
                   {tradingGates.length > 0 && (
                     <div className="lg:hidden max-w-xs">
-                      <GateProgressBar passed={gatesPassedCount} total={4} variant="buy" />
+                      <GateProgressBar passed={gatesPassedCount} total={gatesTotal} variant="buy" />
                     </div>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
@@ -1192,7 +1207,7 @@ export function TickerDetailModal({
                     catalystNote={modalNewsRail.catalystNote}
                   />
                   {tradingGates.length > 0 && (
-                    <GateProgressBar passed={gatesPassedCount} total={4} variant="buy" />
+                    <GateProgressBar passed={gatesPassedCount} total={gatesTotal} variant="buy" />
                   )}
                 </aside>
                 </div>

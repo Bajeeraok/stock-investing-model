@@ -42,6 +42,8 @@ export interface ValuationDeckPayload {
     assessment_label?: string | null;
     min_price_to_buy?: number | null;
     above_full_mos_ceiling?: boolean | null;
+    within_full_mos_ceiling?: boolean | null;
+    full_size_eligible_at_spot?: boolean | null;
     margin_of_safety_pct?: number | null;
     tiers_summary?: {
       id?: string;

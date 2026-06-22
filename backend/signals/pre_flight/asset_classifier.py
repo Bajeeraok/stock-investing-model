@@ -7,6 +7,8 @@ Determines asset type, adjusts layer weights, and generates pre-flight flags.
 from typing import Dict, Optional
 from .constants import AssetType, FlagType, WEIGHT_PROFILES
 from .models import AssetMeta, ClassificationResult, PreFlightFlag
+from .asset_registry_cache import get_inferred_meta, save_inferred_meta
+from .asset_registry_infer import infer_asset_meta_from_ticker
 
 
 # ─────────────────────────────────────────────
@@ -169,7 +171,44 @@ ASSET_REGISTRY: Dict[str, AssetMeta] = {
 # CLASSIFIER
 # ─────────────────────────────────────────────
 
-def classify_asset(ticker: str) -> ClassificationResult:
+def _resolve_asset_meta(
+    ticker: str,
+    *,
+    config: dict | None = None,
+    skip_fetch: bool = False,
+) -> tuple[AssetMeta | None, bool]:
+    """
+    Lookup order: curated ASSET_REGISTRY → JSON cache → live profile inference.
+    Returns (meta, auto_inferred).
+    """
+    meta = ASSET_REGISTRY.get(ticker)
+    if meta is not None:
+        return meta, False
+
+    meta = get_inferred_meta(ticker)
+    if meta is not None:
+        return meta, True
+
+    if skip_fetch:
+        return None, False
+
+    meta = infer_asset_meta_from_ticker(ticker, config)
+    if meta is not None:
+        try:
+            save_inferred_meta(meta)
+        except Exception:
+            pass
+        return meta, True
+
+    return None, False
+
+
+def classify_asset(
+    ticker: str,
+    *,
+    config: dict | None = None,
+    skip_fetch: bool = False,
+) -> ClassificationResult:
     """
     Pre-flight asset classification.
     Returns asset type, adjusted weight profile, and pre-flight flags.
@@ -180,7 +219,7 @@ def classify_asset(ticker: str) -> ClassificationResult:
     Display ClassificationResult.flags as warnings in the ticker card header.
     """
     ticker = ticker.upper().strip()
-    meta = ASSET_REGISTRY.get(ticker)
+    meta, auto_inferred = _resolve_asset_meta(ticker, config=config, skip_fetch=skip_fetch)
 
     if meta is None:
         # Unknown ticker — default to standard equity with warning
@@ -190,7 +229,11 @@ def classify_asset(ticker: str) -> ClassificationResult:
             name=ticker,
             sector="Unknown",
             weight_profile=WEIGHT_PROFILES[AssetType.EQUITY_US],
-            flags=[PreFlightFlag(FlagType.WARN, f"Unknown ticker '{ticker}' — defaulting to standard equity profile. Verify manually.")],
+            flags=[PreFlightFlag(
+                FlagType.WARN,
+                f"Unknown ticker '{ticker}' — defaulting to standard equity profile. "
+                "Run scripts/scan_asset_registry.py to auto-classify from signal universe.",
+            )],
             is_scoreable=True,
             meta=None,
         )
@@ -198,7 +241,11 @@ def classify_asset(ticker: str) -> ClassificationResult:
     wp = WEIGHT_PROFILES[meta.asset_type]
     flags: list[PreFlightFlag] = []
 
-    # Generate flags based on metadata
+    if auto_inferred:
+        flags.append(PreFlightFlag(
+            FlagType.INFO,
+            f"Auto-classified as {wp.label} from company profile ({meta.sector}).",
+        ))
     if not meta.insider_data_reliable and meta.insider_note:
         flags.append(PreFlightFlag(FlagType.WARN, meta.insider_note))
 

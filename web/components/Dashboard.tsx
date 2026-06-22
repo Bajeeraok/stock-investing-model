@@ -1413,7 +1413,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             />
             </>
           )}
-          {/* EOD Universe — all ~100 tickers from the latest EOD run */}
+          {/* EOD Universe panel — folded into SignalsTable audit columns (Jun 2026). Re-enable if cohort table needed again.
           <ToggleSection
             id="signals-eod-universe"
             title="EOD Universe — all tickers"
@@ -1422,6 +1422,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           >
             <SignalUniversePanel onTickerClick={openTickerDetail} />
           </ToggleSection>
+          */}
             </div>
           )}
 

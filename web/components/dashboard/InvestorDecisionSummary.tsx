@@ -198,6 +198,7 @@ export interface InvestorDecisionSummary {
   /** HMM label when provided by API (e.g. Bull / Non-bull) — optional display */
   regime_hmm_label?: string | null;
   regime_bull_pct?: number | null;
+  regime_momentum_extended?: boolean | null;
   model_confidence_pct?: number | null;
   /** 14-day RSI used for short-horizon entry logic. */
   rsi?: number | null;
@@ -322,6 +323,7 @@ export interface HorizonSignalPayload {
       next_add_tier_id?: string;
       label?: string;
       detail?: string;
+      below_all_within_mos?: boolean;
       in_bridge_band?: boolean;
       bridge_band?: {
         low?: number;
@@ -342,6 +344,9 @@ export interface HorizonSignalPayload {
       margin_of_safety_pct?: number | null;
       min_price_to_buy?: number | null;
       above_full_mos_ceiling?: boolean;
+      within_full_mos_ceiling?: boolean;
+      full_size_eligible_at_spot?: boolean;
+      full_size_ceiling_label?: string | null;
       position_mode?: string | null;
       reference_levels?: {
         ma50?: number;
@@ -383,6 +388,8 @@ function regimeWeatherIcon(weather: MarketWeather) {
       return React.createElement(CloudSun, { className: `${cls} text-slate-400`, "aria-hidden": true });
     case "stormy":
       return React.createElement(CloudRain, { className: `${cls} text-sky-400`, "aria-hidden": true });
+    case "extended":
+      return React.createElement(CloudSun, { className: `${cls} text-amber-300`, "aria-hidden": true });
     default:
       return React.createElement(Cloud, { className: `${cls} text-slate-500`, "aria-hidden": true });
   }
@@ -962,7 +969,7 @@ function BuyRangeRetailCard({
             React.createElement(
               "p",
               { className: "text-sm text-cyan-200/85 uppercase tracking-wide font-semibold mb-1" },
-              "Max buy price (full position MOS)"
+              "Full-size ceiling (25% MOS)"
             ),
             React.createElement(
               "p",
@@ -1068,6 +1075,7 @@ export function InvestorDecisionSummarySection({
     valuation_deck: valuationDeck,
     overall_verdict,
     regime_bull_pct,
+    regime_momentum_extended,
     model_confidence_pct,
     horizons,
     ttm_pe_used,
@@ -1190,7 +1198,7 @@ export function InvestorDecisionSummarySection({
           ? "text-amber-300"
           : "text-red-300";
 
-  const regimeWeather = marketWeatherFromRegimeBull(regime_bull_pct);
+  const regimeWeather = marketWeatherFromRegimeBull(regime_bull_pct, regime_momentum_extended);
   const patternDecisionOneLiner = buildPatternDecisionDriverSummary({
     patternScore: pattern_score,
     regimeBullPct: regime_bull_pct,

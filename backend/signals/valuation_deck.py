@@ -109,6 +109,8 @@ def build_valuation_deck(
             "assessment_label": ca.get("label"),
             "min_price_to_buy": ca.get("min_price_to_buy"),
             "above_full_mos_ceiling": ca.get("above_full_mos_ceiling"),
+            "within_full_mos_ceiling": ca.get("within_full_mos_ceiling"),
+            "full_size_eligible_at_spot": ca.get("full_size_eligible_at_spot"),
             "margin_of_safety_pct": ca.get("margin_of_safety_pct"),
             "fv_model_suppressed": bool(
                 fv_anchor.get("fv_model_suppressed") or ca.get("fv_model_suppressed") or fv_suppressed
