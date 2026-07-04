@@ -823,8 +823,10 @@ show_tooltips: false  # Set true to print indicator explanations at end
 # Keep all snapshots (0) recommended so you can use them later; set to e.g. 365 to purge older than 1 year.
 eod_retention_days: 0   # 0 = keep forever; set 90/365 etc. to purge older snapshots
 # Python scheduler (scripts/scheduler_eod.py): run EOD snapshot daily at this time
-eod_schedule_time: "20:00"   # 8pm
+# In-process APScheduler (uvicorn / Docker) uses the same keys when EOD_SCHEDULER_CRON is unset.
+eod_schedule_time: "20:00"   # 8pm ET, Mon–Fri
 eod_schedule_tz: "America/New_York"
+# eod_scheduler_enabled: false   # set to disable in-process EOD without env vars
 
 # Crypto section (BTC, ETH) - same signals as equities
 crypto_watchlist:

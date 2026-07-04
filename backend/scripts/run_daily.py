@@ -41,6 +41,52 @@ def is_us_equity_session_day(date_str: str | None = None) -> bool:
         d = datetime.now(EST).date()
     return d.weekday() < 5
 
+
+def min_full_eod_row_count(config: dict | None = None) -> int:
+    """Minimum run_results rows for a full 8pm EOD cohort (not dashboard-only refresh)."""
+    if config is None:
+        from config_loader import load_config
+
+        config = load_config()
+    from config_loader import get_eod_signal_universe
+
+    eod_n = len(get_eod_signal_universe(config))
+    return max(50, int(eod_n * 0.75))
+
+
+def _eod_snapshot_row_count(snap: dict | None) -> int:
+    if not isinstance(snap, dict):
+        return 0
+    rows = snap.get("run_results") or snap.get("signals") or snap.get("results") or []
+    return len(rows) if isinstance(rows, list) else 0
+
+
+def full_eod_snapshot_exists(date_str: str, config: dict | None = None) -> bool:
+    """True when disk or Redis has a full (~100 ticker) EOD snapshot for date_str."""
+    if config is None:
+        from config_loader import load_config
+
+        config = load_config()
+    min_full = min_full_eod_row_count(config)
+    eod_path = get_data_root() / "eod" / f"{date_str}.json"
+    if eod_path.exists():
+        try:
+            with open(eod_path, encoding="utf-8") as f:
+                snap = json.load(f)
+            if _eod_snapshot_row_count(snap) >= min_full:
+                return True
+        except Exception:
+            pass
+    try:
+        from signals.cache import get_eod_snapshot_redis
+
+        snap = get_eod_snapshot_redis(date_str)
+        if _eod_snapshot_row_count(snap) >= min_full:
+            return True
+    except Exception:
+        pass
+    return False
+
 import yaml
 from config_loader import get_data_root, get_signal_universe, load_config
 from alerts.notifier import send_retail_digest
@@ -733,15 +779,20 @@ def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
             "snapshot_date": date_str,
             "reason": "non_trading_day",
         }
-    eod_path = get_data_root() / "eod" / f"{date_str}.json"
     try:
-        from signals.cache import get_eod_snapshot_redis
+        from config_loader import load_config
 
-        if eod_path.exists() or get_eod_snapshot_redis(date_str):
-            return {"ok": True, "skipped": True, "snapshot_date": date_str}
+        config = load_config()
+        if full_eod_snapshot_exists(date_str, config):
+            return {
+                "ok": True,
+                "skipped": True,
+                "snapshot_date": date_str,
+                "reason": "full_snapshot_exists",
+            }
     except Exception:
-        if eod_path.exists():
-            return {"ok": True, "skipped": True, "snapshot_date": date_str}
+        config = None
+    eod_path = get_data_root() / "eod" / f"{date_str}.json"
     last_run_path = get_data_root() / "last_run.json"
     if not last_run_path.exists():
         return {"ok": False, "skipped": True, "snapshot_date": date_str, "reason": "no_last_run"}
@@ -753,9 +804,8 @@ def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
     try:
         from config_loader import get_eod_signal_universe, load_config
 
-        config = load_config()
-        eod_n = len(get_eod_signal_universe(config))
-        min_full = max(50, int(eod_n * 0.75))
+        config = config or load_config()
+        min_full = min_full_eod_row_count(config)
         if len(run_results) < min_full:
             return {
                 "ok": True,

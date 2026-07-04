@@ -1,6 +1,10 @@
 """
 Optional in-process EOD snapshot schedule (APScheduler).
-Enable by setting EOD_SCHEDULER_CRON to a 5-field cron expression.
+
+Enable via (first match wins):
+  1. EOD_SCHEDULER_CRON — 5-field cron (e.g. 0 20 * * 1-5)
+  2. config.yaml eod_schedule_time + eod_schedule_tz (default 20:00 America/New_York, Mon–Fri)
+Disable: EOD_SCHEDULER_OFF=1
 """
 from __future__ import annotations
 
@@ -15,6 +19,47 @@ logger = logging.getLogger("api.eod_scheduler")
 _scheduler: BackgroundScheduler | None = None
 
 
+def _scheduler_disabled() -> bool:
+    return (os.environ.get("EOD_SCHEDULER_OFF") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def resolve_eod_schedule() -> tuple[str, str] | None:
+    """
+    Return (cron_5field, tz_name) or None when scheduling should stay off.
+    """
+    if _scheduler_disabled():
+        return None
+
+    cron = (os.environ.get("EOD_SCHEDULER_CRON") or "").strip()
+    tz_name = (os.environ.get("EOD_SCHEDULER_TZ") or "").strip() or "America/New_York"
+    if cron:
+        return cron, tz_name
+
+    try:
+        from config_loader import load_config
+
+        config = load_config()
+        if config.get("eod_scheduler_enabled") is False:
+            return None
+        schedule_time = str(config.get("eod_schedule_time") or "20:00").strip()
+        tz_name = str(config.get("eod_schedule_tz") or "America/New_York").strip()
+        parts = schedule_time.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError(f"invalid eod_schedule_time: {schedule_time!r}")
+        cron = f"{minute} {hour} * * 1-5"
+        return cron, tz_name
+    except Exception as e:
+        logger.warning("EOD schedule from config failed (%s) — scheduler off", e)
+        return None
+
+
 def _run_eod_job() -> None:
     try:
         from config_loader import load_config
@@ -24,8 +69,8 @@ def _run_eod_job() -> None:
         result = run_eod_snapshot_only(config)
         if result.get("error"):
             logger.error("[eod-scheduler] %s", result["error"])
-        elif result.get("skipped") and result.get("reason") == "non_trading_day":
-            logger.info("[eod-scheduler] skipped — US market closed (weekend/holiday calendar)")
+        elif result.get("skipped"):
+            logger.info("[eod-scheduler] skipped — %s", result.get("reason") or "unknown")
         else:
             logger.info(
                 "[eod-scheduler] ok date=%s path=%s tickers=%s",
@@ -38,30 +83,32 @@ def _run_eod_job() -> None:
 
 
 def start() -> None:
-    """Start background scheduler if EOD_SCHEDULER_CRON is set."""
+    """Start background scheduler when env or config enables EOD."""
     global _scheduler
-    cron = (os.environ.get("EOD_SCHEDULER_CRON") or "").strip()
-    if not cron:
-        logger.info("EOD scheduler off (set EOD_SCHEDULER_CRON to enable, e.g. 0 20 * * 1-5)")
+    resolved = resolve_eod_schedule()
+    if not resolved:
+        if _scheduler_disabled():
+            logger.info("EOD scheduler off (EOD_SCHEDULER_OFF is set)")
+        else:
+            logger.info(
+                "EOD scheduler off (set EOD_SCHEDULER_CRON or eod_schedule_time in config.yaml)"
+            )
         return
 
+    cron, tz_name = resolved
     parts = cron.split()
     if len(parts) != 5:
         logger.error(
-            "EOD_SCHEDULER_CRON must have exactly 5 fields: minute hour day-of-month month day-of-week "
-            "(e.g. 0 20 * * 1-5 for 8pm Mon-Fri)"
+            "EOD schedule must have exactly 5 cron fields: minute hour day-of-month month day-of-week "
+            "(got %r)",
+            cron,
         )
         return
 
-    tz_name = (os.environ.get("EOD_SCHEDULER_TZ") or "America/New_York").strip()
-
-    # Validate the timezone name before passing to APScheduler.
-    # APScheduler 3.x resolves timezone strings via pytz internally — pass the
-    # name string directly so pytz handles it. Passing a ZoneInfo object can
-    # silently fall back to UTC on slim images where system tzdata is absent.
     import pytz as _pytz
+
     try:
-        _pytz.timezone(tz_name)  # validate; raises UnknownTimeZoneError if bad
+        _pytz.timezone(tz_name)
     except Exception:
         tz_name = "America/New_York"
         logger.warning("EOD_SCHEDULER_TZ unrecognised; falling back to America/New_York")
@@ -70,8 +117,6 @@ def start() -> None:
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
-    # Pass tz_name string — APScheduler 3.x resolves it via pytz regardless of
-    # whether system tzdata or the Python tzdata package is installed.
     _scheduler = BackgroundScheduler(timezone=tz_name)
     _scheduler.add_job(
         _run_eod_job,
@@ -88,16 +133,17 @@ def start() -> None:
         misfire_grace_time=3600,
     )
     _scheduler.start()
-    # Log resolved timezone so Railway logs make it obvious if UTC crept in
-    import pytz as _pytz2
-    _tz_obj = _pytz2.timezone(tz_name)
+    _tz_obj = _pytz.timezone(tz_name)
     from datetime import datetime as _dt
+
     _now_local = _dt.now(_tz_obj)
     logger.info(
-        "EOD scheduler on: cron=%s tz=%s (now=%s — next fire ~%s:00)",
-        cron, tz_name,
+        "EOD scheduler on: cron=%s tz=%s (now=%s — next fire ~%s:%02s ET weekdays)",
+        cron,
+        tz_name,
         _now_local.strftime("%Y-%m-%d %H:%M %Z"),
         hour,
+        int(minute),
     )
 
 

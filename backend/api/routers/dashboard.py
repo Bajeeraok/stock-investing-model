@@ -2591,6 +2591,20 @@ def _compute_full_dashboard_sync() -> dict:
                 eod_auto.get("snapshot_date"),
                 eod_auto.get("tickers_count"),
             )
+        elif eod_auto and eod_auto.get("reason") == "dashboard_only_universe":
+            logger.info(
+                "[dashboard] refresh is dashboard-only (%s/%s tickers) — not saved as EOD; "
+                "full cohort runs at 8pm ET (EOD scheduler) or POST /api/eod/run",
+                eod_auto.get("tickers_count"),
+                eod_auto.get("expected_min"),
+            )
+            try:
+                from api.eod_job import trigger_full_eod_background_if_missing
+
+                if trigger_full_eod_background_if_missing(min_hour_et=20):
+                    logger.info("[dashboard] queued background full EOD (missing after 8pm ET)")
+            except Exception as eod_exc:
+                logger.debug("[dashboard] full EOD safety-net skipped: %s", eod_exc)
     except Exception as e:
         logger.debug("Auto EOD snapshot skipped: %s", e)
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)

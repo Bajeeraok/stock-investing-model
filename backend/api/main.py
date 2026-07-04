@@ -269,8 +269,18 @@ def shutdown():
 @app.get("/api/health")
 def health():
     from signals.time_et import now_iso_et
+    from api.eod_scheduler import resolve_eod_schedule
 
-    return {"status": "ok", "timestamp": now_iso_et()}
+    eod_schedule = resolve_eod_schedule()
+    return {
+        "status": "ok",
+        "timestamp": now_iso_et(),
+        "eod_scheduler": {
+            "enabled": eod_schedule is not None,
+            "cron": eod_schedule[0] if eod_schedule else None,
+            "tz": eod_schedule[1] if eod_schedule else None,
+        },
+    }
 
 
 @app.get("/api/health/memory")
