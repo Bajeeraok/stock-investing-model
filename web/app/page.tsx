@@ -830,6 +830,8 @@ export interface DashboardData {
     sync_targets?: { updated?: number; message?: string | null } | null;
     summary?: {
       status: string;
+      /** Which cohort drives headline win rate / avg return */
+      headline_track?: "accumulate" | "accumulate_thin" | "no_accumulate" | null;
       completed?: number;
       min_required?: number;
       horizon_note?: string | null;
