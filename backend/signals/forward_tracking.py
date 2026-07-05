@@ -207,6 +207,7 @@ def get_forward_tracking(
             aggregate_by_trim_gates,
             aggregate_horizon_stats,
             bars_between_dates,
+            compute_validated_forward_return,
             path_metrics,
             read_frozen_gates,
             read_frozen_trim_gates,
@@ -268,9 +269,14 @@ def get_forward_tracking(
                         enrich_tracking_row(row_work)
                 if not passes_tracking_gate(row_work, config, "forward_tracking"):
                     continue
+                ret_pct, data_quality = compute_validated_forward_return(
+                    row_work,
+                    row_next,
+                    horizon=horizon,
+                    ticker=tk,
+                )
                 gate = read_frozen_gates(row_work)
                 trim_gate = read_frozen_trim_gates(row_work)
-                ret_pct = round(100 * (actual - prior) / prior, 2)
                 our_signal, signal_source = _signal_and_source_from_row(
                     row_work, buy_min=buy_min, sell_max=sell_max
                 )
@@ -278,12 +284,54 @@ def get_forward_tracking(
                 if go_key not in ("go", "no_go"):
                     go_key = "unknown"
 
+                if data_quality == "stale_session":
+                    rec = {
+                        "as_of_date": as_of_date,
+                        "next_date": next_date,
+                        "ticker": tk,
+                        "horizon_days": horizon,
+                        "our_signal": our_signal,
+                        "signal_source": signal_source,
+                        "actual_return_pct": None,
+                        "forward_status": "pending",
+                        "data_quality": data_quality,
+                        "pending_reason": "No new OHLCV session between snapshots (holiday or duplicate EOD)",
+                        "close_at_signal": round(float(row_work.get("close") or prior), 4),
+                        "close_at_forward": round(float(row_next.get("close") or actual), 4),
+                        "gate_cleared": gate.get("gate_cleared"),
+                        "go_no_go": gate.get("go_no_go"),
+                        "entry_mode": (
+                            gate.get("entry_mode")
+                            or row_work.get("entry_mode")
+                            or (row_work.get("retail_status") or {}).get("entry_mode")
+                        ),
+                        "gates_passed": gate.get("gates_passed"),
+                        "gates_total": gate.get("gates_total"),
+                        "gates_frozen": bool(row_work.get("gates_frozen")),
+                        "trim_gate_cleared": trim_gate.get("trim_gate_cleared"),
+                        "trim_gates_passed": trim_gate.get("trim_gates_passed"),
+                        "trim_gates_total": trim_gate.get("trim_gates_total"),
+                        "trim_score_triggered": trim_gate.get("trim_score_triggered"),
+                        "trim_recommendation": trim_gate.get("trim_recommendation"),
+                        "trim_gates_frozen": bool(row_work.get("trim_gates_frozen")),
+                    }
+                    records.append(rec)
+                    signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
+                    continue
+
+                if ret_pct is None:
+                    continue
+
                 stop, target = st_stop_target_from_row(row_work)
                 path_bars = bars_between_dates(
                     dates, start_idx, horizon, tk, _load_snapshot, eod_dir
                 )
                 path = path_metrics(
-                    prior, path_bars, stop, target, use_intraday=use_intraday
+                    float(row_work.get("close") or prior),
+                    path_bars,
+                    stop,
+                    target,
+                    use_intraday=use_intraday,
                 )
                 trim_m = trim_outcome_metrics(ret_pct, our_signal)
 
@@ -295,6 +343,10 @@ def get_forward_tracking(
                     "our_signal": our_signal,
                     "signal_source": signal_source,
                     "actual_return_pct": ret_pct,
+                    "forward_status": "complete",
+                    "data_quality": data_quality,
+                    "close_at_signal": round(float(row_work.get("close") or prior), 4),
+                    "close_at_forward": round(float(row_next.get("close") or actual), 4),
                     "gate_cleared": gate.get("gate_cleared"),
                     "go_no_go": gate.get("go_no_go"),
                     "entry_mode": (
@@ -402,7 +454,9 @@ def get_forward_tracking(
         "meta": meta,
         "data_source_note": (
             "Returns and ST stop/target touches from EOD OHLCV between snapshot dates "
-            "(not paper trades). Gates frozen on new EOD saves; legacy rows recompute gates when enriched."
+            "(not paper trades). Stale holiday duplicates and impossible close jumps are "
+            "excluded; 1d rows may use daily_move_pct when close chain is broken. "
+            "Score buckets (HOLD/ADD) differ from 4-gate GO audit — see By gate status."
         ),
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
@@ -464,6 +518,8 @@ def collect_forward_records(
     if len(dates) < 2:
         return []
 
+    from signals.forward_tracking_metrics import compute_validated_forward_return
+
     records: list[dict[str, Any]] = []
     syms = [str(t).upper() for t in tickers]
 
@@ -503,10 +559,27 @@ def collect_forward_records(
                     continue
                 if prior <= 0:
                     continue
-                ret_pct = round(100 * (actual - prior) / prior, 2)
+                ret_pct, dq = compute_validated_forward_return(
+                    row, row_next, horizon=horizon, ticker=tk
+                )
                 our_signal, signal_source = _signal_and_source_from_row(
                     row, buy_min=buy_min, sell_max=sell_max
                 )
+                if dq == "stale_session":
+                    records.append({
+                        "as_of_date": as_of_date,
+                        "next_date": next_date,
+                        "ticker": tk,
+                        "horizon_days": horizon,
+                        "our_signal": our_signal,
+                        "signal_source": signal_source,
+                        "actual_return_pct": None,
+                        "forward_status": "pending",
+                        "data_quality": dq,
+                    })
+                    continue
+                if ret_pct is None:
+                    continue
                 records.append({
                     "as_of_date": as_of_date,
                     "next_date": next_date,
@@ -515,6 +588,8 @@ def collect_forward_records(
                     "our_signal": our_signal,
                     "signal_source": signal_source,
                     "actual_return_pct": ret_pct,
+                    "forward_status": "complete",
+                    "data_quality": dq,
                 })
 
     return records

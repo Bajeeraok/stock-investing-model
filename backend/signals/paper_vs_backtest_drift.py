@@ -48,6 +48,9 @@ def build_paper_vs_backtest_drift(
     summ = ptl.get_performance_summary(min_completed=3, min_actionable=3)
 
     completed = int(summ.get("completed") or 0)
+    acc = summ.get("accumulate_summary") if isinstance(summ.get("accumulate_summary"), dict) else None
+    acc_n = int((acc or {}).get("completed_n") or 0)
+
     if completed < 3:
         return {
             "status": "insufficient_paper",
@@ -59,7 +62,15 @@ def build_paper_vs_backtest_drift(
             "message": "Need 3+ completed paper trades to compare drift (20d horizon outcomes).",
         }
 
-    paper_avg = summ.get("avg_return_pct")
+    if acc_n >= 3 and acc:
+        paper_avg = acc.get("avg_return_pct")
+        paper_wr = acc.get("win_rate_pct")
+        paper_excess = acc.get("avg_excess_vs_spy_pct")
+    else:
+        paper_avg = summ.get("avg_return_pct")
+        paper_wr = summ.get("win_rate_pct")
+        paper_excess = summ.get("avg_excess_vs_spy_pct")
+
     drift = None
     if forward_mean is not None and paper_avg is not None:
         try:
@@ -81,8 +92,8 @@ def build_paper_vs_backtest_drift(
         "status": summ.get("status") or "ok",
         "paper_completed_n": completed,
         "paper_avg_return_pct": paper_avg,
-        "paper_win_rate_pct": summ.get("win_rate_pct"),
-        "paper_avg_excess_vs_spy_pct": summ.get("avg_excess_vs_spy_pct"),
+        "paper_win_rate_pct": paper_wr,
+        "paper_avg_excess_vs_spy_pct": paper_excess,
         "forward_20d_baseline_pct": forward_mean,
         "forward_20d_n": forward_n,
         "drift_vs_forward_pct": drift,
@@ -94,6 +105,6 @@ def build_paper_vs_backtest_drift(
         "buy_drift_vs_forward_pct": buy_drift,
         "note": (
             "Forward-tracking 20d mean is a population baseline from EOD snapshots; "
-            "paper trades are your subset — large drift warrants checking fills and horizons."
+            "paper drift prefers accumulate track when n≥3. Velocity tactical is separate."
         ),
     }

@@ -97,6 +97,9 @@ export interface HorizonPlaybookPayload {
       ml_confirmation_note?: string | null;
     };
     exit_plan?: {
+      entry_low?: number;
+      entry_high?: number;
+      entry_anchor?: number;
       hard_stop?: number;
       target_1?: number;
       target_2?: number;
@@ -255,8 +258,8 @@ export function HorizonPlaybookCard({
               <div>
                 <p className="text-slate-500">Entry</p>
                 <p className="font-mono text-slate-200 tabular-nums">
-                  ${exitPlan.entry_low?.toFixed(0) ?? t?.entry_low.toFixed(0)}–$
-                  {exitPlan.entry_high?.toFixed(0) ?? t?.entry_high.toFixed(0)}
+                  ${exitPlan.entry_low?.toFixed(0) ?? t?.entry_low?.toFixed(0)}–$
+                  {exitPlan.entry_high?.toFixed(0) ?? t?.entry_high?.toFixed(0)}
                 </p>
               </div>
               <div>

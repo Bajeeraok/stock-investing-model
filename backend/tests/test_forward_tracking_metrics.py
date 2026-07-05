@@ -1,9 +1,10 @@
 """Forward tracking path + TRIM metrics."""
 from signals.forward_tracking_metrics import (
+    aggregate_horizon_stats,
+    compute_validated_forward_return,
+    freeze_gate_fields_from_row,
     path_metrics,
     trim_outcome_metrics,
-    aggregate_horizon_stats,
-    freeze_gate_fields_from_row,
 )
 
 
@@ -52,3 +53,51 @@ def test_freeze_gate_fields():
     assert frozen["gates_frozen"] is True
     assert frozen["gates_passed"] == 3
     assert frozen["gates_total"] == 4
+
+
+def test_stale_session_dropped():
+    start = {"close": 100.0, "ohlcv_last_date": "2026-07-02"}
+    end = {"close": 100.0, "ohlcv_last_date": "2026-07-02", "daily_move_pct": 0.0}
+    ret, q = compute_validated_forward_return(start, end, horizon=1)
+    assert ret is None
+    assert q == "stale_session"
+
+
+def test_crwd_style_reconcile_daily_move():
+    """Broken close chain without ticker: daily_move fallback."""
+    start = {"close": 512.0, "ohlcv_last_date": "2026-07-01", "high": 515, "low": 508}
+    end = {
+        "close": 128.0,
+        "high": 130.0,
+        "low": 126.0,
+        "daily_move_pct": -1.2,
+        "ohlcv_last_date": "2026-07-02",
+    }
+    ret, q = compute_validated_forward_return(start, end, horizon=1)
+    assert ret == -1.2
+    assert q == "reconciled_daily_move"
+
+
+def test_crwd_4_for_1_split_adjusted():
+    """CRWD Jul 2026 4-for-1: pre-split close aligned to post-split basis."""
+    start = {"close": 760.0, "ohlcv_last_date": "2026-07-01", "high": 765, "low": 755}
+    end = {
+        "close": 196.80,
+        "high": 198.0,
+        "low": 194.0,
+        "daily_move_pct": 1.87,
+        "ohlcv_last_date": "2026-07-02",
+    }
+    ret, q = compute_validated_forward_return(start, end, horizon=1, ticker="CRWD")
+    assert q == "split_adjusted"
+    assert ret is not None
+    assert -5.0 < ret < 8.0
+    assert ret > -10.0  # not the bogus -74% raw close chain
+
+
+def test_outlier_dropped_when_no_reconcile():
+    start = {"close": 500.0, "ohlcv_last_date": "2026-07-01"}
+    end = {"close": 125.0, "high": 128.0, "low": 124.0, "ohlcv_last_date": "2026-07-02"}
+    ret, q = compute_validated_forward_return(start, end, horizon=1)
+    assert ret is None
+    assert q == "outlier_abs_cap"

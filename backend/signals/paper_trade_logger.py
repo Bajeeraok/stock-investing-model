@@ -306,6 +306,12 @@ def _result_to_paper_record(
         horizon_trading_days = int(
             r.get("tactical_horizon_trading_days") or horizon_trading_days
         )
+    elif track == "swing":
+        target_1 = _safe_float(r.get("swing_t1")) or target_1
+        hard_stop = _safe_float(r.get("swing_stop")) or hard_stop
+        horizon_trading_days = int(
+            r.get("swing_horizon_trading_days") or horizon_trading_days
+        )
     ml = r.get("ml_short_prob")
     ml_conf = round(float(ml) * 100, 1) if _safe_float(ml) is not None else None
     reg = r.get("_global_market_regime") or r.get("regime")
@@ -351,6 +357,10 @@ def _result_to_paper_record(
         if v is not None:
             row[k] = v
     row["track"] = track
+    if track in ("velocity", "swing"):
+        row["entry_mode"] = "market"
+        if entry is not None:
+            row["reference_entry_price"] = round(entry, 2)
     # Gate-level entry mode (full_go / starter_only / hard_lock) — different from the
     # execution entry_mode (limit_touch / market).  Sourced from enrich_dashboard_signal_row.
     gm = r.get("entry_mode")
@@ -370,6 +380,28 @@ def _result_to_velocity_paper_record(
     vt = (config or {}).get("velocity_tactical") or {}
     horizon = int(vt.get("horizon_trading_days", 5))
     return _result_to_paper_record(r, date_str, horizon_trading_days=horizon, track="velocity")
+
+
+def _result_to_swing_paper_record(
+    r: dict[str, Any],
+    date_str: str,
+    config: dict | None = None,
+) -> dict[str, Any] | None:
+    """Swing paper row — swing_triggered; 4-gate GO not required."""
+    if not r.get("swing_triggered"):
+        return None
+    st_cfg = (config or {}).get("swing_tactical") or {}
+    horizon = int(r.get("swing_horizon_trading_days") or 12)
+    rec = _result_to_paper_record(r, date_str, horizon_trading_days=horizon, track="swing")
+    if rec is None:
+        return None
+    setup = str(r.get("swing_setup_label") or r.get("swing_setup_type") or "swing")
+    rec["signal"] = f"SWING:{setup}"
+    if r.get("swing_setup_type"):
+        rec["swing_setup_type"] = r.get("swing_setup_type")
+    if r.get("swing_score") is not None:
+        rec["swing_score"] = r.get("swing_score")
+    return rec
 
 
 def _build_limit_paper_row(
@@ -406,6 +438,56 @@ def _is_buy_side_signal(sig: str) -> bool:
     if s.strip() in ("HOLD", "WATCH"):
         return False
     return "STRONG BUY" in s or s.strip() == "BUY" or "HOLD/ADD" in s
+
+
+def _is_bearish_signal(sig: str) -> bool:
+    s = (sig or "").upper()
+    return any(x in s for x in ("TRIM", "SELL", "REDUCE", "AVOID"))
+
+
+def _velocity_eligible_for_paper(r: dict[str, Any], config: dict | None) -> bool:
+    """
+    Velocity paper rows are long-only tactical entries — skip bearish signals and optional gate floor.
+    """
+    vt = (config or {}).get("velocity_tactical") or {}
+    sig = str(r.get("signal") or r.get("short_suggestion") or "")
+    if vt.get("require_buy_side_for_paper", True) and _is_bearish_signal(sig):
+        return False
+    min_gates = vt.get("min_gates_for_paper")
+    if min_gates is None:
+        min_gates = vt.get("tactical_min_gates_for_alert", 0)
+    try:
+        min_gates = int(min_gates or 0)
+    except (TypeError, ValueError):
+        min_gates = 0
+    if min_gates > 0:
+        gp = r.get("gates_passed")
+        if gp is not None and int(gp) < min_gates:
+            return False
+    return True
+
+
+def _pair_has_new_price_bar(
+    row_start: dict[str, Any] | None,
+    row_end: dict[str, Any] | None,
+    *,
+    prior_close: float | None,
+    actual_close: float | None,
+) -> bool:
+    """
+    True when the forward window includes a new OHLCV session (not a holiday duplicate snapshot).
+    """
+    if prior_close is None or actual_close is None:
+        return False
+    if float(prior_close) != float(actual_close):
+        return True
+    if not row_start or not row_end:
+        return False
+    d0 = str(row_start.get("ohlcv_last_date") or "")[:10]
+    d1 = str(row_end.get("ohlcv_last_date") or "")[:10]
+    if d0 and d1 and d0 != d1:
+        return True
+    return False
 
 
 @dataclass
@@ -831,6 +913,9 @@ class PaperTradeLogger:
                 t = (r.get("ticker") or "").upper().strip()
                 if not t or not r.get("velocity_triggered"):
                     continue
+                if not _velocity_eligible_for_paper(r, config):
+                    skipped += 1
+                    continue
                 if allowed_tickers is not None and t not in allowed_tickers:
                     continue
                 rec = _result_to_velocity_paper_record(r, date_str, config)
@@ -858,6 +943,76 @@ class PaperTradeLogger:
         if appended:
             self._write_all(rows)
         return {"appended": appended, "skipped": skipped, "date": date_str, "track": "velocity"}
+
+    def log_swing_trades_from_results(
+        self,
+        results: list[dict[str, Any]],
+        date_str: str | None = None,
+        config: dict | None = None,
+        allowed_tickers: set[str] | frozenset[str] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Log swing paper rows for swing_triggered names (market close entry).
+        Does not require GO gates — gates still recorded on the row.
+        """
+        st_cfg = (config or {}).get("swing_tactical") or {}
+        if not st_cfg.get("enabled", True) or not st_cfg.get("log_paper_trades", False):
+            return {"appended": 0, "skipped": 0, "enabled": False}
+
+        date_str = date_str or _today_str()
+        rows = self._read_all()
+        existing = {self._dedupe_key(r) for r in rows}
+
+        _window_days = int((st_cfg.get("dedup_window_days") or 5))
+        try:
+            from datetime import date as _date, timedelta as _td
+
+            _cutoff = (_date.fromisoformat(date_str) - _td(days=_window_days)).isoformat()
+        except Exception:
+            _cutoff = ""
+        _recent_swing: set[tuple[str, str]] = set()
+        for _r in rows:
+            if str(_r.get("track") or "") == "swing" and str(_r.get("date") or "") >= _cutoff:
+                _ep = str(_r.get("entry_price") or "")
+                _tk = str(_r.get("ticker") or "").upper()
+                if _tk and _ep:
+                    _recent_swing.add((_tk, _ep))
+
+        appended = 0
+        skipped = 0
+
+        for r in results or []:
+            try:
+                if not isinstance(r, dict) or r.get("error"):
+                    continue
+                t = (r.get("ticker") or "").upper().strip()
+                if not t or not r.get("swing_triggered"):
+                    continue
+                if allowed_tickers is not None and t not in allowed_tickers:
+                    continue
+                rec = _result_to_swing_paper_record(r, date_str, config)
+                if rec is None:
+                    continue
+                rec["entry_mode"] = "market"
+                rec["entry_price_source"] = rec.get("entry_price_source") or "ohlcv_last_bar"
+                key = self._dedupe_key(rec)
+                if key in existing:
+                    skipped += 1
+                    continue
+                swing_key = (t, str(rec.get("entry_price") or ""))
+                if swing_key in _recent_swing:
+                    skipped += 1
+                    continue
+                rows.append(rec)
+                existing.add(key)
+                _recent_swing.add(swing_key)
+                appended += 1
+            except Exception:
+                continue
+
+        if appended:
+            self._write_all(rows)
+        return {"appended": appended, "skipped": skipped, "date": date_str, "track": "swing"}
 
     def backfill_from_eod_snapshots(
         self,
@@ -1318,11 +1473,34 @@ class PaperTradeLogger:
                 if actual is None or eff_entry <= 0:
                     continue
 
+                snap_start = self._load_snapshot(str(eff_entry_date or as_of))
+                r_start = None
+                if snap_start:
+                    r_start = _run_results_by_ticker_upper(snap_start.get("run_results") or []).get(t)
+                prior_close = _safe_float((r_start or {}).get("close")) or _safe_float(row.get("entry_price"))
+                if not _pair_has_new_price_bar(
+                    r_start,
+                    r_next,
+                    prior_close=prior_close,
+                    actual_close=actual,
+                ):
+                    continue
+
                 exit_cost = self._row_cost_pct(row, "exit_cost_pct")
                 actual_net = round(float(actual) * (1.0 - exit_cost), 4)
-                ret_pct = round(100 * (actual_net - eff_entry) / eff_entry, 2)
+                from signals.stock_splits import cumulative_split_factor
+
+                entry_date = str(eff_entry_date or as_of)[:10]
+                sf = cumulative_split_factor(t, entry_date, str(next_date)[:10])
+                adj_entry = round(eff_entry * sf, 4) if sf != 1.0 else eff_entry
+                ret_pct = round(100 * (actual_net - adj_entry) / adj_entry, 2)
                 tgt = _safe_float(row.get("target_1"))
                 stop = _safe_float(row.get("hard_stop"))
+                if sf != 1.0:
+                    if tgt is not None:
+                        tgt = round(tgt * sf, 4)
+                    if stop is not None:
+                        stop = round(stop * sf, 4)
                 hi = _safe_float((r_next or {}).get("high"))
                 lo = _safe_float((r_next or {}).get("low"))
                 hit_target = None
@@ -1832,12 +2010,59 @@ class PaperTradeLogger:
         else:
             out["message"] = None
 
-        out["win_rate_pct"] = stats["win_rate_pct"]
-        out["avg_return_pct"] = stats["avg_return_pct"]
-        out["avg_win_pct"] = stats["avg_win_pct"]
-        out["avg_loss_pct"] = stats["avg_loss_pct"]
-        out["avg_excess_vs_spy_pct"] = stats["avg_excess_vs_spy_pct"]
-        out["n_benchmarked"] = stats["n_with_benchmark"]
+        accumulate = [
+            r
+            for r in completed
+            if str(r.get("track") or "accumulate") not in ("velocity", "swing")
+        ]
+        tactical = [r for r in completed if str(r.get("track") or "") == "velocity"]
+        swing_track = [r for r in completed if str(r.get("track") or "") == "swing"]
+
+        out["blended_summary"] = {
+            "completed_n": stats["completed_n"],
+            "win_rate_pct": stats["win_rate_pct"],
+            "avg_return_pct": stats["avg_return_pct"],
+            "label": "All tracks blended",
+        }
+
+        # Headline stats = accumulate (4-gate model) when enough data; never blend velocity into model headline.
+        headline_floor = max(3, min(5, int(min_actionable)))
+        if len(accumulate) >= headline_floor:
+            headline_stats = self._stats_for_completed(accumulate, benchmark)
+            out["headline_track"] = "accumulate"
+        elif len(accumulate) > 0:
+            headline_stats = self._stats_for_completed(accumulate, benchmark)
+            out["headline_track"] = "accumulate_thin"
+            thin_note = (
+                f"Accumulate track n={len(accumulate)} — preview only; "
+                "see tactical breakdown for velocity T+5."
+            )
+            out["message"] = thin_note if not out.get("message") else f"{out['message']} {thin_note}"
+        else:
+            headline_stats = {
+                "completed_n": 0,
+                "win_rate_pct": None,
+                "avg_return_pct": None,
+                "avg_win_pct": None,
+                "avg_loss_pct": None,
+                "avg_excess_vs_spy_pct": None,
+                "n_with_benchmark": 0,
+            }
+            out["headline_track"] = "no_accumulate"
+            if tactical:
+                tac_note = (
+                    "Headline win rate is accumulate (4-gate GO) only — "
+                    f"velocity tactical has n={len(tactical)} (see breakdown below). "
+                    "Not comparable to model audit ~51%."
+                )
+                out["message"] = tac_note if not out.get("message") else f"{out['message']} {tac_note}"
+
+        out["win_rate_pct"] = headline_stats.get("win_rate_pct")
+        out["avg_return_pct"] = headline_stats.get("avg_return_pct")
+        out["avg_win_pct"] = headline_stats.get("avg_win_pct")
+        out["avg_loss_pct"] = headline_stats.get("avg_loss_pct")
+        out["avg_excess_vs_spy_pct"] = headline_stats.get("avg_excess_vs_spy_pct")
+        out["n_benchmarked"] = headline_stats.get("n_with_benchmark")
 
         if buy_stats:
             out["buy_signals_summary"] = {
@@ -1848,8 +2073,6 @@ class PaperTradeLogger:
                 "label": buy_stats["label"],
             }
 
-        accumulate = [r for r in completed if str(r.get("track") or "accumulate") != "velocity"]
-        tactical = [r for r in completed if str(r.get("track") or "") == "velocity"]
         if accumulate:
             acc_stats = self._stats_for_completed(accumulate, benchmark)
             out["accumulate_summary"] = {
@@ -1866,6 +2089,14 @@ class PaperTradeLogger:
                 "avg_return_pct": tac_stats["avg_return_pct"],
                 "label": "Tactical velocity track (T+5)",
             }
+        if swing_track:
+            sw_stats = self._stats_for_completed(swing_track, benchmark)
+            out["swing_summary"] = {
+                "completed_n": sw_stats["completed_n"],
+                "win_rate_pct": sw_stats["win_rate_pct"],
+                "avg_return_pct": sw_stats["avg_return_pct"],
+                "label": "Swing classifier track (T1/stop/time)",
+            }
 
         # Gate-mode tiered breakdown (full_go vs starter_only vs hard_lock)
         # Only meaningful for accumulate track where gates apply.
@@ -1874,7 +2105,7 @@ class PaperTradeLogger:
 
         out["marketing_note"] = (
             "Headline marketing stats should use accumulate GO cohort only; "
-            "tactical track is labeled separately."
+            "velocity and swing tracks are labeled separately."
         )
 
         return out
@@ -1883,7 +2114,7 @@ class PaperTradeLogger:
     def _coerce_numeric_fields(row: dict[str, Any]) -> dict[str, Any]:
         """CSV roundtrip turns None → '' ; coerce back so JSON has null, not '0' in JS."""
         _NUMERIC_KEYS = frozenset({
-            "ml_confidence", "entry_price", "effective_entry_price",
+            "ml_confidence", "entry_price", "effective_entry_price", "reference_entry_price",
             "entry_cost_pct", "exit_cost_pct",
             "target_1", "hard_stop", "atr_14", "model_score", "kelly_pct",
             "actual_price", "actual_price_net", "return_pct",

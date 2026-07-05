@@ -17,6 +17,7 @@ export { SignalsTable } from "./SignalsTable";
 export { PortfolioHoldings } from "./PortfolioHoldings";
 export { TrimCandidates } from "./TrimCandidates";
 export { Opportunities } from "./Opportunities";
+export { IncomeBookPanel } from "./IncomeBookPanel";
 export { ThesisCheck } from "./ThesisCheck";
 export { WhatChanged } from "./WhatChanged";
 export { RegimeChart } from "./RegimeChart";

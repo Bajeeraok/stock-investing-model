@@ -33,6 +33,7 @@ import {
   PortfolioHoldings,
   TrimCandidates,
   Opportunities,
+  IncomeBookPanel,
   ThesisCheck,
   WhatChanged,
   RegimeChart,
@@ -161,7 +162,7 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
-const TAB_IDS: TabId[] = ["overview", "signals", "roadmaps", "portfolio", "opportunities", "markets", "analysis"];
+const TAB_IDS: TabId[] = ["overview", "signals", "roadmaps", "portfolio", "opportunities", "income", "markets", "analysis"];
 
 function isValidTab(t: string): t is TabId {
   return TAB_IDS.includes(t as TabId);
@@ -729,7 +730,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       if (e.target && (e.target as HTMLElement).closest("input, textarea, select")) return;
       const keyToTab: Partial<Record<string, TabId>> = {
         "1": "overview", "2": "signals", "3": "portfolio", "4": "opportunities",
-        "5": "markets", "6": "analysis", "7": "roadmaps",
+        "5": "markets", "6": "analysis", "7": "roadmaps", "8": "income",
       };
       const id = e.key in keyToTab ? keyToTab[e.key] : null;
       if (id) {
@@ -1612,6 +1613,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 )}
                 <InsiderFlowTracker data={insiderFlow} />
               </ToggleSection>
+            </div>
+          )}
+
+          {/* Income Book tab — ad-hoc swing sleeve (separate from long-term portfolio) */}
+          {activeTab === "income" && (
+            <div className="p-4 sm:p-6 space-y-4">
+              <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+              <IncomeBookPanel onTickerClick={openTickerDetail} />
             </div>
           )}
 

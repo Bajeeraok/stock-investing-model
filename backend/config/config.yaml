@@ -576,6 +576,14 @@ paper_trading:
     round_trip_cost_pct: 0.003    # commission+slippage total; applied half on entry, half on exit
     use_intraday_touch: true      # if snapshot row has high/low, use them for target/stop hit checks
 
+# Swing setup track (technical-first) — parallel to accumulate GO; does NOT replace 4-gate path
+swing_tactical:
+  enabled: true
+  min_swing_score: 70              # matches classifier SWING_SIGNAL threshold
+  require_swing_signal_verdict: true
+  log_paper_trades: false          # enable after backtest_swing_setups.py looks good
+  dedup_window_days: 5
+
 # Velocity / tactical breakout track (P0) — does NOT change primary 4-gate GO
 velocity_tactical:
   enabled: true
@@ -586,6 +594,8 @@ velocity_tactical:
   horizon_trading_days: 5
   require_rvol_or_bb: true
   log_paper_trades: true
+  require_buy_side_for_paper: true   # skip REDUCE/TRIM/SELL velocity rows (long-only paper)
+  min_gates_for_paper: 0            # set 2 to align with tactical_min_gates_for_alert
   tactical_min_gates_for_alert: 2
 
 # Scout overview: 1-day event risk strip (earnings + ATR + velocity ranking)
@@ -832,9 +842,28 @@ show_tooltips: false  # Set true to print indicator explanations at end
 # for historical tracking, forward tracking, and backtesting.
 # Keep all snapshots (0) recommended so you can use them later; set to e.g. 365 to purge older than 1 year.
 eod_retention_days: 0   # 0 = keep forever; set 90/365 etc. to purge older snapshots
+
+# Corporate actions — EOD closes are not retro-adjusted; forward metrics scale pre-split prices.
+# ratio = N for N-for-1 split (price ÷ N on effective_date).
+stock_splits:
+  CRWD:
+    - effective_date: "2026-07-02"
+      ratio: 4
+
+# Income Book — ad-hoc swing sleeve (separate from long-term portfolio holdings).
+income_book:
+  enabled: true
+  exclude_long_term_holdings: true   # scan ~100 universe minus thesis portfolio
+  min_swing_score: 65
+  min_gates_passed: 3
+  max_proposed_slots: 8
+  max_open_trades: 3                 # user can override in UI settings
+  candidate_pool_size: 30
+  block_new_entries_regime_down: true
 # Python scheduler (scripts/scheduler_eod.py): run EOD snapshot daily at this time
 # In-process APScheduler (uvicorn / Docker) uses the same keys when EOD_SCHEDULER_CRON is unset.
-eod_schedule_time: "20:00"   # 8pm ET, Mon–Fri
+# Skips weekends and NYSE full-day holidays (Independence Day observed, Good Friday, etc.).
+eod_schedule_time: "20:00"   # 8pm ET, Mon–Fri (non-holiday)
 eod_schedule_tz: "America/New_York"
 # eod_scheduler_enabled: false   # set to disable in-process EOD without env vars
 

@@ -33,15 +33,10 @@ def _today_est() -> str:
 
 
 def is_us_equity_session_day(date_str: str | None = None) -> bool:
-    """True for Mon–Fri Eastern calendar days (exchange holidays not excluded)."""
-    if date_str:
-        try:
-            d = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
-        except ValueError:
-            return False
-    else:
-        d = datetime.now(EST).date()
-    return d.weekday() < 5
+    """True for NYSE regular session days (weekday, not exchange holiday)."""
+    from signals.market_calendar import is_us_equity_session_day as _is_session
+
+    return _is_session(date_str)
 
 
 def min_full_eod_row_count(config: dict | None = None) -> int:
@@ -407,9 +402,12 @@ def run_signals(
 
         # Drawdown (52w high) and ATR (14d)
         drawdown_52w = None
+        high_52w = None
+        low_52w = None
         atr_14 = None
         if len(close) >= 252:
             high_52w = float(close.iloc[-252:].max())
+            low_52w = float(close.iloc[-252:].min())
             if high_52w and high_52w > 0:
                 drawdown_52w = round(100 * (float(close.iloc[-1]) - high_52w) / high_52w, 1)
         # Proper daily ATR(14) using True Range (requires high/low/close).
@@ -539,6 +537,7 @@ def run_signals(
             "macd_contrib": sig.get("macd_contrib"),
             "ma20": sig.get("ma20"),
             "ma50": sig.get("ma50"),
+            "ma200": sig.get("ma200"),
             "macd_hist": sig.get("macd_hist"),
             "composite_buy": composite_buy,
             "buy_min": buy_min,
@@ -580,6 +579,8 @@ def run_signals(
             "volume_ratio": volume_ratio,
             "volume_unusual": volume_unusual,
             "drawdown_52w": drawdown_52w,
+            "high_52w": high_52w,
+            "low_52w": low_52w,
             "score_label": get_score_label(composite_buy, global_market_regime),
             "confidence_tag": "low (bear/neutral market)" if global_market_regime and global_market_regime not in ("BULL", "STRONG_BULL") else "normal",
             "_global_market_regime": global_market_regime,
@@ -609,6 +610,12 @@ def run_signals(
             from signals.retail_action_payload import enrich_dashboard_signal_row
 
             enrich_dashboard_signal_row(row)
+        except Exception:
+            pass
+        try:
+            from signals.swing_engine import attach_swing_to_row
+
+            attach_swing_to_row(row, close=close, config=config)
         except Exception:
             pass
         try:
@@ -745,6 +752,22 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             "tactical_horizon_trading_days",
             "tactical_rr",
             "tactical_expiry_note",
+            "swing_setup_type",
+            "swing_setup_label",
+            "swing_score",
+            "swing_verdict",
+            "swing_triggered",
+            "swing_reasons",
+            "swing_divergence_note",
+            "swing_entry_low",
+            "swing_entry_high",
+            "swing_stop",
+            "swing_t1",
+            "swing_t2",
+            "swing_runner",
+            "swing_horizon_trading_days",
+            "swing_rr",
+            "swing_horizon_label",
         ):
             if r.get(k) is not None:
                 row[k] = r.get(k)

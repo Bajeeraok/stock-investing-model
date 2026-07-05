@@ -14,6 +14,9 @@ interface RecordRow {
   horizon_days: number;
   our_signal: string;
   actual_return_pct: number;
+  forward_status?: "pending" | "complete" | null;
+  pending_reason?: string | null;
+  data_quality?: string | null;
   gate_cleared?: boolean | null;
   go_no_go?: string | null;
   gates_passed?: number | null;
@@ -112,13 +115,16 @@ function cutoffDate(range: DateRange): string | null {
 }
 
 function filteredForwardStats(rows: RecordRow[]) {
-  if (!rows.length) return null;
-  const returns = rows.map((r) => r.actual_return_pct);
+  const complete = rows.filter(
+    (r) => r.forward_status !== "pending" && r.actual_return_pct != null,
+  );
+  if (!complete.length) return null;
+  const returns = complete.map((r) => r.actual_return_pct as number);
   const n = returns.length;
   const avg = returns.reduce((a, b) => a + b, 0) / n;
   const wins = returns.filter((r) => r > 0).length;
   const bySignal: Record<string, { n: number; avg: number }> = {};
-  for (const r of rows) {
+  for (const r of complete) {
     const sig = r.our_signal || "N/A";
     if (!bySignal[sig]) bySignal[sig] = { n: 0, avg: 0 };
     bySignal[sig].n += 1;
@@ -239,7 +245,8 @@ export function ForwardTracking({
           </span>
         )}
         <span className="block mt-1 text-slate-600">
-          As-of dates need a finished forward window (1/5/20/60 EOD steps). The latest EOD day is not listed until the next snapshot completes the pair.
+          As-of dates need a finished forward window (1/5/20/60 EOD steps). Pending = no new trading session
+          between snapshots (holiday duplicate). Latest EOD day excluded until the pair completes.
         </span>
       </p>
 
@@ -371,8 +378,10 @@ export function ForwardTracking({
       )}
 
       {summary_by_go_no_go && Object.keys(summary_by_go_no_go).length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">By gate status (20d forward, gates enriched from EOD)</p>
+        <div className="mb-3 rounded-lg border border-emerald-500/20 bg-emerald-950/20 px-3 py-2">
+          <p className="text-xs text-emerald-300/90 font-medium mb-1">
+            Model alignment (20d forward) — compare to audit ~51% on GO cohort
+          </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {Object.entries(summary_by_go_no_go).map(([go, s]) => (
               <span key={go}>
@@ -389,7 +398,9 @@ export function ForwardTracking({
 
       {summary_by_signal && Object.keys(summary_by_signal).length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">By signal (20d forward)</p>
+          <p className="text-xs text-slate-500 mb-1">
+            By score bucket (20d forward) — HOLD/ADD uses composite ≥ buy_min, not 4-gate GO
+          </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {Object.entries(summary_by_signal).map(([sig, s]) => (
               <span key={sig} title={s.metric_note}>
@@ -454,7 +465,30 @@ export function ForwardTracking({
                     "—"
                   )}
                 </td>
-                <td className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>{fmt(r.actual_return_pct)}</td>
+                <td className="py-1.5 pr-2">
+                  {r.forward_status === "pending" || r.actual_return_pct == null ? (
+                    <span
+                      className="text-slate-500 text-xs"
+                      title={r.pending_reason ?? "Waiting for next trading session EOD"}
+                    >
+                      pending
+                    </span>
+                  ) : (
+                    <span className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                      {fmt(r.actual_return_pct)}
+                      {r.data_quality === "split_adjusted" && (
+                        <span className="text-slate-600 text-[10px] ml-1" title="Pre-split close scaled for corporate action (e.g. 4-for-1)">
+                          adj
+                        </span>
+                      )}
+                      {r.data_quality === "reconciled_daily_move" && (
+                        <span className="text-slate-600 text-[10px] ml-1" title="Close chain broken — used EOD daily_move_pct">
+                          †
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </td>
                 <td className="py-1.5 pr-2 text-xs text-slate-400">
                   {r.hit_st_target === 1 ? "✓" : r.hit_st_target === 0 ? "·" : "—"}
                 </td>

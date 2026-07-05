@@ -25,9 +25,21 @@ def test_get_forward_tracking_includes_meta(monkeypatch, tmp_path):
 
     def fake_load(_eod_dir, d):
         if d not in snapshots:
+            day = int(d.split("-")[-1])
+            close = 500.0 + day * 0.5
+            prev_close = close - 0.5
             snapshots[d] = {
                 "run_results": [
-                    {"ticker": "SPY", "close": 500.0, "composite_buy": 72, "signal": "BUY"},
+                    {
+                        "ticker": "SPY",
+                        "close": close,
+                        "high": close + 1.0,
+                        "low": close - 1.0,
+                        "daily_move_pct": round(100.0 * (close - prev_close) / prev_close, 4),
+                        "ohlcv_last_date": d,
+                        "composite_buy": 72,
+                        "signal": "BUY",
+                    },
                 ]
             }
         return snapshots[d]

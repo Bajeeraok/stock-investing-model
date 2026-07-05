@@ -283,10 +283,19 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             )}
             {summary.win_rate_pct != null && (
               <span>
-                <span className="text-slate-500">Win rate:</span>{" "}
+                <span className="text-slate-500">
+                  {summary.headline_track === "accumulate" || summary.headline_track === "accumulate_thin"
+                    ? "Win rate (accumulate):"
+                    : "Win rate:"}
+                </span>{" "}
                 <span className={summary.win_rate_pct >= 55 ? "text-emerald-400" : "text-amber-300"}>
                   {summary.win_rate_pct.toFixed(1)}%
                 </span>
+              </span>
+            )}
+            {summary.headline_track === "no_accumulate" && summary.tactical_summary && (
+              <span className="text-xs text-amber-300/90" title="Model GO track not measured — see velocity card below">
+                No accumulate headline — use tactical breakdown
               </span>
             )}
             {summary.avg_return_pct != null && (
@@ -512,7 +521,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     <EntryModePill mode={r.entry_mode} />
                   </td>
                   <td className="py-1.5 pr-2 text-slate-300">
-                    {r.reference_entry_price != null ? `$${Number(r.reference_entry_price).toFixed(2)}` : "—"}
+                    {hasNumericValue(r.reference_entry_price) && Number(r.reference_entry_price) > 0
+                      ? `$${Number(r.reference_entry_price).toFixed(2)}`
+                      : String(r.track || "") === "velocity"
+                        ? "mkt close"
+                        : "—"}
                   </td>
                   <td className="py-1.5 pr-2 text-slate-300">{r.entry_price != null ? `$${Number(r.entry_price).toFixed(2)}` : "—"}</td>
                   <td className="py-1.5 pr-2 text-slate-400">{r.limit_fill_date || "—"}</td>

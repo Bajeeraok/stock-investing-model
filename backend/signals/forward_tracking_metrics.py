@@ -7,6 +7,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from signals.stock_splits import align_prices_across_split
+
 TRIM_SIGNALS = frozenset({"CONSIDER TRIM", "TRIM", "SELL", "REDUCE", "AVOID"})
 
 
@@ -130,8 +132,8 @@ def st_stop_target_from_row(row: dict[str, Any]) -> tuple[float | None, float | 
     st = row.get("st_band") if isinstance(row.get("st_band"), dict) else None
     if not st:
         return None, None
-    stop = _f(st.get("low"))
-    target = _f(st.get("high"))
+    stop = _positive_price(st.get("low"))
+    target = _positive_price(st.get("high"))
     return stop, target
 
 
@@ -140,9 +142,83 @@ def _f(x: Any) -> float | None:
         if x is None:
             return None
         v = float(x)
-        return v if v > 0 else None
+        return v if v == v else None
     except (TypeError, ValueError):
         return None
+
+
+def _positive_price(x: Any) -> float | None:
+    v = _f(x)
+    return v if v is not None and v > 0 else None
+
+
+# Max |return| without extra OHLC scrutiny (horizon = EOD snapshot steps)
+_FORWARD_ABS_CAP = {1: 18.0, 5: 30.0, 20: 50.0, 60: 90.0}
+
+
+def compute_validated_forward_return(
+    row_start: dict[str, Any],
+    row_end: dict[str, Any],
+    *,
+    horizon: int,
+    ticker: str | None = None,
+) -> tuple[float | None, str]:
+    """
+    Close-to-close return between two EOD rows with sanity checks.
+
+    Drops stale holiday duplicates and impossible 1d jumps (e.g. CRWD -75% from
+    mismatched prior close). When horizon=1 and daily_move_pct disagrees with
+    close chain, prefer daily_move_pct. Applies known stock splits across the pair.
+    """
+    prior_raw = _positive_price(row_start.get("close"))
+    actual = _positive_price(row_end.get("close"))
+    if prior_raw is None or actual is None:
+        return None, "missing_close"
+
+    d0 = str(row_start.get("ohlcv_last_date") or "")[:10]
+    d1 = str(row_end.get("ohlcv_last_date") or "")[:10]
+    prior, _, split_factor = align_prices_across_split(
+        ticker, d0, d1, prior_raw, actual
+    )
+    if prior is None:
+        return None, "missing_close"
+
+    ret = round(100.0 * (actual - prior) / prior, 2)
+
+    if prior_raw == actual and (not d0 or not d1 or d0 == d1):
+        return None, "stale_session"
+
+    dm = _f(row_end.get("daily_move_pct"))
+    hi = _positive_price(row_end.get("high"))
+    lo = _positive_price(row_end.get("low"))
+
+    if horizon == 1 and dm is not None and abs(ret - dm) > 3.0 and abs(ret) > 12.0 and abs(dm) < 12.0:
+        return round(dm, 2), "reconciled_daily_move"
+
+    if hi is not None and lo is not None and prior > 0:
+        band_lo = 100.0 * (lo - prior) / prior
+        band_hi = 100.0 * (hi - prior) / prior
+        if ret < band_lo - 2.0 or ret > band_hi + 2.0:
+            if horizon == 1 and dm is not None and abs(dm) < 12.0:
+                return round(dm, 2), "reconciled_daily_move"
+            return None, "outlier_vs_ohlc"
+
+    cap = _FORWARD_ABS_CAP.get(int(horizon), 50.0)
+    if abs(ret) > cap:
+        if horizon == 1 and dm is not None and abs(dm) <= cap:
+            return round(dm, 2), "reconciled_daily_move"
+        return None, "outlier_abs_cap"
+
+    if split_factor != 1.0:
+        return ret, "split_adjusted"
+
+    return ret, "ok"
+
+
+def _quality_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows with trustworthy forward returns for headline aggregates."""
+    ok = frozenset({"ok", "reconciled_daily_move", "split_adjusted"})
+    return [r for r in rows if str(r.get("data_quality") or "ok") in ok]
 
 
 def bars_between_dates(
@@ -167,9 +243,9 @@ def bars_between_dates(
                 continue
             bars.append(
                 {
-                    "close": _f(r.get("close")),
-                    "high": _f(r.get("high")),
-                    "low": _f(r.get("low")),
+                    "close": _positive_price(r.get("close")),
+                    "high": _positive_price(r.get("high")),
+                    "low": _positive_price(r.get("low")),
                 }
             )
             break
@@ -254,7 +330,13 @@ def trim_outcome_metrics(actual_return_pct: float, signal: str) -> dict[str, Any
     }
 
 
-def aggregate_horizon_stats(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def aggregate_horizon_stats(
+    rows: list[dict[str, Any]],
+    *,
+    quality_only: bool = True,
+) -> dict[str, Any]:
+    if quality_only:
+        rows = _quality_rows(rows)
     if not rows:
         return {}
     rets = [float(r["actual_return_pct"]) for r in rows if r.get("actual_return_pct") is not None]

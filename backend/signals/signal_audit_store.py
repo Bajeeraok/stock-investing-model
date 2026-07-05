@@ -1649,6 +1649,12 @@ def persist_daily_signal_logs(
             config=config,
             allowed_tickers=paper_universe,
         )
+        out["swing_paper_trades"] = pt.log_swing_trades_from_results(
+            paper_results,
+            date_str=date_str or _today_est(),
+            config=config,
+            allowed_tickers=paper_universe,
+        )
     except Exception as e:
         logger.debug("paper_trades log failed: %s", e)
         out["paper_trades"] = {"error": str(e)}

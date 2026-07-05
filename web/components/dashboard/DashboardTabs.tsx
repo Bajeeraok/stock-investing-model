@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, LayoutGrid } from "lucide-react";
+import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, LayoutGrid, Banknote } from "lucide-react";
 import { clsx } from "clsx";
 
 const TABS = [
@@ -9,6 +9,7 @@ const TABS = [
   { id: "roadmaps",    label: "Roadmaps",    compactLabel: "Roads",   shortcut: "7", icon: LayoutGrid      },
   { id: "portfolio",   label: "Portfolio",   compactLabel: "Port",    shortcut: "3", icon: Wallet          },
   { id: "opportunities", label: "Opportunities", compactLabel: "Opps", shortcut: "4", icon: Sparkles    },
+  { id: "income",        label: "Income",        compactLabel: "Income", shortcut: "8", icon: Banknote      },
   { id: "markets",     label: "Markets",     compactLabel: "Mkt",     shortcut: "5", icon: TrendingUp      },
   { id: "analysis",    label: "Analysis",    compactLabel: "Data",    shortcut: "6", icon: BarChart3       },
 ] as const;
@@ -72,7 +73,7 @@ export function DashboardTabs({ active, onChange, badges, advancedMode = false, 
   return (
     <div
       role="tablist"
-      aria-label="Dashboard sections (1-7 to switch)"
+      aria-label="Dashboard sections (1-8 to switch)"
       className="flex gap-0.5 p-1 rounded-xl bg-slate-900/80 border border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto [-webkit-overflow-scrolling:touch] min-h-[44px] touch-manipulation"
     >
       {visibleTabs.map(({ id, label, shortcut, icon: Icon }) => {
