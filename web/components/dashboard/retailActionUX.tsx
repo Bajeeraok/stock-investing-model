@@ -114,6 +114,7 @@ export type RetailActionPayload = {
     bridge_rationale?: string;
     catch_levels?: Array<{ id: string; label: string; price: number; role?: string }>;
   } | null;
+  signal_reason?: import("./tickerDetail/SignalReasonCard").SignalReasonPayload | null;
 };
 
 export function mapApiGateToRow(g: NonNullable<RetailActionPayload["gates"]>[number]): TradingGateRow {
@@ -905,8 +906,10 @@ export function CompactSignalActionStrip({
   const status = deriveListActionStatus(signal);
   const assessmentPct = deriveAssessmentPctFromSignal(signal.close, signal.lt_band);
   const insideBuyBand = signalInsideStBand(signal);
+  const signalReason = signal.retail_status?.signal_reason;
   const subtitle =
     oneLiner?.trim() ||
+    signalReason?.headline ||
     signal.retail_status?.dynamic_subtitle ||
     buildDynamicActionSubtitle(primaryGates, assessmentPct, signal.rsi, insideBuyBand);
   const displayStatus = signal.retail_status?.action_title
@@ -944,6 +947,12 @@ export function CompactSignalActionStrip({
       {variant !== "column" && (
         <p className="mt-1.5 text-sm text-slate-300/95 leading-snug line-clamp-2 italic">&ldquo;{subtitle}&rdquo;</p>
       )}
+      {variant !== "column" && signalReason?.wait_plain && (
+        <p className="mt-1.5 text-xs text-amber-200/85 leading-snug border-l-2 border-amber-500/40 pl-2">
+          <span className="font-semibold text-amber-300/90">Timing: </span>
+          {signalReason.wait_plain}
+        </p>
+      )}
       {variant === "column" && subtitle && (
         <p className="mt-1 text-xs text-slate-400 leading-snug line-clamp-1">{subtitle}</p>
       )}
@@ -963,7 +972,30 @@ export function CompactSignalActionStrip({
         </button>
       )}
       {expanded && variant === "card" && (
-        <div className="mt-2">
+        <div className="mt-2 space-y-2">
+          {signalReason?.factors && signalReason.factors.length > 0 && (
+            <div className="rounded-md border border-slate-700/60 bg-slate-950/60 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Key factors</p>
+              <ul className="space-y-1">
+                {signalReason.factors.slice(0, 3).map((f) => (
+                  <li key={f.id ?? f.label} className="text-[11px] text-slate-400 leading-snug">
+                    <span
+                      className={
+                        f.stance === "helps"
+                          ? "text-emerald-400"
+                          : f.stance === "hurts"
+                            ? "text-amber-300"
+                            : "text-slate-500"
+                      }
+                    >
+                      {f.stance === "helps" ? "↑" : f.stance === "hurts" ? "↓" : "·"}
+                    </span>{" "}
+                    <span className="text-slate-300">{f.label}:</span> {f.summary}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <TradingGateStatus gates={primaryGates} />
         </div>
       )}
@@ -2068,6 +2100,22 @@ export function EntryTierPanel(props: Parameters<typeof LongTermTierLadder>[0]) 
 
 export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentPrice: number) {
   const ra = summary.retail_action;
+  const sr = summary.signal_reason ?? ra?.signal_reason;
+
+  if (sr?.headline) {
+    const helps = (sr.factors ?? []).filter((f) => f.stance === "helps");
+    const hurts = (sr.factors ?? []).filter((f) => f.stance === "hurts");
+    return {
+      good:
+        helps[0]?.summary ||
+        (sr.supporting?.[0] ?? "Some model layers still support the longer thesis."),
+      bad:
+        hurts[0]?.summary ||
+        (sr.blocking?.[0] ?? "Not all entry gates have cleared yet."),
+      move: sr.wait_plain || sr.headline,
+    };
+  }
+
   if (ra?.dynamic_subtitle) {
     const pct =
       ra.assessment_pct ??

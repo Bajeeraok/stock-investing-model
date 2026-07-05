@@ -627,6 +627,16 @@ signal_audit:
     export_filename: signal_audit_export.csv
     resolve_before_build: true
 
+# Retail trading-gate thresholds (retail_action_payload.py). Do not lower valuation_full_mos_pct
+# below 25 for full GO — starter_only covers 15–25% MOS when tech gates fail.
+retail_gates:
+  regime_bull_pct_min: 60
+  valuation_full_mos_pct: 25
+  valuation_partial_mos_pct: 15
+  ml_short_prob_min: 25
+  momentum_rsi_max: 50
+  momentum_pattern_min: 45
+
 # Forward tracking panel (Analysis tab)
 forward_tracking:
   max_pairs_per_horizon: 60              # snapshot-step pairs per horizon (raise if cohort is large)

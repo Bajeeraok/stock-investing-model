@@ -230,6 +230,41 @@ def build_swing_setup(
         else "Setup forming — do not initiate until gates clear"
     )
 
+    classification = None
+    try:
+        from signals.swing_classifier import build_swing_classification_bundle
+
+        classification = build_swing_classification_bundle(
+            investor_out=investor_out,
+            response=response,
+            current_price=cp,
+            entry_low=min(el, eh),
+            entry_high=max(el, eh),
+        )
+        sc = classification.get("swing_score") or {}
+        st = classification.get("setup_type")
+        if sc.get("verdict") == "SWING_SIGNAL" and st and st != "no_setup":
+            headline = f"Swing opportunity — {classification.get('setup_label', 'setup')}"
+        elif sc.get("verdict") == "WATCH" and st and st != "no_setup":
+            headline = f"Swing watch — {classification.get('setup_label', 'setup')} forming"
+        if classification.get("divergence_note"):
+            narrative.insert(0, classification["divergence_note"])
+        for r in (classification.get("setup_reasons") or [])[:3]:
+            if r not in narrative:
+                narrative.append(r)
+    except Exception:
+        classification = None
+
+    exit_plan = (classification or {}).get("exit_plan") if classification else None
+    if exit_plan and isinstance(exit_plan, dict):
+        if exit_plan.get("hard_stop"):
+            stop = float(exit_plan["hard_stop"])
+        if exit_plan.get("target_1"):
+            target1 = float(exit_plan["target_1"])
+        if exit_plan.get("target_2"):
+            target2 = float(exit_plan["target_2"])
+        exit_triggers = list(exit_plan.get("exit_rules") or exit_triggers)
+
     return {
         "active": True,
         "ticker": ticker,
@@ -266,5 +301,6 @@ def build_swing_setup(
             "risk_pct": round((cp - stop) / cp * 100, 1) if cp > stop else None,
             "honest_note": rr_note,
         },
+        "swing_classification": classification,
         "disclaimer": "Decision support only — educational swing framework, not financial advice.",
     }

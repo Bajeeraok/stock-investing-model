@@ -9,6 +9,7 @@ Compare vs other sites at the same phase (both prior close).
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 EST = ZoneInfo("America/New_York")
+logger = logging.getLogger("run_daily")
 
 
 def _today_est() -> str:
@@ -624,11 +626,11 @@ def run_signals(
     # end _process_single_ticker
 
     # ── Parallel execution: network I/O dominates (~5-8 s/ticker); workers tunable
-    # via RUN_SIGNALS_MAX_WORKERS (default 6). Lower on memory-constrained hosts
-    # (Railway): 111 tickers × 12 workers can spike RSS into many GB of pandas frames.
+    # via RUN_SIGNALS_MAX_WORKERS (default 4 on Railway, 6 elsewhere). Lower on memory-constrained
+    # hosts: 111 tickers × many workers can spike RSS into many GB of pandas frames.
     import os as _os
 
-    _max_w = 6
+    _max_w = 4 if (_os.environ.get("RAILWAY_ENVIRONMENT") or _os.environ.get("RAILWAY_SERVICE_NAME")) else 6
     _raw_w = (_os.environ.get("RUN_SIGNALS_MAX_WORKERS") or "").strip()
     if _raw_w:
         try:
@@ -1030,6 +1032,18 @@ def run_eod_snapshot_only(
             result["signal_audit"] = {"error": str(e)}
     except Exception as e:
         result["error"] = str(e)
+    finally:
+        try:
+            from signals.process_memory import process_rss_mb, release_process_caches
+
+            stats = release_process_caches(aggressive=True)
+            logger.info(
+                "run_eod_snapshot_only memory hygiene rss_mb=%s stats=%s",
+                process_rss_mb(),
+                stats,
+            )
+        except Exception:
+            pass
     return result
 
 

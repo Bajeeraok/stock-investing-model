@@ -691,6 +691,53 @@ class SignalAuditStore:
             for gid, n in counts.most_common()
         ]
 
+    def gate_pass_rate_breakdown(self, cohort_tag: str, *, since_date: str | None = None) -> list[dict[str, Any]]:
+        """Share of captured events where each primary gate passes (not blocking)."""
+        from collections import Counter
+
+        primary_ids = ("valuation", "regime", "momentum", "ml")
+        q = """
+            SELECT gate_detail_json FROM signal_events
+            WHERE cohort_tag = ? AND source = 'live'
+        """
+        params: list[Any] = [cohort_tag]
+        if since_date:
+            q += " AND signal_date >= ?"
+            params.append(since_date)
+        with self._connect() as conn:
+            rows = conn.execute(q, params).fetchall()
+        pass_counts: Counter[str] = Counter()
+        for r in rows:
+            raw = r["gate_detail_json"]
+            if not raw:
+                continue
+            try:
+                gates = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(gates, list):
+                continue
+            for g in gates:
+                if not isinstance(g, dict):
+                    continue
+                gid = str(g.get("id") or "")
+                if gid not in primary_ids:
+                    continue
+                if g.get("pass"):
+                    pass_counts[gid] += 1
+        n_events = len(rows)
+        out: list[dict[str, Any]] = []
+        for gid in primary_ids:
+            pn = int(pass_counts.get(gid, 0))
+            out.append({
+                "gate": gid,
+                "pass_n": pn,
+                "pass_pct": round(100.0 * pn / n_events, 1) if n_events else 0.0,
+                "fail_pct": round(100.0 * (n_events - pn) / n_events, 1) if n_events else 0.0,
+            })
+        out.sort(key=lambda x: x["pass_pct"])
+        return out
+
     def daily_capture_counts(self, cohort_tag: str, limit: int = 30) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
@@ -922,6 +969,96 @@ class SignalAuditStore:
                 """,
                 tuple(params_base),
             ).fetchall()
+            by_gates = conn.execute(
+                f"""
+                SELECT e.gates_passed AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                GROUP BY e.gates_passed
+                ORDER BY e.gates_passed DESC
+                """,
+                tuple(params_base),
+            ).fetchall()
+            by_entry_mode = conn.execute(
+                f"""
+                SELECT e.entry_mode AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                GROUP BY e.entry_mode
+                ORDER BY n DESC
+                """,
+                tuple(params_base),
+            ).fetchall()
+            by_track = conn.execute(
+                f"""
+                SELECT e.track AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                GROUP BY e.track
+                ORDER BY n DESC
+                """,
+                tuple(params_base),
+            ).fetchall()
+            by_category = conn.execute(
+                f"""
+                SELECT e.market_cap_bucket AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                GROUP BY e.market_cap_bucket
+                ORDER BY n DESC
+                LIMIT 12
+                """,
+                tuple(params_base),
+            ).fetchall()
+
+            def _slice_stats(extra_where: str = "", extra_params: list[Any] | None = None) -> dict[str, Any]:
+                sp = list(params_base) + list(extra_params or [])
+                row = conn.execute(
+                    f"""
+                    SELECT COUNT(*) AS n,
+                           SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS wins,
+                           SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS losses,
+                           SUM(CASE WHEN o.verdict = 'NEUTRAL' THEN 1 ELSE 0 END) AS neutral
+                    FROM signal_outcomes o
+                    JOIN signal_events e ON e.id = o.signal_event_id
+                    WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}{extra_where}
+                    """,
+                    tuple(sp),
+                ).fetchone()
+                n = int(row["n"] or 0)
+                wins = int(row["wins"] or 0)
+                losses = int(row["losses"] or 0)
+                neutral = int(row["neutral"] or 0)
+                decided = wins + losses + neutral
+                actionable = wins + losses
+                return {
+                    "n": n,
+                    "wins": wins,
+                    "losses": losses,
+                    "neutral": neutral,
+                    "win_rate_pct": round(100.0 * wins / decided, 1) if decided else None,
+                    "actionable_win_rate_pct": round(100.0 * wins / actionable, 1) if actionable else None,
+                }
+
+            actionable_slices = {
+                "full_go": _slice_stats(" AND e.entry_mode = 'full_go'"),
+                "go_4_gates": _slice_stats(" AND e.gates_passed = 4 AND e.go_no_go = 'go'"),
+                "starter_only": _slice_stats(" AND e.entry_mode = 'starter_only'"),
+                "all_go": _slice_stats(" AND e.go_no_go = 'go'"),
+                "hold_no_go": _slice_stats(" AND e.go_no_go = 'no_go'"),
+            }
 
         n_total = int(total["n"]) if total else 0
         n_resolved = int(resolved["n"]) if resolved else 0
@@ -958,6 +1095,12 @@ class SignalAuditStore:
                 else None,
             })
 
+        headline_slice = actionable_slices.get("go_4_gates") or {}
+        if int(headline_slice.get("n") or 0) < 5:
+            headline_slice = actionable_slices.get("full_go") or headline_slice
+        if int(headline_slice.get("n") or 0) < 5:
+            headline_slice = actionable_slices.get("all_go") or headline_slice
+
         return {
             "events_total": n_total,
             "resolved_n": n_resolved,
@@ -971,6 +1114,13 @@ class SignalAuditStore:
             "by_verdict": verdict_rows,
             "by_go_no_go": _win_rate_rows(by_go),
             "by_ml_signal": _win_rate_rows(by_signal),
+            "by_gates_passed": _win_rate_rows(by_gates),
+            "by_entry_mode": _win_rate_rows(by_entry_mode),
+            "by_track": _win_rate_rows(by_track),
+            "by_category": _win_rate_rows(by_category),
+            "actionable_slices": actionable_slices,
+            "headline_actionable_win_rate_pct": headline_slice.get("actionable_win_rate_pct"),
+            "headline_actionable_n": headline_slice.get("n"),
         }
 
     def list_records_with_outcomes(
@@ -1070,6 +1220,87 @@ def _audit_outcomes_note(
     return " · ".join(parts) + "."
 
 
+def _merge_breakdown_win_rates(
+    breakdown: list[dict[str, Any]],
+    win_rows: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if not win_rows:
+        return breakdown
+    by_bucket = {str(r.get("bucket")): r.get("win_rate_pct") for r in win_rows}
+    out: list[dict[str, Any]] = []
+    for row in breakdown:
+        merged = dict(row)
+        merged["win_rate_pct"] = by_bucket.get(str(row.get("bucket")))
+        out.append(merged)
+    return out
+
+
+def _retail_gate_thresholds_payload() -> dict[str, float | int]:
+    from signals.retail_action_payload import (
+        REGIME_GATE,
+        ST_ML_GATE,
+        VALUATION_GATE_PARTIAL_PCT,
+        VALUATION_GATE_PASS_PCT,
+    )
+
+    return {
+        "regime_bull_pct_min": REGIME_GATE,
+        "valuation_full_mos_pct": VALUATION_GATE_PASS_PCT,
+        "valuation_partial_mos_pct": VALUATION_GATE_PARTIAL_PCT,
+        "ml_short_prob_min": ST_ML_GATE,
+        "momentum_rsi_max": 50,
+        "momentum_pattern_min": 45,
+    }
+
+
+def build_gate_calibration_guidance(
+    *,
+    gate_pass_rates: list[dict[str, Any]],
+    gate_blockers: list[dict[str, Any]],
+    actionable_slices: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Evidence-based notes on whether to loosen gate thresholds (defaults: keep valuation strict)."""
+    pass_by_gate = {str(g["gate"]): float(g.get("pass_pct") or 0) for g in gate_pass_rates}
+    fail_by_gate = {str(b["gate"]): float(b.get("pct_of_events") or 0) for b in gate_blockers}
+    val_fail = fail_by_gate.get("valuation", 0.0)
+    mom_fail = fail_by_gate.get("momentum", 0.0)
+    regime_fail = fail_by_gate.get("regime", 0.0)
+    mom_pass = pass_by_gate.get("momentum", 0.0)
+
+    notes: list[str] = []
+    if val_fail >= 70:
+        notes.append(
+            "Valuation blocks most events — expected when spot is rich vs model FV. "
+            "Keep 25% MOS for full GO; starter_only (15–25% MOS) is the intended partial path."
+        )
+    if mom_fail >= 35 and mom_pass < 40:
+        notes.append(
+            "Momentum (RSI < 50 and pattern ≥ 45) fails often in bull tape. "
+            "Review win rate on 3/4-gate rows before raising RSI cap — do not lower valuation MOS."
+        )
+    if regime_fail >= 40:
+        notes.append(
+            "Regime gate filters stormy HMM tape. starter_only can still apply when valuation passes "
+            "but tech gates fail — loosen regime only if 3/4-gate win rate justifies it."
+        )
+
+    full_go = (actionable_slices or {}).get("full_go") or {}
+    go_4 = (actionable_slices or {}).get("go_4_gates") or {}
+    if int(full_go.get("n") or 0) == 0 and int(go_4.get("n") or 0) == 0:
+        notes.append(
+            "No resolved full-GO outcomes yet — headline win rate blends mostly HOLD/NO-GO. "
+            "Use actionable slice win rate once 4/4 GO rows accumulate."
+        )
+
+    return {
+        "recommend_loosen_valuation": False,
+        "recommend_loosen_regime": False,
+        "recommend_momentum_review": mom_fail >= 35 and mom_pass < 40,
+        "thresholds": _retail_gate_thresholds_payload(),
+        "notes": notes,
+    }
+
+
 def build_model_audit_payload(
     config: dict,
     data_root: Path | None = None,
@@ -1153,6 +1384,40 @@ def build_model_audit_payload(
     elif last_session_count < len(cohort_tickers):
         message = f"Last session captured {last_session_count}/{len(cohort_tickers)} cohort tickers."
 
+    gate_pass_rates = store.gate_pass_rate_breakdown(cohort_tag)
+    gate_blocker_breakdown = store.gate_blocker_breakdown(cohort_tag)
+    gate_calibration = build_gate_calibration_guidance(
+        gate_pass_rates=gate_pass_rates,
+        gate_blockers=gate_blocker_breakdown,
+        actionable_slices=(outcome_summary or {}).get("actionable_slices"),
+    )
+
+    os = outcome_summary or {}
+    breakdown_by_gates = _merge_breakdown_win_rates(
+        store.breakdown_rows(cohort_tag, "gates_passed"),
+        os.get("by_gates_passed"),
+    )
+    breakdown_by_entry_mode = _merge_breakdown_win_rates(
+        store.breakdown_rows(cohort_tag, "entry_mode"),
+        os.get("by_entry_mode"),
+    )
+    breakdown_by_track = _merge_breakdown_win_rates(
+        store.breakdown_rows(cohort_tag, "track"),
+        os.get("by_track"),
+    )
+    breakdown_by_category = _merge_breakdown_win_rates(
+        store.breakdown_rows(cohort_tag, "market_cap_bucket"),
+        os.get("by_category"),
+    )
+    breakdown_by_go_no_go = _merge_breakdown_win_rates(
+        store.breakdown_rows(cohort_tag, "go_no_go"),
+        os.get("by_go_no_go"),
+    )
+    breakdown_by_signal = _merge_breakdown_win_rates(
+        store.breakdown_rows(cohort_tag, "ml_signal"),
+        os.get("by_ml_signal"),
+    )
+
     return {
         "enabled": True,
         "cohort_tag": cohort_tag,
@@ -1169,15 +1434,17 @@ def build_model_audit_payload(
             "missing_count": len(missing_on_last),
         },
         "daily_captures": store.daily_capture_counts(cohort_tag, limit=30),
-        "breakdown_by_gates": store.breakdown_rows(cohort_tag, "gates_passed"),
-        "breakdown_by_go_no_go": store.breakdown_rows(cohort_tag, "go_no_go"),
-        "breakdown_by_category": store.breakdown_rows(cohort_tag, "market_cap_bucket"),
-        "breakdown_by_signal": store.breakdown_rows(cohort_tag, "ml_signal"),
+        "breakdown_by_gates": breakdown_by_gates,
+        "breakdown_by_go_no_go": breakdown_by_go_no_go,
+        "breakdown_by_category": breakdown_by_category,
+        "breakdown_by_signal": breakdown_by_signal,
         "breakdown_by_regime": store.breakdown_rows(cohort_tag, "regime_label"),
-        "breakdown_by_track": store.breakdown_rows(cohort_tag, "track"),
+        "breakdown_by_track": breakdown_by_track,
         "breakdown_by_readiness": store.breakdown_rows(cohort_tag, "readiness_tier"),
-        "breakdown_by_entry_mode": store.breakdown_rows(cohort_tag, "entry_mode"),
-        "gate_blocker_breakdown": store.gate_blocker_breakdown(cohort_tag),
+        "breakdown_by_entry_mode": breakdown_by_entry_mode,
+        "gate_blocker_breakdown": gate_blocker_breakdown,
+        "gate_pass_rates": gate_pass_rates,
+        "gate_calibration": gate_calibration,
         "batch_queues": store.batch_queue_summary(cohort_tag, last_date),
         "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),
         "eod_snapshot_count": eod_snapshots,

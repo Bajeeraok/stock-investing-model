@@ -1752,6 +1752,50 @@ def _build_investor_summary(
             volume_ratio=_safe_float(response.get("volume_ratio")),
             institutional_conviction=inst_conv,
         )
+        try:
+            from signals.signal_reason_summary import build_signal_reason_summary
+
+            ra = out.get("retail_action") or {}
+            horizons = out.get("horizons") or {}
+            short_h = horizons.get("short") or {}
+            oa = out.get("one_answer") or {}
+            earnings = response.get("earnings") if isinstance(response.get("earnings"), dict) else {}
+            days_to_earnings = _safe_float(earnings.get("days_until"))
+            sr = build_signal_reason_summary(
+                ticker=ticker,
+                gates=ra.get("gates") or [],
+                assessment_pct=float(ra.get("assessment_pct") or 0),
+                current_price=current_price,
+                fair_value=out.get("fair_value"),
+                regime_bull_pct=out.get("regime_bull_pct"),
+                market_regime_bull_pct=ra.get("market_regime_bull_pct"),
+                pattern_score=out.get("pattern_score"),
+                rsi=out.get("rsi"),
+                short_ml_prob=short_h.get("ml_prob"),
+                overall_verdict=out.get("overall_verdict"),
+                entry_mode=ra.get("entry_mode"),
+                gate_cleared=bool(ra.get("gate_cleared")),
+                next_trigger=ra.get("next_trigger"),
+                regime_transition_days=out.get("regime_transition_days_estimate"),
+                st_band={"low": (short_h.get("entry_zone") or {}).get("low"), "high": (short_h.get("entry_zone") or {}).get("high")}
+                if isinstance(short_h.get("entry_zone"), dict)
+                else None,
+                trigger_buy=short_h.get("trigger_buy"),
+                confidence=conf_snapshot if isinstance(conf_snapshot, dict) else None,
+                catalyst=response.get("catalyst") if isinstance(response.get("catalyst"), dict) else None,
+                earnings_days=int(days_to_earnings) if days_to_earnings is not None else None,
+                global_market_regime=response.get("_global_market_regime"),
+                one_answer_action_today=oa.get("action_today"),
+            )
+            out["signal_reason"] = sr
+            if isinstance(ra, dict):
+                ra["signal_reason"] = sr
+                out["retail_action"] = ra
+            if isinstance(oa, dict) and sr.get("wait_plain"):
+                oa["wait_timeframe_plain"] = sr["wait_plain"]
+                out["one_answer"] = oa
+        except Exception:
+            pass
     except Exception:
         pass
 

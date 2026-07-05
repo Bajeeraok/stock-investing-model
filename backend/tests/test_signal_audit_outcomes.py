@@ -127,3 +127,6 @@ def test_resolve_event_outcome_with_eod_chain(audit_config, tmp_path, monkeypatc
     store.upsert_outcome(outcome)
     summary = store.outcome_summary(cohort_tag="test_cohort")
     assert summary["resolved_n"] == 1
+    assert "actionable_slices" in summary
+    assert "full_go" in summary["actionable_slices"]
+    assert "by_gates_passed" in summary

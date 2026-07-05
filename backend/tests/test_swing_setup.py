@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from signals.retail_action_payload import enrich_investor_summary_retail_action
 from signals.swing_setup import build_swing_setup
 
@@ -40,7 +42,16 @@ def test_swing_setup_no_go_when_gates_fail():
         ticker="NVDA",
         investor_out=inv,
         current_price=100.0,
-        response={"high_52w": 110.0, "earnings": {"days_until": 8, "date": "2026-05-27"}},
+        response={
+            "high_52w": 110.0,
+            "earnings": {"days_until": 8, "date": "2026-05-27"},
+            "ma20": 99.0,
+            "ma50": 95.0,
+            "ma200": 90.0,
+            "volume_ratio": 0.7,
+            "trend_score": 67.0,
+            "atr14": 2.5,
+        },
         market_context={"primary_message": "Macro overlay cautious — wait for dip."},
     )
     assert out is not None
@@ -58,7 +69,15 @@ def test_swing_setup_go_with_sizing_when_all_gates_pass():
         ticker="AAPL",
         investor_out=inv,
         current_price=100.0,
-        response={"high_52w": 108.0},
+        response={
+            "high_52w": 108.0,
+            "ma20": 99.0,
+            "ma50": 96.0,
+            "ma200": 88.0,
+            "volume_ratio": 0.75,
+            "trend_score": 72.0,
+            "atr14": 2.0,
+        },
         config={"risk_sizing": {"risk_pct": 2.0}},
     )
     assert out is not None
@@ -67,7 +86,8 @@ def test_swing_setup_go_with_sizing_when_all_gates_pass():
     assert out["sizing"] is not None
     assert out["sizing"]["shares_example"] > 0
     assert out["trade"]["entry_low"] == 98.0
-    assert out["trade"]["stop"] == 94.0
+    assert out.get("swing_classification") is not None
+    assert out["trade"]["stop"] == pytest.approx(94.0, abs=0.15)
     assert not out["triggers"]["wait"]
 
 

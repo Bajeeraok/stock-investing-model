@@ -893,6 +893,31 @@ def build_retail_action_payload(
         payload["rr_ratio"] = round(float(risk_reward), 2)
     if institutional_conviction:
         payload["institutional_conviction"] = institutional_conviction
+
+    try:
+        from signals.signal_reason_summary import build_signal_reason_summary
+
+        payload["signal_reason"] = build_signal_reason_summary(
+            ticker=ticker,
+            gates=gates,
+            assessment_pct=assessment_pct,
+            current_price=current_price,
+            fair_value=fair_value,
+            regime_bull_pct=regime_bull_pct,
+            market_regime_bull_pct=market_regime_bull_pct,
+            pattern_score=pattern_score,
+            rsi=rsi,
+            short_ml_prob=short_ml_prob,
+            overall_verdict=overall_verdict,
+            entry_mode=None,
+            gate_cleared=all_go,
+            next_trigger=next_trigger,
+            regime_transition_days=regime_transition_days,
+            st_band=st_band,
+        )
+    except Exception:
+        pass
+
     return payload
 
 
@@ -1015,6 +1040,35 @@ def enrich_investor_summary_retail_action(
     elif ra.get("entry_mode") != "full_go":
         ra["unlock_summary"] = ra["unlock_sequence"]
 
+    try:
+        from signals.signal_reason_summary import build_signal_reason_summary
+
+        short = horizons.get("short") or {}
+        oa = investor_out.get("one_answer") or {}
+        ra["signal_reason"] = build_signal_reason_summary(
+            ticker=ticker,
+            gates=ra.get("gates") or [],
+            assessment_pct=float(ra.get("assessment_pct") or 0),
+            current_price=current_price,
+            fair_value=investor_out.get("fair_value"),
+            regime_bull_pct=investor_out.get("regime_bull_pct"),
+            market_regime_bull_pct=market_regime_bull_pct or investor_out.get("market_regime_bull_pct"),
+            pattern_score=investor_out.get("pattern_score"),
+            rsi=investor_out.get("rsi"),
+            short_ml_prob=short.get("ml_prob"),
+            overall_verdict=investor_out.get("overall_verdict"),
+            entry_mode=ra.get("entry_mode"),
+            gate_cleared=bool(ra.get("gate_cleared")),
+            next_trigger=ra.get("next_trigger"),
+            regime_transition_days=investor_out.get("regime_transition_days_estimate"),
+            st_band=st_band,
+            trigger_buy=short.get("trigger_buy"),
+            one_answer_action_today=oa.get("action_today"),
+        )
+        investor_out["signal_reason"] = ra["signal_reason"]
+    except Exception:
+        pass
+
     return investor_out
 
 
@@ -1089,6 +1143,31 @@ def enrich_dashboard_signal_row(
         payload.get("gates") or [],
         stock_bull_pct=rb,
     )
+    try:
+        from signals.signal_reason_summary import build_signal_reason_summary
+
+        payload["signal_reason"] = build_signal_reason_summary(
+            ticker=row.get("ticker"),
+            gates=payload.get("gates") or [],
+            assessment_pct=assessment,
+            current_price=float(cp) if cp is not None else None,
+            regime_bull_pct=rb,
+            market_regime_bull_pct=rb,
+            pattern_score=row.get("confluence_score") or row.get("composite_buy"),
+            rsi=row.get("rsi"),
+            short_ml_prob=ml_pct,
+            overall_verdict=row.get("plan_action") or row.get("signal"),
+            entry_mode=entry["entry_mode"],
+            gate_cleared=bool(payload.get("gate_cleared")),
+            next_trigger=payload.get("next_trigger"),
+            st_band=st_band if isinstance(st_band, dict) else None,
+            global_market_regime=row.get("_global_market_regime"),
+            earnings_days=int(row.get("earnings_days_until") or row.get("days_to_earnings"))
+            if row.get("earnings_days_until") is not None or row.get("days_to_earnings") is not None
+            else None,
+        )
+    except Exception:
+        pass
 
     row["retail_status"] = payload
     row["rsi_status"] = payload["rsi_status"]

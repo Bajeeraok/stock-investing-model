@@ -62,7 +62,11 @@ def _hmm_cache_max() -> int:
 
 def hmm_model_cache_stats() -> dict[str, int]:
     with _MODEL_CACHE_LOCK:
-        return {"size": len(_MODEL_MEMORY_CACHE), "max_entries": _hmm_cache_max()}
+        return {
+            "size": len(_MODEL_MEMORY_CACHE),
+            "max_entries": _hmm_cache_max(),
+            "fit_locks": len(_MODEL_FIT_LOCKS),
+        }
 
 
 def trim_hmm_model_cache(*, keep: int | None = None) -> dict[str, int]:
@@ -72,11 +76,29 @@ def trim_hmm_model_cache(*, keep: int | None = None) -> dict[str, int]:
         before = len(_MODEL_MEMORY_CACHE)
         if cap == 0:
             _MODEL_MEMORY_CACHE.clear()
+            locks_removed = len(_MODEL_FIT_LOCKS)
+            _MODEL_FIT_LOCKS.clear()
         elif len(_MODEL_MEMORY_CACHE) > cap:
-            # dict preserves insertion order (Py3.7+); drop oldest
             while len(_MODEL_MEMORY_CACHE) > cap:
                 _MODEL_MEMORY_CACHE.pop(next(iter(_MODEL_MEMORY_CACHE)))
-        return {"before": before, "after": len(_MODEL_MEMORY_CACHE), "max_entries": cap}
+            locks_removed = 0
+            for lk in list(_MODEL_FIT_LOCKS.keys()):
+                if lk not in _MODEL_MEMORY_CACHE:
+                    del _MODEL_FIT_LOCKS[lk]
+                    locks_removed += 1
+        else:
+            locks_removed = 0
+            for lk in list(_MODEL_FIT_LOCKS.keys()):
+                if lk not in _MODEL_MEMORY_CACHE:
+                    del _MODEL_FIT_LOCKS[lk]
+                    locks_removed += 1
+        return {
+            "before": before,
+            "after": len(_MODEL_MEMORY_CACHE),
+            "max_entries": cap,
+            "fit_locks": len(_MODEL_FIT_LOCKS),
+            "fit_locks_removed": locks_removed,
+        }
 
 
 def _store_hmm_in_cache(cache_key: str, model: object) -> None:

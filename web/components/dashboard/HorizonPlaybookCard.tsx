@@ -83,6 +83,30 @@ export interface HorizonPlaybookPayload {
     risk_pct?: number | null;
     honest_note: string;
   };
+  swing_classification?: {
+    setup_type?: string;
+    setup_label?: string;
+    setup_reasons?: string[];
+    divergence_note?: string | null;
+    swing_score?: {
+      score?: number;
+      verdict?: "SWING_SIGNAL" | "WATCH" | "NO_SIGNAL";
+      technical_component?: number;
+      pattern_component?: number;
+      signal_basis?: string;
+      ml_confirmation_note?: string | null;
+    };
+    exit_plan?: {
+      hard_stop?: number;
+      target_1?: number;
+      target_2?: number;
+      runner_target?: number;
+      horizon_label?: string;
+      time_stop_days?: number;
+      risk_reward_t1?: number | null;
+      exit_rules?: string[];
+    };
+  } | null;
   disclaimer: string;
 }
 
@@ -174,12 +198,98 @@ export function HorizonPlaybookCard({
     : data.go_no_go === "go";
   const t = data.trade;
   const accent = KIND_ACCENT[data.kind] ?? KIND_ACCENT.swing;
+  const swingCls = data.swing_classification;
+  const swingScore = swingCls?.swing_score;
+  const exitPlan = swingCls?.exit_plan;
+  const isSwingSignal = swingScore?.verdict === "SWING_SIGNAL";
 
   return (
     <section
       className={clsx("border-b", isGo ? accent.go : accent.no, compact && "opacity-95")}
       aria-label={`${data.title} play sheet`}
     >
+      {data.kind === "swing" && swingCls?.setup_label && (
+        <div
+          className={clsx(
+            "mx-4 sm:mx-6 mt-3 rounded-xl border px-4 py-3",
+            isSwingSignal
+              ? "border-violet-500/40 bg-gradient-to-br from-violet-950/50 to-slate-950/80"
+              : "border-slate-600/60 bg-slate-950/60",
+          )}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+            <p className="flex items-center gap-2 text-sm font-bold text-violet-200">
+              <Zap className="h-4 w-4 text-violet-400" aria-hidden />
+              {isSwingSignal ? "Swing opportunity" : "Swing watch"} — {data.ticker}
+            </p>
+            {swingScore?.score != null && (
+              <span
+                className={clsx(
+                  "text-xs font-black tabular-nums px-2 py-0.5 rounded border",
+                  isSwingSignal
+                    ? "border-emerald-500/50 text-emerald-300 bg-emerald-500/10"
+                    : "border-amber-500/40 text-amber-200 bg-amber-500/10",
+                )}
+              >
+                {swingScore.score.toFixed(0)}/100
+              </span>
+            )}
+          </div>
+          <p className="text-xs uppercase tracking-wider text-slate-500 mb-1">Setup</p>
+          <p className="text-base font-semibold text-slate-100">{swingCls.setup_label}</p>
+          {swingScore?.verdict && (
+            <p className="text-[11px] text-slate-400 mt-1">
+              {swingScore.verdict.replace(/_/g, " ")}
+              {swingScore.technical_component != null
+                ? ` · Tech ${swingScore.technical_component.toFixed(0)} + Pattern ${(swingScore.pattern_component ?? 0).toFixed(0)}`
+                : ""}
+            </p>
+          )}
+          {swingCls.divergence_note && (
+            <p className="mt-2 text-xs text-amber-100/90 leading-snug border-l-2 border-amber-500/50 pl-2">
+              {swingCls.divergence_note}
+            </p>
+          )}
+          {exitPlan && (
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+              <div>
+                <p className="text-slate-500">Entry</p>
+                <p className="font-mono text-slate-200 tabular-nums">
+                  ${exitPlan.entry_low?.toFixed(0) ?? t?.entry_low.toFixed(0)}–$
+                  {exitPlan.entry_high?.toFixed(0) ?? t?.entry_high.toFixed(0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500">Hard stop</p>
+                <p className="font-mono text-red-300/90 tabular-nums">${exitPlan.hard_stop?.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Target 1 / 2</p>
+                <p className="font-mono text-emerald-300/90 tabular-nums">
+                  ${exitPlan.target_1?.toFixed(0)} / ${exitPlan.target_2?.toFixed(0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500">R/R · Horizon</p>
+                <p className="font-mono text-slate-300 tabular-nums">
+                  {exitPlan.risk_reward_t1 != null ? `${exitPlan.risk_reward_t1.toFixed(1)}:1` : "—"} ·{" "}
+                  {exitPlan.horizon_label ?? "10–14d"}
+                </p>
+              </div>
+            </div>
+          )}
+          {(swingCls.setup_reasons?.length ?? 0) > 0 && (
+            <p className="mt-2 text-[11px] text-slate-400 leading-snug">
+              <span className="text-slate-500">Why: </span>
+              {swingCls.setup_reasons!.slice(0, 2).join(" · ")}
+            </p>
+          )}
+          {swingScore?.ml_confirmation_note && (
+            <p className="mt-1.5 text-[10px] text-slate-600">{swingScore.ml_confirmation_note}</p>
+          )}
+        </div>
+      )}
+
       <div className="px-4 sm:px-6 py-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">{data.title}</p>

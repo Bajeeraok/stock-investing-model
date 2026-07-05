@@ -121,12 +121,22 @@ def fetch_ohlcv_close_and_volume(
     FMP adjClose plus aligned volume from the same historical response when api_key is set.
     Returns (None, None) if no key or FMP fails — caller should fall back to yfinance.
     Index ETFs (SPY/QQQ/DIA/IWM) skip FMP — use yfinance for consistency with spot.
+
+    Uses the same bounded in-process OHLCV cache as fetcher.fetch_ohlcv_with_volume.
     """
+    from signals.fetcher import _cache_get, _cache_set, _ohlcv_key
+
     config = config or {}
+    sym = (ticker or "").upper().strip()
+    key = _ohlcv_key(sym, period, "close_vol")
+    hit, cached = _cache_get(key)
+    if hit and isinstance(cached, tuple):
+        return cached  # type: ignore[return-value]
+
     api_key = config.get("data", {}).get("fmp_api_key") or config.get("fmp_api_key")
-    if not api_key or ticker.upper() in MAJOR_INDEX_ETFS:
+    if not api_key or sym in MAJOR_INDEX_ETFS:
         return None, None
-    df = _load_fmp_historical_df(ticker, period, api_key)
+    df = _load_fmp_historical_df(sym, period, api_key)
     if df is None:
         return None, None
     if "volume" in df.columns:
@@ -135,11 +145,15 @@ def fetch_ohlcv_close_and_volume(
             return None, None
         close = merged["adjClose"].rename("close")
         vol = merged["volume"].rename("volume")
-        return close, vol
+        result = (close, vol)
+        _cache_set(key, result)
+        return result
     close = df["adjClose"].dropna()
     if len(close) < 50:
         return None, None
-    return close.rename("close"), None
+    result = (close.rename("close"), None)
+    _cache_set(key, result)
+    return result
 
 
 # ETFs have no earnings; skip to avoid yfinance 404 noise

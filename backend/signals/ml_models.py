@@ -534,6 +534,49 @@ def _model_path(ticker: str, horizon_key: str = "short") -> Path:
     return MODELS_DIR / f"lgbm_{ticker.upper()}_{horizon_key}.pkl"
 
 
+_LGBM_MEMORY_CACHE: dict[str, object] = {}
+
+
+def _lgbm_cache_max() -> int:
+    import os
+
+    raw = (os.environ.get("LGBM_MODEL_CACHE_MAX") or "").strip()
+    if raw:
+        try:
+            return max(0, min(128, int(raw)))
+        except ValueError:
+            pass
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return 24
+    return 32
+
+
+def lgbm_model_cache_stats() -> dict[str, int]:
+    return {"size": len(_LGBM_MEMORY_CACHE), "max_entries": _lgbm_cache_max()}
+
+
+def trim_lgbm_model_cache(*, keep: int | None = None) -> dict[str, int]:
+    cap = _lgbm_cache_max() if keep is None else max(0, keep)
+    before = len(_LGBM_MEMORY_CACHE)
+    if cap == 0:
+        _LGBM_MEMORY_CACHE.clear()
+    elif len(_LGBM_MEMORY_CACHE) > cap:
+        while len(_LGBM_MEMORY_CACHE) > cap:
+            _LGBM_MEMORY_CACHE.pop(next(iter(_LGBM_MEMORY_CACHE)))
+    return {"before": before, "after": len(_LGBM_MEMORY_CACHE), "max_entries": cap}
+
+
+def _lgbm_cache_key(ticker: str, horizon_key: str) -> str:
+    return f"{ticker.upper()}:{horizon_key}"
+
+
+def _store_lgbm_in_cache(cache_key: str, model: object) -> None:
+    _LGBM_MEMORY_CACHE[cache_key] = model
+    cap = _lgbm_cache_max()
+    while len(_LGBM_MEMORY_CACHE) > cap:
+        _LGBM_MEMORY_CACHE.pop(next(iter(_LGBM_MEMORY_CACHE)))
+
+
 def _load_or_train(
     ticker: str,
     df: pd.DataFrame,
@@ -541,10 +584,15 @@ def _load_or_train(
     horizon_key: str = "short",
 ) -> object | None:
     path = _model_path(ticker, horizon_key)
+    cache_key = _lgbm_cache_key(ticker, horizon_key)
+    if not force_retrain and cache_key in _LGBM_MEMORY_CACHE:
+        return _LGBM_MEMORY_CACHE[cache_key]
     if path.exists() and not force_retrain:
         try:
             with open(path, "rb") as f:
-                return pickle.load(f)
+                model = pickle.load(f)
+            _store_lgbm_in_cache(cache_key, model)
+            return model
         except Exception:
             logger.debug("LGBM cache corrupt for %s [%s] — retraining", ticker, horizon_key)
     result = train_and_save(ticker, df, horizon_key)
@@ -554,7 +602,9 @@ def _load_or_train(
     path = _model_path(ticker, horizon_key)
     if path.exists():
         with open(path, "rb") as f:
-            return pickle.load(f)
+            model = pickle.load(f)
+        _store_lgbm_in_cache(cache_key, model)
+        return model
     return None
 
 

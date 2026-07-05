@@ -11,6 +11,7 @@ export type ModelAuditBreakdownRow = {
   n: number;
   avg_score?: number | null;
   go_pct?: number;
+  win_rate_pct?: number | null;
 };
 
 export type ModelAuditRecord = {
@@ -72,6 +73,15 @@ function EntryModePill({ mode }: { mode?: string | null }) {
   );
 }
 
+export type ModelAuditActionableSlice = {
+  n?: number;
+  wins?: number;
+  losses?: number;
+  neutral?: number;
+  win_rate_pct?: number | null;
+  actionable_win_rate_pct?: number | null;
+};
+
 export type ModelAuditOutcomeSummary = {
   events_total?: number;
   resolved_n?: number;
@@ -81,9 +91,16 @@ export type ModelAuditOutcomeSummary = {
   wins?: number;
   losses?: number;
   neutral?: number;
+  headline_actionable_win_rate_pct?: number | null;
+  headline_actionable_n?: number;
+  actionable_slices?: Record<string, ModelAuditActionableSlice>;
   by_verdict?: { bucket: string; n: number; avg_return_7d_pct?: number | null; avg_return_30d_pct?: number | null }[];
   by_go_no_go?: { bucket: string; n: number; win_rate_pct?: number | null }[];
   by_ml_signal?: { bucket: string; n: number; win_rate_pct?: number | null }[];
+  by_gates_passed?: { bucket: string | number; n: number; win_rate_pct?: number | null }[];
+  by_entry_mode?: { bucket: string; n: number; win_rate_pct?: number | null }[];
+  by_track?: { bucket: string; n: number; win_rate_pct?: number | null }[];
+  by_category?: { bucket: string; n: number; win_rate_pct?: number | null }[];
 };
 
 export type ModelAuditPayload = {
@@ -118,6 +135,14 @@ export type ModelAuditPayload = {
   breakdown_by_readiness?: ModelAuditBreakdownRow[];
   breakdown_by_entry_mode?: ModelAuditBreakdownRow[];
   gate_blocker_breakdown?: { gate: string; n: number; pct_of_events?: number }[];
+  gate_pass_rates?: { gate: string; pass_n?: number; pass_pct?: number; fail_pct?: number }[];
+  gate_calibration?: {
+    recommend_loosen_valuation?: boolean;
+    recommend_loosen_regime?: boolean;
+    recommend_momentum_review?: boolean;
+    thresholds?: Record<string, number>;
+    notes?: string[];
+  };
   eod_snapshot_count?: number;
   batch_queues?: {
     signal_date?: string | null;
@@ -171,6 +196,7 @@ function BreakdownTable({
   hint?: string;
 }) {
   if (!rows?.length) return null;
+  const showWinRate = rows.some((r) => r.win_rate_pct != null);
   return (
     <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 overflow-hidden">
       <div className="px-3 py-2 border-b border-slate-700/60">
@@ -183,6 +209,9 @@ function BreakdownTable({
             <th className="text-left py-1.5 px-3 font-medium">{bucketLabel}</th>
             <th className="text-right py-1.5 px-2 font-medium">n</th>
             <th className="text-right py-1.5 px-2 font-medium">GO %</th>
+            {showWinRate && (
+              <th className="text-right py-1.5 px-2 font-medium">Win %</th>
+            )}
             <th className="text-right py-1.5 px-3 font-medium">Avg score</th>
           </tr>
         </thead>
@@ -192,6 +221,20 @@ function BreakdownTable({
               <td className="py-1 px-3">{fmtBucket(r.bucket)}</td>
               <td className="py-1 px-2 text-right tabular-nums">{r.n}</td>
               <td className="py-1 px-2 text-right tabular-nums text-slate-400">{r.go_pct ?? "—"}</td>
+              {showWinRate && (
+                <td
+                  className={clsx(
+                    "py-1 px-2 text-right tabular-nums",
+                    r.win_rate_pct != null && r.win_rate_pct >= 55
+                      ? "text-emerald-400"
+                      : r.win_rate_pct != null
+                        ? "text-amber-300/90"
+                        : "text-slate-600",
+                  )}
+                >
+                  {r.win_rate_pct != null ? `${r.win_rate_pct.toFixed(1)}%` : "—"}
+                </td>
+              )}
               <td className="py-1 px-3 text-right tabular-nums">{r.avg_score ?? "—"}</td>
             </tr>
           ))}
@@ -455,10 +498,83 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         </div>
       )}
 
+      {(audit.gate_pass_rates?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            Gate pass rates
+            <span className="ml-1 font-normal text-slate-600">(% of captured events where gate cleared)</span>
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {audit.gate_pass_rates!.map((g) => (
+              <div
+                key={g.gate}
+                className="flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-900/30 px-3 py-2"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{g.gate}</span>
+                <span className="text-xs font-mono tabular-nums text-emerald-300/90">
+                  {g.pass_pct != null ? `${g.pass_pct.toFixed(1)}% pass` : "—"}
+                </span>
+                <span className="text-[9px] text-slate-600">n={g.pass_n ?? "—"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(audit.gate_calibration?.notes?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-violet-500/25 bg-violet-950/15 px-3 py-2.5 space-y-1.5">
+          <p className="text-[10px] font-semibold text-violet-300/90 uppercase tracking-wider">
+            Gate calibration — keep or loosen?
+          </p>
+          {audit.gate_calibration!.notes!.map((note, i) => (
+            <p key={i} className="text-[11px] text-slate-400 leading-snug">{note}</p>
+          ))}
+          {audit.gate_calibration?.thresholds && (
+            <p className="text-[9px] text-slate-600 pt-1">
+              Current: regime ≥{audit.gate_calibration.thresholds.regime_bull_pct_min}% · full MOS ≥
+              {audit.gate_calibration.thresholds.valuation_full_mos_pct}% · starter MOS ≥
+              {audit.gate_calibration.thresholds.valuation_partial_mos_pct}% · ML ≥
+              {audit.gate_calibration.thresholds.ml_short_prob_min}% · momentum RSI &lt;
+              {audit.gate_calibration.thresholds.momentum_rsi_max} + pattern ≥
+              {audit.gate_calibration.thresholds.momentum_pattern_min}
+            </p>
+          )}
+        </div>
+      )}
+
       {audit.outcome_summary &&
         ((audit.outcome_summary.resolved_n ?? 0) > 0 || (audit.outcome_summary.partial_7d_n ?? 0) > 0) && (
         <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5 space-y-2">
           <p className="text-xs font-semibold text-emerald-200/90 uppercase tracking-wide">Outcome track record</p>
+          {(audit.outcome_summary.headline_actionable_win_rate_pct != null ||
+            (audit.outcome_summary.headline_actionable_n ?? 0) > 0) && (
+            <div className="rounded border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wider text-emerald-300/80 mb-1">
+                Actionable slice (4/4 GO or full_go)
+              </p>
+              <p className="text-sm text-slate-200">
+                Win rate{" "}
+                <strong
+                  className={
+                    (audit.outcome_summary.headline_actionable_win_rate_pct ?? 0) >= 55
+                      ? "text-emerald-400"
+                      : "text-amber-300"
+                  }
+                >
+                  {audit.outcome_summary.headline_actionable_win_rate_pct != null
+                    ? `${audit.outcome_summary.headline_actionable_win_rate_pct.toFixed(1)}%`
+                    : "—"}
+                </strong>
+                <span className="text-slate-500 text-xs">
+                  {" "}
+                  (n={audit.outcome_summary.headline_actionable_n ?? 0} resolved)
+                </span>
+              </p>
+              <p className="text-[9px] text-slate-500 mt-0.5">
+                Headline 51% blends mostly HOLD/NO-GO — this is the slice that matches a full entry decision.
+              </p>
+            </div>
+          )}
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-300">
             <span>
               Resolved:{" "}
@@ -502,6 +618,21 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               ))}
             </div>
           )}
+          {audit.outcome_summary.actionable_slices && (
+            <div className="flex flex-wrap gap-2 text-[10px]">
+              {Object.entries(audit.outcome_summary.actionable_slices).map(([key, slice]) => (
+                <span
+                  key={key}
+                  className="rounded border border-slate-700/60 bg-slate-900/50 px-2 py-0.5 text-slate-500"
+                >
+                  {key.replace(/_/g, " ")}: n={slice.n ?? 0}
+                  {slice.actionable_win_rate_pct != null
+                    ? ` · ${slice.actionable_win_rate_pct.toFixed(0)}% W/L`
+                    : ""}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -511,7 +642,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
           title="By gates passed"
           rows={audit.breakdown_by_gates ?? []}
           bucketLabel="Passed"
-          hint="X of 4 primary gates cleared at signal time"
+          hint="X of 4 primary gates cleared at signal time · Win % from resolved outcomes"
         />
         <BreakdownTable title="By GO / NO-GO" rows={audit.breakdown_by_go_no_go ?? []} bucketLabel="Status" />
         <BreakdownTable title="By category" rows={audit.breakdown_by_category ?? []} bucketLabel="Category" />

@@ -228,6 +228,8 @@ export interface InvestorDecisionSummary {
   investor_roadmap?: InvestorRoadmap | null;
   /** Complete Trade Roadmap: buy/sell stages + trader summary (tabbed card). */
   trade_roadmap?: TradeRoadmapData | null;
+  /** Plain-language model reasoning (factors + wait timeframe). */
+  signal_reason?: import("./tickerDetail/SignalReasonCard").SignalReasonPayload | null;
   horizons: {
     short: HorizonSignalPayload;
     medium: HorizonSignalPayload;

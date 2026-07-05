@@ -86,6 +86,51 @@ _info_last_call = 0.0
 _info_store: dict[str, _CacheEntry] = {}
 
 
+def _memory_constrained_host() -> bool:
+    """Railway / small containers — tighter in-process cache caps."""
+    if (os.environ.get("MEMORY_CONSTRAINED") or "").strip().lower() in ("1", "true", "yes", "on"):
+        return True
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return True
+    return False
+
+
+def _info_cache_max_entries() -> int:
+    raw = os.environ.get("YFINANCE_INFO_CACHE_MAX_ENTRIES", "").strip()
+    if raw:
+        try:
+            return max(20, min(5000, int(raw)))
+        except ValueError:
+            pass
+    return 120 if _memory_constrained_host() else 300
+
+
+def _info_cache_prune_locked(*, now: float | None = None) -> dict[str, int]:
+    """Remove expired info entries; LRU-trim to max. Caller must hold _info_lock."""
+    t = now if now is not None else time.monotonic()
+    ttl = _info_cache_ttl()
+    max_entries = _info_cache_max_entries()
+    expired = [k for k, e in _info_store.items() if t - e.ts > ttl]
+    for k in expired:
+        del _info_store[k]
+    if len(_info_store) > max_entries:
+        sorted_keys = sorted(_info_store.items(), key=lambda kv: kv[1].ts)
+        for k, _ in sorted_keys[: len(_info_store) - max_entries]:
+            del _info_store[k]
+    return {"expired_removed": len(expired), "size": len(_info_store), "max_entries": max_entries}
+
+
+def prune_info_cache() -> dict[str, int]:
+    """Public: evict stale / excess yfinance .info cache entries."""
+    with _info_lock:
+        return _info_cache_prune_locked()
+
+
+def info_cache_stats() -> dict[str, int]:
+    with _info_lock:
+        return {"size": len(_info_store), "max_entries": _info_cache_max_entries()}
+
+
 def _info_cache_ttl() -> int:
     raw = os.environ.get("YFINANCE_INFO_CACHE_TTL_SECONDS", "").strip()
     if raw:
@@ -109,17 +154,19 @@ def _info_min_interval() -> float:
 def _info_cache_get(key: str) -> tuple[bool, dict]:
     with _info_lock:
         entry = _info_store.get(key)
-    if entry is None:
-        return False, {}
-    if time.monotonic() - entry.ts > _info_cache_ttl():
-        return False, {}
-    val = entry.value
+        if entry is None:
+            return False, {}
+        if time.monotonic() - entry.ts > _info_cache_ttl():
+            del _info_store[key]
+            return False, {}
+        val = entry.value
     return True, val if isinstance(val, dict) else {}
 
 
 def _info_cache_set(key: str, value: dict) -> None:
     with _info_lock:
         _info_store[key] = _CacheEntry(value=value, ts=time.monotonic())
+        _info_cache_prune_locked()
 
 
 def _is_rate_limit_error(exc: BaseException | str) -> bool:
@@ -293,7 +340,7 @@ def _ohlcv_cache_max_entries() -> int:
             return max(50, min(5000, int(raw)))
         except ValueError:
             pass
-    return 400
+    return 150 if _memory_constrained_host() else 400
 
 
 class _CacheEntry(NamedTuple):
@@ -327,6 +374,14 @@ def prune_ohlcv_cache() -> dict[str, int]:
         return _cache_prune_locked()
 
 
+def clear_ohlcv_cache() -> dict[str, int]:
+    """Drop all in-process OHLCV entries (after heavy batch jobs)."""
+    with _ohlcv_lock:
+        before = len(_ohlcv_store)
+        _ohlcv_store.clear()
+        return {"cleared": before, "size": 0, "max_entries": _ohlcv_cache_max_entries()}
+
+
 def ohlcv_cache_stats() -> dict[str, int]:
     with _ohlcv_lock:
         return {"size": len(_ohlcv_store), "max_entries": _ohlcv_cache_max_entries()}
@@ -334,13 +389,13 @@ def ohlcv_cache_stats() -> dict[str, int]:
 
 def _cache_get(key: str) -> tuple[bool, object]:
     with _ohlcv_lock:
-        _cache_prune_locked()
         entry = _ohlcv_store.get(key)
-    if entry is None:
-        return False, None
-    if time.monotonic() - entry.ts > _ohlcv_cache_ttl():
-        return False, None
-    return True, entry.value
+        if entry is None:
+            return False, None
+        if time.monotonic() - entry.ts > _ohlcv_cache_ttl():
+            del _ohlcv_store[key]
+            return False, None
+        return True, entry.value
 
 
 def _cache_set(key: str, value: object) -> None:

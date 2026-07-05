@@ -80,6 +80,14 @@ def _run_eod_job() -> None:
             )
     except Exception:
         logger.exception("[eod-scheduler] job failed")
+    finally:
+        try:
+            from signals.process_memory import process_rss_mb, release_process_caches
+
+            stats = release_process_caches(aggressive=True)
+            logger.info("[eod-scheduler] memory hygiene rss_mb=%s stats=%s", process_rss_mb(), stats)
+        except Exception:
+            logger.debug("[eod-scheduler] memory hygiene skipped", exc_info=True)
 
 
 def start() -> None:

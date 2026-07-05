@@ -52,4 +52,48 @@ def test_release_process_caches_returns_stats():
 
     stats = release_process_caches(aggressive=False)
     assert "ohlcv" in stats
+    assert "info" in stats
     assert "gc_collected" in stats
+
+
+def test_info_cache_evicts_expired_and_caps():
+    from signals import fetcher
+
+    fetcher._info_store.clear()
+    old_ts = time.monotonic() - 9999
+    fetcher._info_store["info:OLD"] = fetcher._CacheEntry(value={"x": 1}, ts=old_ts)
+    fetcher._info_store["info:NEW"] = fetcher._CacheEntry(value={"y": 2}, ts=time.monotonic())
+
+    stats = fetcher.prune_info_cache()
+    assert "info:OLD" not in fetcher._info_store
+    assert "info:NEW" in fetcher._info_store
+    assert stats["expired_removed"] >= 1
+
+
+def test_info_cache_get_deletes_expired():
+    from signals import fetcher
+
+    fetcher._info_store.clear()
+    fetcher._info_store["info:STALE"] = fetcher._CacheEntry(value={"a": 1}, ts=time.monotonic() - 9999)
+    hit, _ = fetcher._info_cache_get("info:STALE")
+    assert hit is False
+    assert "info:STALE" not in fetcher._info_store
+
+
+def test_fmp_ohlcv_uses_shared_cache():
+    from unittest.mock import patch
+
+    import pandas as pd
+
+    from signals import fetcher, providers
+
+    fetcher._ohlcv_store.clear()
+    idx = pd.date_range("2020-01-01", periods=120, freq="B")
+    df = pd.DataFrame({"adjClose": range(120), "volume": range(120)}, index=idx)
+    cfg = {"data": {"fmp_api_key": "test-key"}}
+
+    with patch.object(providers, "_load_fmp_historical_df", return_value=df) as mock_load:
+        c1, v1 = providers.fetch_ohlcv_close_and_volume("AAPL", "5y", cfg)
+        c2, v2 = providers.fetch_ohlcv_close_and_volume("AAPL", "5y", cfg)
+        assert c1 is not None and c2 is not None
+        assert mock_load.call_count == 1

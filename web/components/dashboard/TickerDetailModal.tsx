@@ -38,6 +38,7 @@ import {
 } from "./retailActionUX";
 import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
 import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
+import { SignalReasonCard } from "./tickerDetail/SignalReasonCard";
 import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
@@ -1040,6 +1041,9 @@ export function TickerDetailModal({
                       ma50={detail.ma50}
                       variant="sparkline"
                     />
+                  )}
+                  {detail.investor_summary?.signal_reason && (
+                    <SignalReasonCard reason={detail.investor_summary.signal_reason} />
                   )}
                   {executionVm && (
                     <SignalBreakdownGrid

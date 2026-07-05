@@ -209,6 +209,45 @@ def test_gate_blocker_breakdown(audit_config, tmp_path, monkeypatch):
     assert any(b["gate"] in ("regime", "momentum") for b in blockers)
 
 
+def test_gate_pass_rate_breakdown(audit_config, tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    from signals.signal_audit_store import SignalAuditStore, log_signal_audit_from_results
+
+    log_signal_audit_from_results(
+        [_sample_row("SPY"), _sample_row("QQQ")],
+        audit_config,
+        date_str="2026-05-24",
+        data_root=tmp_path,
+    )
+    store = SignalAuditStore(data_root=tmp_path)
+    rates = store.gate_pass_rate_breakdown("test_cohort")
+    assert len(rates) == 4
+    assert all("pass_pct" in r and "gate" in r for r in rates)
+    val = next(r for r in rates if r["gate"] == "valuation")
+    assert val["pass_n"] == 2
+
+
+def test_build_gate_calibration_guidance():
+    from signals.signal_audit_store import build_gate_calibration_guidance
+
+    guidance = build_gate_calibration_guidance(
+        gate_pass_rates=[
+            {"gate": "valuation", "pass_pct": 5.0},
+            {"gate": "momentum", "pass_pct": 25.0},
+            {"gate": "regime", "pass_pct": 60.0},
+            {"gate": "ml", "pass_pct": 80.0},
+        ],
+        gate_blockers=[
+            {"gate": "valuation", "pct_of_events": 95.0},
+            {"gate": "momentum", "pct_of_events": 40.0},
+        ],
+        actionable_slices={"full_go": {"n": 0}, "go_4_gates": {"n": 0}},
+    )
+    assert guidance["recommend_loosen_valuation"] is False
+    assert guidance["recommend_momentum_review"] is True
+    assert any("Valuation blocks" in n for n in guidance["notes"])
+
+
 def test_dashboard_partial_cohort_skipped(audit_config, tmp_path, monkeypatch):
     """Dashboard refresh (~25/100 overlap) must not write partial audit rows."""
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
