@@ -342,17 +342,33 @@ export function ForwardTracking({
                 className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs"
               >
                 <p className="text-slate-400 font-medium mb-1">{h} EOD steps</p>
-                <p>
-                  Avg{" "}
-                  <span className={s.avg_return_pct != null && s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                <p className="text-slate-500">
+                  Win rate{" "}
+                  <span
+                    className={
+                      (s.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"
+                    }
+                  >
+                    {s.win_rate_pct != null ? `${s.win_rate_pct}%` : "—"}
+                  </span>
+                  <span className="text-slate-600"> · n={s.n_observations}</span>
+                </p>
+                <p className="mt-0.5">
+                  Avg return{" "}
+                  <span
+                    className={
+                      s.avg_return_pct != null && s.avg_return_pct >= 0
+                        ? "text-emerald-400"
+                        : "text-red-400"
+                    }
+                  >
                     {fmt(s.avg_return_pct ?? 0)}
                   </span>
-                  <span className="text-slate-500"> · n={s.n_observations}</span>
+                  <span className="text-slate-600 text-[10px]"> (not win %)</span>
                 </p>
                 {s.win_rate_pct != null && (
-                  <p className="text-slate-500 mt-0.5">
-                    Win {s.win_rate_pct}% · ST tgt {s.st_target_hit_rate_pct ?? "—"}% · ST stop{" "}
-                    {s.st_stop_hit_rate_pct ?? "—"}%
+                  <p className="text-slate-600 text-[10px] mt-0.5">
+                    ST tgt {s.st_target_hit_rate_pct ?? "—"}% · ST stop {s.st_stop_hit_rate_pct ?? "—"}%
                   </p>
                 )}
               </div>

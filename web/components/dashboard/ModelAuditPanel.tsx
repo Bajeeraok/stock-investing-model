@@ -90,6 +90,12 @@ export type ModelAuditOutcomeSummary = {
   losses?: number;
   neutral?: number;
   blended_win_rate_pct?: number | null;
+  all_tracks_actionable_win_rate_pct?: number | null;
+  track_scope?: string;
+  track_scope_note?: string;
+  resolved_n_accumulate?: number;
+  resolved_n_velocity?: number;
+  tactical_summary?: ModelAuditActionableSlice | null;
   headline_actionable_win_rate_pct?: number | null;
   headline_actionable_n?: number;
   actionable_slices?: Record<string, ModelAuditActionableSlice>;
@@ -665,7 +671,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       {audit.outcome_summary &&
         ((audit.outcome_summary.resolved_n ?? 0) > 0 || (audit.outcome_summary.partial_7d_n ?? 0) > 0) && (
         <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5 space-y-2">
-          <p className="text-xs font-semibold text-emerald-200/90 uppercase tracking-wide">Outcome track record</p>
+          <p className="text-xs font-semibold text-emerald-200/90 uppercase tracking-wide">
+            Outcome track record
+            <span className="ml-2 text-[10px] font-normal text-slate-500 normal-case">
+              accumulate · excludes velocity tactical
+            </span>
+          </p>
           {(audit.outcome_summary.headline_actionable_win_rate_pct != null ||
             (audit.outcome_summary.headline_actionable_n ?? 0) > 0) && (
             <div className="rounded border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-2">
@@ -699,8 +710,14 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             <span>
               Resolved:{" "}
               <strong className="text-slate-100 tabular-nums">
-                {audit.outcome_summary.resolved_n}/{audit.outcome_summary.events_total}
+                {audit.outcome_summary.resolved_n_accumulate ?? audit.outcome_summary.resolved_n}/
+                {audit.outcome_summary.events_total}
               </strong>
+              {(audit.outcome_summary.resolved_n_velocity ?? 0) > 0 && (
+                <span className="text-violet-400/80 text-[10px] ml-1">
+                  (+{audit.outcome_summary.resolved_n_velocity} velocity tactical separate)
+                </span>
+              )}
             </span>
             {audit.outcome_summary.win_rate_pct != null && (
               <span>
@@ -721,7 +738,16 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             )}
             {audit.outcome_summary.blended_win_rate_pct != null && (
               <span className="text-slate-500">
-                Blended (incl. neutral): {audit.outcome_summary.blended_win_rate_pct.toFixed(1)}%
+                All tracks blended (incl. neutral): {audit.outcome_summary.blended_win_rate_pct.toFixed(1)}%
+              </span>
+            )}
+            {audit.outcome_summary.tactical_summary &&
+              (audit.outcome_summary.tactical_summary.n ?? 0) > 0 && (
+              <span className="text-violet-300/90">
+                Velocity tactical: n={audit.outcome_summary.tactical_summary.n}
+                {audit.outcome_summary.tactical_summary.actionable_win_rate_pct != null
+                  ? ` · ${audit.outcome_summary.tactical_summary.actionable_win_rate_pct.toFixed(0)}% W/L`
+                  : ""}
               </span>
             )}
             {(audit.outcome_summary.partial_7d_n ?? 0) > 0 && (
@@ -771,8 +797,13 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         />
         <BreakdownTable title="By GO / NO-GO" rows={audit.breakdown_by_go_no_go ?? []} bucketLabel="Status" />
         <BreakdownTable title="By category" rows={audit.breakdown_by_category ?? []} bucketLabel="Category" />
-        <BreakdownTable title="By ML signal" rows={audit.breakdown_by_signal ?? []} bucketLabel="Signal" />
-        <BreakdownTable title="By track" rows={audit.breakdown_by_track ?? []} bucketLabel="Track" />
+        <BreakdownTable
+          title="By ML signal"
+          rows={audit.breakdown_by_signal ?? []}
+          bucketLabel="Signal"
+          hint="Win % = accumulate track only (excludes velocity)"
+        />
+        <BreakdownTable title="By track" rows={audit.breakdown_by_track ?? []} bucketLabel="Track" hint="Velocity uses 5d tactical verdict rules — not in headline win %" />
         <BreakdownTable title="By readiness" rows={audit.breakdown_by_readiness ?? []} bucketLabel="Tier" />
         <BreakdownTable title="By entry mode" rows={audit.breakdown_by_entry_mode ?? []} bucketLabel="Mode" hint="full_go = 4/4 · starter_only = value present, tech blocked · hard_lock = no MOS" />
       </div>

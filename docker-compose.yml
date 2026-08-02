@@ -26,8 +26,11 @@ services:
       - CORS_ORIGINS=http://localhost:3001,http://web:3001
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app
+      - EOD_SCHEDULER_CRON=0 20 * * 1-5
+      - EOD_SCHEDULER_TZ=America/New_York
     volumes:
       - ./backend/data:/app/data
+      - ./backend/config:/app/config:ro
     depends_on:
       - redis
 

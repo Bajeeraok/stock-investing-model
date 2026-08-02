@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 _SCHEMA_VERSION = 3
 
+# Headline audit win rates = accumulate track (~20d, 4-gate model). Velocity tactical uses 5d rules — keep separate.
+_ACCUMULATE_TRACK_WHERE = " AND COALESCE(e.track, 'accumulate') NOT IN ('velocity', 'swing')"
+_VELOCITY_TRACK_WHERE = " AND COALESCE(e.track, 'accumulate') = 'velocity'"
+
 _VELOCITY_COLUMNS: list[tuple[str, str]] = [
     ("track", "TEXT DEFAULT 'accumulate'"),
     ("velocity_triggered", "INTEGER"),
@@ -930,6 +934,23 @@ class SignalAuditStore:
                 """,
                 tuple(params_base),
             ).fetchone()
+            resolved_accumulate = conn.execute(
+                f"""
+                SELECT COUNT(*) AS n FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}{_ACCUMULATE_TRACK_WHERE}
+                """,
+                tuple(params_base),
+            ).fetchone()
+            resolved_velocity = conn.execute(
+                f"""
+                SELECT COUNT(*) AS n FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}{_VELOCITY_TRACK_WHERE}
+                """,
+                tuple(params_base),
+            ).fetchone()
+            _win_breakdown_where = f"{date_filter}{_ACCUMULATE_TRACK_WHERE}"
             by_verdict = conn.execute(
                 f"""
                 SELECT o.verdict AS bucket, COUNT(*) AS n,
@@ -937,7 +958,7 @@ class SignalAuditStore:
                        AVG(o.return_7d_pct) AS avg_return_7d_pct
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
-                WHERE e.cohort_tag = ? AND e.source = 'live' AND o.verdict IS NOT NULL{date_filter}
+                WHERE e.cohort_tag = ? AND e.source = 'live' AND o.verdict IS NOT NULL{_win_breakdown_where}
                 GROUP BY o.verdict
                 ORDER BY n DESC
                 """,
@@ -951,7 +972,7 @@ class SignalAuditStore:
                        SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
-                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                WHERE e.cohort_tag = ? AND e.source = 'live'{_win_breakdown_where}
                 GROUP BY e.go_no_go
                 """,
                 tuple(params_base),
@@ -964,7 +985,7 @@ class SignalAuditStore:
                        SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
-                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                WHERE e.cohort_tag = ? AND e.source = 'live'{_win_breakdown_where}
                 GROUP BY e.ml_signal
                 ORDER BY n DESC
                 LIMIT 12
@@ -979,7 +1000,7 @@ class SignalAuditStore:
                        SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
-                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                WHERE e.cohort_tag = ? AND e.source = 'live'{_win_breakdown_where}
                 GROUP BY e.gates_passed
                 ORDER BY e.gates_passed DESC
                 """,
@@ -993,7 +1014,7 @@ class SignalAuditStore:
                        SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
-                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                WHERE e.cohort_tag = ? AND e.source = 'live'{_win_breakdown_where}
                 GROUP BY e.entry_mode
                 ORDER BY n DESC
                 """,
@@ -1021,7 +1042,7 @@ class SignalAuditStore:
                        SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
-                WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
+                WHERE e.cohort_tag = ? AND e.source = 'live'{_win_breakdown_where}
                 GROUP BY e.market_cap_bucket
                 ORDER BY n DESC
                 LIMIT 12
@@ -1059,22 +1080,32 @@ class SignalAuditStore:
                 }
 
             actionable_slices = {
-                "full_go": _slice_stats(" AND e.entry_mode = 'full_go'"),
-                "go_4_gates": _slice_stats(" AND e.gates_passed = 4 AND e.go_no_go = 'go'"),
-                "gates_3plus": _slice_stats(" AND e.gates_passed >= 3"),
-                "starter_only": _slice_stats(" AND e.entry_mode = 'starter_only'"),
-                "all_go": _slice_stats(" AND e.go_no_go = 'go'"),
-                "hold_no_go": _slice_stats(" AND e.go_no_go = 'no_go'"),
+                "full_go": _slice_stats(f" AND e.entry_mode = 'full_go'{_ACCUMULATE_TRACK_WHERE}"),
+                "go_4_gates": _slice_stats(
+                    f" AND e.gates_passed = 4 AND e.go_no_go = 'go'{_ACCUMULATE_TRACK_WHERE}"
+                ),
+                "gates_3plus": _slice_stats(f" AND e.gates_passed >= 3{_ACCUMULATE_TRACK_WHERE}"),
+                "starter_only": _slice_stats(f" AND e.entry_mode = 'starter_only'{_ACCUMULATE_TRACK_WHERE}"),
+                "all_go": _slice_stats(f" AND e.go_no_go = 'go'{_ACCUMULATE_TRACK_WHERE}"),
+                "hold_no_go": _slice_stats(f" AND e.go_no_go = 'no_go'{_ACCUMULATE_TRACK_WHERE}"),
+                "accumulate_all": _slice_stats(_ACCUMULATE_TRACK_WHERE),
+                "velocity_tactical": _slice_stats(_VELOCITY_TRACK_WHERE),
             }
+
+            all_tracks_slice = _slice_stats("")
 
         n_total = int(total["n"]) if total else 0
         n_resolved = int(resolved["n"]) if resolved else 0
+        n_resolved_accumulate = int(resolved_accumulate["n"]) if resolved_accumulate else 0
+        n_resolved_velocity = int(resolved_velocity["n"]) if resolved_velocity else 0
         partial_7d = self.count_partial_7d_outcomes(cohort_tag=cohort_tag)
         wins = sum(int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "WIN")
         losses = sum(int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "LOSS")
         decided = wins + losses + sum(
             int(r["n"] or 0) for r in by_verdict if str(r["bucket"]).upper() == "NEUTRAL"
         )
+        accumulate_headline = actionable_slices.get("accumulate_all") or {}
+        tactical_summary = actionable_slices.get("velocity_tactical") or {}
 
         def _win_rate_rows(rows) -> list[dict[str, Any]]:
             out: list[dict[str, Any]] = []
@@ -1114,20 +1145,31 @@ class SignalAuditStore:
         if int(headline_slice.get("n") or 0) < 5:
             headline_slice = actionable_slices.get("all_go") or headline_slice
 
-        actionable_total = wins + losses
-        blended_decided = decided
+        actionable_total = int(accumulate_headline.get("wins") or 0) + int(accumulate_headline.get("losses") or 0)
+        accumulate_wins = int(accumulate_headline.get("wins") or 0)
+        accumulate_losses = int(accumulate_headline.get("losses") or 0)
+        accumulate_neutral = int(accumulate_headline.get("neutral") or 0)
+        all_tracks_wins = int(all_tracks_slice.get("wins") or 0)
+        all_tracks_losses = int(all_tracks_slice.get("losses") or 0)
+        all_tracks_decided = all_tracks_wins + all_tracks_losses + int(all_tracks_slice.get("neutral") or 0)
 
         return {
             "events_total": n_total,
             "resolved_n": n_resolved,
+            "resolved_n_accumulate": n_resolved_accumulate,
+            "resolved_n_velocity": n_resolved_velocity,
             "partial_7d_n": partial_7d,
             "pending_n": max(0, n_total - n_resolved),
             "since_date": since_date,
-            "win_rate_pct": round(100.0 * wins / actionable_total, 1) if actionable_total else None,
-            "blended_win_rate_pct": round(100.0 * wins / blended_decided, 1) if blended_decided else None,
-            "wins": wins,
-            "losses": losses,
-            "neutral": decided - wins - losses,
+            "track_scope": "accumulate",
+            "track_scope_note": "Headline win % excludes velocity tactical (5d rules) — see tactical_summary and by_track.",
+            "win_rate_pct": accumulate_headline.get("actionable_win_rate_pct"),
+            "blended_win_rate_pct": round(100.0 * all_tracks_wins / all_tracks_decided, 1) if all_tracks_decided else None,
+            "all_tracks_actionable_win_rate_pct": all_tracks_slice.get("actionable_win_rate_pct"),
+            "wins": accumulate_wins,
+            "losses": accumulate_losses,
+            "neutral": accumulate_neutral,
+            "tactical_summary": tactical_summary if int(tactical_summary.get("n") or 0) > 0 else None,
             "by_verdict": verdict_rows,
             "by_go_no_go": _win_rate_rows(by_go),
             "by_ml_signal": _win_rate_rows(by_signal),
@@ -1307,6 +1349,12 @@ def build_gate_calibration_guidance(
         notes.append(
             "No resolved full-GO outcomes yet — headline win rate blends mostly HOLD/NO-GO. "
             "Use actionable slice win rate once 4/4 GO rows accumulate."
+        )
+    vel = (actionable_slices or {}).get("velocity_tactical") or {}
+    if int(vel.get("n") or 0) > 0:
+        notes.append(
+            "Headline win % is accumulate-only (~20d, 4-gate model). "
+            f"Velocity tactical (n={vel.get('n')}) uses 5d T+1 rules — see tactical_summary / By track, not blended into headline."
         )
 
     return {
