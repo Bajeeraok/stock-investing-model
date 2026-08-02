@@ -8,6 +8,7 @@ sections — skips accuracy, paper backfill, performance vs benchmark, analysis 
 from __future__ import annotations
 
 import logging
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
