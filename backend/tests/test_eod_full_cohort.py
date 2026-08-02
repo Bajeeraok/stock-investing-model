@@ -33,7 +33,9 @@ def test_full_eod_snapshot_exists_counts_rows(tmp_path, monkeypatch):
 def test_maybe_save_skips_dashboard_only_universe(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_ROOT", str(tmp_path))
     from config_loader import get_data_root, load_config
+    import scripts.run_daily as rd
 
+    monkeypatch.setattr(rd, "_et_hour_now", lambda: 10)  # before close — no thin fallback
     config = load_config()
     min_full = min_full_eod_row_count(config)
     last_run = {
@@ -47,3 +49,28 @@ def test_maybe_save_skips_dashboard_only_universe(tmp_path, monkeypatch):
     out = maybe_save_eod_from_last_run("2026-06-18")  # Thursday
     assert out.get("skipped") is True
     assert out.get("reason") == "dashboard_only_universe"
+
+
+def test_maybe_save_thin_fallback_after_close(tmp_path, monkeypatch):
+    """489bd45 regression: after close, save thin fallback if no snapshot exists."""
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    from config_loader import get_data_root, load_config
+    import scripts.run_daily as rd
+
+    monkeypatch.setattr(rd, "_et_hour_now", lambda: 21)
+    monkeypatch.setattr(rd, "is_us_equity_session_day", lambda _d=None: True)
+    config = load_config()
+    min_full = min_full_eod_row_count(config)
+    last_run = {
+        "run_results": [{"ticker": f"T{i}", "composite_buy": 50} for i in range(min_full - 5)],
+    }
+    path = get_data_root() / "last_run.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import json
+
+    path.write_text(json.dumps(last_run), encoding="utf-8")
+    out = maybe_save_eod_from_last_run("2026-07-07")
+    assert out.get("skipped") is False
+    assert out.get("reason") == "dashboard_fallback"
+    assert full_eod_snapshot_exists("2026-07-07", config) is False
+    assert (get_data_root() / "eod" / "2026-07-07.json").exists()

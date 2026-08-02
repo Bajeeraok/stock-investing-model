@@ -1,17 +1,29 @@
 """
 Single-flight background full EOD snapshot (~100 tickers).
 Used by the 8pm scheduler and as a safety net after dashboard refresh post-close.
+
+Fix vs 489bd45: do not burn the day on a single failed/skipped attempt — retry with cooldown.
 """
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any
 
 logger = logging.getLogger("api.eod_job")
 
+# Retry cooldown after a failed/skipped attempt (seconds). Prevents stampede, allows recovery.
+_RETRY_COOLDOWN_SEC = 15 * 60
+
 _lock = threading.Lock()
-_state: dict[str, Any] = {"running": False, "last_trigger_date": None}
+_state: dict[str, Any] = {
+    "running": False,
+    "last_success_date": None,
+    "last_attempt_ts": 0.0,
+    "last_attempt_date": None,
+    "last_result": None,
+}
 
 
 def is_eod_job_running() -> bool:
@@ -19,10 +31,27 @@ def is_eod_job_running() -> bool:
         return bool(_state.get("running"))
 
 
-def trigger_full_eod_background_if_missing(*, min_hour_et: int = 20) -> bool:
+def eod_job_state() -> dict[str, Any]:
+    with _lock:
+        return {
+            "running": bool(_state.get("running")),
+            "last_success_date": _state.get("last_success_date"),
+            "last_attempt_date": _state.get("last_attempt_date"),
+            "last_result": _state.get("last_result"),
+            "retry_cooldown_sec": _RETRY_COOLDOWN_SEC,
+        }
+
+
+def trigger_full_eod_background_if_missing(
+    *,
+    min_hour_et: int = 20,
+    force_retry: bool = False,
+) -> bool:
     """
     Start full EOD in a daemon thread when today's full cohort snapshot is missing.
     Returns True if a new background job was started.
+
+    Retries after failure/skip once _RETRY_COOLDOWN_SEC has elapsed (unless force_retry).
     """
     try:
         from datetime import datetime
@@ -40,6 +69,8 @@ def trigger_full_eod_background_if_missing(*, min_hour_et: int = 20) -> bool:
 
         config = load_config()
         if full_eod_snapshot_exists(date_str, config):
+            with _lock:
+                _state["last_success_date"] = date_str
             return False
     except Exception as exc:
         logger.debug("[eod-job] preflight skipped: %s", exc)
@@ -48,12 +79,25 @@ def trigger_full_eod_background_if_missing(*, min_hour_et: int = 20) -> bool:
     with _lock:
         if _state.get("running"):
             return False
-        if _state.get("last_trigger_date") == date_str:
+        if _state.get("last_success_date") == date_str:
+            return False
+        now_ts = time.time()
+        last_ts = float(_state.get("last_attempt_ts") or 0)
+        last_date = _state.get("last_attempt_date")
+        if (
+            not force_retry
+            and last_date == date_str
+            and (now_ts - last_ts) < _RETRY_COOLDOWN_SEC
+        ):
             return False
         _state["running"] = True
-        _state["last_trigger_date"] = date_str
+        _state["last_attempt_ts"] = now_ts
+        _state["last_attempt_date"] = date_str
+        _state["last_result"] = "started"
 
     def _worker() -> None:
+        ok = False
+        reason = None
         try:
             from config_loader import load_config
             from scripts.run_daily import run_eod_snapshot_only
@@ -61,10 +105,18 @@ def trigger_full_eod_background_if_missing(*, min_hour_et: int = 20) -> bool:
             logger.info("[eod-job] background full EOD START date=%s", date_str)
             result = run_eod_snapshot_only(load_config(), snapshot_date=date_str)
             if result.get("error"):
+                reason = f"error:{result['error']}"
                 logger.error("[eod-job] failed: %s", result["error"])
             elif result.get("skipped"):
+                reason = f"skipped:{result.get('reason') or 'unknown'}"
                 logger.info("[eod-job] skipped: %s", result.get("reason"))
+                # non_trading_day / full_snapshot_exists — treat exists as success
+                if result.get("reason") == "full_snapshot_exists" or not result.get("reason"):
+                    if result.get("reason") == "full_snapshot_exists":
+                        ok = True
             else:
+                ok = True
+                reason = "ok"
                 logger.info(
                     "[eod-job] ok date=%s tickers=%s path=%s",
                     result.get("snapshot_date"),
@@ -72,10 +124,15 @@ def trigger_full_eod_background_if_missing(*, min_hour_et: int = 20) -> bool:
                     result.get("snapshot_path"),
                 )
         except Exception:
+            reason = "exception"
             logger.exception("[eod-job] background run failed")
         finally:
             with _lock:
                 _state["running"] = False
+                _state["last_result"] = reason
+                if ok:
+                    _state["last_success_date"] = date_str
+                # On failure: leave last_attempt_* so cooldown applies, then retry
 
     threading.Thread(target=_worker, name="eod-full-snapshot", daemon=True).start()
     return True

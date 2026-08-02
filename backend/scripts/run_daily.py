@@ -789,12 +789,43 @@ def save_last_run(results: list[dict], path: Path | None = None) -> None:
         json.dump(payload, f, indent=2)
 
 
-def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
+def _any_eod_snapshot_exists(date_str: str) -> bool:
+    """True if disk or Redis has any snapshot for date (thin or full)."""
+    eod_path = get_data_root() / "eod" / f"{date_str}.json"
+    if eod_path.exists():
+        return True
+    try:
+        from signals.cache import get_eod_snapshot_redis
+
+        snap = get_eod_snapshot_redis(date_str)
+        if isinstance(snap, dict) and _eod_snapshot_row_count(snap) > 0:
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _et_hour_now() -> int:
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo("America/New_York")).hour
+    except Exception:
+        return datetime.now(EST).hour
+
+
+def maybe_save_eod_from_last_run(
+    snapshot_date: str | None = None,
+    *,
+    allow_thin_fallback_after_hour_et: int = 20,
+) -> dict:
     """
     Idempotent: archive today's last_run.json into data/eod/ + Redis when missing.
-    Keeps forward tracking and paper-trade outcome chains advancing after dashboard Refresh.
-    Skips weekends and dashboard-only universes (~43 tickers) so thin refreshes do not
-    masquerade as full 8pm EOD cohort snapshots (~100 tickers).
+
+    Full cohort (~100) is preferred. Dashboard-only (~43) refreshes are not treated as
+    full EOD — but after the close window, if *no* snapshot exists for today, save a
+    thin fallback so forward tracking / paper outcomes do not go dark when the 8pm
+    full job fails (regression from 489bd45).
     """
     date_str = snapshot_date or _today_est()
     if not is_us_equity_session_day(date_str):
@@ -817,7 +848,6 @@ def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
             }
     except Exception:
         config = None
-    eod_path = get_data_root() / "eod" / f"{date_str}.json"
     last_run_path = get_data_root() / "last_run.json"
     if not last_run_path.exists():
         return {"ok": False, "skipped": True, "snapshot_date": date_str, "reason": "no_last_run"}
@@ -827,11 +857,32 @@ def maybe_save_eod_from_last_run(snapshot_date: str | None = None) -> dict:
     if not run_results:
         return {"ok": False, "skipped": True, "snapshot_date": date_str, "reason": "empty_run_results"}
     try:
-        from config_loader import get_eod_signal_universe, load_config
+        from config_loader import load_config
 
         config = config or load_config()
         min_full = min_full_eod_row_count(config)
         if len(run_results) < min_full:
+            # After close: if nothing saved today, keep the chain alive with thin fallback.
+            # Full cohort can still overwrite later via scheduler / eod_job.
+            hour_et = _et_hour_now()
+            if (
+                hour_et >= allow_thin_fallback_after_hour_et
+                and not _any_eod_snapshot_exists(date_str)
+            ):
+                path = save_eod_snapshot(
+                    run_results,
+                    date_str=date_str,
+                    universe="dashboard_fallback",
+                )
+                return {
+                    "ok": True,
+                    "skipped": False,
+                    "snapshot_date": date_str,
+                    "snapshot_path": str(path) if path else None,
+                    "tickers_count": len(run_results),
+                    "reason": "dashboard_fallback",
+                    "expected_min": min_full,
+                }
             return {
                 "ok": True,
                 "skipped": True,

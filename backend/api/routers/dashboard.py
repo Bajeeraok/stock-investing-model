@@ -2591,12 +2591,16 @@ def _compute_full_dashboard_sync() -> dict:
                 eod_auto.get("snapshot_date"),
                 eod_auto.get("tickers_count"),
             )
-        elif eod_auto and eod_auto.get("reason") == "dashboard_only_universe":
+        elif eod_auto and eod_auto.get("reason") in (
+            "dashboard_only_universe",
+            "dashboard_fallback",
+        ):
             logger.info(
-                "[dashboard] refresh is dashboard-only (%s/%s tickers) — not saved as EOD; "
+                "[dashboard] refresh is dashboard-only (%s/%s tickers) reason=%s — "
                 "full cohort runs at 8pm ET (EOD scheduler) or POST /api/eod/run",
                 eod_auto.get("tickers_count"),
                 eod_auto.get("expected_min"),
+                eod_auto.get("reason"),
             )
             try:
                 from api.eod_job import trigger_full_eod_background_if_missing
@@ -4153,17 +4157,50 @@ def eod_status():
             dates = sorted(p.stem for p in eod_dir.glob("*.json") if p.stem[:4].isdigit())
     latest = dates[-1] if dates else None
     today_path = get_data_root() / "eod" / f"{today_est}.json"
+    scheduler: dict = {}
+    try:
+        from api.eod_scheduler import scheduler_status
+
+        scheduler = scheduler_status()
+    except Exception as e:
+        scheduler = {"enabled": False, "running": False, "off_reason": str(e)}
+
+    job_state: dict = {}
+    safety_net_queued = False
+    try:
+        from api.eod_job import eod_job_state, trigger_full_eod_background_if_missing
+
+        job_state = eod_job_state()
+        # Lightweight kick: if full cohort missing after 8pm, queue background job (with cooldown).
+        safety_net_queued = bool(trigger_full_eod_background_if_missing(min_hour_et=20))
+    except Exception as e:
+        job_state = {"error": str(e)}
+
+    gap_days = None
+    if latest:
+        try:
+            gap_days = (
+                _dt.strptime(today_est, "%Y-%m-%d").date()
+                - _dt.strptime(str(latest)[:10], "%Y-%m-%d").date()
+            ).days
+        except Exception:
+            gap_days = None
+
     return {
         "today_est": today_est,
         "latest_snapshot_date": latest,
         "snapshot_count": len(dates),
+        "days_since_latest": gap_days,
         "today_snapshot_exists": today_path.exists() or today_est in dates,
         "today_snapshot_path": str(today_path) if today_path.exists() else None,
         "dashboard_universe_count": len(dashboard_uni),
         "eod_universe_count": len(eod_uni),
         "dashboard_universe_sample": dashboard_uni[:8],
+        "scheduler": scheduler,
+        "eod_job": job_state,
+        "safety_net_queued": safety_net_queued,
         "manual_run_hint": (
-            "POST /api/eod/run?force=true&refresh_dashboard=true re-runs today's snapshot "
+            "POST /api/eod/run?force=true&refresh_dashboard=true&universe=eod re-runs today's snapshot "
             "and refreshes the dashboard cache (use after 8pm scheduler if you want a fresh pass)."
         ),
     }

@@ -69,6 +69,13 @@ def _run_eod_job() -> None:
         result = run_eod_snapshot_only(config)
         if result.get("error"):
             logger.error("[eod-scheduler] %s", result["error"])
+            # Allow eod_job safety-net to retry soon (do not leave a sticky "success" day).
+            try:
+                from api.eod_job import trigger_full_eod_background_if_missing
+
+                trigger_full_eod_background_if_missing(min_hour_et=20, force_retry=True)
+            except Exception:
+                pass
         elif result.get("skipped"):
             logger.info("[eod-scheduler] skipped — %s", result.get("reason") or "unknown")
         else:
@@ -80,6 +87,12 @@ def _run_eod_job() -> None:
             )
     except Exception:
         logger.exception("[eod-scheduler] job failed")
+        try:
+            from api.eod_job import trigger_full_eod_background_if_missing
+
+            trigger_full_eod_background_if_missing(min_hour_et=20, force_retry=True)
+        except Exception:
+            pass
     finally:
         try:
             from signals.process_memory import process_rss_mb, release_process_caches
@@ -163,3 +176,40 @@ def shutdown() -> None:
         except Exception:
             logger.exception("EOD scheduler shutdown")
         _scheduler = None
+
+
+def scheduler_status() -> dict:
+    """
+    Introspection for GET /api/eod/status — whether the in-process APScheduler is alive.
+    """
+    resolved = resolve_eod_schedule()
+    out: dict = {
+        "enabled": resolved is not None,
+        "running": False,
+        "cron": None,
+        "tz": None,
+        "next_run_at": None,
+        "job_id": "eod_snapshot",
+        "off_reason": None,
+    }
+    if not resolved:
+        if _scheduler_disabled():
+            out["off_reason"] = "EOD_SCHEDULER_OFF is set"
+        else:
+            out["off_reason"] = "no EOD_SCHEDULER_CRON and config schedule unavailable"
+        return out
+
+    cron, tz_name = resolved
+    out["cron"] = cron
+    out["tz"] = tz_name
+    if _scheduler is None:
+        out["off_reason"] = "scheduler object is None (startup may have failed)"
+        return out
+    try:
+        out["running"] = bool(_scheduler.running)
+        job = _scheduler.get_job("eod_snapshot")
+        if job is not None and job.next_run_time is not None:
+            out["next_run_at"] = job.next_run_time.isoformat()
+    except Exception as e:
+        out["off_reason"] = f"status read failed: {e}"
+    return out
