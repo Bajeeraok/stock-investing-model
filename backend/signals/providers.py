@@ -228,6 +228,16 @@ def _get_most_recent_earnings_impl(ticker: str, config: dict) -> dict | None:
         return None
 
 
+def clear_providers_lru_caches() -> dict[str, int]:
+    """Clear in-process LRU caches (earnings yfinance path)."""
+    try:
+        info = _get_most_recent_earnings_yf_cached.cache_info()
+        _get_most_recent_earnings_yf_cached.cache_clear()
+        return {"earnings_yf_cleared": info.currsize}
+    except Exception:
+        return {"earnings_yf_cleared": 0}
+
+
 @lru_cache(maxsize=512)
 def _get_most_recent_earnings_yf_cached(ticker: str) -> dict | None:
     """Cached yfinance path only (keyed by ticker)."""

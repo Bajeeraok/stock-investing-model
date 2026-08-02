@@ -14,6 +14,41 @@ logger = logging.getLogger(__name__)
 
 _EOD_DIR_NAME = "eod"
 _DEFAULT_MAX_RECORDS = 2000
+_SNAPSHOT_MEM_CACHE: dict[str, dict] = {}
+_SNAPSHOT_MEM_CACHE_MAX = 24
+
+
+def _snapshot_mem_cache_max() -> int:
+    import os
+
+    raw = (os.environ.get("EOD_SNAPSHOT_MEM_CACHE_MAX") or "").strip()
+    if raw:
+        try:
+            return max(4, min(64, int(raw)))
+        except ValueError:
+            pass
+    return _SNAPSHOT_MEM_CACHE_MAX
+
+
+def clear_eod_snapshot_mem_cache() -> dict[str, int]:
+    """Clear in-process EOD snapshot dicts (forward-tracking path)."""
+    n = len(_SNAPSHOT_MEM_CACHE)
+    _SNAPSHOT_MEM_CACHE.clear()
+    return {"cleared": n}
+
+
+def _load_snapshot_mem(eod_dir: Path | None, date_str: str) -> dict | None:
+    """Load EOD snapshot with bounded in-process reuse (cleared after heavy jobs)."""
+    hit = _SNAPSHOT_MEM_CACHE.get(date_str)
+    if hit is not None:
+        return hit
+    data = _load_snapshot(eod_dir, date_str)
+    if data is not None:
+        cap = _snapshot_mem_cache_max()
+        while len(_SNAPSHOT_MEM_CACHE) >= cap:
+            _SNAPSHOT_MEM_CACHE.pop(next(iter(_SNAPSHOT_MEM_CACHE)))
+        _SNAPSHOT_MEM_CACHE[date_str] = data
+    return data
 
 
 def _cap_records_recent(records: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -228,8 +263,8 @@ def get_forward_tracking(
             continue
         pairs = list(zip(dates[:-horizon], dates[horizon:]))[-max_pairs_per_horizon:]
         for as_of_date, next_date in reversed(pairs):
-            snap = _load_snapshot(eod_dir, as_of_date)
-            snap_next = _load_snapshot(eod_dir, next_date)
+            snap = _load_snapshot_mem(eod_dir, as_of_date)
+            snap_next = _load_snapshot_mem(eod_dir, next_date)
             if not snap or not snap_next:
                 continue
             start_idx = date_to_idx.get(as_of_date)
@@ -324,7 +359,7 @@ def get_forward_tracking(
 
                 stop, target = st_stop_target_from_row(row_work)
                 path_bars = bars_between_dates(
-                    dates, start_idx, horizon, tk, _load_snapshot, eod_dir
+                    dates, start_idx, horizon, tk, _load_snapshot_mem, eod_dir
                 )
                 path = path_metrics(
                     float(row_work.get("close") or prior),

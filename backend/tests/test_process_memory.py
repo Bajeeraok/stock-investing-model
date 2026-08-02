@@ -56,6 +56,22 @@ def test_release_process_caches_returns_stats():
     assert "gc_collected" in stats
 
 
+def test_process_rss_snapshot_keys():
+    from signals.process_memory import process_rss_snapshot
+
+    snap = process_rss_snapshot()
+    assert "rss_mb" in snap
+    assert "rss_mb_peak" in snap
+
+
+def test_release_process_caches_aggressive_clears_yfinance():
+    from signals.process_memory import release_process_caches
+
+    stats = release_process_caches(aggressive=True)
+    assert "yfinance" in stats
+    assert "rss_mb" in stats or "rss_mb_after" in stats
+
+
 def test_info_cache_evicts_expired_and_caps():
     from signals import fetcher
 

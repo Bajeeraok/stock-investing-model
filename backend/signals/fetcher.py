@@ -537,6 +537,32 @@ def _is_yahoo_auth_error(exc: BaseException | str) -> bool:
     )
 
 
+def clear_yfinance_process_caches() -> dict[str, int]:
+    """Drop yfinance in-process DataFrame / shared caches (can grow across warm cycles)."""
+    cleared_dfs = 0
+    cleared_shared = 0
+    if yf is None:
+        return {"dfs": 0, "shared": 0}
+    try:
+        import yfinance.base as _yfbase  # type: ignore
+
+        if hasattr(_yfbase, "_DFS") and isinstance(_yfbase._DFS, dict):
+            cleared_dfs = len(_yfbase._DFS)
+            _yfbase._DFS.clear()
+    except Exception:
+        pass
+    try:
+        from yfinance import shared as _yfshared  # type: ignore
+
+        if hasattr(_yfshared, "_CACHE") and isinstance(_yfshared._CACHE, dict):
+            cleared_shared = len(_yfshared._CACHE)
+            _yfshared._CACHE.clear()
+    except Exception:
+        pass
+    _clear_yfinance_crumb()
+    return {"dfs": cleared_dfs, "shared": cleared_shared}
+
+
 def _clear_yfinance_crumb() -> None:
     """Force yfinance to fetch a fresh Yahoo cookie + crumb on the next request."""
     if yf is None:

@@ -14,9 +14,33 @@ from typing import Any
 logger = logging.getLogger("signals.process_memory")
 
 
+def dashboard_parallel_max_workers() -> int:
+    """Cap ThreadPoolExecutor workers during dashboard compute (lower on Railway)."""
+    raw = (os.environ.get("DASHBOARD_PARALLEL_MAX_WORKERS") or "").strip()
+    if raw:
+        try:
+            return max(2, min(16, int(raw)))
+        except ValueError:
+            pass
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return 6
+    return 12
+
+
 def _gc_after_jobs_enabled() -> bool:
     raw = (os.environ.get("MEMORY_GC_AFTER_JOBS") or "1").strip().lower()
     return raw not in ("0", "false", "no", "off")
+
+
+def _malloc_trim() -> bool:
+    """Return freed heap pages to the OS (Linux glibc). No-op elsewhere."""
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL("libc.so.6")
+        return bool(libc.malloc_trim(0))
+    except Exception:
+        return False
 
 
 def release_process_caches(*, aggressive: bool = False) -> dict[str, Any]:
@@ -42,6 +66,24 @@ def release_process_caches(*, aggressive: bool = False) -> dict[str, Any]:
 
     if aggressive:
         try:
+            from signals.fetcher import clear_yfinance_process_caches
+
+            stats["yfinance"] = clear_yfinance_process_caches()
+        except Exception as e:
+            stats["yfinance"] = {"error": str(e)}
+        try:
+            from signals.forward_tracking import clear_eod_snapshot_mem_cache
+
+            stats["eod_snapshot_mem"] = clear_eod_snapshot_mem_cache()
+        except Exception as e:
+            stats["eod_snapshot_mem"] = {"error": str(e)}
+        try:
+            from signals.providers import clear_providers_lru_caches
+
+            stats["providers_lru"] = clear_providers_lru_caches()
+        except Exception as e:
+            stats["providers_lru"] = {"error": str(e)}
+        try:
             from signals.hmm_regime import trim_hmm_model_cache
 
             stats["hmm_models"] = trim_hmm_model_cache(keep=0)
@@ -56,39 +98,68 @@ def release_process_caches(*, aggressive: bool = False) -> dict[str, Any]:
 
     collected = 0
     if _gc_after_jobs_enabled():
-        collected = gc.collect()
+        collected = gc.collect(2)
     stats["gc_collected"] = collected
-    stats["rss_mb_after"] = process_rss_mb()
+    if aggressive:
+        stats["malloc_trim"] = _malloc_trim()
+    rss = process_rss_snapshot()
+    stats["rss_mb"] = rss.get("rss_mb")
+    stats["rss_mb_peak"] = rss.get("rss_mb_peak")
+    # Back-compat for log parsers expecting rss_mb_after
+    stats["rss_mb_after"] = rss.get("rss_mb")
     return stats
 
 
-def process_rss_mb() -> float | None:
-    """Resident set size in MB (Linux / Railway). None when unavailable."""
-    try:
-        import resource
-
-        usage = resource.getrusage(resource.RUSAGE_SELF)
-        # Linux: ru_maxrss is kilobytes; macOS: bytes
-        rss = usage.ru_maxrss
-        if rss > 10_000_000:
-            return round(rss / (1024 * 1024), 1)
-        return round(rss / 1024, 1)
-    except Exception:
-        pass
+def _read_proc_rss_kb() -> int | None:
     try:
         with open("/proc/self/status", encoding="utf-8") as f:
             for line in f:
                 if line.startswith("VmRSS:"):
-                    kb = int(line.split()[1])
-                    return round(kb / 1024, 1)
+                    return int(line.split()[1])
     except Exception:
         pass
     return None
 
 
+def _read_peak_rss_kb() -> int | None:
+    """Linux ru_maxrss is peak RSS in KB; macOS uses bytes."""
+    try:
+        import resource
+
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        rss = usage.ru_maxrss
+        if rss > 10_000_000:
+            return int(rss / 1024)
+        return int(rss)
+    except Exception:
+        return None
+
+
+def process_rss_mb() -> float | None:
+    """Current resident set size in MB (Linux / Railway). None when unavailable."""
+    kb = _read_proc_rss_kb()
+    if kb is not None:
+        return round(kb / 1024, 1)
+    peak_kb = _read_peak_rss_kb()
+    if peak_kb is not None:
+        return round(peak_kb / 1024, 1)
+    return None
+
+
+def process_rss_snapshot() -> dict[str, float | None]:
+    """Current RSS + process peak RSS (for post-job logs and /api/health/memory)."""
+    current_kb = _read_proc_rss_kb()
+    peak_kb = _read_peak_rss_kb()
+    return {
+        "rss_mb": round(current_kb / 1024, 1) if current_kb is not None else None,
+        "rss_mb_peak": round(peak_kb / 1024, 1) if peak_kb is not None else None,
+    }
+
+
 def memory_snapshot() -> dict[str, Any]:
     """Lightweight stats for GET /api/health/memory."""
-    snap: dict[str, Any] = {"rss_mb": process_rss_mb()}
+    rss = process_rss_snapshot()
+    snap: dict[str, Any] = dict(rss)
     try:
         from signals.fetcher import info_cache_stats, ohlcv_cache_stats
 

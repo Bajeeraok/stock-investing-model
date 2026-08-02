@@ -43,13 +43,15 @@ PREMARKET_TIMES_ET: tuple[tuple[int, int], ...] = (
 
 
 def _dashboard_warm_interval_min() -> int:
-    """Minutes between signal warm runs (8:30–16:00 ET weekdays). Env DASHBOARD_WARM_INTERVAL_MIN, default 30."""
+    """Minutes between signal warm runs (8:30–16:00 ET weekdays). Env DASHBOARD_WARM_INTERVAL_MIN."""
     raw = (os.environ.get("DASHBOARD_WARM_INTERVAL_MIN") or "").strip()
     if raw:
         try:
             return max(10, min(60, int(raw)))
         except ValueError:
             pass
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return 60
     return 30
 
 

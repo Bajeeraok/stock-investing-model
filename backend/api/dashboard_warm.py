@@ -231,6 +231,43 @@ def _write_panel_caches(config: dict, results: list[dict], as_of_date: str | Non
     )
 
 
+def _signals_warm_skip_if_fresh_min() -> float:
+    """Skip full run_signals in warm path when signals were updated recently (0 = never skip)."""
+    raw = (os.environ.get("SIGNAL_WARM_SKIP_IF_FRESH_MIN") or "").strip()
+    if raw:
+        try:
+            return max(0.0, min(120.0, float(raw)))
+        except ValueError:
+            pass
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return 25.0
+    return 0.0
+
+
+def _cached_signals_age_minutes(cached: dict) -> float | None:
+    ts = (cached.get("data_freshness") or {}).get("signals_updated_at") or cached.get("refresh_ts")
+    if not ts:
+        return None
+    try:
+        from datetime import datetime
+
+        s = str(ts).strip().replace("Z", "+00:00")
+        if "T" not in s and len(s) >= 10:
+            dt = datetime.fromisoformat(s[:10])
+        else:
+            dt = datetime.fromisoformat(s)
+        if dt.tzinfo is not None:
+            from datetime import timezone
+
+            now = datetime.now(dt.tzinfo)
+        else:
+            now = datetime.utcnow()
+            dt = dt.replace(tzinfo=None)
+        return max(0.0, (now - dt).total_seconds() / 60.0)
+    except Exception:
+        return None
+
+
 def compute_signal_warm_sync() -> dict:
     """Signal warm: EOD universe signals + portfolio; merge into cached macro snapshot."""
     from api.routers.dashboard import (
@@ -269,32 +306,54 @@ def compute_signal_warm_sync() -> dict:
     quote_tickers = get_retail_quote_tickers(config, holdings)
 
     prices, fmp_batch = fetch_live_prices(config, quote_tickers)
-    from config_loader import get_data_root
 
-    hit_rate_context = None
-    try:
-        ft = get_forward_tracking(
-            data_root=get_data_root(),
-            tickers=["SPY", "QQQ"],
-            horizons=[20],
-        )
-        add_info = (ft.get("summary_by_signal") or {}).get("HOLD/ADD")
-        if isinstance(add_info, dict) and add_info.get("hit_rate_pct") is not None:
-            hit_rate_context = {"add_hit_rate_pct": float(add_info["hit_rate_pct"])}
-    except Exception as e:
-        logger.debug("[dashboard-warm] hit-rate gate: %s", e)
-
-    from scripts.run_daily import run_signals
-
-    logger.info("[dashboard-warm] run_signals EOD universe (%d tickers)...", len(signal_universe))
-    t0 = time.perf_counter()
-    results = run_signals(
-        config,
-        prices_by_ticker=prices,
-        hit_rate_context=hit_rate_context,
-        tickers=signal_universe,
+    skip_fresh_min = _signals_warm_skip_if_fresh_min()
+    signals_age = _cached_signals_age_minutes(cached)
+    skip_run_signals = (
+        skip_fresh_min > 0
+        and signals_age is not None
+        and signals_age < skip_fresh_min
+        and bool(cached.get("signals"))
     )
-    logger.info("[dashboard-warm] run_signals DONE (%d rows, %.0f ms)", len(results or []), (time.perf_counter() - t0) * 1000)
+    if skip_run_signals:
+        logger.info(
+            "[dashboard-warm] run_signals SKIPPED — signals %.0f min old (< %.0f min threshold)",
+            signals_age,
+            skip_fresh_min,
+        )
+        results = list(cached.get("signals") or [])
+        hit_rate_context = None
+    else:
+        from config_loader import get_data_root
+
+        hit_rate_context = None
+        try:
+            ft = get_forward_tracking(
+                data_root=get_data_root(),
+                tickers=["SPY", "QQQ"],
+                horizons=[20],
+            )
+            add_info = (ft.get("summary_by_signal") or {}).get("HOLD/ADD")
+            if isinstance(add_info, dict) and add_info.get("hit_rate_pct") is not None:
+                hit_rate_context = {"add_hit_rate_pct": float(add_info["hit_rate_pct"])}
+        except Exception as e:
+            logger.debug("[dashboard-warm] hit-rate gate: %s", e)
+
+        from scripts.run_daily import run_signals
+
+        logger.info("[dashboard-warm] run_signals EOD universe (%d tickers)...", len(signal_universe))
+        t0 = time.perf_counter()
+        results = run_signals(
+            config,
+            prices_by_ticker=prices,
+            hit_rate_context=hit_rate_context,
+            tickers=signal_universe,
+        )
+        logger.info(
+            "[dashboard-warm] run_signals DONE (%d rows, %.0f ms)",
+            len(results or []),
+            (time.perf_counter() - t0) * 1000,
+        )
 
     market_reversal_overlay = cached.get("market_reversal_overlay")
     for r in results or []:
@@ -569,7 +628,8 @@ def compute_signal_warm_sync() -> dict:
     except Exception as e:
         logger.debug("[dashboard-warm] retail alerts: %s", e)
 
-    save_last_run(results)
+    if not skip_run_signals:
+        save_last_run(results)
 
     opp_bundle_on = _opportunities_bundle_enabled(config)
     if opp_bundle_on:

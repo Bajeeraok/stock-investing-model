@@ -877,7 +877,10 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
         _task_paper_trading_async, _task_regime_validation, _task_confidence_calibration,
         _task_model_audit,
     ]
-    with ThreadPoolExecutor(max_workers=min(8, len(specs))) as ex:
+    from signals.process_memory import dashboard_parallel_max_workers
+
+    _par = dashboard_parallel_max_workers()
+    with ThreadPoolExecutor(max_workers=min(_par, len(specs))) as ex:
         futures = [ex.submit(fn) for fn in specs]
         for fut in as_completed(futures):
             try:
@@ -1557,7 +1560,9 @@ def _compute_full_dashboard_sync() -> dict:
                 return (ticker, None)
         try:
             t0_conf = time.perf_counter()
-            with ThreadPoolExecutor(max_workers=8) as ex:
+            from signals.process_memory import dashboard_parallel_max_workers
+
+            with ThreadPoolExecutor(max_workers=min(4, dashboard_parallel_max_workers())) as ex:
                 futures = [ex.submit(_confidence_one, t) for t in holdings_tickers]
                 for fut in as_completed(futures):
                     ticker, conf = fut.result()
@@ -1959,7 +1964,10 @@ def _compute_full_dashboard_sync() -> dict:
     parallel_results: dict = {}
     t_parallel = time.perf_counter()
     logger.info("[dashboard] section: parallel load (%d tasks)...", len(parallel_task_specs))
-    with ThreadPoolExecutor(max_workers=min(14, len(parallel_task_specs))) as ex:
+    from signals.process_memory import dashboard_parallel_max_workers
+
+    _par = dashboard_parallel_max_workers()
+    with ThreadPoolExecutor(max_workers=min(_par, len(parallel_task_specs))) as ex:
         futures = [ex.submit(_timed_parallel_task, name, fn) for name, fn in parallel_task_specs]
         for fut in as_completed(futures):
             try:
