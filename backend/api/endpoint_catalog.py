@@ -15,6 +15,8 @@ CATALOG: list[dict[str, Any]] = [
     {"group": "Dashboard", "method": "GET", "path": "/api/dashboard", "description": "Full dashboard payload", "query": {"refresh": "false"}},
     {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/shell", "description": "Light shell (no heavy compute)"},
     {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/status", "description": "Warm/cache status"},
+    {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/ws-config", "description": "WebSocket URL for live cache push"},
+    {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/ws", "description": "WebSocket live dashboard updates (upgrade)", "external": True},
     {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/signals-panel", "description": "Signals table rows (lazy)"},
     {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/opportunities-bundle", "description": "Opportunities + doctor adds"},
     {"group": "Dashboard", "method": "GET", "path": "/api/dashboard/analysis-bundle", "description": "Analysis tab bundle"},

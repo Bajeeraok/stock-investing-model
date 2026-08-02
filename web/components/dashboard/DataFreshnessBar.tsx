@@ -71,8 +71,8 @@ function SnapshotMetaLine({
         <span className="text-slate-400">Signals as of</span>
         <span className="font-mono text-slate-200">{signalsLabel}</span>
         {data.serving_stale && (
-          <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 rounded">
-            Stale — refreshing
+          <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
+            Loading first snapshot
           </span>
         )}
       </div>
@@ -105,7 +105,7 @@ function SnapshotMetaLine({
         </span>
       )}
       {!data.serving_stale && stale && age && (
-        <span className="text-[10px] text-amber-400/90">may be outdated</span>
+        <span className="text-[10px] text-slate-500">older snapshot</span>
       )}
       {!compact && data.snapshot_source && (
         <span className="text-slate-600 text-[10px]">source: {data.snapshot_source.replace("_", " ")}</span>

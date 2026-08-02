@@ -796,10 +796,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             )}
             {snapshotIso && (
               <span
-                className={clsx(
-                  "text-xs hidden lg:inline font-mono",
-                  data.data_freshness?.serving_stale || stale ? "text-amber-400" : "text-slate-500",
-                )}
+                className="text-xs hidden lg:inline font-mono text-slate-500"
                 title={
                   data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
                     ? `Prices ${formatSnapshotEt(data.data_freshness?.quotes_updated_at ?? undefined) ?? "—"} · Signals ${formatSnapshotEt(data.data_freshness?.signals_updated_at ?? undefined) ?? "—"}`
@@ -831,18 +828,21 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <FlaskConical className="h-4 w-4 shrink-0" />
               <span className="hidden sm:inline">{advancedMode ? "Advanced on" : "Advanced"}</span>
             </button>
-            <button
-              onClick={() => onRefresh(true)}
-            disabled={loading || isRefreshing}
-              className={clsx(
-                "flex items-center gap-2 px-3 py-2.5 sm:px-4 rounded-lg font-medium transition min-h-[44px] sm:min-h-0",
-                "bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-              )}
-            >
-              <RefreshCw className={clsx("h-4 w-4 shrink-0", loading && "animate-spin")} />
-              <span className="hidden sm:inline">{loading ? "Refreshing..." : "Refresh"}</span>
-              <span className="sm:hidden">{loading ? "…" : "Refresh"}</span>
-            </button>
+            {advancedMode && (
+              <button
+                onClick={() => onRefresh(true)}
+                disabled={loading || isRefreshing}
+                className={clsx(
+                  "flex items-center gap-2 px-3 py-2.5 sm:px-4 rounded-lg font-medium transition min-h-[44px] sm:min-h-0",
+                  "border border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                )}
+                title="Force full signal recompute (usually unnecessary — data updates automatically)"
+              >
+                <RefreshCw className={clsx("h-4 w-4 shrink-0", (loading || isRefreshing) && "animate-spin")} />
+                <span className="hidden sm:inline">{loading || isRefreshing ? "Refreshing…" : "Force refresh"}</span>
+                <span className="sm:hidden">{loading || isRefreshing ? "…" : "↻"}</span>
+              </button>
+            )}
             <button
               onClick={() => {
                 if (!data) return;
@@ -911,18 +911,16 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
       {/* Compact alert strip - always visible */}
       <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
-        {(stale || isRefreshing || data.warming || data.refresh_coalesced) && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-amber-100 text-sm flex items-center gap-2">
-            <RefreshCw className={clsx("h-4 w-4 shrink-0", (isRefreshing || data.refresh_status === "running") && "animate-spin")} />
-            <span>
-              {data.warming
-                ? "First load in progress — usually 1–3 minutes. Data will appear automatically."
-                : data.refresh_coalesced || data.refresh_status === "running"
-                  ? "Refresh already running — showing current data until it finishes."
-                  : isRefreshing
-                    ? "Refreshing dashboard…"
-                    : "Showing last saved snapshot — updating in background."}
-            </span>
+        {data.warming && (
+          <div className="rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 py-2 text-slate-300 text-sm flex items-center gap-2">
+            <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+            <span>First load in progress — usually 1–3 minutes. Data will appear automatically.</span>
+          </div>
+        )}
+        {isRefreshing && !data.warming && (
+          <div className="rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 py-2 text-slate-400 text-sm flex items-center gap-2">
+            <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+            <span>Running full refresh…</span>
           </div>
         )}
         {data.data_freshness && !data.warming && (

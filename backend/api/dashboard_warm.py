@@ -190,6 +190,7 @@ def compute_quote_tick_sync() -> dict | None:
         "portfolios": portfolios_out,
         "portfolio": portfolio,
         "data_freshness": df,
+        "warm_kind": "quote_tick",
     }
     ok = merge_dashboard_cache_updates(updates)
     logger.info(

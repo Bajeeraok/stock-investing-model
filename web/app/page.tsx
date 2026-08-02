@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Dashboard } from "@/components/Dashboard";
 import type { PaperVsBacktestDriftPayload } from "@/components/dashboard/PaperVsBacktestDrift";
 import { loadCachedDashboard, mergeDashboardData, saveCachedDashboard } from "@/lib/dashboardCache";
+import { connectDashboardWs, type DashboardWsConnection } from "@/lib/dashboardWs";
 
 // Use relative /api/* so Next.js rewrites proxy to backend (BACKEND_API_URL). No NEXT_PUBLIC needed for Railway.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -60,6 +61,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [wsLive, setWsLive] = useState(false);
 
   const lastFetchRef = useRef<number>(0);
   const stalePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -79,15 +81,15 @@ export default function Home() {
       saveCachedDashboard(json);
       setLastRefreshedAt(new Date());
     }
-    setStale(Boolean(json.stale));
-    if (fromNetwork && json.stale === false) {
+    setStale(Boolean(json.stale) || Boolean(json.warming));
+    if (fromNetwork && !json.warming && json.refresh_status !== "running") {
       setIsRefreshing(false);
     }
   }, []);
 
-  const refresh = useCallback(async (isAutoRetry = false, forceRefresh = false) => {
+  const refresh = useCallback(async (isAutoRetry = false, forceRefresh = false, silentBackground = false) => {
     const now = Date.now();
-    if (!forceRefresh && now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
+    if (!forceRefresh && !silentBackground && now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
     lastFetchRef.current = now;
 
     if (dashboardFetchInProgress) {
@@ -96,6 +98,7 @@ export default function Home() {
     }
     if (
       !forceRefresh &&
+      !silentBackground &&
       lastDashboardFetchStart !== 0 &&
       now - lastDashboardFetchStart < DASHBOARD_MIN_INTERVAL_MS
     ) {
@@ -106,7 +109,7 @@ export default function Home() {
     lastDashboardFetchStart = now;
     const hasCached = !!loadCachedDashboard();
     if (!hasCached && !data) setLoading(true);
-    else setIsRefreshing(true);
+    else if (forceRefresh) setIsRefreshing(true);
     if (!isAutoRetry) setError(null);
     let succeeded = false;
     let keepRefreshing = false;
@@ -189,6 +192,37 @@ export default function Home() {
     refresh();
   }, [refresh]);
 
+  // WebSocket push: backend notifies when Redis cache is updated (quote tick / signal warm / full run).
+  useEffect(() => {
+    let conn: DashboardWsConnection | null = null;
+    let wsCheckTimer: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    void connectDashboardWs(() => {
+      void refresh(false, false, true);
+    }).then((c) => {
+      if (cancelled) {
+        c?.close();
+        return;
+      }
+      conn = c;
+      if (!c) {
+        setWsLive(false);
+        return;
+      }
+      const sync = () => setWsLive(c.isConnected());
+      sync();
+      wsCheckTimer = setInterval(sync, 3000);
+    });
+
+    return () => {
+      cancelled = true;
+      setWsLive(false);
+      if (wsCheckTimer) clearInterval(wsCheckTimer);
+      conn?.close();
+    };
+  }, [refresh]);
+
   // Auto-refresh: only during US market hours on weekdays (ET).
   useEffect(() => {
     if (error || !data) return;
@@ -199,14 +233,17 @@ export default function Home() {
     return () => clearInterval(id);
   }, [data, error, refresh]);
 
-  // Poll when serving stale snapshot (or first-load warming) until cache is fresh
+  // HTTP poll fallback when WebSocket unavailable (cold start / proxy) or first-load warming.
   useEffect(() => {
-    const shouldPoll =
-      stale ||
+    const jobRunning =
       data?.warming === true ||
       data?.refresh_status === "running" ||
       data?.refresh_coalesced === true;
-    if (!shouldPoll || error) {
+    const shouldPoll =
+      jobRunning &&
+      !error &&
+      (!wsLive || data?.warming === true);
+    if (!shouldPoll) {
       if (stalePollRef.current) {
         clearInterval(stalePollRef.current);
         stalePollRef.current = null;
@@ -223,7 +260,7 @@ export default function Home() {
           st?.ready === true ||
           (st?.cache_fresh === true && st?.is_running === false && st?.status !== "running");
         if (ready) {
-          await refresh(false, false);
+          await refresh(false, false, true);
           setIsRefreshing(false);
         }
       } catch {
@@ -235,7 +272,7 @@ export default function Home() {
     return () => {
       if (stalePollRef.current) clearInterval(stalePollRef.current);
     };
-  }, [stale, data?.warming, data?.refresh_status, data?.refresh_coalesced, error, refresh]);
+  }, [data?.warming, data?.refresh_status, data?.refresh_coalesced, error, refresh, wsLive]);
 
   if (loading && !data && !retrying) {
     return (
@@ -297,7 +334,7 @@ export default function Home() {
         onRefresh={(force?: boolean) => {
           void refresh(false, !!force);
         }}
-        loading={loading || isRefreshing}
+        loading={loading}
         isRefreshing={isRefreshing}
         stale={stale}
         lastRefreshedAt={lastRefreshedAt}

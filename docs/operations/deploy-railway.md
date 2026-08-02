@@ -62,9 +62,11 @@ Optional (API keys – env vars override config.yaml; use these so you don't com
 | Backend | `POLYGON_API_KEY` | Polygon.io |
 | Backend | `FINNHUB_API_KEY` | Finnhub recommendations |
 | Backend | `OPENAI_API_KEY` | Chat copilot (gpt-4o-mini) |
-| Backend | `REDIS_URL` | Optional. Use `${{Redis.REDIS_URL}}` to reference Railway Redis. |
-| Backend | `EOD_SCHEDULER_CRON` | Optional. 5-field cron (e.g. `0 20 * * 1-5`) so the API runs a daily EOD snapshot in-process (APScheduler). Unset = no schedule. |
-| Backend | `EOD_SCHEDULER_TZ` | Optional. IANA timezone for that cron (default `America/New_York`). |
+| Backend | `REDIS_URL` | Recommended. Use `${{Redis.REDIS_URL}}` — EOD snapshots persist in Redis across deploys (disk alone is ephemeral without a Volume). |
+| Backend | `EOD_SCHEDULER_CRON` | **Required for scheduled EOD on Railway** unless you deploy code that reads `eod_schedule_time` from `config.yaml` (default `0 20 * * 1-5` after recent fix). Set explicitly: `0 20 * * 1-5` |
+| Backend | `EOD_SCHEDULER_TZ` | **Set with cron** — `America/New_York` (otherwise APScheduler may fire in UTC). |
+| Backend | `EOD_SCHEDULER_OFF` | Set to `1` only if you want to disable in-process EOD entirely. |
+| Backend | `DATA_ROOT` | Optional. Mount a Railway **Volume** at e.g. `/data` and set `DATA_ROOT=/data` for durable `eod/`, paper trades, audit DB. Without it, rely on `REDIS_URL` for EOD. |
 | Web | `NEXT_PUBLIC_API_URL` | Only if you need client-side direct API calls. Server-side rewrites use `BACKEND_API_URL`. |
 
 **Local:** Use `config.yaml`. **Railway:** Set env vars above; they override config. Leave API keys empty in `config.yaml` when deploying if you use env vars.
@@ -88,6 +90,8 @@ Optional (API keys – env vars override config.yaml; use these so you don't com
 5. **Variables** → Add:
    - `CORS_ORIGINS`: `https://your-web-domain.up.railway.app` (add after web is deployed)
    - `REDIS_URL`: `${{Redis.REDIS_URL}}` (if you added Redis; replace `Redis` with your Redis service name)
+   - `EOD_SCHEDULER_CRON`: `0 20 * * 1-5` (8pm ET Mon–Fri — full ~100-ticker EOD cohort)
+   - `EOD_SCHEDULER_TZ`: `America/New_York`
 
 ### 3. Add Web Service
 
@@ -143,12 +147,54 @@ Config in these files overrides dashboard settings. Env vars (e.g. `CORS_ORIGINS
 
 ---
 
+## EOD snapshot on Railway
+
+Railway has **no OS cron**. The backend runs EOD **inside the API process** (APScheduler) when enabled.
+
+### Enable (backend service → Variables)
+
+| Variable | Value |
+|----------|--------|
+| `EOD_SCHEDULER_CRON` | `0 20 * * 1-5` |
+| `EOD_SCHEDULER_TZ` | `America/New_York` |
+| `REDIS_URL` | `${{Redis.REDIS_URL}}` (recommended) |
+
+Redeploy or restart the backend after adding vars. On startup, logs should include:
+
+`EOD scheduler on: cron=0 20 * * 1-5 tz=America/New_York`
+
+### Verify
+
+```bash
+curl https://YOUR-BACKEND.up.railway.app/api/health
+```
+
+Look for `"eod_scheduler": { "enabled": true, ... }`.
+
+### Run EOD now (manual)
+
+```bash
+curl -X POST "https://YOUR-BACKEND.up.railway.app/api/eod/run?force=true&refresh_dashboard=true"
+```
+
+Takes ~1–2 minutes. Use `force=true` on weekends/holidays (scheduler skips non–Mon–Fri calendar days).
+
+Optional: set `EOD_RUN_SECRET` and pass `Authorization: Bearer <secret>`.
+
+### Why Signal Universe might look thin
+
+Dashboard refresh saves a **~43-ticker** snapshot. The **8pm EOD job** saves the **full audit cohort (~100 tickers)**. If `EOD_SCHEDULER_CRON` was never set, only thin snapshots exist — fix vars above and run manual `/api/eod/run`.
+
+---
+
 ## Checklist Before Going Live
 
 - [ ] Backend: `CORS_ORIGINS` includes web domain(s)
 - [ ] Web: `BACKEND_API_URL` points to backend URL (no trailing slash)
 - [ ] Both services have generated domains (Railway sets `PORT` automatically)
 - [ ] Redis (optional): Backend has `REDIS_URL=${{Redis.REDIS_URL}}` if Redis was added
+- [ ] Backend: `EOD_SCHEDULER_CRON=0 20 * * 1-5` and `EOD_SCHEDULER_TZ=America/New_York`
+- [ ] `/api/health` shows `eod_scheduler.enabled: true` after deploy
 
 ---
 

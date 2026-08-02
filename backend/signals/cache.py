@@ -630,7 +630,26 @@ def set_cached_dashboard(payload: dict) -> bool:
     ok = set_cached(key, payload, _dashboard_ttl_seconds())
     last_key = cache_key("dashboard", "last")
     set_cached(last_key, payload, 7 * 24 * 3600)
+    if ok:
+        _notify_dashboard_ws(payload)
     return ok
+
+
+def _notify_dashboard_ws(payload: dict) -> None:
+    try:
+        from api.dashboard_hub import notify_dashboard_updated_sync
+
+        df = payload.get("data_freshness") if isinstance(payload.get("data_freshness"), dict) else {}
+        kind = str(payload.get("warm_kind") or "full")
+        notify_dashboard_updated_sync(
+            kind,
+            refresh_ts=payload.get("refresh_ts"),
+            quotes_updated_at=df.get("quotes_updated_at"),
+            signals_updated_at=df.get("signals_updated_at"),
+            as_of_date=payload.get("as_of_date"),
+        )
+    except Exception:
+        pass
 
 
 def merge_dashboard_cache_updates(updates: dict) -> bool:

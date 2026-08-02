@@ -35,8 +35,8 @@ export function mergeDashboardData(
     merged.stale = false;
     merged.refresh_coalesced = false;
     merged.warming = false;
-    if (patch.refresh_status === "idle" || patch.refresh_status === "done") {
-      merged.refresh_status = "idle";
+    if (patch.refresh_status === "idle" || patch.refresh_status === "done" || !patch.refresh_status) {
+      merged.refresh_status = patch.refresh_status ?? "idle";
     }
     const df = patch.data_freshness ?? merged.data_freshness;
     if (df && typeof df === "object") {

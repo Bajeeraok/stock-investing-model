@@ -241,7 +241,8 @@ def enrich_shell_snapshot_meta(shell: dict) -> dict:
         df["snapshot_updated_at"] = snapshot_at
     if as_of and not df.get("snapshot_updated_et"):
         df["snapshot_updated_et"] = df.get("as_of_et")
-    if shell.get("stale"):
+    # Only flag serving_stale on true cold start (no usable snapshot yet).
+    if shell.get("warming"):
         df["serving_stale"] = True
     if shell.get("warming"):
         df.setdefault("status", "warming")

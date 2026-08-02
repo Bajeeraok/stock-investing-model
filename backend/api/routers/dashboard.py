@@ -24,7 +24,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile, WebSocket
 
 # Circuit breaker: after a 402 on FMP batch-quote, skip retries for 2 hours.
 # Resets on process restart or when the 2-hour window expires.
@@ -1229,7 +1229,7 @@ def _shell_while_compute_running(*, coalesced: bool = False) -> dict:
         cached = get_cached_dashboard()
         if cached is not None:
             shell = build_shell_from_full(cached, include_full_signals=False)
-            shell["stale"] = True
+            shell["stale"] = False
             shell["refresh_status"] = "running"
             if coalesced:
                 shell["refresh_coalesced"] = True
@@ -1244,7 +1244,7 @@ def _shell_while_compute_running(*, coalesced: bool = False) -> dict:
         stale = get_last_dashboard_snapshot()
         if stale is not None:
             shell = build_shell_from_full(stale, include_full_signals=False)
-            shell["stale"] = True
+            shell["stale"] = False
             shell["refresh_status"] = "running"
             if coalesced:
                 shell["refresh_coalesced"] = True
@@ -1282,7 +1282,7 @@ async def get_dashboard(
         cached = get_cached_dashboard() or get_last_dashboard_snapshot()
         if cached is not None:
             shell = build_shell_from_full(cached, include_full_signals=False)
-            shell["stale"] = True
+            shell["stale"] = False
         else:
             shell = build_warming_shell(_load_config())
         shell["refresh_status"] = "running"
@@ -1319,7 +1319,7 @@ async def get_dashboard(
 
         trigger_background_refresh(compute_for_background_refresh)
         shell = build_shell_from_full(stale, include_full_signals=False)
-        shell["stale"] = True
+        shell["stale"] = False
         shell["refresh_status"] = "running" if is_refresh_running() else get_refresh_status().get("status", "idle")
         df = shell.get("data_freshness") or {}
         if isinstance(df, dict):
@@ -1363,6 +1363,22 @@ async def get_dashboard_status():
     # Client should fetch /dashboard/shell (not ?refresh=true) when ready.
     status["ready"] = cache_fresh and not running
     return status
+
+
+@router.get("/dashboard/ws-config")
+async def get_dashboard_ws_config():
+    """Browser WebSocket URL when HTTP /api/* is proxied through Next.js."""
+    from api.dashboard_hub import ws_public_url
+
+    url = ws_public_url()
+    return {"enabled": bool(url), "url": url}
+
+
+@router.websocket("/dashboard/ws")
+async def dashboard_websocket(websocket: WebSocket):
+    from api.dashboard_hub import handle_websocket
+
+    await handle_websocket(websocket)
 
 
 def _compute_full_dashboard_sync() -> dict:

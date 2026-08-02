@@ -216,6 +216,13 @@ def _startup_background_refresh(delay_s: float = 10.0, max_age_min: float = 20.0
 def startup():
     logger.info("FastAPI server startup complete. Listening for requests on /api/*")
     try:
+        import asyncio
+        from api.dashboard_hub import set_event_loop
+
+        set_event_loop(asyncio.get_event_loop())
+    except Exception as e:
+        logger.warning("Dashboard WebSocket hub loop setup failed: %s", e)
+    try:
         scanner.startup_scanner()
     except Exception as e:
         logger.warning("Scanner startup failed: %s", e)
