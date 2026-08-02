@@ -78,7 +78,7 @@ class SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 logger.info("Backend: importing dashboard router...")
-from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2, push, income_book
+from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2, push, income_book, dev_tools
 from api import eod_scheduler
 
 logger.info("Backend: imports complete.")
@@ -122,6 +122,7 @@ app.add_middleware(
 
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
 app.include_router(income_book.router, prefix="/api", tags=["income-book"])
+app.include_router(dev_tools.router, prefix="/api", tags=["dev"])
 app.include_router(thrive_phase2.router, prefix="/api", tags=["thrive-phase2"])
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(alerts.router, prefix="/api", tags=["alerts"])

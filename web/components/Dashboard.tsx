@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Crosshair, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Crosshair, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -66,6 +66,7 @@ import {
   type PreMarketData,
   RiskDashboard,
   EodAndSystemPanel,
+  ApiEndpointsPanel,
   InsiderFlowTracker,
   TaxAwareExitPanel,
   AlertsPanel,
@@ -1713,6 +1714,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 </div>
               )}
               <TrackRecordFramework />
+              <ToggleSection id="analysis-api-endpoints" title="API endpoints (ad-hoc runner)" icon={<Terminal className="h-5 w-5" />} defaultOpen={false}>
+                <ApiEndpointsPanel />
+              </ToggleSection>
               <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen={false}>
                 <EodAndSystemPanel
                   eodSnapshots={data.eod_snapshots ?? []}
