@@ -633,7 +633,7 @@ class SignalAuditStore:
             SELECT {group_col} AS bucket,
                    COUNT(*) AS n,
                    AVG(composite_score) AS avg_score,
-                   SUM(CASE WHEN go_no_go = 'go' THEN 1 ELSE 0 END) AS n_go
+                   SUM(CASE WHEN go_no_go = 'go' OR entry_mode IN ('full_go', 'starter_only') THEN 1 ELSE 0 END) AS n_go
             FROM signal_events
             WHERE cohort_tag = ? AND source = 'live'
         """
@@ -947,7 +947,8 @@ class SignalAuditStore:
                 f"""
                 SELECT e.go_no_go AS bucket,
                        COUNT(*) AS n,
-                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
                 WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
@@ -959,7 +960,8 @@ class SignalAuditStore:
                 f"""
                 SELECT e.ml_signal AS bucket,
                        COUNT(*) AS n,
-                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
                 WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
@@ -973,7 +975,8 @@ class SignalAuditStore:
                 f"""
                 SELECT e.gates_passed AS bucket,
                        COUNT(*) AS n,
-                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
                 WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
@@ -986,7 +989,8 @@ class SignalAuditStore:
                 f"""
                 SELECT e.entry_mode AS bucket,
                        COUNT(*) AS n,
-                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
                 WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
@@ -999,7 +1003,8 @@ class SignalAuditStore:
                 f"""
                 SELECT e.track AS bucket,
                        COUNT(*) AS n,
-                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
                 WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
@@ -1012,7 +1017,8 @@ class SignalAuditStore:
                 f"""
                 SELECT e.market_cap_bucket AS bucket,
                        COUNT(*) AS n,
-                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
                 FROM signal_outcomes o
                 JOIN signal_events e ON e.id = o.signal_event_id
                 WHERE e.cohort_tag = ? AND e.source = 'live'{date_filter}
@@ -1055,6 +1061,7 @@ class SignalAuditStore:
             actionable_slices = {
                 "full_go": _slice_stats(" AND e.entry_mode = 'full_go'"),
                 "go_4_gates": _slice_stats(" AND e.gates_passed = 4 AND e.go_no_go = 'go'"),
+                "gates_3plus": _slice_stats(" AND e.gates_passed >= 3"),
                 "starter_only": _slice_stats(" AND e.entry_mode = 'starter_only'"),
                 "all_go": _slice_stats(" AND e.go_no_go = 'go'"),
                 "hold_no_go": _slice_stats(" AND e.go_no_go = 'no_go'"),
@@ -1074,10 +1081,14 @@ class SignalAuditStore:
             for r in rows:
                 n = int(r["n"] or 0)
                 nw = int(r["n_win"] or 0)
+                nl = int(r["n_loss"] or 0)
+                actionable = nw + nl
                 out.append({
                     "bucket": r["bucket"],
                     "n": n,
-                    "win_rate_pct": round(100.0 * nw / n, 1) if n else None,
+                    "wins": nw,
+                    "losses": nl,
+                    "win_rate_pct": round(100.0 * nw / actionable, 1) if actionable else None,
                 })
             return out
 
@@ -1099,7 +1110,12 @@ class SignalAuditStore:
         if int(headline_slice.get("n") or 0) < 5:
             headline_slice = actionable_slices.get("full_go") or headline_slice
         if int(headline_slice.get("n") or 0) < 5:
+            headline_slice = actionable_slices.get("gates_3plus") or headline_slice
+        if int(headline_slice.get("n") or 0) < 5:
             headline_slice = actionable_slices.get("all_go") or headline_slice
+
+        actionable_total = wins + losses
+        blended_decided = decided
 
         return {
             "events_total": n_total,
@@ -1107,7 +1123,8 @@ class SignalAuditStore:
             "partial_7d_n": partial_7d,
             "pending_n": max(0, n_total - n_resolved),
             "since_date": since_date,
-            "win_rate_pct": round(100.0 * wins / decided, 1) if decided else None,
+            "win_rate_pct": round(100.0 * wins / actionable_total, 1) if actionable_total else None,
+            "blended_win_rate_pct": round(100.0 * wins / blended_decided, 1) if blended_decided else None,
             "wins": wins,
             "losses": losses,
             "neutral": decided - wins - losses,

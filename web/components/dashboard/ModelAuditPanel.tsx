@@ -55,8 +55,6 @@ export type ModelAuditRecord = {
   readiness_score?: number | null;
 };
 
-type ModeFilter = "ALL" | "full_go" | "starter_only" | "hard_lock";
-
 const ENTRY_MODE_CFG = {
   full_go:      { label: "FULL GO",   cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-200" },
   starter_only: { label: "STARTER",   cls: "border-amber-500/40  bg-amber-500/10  text-amber-200"   },
@@ -91,6 +89,7 @@ export type ModelAuditOutcomeSummary = {
   wins?: number;
   losses?: number;
   neutral?: number;
+  blended_win_rate_pct?: number | null;
   headline_actionable_win_rate_pct?: number | null;
   headline_actionable_n?: number;
   actionable_slices?: Record<string, ModelAuditActionableSlice>;
@@ -165,6 +164,90 @@ export type ModelAuditPayload = {
 
 type DateRange = "1W" | "1M" | "ALL";
 type TrackFilter = "all" | "accumulate" | "velocity";
+
+type ColumnFilters = {
+  ticker: string;
+  category: string;
+  retail: string;
+  mlSignal: string;
+  gates: string;
+  track: string;
+  entryMode: string;
+  verdict: string;
+  rsiMin: string;
+  rsiMax: string;
+  scoreMin: string;
+  scoreMax: string;
+};
+
+const EMPTY_COL_FILTERS: ColumnFilters = {
+  ticker: "",
+  category: "",
+  retail: "",
+  mlSignal: "",
+  gates: "",
+  track: "",
+  entryMode: "",
+  verdict: "",
+  rsiMin: "",
+  rsiMax: "",
+  scoreMin: "",
+  scoreMax: "",
+};
+
+function uniqueSorted(values: (string | null | undefined)[]): string[] {
+  return Array.from(new Set(values.map((v) => String(v || "").trim()).filter(Boolean))).sort();
+}
+
+function ColFilterSelect({
+  value,
+  onChange,
+  options,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={clsx(
+        "w-full min-w-0 rounded border border-slate-700 bg-slate-950/80 px-1 py-0.5 text-[10px] text-slate-300",
+        className,
+      )}
+    >
+      <option value="">{placeholder}</option>
+      {options.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  );
+}
+
+function ColFilterNum({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <input
+      type="number"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full min-w-0 rounded border border-slate-700 bg-slate-950/80 px-1 py-0.5 text-[10px] text-slate-300 tabular-nums"
+    />
+  );
+}
 const DATE_RANGES: { label: string; value: DateRange }[] = [
   { label: "1 W", value: "1W" },
   { label: "1 M", value: "1M" },
@@ -245,34 +328,65 @@ function BreakdownTable({
 }
 
 export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | undefined }) {
-  const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
-  const [gatesFilter, setGatesFilter] = useState<string>("");
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
-  const [modeFilter, setModeFilter] = useState<ModeFilter>("ALL");
+  const [recommendedOnly, setRecommendedOnly] = useState(false);
+  const [colFilters, setColFilters] = useState<ColumnFilters>(EMPTY_COL_FILTERS);
   const [page, setPage] = useState(0);
 
+  const setColFilter = (key: keyof ColumnFilters, value: string) => {
+    setColFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const clearAllFilters = () => {
+    setDateRange("ALL");
+    setTrackFilter("all");
+    setRecommendedOnly(false);
+    setColFilters(EMPTY_COL_FILTERS);
+  };
+
   const records = audit?.enabled ? audit.recent_records ?? [] : [];
-  const uniqueTickers = useMemo(
-    () => Array.from(new Set(records.map((r) => r.ticker))).sort(),
-    [records],
-  );
+  const uniqueTickers = useMemo(() => uniqueSorted(records.map((r) => r.ticker)), [records]);
+  const uniqueCategories = useMemo(() => uniqueSorted(records.map((r) => r.market_cap_bucket)), [records]);
+  const uniqueRetail = useMemo(() => uniqueSorted(records.map((r) => r.retail_verdict)), [records]);
+  const uniqueMlSignals = useMemo(() => uniqueSorted(records.map((r) => r.ml_signal)), [records]);
+  const uniqueTracks = useMemo(() => uniqueSorted(records.map((r) => r.track || "accumulate")), [records]);
+  const uniqueEntryModes = useMemo(() => uniqueSorted(records.map((r) => r.entry_mode)), [records]);
+  const uniqueVerdicts = useMemo(() => uniqueSorted(records.map((r) => r.verdict)), [records]);
 
   const filtered = useMemo(() => {
     const cutoff = cutoffDate(dateRange);
-    const gf = gatesFilter;
     const trk = trackFilter;
+    const cf = colFilters;
+    const rsiMin = cf.rsiMin.trim() ? parseFloat(cf.rsiMin) : null;
+    const rsiMax = cf.rsiMax.trim() ? parseFloat(cf.rsiMax) : null;
+    const scoreMin = cf.scoreMin.trim() ? parseFloat(cf.scoreMin) : null;
+    const scoreMax = cf.scoreMax.trim() ? parseFloat(cf.scoreMax) : null;
+
     return records.filter((r) => {
-      if (tickerFilter && r.ticker !== tickerFilter) return false;
       if (cutoff && r.signal_date < cutoff) return false;
-      if (gf !== "" && String(r.gates_passed ?? "") !== gf) return false;
       const track = (r.track || "accumulate").toLowerCase();
       if (trk === "accumulate" && track === "velocity") return false;
       if (trk === "velocity" && track !== "velocity") return false;
-      if (modeFilter !== "ALL" && (r.entry_mode || "") !== modeFilter) return false;
+      if (recommendedOnly) {
+        if (track === "velocity") return false;
+        if (r.entry_mode !== "full_go") return false;
+      }
+      if (cf.ticker && r.ticker !== cf.ticker) return false;
+      if (cf.category && String(r.market_cap_bucket || "") !== cf.category) return false;
+      if (cf.retail && String(r.retail_verdict || "") !== cf.retail) return false;
+      if (cf.mlSignal && String(r.ml_signal || "") !== cf.mlSignal) return false;
+      if (cf.gates !== "" && String(r.gates_passed ?? "") !== cf.gates) return false;
+      if (cf.track && track !== cf.track.toLowerCase()) return false;
+      if (cf.entryMode && String(r.entry_mode || "") !== cf.entryMode) return false;
+      if (cf.verdict && String(r.verdict || "") !== cf.verdict) return false;
+      if (rsiMin != null && (r.rsi == null || r.rsi < rsiMin)) return false;
+      if (rsiMax != null && (r.rsi == null || r.rsi > rsiMax)) return false;
+      if (scoreMin != null && (r.composite_score == null || r.composite_score < scoreMin)) return false;
+      if (scoreMax != null && (r.composite_score == null || r.composite_score > scoreMax)) return false;
       return true;
     });
-  }, [records, tickerFilter, dateRange, gatesFilter, trackFilter, modeFilter]);
+  }, [records, dateRange, trackFilter, recommendedOnly, colFilters]);
 
   const gateOptions = useMemo(() => {
     const set = new Set(records.map((r) => r.gates_passed).filter((g) => g != null));
@@ -283,9 +397,15 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
     return arr.sort((a, b) => Number(a) - Number(b));
   }, [records]);
 
+  const hasActiveFilters =
+    recommendedOnly ||
+    dateRange !== "ALL" ||
+    trackFilter !== "all" ||
+    Object.values(colFilters).some((v) => v !== "");
+
   useEffect(() => {
     setPage(0);
-  }, [tickerFilter, dateRange, gatesFilter, trackFilter, modeFilter]);
+  }, [dateRange, trackFilter, recommendedOnly, colFilters]);
 
   const pagedRows = useMemo(
     () => paginateRows(filtered, page, AUDIT_PAGE_SIZE),
@@ -584,10 +704,10 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             </span>
             {audit.outcome_summary.win_rate_pct != null && (
               <span>
-                Win rate:{" "}
+                Actionable win rate (W÷W+L):{" "}
                 <strong
                   className={
-                    audit.outcome_summary.win_rate_pct >= 55 ? "text-emerald-400" : "text-amber-300"
+                    audit.outcome_summary.win_rate_pct >= 70 ? "text-emerald-400" : audit.outcome_summary.win_rate_pct >= 55 ? "text-amber-300" : "text-red-300"
                   }
                 >
                   {audit.outcome_summary.win_rate_pct.toFixed(1)}%
@@ -597,6 +717,11 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   (W {audit.outcome_summary.wins ?? 0} · L {audit.outcome_summary.losses ?? 0} · N{" "}
                   {audit.outcome_summary.neutral ?? 0})
                 </span>
+              </span>
+            )}
+            {audit.outcome_summary.blended_win_rate_pct != null && (
+              <span className="text-slate-500">
+                Blended (incl. neutral): {audit.outcome_summary.blended_win_rate_pct.toFixed(1)}%
               </span>
             )}
             {(audit.outcome_summary.partial_7d_n ?? 0) > 0 && (
@@ -657,26 +782,19 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       <div>
         <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Recent captures</p>
         <div className="flex flex-wrap items-center gap-2 mb-2">
-          <select
-            value={tickerFilter}
-            onChange={(e) => setTickerFilter(e.target.value)}
-            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
+          <button
+            type="button"
+            onClick={() => setRecommendedOnly((v) => !v)}
+            className={clsx(
+              "rounded border px-2.5 py-1 text-[11px] font-medium touch-manipulation",
+              recommendedOnly
+                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
+                : "border-slate-600 text-slate-400 hover:border-slate-500",
+            )}
+            title="full_go + accumulate only — highest-quality entry slice"
           >
-            <option value="">All tickers ({uniqueTickers.length})</option>
-            {uniqueTickers.map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <select
-            value={gatesFilter}
-            onChange={(e) => setGatesFilter(e.target.value)}
-            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
-          >
-            <option value="">All gates</option>
-            {gateOptions.map((g) => (
-              <option key={String(g)} value={String(g)}>{g}/{records[0]?.gates_total ?? 4} pass</option>
-            ))}
-          </select>
+            Recommended entries only
+          </button>
           <div className="flex rounded border border-slate-600 overflow-hidden">
             {DATE_RANGES.map((dr) => (
               <button
@@ -692,16 +810,15 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               </button>
             ))}
           </div>
-          <select
-            value={modeFilter}
-            onChange={(e) => setModeFilter(e.target.value as ModeFilter)}
-            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300"
-          >
-            <option value="ALL">All entry modes</option>
-            <option value="full_go">Full Go</option>
-            <option value="starter_only">Starter Only</option>
-            <option value="hard_lock">Hard Lock</option>
-          </select>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="text-[11px] text-violet-300 hover:text-violet-200 underline"
+            >
+              Clear filters
+            </button>
+          )}
           <span className="text-[10px] text-slate-600">{filtered.length} rows</span>
         </div>
 
@@ -727,6 +844,105 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <th className="py-1.5 pr-2 font-medium">7d</th>
                   <th className="py-1.5 pr-2 font-medium">~20d</th>
                   <th className="py-1.5 pr-2 font-medium">Verdict</th>
+                </tr>
+                <tr className="border-b border-slate-700/60 bg-slate-900/60">
+                  <th className="py-1 pr-1" />
+                  <th className="py-1 pr-1 min-w-[4.5rem]">
+                    <ColFilterSelect
+                      value={colFilters.ticker}
+                      onChange={(v) => setColFilter("ticker", v)}
+                      options={uniqueTickers}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1 min-w-[5.5rem]">
+                    <ColFilterSelect
+                      value={colFilters.category}
+                      onChange={(v) => setColFilter("category", v)}
+                      options={uniqueCategories}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1 min-w-[6rem]">
+                    <ColFilterSelect
+                      value={colFilters.retail}
+                      onChange={(v) => setColFilter("retail", v)}
+                      options={uniqueRetail}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1 min-w-[4.5rem]">
+                    <ColFilterSelect
+                      value={colFilters.mlSignal}
+                      onChange={(v) => setColFilter("mlSignal", v)}
+                      options={uniqueMlSignals}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1 min-w-[3rem]">
+                    <ColFilterSelect
+                      value={colFilters.gates}
+                      onChange={(v) => setColFilter("gates", v)}
+                      options={gateOptions.map(String)}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1" />
+                  <th className="py-1 pr-1 min-w-[4.5rem]">
+                    <ColFilterSelect
+                      value={colFilters.track}
+                      onChange={(v) => setColFilter("track", v)}
+                      options={uniqueTracks}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1 min-w-[4.5rem]">
+                    <ColFilterSelect
+                      value={colFilters.entryMode}
+                      onChange={(v) => setColFilter("entryMode", v)}
+                      options={uniqueEntryModes}
+                      placeholder="All"
+                    />
+                  </th>
+                  <th className="py-1 pr-1" />
+                  <th className="py-1 pr-1 min-w-[3rem]">
+                    <div className="flex gap-0.5">
+                      <ColFilterNum
+                        value={colFilters.scoreMin}
+                        onChange={(v) => setColFilter("scoreMin", v)}
+                        placeholder="min"
+                      />
+                      <ColFilterNum
+                        value={colFilters.scoreMax}
+                        onChange={(v) => setColFilter("scoreMax", v)}
+                        placeholder="max"
+                      />
+                    </div>
+                  </th>
+                  <th className="py-1 pr-1 min-w-[3rem]">
+                    <div className="flex gap-0.5">
+                      <ColFilterNum
+                        value={colFilters.rsiMin}
+                        onChange={(v) => setColFilter("rsiMin", v)}
+                        placeholder="min"
+                      />
+                      <ColFilterNum
+                        value={colFilters.rsiMax}
+                        onChange={(v) => setColFilter("rsiMax", v)}
+                        placeholder="max"
+                      />
+                    </div>
+                  </th>
+                  <th className="py-1 pr-1" />
+                  <th className="py-1 pr-1" />
+                  <th className="py-1 pr-1 min-w-[4rem]">
+                    <ColFilterSelect
+                      value={colFilters.verdict}
+                      onChange={(v) => setColFilter("verdict", v)}
+                      options={uniqueVerdicts}
+                      placeholder="All"
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>

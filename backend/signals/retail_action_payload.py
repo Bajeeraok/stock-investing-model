@@ -1174,6 +1174,7 @@ def enrich_dashboard_signal_row(
     row["gate_cleared"] = payload["gate_cleared"]
     row["entry_mode"] = entry["entry_mode"]
     row["max_sizing_pct"] = entry["max_sizing_pct"]
+    align_ml_signal_with_retail_gates(row)
     try:
         from signals.trim_gates import attach_trim_gates_to_row
 
@@ -1181,3 +1182,25 @@ def enrich_dashboard_signal_row(
     except Exception:
         pass
     return row
+
+
+def align_ml_signal_with_retail_gates(row: dict[str, Any]) -> None:
+    """
+    Downgrade ML `signal` when retail gates block a full entry.
+
+    BUY/STRONG BUY without full_go inflates audit win rate (technical BUY but gates say wait).
+    """
+    sig = str(row.get("signal") or "").strip().upper()
+    if sig not in ("BUY", "STRONG BUY"):
+        return
+    em = str(row.get("entry_mode") or "").lower()
+    rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
+    gng = str(rs.get("go_no_go") or "").lower()
+    if em == "full_go" or gng == "go":
+        return
+    if em == "starter_only":
+        row["signal"] = "WATCH"
+        row["signal_gate_capped"] = "starter_only"
+        return
+    row["signal"] = "WATCH" if sig == "BUY" else "HOLD"
+    row["signal_gate_capped"] = em or gng or "hard_lock"
