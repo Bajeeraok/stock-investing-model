@@ -126,6 +126,13 @@ def signal_bucket_from_row(row: dict | None, buy_min: float = 70, sell_max: floa
         score = float(score)
     except (TypeError, ValueError):
         return "N/A"
+    em = str(row.get("entry_mode") or "").lower()
+    go = str(row.get("go_no_go") or "").lower()
+    # High composite without full_go is not an add signal — avoids inflating HOLD/ADD forward stats.
+    if em != "full_go":
+        if score <= sell_max:
+            return "CONSIDER TRIM"
+        return "HOLD"
     if score >= buy_min:
         return "HOLD/ADD"
     if score <= sell_max:
@@ -302,6 +309,12 @@ def get_forward_tracking(
                 if enrich_gates:
                     if not row_work.get("gates_frozen"):
                         enrich_tracking_row(row_work)
+                try:
+                    from signals.retail_action_payload import align_ml_signal_with_retail_gates
+
+                    align_ml_signal_with_retail_gates(row_work)
+                except Exception:
+                    pass
                 if not passes_tracking_gate(row_work, config, "forward_tracking"):
                     continue
                 ret_pct, data_quality = compute_validated_forward_return(
@@ -444,8 +457,7 @@ def get_forward_tracking(
         em_rows = [
             r
             for r in records
-            if r.get("horizon_days") == 20
-            and str(r.get("entry_mode") or "").lower() == em_key
+            if r.get("horizon_days") == 20 and str(r.get("entry_mode") or "").lower() == em_key
         ]
         if em_rows:
             summary_by_entry_mode[em_key] = aggregate_horizon_stats(em_rows)
@@ -455,6 +467,19 @@ def get_forward_tracking(
             summary_by_entry_mode[em_key]["hit_rate_pct"] = summary_by_entry_mode[em_key].get(
                 "win_rate_pct"
             )
+
+    actionable_buy_rows = [
+        r
+        for r in records
+        if r.get("horizon_days") == 20
+        and str(r.get("entry_mode") or "").lower() == "full_go"
+        and str(r.get("our_signal") or "") == "HOLD/ADD"
+    ]
+    summary_actionable_buy: dict[str, Any] = {}
+    if actionable_buy_rows:
+        summary_actionable_buy = aggregate_horizon_stats(actionable_buy_rows)
+        summary_actionable_buy["avg_return_20d_pct"] = summary_actionable_buy.get("avg_return_pct")
+        summary_actionable_buy["label"] = "full_go + HOLD/ADD (entry slice)"
 
     summary_by_gates = aggregate_by_gates([r for r in records if r.get("horizon_days") == 20])
     summary_by_trim_gates = aggregate_by_trim_gates(
@@ -483,6 +508,7 @@ def get_forward_tracking(
         "summary_by_signal": summary_by_signal,
         "summary_by_go_no_go": summary_by_go_no_go,
         "summary_by_entry_mode": summary_by_entry_mode,
+        "summary_actionable_buy": summary_actionable_buy if summary_actionable_buy else None,
         "summary_by_gates": summary_by_gates,
         "summary_by_trim_gates": summary_by_trim_gates,
         "signal_source_counts": signal_source_counts,
@@ -491,7 +517,8 @@ def get_forward_tracking(
             "Returns and ST stop/target touches from EOD OHLCV between snapshot dates "
             "(not paper trades). Stale holiday duplicates and impossible close jumps are "
             "excluded; 1d rows may use daily_move_pct when close chain is broken. "
-            "Score buckets (HOLD/ADD) differ from 4-gate GO audit — see By gate status."
+            "HOLD/ADD bucket requires full_go entry_mode; ML BUY without full_go is downgraded. "
+            "See summary_actionable_buy for entry slice. Gate buckets differ from audit verdict rules."
         ),
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }

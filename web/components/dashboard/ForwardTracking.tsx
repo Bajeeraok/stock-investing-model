@@ -82,6 +82,8 @@ interface Props {
   summary_by_signal: SummaryBySignal;
   summary_by_go_no_go?: SummaryByGoNoGo;
   summary_by_gates?: SummaryByGates;
+  summary_actionable_buy?: HorizonSummary & { label?: string; avg_return_20d_pct?: number };
+  summary_by_entry_mode?: Record<string, HorizonSummary & { avg_return_20d_pct?: number; hit_rate_pct?: number }>;
   data_source_note?: string | null;
   message?: string | null;
   meta?: ForwardMeta | null;
@@ -142,6 +144,8 @@ export function ForwardTracking({
   summary_by_signal,
   summary_by_go_no_go,
   summary_by_gates,
+  summary_actionable_buy,
+  summary_by_entry_mode,
   data_source_note,
   message,
   meta,
@@ -377,6 +381,47 @@ export function ForwardTracking({
         </div>
       )}
 
+      {summary_actionable_buy && (summary_actionable_buy.n_observations ?? 0) > 0 && (
+        <div className="mb-3 rounded-lg border border-emerald-500/35 bg-emerald-950/30 px-3 py-2">
+          <p className="text-xs text-emerald-300/90 font-medium mb-1">
+            Entry slice (20d) — full_go + BUY/HOLD/ADD only
+          </p>
+          <p className="text-sm text-slate-200">
+            Avg return{" "}
+            <span
+              className={
+                (summary_actionable_buy.avg_return_20d_pct ?? summary_actionable_buy.avg_return_pct ?? 0) >= 0
+                  ? "text-emerald-400 font-semibold"
+                  : "text-red-400 font-semibold"
+              }
+            >
+              {fmt(summary_actionable_buy.avg_return_20d_pct ?? summary_actionable_buy.avg_return_pct ?? 0)}
+            </span>
+            <span className="text-slate-500 text-xs ml-2">
+              win {summary_actionable_buy.win_rate_pct ?? "—"}% · n={summary_actionable_buy.n_observations}
+            </span>
+          </p>
+          <p className="text-[10px] text-slate-500 mt-1">
+            Use this row for entry quality — broad HOLD/ADD bucket mixes gate-blocked high scores.
+          </p>
+        </div>
+      )}
+
+      {summary_by_entry_mode && Object.keys(summary_by_entry_mode).length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-slate-500 mb-1">By entry mode (20d forward)</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {Object.entries(summary_by_entry_mode).map(([em, s]) => (
+              <span key={em} className="text-slate-300">
+                <span className="text-slate-400">{em}:</span>{" "}
+                {fmt(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0)} win {s.hit_rate_pct ?? s.win_rate_pct ?? "—"}%
+                (n={s.n_observations})
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {summary_by_gates && Object.keys(summary_by_gates).length > 0 && (
         <div className="mb-3">
           <p className="text-xs text-slate-500 mb-1">By gates (20d forward)</p>
@@ -396,7 +441,7 @@ export function ForwardTracking({
       {summary_by_go_no_go && Object.keys(summary_by_go_no_go).length > 0 && (
         <div className="mb-3 rounded-lg border border-emerald-500/20 bg-emerald-950/20 px-3 py-2">
           <p className="text-xs text-emerald-300/90 font-medium mb-1">
-            Model alignment (20d forward) — compare to audit ~51% on GO cohort
+            Model alignment (20d forward) — GO vs NO-GO (not the same as full_go entry)
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {Object.entries(summary_by_go_no_go).map(([go, s]) => (
@@ -415,7 +460,7 @@ export function ForwardTracking({
       {summary_by_signal && Object.keys(summary_by_signal).length > 0 && (
         <div className="mb-3">
           <p className="text-xs text-slate-500 mb-1">
-            By score bucket (20d forward) — HOLD/ADD uses composite ≥ buy_min, not 4-gate GO
+            By signal bucket (20d) — HOLD/ADD requires full_go; high score alone maps to HOLD
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {Object.entries(summary_by_signal).map(([sig, s]) => (

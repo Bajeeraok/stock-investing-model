@@ -180,7 +180,9 @@ def compute_quote_tick_sync() -> dict | None:
         _patch_portfolios_with_prices(portfolios_out, prices, fmp_batch=fmp_batch)
     portfolio = portfolios_out.get("All") or cached.get("portfolio") or {}
 
-    ts = _iso_utc_now()
+    from signals.time_et import now_iso_et
+
+    ts = now_iso_et()
     df = dict(cached.get("data_freshness") or {})
     df["quotes_updated_at"] = ts
 
@@ -643,7 +645,7 @@ def compute_signal_warm_sync() -> dict:
 
     as_of_date = now_iso_et()
     as_of_et = format_et_display()
-    ts = _iso_utc_now()
+    ts = now_iso_et()
 
     ohlcv_dates = [str(r["ohlcv_last_date"])[:10] for r in results if isinstance(r, dict) and r.get("ohlcv_last_date")]
     price_last_bar_date = max(ohlcv_dates) if ohlcv_dates else (cached.get("data_freshness") or {}).get("price_last_bar_date")

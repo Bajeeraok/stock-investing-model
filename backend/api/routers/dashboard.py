@@ -1303,6 +1303,11 @@ async def get_dashboard(
             df = shell.get("data_freshness") or {}
             if isinstance(df, dict):
                 df["snapshot_source"] = "cache"
+                logger.info(
+                    "[dashboard] cache freshness signals=%s quotes=%s",
+                    df.get("signals_updated_at"),
+                    df.get("quotes_updated_at"),
+                )
             return enrich_shell_snapshot_meta(shell)
     except Exception as e:
         logger.debug("[dashboard] cache check skipped: %s", e)
@@ -1324,7 +1329,15 @@ async def get_dashboard(
         df = shell.get("data_freshness") or {}
         if isinstance(df, dict):
             df["snapshot_source"] = "last_snapshot"
-        return enrich_shell_snapshot_meta(shell)
+        shell = enrich_shell_snapshot_meta(shell)
+        df2 = shell.get("data_freshness") or {}
+        if isinstance(df2, dict):
+            logger.info(
+                "[dashboard] last_snapshot freshness (meta overlay) signals=%s quotes=%s",
+                df2.get("signals_updated_at"),
+                df2.get("quotes_updated_at"),
+            )
+        return shell
 
     job_status = get_refresh_status()
     if job_status.get("status") == "error":

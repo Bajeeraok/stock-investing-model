@@ -1,7 +1,7 @@
 /** Client-side stale-while-revalidate cache for instant dashboard paint. */
 import type { DashboardData } from "@/app/page";
 
-export const DASHBOARD_CACHE_KEY = "thrive-dashboard-v1";
+export const DASHBOARD_CACHE_KEY = "thrive-dashboard-v2";
 
 export function loadCachedDashboard(): DashboardData | null {
   if (typeof window === "undefined") return null;
@@ -30,6 +30,9 @@ export function mergeDashboardData(
   patch: Partial<DashboardData>
 ): DashboardData {
   const merged: DashboardData = { ...base, ...patch };
+  if (patch.data_freshness && typeof patch.data_freshness === "object") {
+    merged.data_freshness = { ...(base.data_freshness ?? {}), ...patch.data_freshness };
+  }
   // Explicitly clear transient refresh flags when server says data is fresh.
   if (patch.stale === false) {
     merged.stale = false;
@@ -38,9 +41,8 @@ export function mergeDashboardData(
     if (patch.refresh_status === "idle" || patch.refresh_status === "done" || !patch.refresh_status) {
       merged.refresh_status = patch.refresh_status ?? "idle";
     }
-    const df = patch.data_freshness ?? merged.data_freshness;
-    if (df && typeof df === "object") {
-      merged.data_freshness = { ...df, serving_stale: false };
+    if (merged.data_freshness && typeof merged.data_freshness === "object") {
+      merged.data_freshness = { ...merged.data_freshness, serving_stale: false };
     }
   }
   return merged;

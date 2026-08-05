@@ -117,7 +117,10 @@ export default function Home() {
       const shellBase = API_BASE ? `${API_BASE}/api/dashboard/shell` : "/api/dashboard/shell";
       const refreshUrl = API_BASE ? `${API_BASE}/api/dashboard?refresh=true` : "/api/dashboard?refresh=true";
       const url = forceRefresh ? refreshUrl : shellBase;
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      });
       if (!res.ok) {
         let errMsg = res.status === 503
           ? "Dashboard warming up — retry in a moment."
@@ -221,6 +224,17 @@ export default function Home() {
       if (wsCheckTimer) clearInterval(wsCheckTimer);
       conn?.close();
     };
+  }, [refresh]);
+
+  // Mobile: refetch when tab becomes visible (Safari suspends WebSocket / stale localStorage).
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refresh(false, false, true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refresh]);
 
   // Auto-refresh: only during US market hours on weekdays (ET).

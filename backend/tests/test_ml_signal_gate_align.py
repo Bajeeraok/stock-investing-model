@@ -28,3 +28,23 @@ def test_starter_only_caps_to_watch():
     align_ml_signal_with_retail_gates(row)
     assert row["signal"] == "WATCH"
     assert row.get("signal_gate_capped") == "starter_only"
+
+
+def test_go_without_full_go_downgrades_buy():
+    row = {
+        "signal": "BUY",
+        "entry_mode": "starter_only",
+        "retail_status": {"go_no_go": "go"},
+    }
+    align_ml_signal_with_retail_gates(row)
+    assert row["signal"] == "WATCH"
+
+
+def test_go_hard_lock_downgrades_buy():
+    row = {
+        "signal": "BUY",
+        "entry_mode": "hard_lock",
+        "retail_status": {"go_no_go": "go"},
+    }
+    align_ml_signal_with_retail_gates(row)
+    assert row["signal"] == "WATCH"

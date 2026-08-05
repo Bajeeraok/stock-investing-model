@@ -249,6 +249,27 @@ def enrich_shell_snapshot_meta(shell: dict) -> dict:
     refresh = shell.get("refresh_status")
     if refresh:
         df["refresh_status"] = refresh
+    try:
+        from signals.cache import get_dashboard_freshness_meta
+
+        meta = get_dashboard_freshness_meta()
+        if meta:
+            for k in (
+                "quotes_updated_at",
+                "signals_updated_at",
+                "snapshot_updated_at",
+                "snapshot_updated_et",
+                "as_of_et",
+                "price_last_bar_date",
+            ):
+                if meta.get(k) is not None:
+                    df[k] = meta[k]
+            if meta.get("refresh_ts"):
+                shell["refresh_ts"] = meta["refresh_ts"]
+            if meta.get("as_of_date") and not shell.get("as_of_date"):
+                shell["as_of_date"] = meta["as_of_date"]
+    except Exception:
+        pass
     shell["data_freshness"] = df
     return shell
 

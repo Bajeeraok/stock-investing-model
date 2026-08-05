@@ -624,8 +624,41 @@ def get_last_dashboard_snapshot() -> dict | None:
     return None
 
 
+DASHBOARD_FRESHNESS_META_KEY = "dashboard:freshness_meta"
+DASHBOARD_FRESHNESS_META_TTL = 7 * 24 * 3600
+
+
+def _persist_dashboard_freshness_meta(payload: dict) -> None:
+    """Small Redis key so timestamps stay correct when the large dashboard blob is missing/evicted."""
+    if not isinstance(payload, dict):
+        return
+    df = payload.get("data_freshness") if isinstance(payload.get("data_freshness"), dict) else {}
+    meta = {
+        "quotes_updated_at": df.get("quotes_updated_at"),
+        "signals_updated_at": df.get("signals_updated_at"),
+        "snapshot_updated_at": df.get("snapshot_updated_at"),
+        "snapshot_updated_et": df.get("snapshot_updated_et"),
+        "as_of_et": df.get("as_of_et"),
+        "price_last_bar_date": df.get("price_last_bar_date"),
+        "refresh_ts": payload.get("refresh_ts"),
+        "as_of_date": payload.get("as_of_date"),
+    }
+    if not any(v is not None for v in meta.values()):
+        return
+    try:
+        set_cached(DASHBOARD_FRESHNESS_META_KEY, meta, DASHBOARD_FRESHNESS_META_TTL)
+    except Exception:
+        pass
+
+
+def get_dashboard_freshness_meta() -> dict | None:
+    hit = get_cached(DASHBOARD_FRESHNESS_META_KEY)
+    return hit if isinstance(hit, dict) else None
+
+
 def set_cached_dashboard(payload: dict) -> bool:
     """Store full dashboard payload in Redis. TTL from _dashboard_ttl_seconds(). Also keeps 7d last snapshot."""
+    _persist_dashboard_freshness_meta(payload)
     key = cache_key("dashboard", "default")
     ok = set_cached(key, payload, _dashboard_ttl_seconds())
     last_key = cache_key("dashboard", "last")

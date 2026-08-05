@@ -1194,13 +1194,12 @@ def align_ml_signal_with_retail_gates(row: dict[str, Any]) -> None:
     if sig not in ("BUY", "STRONG BUY"):
         return
     em = str(row.get("entry_mode") or "").lower()
-    rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
-    gng = str(rs.get("go_no_go") or "").lower()
-    if em == "full_go" or gng == "go":
+    # Only full_go unlocks BUY/STRONG BUY — 4/4 gates with starter/hard_lock is not a full entry.
+    if em == "full_go":
         return
     if em == "starter_only":
         row["signal"] = "WATCH"
         row["signal_gate_capped"] = "starter_only"
         return
     row["signal"] = "WATCH" if sig == "BUY" else "HOLD"
-    row["signal_gate_capped"] = em or gng or "hard_lock"
+    row["signal_gate_capped"] = em or "hard_lock"

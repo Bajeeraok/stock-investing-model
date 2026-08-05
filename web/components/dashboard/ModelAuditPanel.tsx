@@ -702,7 +702,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 </span>
               </p>
               <p className="text-[9px] text-slate-500 mt-0.5">
-                Headline 51% blends mostly HOLD/NO-GO — this is the slice that matches a full entry decision.
+                Win % on resolved 4/4 GO rows — not the broad accumulate headline (HOLD-heavy).
               </p>
             </div>
           )}
@@ -801,7 +801,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
           title="By ML signal"
           rows={audit.breakdown_by_signal ?? []}
           bucketLabel="Signal"
-          hint="Win % = accumulate track only (excludes velocity)"
+          hint="Entry quality: BUY / STRONG BUY rows — not HOLD-heavy headline. Win % = W÷(W+L) on ~30d verdict rules."
         />
         <BreakdownTable title="By track" rows={audit.breakdown_by_track ?? []} bucketLabel="Track" hint="Velocity uses 5d tactical verdict rules — not in headline win %" />
         <BreakdownTable title="By readiness" rows={audit.breakdown_by_readiness ?? []} bucketLabel="Tier" />
