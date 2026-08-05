@@ -828,6 +828,24 @@ export interface DashboardData {
       }
     >;
     summary_by_go_no_go?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
+    summary_by_entry_mode?: Record<
+      string,
+      {
+        avg_return_pct?: number;
+        avg_return_20d_pct?: number;
+        n_observations?: number;
+        win_rate_pct?: number;
+        hit_rate_pct?: number;
+      }
+    >;
+    summary_actionable_buy?: {
+      label?: string;
+      avg_return_pct?: number;
+      avg_return_20d_pct?: number;
+      n_observations?: number;
+      win_rate_pct?: number;
+      hit_rate_pct?: number;
+    } | null;
     data_source_note?: string | null;
     meta?: {
       eod_date_first?: string | null;
@@ -837,6 +855,7 @@ export interface DashboardData {
       records_returned?: number;
       as_of_date_min?: string | null;
       as_of_date_max?: string | null;
+      newest_completed_as_of?: string | null;
       ticker_count?: number;
     };
     message?: string | null;
