@@ -61,6 +61,7 @@ def resolve_eod_schedule() -> tuple[str, str] | None:
 
 
 def _run_eod_job() -> None:
+    eod_ok = False
     try:
         from config_loader import load_config
         from scripts.run_daily import run_eod_snapshot_only
@@ -79,6 +80,7 @@ def _run_eod_job() -> None:
         elif result.get("skipped"):
             logger.info("[eod-scheduler] skipped — %s", result.get("reason") or "unknown")
         else:
+            eod_ok = True
             logger.info(
                 "[eod-scheduler] ok date=%s path=%s tickers=%s",
                 result.get("snapshot_date"),
@@ -101,6 +103,15 @@ def _run_eod_job() -> None:
             logger.info("[eod-scheduler] memory hygiene rss_mb=%s stats=%s", process_rss_mb(), stats)
         except Exception:
             logger.debug("[eod-scheduler] memory hygiene skipped", exc_info=True)
+
+    if eod_ok:
+        try:
+            from api.dashboard_warm import trigger_post_eod_dashboard_sync
+
+            queued = trigger_post_eod_dashboard_sync()
+            logger.info("[eod-scheduler] post-EOD dashboard cache sync queued=%s", queued)
+        except Exception:
+            logger.exception("[eod-scheduler] post-EOD dashboard cache sync failed to queue")
 
 
 def start() -> None:

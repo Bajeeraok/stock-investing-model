@@ -133,6 +133,14 @@ def trigger_full_eod_background_if_missing(
                 if ok:
                     _state["last_success_date"] = date_str
                 # On failure: leave last_attempt_* so cooldown applies, then retry
+            if ok:
+                try:
+                    from api.dashboard_warm import trigger_post_eod_dashboard_sync
+
+                    queued = trigger_post_eod_dashboard_sync()
+                    logger.info("[eod-job] post-EOD dashboard cache sync queued=%s", queued)
+                except Exception:
+                    logger.exception("[eod-job] post-EOD dashboard cache sync failed to queue")
 
     threading.Thread(target=_worker, name="eod-full-snapshot", daemon=True).start()
     return True

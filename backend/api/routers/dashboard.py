@@ -4338,6 +4338,18 @@ def run_eod_now(
             "poll_status_url": "/api/dashboard/status",
             "reload_hint": "Poll /api/dashboard/status until idle, then reload dashboard or GET /api/dashboard/shell",
         }
+    else:
+        try:
+            from api.dashboard_warm import trigger_post_eod_dashboard_sync
+
+            started = trigger_post_eod_dashboard_sync()
+            dash_refresh = {
+                "triggered": started,
+                "mode": "post_eod_cache_sync",
+                "poll_status_url": "/api/dashboard/status",
+            }
+        except Exception as e:
+            logger.debug("[eod/run] post-EOD cache sync queue failed: %s", e)
 
     return {
         "ok": True,

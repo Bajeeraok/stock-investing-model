@@ -80,3 +80,39 @@ def test_compute_signal_warm_falls_back_without_cache():
         out = compute_signal_warm_sync()
     full.assert_called_once()
     assert out == {"ok": True}
+
+
+def test_compute_post_eod_dashboard_sync_uses_last_run(tmp_path):
+    import json
+
+    from api.dashboard_warm import compute_post_eod_dashboard_sync
+
+    full_results = [
+        {"ticker": f"T{i}", "composite_buy": 50, "error": False, "close": 100.0}
+        for i in range(80)
+    ]
+    (tmp_path / "last_run.json").write_text(
+        json.dumps({"run_results": full_results}),
+        encoding="utf-8",
+    )
+    with patch("config_loader.get_data_root", return_value=tmp_path), patch(
+        "scripts.run_daily.min_full_eod_row_count", return_value=50
+    ), patch(
+        "api.dashboard_warm.compute_signal_warm_sync", return_value={"merged": True}
+    ) as warm:
+        out = compute_post_eod_dashboard_sync()
+    warm.assert_called_once()
+    assert warm.call_args.kwargs["prefetched_results"] == full_results
+    assert warm.call_args.kwargs["warm_kind"] == "post_eod"
+    assert out == {"merged": True}
+
+
+def test_trigger_post_eod_dashboard_sync():
+    from api.dashboard_warm import trigger_post_eod_dashboard_sync
+
+    with patch("api.dashboard_job.is_refresh_running", return_value=False), patch(
+        "api.dashboard_job.trigger_background_refresh", return_value=True
+    ) as trigger:
+        ok = trigger_post_eod_dashboard_sync()
+    assert ok is True
+    trigger.assert_called_once()

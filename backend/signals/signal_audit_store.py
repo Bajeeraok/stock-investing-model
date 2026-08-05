@@ -1312,6 +1312,198 @@ def _retail_gate_thresholds_payload() -> dict[str, float | int]:
     }
 
 
+def _actionable_win_rate(wins: int, losses: int) -> float | None:
+    actionable = wins + losses
+    return round(100.0 * wins / actionable, 1) if actionable else None
+
+
+def analyze_buy_win_gap(conn, cohort_tag: str) -> dict[str, Any]:
+    """
+    Diagnose why ml_signal=BUY win % lags headline actionable win %.
+    Accumulate track only; compares full_go vs gate-blocked BUY labels.
+    """
+    base_where = (
+        "e.cohort_tag = ? AND e.source = 'live' AND o.verdict IS NOT NULL"
+        f"{_ACCUMULATE_TRACK_WHERE}"
+    )
+    buy_ml_where = " AND UPPER(TRIM(e.ml_signal)) IN ('BUY', 'STRONG BUY')"
+
+    def _row_stats(extra: str = "", params: tuple[Any, ...] = ()) -> dict[str, Any]:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS n,
+                   SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS losses,
+                   SUM(CASE WHEN o.verdict = 'NEUTRAL' THEN 1 ELSE 0 END) AS neutral,
+                   AVG(e.composite_score) AS avg_score
+            FROM signal_outcomes o
+            JOIN signal_events e ON e.id = o.signal_event_id
+            WHERE {base_where}{extra}
+            """,
+            (cohort_tag,) + params,
+        ).fetchone()
+        n = int(row["n"] or 0)
+        wins = int(row["wins"] or 0)
+        losses = int(row["losses"] or 0)
+        neutral = int(row["neutral"] or 0)
+        return {
+            "n": n,
+            "wins": wins,
+            "losses": losses,
+            "neutral": neutral,
+            "actionable_win_rate_pct": _actionable_win_rate(wins, losses),
+            "avg_score": round(float(row["avg_score"]), 1) if row["avg_score"] is not None else None,
+        }
+
+    def _group_stats(group_col: str, extra: str = "", limit: int = 12) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            f"""
+            SELECT e.{group_col} AS bucket,
+                   COUNT(*) AS n,
+                   SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS losses
+            FROM signal_outcomes o
+            JOIN signal_events e ON e.id = o.signal_event_id
+            WHERE {base_where}{buy_ml_where}{extra}
+            GROUP BY e.{group_col}
+            ORDER BY n DESC
+            LIMIT {int(limit)}
+            """,
+            (cohort_tag,),
+        ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            wins = int(r["wins"] or 0)
+            losses = int(r["losses"] or 0)
+            out.append({
+                "bucket": r["bucket"],
+                "n": int(r["n"] or 0),
+                "wins": wins,
+                "losses": losses,
+                "actionable_win_rate_pct": _actionable_win_rate(wins, losses),
+            })
+        return out
+
+    buy_all = _row_stats(buy_ml_where)
+    buy_full_go = _row_stats(buy_ml_where + " AND e.entry_mode = 'full_go'")
+    buy_starter = _row_stats(buy_ml_where + " AND e.entry_mode = 'starter_only'")
+    buy_hard_lock = _row_stats(buy_ml_where + " AND e.entry_mode = 'hard_lock'")
+    buy_go_4 = _row_stats(
+        buy_ml_where + " AND e.gates_passed = 4 AND e.go_no_go = 'go'"
+    )
+    hold_no_go = _row_stats(" AND e.go_no_go = 'no_go' AND UPPER(TRIM(e.ml_signal)) = 'HOLD'")
+
+    loss_rules = conn.execute(
+        f"""
+        SELECT o.verdict_rule AS bucket,
+               COUNT(*) AS n
+        FROM signal_outcomes o
+        JOIN signal_events e ON e.id = o.signal_event_id
+        WHERE {base_where}{buy_ml_where} AND o.verdict = 'LOSS'
+        GROUP BY o.verdict_rule
+        ORDER BY n DESC
+        LIMIT 8
+        """,
+        (cohort_tag,),
+    ).fetchall()
+
+    gate_fail_rows = conn.execute(
+        f"""
+        SELECT e.gate_detail_json
+        FROM signal_outcomes o
+        JOIN signal_events e ON e.id = o.signal_event_id
+        WHERE {base_where}{buy_ml_where} AND o.verdict = 'LOSS'
+        """,
+        (cohort_tag,),
+    ).fetchall()
+    fail_counts: dict[str, int] = {}
+    for gr in gate_fail_rows:
+        raw = gr["gate_detail_json"]
+        if not raw:
+            continue
+        try:
+            gates = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            continue
+        if not isinstance(gates, list):
+            continue
+        for g in gates:
+            if not isinstance(g, dict):
+                continue
+            gid = str(g.get("id") or "")
+            if gid and not g.get("pass"):
+                fail_counts[gid] = fail_counts.get(gid, 0) + 1
+
+    top_gate_failures = sorted(
+        [{"gate": k, "n": v} for k, v in fail_counts.items()],
+        key=lambda x: x["n"],
+        reverse=True,
+    )[:6]
+
+    recommendations: list[str] = []
+    gap_note = (
+        "Headline ~75% blends mostly NO-GO/HOLD (caution verdict: win when return ≤0). "
+        "BUY uses buy-side rules (+3% or ST target before stop) — harder bar in uptrends."
+    )
+    if int(buy_all.get("n") or 0) >= 10:
+        not_full = int(buy_all.get("n") or 0) - int(buy_full_go.get("n") or 0)
+        full_wr = buy_full_go.get("actionable_win_rate_pct")
+        all_wr = buy_all.get("actionable_win_rate_pct")
+        if not_full > 20 and full_wr is not None and all_wr is not None and full_wr - all_wr >= 15:
+            recommendations.append(
+                f"BUY without full_go ({not_full} rows) drags ml_signal=BUY win %. "
+                f"full_go BUY is {full_wr}% vs all BUY {all_wr}%. "
+                "Live UI now downgrades non-full_go BUY to WATCH; headline BUY bucket is legacy-heavy."
+            )
+        if full_wr is not None and full_wr >= 70:
+            recommendations.append(
+                f"Actionable BUY (full_go) already at {full_wr}% — target 70% met on entry slice; "
+                "improve headline BUY by not treating gate-blocked ML labels as buys."
+            )
+        elif full_wr is not None and full_wr < 65 and int(buy_full_go.get("n") or 0) >= 15:
+            recommendations.append(
+                f"Even full_go BUY is {full_wr}% (n={buy_full_go.get('n')}) — tighten ML gate threshold "
+                "or require momentum+regime pass before ML can emit BUY (see gate_backtest / backtest_gates.py)."
+            )
+    for cat in _group_stats("market_cap_bucket"):
+        if int(cat.get("n") or 0) >= 25 and cat.get("actionable_win_rate_pct") is not None:
+            if cat["actionable_win_rate_pct"] < 55:
+                recommendations.append(
+                    f"BUY underperforms in {cat['bucket']} ({cat['actionable_win_rate_pct']}% "
+                    f"n={cat['n']}) — consider category-specific ML threshold or gate cap."
+                )
+            elif cat["actionable_win_rate_pct"] >= 75:
+                recommendations.append(
+                    f"BUY strong in {cat['bucket']} ({cat['actionable_win_rate_pct']}% n={cat['n']})."
+                )
+
+    if top_gate_failures:
+        top = top_gate_failures[0]
+        recommendations.append(
+            f"Top failed gate on BUY losses: {top['gate']} ({top['n']} rows) — "
+            "many losses may be pre-align BUY rows where gates were not cleared."
+        )
+
+    return {
+        "methodology_note": gap_note,
+        "buy_all": buy_all,
+        "buy_full_go": buy_full_go,
+        "buy_go_4_gates": buy_go_4,
+        "buy_starter_only": buy_starter,
+        "buy_hard_lock": buy_hard_lock,
+        "hold_no_go_reference": hold_no_go,
+        "buy_by_entry_mode": _group_stats("entry_mode"),
+        "buy_by_gates_passed": _group_stats("gates_passed"),
+        "buy_by_category": _group_stats("market_cap_bucket"),
+        "buy_loss_verdict_rules": [
+            {"rule": r["bucket"], "n": int(r["n"] or 0)} for r in loss_rules
+        ],
+        "buy_loss_top_gate_failures": top_gate_failures,
+        "recommendations": recommendations[:8],
+        "target_win_rate_pct": 70.0,
+    }
+
+
 def build_gate_calibration_guidance(
     *,
     gate_pass_rates: list[dict[str, Any]],
@@ -1457,6 +1649,13 @@ def build_model_audit_payload(
         actionable_slices=(outcome_summary or {}).get("actionable_slices"),
     )
 
+    buy_win_gap: dict[str, Any] | None = None
+    try:
+        with store._connect() as conn:
+            buy_win_gap = analyze_buy_win_gap(conn, cohort_tag)
+    except Exception as e:
+        logger.debug("buy_win_gap analysis: %s", e)
+
     os = outcome_summary or {}
     breakdown_by_gates = _merge_breakdown_win_rates(
         store.breakdown_rows(cohort_tag, "gates_passed"),
@@ -1510,6 +1709,7 @@ def build_model_audit_payload(
         "gate_blocker_breakdown": gate_blocker_breakdown,
         "gate_pass_rates": gate_pass_rates,
         "gate_calibration": gate_calibration,
+        "buy_win_gap": buy_win_gap,
         "batch_queues": store.batch_queue_summary(cohort_tag, last_date),
         "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),
         "eod_snapshot_count": eod_snapshots,

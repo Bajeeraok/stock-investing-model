@@ -298,3 +298,14 @@ def test_duplicate_run_skips(audit_config, tmp_path, monkeypatch):
     assert out1["appended"] == 1
     assert out2["skipped_duplicate"] == 1
     assert out2["appended"] == 0
+
+
+def test_analyze_buy_win_gap_structure(audit_config, tmp_path, monkeypatch):
+    from signals.signal_audit_store import analyze_buy_win_gap
+
+    store = SignalAuditStore(data_root=tmp_path)
+    with store._connect() as conn:
+        report = analyze_buy_win_gap(conn, "test_cohort")
+    assert report["buy_all"]["n"] == 0
+    assert "methodology_note" in report
+    assert report.get("target_win_rate_pct") == 70.0

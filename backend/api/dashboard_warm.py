@@ -272,8 +272,15 @@ def _cached_signals_age_minutes(cached: dict) -> float | None:
         return None
 
 
-def compute_signal_warm_sync() -> dict:
-    """Signal warm: EOD universe signals + portfolio; merge into cached macro snapshot."""
+def compute_signal_warm_sync(
+    prefetched_results: list | None = None,
+    warm_kind: str = "signal_warm",
+) -> dict:
+    """Signal warm: EOD universe signals + portfolio; merge into cached macro snapshot.
+
+    When prefetched_results is set (post-8pm EOD), reuse those rows instead of run_signals
+    so Redis dashboard cache matches the full EOD cohort without a second full signal pass.
+    """
     from api.routers.dashboard import (
         _build_event_risk_strip,
         _build_hunter_panel_payload,
@@ -304,60 +311,73 @@ def compute_signal_warm_sync() -> dict:
 
         return _compute_full_dashboard_sync()
 
-    last_run_prev = load_last_run()
     holdings = _holdings_from_config(config)
     signal_universe = get_eod_signal_universe(config)
     quote_tickers = get_retail_quote_tickers(config, holdings)
-
     prices, fmp_batch = fetch_live_prices(config, quote_tickers)
 
-    skip_fresh_min = _signals_warm_skip_if_fresh_min()
-    signals_age = _cached_signals_age_minutes(cached)
-    skip_run_signals = (
-        skip_fresh_min > 0
-        and signals_age is not None
-        and signals_age < skip_fresh_min
-        and bool(cached.get("signals"))
-    )
-    if skip_run_signals:
+    skip_run_signals = False
+    if prefetched_results is not None:
+        results = list(prefetched_results)
+        skip_run_signals = True
+        last_run_prev = {
+            str(r["ticker"]).upper(): r
+            for r in (cached.get("signals") or [])
+            if isinstance(r, dict) and r.get("ticker")
+        }
         logger.info(
-            "[dashboard-warm] run_signals SKIPPED — signals %.0f min old (< %.0f min threshold)",
-            signals_age,
-            skip_fresh_min,
+            "[dashboard-warm] using prefetched results (%d rows, warm_kind=%s)",
+            len(results),
+            warm_kind,
         )
-        results = list(cached.get("signals") or [])
-        hit_rate_context = None
     else:
-        from config_loader import get_data_root
-
-        hit_rate_context = None
-        try:
-            ft = get_forward_tracking(
-                data_root=get_data_root(),
-                tickers=["SPY", "QQQ"],
-                horizons=[20],
+        last_run_prev = load_last_run()
+        skip_fresh_min = _signals_warm_skip_if_fresh_min()
+        signals_age = _cached_signals_age_minutes(cached)
+        skip_run_signals = (
+            skip_fresh_min > 0
+            and signals_age is not None
+            and signals_age < skip_fresh_min
+            and bool(cached.get("signals"))
+        )
+        if skip_run_signals:
+            logger.info(
+                "[dashboard-warm] run_signals SKIPPED — signals %.0f min old (< %.0f min threshold)",
+                signals_age,
+                skip_fresh_min,
             )
-            add_info = (ft.get("summary_by_signal") or {}).get("HOLD/ADD")
-            if isinstance(add_info, dict) and add_info.get("hit_rate_pct") is not None:
-                hit_rate_context = {"add_hit_rate_pct": float(add_info["hit_rate_pct"])}
-        except Exception as e:
-            logger.debug("[dashboard-warm] hit-rate gate: %s", e)
+            results = list(cached.get("signals") or [])
+        else:
+            from config_loader import get_data_root
 
-        from scripts.run_daily import run_signals
+            hit_rate_context = None
+            try:
+                ft = get_forward_tracking(
+                    data_root=get_data_root(),
+                    tickers=["SPY", "QQQ"],
+                    horizons=[20],
+                )
+                add_info = (ft.get("summary_by_signal") or {}).get("HOLD/ADD")
+                if isinstance(add_info, dict) and add_info.get("hit_rate_pct") is not None:
+                    hit_rate_context = {"add_hit_rate_pct": float(add_info["hit_rate_pct"])}
+            except Exception as e:
+                logger.debug("[dashboard-warm] hit-rate gate: %s", e)
 
-        logger.info("[dashboard-warm] run_signals EOD universe (%d tickers)...", len(signal_universe))
-        t0 = time.perf_counter()
-        results = run_signals(
-            config,
-            prices_by_ticker=prices,
-            hit_rate_context=hit_rate_context,
-            tickers=signal_universe,
-        )
-        logger.info(
-            "[dashboard-warm] run_signals DONE (%d rows, %.0f ms)",
-            len(results or []),
-            (time.perf_counter() - t0) * 1000,
-        )
+            from scripts.run_daily import run_signals
+
+            logger.info("[dashboard-warm] run_signals EOD universe (%d tickers)...", len(signal_universe))
+            t0 = time.perf_counter()
+            results = run_signals(
+                config,
+                prices_by_ticker=prices,
+                hit_rate_context=hit_rate_context,
+                tickers=signal_universe,
+            )
+            logger.info(
+                "[dashboard-warm] run_signals DONE (%d rows, %.0f ms)",
+                len(results or []),
+                (time.perf_counter() - t0) * 1000,
+            )
 
     market_reversal_overlay = cached.get("market_reversal_overlay")
     for r in results or []:
@@ -720,7 +740,7 @@ def compute_signal_warm_sync() -> dict:
         "refresh_ts": ts,
         "signals_count": len(results),
         "data_freshness": df,
-        "warm_kind": "signal_warm",
+        "warm_kind": warm_kind,
     })
 
     set_cached_dashboard(merged)
@@ -733,8 +753,53 @@ def compute_signal_warm_sync() -> dict:
     except Exception:
         pass
 
-    logger.info("[dashboard-warm] signal warm DONE (%.0f ms)", (time.perf_counter() - t0_all) * 1000)
+    logger.info("[dashboard-warm] %s DONE (%.0f ms)", warm_kind, (time.perf_counter() - t0_all) * 1000)
     return merged
+
+
+def compute_post_eod_dashboard_sync() -> dict:
+    """Merge full EOD last_run into Redis dashboard cache (no second run_signals pass)."""
+    import json
+
+    from api.routers.dashboard import _load_config
+    from config_loader import get_data_root
+    from scripts.run_daily import min_full_eod_row_count
+
+    config = _load_config()
+    path = get_data_root() / "last_run.json"
+    if not path.exists():
+        logger.warning("[dashboard-warm] post-EOD — no last_run.json; falling back to signal warm")
+        return compute_signal_warm_sync()
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            payload = json.load(f)
+    except Exception as e:
+        logger.warning("[dashboard-warm] post-EOD — last_run read failed (%s); falling back", e)
+        return compute_signal_warm_sync()
+
+    results = payload.get("run_results") or []
+    min_rows = min_full_eod_row_count(config)
+    if len(results) < min_rows:
+        logger.warning(
+            "[dashboard-warm] post-EOD — last_run thin (%d < %d); falling back to signal warm",
+            len(results),
+            min_rows,
+        )
+        return compute_signal_warm_sync()
+
+    logger.info("[dashboard-warm] post-EOD merge from last_run (%d rows)", len(results))
+    return compute_signal_warm_sync(prefetched_results=results, warm_kind="post_eod")
+
+
+def trigger_post_eod_dashboard_sync() -> bool:
+    """Queue background dashboard cache update after a successful full EOD snapshot."""
+    from api.dashboard_job import is_refresh_running, trigger_background_refresh
+
+    if is_refresh_running():
+        logger.info("[dashboard-warm] post-EOD dashboard sync skipped — refresh already running")
+        return False
+    return trigger_background_refresh(compute_post_eod_dashboard_sync)
 
 
 def compute_for_background_refresh() -> dict:

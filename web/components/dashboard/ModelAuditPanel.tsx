@@ -148,6 +148,14 @@ export type ModelAuditPayload = {
     thresholds?: Record<string, number>;
     notes?: string[];
   };
+  buy_win_gap?: {
+    methodology_note?: string;
+    buy_all?: ModelAuditActionableSlice & { avg_score?: number | null };
+    buy_full_go?: ModelAuditActionableSlice & { avg_score?: number | null };
+    buy_go_4_gates?: ModelAuditActionableSlice;
+    recommendations?: string[];
+    target_win_rate_pct?: number;
+  } | null;
   eod_snapshot_count?: number;
   batch_queues?: {
     signal_date?: string | null;
@@ -783,6 +791,45 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 </span>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* BUY win-rate gap (ml_signal=BUY vs headline) */}
+      {audit.buy_win_gap && (audit.buy_win_gap.buy_all?.n ?? 0) > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+          <p className="text-[11px] font-semibold text-amber-200 uppercase tracking-wide">
+            BUY win-rate gap
+          </p>
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            {audit.buy_win_gap.methodology_note}
+          </p>
+          <div className="flex flex-wrap gap-2 text-[10px]">
+            {[
+              { label: "All BUY labels", data: audit.buy_win_gap.buy_all },
+              { label: "full_go BUY", data: audit.buy_win_gap.buy_full_go },
+              { label: "4/4 GO BUY", data: audit.buy_win_gap.buy_go_4_gates },
+            ].map(({ label, data }) =>
+              data?.n ? (
+                <span
+                  key={label}
+                  className="rounded border border-slate-600/80 bg-slate-900/60 px-2 py-1 text-slate-300"
+                >
+                  {label}:{" "}
+                  <span className="font-bold text-slate-100 tabular-nums">
+                    {data.actionable_win_rate_pct ?? "—"}%
+                  </span>
+                  <span className="text-slate-500"> (n={data.n})</span>
+                </span>
+              ) : null,
+            )}
+          </div>
+          {audit.buy_win_gap.recommendations && audit.buy_win_gap.recommendations.length > 0 && (
+            <ul className="text-[10px] text-slate-400 space-y-1 list-disc pl-4">
+              {audit.buy_win_gap.recommendations.slice(0, 4).map((note) => (
+                <li key={note}>{note}</li>
+              ))}
+            </ul>
           )}
         </div>
       )}
