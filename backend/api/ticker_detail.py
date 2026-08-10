@@ -637,6 +637,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         close_ticker=close_ticker,
         signal_data=signal_data,
         conf_snapshot=conf_snapshot_for_request,
+        close_spy=close_spy,
     )
     # Ensure 52w range is always 2 decimals (yfinance/merge can leave raw floats)
     if response.get("high_52w") is not None:
@@ -708,6 +709,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 market_regime_bull_pct=ctx.get("hmm_bull_pct"),
                 volume_ratio=_safe_float(response.get("volume_ratio")),
                 institutional_conviction=inv.get("institutional_conviction"),
+                real_st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
             )
         except Exception:
             pass
@@ -936,6 +938,7 @@ def _build_investor_summary(
     close_ticker=None,
     signal_data: dict | None = None,
     conf_snapshot: dict | None = None,
+    close_spy=None,
 ) -> dict | None:
     """
     Build Investor Decision Summary (horizon entry tiers + verdicts) for the ticker detail modal.
@@ -1751,17 +1754,72 @@ def _build_investor_summary(
             ticker=ticker,
             volume_ratio=_safe_float(response.get("volume_ratio")),
             institutional_conviction=inst_conv,
+            real_st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
         )
         try:
             from signals.signal_reason_summary import build_signal_reason_summary
+            from signals.price_move_narrative import build_price_move_narrative
+            from signals.retail_action_payload import required_mos_pct, tranche_idx_from_tier_id
 
             ra = out.get("retail_action") or {}
             horizons = out.get("horizons") or {}
             short_h = horizons.get("short") or {}
+            medium_h = horizons.get("medium") or {}
+            long_h = horizons.get("long") or {}
             oa = out.get("one_answer") or {}
             earnings = response.get("earnings") if isinstance(response.get("earnings"), dict) else {}
             days_to_earnings = _safe_float(earnings.get("days_until"))
-            sr = build_signal_reason_summary(
+
+            # Near-bottom-reversal / bullish-trend-continuation plain-English signals
+            # (signals.pattern_signals.near_bottom_score, surfaced via confidence engine).
+            near_bottom = conf_snapshot.get("pattern") if isinstance(conf_snapshot, dict) else None
+
+            # Today's move vs SPY — rule-based "why is this stock moving" classification.
+            day_change_pct = None
+            spy_day_change_pct = None
+            try:
+                if close_ticker is not None and len(close_ticker) >= 2:
+                    prev, last = float(close_ticker.iloc[-2]), float(close_ticker.iloc[-1])
+                    if prev > 0:
+                        day_change_pct = round(100.0 * (last - prev) / prev, 2)
+                if close_spy is not None and len(close_spy) >= 2:
+                    prev_s, last_s = float(close_spy.iloc[-2]), float(close_spy.iloc[-1])
+                    if prev_s > 0:
+                        spy_day_change_pct = round(100.0 * (last_s - prev_s) / prev_s, 2)
+            except Exception:
+                pass
+            pe_transition = conf_snapshot.get("post_earnings_transition") if isinstance(conf_snapshot, dict) else None
+            earnings_days_since = (
+                pe_transition.get("days_since")
+                if isinstance(pe_transition, dict) and pe_transition.get("active")
+                else None
+            )
+            move_narrative = build_price_move_narrative(
+                ticker=ticker,
+                day_change_pct=day_change_pct,
+                spy_day_change_pct=spy_day_change_pct,
+                global_market_regime=response.get("_global_market_regime"),
+                catalyst=response.get("catalyst") if isinstance(response.get("catalyst"), dict) else None,
+                earnings_days_since=int(earnings_days_since) if earnings_days_since is not None else None,
+            )
+
+            # Owner persona's valuation framing uses the same tranche-tiered MOS ladder
+            # that gates full_go (see signals.retail_action_payload) — required discount
+            # scales with how deep the long-horizon tier ladder currently sits, not one
+            # flat number for every persona.
+            long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
+            tranche_idx = tranche_idx_from_tier_id(
+                long_spot.get("active_tier_id") or long_spot.get("tier_id") or long_spot.get("next_add_tier_id")
+            )
+            owner_required_mos = required_mos_pct(tranche_idx, out.get("regime_bull_pct"))
+
+            def _band(h: dict) -> dict | None:
+                ez = h.get("entry_zone") if isinstance(h, dict) else None
+                if isinstance(ez, dict) and ez.get("low") is not None and ez.get("high") is not None:
+                    return {"low": ez["low"], "high": ez["high"]}
+                return None
+
+            common_kwargs = dict(
                 ticker=ticker,
                 gates=ra.get("gates") or [],
                 assessment_pct=float(ra.get("assessment_pct") or 0),
@@ -1771,28 +1829,54 @@ def _build_investor_summary(
                 market_regime_bull_pct=ra.get("market_regime_bull_pct"),
                 pattern_score=out.get("pattern_score"),
                 rsi=out.get("rsi"),
-                short_ml_prob=short_h.get("ml_prob"),
                 overall_verdict=out.get("overall_verdict"),
                 entry_mode=ra.get("entry_mode"),
                 gate_cleared=bool(ra.get("gate_cleared")),
                 next_trigger=ra.get("next_trigger"),
                 regime_transition_days=out.get("regime_transition_days_estimate"),
-                st_band={"low": (short_h.get("entry_zone") or {}).get("low"), "high": (short_h.get("entry_zone") or {}).get("high")}
-                if isinstance(short_h.get("entry_zone"), dict)
-                else None,
-                trigger_buy=short_h.get("trigger_buy"),
                 confidence=conf_snapshot if isinstance(conf_snapshot, dict) else None,
                 catalyst=response.get("catalyst") if isinstance(response.get("catalyst"), dict) else None,
                 earnings_days=int(days_to_earnings) if days_to_earnings is not None else None,
                 global_market_regime=response.get("_global_market_regime"),
                 one_answer_action_today=oa.get("action_today"),
+                near_bottom=near_bottom,
+                move_narrative=move_narrative,
             )
-            out["signal_reason"] = sr
+
+            # Scout (tactical): short-horizon band/trigger/ML. Swing (few weeks): medium
+            # horizon, falling back to short when medium data is thin. Owner (long-term
+            # accumulate): long-horizon tier band + tranche-aware MOS framing.
+            sr_scout = build_signal_reason_summary(
+                persona="scout",
+                short_ml_prob=short_h.get("ml_prob"),
+                st_band=_band(short_h),
+                trigger_buy=short_h.get("trigger_buy"),
+                **common_kwargs,
+            )
+            sr_swing = build_signal_reason_summary(
+                persona="swing",
+                short_ml_prob=medium_h.get("ml_prob") if medium_h.get("ml_prob") is not None else short_h.get("ml_prob"),
+                st_band=_band(medium_h) or _band(short_h),
+                trigger_buy=medium_h.get("trigger_buy") or short_h.get("trigger_buy"),
+                **common_kwargs,
+            )
+            sr_owner = build_signal_reason_summary(
+                persona="owner",
+                short_ml_prob=short_h.get("ml_prob"),
+                st_band=_band(long_h),
+                trigger_buy=long_h.get("trigger_buy"),
+                required_mos_pct_value=owner_required_mos,
+                **common_kwargs,
+            )
+
+            out["signal_reason"] = sr_scout
+            out["signal_reason_by_persona"] = {"scout": sr_scout, "swing": sr_swing, "owner": sr_owner}
             if isinstance(ra, dict):
-                ra["signal_reason"] = sr
+                ra["signal_reason"] = sr_scout
+                ra["signal_reason_by_persona"] = out["signal_reason_by_persona"]
                 out["retail_action"] = ra
-            if isinstance(oa, dict) and sr.get("wait_plain"):
-                oa["wait_timeframe_plain"] = sr["wait_plain"]
+            if isinstance(oa, dict) and sr_scout.get("wait_plain"):
+                oa["wait_timeframe_plain"] = sr_scout["wait_plain"]
                 out["one_answer"] = oa
         except Exception:
             pass

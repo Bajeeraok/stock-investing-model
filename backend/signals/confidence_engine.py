@@ -499,7 +499,7 @@ class ConfidenceEngine:
         # ── Layer 2: Pattern + technical ─────────────────────────────────
         if df is not None and not df.empty:
             from signals.pattern_signals import near_bottom_score
-            p_score, p_signals, _ = near_bottom_score(df, ticker)
+            p_score, p_signals, p_details = near_bottom_score(df, ticker)
             # Blend pattern (40%) with composite technical (60%)
             tech_norm = composite_score / 100.0
             pattern_norm = p_score / 100.0
@@ -509,6 +509,15 @@ class ConfidenceEngine:
                 f"Pattern {p_score:.0f}/100; technical {composite_score:.0f}/100"
                 + (f" — {p_signals[0]}" if p_signals else "")
             )
+            # Full plain-English signal list (near-bottom-reversal or bullish-trend-continuation,
+            # whichever near_bottom_score judged dominant) — surfaced in ticker detail as the
+            # "near bottom / breakout" narrative. Previously discarded here; only the numeric
+            # score fed the blend.
+            details["pattern"] = {
+                "score": p_score,
+                "mode": p_details.get("mode"),
+                "signals": p_signals,
+            }
         else:
             scores["pattern_technical"] = round(composite_score / 100.0, 3)
             labels["pattern_technical"] = f"Technical score {composite_score:.0f}/100 (no OHLCV for pattern)"
@@ -983,6 +992,8 @@ class ConfidenceEngine:
             "analyst_estimates": details.get("analyst_est"),
             # Headlines + score for UI (roadmap / ticker detail transparency)
             "nlp":               details.get("nlp"),
+            # Near-bottom-reversal / bullish-trend-continuation plain-English signals
+            "pattern":           details.get("pattern"),
             # Blend vs multiplicative penalties (HMM bear gate, insider) — for audits & UI
             "penalty_audit":     penalty_audit,
             # Pre-flight enrichment

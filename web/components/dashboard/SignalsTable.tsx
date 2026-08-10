@@ -1545,7 +1545,10 @@ export function SignalsTable({
               <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
                 Positioning
               </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
+              <th
+                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help"
+                title="Quick MA-pullback heuristic (MA50/MA200 dip, RSI-overbought exit) — independent of the model's gates/valuation. For the gate-aware entry/exit view, use the ST/MT/LT band column."
+              >
                 Buy / Sell / Support
               </th>
               <th

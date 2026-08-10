@@ -17,6 +17,12 @@ from signals.retail_action_payload import (
 )
 
 Stance = Literal["helps", "hurts", "neutral"]
+Persona = Literal["scout", "swing", "owner"]
+
+_PERSONA_PREFIX: dict[str, str] = {
+    "swing": "Swing view (weeks): ",
+    "owner": "Owner view (long-term): ",
+}
 
 _LAYER_META: dict[str, tuple[str, str]] = {
     "regime_hmm": ("Market & regime", "market"),
@@ -266,11 +272,13 @@ def _build_headline(
     factors: list[dict[str, Any]],
     gates: list[dict[str, Any]],
     overall_verdict: str | None,
+    persona: Persona = "scout",
 ) -> str:
     if gate_cleared or entry_mode == "full_go":
         helps = [f for f in factors if f.get("stance") == "helps"]
         top = helps[0]["label"] if helps else "Model checks"
-        return f"Model aligns — {top.lower()} leads, and all four entry gates are green for a staged add."
+        text = f"Model aligns — {top.lower()} leads, and all four entry gates are green for a staged add."
+        return _PERSONA_PREFIX.get(persona, "") + text
 
     failed = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS and not g.get("pass")]
     top_fail = failed[0] if failed else None
@@ -279,22 +287,31 @@ def _build_headline(
     if entry_mode == "starter_only":
         blocker = _gate_plain_blocker(top_fail) if top_fail else "timing gates"
         support = helps[0]["label"].lower() if helps else "valuation"
-        return f"Starter size only — {support} supports the thesis, but {blocker}."
+        text = f"Starter size only — {support} supports the thesis, but {blocker}."
+        return _PERSONA_PREFIX.get(persona, "") + text
 
     if entry_mode == "hard_lock":
-        return "Hard lock — no margin of safety at this price; wait for a deeper discount or tier entry."
+        text = (
+            "Hard lock — no margin of safety at this price; wait for the next tranche's discount."
+            if persona == "owner"
+            else "Hard lock — no margin of safety at this price; wait for a deeper discount or tier entry."
+        )
+        return _PERSONA_PREFIX.get(persona, "") + text
 
     ov = (overall_verdict or "").upper()
     if ov in ("REDUCE", "AVOID"):
-        return f"{ov.title()} — risk controls override the bullish case; trim or avoid new adds here."
+        text = f"{ov.title()} — risk controls override the bullish case; trim or avoid new adds here."
+        return _PERSONA_PREFIX.get(persona, "") + text
 
     if top_fail:
         blocker = _gate_plain_blocker(top_fail)
         if helps:
-            return f"Wait — {blocker}, even though {helps[0]['label'].lower()} still supports the longer thesis."
-        return f"Wait — mainly because {blocker}."
+            text = f"Wait — {blocker}, even though {helps[0]['label'].lower()} still supports the longer thesis."
+        else:
+            text = f"Wait — mainly because {blocker}."
+        return _PERSONA_PREFIX.get(persona, "") + text
 
-    return "Wait — not all model checks have cleared yet; see factors below."
+    return _PERSONA_PREFIX.get(persona, "") + "Wait — not all model checks have cleared yet; see factors below."
 
 
 def _build_wait_plain(
@@ -312,6 +329,8 @@ def _build_wait_plain(
     trigger_buy: str | None,
     earnings_days: int | None,
     catalyst: dict[str, Any] | None,
+    persona: Persona = "scout",
+    required_mos_pct_value: float | None = None,
 ) -> str | None:
     if gate_cleared and entry_mode == "full_go":
         return None
@@ -334,17 +353,25 @@ def _build_wait_plain(
         parts.append(f"Regime shift may take {_days_to_plain(regime_transition_days)}.")
 
     val_gate = next((g for g in gates if g.get("id") == "valuation"), None)
-    if val_gate and not val_gate.get("pass") and assessment_pct < VALUATION_GATE_PASS_PCT:
-        gap = max(0.0, VALUATION_GATE_PASS_PCT - assessment_pct)
+    val_req = required_mos_pct_value if required_mos_pct_value is not None else VALUATION_GATE_PASS_PCT
+    if val_gate and not val_gate.get("pass") and assessment_pct < val_req:
+        gap = max(0.0, val_req - assessment_pct)
         if gap >= 3:
-            parts.append(
-                f"Full-size entry needs ~{gap:.0f}% more discount — often a few weeks in a grinding market, faster in a pullback."
-            )
+            if persona == "owner":
+                parts.append(
+                    f"This tranche needs ~{gap:.0f}% more discount to fair value — deploy the next dollar there, not before."
+                )
+            else:
+                parts.append(
+                    f"Full-size entry needs ~{gap:.0f}% more discount — often a few weeks in a grinding market, faster in a pullback."
+                )
 
     mom_gate = next((g for g in gates if g.get("id") == "momentum"), None)
     rv = float(rsi) if rsi is not None else None
-    if (mom_gate and not mom_gate.get("pass")) or (rv is not None and rv >= 50):
+    if persona != "owner" and ((mom_gate and not mom_gate.get("pass")) or (rv is not None and rv >= 50)):
         parts.append("Momentum usually cools within 1–2 weeks on a small dip or sideways chop.")
+    elif persona == "owner" and mom_gate and not mom_gate.get("pass"):
+        parts.append("Near-term momentum is hot, but that's noise for a multi-year hold — valuation is what matters here.")
 
     if st_band and current_price:
         lo, hi = st_band.get("low"), st_band.get("high")
@@ -415,8 +442,20 @@ def build_signal_reason_summary(
     earnings_days: int | None = None,
     global_market_regime: str | None = None,
     one_answer_action_today: str | None = None,
+    persona: Persona = "scout",
+    required_mos_pct_value: float | None = None,
+    near_bottom: dict[str, Any] | None = None,
+    move_narrative: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build retail signal reasoning payload."""
+    """Build retail signal reasoning payload.
+
+    persona tailors headline/wait_plain phrasing for the Scout (tactical),
+    Swing (few-week), or Owner (long-term accumulate) view of the same ticker —
+    the underlying gates are shared, but the framing and time horizon differ.
+    near_bottom / move_narrative are optional pass-throughs (signals.pattern_signals
+    near_bottom_score and signals.price_move_narrative) folded into the payload so
+    ticker detail has one place to read "is this near a bottom" and "why did it move."
+    """
     conf_factors = _factors_from_confidence(confidence)
     gate_factors = _factors_from_gates(
         gates,
@@ -439,6 +478,7 @@ def build_signal_reason_summary(
         factors=factors,
         gates=gates,
         overall_verdict=overall_verdict,
+        persona=persona,
     )
     wait_plain = _build_wait_plain(
         gate_cleared=gate_cleared,
@@ -454,6 +494,8 @@ def build_signal_reason_summary(
         trigger_buy=trigger_buy,
         earnings_days=earnings_days,
         catalyst=catalyst,
+        persona=persona,
+        required_mos_pct_value=required_mos_pct_value,
     )
 
     sym = (ticker or "This name").upper()
@@ -471,8 +513,16 @@ def build_signal_reason_summary(
     if hurts and not blocking:
         blocking.append(f"{hurts[0]['label']}: {hurts[0]['summary']}")
 
+    # Near-bottom/breakout reversal signal (signals.pattern_signals.near_bottom_score) —
+    # a genuinely strong read (score >= 50) is worth surfacing alongside the gate factors.
+    nb_signals = (near_bottom or {}).get("signals") or []
+    if isinstance(near_bottom, dict) and (near_bottom.get("score") or 0) >= 50 and nb_signals:
+        label = "Reversal setup" if near_bottom.get("mode") == "bottom_reversal" else "Trend continuation"
+        supporting.insert(0, f"{label}: {nb_signals[0]}")
+
     return {
         "ticker": sym if ticker else None,
+        "persona": persona,
         "headline": headline,
         "wait_plain": wait_plain,
         "factors": factors,
@@ -485,4 +535,6 @@ def build_signal_reason_summary(
         ),
         "fair_value": round(float(fair_value), 2) if fair_value else None,
         "assessment_pct": round(float(assessment_pct), 1),
+        "near_bottom": near_bottom,
+        "move_narrative": move_narrative,
     }

@@ -358,7 +358,7 @@ def required_mos_pct(tranche_idx: int, regime_bull_pct: float | None = None) -> 
     return base + addon
 
 
-def _tranche_idx_from_tier_id(tier_id: str | None) -> int:
+def tranche_idx_from_tier_id(tier_id: str | None) -> int:
     """Map a long-horizon entry tier ("T1"/"T2"/"T3") to a 0-based MOS ladder index.
 
     Defaults to 0 (T1, the loosest rung) when no tier context is available — e.g. the
@@ -1016,8 +1016,16 @@ def enrich_investor_summary_retail_action(
     market_regime_bull_pct: float | None = None,
     volume_ratio: float | None = None,
     institutional_conviction: dict[str, Any] | None = None,
+    real_st_band: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Attach retail_action block to investor_summary dict (mutates copy)."""
+    """Attach retail_action block to investor_summary dict (mutates copy).
+
+    real_st_band, when provided, is the same signals.target_bands-derived band the
+    dashboard list row uses for its "inside buy band" gate check. Pass it so Ticker
+    Detail's gate agrees with the dashboard row for the same ticker/day — without it,
+    this function fell back to deriving a same-named st_band from the short horizon's
+    entry_zone, a different calculation that could independently disagree.
+    """
     horizons = investor_out.get("horizons") or {}
     short = horizons.get("short") or {}
     band = None
@@ -1033,9 +1041,12 @@ def enrich_investor_summary_retail_action(
             confidence_mid = (float(m.group(1)) + float(m.group(2))) / 2.0
 
     st_band = None
-    ez = short.get("entry_zone") or {}
-    if ez.get("low") is not None and ez.get("high") is not None:
-        st_band = {"low": ez["low"], "high": ez["high"]}
+    if real_st_band and real_st_band.get("low") is not None and real_st_band.get("high") is not None:
+        st_band = {"low": real_st_band["low"], "high": real_st_band["high"]}
+    else:
+        ez = short.get("entry_zone") or {}
+        if ez.get("low") is not None and ez.get("high") is not None:
+            st_band = {"low": ez["low"], "high": ez["high"]}
 
     long_h = horizons.get("long") or {}
     rr = long_h.get("risk_reward")
@@ -1055,7 +1066,7 @@ def enrich_investor_summary_retail_action(
             rr = (tgt - cp) / (cp - stop)
 
     long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
-    tranche_idx = _tranche_idx_from_tier_id(
+    tranche_idx = tranche_idx_from_tier_id(
         long_spot.get("active_tier_id") or long_spot.get("tier_id") or long_spot.get("next_add_tier_id")
     )
 
