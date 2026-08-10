@@ -32,14 +32,10 @@ import { DecisionModeSelector } from "./DecisionModeSelector";
 import { DecisionDeck } from "./DecisionDeck";
 import { buildExecutionPlanViewModel } from "./executionPlanModel";
 import {
-  GlobalActionHeader,
   buildGatesFromInvestorSummary,
   resolvePrimaryGatesCount,
 } from "./retailActionUX";
-import { TickerCommandCard } from "./tickerDetail/TickerCommandCard";
-import { SignalBreakdownGrid } from "./tickerDetail/SignalBreakdownGrid";
-import { SignalReasonCard } from "./tickerDetail/SignalReasonCard";
-import { StreetVsExecutionCard } from "./tickerDetail/StreetVsExecutionCard";
+import { TickerDecisionHero } from "./tickerDetail/TickerDecisionHero";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
@@ -49,7 +45,6 @@ import { TierThermometerPanel } from "./levels/TierThermometerPanel";
 import { DensityProvider, DensityToggle, Comfort } from "./levels/DensityToggle";
 import { IntradayChart } from "./IntradayChart";
 import {
-  GateProgressBar,
   NewsSentimentRail,
   StickyTickerQuoteBar,
 } from "./tradingPlatformUX";
@@ -662,19 +657,6 @@ export function TickerDetailModal({
     };
   }, [detail]);
 
-  const buyBandContext = useMemo(() => {
-    const inv = detail?.investor_summary;
-    const cp = effectivePrice;
-    const ez = inv?.horizons?.short?.entry_zone;
-    if (!cp || !ez?.low || !ez?.high) {
-      return { insideBuyBand: false, rsi: inv?.rsi ?? null };
-    }
-    const low = Math.min(ez.low, ez.high);
-    const high = Math.max(ez.low, ez.high);
-    return { insideBuyBand: cp >= low && cp <= high, rsi: inv?.rsi ?? null };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, effectivePrice]);
-
   const assessmentPctForHeader = useMemo(() => {
     const inv = detail?.investor_summary;
     const cp = effectivePrice;
@@ -690,11 +672,6 @@ export function TickerDetailModal({
     return buildExecutionPlanViewModel(inv, cp, decisionMode);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.investor_summary, effectivePrice, decisionMode]);
-
-  const streetVsExecutionText = useMemo(() => {
-    const inv = detail?.investor_summary;
-    return inv?.retail_action?.coherent_story?.trim() || inv?.one_answer?.bottom_line || null;
-  }, [detail?.investor_summary]);
 
   const horizonPlaybooksBundle = useMemo((): HorizonPlaybooksBundle | null => {
     const inv = detail?.investor_summary;
@@ -999,12 +976,19 @@ export function TickerDetailModal({
                       regimeBullPct={detail.investor_summary.regime_bull_pct}
                     />
                   )}
-                  <TickerCommandCard
+                  <TickerDecisionHero
+                    ticker={detail.ticker}
+                    companyName={detail.company_name}
+                    sector={detail.sector}
+                    currentPrice={effectivePrice}
+                    dailyMovePct={quoteDailyMovePct}
                     summary={detail.investor_summary}
-                    currentPrice={effectivePrice ?? 0}
                     mode={decisionMode}
-                    actionTitle={headerActionStatus.title}
-                    actionLight={headerActionStatus.light}
+                    actionStatus={headerActionStatus}
+                    gates={tradingGates}
+                    gatesPassed={gatesPassedCount}
+                    gatesTotal={gatesTotal}
+                    onOpenWhy={() => { setModalTab("why"); setWhySubTab("proof"); }}
                   />
                   <div className="lg:hidden">
                     <NewsSentimentRail
@@ -1015,11 +999,6 @@ export function TickerDetailModal({
                       catalystNote={modalNewsRail.catalystNote}
                     />
                   </div>
-                  {tradingGates.length > 0 && (
-                    <div className="lg:hidden max-w-xs">
-                      <GateProgressBar passed={gatesPassedCount} total={gatesTotal} variant="buy" />
-                    </div>
-                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <CopyTradePlanButton
                       ticker={detail.ticker}
@@ -1042,43 +1021,12 @@ export function TickerDetailModal({
                       variant="sparkline"
                     />
                   )}
-                  {detail.investor_summary?.signal_reason && (
-                    <SignalReasonCard reason={detail.investor_summary.signal_reason} />
-                  )}
-                  {executionVm && (
-                    <SignalBreakdownGrid
-                      rows={[
-                        { label: "Market structure", status: executionVm.marketStatus, summary: executionVm.marketSummary },
-                        { label: "Chart & momentum", status: executionVm.chartStatus, summary: executionVm.chartSummary },
-                        { label: "Smart money", status: executionVm.flowStatus, summary: executionVm.flowSummary },
-                        { label: "Business & news", status: executionVm.businessStatus, summary: executionVm.businessSummary },
-                      ]}
-                      bottomLine={detail.investor_summary.one_answer?.bottom_line}
-                    />
-                  )}
-                  {tradingGates.length > 0 && (
-                    <GlobalActionHeader
-                      ticker={detail.ticker}
-                      companyName={detail.company_name}
-                      sector={detail.sector}
-                      currentPrice={effectivePrice}
-                      statusTitle={headerActionStatus.title}
-                      statusLight={headerActionStatus.light}
-                      assessmentPct={assessmentPctForHeader}
-                      gates={tradingGates}
-                      insideBuyBand={buyBandContext.insideBuyBand}
-                      rsi={buyBandContext.rsi}
-                      nextTrigger={detail.investor_summary.retail_action?.next_trigger}
-                      entryMode={detail.investor_summary.retail_action?.entry_mode}
-                      entryModeHeadline={detail.investor_summary.retail_action?.entry_mode_headline}
-                      entryModeDetail={detail.investor_summary.retail_action?.entry_mode_detail}
-                      maxSizingPct={detail.investor_summary.retail_action?.max_sizing_pct}
-                      unlockSequence={detail.investor_summary.retail_action?.unlock_sequence}
-                      contextOnly
-                    />
-                  )}
                 </div>
               )}
+
+              <p className="text-[10px] font-mono uppercase tracking-wider text-slate-600 pt-2 border-t border-slate-800">
+                Reference detail — execution plan, roadmaps, scenarios
+              </p>
 
               {detail.investor_summary && (
                 <DecisionDeck
@@ -1092,8 +1040,6 @@ export function TickerDetailModal({
                   hideExecutionEvidence={Boolean(executionVm)}
                 />
               )}
-
-              <StreetVsExecutionCard text={streetVsExecutionText} />
 
               <ScenarioTeaser data={priceTargets} onOpenValuation={openWhyValuation} />
 
@@ -1210,9 +1156,6 @@ export function TickerDetailModal({
                     headlines={modalNewsRail.headlines}
                     catalystNote={modalNewsRail.catalystNote}
                   />
-                  {tradingGates.length > 0 && (
-                    <GateProgressBar passed={gatesPassedCount} total={gatesTotal} variant="buy" />
-                  )}
                 </aside>
                 </div>
               )}

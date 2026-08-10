@@ -115,6 +115,7 @@ export type RetailActionPayload = {
     catch_levels?: Array<{ id: string; label: string; price: number; role?: string }>;
   } | null;
   signal_reason?: import("./tickerDetail/SignalReasonCard").SignalReasonPayload | null;
+  signal_reason_by_persona?: import("./tickerDetail/SignalReasonCard").SignalReasonByPersona | null;
 };
 
 export function mapApiGateToRow(g: NonNullable<RetailActionPayload["gates"]>[number]): TradingGateRow {

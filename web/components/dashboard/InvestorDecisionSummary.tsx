@@ -228,8 +228,10 @@ export interface InvestorDecisionSummary {
   investor_roadmap?: InvestorRoadmap | null;
   /** Complete Trade Roadmap: buy/sell stages + trader summary (tabbed card). */
   trade_roadmap?: TradeRoadmapData | null;
-  /** Plain-language model reasoning (factors + wait timeframe). */
+  /** Plain-language model reasoning (factors + wait timeframe). Aliased to the Scout persona. */
   signal_reason?: import("./tickerDetail/SignalReasonCard").SignalReasonPayload | null;
+  /** Same reasoning, once per persona (Scout/Swing/Owner) — different framing/time horizon. */
+  signal_reason_by_persona?: import("./tickerDetail/SignalReasonCard").SignalReasonByPersona | null;
   horizons: {
     short: HorizonSignalPayload;
     medium: HorizonSignalPayload;
