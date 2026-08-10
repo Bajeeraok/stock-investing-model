@@ -317,6 +317,21 @@ def run_signals(
             )
         except Exception:
             pass  # graceful — ML column simply shows N/A
+
+        # ── Per-ticker HMM regime (bull probability) — feeds the retail-gate "Market
+        # Weather" gate. Without this, gates fall back to the single market-wide
+        # regime bucket shared by every ticker (see retail_action_payload._global_regime_bull_pct),
+        # which makes the regime gate pass 100% of the time whenever the broad tape is
+        # bullish regardless of this ticker's own state.
+        regime_bull_pct: float | None = None
+        try:
+            from signals.hmm_regime import get_hmm_regime
+            _hmm_out = get_hmm_regime(ticker, close, volume)
+            if _hmm_out and not _hmm_out.get("error") and _hmm_out.get("bull_probability") is not None:
+                regime_bull_pct = round(float(_hmm_out["bull_probability"]) * 100.0, 1)
+        except Exception:
+            pass  # graceful — falls back to market-wide proxy in enrich_dashboard_signal_row
+
         regime = _ma_regime_to_display(sig["ma_regime"]) if sig.get("ma_regime") else get_regime(composite_buy, up_min, down_max)
 
         # Multi-layer signal: requires BOTH confluence AND ML to agree for BUY.
@@ -553,6 +568,7 @@ def run_signals(
             # None when no model trained yet; never triggers training during dashboard load
             "ml_short_prob": ml_short_prob,
             "regime": regime,
+            "regime_bull_pct": regime_bull_pct,
             "signal": signal,
             "earnings_note": earnings_note,
             "earnings_days_until": earnings_days_until,
@@ -609,7 +625,7 @@ def run_signals(
         try:
             from signals.retail_action_payload import enrich_dashboard_signal_row
 
-            enrich_dashboard_signal_row(row)
+            enrich_dashboard_signal_row(row, regime_bull_pct=row.get("regime_bull_pct"))
         except Exception:
             pass
         try:

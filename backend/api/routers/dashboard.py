@@ -2387,7 +2387,11 @@ def _compute_full_dashboard_sync() -> dict:
         for r in results:
             if r.get("error"):
                 continue
-            enrich_dashboard_signal_row(r, regime_bull_pct=_regime_bull_global)
+            # Prefer this ticker's own HMM bull % (set in run_daily._process_single_ticker);
+            # the market-wide proxy is a fallback only, not an override — otherwise every
+            # ticker's regime gate collapses to the same market-wide number.
+            _rb = r.get("regime_bull_pct")
+            enrich_dashboard_signal_row(r, regime_bull_pct=_rb if _rb is not None else _regime_bull_global)
         try:
             from signals.readiness_score import compute_readiness
 

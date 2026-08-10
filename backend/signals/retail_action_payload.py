@@ -9,12 +9,49 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-ST_ML_GATE = 25
-ML_MARGINAL_ABS = 55  # pass vs threshold but low absolute conviction
-REGIME_GATE = 60
-CONFIDENCE_GATE = 55
-VALUATION_GATE_PASS_PCT = 25.0   # align with House LT_REQUIRED_MOS_PCT
-VALUATION_GATE_PARTIAL_PCT = 15.0
+
+def _retail_gates_config() -> dict[str, Any]:
+    """config.yaml `retail_gates` section — loaded once, with hardcoded fallbacks below.
+
+    Previously these thresholds were pure Python constants with no config path, so
+    editing config.yaml's `retail_gates` block (which documented itself as the tunable
+    source) had zero effect. Load once at import; a bad/missing config.yaml falls back
+    to the same numbers this module always shipped with.
+    """
+    try:
+        from config_loader import load_config
+
+        return dict(load_config().get("retail_gates") or {})
+    except Exception:
+        return {}
+
+
+_RG_CFG = _retail_gates_config()
+
+ST_ML_GATE = float(_RG_CFG.get("ml_short_prob_min", 25))
+ML_MARGINAL_ABS = float(_RG_CFG.get("ml_marginal_abs_pct", 55))  # pass vs threshold but low absolute conviction
+REGIME_GATE = float(_RG_CFG.get("regime_bull_pct_min", 60))
+CONFIDENCE_GATE = float(_RG_CFG.get("confidence_gate_pct", 55))
+MOMENTUM_RSI_MAX = float(_RG_CFG.get("momentum_rsi_max", 50))
+MOMENTUM_PATTERN_MIN = float(_RG_CFG.get("momentum_pattern_min", 45))
+
+# Tranche-tiered MOS ladder: required valuation discount scales with tranche depth
+# (T1 = first dollar in, T3 = final/deepest tranche) instead of one flat number applied
+# to every entry regardless of context. A flat 25% requirement made "full GO" nearly
+# unreachable for list-level rows (no tranche context => implicitly held to the T3 bar).
+_ladder_cfg = _RG_CFG.get("valuation_mos_ladder_pct")
+VALUATION_MOS_LADDER_PCT: tuple[float, ...] = (
+    tuple(float(x) for x in _ladder_cfg) if isinstance(_ladder_cfg, (list, tuple)) and _ladder_cfg
+    else (10.0, 18.0, 25.0)
+)
+_addon_cfg = _RG_CFG.get("valuation_regime_addon_pct") or {}
+VALUATION_REGIME_ADDON_PCT: dict[str, float] = {
+    "bull": float(_addon_cfg.get("bull", 0.0)),
+    "mixed": float(_addon_cfg.get("mixed", 3.0)),
+    "stormy": float(_addon_cfg.get("stormy", 7.0)),
+}
+VALUATION_GATE_PASS_PCT = VALUATION_MOS_LADDER_PCT[-1]   # deepest-tranche ceiling; align with House LT_REQUIRED_MOS_PCT
+VALUATION_GATE_PARTIAL_PCT = float(_RG_CFG.get("valuation_partial_mos_pct", 15.0))
 PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
 
 RsiStatus = Literal["hot", "neutral", "oversold"]
@@ -298,17 +335,62 @@ def build_next_trigger(
     }
 
 
-def _valuation_gate_detail(assessment_pct: float) -> tuple[bool, str]:
-    """Valuation gate aligned with House MOS — full entry requires ~25% discount."""
-    if assessment_pct >= VALUATION_GATE_PASS_PCT:
-        return True, f"Sufficient MOS (+{assessment_pct:.1f}% vs fair value)"
-    if assessment_pct >= VALUATION_GATE_PARTIAL_PCT:
+def _regime_bucket(regime_bull_pct: float | None) -> str:
+    if regime_bull_pct is None:
+        return "mixed"
+    if regime_bull_pct >= REGIME_GATE:
+        return "bull"
+    if regime_bull_pct < 42:
+        return "stormy"
+    return "mixed"
+
+
+def required_mos_pct(tranche_idx: int, regime_bull_pct: float | None = None) -> float:
+    """Required valuation discount for this tranche depth, tightened (never loosened) by regime.
+
+    tranche_idx 0 = first dollar in (loosest rung); the last rung matches the historical
+    flat 25% "full GO" bar — that discipline still applies, just to the deepest tranche
+    rather than to every entry regardless of how much has already been bought.
+    """
+    idx = max(0, min(int(tranche_idx), len(VALUATION_MOS_LADDER_PCT) - 1))
+    base = VALUATION_MOS_LADDER_PCT[idx]
+    addon = VALUATION_REGIME_ADDON_PCT[_regime_bucket(regime_bull_pct)]
+    return base + addon
+
+
+def _tranche_idx_from_tier_id(tier_id: str | None) -> int:
+    """Map a long-horizon entry tier ("T1"/"T2"/"T3") to a 0-based MOS ladder index.
+
+    Defaults to 0 (T1, the loosest rung) when no tier context is available — e.g. the
+    list-row / daily-batch path (enrich_dashboard_signal_row) has no entry-tier data,
+    so it should be judged against the first-tranche bar, not implicitly held to the
+    deepest tranche's 25% requirement.
+    """
+    s = str(tier_id or "").strip().upper()
+    if s.startswith("T") and s[1:].isdigit():
+        return max(0, int(s[1:]) - 1)
+    return 0
+
+
+def _valuation_gate_detail(
+    assessment_pct: float,
+    *,
+    tranche_idx: int = 0,
+    regime_bull_pct: float | None = None,
+) -> tuple[bool, str]:
+    """Valuation gate — required MOS scales with tranche depth (see required_mos_pct)."""
+    full_req = required_mos_pct(tranche_idx, regime_bull_pct)
+    partial_req = max(0.0, full_req - 10.0)
+    tier_note = f"T{tranche_idx + 1}"
+    if assessment_pct >= full_req:
+        return True, f"Sufficient MOS (+{assessment_pct:.1f}% vs required {full_req:.0f}%, {tier_note})"
+    if assessment_pct >= partial_req:
         return False, (
-            f"Partial MOS (+{assessment_pct:.1f}% — need {VALUATION_GATE_PASS_PCT:.0f}% for full entry)"
+            f"Partial MOS (+{assessment_pct:.1f}% — need {full_req:.0f}% for full entry, {tier_note})"
         )
     if assessment_pct >= 0:
         return False, (
-            f"Modest discount (+{assessment_pct:.1f}% — need {VALUATION_GATE_PASS_PCT:.0f}% MOS)"
+            f"Modest discount (+{assessment_pct:.1f}% — need {full_req:.0f}% MOS, {tier_note})"
         )
     return False, f"Rich vs fair value ({assessment_pct:.1f}%)"
 
@@ -328,15 +410,18 @@ def build_trading_gates(
     market_regime_bull_pct: float | None = None,
     volume_ratio: float | None = None,
     momentum_extended: bool = False,
+    tranche_idx: int = 0,
 ) -> list[dict[str, Any]]:
     """Primary + optional confidence gates with pass flags and visual_status tokens."""
     rb = regime_bull_pct if regime_bull_pct is not None else 50.0
     rsi_val = float(rsi) if rsi is not None else 50.0
     weather = regime_weather_status(regime_bull_pct, momentum_extended=momentum_extended)
 
-    valuation_ok, valuation_detail = _valuation_gate_detail(assessment_pct)
+    valuation_ok, valuation_detail = _valuation_gate_detail(
+        assessment_pct, tranche_idx=tranche_idx, regime_bull_pct=regime_bull_pct
+    )
     regime_ok = regime_bull_pct is not None and regime_bull_pct >= REGIME_GATE
-    momentum_ok = rsi_val < 50 and (pattern_score or 0) >= 45
+    momentum_ok = rsi_val < MOMENTUM_RSI_MAX and (pattern_score or 0) >= MOMENTUM_PATTERN_MIN
     ml_detail, ml_visual, ml_ok = _ml_gate_detail(short_ml_prob)
     conf_ok = (confidence_mid or 0) >= CONFIDENCE_GATE
 
@@ -821,6 +906,7 @@ def build_retail_action_payload(
     volume_ratio: float | None = None,
     institutional_conviction: dict[str, Any] | None = None,
     momentum_extended: bool = False,
+    tranche_idx: int = 0,
 ) -> dict[str, Any]:
     assessment_pct = _assessment_pct(current_price, fair_value)
     gates = build_trading_gates(
@@ -837,6 +923,7 @@ def build_retail_action_payload(
         market_regime_bull_pct=market_regime_bull_pct,
         volume_ratio=volume_ratio,
         momentum_extended=momentum_extended,
+        tranche_idx=tranche_idx,
     )
     primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
     locked = sum(1 for g in primary if not g.get("pass"))
@@ -967,6 +1054,11 @@ def enrich_investor_summary_retail_action(
         if cp > stop and tgt > cp:
             rr = (tgt - cp) / (cp - stop)
 
+    long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
+    tranche_idx = _tranche_idx_from_tier_id(
+        long_spot.get("active_tier_id") or long_spot.get("tier_id") or long_spot.get("next_add_tier_id")
+    )
+
     investor_out["retail_action"] = build_retail_action_payload(
         current_price=current_price,
         fair_value=investor_out.get("fair_value"),
@@ -988,9 +1080,9 @@ def enrich_investor_summary_retail_action(
         volume_ratio=volume_ratio,
         institutional_conviction=institutional_conviction,
         momentum_extended=bool(investor_out.get("regime_momentum_extended")),
+        tranche_idx=tranche_idx,
     )
 
-    long_spot = ((long_h.get("entry_tiers") or {}).get("spot_position")) or {}
     short_spot = (short.get("entry_zone") or {}).get("spot_position") or {}
     zone_ctx = build_zone_context(investor_out, current_price)
     ra = investor_out["retail_action"]
@@ -1106,11 +1198,13 @@ def enrich_dashboard_signal_row(
         risk_reward=None,
         include_confidence_gate=False,
     )
-    # List view uses LT band proxy — override valuation detail when no FV
+    # List view uses LT band proxy — override valuation detail when no FV.
+    # tranche_idx defaults to 0 (T1, first-dollar rung) — this path has no entry-tier
+    # context, so it must not be implicitly held to the T3/deepest-tranche 25% bar.
     if assessment != 0:
         for g in payload["gates"]:
             if g["id"] == "valuation":
-                ok, detail = _valuation_gate_detail(assessment)
+                ok, detail = _valuation_gate_detail(assessment, regime_bull_pct=rb)
                 g["pass"] = ok
                 g["gate_cleared"] = ok
                 g["visual_status"] = "cleared" if ok else "blocked"
