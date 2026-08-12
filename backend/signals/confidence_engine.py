@@ -1422,7 +1422,7 @@ def _yfinance_news_summary(ticker: str) -> dict | None:
 
         kw_avg, n_h, kw_hit, _kw_method = aggregate_keyword_sentiment(raw_items, ticker=sym)
         headlines = [
-            {"title": (it.get("title") or "")[:120], "score": None, "label": "Neutral"}
+            {"title": (it.get("title") or "")[:120], "score": None, "label": "Neutral", "url": it.get("url") or None}
             for it in raw_items[:10]
         ]
         if kw_hit and kw_avg is not None:

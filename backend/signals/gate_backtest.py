@@ -90,32 +90,47 @@ def fair_value_proxy_for_backtest(
     indicator_row: Any | None = None,
 ) -> float | None:
     """
-    Causal FV proxy when full fair_value_estimator is not run per bar.
-    Prefers suggested buy / MA200 anchors from the signal bar.
+    Causal FV proxy when the full fair_value_estimator isn't run per bar (that
+    model needs point-in-time fundamentals — P/E, growth, margins, debt ratios —
+    which aren't cheaply available per historical bar without a network fetch
+    per bar, and even then "today's" fundamentals applied to a years-old bar
+    would be a look-ahead problem, not a fix).
+
+    MA200 is the primary anchor: a symmetric read (price vs its own 200-day
+    average), not directional. Previous version applied a flat -3% "rich"
+    penalty whenever price was above MA200 — meaning *any* stock in an uptrend
+    always read as ~3% overvalued regardless of how much genuine cushion it
+    had, and separately capped the fallback suggested-buy-based anchor at 5%
+    above a near-term technical level — a level that's rarely more than a few
+    percent from spot by construction, so the valuation gate's 10-25% MOS bar
+    could almost never register as cleared even when a stock was genuinely
+    cheap. Neither bias was intentional; both quietly suppressed the valuation
+    gate's pass rate in every walk-forward backtest.
     """
     if close <= 0:
         return None
-    sb = sig.get("suggested_buy_price")
-    if sb is not None:
-        try:
-            v = float(sb)
-            if v > 0:
-                return v * 1.05
-        except (TypeError, ValueError):
-            pass
     if indicator_row is not None:
         ma200 = indicator_row.get("MA200") if hasattr(indicator_row, "get") else None
         if ma200 is not None:
             try:
                 m = float(ma200)
                 if m > 0:
-                    return m if close <= m else close * 0.97
+                    return m
             except (TypeError, ValueError):
                 pass
-    comp = float(sig.get("composite_buy") or sig.get("confluence_score") or 50)
-    # Modest discount vs spot when composite is strong (aligns with “value” gate stress tests)
-    discount = max(0.0, min(0.25, (comp - 45) / 200.0))
-    return close * (1.0 + discount)
+    sb = sig.get("suggested_buy_price")
+    if sb is not None:
+        try:
+            v = float(sb)
+            if v > 0:
+                return v * 1.15
+        except (TypeError, ValueError):
+            pass
+    # No anchor available (e.g. early in a series, before 200 bars exist) —
+    # read as neutral (assessment_pct ~= 0) rather than fabricating a directional
+    # guess from the composite/momentum score, which measures something
+    # different (technical strength) and shouldn't be conflated with valuation.
+    return close
 
 
 def _ml_prob_at_bar(

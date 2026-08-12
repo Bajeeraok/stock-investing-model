@@ -65,7 +65,7 @@ export interface NewsSentimentLayerPayload {
   headline_count?: number | null;
   source?: string | null;
   method?: string | null;
-  headlines?: { title: string; score?: number | null; label?: string | null }[];
+  headlines?: { title: string; score?: number | null; label?: string | null; url?: string | null }[];
   layer_weight?: number | null;
   layer_available?: boolean | null;
   message?: string | null;
@@ -950,7 +950,13 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                       <ul className="space-y-1.5 text-xs text-slate-300 border-t border-slate-600/40 pt-2">
                         {(data.news_sentiment_layer.headlines ?? []).map((h, i) => (
                           <li key={i} className="leading-snug pl-2 border-l-2 border-slate-600/60">
-                            {h.title}
+                            {h.url ? (
+                              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-sky-300">
+                                {h.title}
+                              </a>
+                            ) : (
+                              h.title
+                            )}
                           </li>
                         ))}
                       </ul>

@@ -119,3 +119,48 @@ def test_stock_specific_catalyst_detail_includes_volume_when_notable():
     )
     assert "soft demand" in out["detail"]
     assert "3.1x average" in out["detail"]
+
+
+def test_gold_move_attributed_to_dollar_even_when_spy_is_quiet():
+    # The exact GLD scenario: SPY +0.2% is below the "meaningful" bar, so the plain
+    # SPY comparison would fall through to "unclear" — but GLD is gold-sensitive and
+    # DXY moved meaningfully opposite, so this should resolve to broad_market (dollar).
+    out = build_price_move_narrative(
+        ticker="GLD",
+        day_change_pct=1.1,
+        spy_day_change_pct=0.2,
+        catalyst=None,
+        dxy_day_change_pct=-0.4,
+        cross_asset_badges=["gold-sensitive"],
+    )
+    assert out["driver"] == "broad_market"
+    assert "dollar" in out["headline"].lower()
+    assert "-0.4%" in out["headline"]
+
+
+def test_dxy_comove_ignored_for_non_dollar_sensitive_ticker():
+    # Same DXY move, but the ticker has no gold/USD-sensitive badge — should not
+    # be attributed to the dollar; falls through to unclear (SPY too quiet to count).
+    out = build_price_move_narrative(
+        ticker="XYZ",
+        day_change_pct=1.1,
+        spy_day_change_pct=0.2,
+        catalyst=None,
+        dxy_day_change_pct=-0.4,
+        cross_asset_badges=[],
+    )
+    assert out["driver"] == "unclear"
+
+
+def test_dxy_comove_requires_opposite_direction():
+    # Gold up AND dollar up together is not the expected inverse relationship —
+    # should not be attributed to the dollar.
+    out = build_price_move_narrative(
+        ticker="GLD",
+        day_change_pct=1.1,
+        spy_day_change_pct=0.2,
+        catalyst=None,
+        dxy_day_change_pct=0.4,
+        cross_asset_badges=["gold-sensitive"],
+    )
+    assert out["driver"] != "broad_market" or "dollar" not in out["headline"].lower()

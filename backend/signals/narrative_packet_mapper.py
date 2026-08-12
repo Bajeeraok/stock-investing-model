@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from signals.narrative_waterfall import Band, Gate, Scenario, SignalPacket
+from signals.retail_action_payload import ST_ML_GATE
 from signals.time_et import today_est
 
 _HORIZON_BY_MODE = {"scout": "short", "swing": "medium", "owner": "long"}
@@ -129,7 +130,7 @@ def _unlock_conditions(gates: list[dict]) -> list[str]:
 
 
 def _gate_detail(canonical: str, gate: dict, *, rsi, hmm_bull_pct, ml_prob_pct,
-                  ml_threshold_pct, fused_confidence_pct) -> dict:
+                  fused_confidence_pct) -> dict:
     """Structured numeric fields where cheaply available (renders the nicer
     GATE_TEMPLATES copy); `text` is always present as a safe fallback
     (narrative_waterfall.render_explanations degrades to it gracefully)."""
@@ -142,7 +143,12 @@ def _gate_detail(canonical: str, gate: dict, *, rsi, hmm_bull_pct, ml_prob_pct,
         detail["tape"] = "Bull" if hmm_bull_pct >= _MARKET_WEATHER_NEED_PCT else "Mixed"
     elif canonical == "ml_probability" and ml_prob_pct is not None:
         detail["ml_prob_pct"] = float(ml_prob_pct)
-        detail["threshold_pct"] = float(ml_threshold_pct) if ml_threshold_pct is not None else 25.0
+        # The real pass/fail bar (retail_action_payload.ST_ML_GATE) — NOT the
+        # per-horizon ml_horizons[...].threshold_pct, which is a different
+        # concept (the ML model's target gain threshold, not a probability
+        # bar) and was previously mistakenly reused here, producing a
+        # nonsensical "clears the 3% threshold" instead of the real ~25%.
+        detail["threshold_pct"] = ST_ML_GATE
     elif canonical == "confidence" and fused_confidence_pct is not None:
         detail["conf_pct"] = float(fused_confidence_pct)
     return detail
@@ -192,8 +198,7 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
             name=canonical,
             passed=bool(g.get("pass")),
             detail=_gate_detail(canonical, g, rsi=rsi, hmm_bull_pct=regime_bull_pct,
-                                 ml_prob_pct=ml_prob_pct, ml_threshold_pct=ml_threshold_pct,
-                                 fused_confidence_pct=fused_confidence_pct),
+                                 ml_prob_pct=ml_prob_pct, fused_confidence_pct=fused_confidence_pct),
         ))
         seen_canonical.add(canonical)
     if "confidence" not in seen_canonical and fused_confidence_pct is not None:

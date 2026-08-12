@@ -821,6 +821,7 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = 
                         "title": str(h.get("title") or "")[:220],
                         "score": h.get("score"),
                         "label": h.get("label"),
+                        "url": h.get("url") or None,
                     }
                 )
             elif isinstance(h, str):
@@ -1794,6 +1795,26 @@ def _build_investor_summary(
                 if isinstance(pe_transition, dict) and pe_transition.get("active")
                 else None
             )
+
+            # DXY day change — only fetched for gold/USD-sensitive names (cross_asset
+            # badges, already computed above), since SPY is frequently the wrong
+            # cross-asset comparison for them and this is an extra fetch we don't
+            # want to pay for every ticker.
+            cross_asset_badges = (
+                response.get("cross_asset", {}).get("badges")
+                if isinstance(response.get("cross_asset"), dict) else None
+            ) or []
+            dxy_day_change_pct = None
+            if any(b in cross_asset_badges for b in ("gold-sensitive", "USD-sensitive")):
+                try:
+                    close_dxy = fetch_ohlcv_safe("DX-Y.NYB", "5d")
+                    if close_dxy is not None and len(close_dxy) >= 2:
+                        prev_d, last_d = float(close_dxy.iloc[-2]), float(close_dxy.iloc[-1])
+                        if prev_d > 0:
+                            dxy_day_change_pct = round(100.0 * (last_d - prev_d) / prev_d, 2)
+                except Exception:
+                    pass
+
             move_narrative = build_price_move_narrative(
                 ticker=ticker,
                 day_change_pct=day_change_pct,
@@ -1803,6 +1824,8 @@ def _build_investor_summary(
                 earnings_days_since=int(earnings_days_since) if earnings_days_since is not None else None,
                 volume_ratio=_safe_float(response.get("volume_ratio")),
                 rsi=_safe_float(out.get("rsi")),
+                dxy_day_change_pct=dxy_day_change_pct,
+                cross_asset_badges=cross_asset_badges,
             )
             # Raw numbers alongside the narrative text, for UI stats that want the figure directly.
             move_narrative["day_change_pct"] = day_change_pct

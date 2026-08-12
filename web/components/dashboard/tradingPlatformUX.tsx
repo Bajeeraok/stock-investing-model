@@ -236,7 +236,7 @@ export function NewsSentimentRail({
   label?: string | null;
   score?: number | null;
   headlineCount?: number | null;
-  headlines?: Array<{ title?: string; url?: string }>;
+  headlines?: Array<{ title?: string; url?: string | null }>;
   catalystNote?: string | null;
 }) {
   if (!headlineCount && !headlines?.length && !catalystNote) return null;
@@ -263,11 +263,11 @@ export function NewsSentimentRail({
       {catalystNote && (
         <p className="text-[11px] text-amber-200/90 leading-snug">{catalystNote}</p>
       )}
-      <ul className="space-y-1">
-        {(headlines ?? []).slice(0, 3).map((h, i) => (
-          <li key={i} className="text-[11px] text-slate-400 leading-snug truncate">
+      <ul className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+        {(headlines ?? []).slice(0, 8).map((h, i) => (
+          <li key={i} className="text-[11px] text-slate-400 leading-snug line-clamp-2">
             {h.url ? (
-              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-sky-300">
+              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-sky-300" title="Open full article">
                 {h.title}
               </a>
             ) : (

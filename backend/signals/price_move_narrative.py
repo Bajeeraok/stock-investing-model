@@ -77,6 +77,26 @@ def _spy_comoves(day_change_pct: float | None, spy_day_change_pct: float | None)
     return abs(day_change_pct) <= _COMOVE_TOLERANCE_MULT * max(abs(spy_day_change_pct), 0.1)
 
 
+# Gold/commodity-FX names track the dollar, not equities — SPY is frequently the
+# wrong cross-asset comparison for them (a quiet equity tape says nothing about
+# a real DXY-driven gold move). DXY's day-to-day range also runs smaller than
+# SPY's, so it needs its own (tighter) "meaningful move" bar, not SPY's.
+_DXY_MEANINGFUL_MOVE_PCT = 0.3
+_DXY_COMOVE_TOLERANCE_MULT = 3.0
+
+
+def _dxy_comoves(day_change_pct: float | None, dxy_day_change_pct: float | None) -> bool:
+    """Gold/USD-sensitive assets typically move opposite the dollar (DXY up -> gold down)."""
+    if day_change_pct is None or dxy_day_change_pct is None:
+        return False
+    if abs(dxy_day_change_pct) < _DXY_MEANINGFUL_MOVE_PCT:
+        return False
+    opposite_sign = (day_change_pct >= 0) != (dxy_day_change_pct >= 0)
+    if not opposite_sign:
+        return False
+    return abs(day_change_pct) <= _DXY_COMOVE_TOLERANCE_MULT * max(abs(dxy_day_change_pct), 0.1)
+
+
 def _macro_citation(market_catalysts: dict[str, Any] | None) -> str | None:
     if not isinstance(market_catalysts, dict):
         return None
@@ -104,6 +124,8 @@ def build_price_move_narrative(
     earnings_days_since: int | None = None,
     volume_ratio: float | None = None,
     rsi: float | None = None,
+    dxy_day_change_pct: float | None = None,
+    cross_asset_badges: list[str] | None = None,
 ) -> dict[str, Any]:
     """Classify and explain today's price move. Returns driver/headline/detail/citation."""
     sym = (ticker or "This stock").upper() if ticker else "This stock"
@@ -145,7 +167,28 @@ def build_price_move_narrative(
             "citation": None,
         }
 
-    # 3. Broad market co-move
+    # 3. Dollar co-move — checked before the generic SPY comparison, since gold/
+    # USD-sensitive names track DXY far more directly than the equity tape. A
+    # quiet SPY session (e.g. +0.2%, below the "meaningful" bar) says nothing
+    # about a real DXY-driven gold move, which SPY-only comparison would miss
+    # entirely and fall through to "unclear."
+    is_dollar_sensitive = bool(cross_asset_badges) and any(
+        b in cross_asset_badges for b in ("gold-sensitive", "USD-sensitive")
+    )
+    if is_dollar_sensitive and _dxy_comoves(day_change_pct, dxy_day_change_pct):
+        headline = (
+            f"{move_desc + ' — ' if move_desc else sym + ' moved '}"
+            f"tracking the dollar inversely (DXY {dxy_day_change_pct:+.1f}%) — a classic gold/commodity-FX "
+            "dynamic, not a stock-specific catalyst."
+        )
+        return {
+            "driver": "broad_market",
+            "headline": headline,
+            "detail": _join_detail(vol_phrase),
+            "citation": None,
+        }
+
+    # 4. Broad market (equity) co-move
     if _spy_comoves(day_change_pct, spy_day_change_pct):
         direction = "down with" if (spy_day_change_pct or 0) < 0 else "up with"
         headline = (
@@ -166,7 +209,7 @@ def build_price_move_narrative(
             "citation": _macro_citation(market_catalysts),
         }
 
-    # 4. No dominant driver identified — say so honestly rather than guess, but
+    # 5. No dominant driver identified — say so honestly rather than guess, but
     # volume/RSI are real, data-backed facts even when no catalyst was found.
     if move_desc and day_change_pct is not None and abs(day_change_pct) >= 1.0:
         headline = f"{move_desc} without a clear stock-specific catalyst or broad-market co-move — likely technical (volume, positioning, or a smaller headline not yet classified)."

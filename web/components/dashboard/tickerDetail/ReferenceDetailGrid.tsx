@@ -28,7 +28,6 @@ import { InvestorDecisionSummarySection } from "../InvestorDecisionSummary";
 import { HorizonDivergenceNote } from "../retailActionUX";
 import { ScenarioTeaser } from "../ScenarioTeaser";
 import { apiUrl } from "@/lib/apiBase";
-import { NarrativeWaterfallCard } from "./NarrativeWaterfallCard";
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -159,7 +158,6 @@ export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
         <NearBottomCard {...props} />
         <ConfidenceCard {...props} />
         <FundamentalsCard {...props} />
-        <NarrativeWaterfallCard ticker={props.detail.ticker} mode={props.decisionMode} />
       </div>
     </div>
   );

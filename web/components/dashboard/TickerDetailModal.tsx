@@ -34,6 +34,7 @@ import {
 } from "./retailActionUX";
 import { TickerDecisionHero } from "./tickerDetail/TickerDecisionHero";
 import { ReferenceDetailGrid } from "./tickerDetail/ReferenceDetailGrid";
+import { NarrativeWaterfallCard } from "./tickerDetail/NarrativeWaterfallCard";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { WatchZoneCallout } from "./zoneContextUX";
@@ -650,7 +651,7 @@ export function TickerDetailModal({
       label: roadmapNews?.sentiment_label ?? null,
       score: roadmapNews?.score_0_1 ?? null,
       headlineCount: roadmapNews?.headline_count ?? null,
-      headlines: (roadmapNews?.headlines ?? []).map((h) => ({ title: h.title })),
+      headlines: (roadmapNews?.headlines ?? []).map((h) => ({ title: h.title, url: h.url })),
       catalystNote: catalyst ?? detail?.catalyst?.override_note ?? null,
     };
   }, [detail]);
@@ -988,7 +989,7 @@ export function TickerDetailModal({
                     gatesTotal={gatesTotal}
                     onOpenWhy={() => { setModalTab("why"); setWhySubTab("proof"); }}
                   />
-                  <div className="lg:hidden">
+                  <div className="lg:hidden space-y-3">
                     <NewsSentimentRail
                       label={modalNewsRail.label}
                       score={modalNewsRail.score}
@@ -996,6 +997,7 @@ export function TickerDetailModal({
                       headlines={modalNewsRail.headlines}
                       catalystNote={modalNewsRail.catalystNote}
                     />
+                    <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <CopyTradePlanButton
@@ -1090,6 +1092,7 @@ export function TickerDetailModal({
                     headlines={modalNewsRail.headlines}
                     catalystNote={modalNewsRail.catalystNote}
                   />
+                  <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />
                 </aside>
                 </div>
               )}
