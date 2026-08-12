@@ -4000,12 +4000,17 @@ async def get_ticker_narrative(
 
         scenarios_raw: list = []
         try:
+            from signals.cache import cached_price_target_scenarios
             from signals.price_targets import run_price_targets
             inv = detail.get("investor_summary") or {}
             rb = inv.get("regime_bull_pct") or 0
             regime = "UP" if rb >= 60 else "DOWN" if rb <= 40 else "NEUTRAL"
-            pt = run_price_targets(sym, market_regime=regime, config=config, fair_value=inv.get("fair_value"))
-            scenarios_raw = pt.get("scenarios") or []
+            fair_value = inv.get("fair_value")
+            pt = cached_price_target_scenarios(
+                sym, regime,
+                lambda: run_price_targets(sym, market_regime=regime, config=config, fair_value=fair_value),
+            )
+            scenarios_raw = (pt or {}).get("scenarios") or []
         except Exception as e:
             logger.warning("[narrative] scenarios unavailable for %s: %s", sym, e)
 

@@ -51,6 +51,7 @@ TTL_NEWS_GENERAL = 3600  # 1h – FMP general news for pre-IPO keyword filter
 TTL_EARNINGS_QUALITY = 14 * 24 * 3600  # 14d – statements/revisions move quarterly
 TTL_EARNINGS_QUALITY_NEAR = 24 * 3600  # 1d – earnings nearby: re-fetch daily to catch new report
 TTL_INSTITUTIONAL_BUNDLE = 12 * 3600  # 12h – 13F quarterly, short interest bi-weekly, insiders daily at most
+TTL_PRICE_TARGET_SCENARIOS = 15 * 60  # 15 min – internal scenario-EV engine (HMM/ML-tilted); mode-independent
 
 
 def _dashboard_ttl_seconds() -> int:
@@ -414,6 +415,25 @@ def cached_price_target(ticker: str, fetch_fn):
         set_cached(key, out, TTL_PRICE_TARGET)
         return out
     return None
+
+
+def cached_price_target_scenarios(ticker: str, regime: str, fetch_fn):
+    """Cache run_price_targets() scenario list. TTL 15 min.
+
+    Keyed by ticker + regime bucket only (not mode/persona) — the scenario
+    math (HMM tilt, ML-probability adjustment, short-interest squeeze) is
+    identical across scout/swing/owner, so callers that vary by mode (e.g.
+    the trade-narrative endpoint) should share one cache entry per ticker
+    instead of recomputing on every persona switch.
+    """
+    key = cache_key("price_target_scenarios", ticker, regime)
+    hit = get_cached(key)
+    if hit is not None:
+        return hit
+    out = fetch_fn()
+    if out is not None:
+        set_cached(key, out, TTL_PRICE_TARGET_SCENARIOS)
+    return out
 
 
 def cached_insider_stats(ticker: str, fetch_fn):
