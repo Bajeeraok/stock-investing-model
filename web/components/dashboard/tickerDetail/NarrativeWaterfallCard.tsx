@@ -83,6 +83,12 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   const usingNarrative = Boolean(
     data?.narrative && (data.narrative_status === "ok" || data.narrative_status === "cached"),
   );
+  const narrativeParagraphs = usingNarrative
+    ? (data!.narrative as string)
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
 
   return (
     <ReferenceCard
@@ -101,7 +107,13 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
         loading ? (
           <p className="text-xs text-slate-500 italic animate-pulse">Building trade narrative…</p>
         ) : usingNarrative ? (
-          <p className="text-xs text-slate-300 leading-relaxed">{data!.narrative}</p>
+          <div className="space-y-2">
+            {narrativeParagraphs.map((p, i) => (
+              <p key={i} className="text-xs text-slate-300 leading-relaxed">
+                {p}
+              </p>
+            ))}
+          </div>
         ) : action ? (
           <p className="text-xs text-slate-300 leading-relaxed">{action.text}</p>
         ) : undefined
