@@ -16,6 +16,12 @@ elsewhere in the pipeline:
 Deliberately does not fabricate a cause: when neither a stock-specific catalyst
 nor a broad-market co-move is detected, the narrative says so plainly rather than
 guessing (e.g. "war", "jobs report") without data behind it.
+
+Volume and RSI (both already computed upstream, no extra fetch) add a second
+layer of plain-English color to every branch — especially "unclear," which
+would otherwise be a dead end: even with no identified catalyst, "on 2.1x
+average volume" or "RSI 74, already overbought" is a real, data-backed fact
+worth surfacing rather than silence.
 """
 from __future__ import annotations
 
@@ -27,6 +33,35 @@ Driver = Literal["stock_specific", "broad_market", "earnings", "unclear"]
 # ticker's move must be in the same direction and not wildly larger than SPY's.
 _SPY_MEANINGFUL_MOVE_PCT = 0.5
 _COMOVE_TOLERANCE_MULT = 2.5
+
+
+def _volume_phrase(volume_ratio: float | None) -> str | None:
+    """Plain-English volume color — only when it's actually notable (near-1x isn't worth a sentence)."""
+    if volume_ratio is None or volume_ratio <= 0:
+        return None
+    if volume_ratio >= 2.0:
+        return f"Volume is running {volume_ratio:.1f}x average — a real spike, consistent with the move getting noticed."
+    if volume_ratio >= 1.4:
+        return f"Volume is {volume_ratio:.1f}x average — somewhat elevated."
+    if volume_ratio <= 0.6:
+        return f"Volume is only {volume_ratio:.1f}x average — a quiet, low-conviction session."
+    return None
+
+
+def _rsi_phrase(rsi: float | None) -> str | None:
+    """Plain-English momentum color — only when RSI is actually stretched, not mid-range noise."""
+    if rsi is None:
+        return None
+    if rsi >= 70:
+        return f"RSI is {rsi:.0f} — already technically overbought, so this move extends an already-stretched setup."
+    if rsi <= 30:
+        return f"RSI is {rsi:.0f} — technically oversold, so this is happening from an already-beaten-down level."
+    return None
+
+
+def _join_detail(*parts: str | None) -> str | None:
+    joined = " ".join(p for p in parts if p)
+    return joined or None
 
 
 def _spy_comoves(day_change_pct: float | None, spy_day_change_pct: float | None) -> bool:
@@ -67,6 +102,8 @@ def build_price_move_narrative(
     market_catalysts: dict[str, Any] | None = None,
     earnings_days_until: int | None = None,
     earnings_days_since: int | None = None,
+    volume_ratio: float | None = None,
+    rsi: float | None = None,
 ) -> dict[str, Any]:
     """Classify and explain today's price move. Returns driver/headline/detail/citation."""
     sym = (ticker or "This stock").upper() if ticker else "This stock"
@@ -74,6 +111,9 @@ def build_price_move_narrative(
     if day_change_pct is not None:
         direction = "up" if day_change_pct >= 0 else "down"
         move_desc = f"{sym} is {direction} {abs(day_change_pct):.1f}% today"
+
+    vol_phrase = _volume_phrase(volume_ratio)
+    rsi_phrase = _rsi_phrase(rsi)
 
     # 1. Stock-specific catalyst (real classified news event, not a guess)
     if isinstance(catalyst, dict) and catalyst.get("active"):
@@ -87,7 +127,7 @@ def build_price_move_narrative(
         return {
             "driver": "stock_specific",
             "headline": headline,
-            "detail": headline_txt,
+            "detail": _join_detail(headline_txt, vol_phrase),
             "citation": catalyst.get("override_note"),
         }
 
@@ -101,7 +141,7 @@ def build_price_move_narrative(
         return {
             "driver": "earnings",
             "headline": headline,
-            "detail": None,
+            "detail": _join_detail(vol_phrase, rsi_phrase),
             "citation": None,
         }
 
@@ -113,20 +153,21 @@ def build_price_move_narrative(
             f"moving {direction} the broader market (SPY {spy_day_change_pct:+.1f}%), "
             "not on company-specific news."
         )
-        detail = None
+        regime_note = None
         gmr = (global_market_regime or "").upper()
         if gmr in ("BEAR", "STRONG_BEAR"):
-            detail = f"Macro regime reads {gmr.replace('_', ' ').title()} — a broad risk-off tape, not a stock-specific problem."
+            regime_note = f"Macro regime reads {gmr.replace('_', ' ').title()} — a broad risk-off tape, not a stock-specific problem."
         elif gmr in ("BULL", "STRONG_BULL"):
-            detail = f"Macro regime reads {gmr.replace('_', ' ').title()} — broad risk-on tape lifting most names."
+            regime_note = f"Macro regime reads {gmr.replace('_', ' ').title()} — broad risk-on tape lifting most names."
         return {
             "driver": "broad_market",
             "headline": headline,
-            "detail": detail,
+            "detail": _join_detail(regime_note, vol_phrase),
             "citation": _macro_citation(market_catalysts),
         }
 
-    # 4. No dominant driver identified — say so honestly rather than guess
+    # 4. No dominant driver identified — say so honestly rather than guess, but
+    # volume/RSI are real, data-backed facts even when no catalyst was found.
     if move_desc and day_change_pct is not None and abs(day_change_pct) >= 1.0:
         headline = f"{move_desc} without a clear stock-specific catalyst or broad-market co-move — likely technical (volume, positioning, or a smaller headline not yet classified)."
     else:
@@ -134,6 +175,6 @@ def build_price_move_narrative(
     return {
         "driver": "unclear",
         "headline": headline,
-        "detail": None,
+        "detail": _join_detail(vol_phrase, rsi_phrase),
         "citation": None,
     }

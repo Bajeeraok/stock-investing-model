@@ -1801,6 +1801,8 @@ def _build_investor_summary(
                 global_market_regime=response.get("_global_market_regime"),
                 catalyst=response.get("catalyst") if isinstance(response.get("catalyst"), dict) else None,
                 earnings_days_since=int(earnings_days_since) if earnings_days_since is not None else None,
+                volume_ratio=_safe_float(response.get("volume_ratio")),
+                rsi=_safe_float(out.get("rsi")),
             )
             # Raw numbers alongside the narrative text, for UI stats that want the figure directly.
             move_narrative["day_change_pct"] = day_change_pct

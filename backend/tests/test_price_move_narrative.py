@@ -74,3 +74,48 @@ def test_no_data_does_not_crash():
     out = build_price_move_narrative(ticker=None, day_change_pct=None, spy_day_change_pct=None)
     assert out["driver"] == "unclear"
     assert isinstance(out["headline"], str) and out["headline"]
+
+
+def test_unclear_case_gets_volume_and_rsi_color():
+    out = build_price_move_narrative(
+        ticker="QRS",
+        day_change_pct=-7.0,
+        spy_day_change_pct=0.1,
+        catalyst=None,
+        volume_ratio=2.4,
+        rsi=76.0,
+    )
+    assert out["driver"] == "unclear"
+    assert "2.4x average" in out["detail"]
+    assert "overbought" in out["detail"]
+
+
+def test_unclear_case_stays_none_without_notable_volume_or_rsi():
+    # Near-1x volume and mid-range RSI aren't worth a sentence — detail should stay empty.
+    out = build_price_move_narrative(
+        ticker="QRS",
+        day_change_pct=-1.0,
+        spy_day_change_pct=0.1,
+        catalyst=None,
+        volume_ratio=1.05,
+        rsi=50.0,
+    )
+    assert out["detail"] is None
+
+
+def test_stock_specific_catalyst_detail_includes_volume_when_notable():
+    out = build_price_move_narrative(
+        ticker="XYZ",
+        day_change_pct=-6.0,
+        spy_day_change_pct=-0.8,
+        catalyst={
+            "active": True,
+            "top_event_type": "GUIDANCE_CUT",
+            "headline_summary": "XYZ cuts full-year guidance on soft demand",
+            "override_note": "Catalyst active (guidance cut, 3h ago) — negative event may override bullish technicals.",
+            "hours_since_catalyst": 3.0,
+        },
+        volume_ratio=3.1,
+    )
+    assert "soft demand" in out["detail"]
+    assert "3.1x average" in out["detail"]
