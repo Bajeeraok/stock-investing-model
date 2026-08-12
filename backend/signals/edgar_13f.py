@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from config_loader import get_data_root
 from signals.edgar_common import ensure_edgar_identity, shares_for_ticker_in_report
 from signals.edgar_filer_resolve import resolve_filers_from_yahoo_holders
 from signals.edgar_insider import get_ticker_to_cik, _sec_request
@@ -21,7 +22,10 @@ TTL_13F_CACHE = 24 * 3600
 MAX_FILERS_DEFAULT = 5
 _CHANGE_THRESHOLD_PCT = 1.0
 
-_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "edgar_13f_cache"
+# Routed through get_data_root() (not a hardcoded source-tree path) so this
+# survives Railway redeploys when DATA_ROOT points at a mounted Volume —
+# otherwise every deploy resets it and forces a full SEC EDGAR re-crawl.
+_CACHE_DIR = get_data_root() / "edgar_13f_cache"
 
 
 def _shares_for_ticker(report: Any, ticker: str, issuer_hint: str | None = None) -> int:

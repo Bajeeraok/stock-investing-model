@@ -13,10 +13,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+from config_loader import get_data_root
+
 logger = logging.getLogger(__name__)
 
 TTL_CACHE_SEC = 12 * 3600
-_CACHE_DIR = Path(__file__).resolve().parent.parent / "data" / "institutional_cache"
+# Routed through get_data_root() (not a hardcoded source-tree path) so this
+# survives Railway redeploys when DATA_ROOT points at a mounted Volume.
+_CACHE_DIR = get_data_root() / "institutional_cache"
 
 
 def _cache_path(ticker: str) -> Path:

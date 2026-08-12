@@ -492,11 +492,12 @@ HARD RULES:
 1. Every dollar figure and percentage you write MUST appear verbatim in the JSON packet. Never invent a price, level, or probability.
 2. Never contradict ACTION_CONTRACT. You explain it; you do not second-guess it. Do not use the words BUY/SELL except as they appear in the contract.
 3. Use ONLY the catalysts listed in CATALYSTS — do not introduce others. Weave them into flowing prose with their horizons.
-4. Structure (plain prose, ~150-220 words, no headers/bullets):
-   (a) one-sentence thesis consistent with the verdict,
-   (b) what unlocks the setup, with realistic timelines from the catalysts,
-   (c) what breaks it (invalidation level, downside scenario),
-   (d) close with the single most important thing to watch.
+4. Output EXACTLY 4 short paragraphs, each 1-3 sentences, separated by a single blank line (one "\\n\\n" between each — no headers, no bullets, no bold):
+   Paragraph 1 — one-sentence thesis consistent with the verdict.
+   Paragraph 2 — what unlocks the setup, with realistic timelines from the catalysts.
+   Paragraph 3 — what breaks it (invalidation level, downside scenario).
+   Paragraph 4 — a single sentence naming the most important thing to watch.
+   Total length ~150-220 words across all 4 paragraphs.
 5. Tone: measured. No hype, no certainty language."""
 
 
