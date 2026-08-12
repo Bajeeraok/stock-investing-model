@@ -98,6 +98,9 @@ export type ModelAuditOutcomeSummary = {
   tactical_summary?: ModelAuditActionableSlice | null;
   headline_actionable_win_rate_pct?: number | null;
   headline_actionable_n?: number;
+  /** Which actionable_slices key actually produced the headline number (falls through go_4_gates -> full_go -> gates_3plus -> all_go when a stricter slice has <5 resolved rows). */
+  headline_actionable_slice?: "go_4_gates" | "full_go" | "gates_3plus" | "all_go";
+  headline_actionable_slice_label?: string;
   actionable_slices?: Record<string, ModelAuditActionableSlice>;
   by_verdict?: { bucket: string; n: number; avg_return_7d_pct?: number | null; avg_return_30d_pct?: number | null }[];
   by_go_no_go?: { bucket: string; n: number; win_rate_pct?: number | null }[];
@@ -689,7 +692,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             (audit.outcome_summary.headline_actionable_n ?? 0) > 0) && (
             <div className="rounded border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-2">
               <p className="text-[10px] uppercase tracking-wider text-emerald-300/80 mb-1">
-                Actionable slice (4/4 GO or full_go)
+                Actionable slice ({audit.outcome_summary.headline_actionable_slice_label ?? "4/4 GO or full_go"})
               </p>
               <p className="text-sm text-slate-200">
                 Win rate{" "}
@@ -710,7 +713,10 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 </span>
               </p>
               <p className="text-[9px] text-slate-500 mt-0.5">
-                Win % on resolved 4/4 GO rows — not the broad accumulate headline (HOLD-heavy).
+                {audit.outcome_summary.headline_actionable_slice === "gates_3plus" ||
+                audit.outcome_summary.headline_actionable_slice === "all_go"
+                  ? "Too few 4/4 GO rows have resolved yet — showing a looser fallback slice instead (see label above). Not the broad accumulate headline (HOLD-heavy) either way."
+                  : "Win % on resolved 4/4 GO rows — not the broad accumulate headline (HOLD-heavy)."}
               </p>
             </div>
           )}

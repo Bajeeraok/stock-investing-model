@@ -172,7 +172,7 @@ def main() -> None:
 
         from signals.time_et import now_et
 
-    now = now_et()
+        now = now_et()
         hour, minute = now.hour, now.minute
         is_premarket = (hour >= 4 and hour < 9) or (hour == 9 and minute < 30)
         is_weekday = now.weekday() < 5

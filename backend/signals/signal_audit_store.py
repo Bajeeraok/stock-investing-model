@@ -1137,12 +1137,21 @@ class SignalAuditStore:
                 else None,
             })
 
+        # Fallback chain: prefer the strictest slice with enough resolved rows to be
+        # meaningful (n>=5), loosening only when the stricter ones are too thin. The
+        # UI must label the headline number by whichever slice actually won this
+        # chain — a fixed "4/4 GO or full_go" label is wrong once it falls through
+        # to gates_3plus/all_go, which include 3-of-4-gate (or gate-count-agnostic) rows.
+        headline_slice_name = "go_4_gates"
         headline_slice = actionable_slices.get("go_4_gates") or {}
         if int(headline_slice.get("n") or 0) < 5:
+            headline_slice_name = "full_go"
             headline_slice = actionable_slices.get("full_go") or headline_slice
         if int(headline_slice.get("n") or 0) < 5:
+            headline_slice_name = "gates_3plus"
             headline_slice = actionable_slices.get("gates_3plus") or headline_slice
         if int(headline_slice.get("n") or 0) < 5:
+            headline_slice_name = "all_go"
             headline_slice = actionable_slices.get("all_go") or headline_slice
 
         actionable_total = int(accumulate_headline.get("wins") or 0) + int(accumulate_headline.get("losses") or 0)
@@ -1180,6 +1189,16 @@ class SignalAuditStore:
             "actionable_slices": actionable_slices,
             "headline_actionable_win_rate_pct": headline_slice.get("actionable_win_rate_pct"),
             "headline_actionable_n": headline_slice.get("n"),
+            # Which slice actually produced the headline number, so the UI doesn't
+            # show a fixed "4/4 GO or full_go" label once this has fallen through
+            # to a looser slice (gates_3plus / all_go) for lack of resolved rows.
+            "headline_actionable_slice": headline_slice_name,
+            "headline_actionable_slice_label": {
+                "go_4_gates": "4/4 gates + GO",
+                "full_go": "full_go",
+                "gates_3plus": "≥3/4 gates (fallback — too few 4/4 rows resolved yet)",
+                "all_go": "any GO, any gate count (fallback — too few 4/4 rows resolved yet)",
+            }[headline_slice_name],
         }
 
     def list_records_with_outcomes(
