@@ -38,12 +38,18 @@ BULLISH_KEYWORDS = frozenset({
 })
 
 BEARISH_KEYWORDS = frozenset({
-    "miss", "misses", "cut", "cuts", "downgrade", "downgrades", "downgraded",
+    "miss", "misses", "downgrade", "downgrades", "downgraded",
     "sell", "sold", "loss", "losses", "decline", "declines", "warning", "warnings",
     "weak", "weaker", "lawsuit", "investigation", "below", "layoff", "layoffs",
     "recession", "risk", "risks", "bearish", "downside", "crash", "selloff",
-    "bankruptcy", "probe", "fraud", "guidance", "slashes", "slashed",
-    "reduces", "reduced", "trimmed", "trims", "trimming", "stake", "unloaded",
+    "bankruptcy", "probe", "fraud", "slashes", "slashed",
+    "reduces", "reduced", "trimmed", "trims", "trimming", "unloaded",
+    # NOTE: "cut"/"cuts", "stake", and "guidance" deliberately excluded as bare
+    # words — each is too context-dependent to score on its own ("rate cuts"/
+    # "cost cuts" are commonly bullish, "increases stake" is bullish, "raises
+    # guidance" is bullish). The genuinely-bearish senses are captured as
+    # specific phrases below instead (_BEARISH_PHRASES), which only fire when
+    # the negative direction is actually present in the text.
 })
 
 # Gold / silver / broad commodity ETF headlines (Yahoo/FMP often cite spot, macro, USD)
@@ -53,6 +59,7 @@ COMMODITY_BULLISH_KEYWORDS = frozenset({
     "dxy", "treasury", "cuts",
     "ounces", "ounce", "spot", "commodity", "commodities", "futures",
     "rally", "rallies", "surge", "record", "highs", "breakout",
+    "soar", "soars", "soaring", "spike", "spikes", "spiking",
 })
 
 COMMODITY_BEARISH_KEYWORDS = frozenset({
@@ -74,6 +81,22 @@ _BEARISH_PHRASES = (
     "decreases stake",
     "decreased stake",
     "lowers stake",
+    # Direction-specific senses of "cut"/"guidance" — the bare words were
+    # removed from BEARISH_KEYWORDS (see note there) because they're too
+    # often bullish ("rate cuts", "cost cuts", "raises guidance"); these
+    # phrases only fire when the actual negative direction is present.
+    "guidance cut",
+    "cuts guidance",
+    "cut guidance",
+    "lowered guidance",
+    "lowers guidance",
+    "guidance miss",
+    "missed guidance",
+    "below guidance",
+    "dividend cut",
+    "cuts dividend",
+    "cuts jobs",
+    "job cuts",
 )
 
 DEFAULT_MIN_QUALITY_WEIGHT = 0.20
