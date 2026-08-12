@@ -34,8 +34,6 @@ _GATE_ID_TO_CANONICAL = {
     "confidence": "confidence",
 }
 
-_PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
-
 # Regime-weather bull-probability threshold used elsewhere in this app
 # (CLAUDE.md: UP regime >= 60) — reused here only as narrative context, not
 # to recompute the regime itself.
@@ -120,11 +118,18 @@ def _trend(regime_bull_pct: float | None) -> str:
     return "UP" if (regime_bull_pct or 0) >= 50 else "DOWN"
 
 
-def _unlock_conditions(gates: list[dict]) -> list[str]:
+def _unlock_conditions(gates: list[Gate]) -> list[str]:
+    """Built from the final canonical gate list (post confidence-synthesis) —
+    not just the primary 4 — because SignalPacket.validate() requires
+    unlock_conditions to cover every failed gate in p.gates, confidence
+    included. Sourcing this from only the primary raw gates left the
+    synthesized confidence gate uncovered, so any ticker whose confidence
+    gate failed got wrongly rejected as "blocked" (unlock_conditions missing
+    failed gate 'confidence') even though nothing else was wrong."""
     out = []
     for g in gates:
-        if g.get("id") in _PRIMARY_GATE_IDS and not g.get("pass"):
-            label = (g.get("label") or g.get("id") or "").title()
+        if not g.passed:
+            label = g.name.replace("_", " ").title()
             out.append(f"{label} clears")
     return out
 
@@ -252,7 +257,7 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         options_pc=options.get("pc_ratio"),
         options_class=((options.get("asset_narrative_meta") or {}).get("verdict") or options.get("options_label") or ""),
         options_score_pct=round(float(options["options_score"]) * 100, 1) if options.get("options_score") is not None else None,
-        unlock_conditions=_unlock_conditions(raw_gates),
+        unlock_conditions=_unlock_conditions(gates),
         scenarios=scenarios,
         expected_value_pct=None,
         sensitivities=list(cross_asset.get("badges") or []),
