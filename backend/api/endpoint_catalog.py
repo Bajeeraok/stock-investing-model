@@ -31,6 +31,15 @@ CATALOG: list[dict[str, Any]] = [
     # Signals & backtest
     {"group": "Signals", "method": "GET", "path": "/api/signals", "description": "Run signals for tickers", "query": {"tickers": "SPY,QQQ"}},
     {"group": "Signals", "method": "GET", "path": "/api/backtest", "description": "Backtest bucket results"},
+    {"group": "Signals", "method": "GET", "path": "/api/backtest/gates/status", "description": "Gate-cohort walk-forward backtest: progress/result"},
+    {
+        "group": "Signals",
+        "method": "POST",
+        "path": "/api/backtest/gates/run",
+        "description": "Start gate-cohort walk-forward backtest (background, minutes) — does gates>=N/4 beat raw score alone?",
+        "query": {"tickers": "", "period": "5y", "min_gates": "4"},
+        "confirm": True,
+    },
     {"group": "Signals", "method": "GET", "path": "/api/reports/monthly-signal-buckets", "description": "Monthly signal bucket report"},
     {"group": "Signals", "method": "POST", "path": "/api/test-suite", "description": "Signal test suite", "body": {"tickers": ["SPY"]}, "confirm": True},
     # Ticker detail

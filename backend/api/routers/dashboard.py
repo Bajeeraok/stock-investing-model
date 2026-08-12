@@ -3340,6 +3340,93 @@ async def get_backtest(
     }
 
 
+@router.get("/backtest/gates/status")
+async def get_gate_backtest_status():
+    """
+    Status/result of the background gate-cohort walk-forward backtest
+    (scripts/backtest_gates.py logic, same computation, run via POST /backtest/gates/run
+    instead of a shell). Poll this after starting a run — running=false + last_result
+    populated means it finished; last_error populated means it failed.
+    """
+    from api.gate_backtest_job import gate_backtest_job_state
+
+    return gate_backtest_job_state()
+
+
+@router.post("/backtest/gates/run")
+async def run_gate_backtest(
+    tickers: str = "",
+    period: str = "5y",
+    step: int = 0,
+    horizons: str = "",
+    min_gates: int = 4,
+    authorization: str | None = Header(None),
+):
+    """
+    Kick off the gate-cohort walk-forward backtest (does gates ≥N/4 actually beat
+    raw score alone?) in a background thread — mirrors `python scripts/backtest_gates.py
+    --source walkforward`, but runs off the request thread so it doesn't block/timeout
+    the caller, and doesn't need shell access to the backend service.
+
+    Still real, sustained CPU + live-network work (multi-year OHLCV fetch per ticker)
+    in the same process as the live API — keep `tickers` modest (default: watchlist,
+    ~17 names) and avoid kicking off a large cohort run during high-traffic periods.
+    Single-flight: returns started=false if a run is already in progress.
+
+    Query params:
+      tickers — comma-separated (default: watchlist from config.yaml). Capped at 120.
+      period — history window, default 5y.
+      step — bar sampling stride; 0 = use config default (usually 5).
+      horizons — comma-separated trading-day horizons, default from config (21,63,126).
+      min_gates — gate count threshold for the "gates_ge_min" cohort (1-4, default 4).
+
+    If env EOD_RUN_SECRET is set, require header: Authorization: Bearer <secret>
+    (same admin-trigger gate as /eod/run — this is comparably expensive).
+    Poll GET /backtest/gates/status for progress/result.
+    """
+    secret = os.environ.get("EOD_RUN_SECRET", "").strip()
+    if secret and (authorization or "").strip() != f"Bearer {secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    from api.gate_backtest_job import start_gate_backtest_job
+
+    config = _load_config()
+    ev = config.get("evaluation") or {}
+
+    if tickers.strip():
+        ticker_list = sorted({t.strip().upper() for t in tickers.split(",") if t.strip()})
+    else:
+        ticker_list = [str(t).upper() for t in (config.get("watchlist") or []) if t]
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="No tickers: pass ?tickers=... or set watchlist in config.yaml")
+    if len(ticker_list) > 120:
+        raise HTTPException(status_code=400, detail=f"{len(ticker_list)} tickers requested — capped at 120 to bound run time/resource use.")
+
+    horizons_list = ev.get("horizons_trading_days") or [21, 63, 126]
+    if horizons.strip():
+        horizons_list = [int(x.strip()) for x in horizons.split(",") if x.strip()]
+
+    started = start_gate_backtest_job(
+        tickers=ticker_list,
+        period=period,
+        step=step,
+        horizons=tuple(int(h) for h in horizons_list),
+        min_gates_passed=min_gates,
+    )
+    if not started:
+        return {
+            "started": False,
+            "message": "A gate backtest is already running — poll GET /backtest/gates/status.",
+        }
+    return {
+        "started": True,
+        "tickers_count": len(ticker_list),
+        "period": period,
+        "horizons": horizons_list,
+        "message": "Running in background — poll GET /backtest/gates/status for progress/result.",
+    }
+
+
 @router.get("/theses")
 async def get_theses():
     """Load thesis storage."""
