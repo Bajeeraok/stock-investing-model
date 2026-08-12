@@ -178,15 +178,21 @@ def build_evaluation_panel(
                 try:
                     from signals.gate_backtest import enrich_row_with_gates
 
+                    # Gate thresholds (retail_action_payload.REGIME_GATE etc.) are 0-100
+                    # scale, e.g. ">= 60" — `rb` above is intentionally 0-1 for the
+                    # confidence_proxy blend, so convert here rather than changing `rb`
+                    # itself. Bug fixed: this previously passed `rb` (max 0.90) straight
+                    # into a ">=60" comparison, so the regime gate could never pass in
+                    # walk-forward backtests regardless of actual market regime.
                     enrich_row_with_gates(
                         rec,
                         close=c0,
                         sig=sig,
-                        regime_bull_pct=rb,
+                        regime_bull_pct=rb * 100.0,
                         rsi=rsi_val,
                         indicator_row=last,
                         ticker=sym,
-                        market_regime_bull_pct=rb,
+                        market_regime_bull_pct=rb * 100.0,
                         predict_ml=bool(gb_cfg.get("predict_ml", False)),
                         close_series=c_slice,
                         include_confidence_gate=bool(gb_cfg.get("include_confidence_gate", False)),

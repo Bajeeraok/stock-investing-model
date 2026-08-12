@@ -3356,29 +3356,43 @@ async def get_gate_backtest_status():
 @router.post("/backtest/gates/run")
 async def run_gate_backtest(
     tickers: str = "",
+    source: str = "eod",
     period: str = "5y",
     step: int = 0,
+    eod_days: int = 90,
     horizons: str = "",
     min_gates: int = 4,
+    predict_ml: bool = False,
     authorization: str | None = Header(None),
 ):
     """
-    Kick off the gate-cohort walk-forward backtest (does gates ≥N/4 actually beat
-    raw score alone?) in a background thread — mirrors `python scripts/backtest_gates.py
-    --source walkforward`, but runs off the request thread so it doesn't block/timeout
-    the caller, and doesn't need shell access to the backend service.
+    Kick off the gate-cohort backtest (does gates ≥N/4 actually beat raw score
+    alone?) in a background thread — mirrors `python scripts/backtest_gates.py`,
+    but runs off the request thread so it doesn't block/timeout the caller, and
+    doesn't need shell access to the backend service.
 
-    Still real, sustained CPU + live-network work (multi-year OHLCV fetch per ticker)
-    in the same process as the live API — keep `tickers` modest (default: watchlist,
-    ~17 names) and avoid kicking off a large cohort run during high-traffic periods.
-    Single-flight: returns started=false if a run is already in progress.
+    source="eod" (default) uses real frozen daily gate snapshots from data/eod/
+    — "production-like fidelity" per the walk-forward UI panel's own guidance,
+    since that panel's regime gate falls back to a SPY-vs-SMA proxy rather than
+    real per-ticker HMM history. Needs a real EOD history (production has one;
+    local dev mostly doesn't) — fails fast with a clear error if <3 snapshot
+    days are found. source="walkforward" rebuilds from live OHLCV instead.
+
+    Still real, sustained CPU + live-network work (multi-year OHLCV fetch per
+    ticker for forward returns, either source) in the same process as the live
+    API — keep `tickers` modest and avoid kicking off a large cohort run during
+    high-traffic periods. Single-flight: returns started=false if already running.
 
     Query params:
       tickers — comma-separated (default: watchlist from config.yaml). Capped at 120.
-      period — history window, default 5y.
-      step — bar sampling stride; 0 = use config default (usually 5).
+      source — "eod" (default) or "walkforward".
+      period — history window for walkforward source, default 5y.
+      step — bar sampling stride for walkforward source; 0 = config default (~5).
+      eod_days — max recent EOD snapshot days to use for eod source, default 90.
       horizons — comma-separated trading-day horizons, default from config (21,63,126).
       min_gates — gate count threshold for the "gates_ge_min" cohort (1-4, default 4).
+      predict_ml — walkforward source only; run real ML inference per bar instead of
+                   leaving the ML gate defaulted to fail. Meaningfully slower.
 
     If env EOD_RUN_SECRET is set, require header: Authorization: Bearer <secret>
     (same admin-trigger gate as /eod/run — this is comparably expensive).
@@ -3408,10 +3422,13 @@ async def run_gate_backtest(
 
     started = start_gate_backtest_job(
         tickers=ticker_list,
+        source=source,
         period=period,
         step=step,
+        eod_days=eod_days,
         horizons=tuple(int(h) for h in horizons_list),
         min_gates_passed=min_gates,
+        predict_ml=predict_ml,
     )
     if not started:
         return {
@@ -3421,6 +3438,7 @@ async def run_gate_backtest(
     return {
         "started": True,
         "tickers_count": len(ticker_list),
+        "source": source,
         "period": period,
         "horizons": horizons_list,
         "message": "Running in background — poll GET /backtest/gates/status for progress/result.",
