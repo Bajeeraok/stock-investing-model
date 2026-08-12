@@ -7,19 +7,17 @@ import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
 import { PriceTargetsPanel, TechnicalLevelsBar, type PriceTargetsData } from "./PriceTargetsPanel";
-import { InvestorDecisionSummarySection, type InvestorDecisionSummary } from "./InvestorDecisionSummary";
+import type { InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { HorizonProjectionChart } from "./HorizonProjectionChart";
 import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
 import { FairValueDebugPanel } from "./FairValueDebugPanel";
 import { TickerDetailWhyNav, type WhySubTab } from "./TickerDetailWhyNav";
-import { ScenarioTeaser } from "./ScenarioTeaser";
 import { RoadmapSummaries } from "./RoadmapSummaries";
 import { HorizonPlaybooksPanel } from "./HorizonPlaybooksPanel";
 import type { HorizonPlaybooksBundle } from "./HorizonPlaybookCard";
 import { type TickerMarketContext } from "./TickerMarketContextCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
 import { PositionIntentChip } from "./PositionIntentChip";
-import { TacticalEntryPanel } from "./TacticalEntryPanel";
 import { getPositionIntent, setPositionIntent, type PositionIntent } from "@/lib/positionIntent";
 import {
   getDecisionMode,
@@ -29,16 +27,16 @@ import {
   type DecisionMode,
 } from "@/lib/decisionMode";
 import { DecisionModeSelector } from "./DecisionModeSelector";
-import { DecisionDeck } from "./DecisionDeck";
 import { buildExecutionPlanViewModel } from "./executionPlanModel";
 import {
   buildGatesFromInvestorSummary,
   resolvePrimaryGatesCount,
 } from "./retailActionUX";
 import { TickerDecisionHero } from "./tickerDetail/TickerDecisionHero";
+import { ReferenceDetailGrid } from "./tickerDetail/ReferenceDetailGrid";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
-import { UnlockWhenStrip, WatchZoneCallout } from "./zoneContextUX";
+import { WatchZoneCallout } from "./zoneContextUX";
 import { LevelsPageHeader } from "./levels/LevelsPageHeader";
 import { AnchorBentoGrid, anchorsFromTechnicalLevels } from "./levels/AnchorBentoGrid";
 import { TierThermometerPanel } from "./levels/TierThermometerPanel";
@@ -1024,83 +1022,19 @@ export function TickerDetailModal({
                 </div>
               )}
 
-              <p className="text-[10px] font-mono uppercase tracking-wider text-slate-600 pt-2 border-t border-slate-800">
-                Reference detail — execution plan, roadmaps, scenarios
-              </p>
-
-              {detail.investor_summary && (
-                <DecisionDeck
-                  summary={detail.investor_summary}
-                  currentPrice={detail.current_price ?? 0}
-                  mode={decisionMode}
-                  tacticalActive={Boolean(detail.investor_summary.tactical_entry?.active)}
-                  ltEntryTiersOpen={ltEntryTiersOpen}
-                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
-                  hideHero
-                  hideExecutionEvidence={Boolean(executionVm)}
-                />
-              )}
-
-              <ScenarioTeaser data={priceTargets} onOpenValuation={openWhyValuation} />
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setModalTab("levels")}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
-                >
-                  Levels &amp; roadmaps
-                </button>
-                <button
-                  type="button"
-                  onClick={openWhyValuation}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-violet-600/50 text-violet-200 hover:bg-violet-950/40"
-                >
-                  Scenarios
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setModalTab("why"); setWhySubTab("proof"); }}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
-                >
-                  Model proof
-                </button>
-              </div>
-
-              {decisionMode === "scout" && detail.investor_summary?.tactical_entry && (
-                <TacticalEntryPanel
-                  payload={detail.investor_summary.tactical_entry}
-                  layout="scout"
-                />
-              )}
-
-              {detail.investor_summary ? (
-                <InvestorDecisionSummarySection
-                  summary={detail.investor_summary}
-                  currentPrice={detail.current_price ?? 0}
-                  ma200={detail.ma200}
-                  ma20={detail.ma20}
-                  ma50={detail.ma50}
-                  sector={detail.sector}
-                  companyName={detail.company_name}
-                  ltEntryTiersOpen={ltEntryTiersOpen}
-                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
-                  priceHistory={detail.price_history}
-                  ticker={detail.ticker}
-                  hideTradingGates={tradingGates.length > 0}
-                  hideRoadmaps
-                  compactOverview
-                  marketContext={detail.market_context}
-                  decisionMode={decisionMode}
-                  contentLayer="today"
-                />
-              ) : null}
-
-              <UnlockWhenStrip
-                text={
-                  detail.investor_summary?.retail_action?.unlock_summary ??
-                  detail.investor_summary?.retail_action?.unlock_sequence
-                }
+              <ReferenceDetailGrid
+                detail={detail}
+                priceTargets={priceTargets}
+                confidence={confidence}
+                decisionMode={decisionMode}
+                currentPrice={effectivePrice}
+                executionVm={executionVm}
+                ltEntryTiersOpen={ltEntryTiersOpen}
+                onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                onOpenLevels={() => setModalTab("levels")}
+                onOpenValuation={openWhyValuation}
+                onOpenProof={() => { setModalTab("why"); setWhySubTab("proof"); }}
+                onOpenContext={() => { setModalTab("why"); setWhySubTab("context"); }}
               />
 
               {!detail.investor_summary && (

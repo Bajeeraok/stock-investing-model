@@ -26,6 +26,8 @@ export type MoveNarrative = {
   headline?: string;
   detail?: string | null;
   citation?: string | null;
+  day_change_pct?: number | null;
+  spy_day_change_pct?: number | null;
 };
 
 export type SignalReasonPayload = {
