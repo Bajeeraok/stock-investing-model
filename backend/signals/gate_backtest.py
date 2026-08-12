@@ -289,20 +289,27 @@ def summarize_gate_backtest(
     def _entry_mode_is(mode: str) -> Callable[[dict[str, Any]], bool]:
         def _f(r: dict[str, Any]) -> bool:
             em = str(r.get("entry_mode") or "")
-            if em == mode:
-                return True
-            # Fallback for rows that pre-date entry_mode: derive from gate fields.
-            if not em:
-                pg = {
-                    "valuation": r.get("valuation_pass"),
-                    "regime": r.get("regime_pass"),
-                    "momentum": r.get("momentum_pass"),
-                    "ml": r.get("ml_pass"),
-                }
-                em = _derive_entry_mode_from_gates(
-                    {k: bool(v) for k, v in pg.items()},
-                    bool(r.get("gate_cleared")),
-                )
+            if em:
+                return em == mode
+            # Fallback for rows that pre-date entry_mode: derive from per-gate fields —
+            # but only when at least one is actually present. Some EOD snapshot rows
+            # carry only the aggregate gates_passed/gate_cleared count, not which
+            # specific gates passed; deriving from four missing (None) fields would
+            # silently default every such row to "hard_lock" rather than reflecting
+            # that entry_mode genuinely isn't knowable from this row. Those rows
+            # count toward "unknown" instead.
+            pg_raw = {
+                "valuation": r.get("valuation_pass"),
+                "regime": r.get("regime_pass"),
+                "momentum": r.get("momentum_pass"),
+                "ml": r.get("ml_pass"),
+            }
+            if all(v is None for v in pg_raw.values()):
+                return mode == "unknown"
+            em = _derive_entry_mode_from_gates(
+                {k: bool(v) for k, v in pg_raw.items()},
+                bool(r.get("gate_cleared")),
+            )
             return em == mode
         return _f
 
@@ -320,6 +327,7 @@ def summarize_gate_backtest(
         "entry_mode_full_go": _entry_mode_is("full_go"),
         "entry_mode_starter_only": _entry_mode_is("starter_only"),
         "entry_mode_hard_lock": _entry_mode_is("hard_lock"),
+        "entry_mode_unknown": _entry_mode_is("unknown"),
         "composite_and_gate_cleared": lambda r: _composite_buy(r) and _cleared(r),
         "composite_sell": _composite_sell,
     }
@@ -332,15 +340,49 @@ def summarize_gate_backtest(
             for name, pred in cohorts.items()
         }
 
+    # Per-gate pass rate: computed over rows that actually carry that gate's pass/fail
+    # detail, not over all rows. Some EOD snapshot rows only store the aggregate
+    # gates_passed/gate_cleared count (not which specific gates passed) — for those,
+    # `{gid}_pass` is None, and counting None as "not passed" would silently report a
+    # misleading 0% instead of "not measurable from this data."
     gate_pass_rates: dict[str, Any] = {}
+    gate_pass_coverage_n: dict[str, Any] = {}
     n = len(rows)
     if n:
         for gid in PRIMARY_GATE_IDS:
             k = f"{gid}_pass"
-            hits = sum(1 for r in rows if r.get(k) is True)
-            gate_pass_rates[gid] = round(100.0 * hits / n, 2)
+            available = [r for r in rows if r.get(k) is not None]
+            gate_pass_coverage_n[gid] = len(available)
+            if available:
+                hits = sum(1 for r in available if r.get(k) is True)
+                gate_pass_rates[gid] = round(100.0 * hits / len(available), 2)
+            else:
+                gate_pass_rates[gid] = None
         cleared_n = sum(1 for r in rows if _cleared(r))
         gate_pass_rates["gate_cleared_pct"] = round(100.0 * cleared_n / n, 2)
+
+    rows_missing_gate_detail = sum(
+        1 for r in rows if all(r.get(f"{gid}_pass") is None for gid in PRIMARY_GATE_IDS)
+    )
+    # Walk-forward-specific proxy caveats only apply to rows that actually came from
+    # that path (identifiable by fields evaluation_harness.py alone sets) — showing
+    # them unconditionally was itself misleading on eod-source reports.
+    looks_walkforward = any(r.get("regime_bull_prob") is not None for r in rows[:20])
+
+    notes: list[str] = []
+    if rows_missing_gate_detail:
+        notes.append(
+            f"{rows_missing_gate_detail}/{n} rows carry only the aggregate gates_passed/gate_cleared "
+            "count, not which specific gates passed — their valuation/regime/momentum/ml pass rates "
+            "are excluded (null if that leaves zero rows for a gate) rather than shown as a misleading "
+            "0%, and their entry_mode is counted under entry_mode_unknown rather than defaulted to "
+            "hard_lock. gates_ge_min / gate_cleared_4of4 are unaffected either way — those read the "
+            "aggregate fields directly, which are reliably present."
+        )
+    if looks_walkforward:
+        notes.append("Walk-forward rows use SPY regime bull % proxy unless EOD retail_status is present.")
+        notes.append("FV for walk-forward uses suggested_buy/MA200 proxy — prefer --source eod for production-like gates.")
+    notes.append("ML gate requires ml_short_prob on row or evaluation.gate_backtest.predict_ml: true.")
 
     return {
         "n_rows": n,
@@ -349,12 +391,9 @@ def summarize_gate_backtest(
         "min_gates_passed": min_gates_passed,
         "primary_gate_ids": list(PRIMARY_GATE_IDS),
         "gate_pass_rates_pct": gate_pass_rates,
+        "gate_pass_coverage_n": gate_pass_coverage_n,
         "by_horizon_trading_days": by_horizon,
-        "notes": [
-            "Walk-forward rows use SPY regime bull % proxy unless EOD retail_status is present.",
-            "FV for walk-forward uses suggested_buy/MA200 proxy — prefer --source eod for production-like gates.",
-            "ML gate requires ml_short_prob on row or evaluation.gate_backtest.predict_ml: true.",
-        ],
+        "notes": notes,
     }
 
 
@@ -371,10 +410,12 @@ def format_gate_backtest_report(summary: dict[str, Any]) -> str:
     ]
     gpr = summary.get("gate_pass_rates_pct") or {}
     if gpr:
-        lines.append(
-            "Gate pass rates: "
-            + ", ".join(f"{k}={v}%" for k, v in gpr.items() if k != "gate_cleared_pct")
-        )
+        parts = []
+        for k, v in gpr.items():
+            if k == "gate_cleared_pct":
+                continue
+            parts.append(f"{k}={v}%" if v is not None else f"{k}=n/a (no per-gate detail in this data)")
+        lines.append("Gate pass rates: " + ", ".join(parts))
         if gpr.get("gate_cleared_pct") is not None:
             lines.append(f"  Full 4/4 cleared: {gpr['gate_cleared_pct']}% of bars")
     for h, cohorts in (summary.get("by_horizon_trading_days") or {}).items():
