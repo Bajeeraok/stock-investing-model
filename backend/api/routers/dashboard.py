@@ -3859,6 +3859,69 @@ async def get_roadmaps(tickers: str = ""):
     return {"roadmaps": out}
 
 
+@router.get("/ticker/{ticker}/narrative")
+async def get_ticker_narrative(
+    ticker: str,
+    mode: str = Query("scout", description="scout | swing | owner"),
+):
+    """
+    Validated action-contract narrative for one persona (narrative_waterfall.py).
+
+    Layers 0-2 (canonical packet + validation, deterministic BUY/WAIT/HOLD
+    action contract, templated gate explanations + catalysts) are always
+    computed, free, from data already in the ticker-detail/confidence/
+    price-targets responses. Layer 3 (a short guarded LLM narrative paragraph,
+    Anthropic Haiku) only runs when ANTHROPIC_API_KEY is configured — otherwise
+    `narrative_status` comes back "skipped" and the deterministic action/why/
+    catalysts still populate. Redis-cached per ticker+mode+decision-state so
+    repeat views (and unchanged tickers across restarts) don't re-call the LLM.
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    mode_norm = (mode or "scout").lower().strip()
+    if mode_norm not in ("scout", "swing", "owner"):
+        mode_norm = "scout"
+    sym = ticker.upper().strip()
+
+    def _build() -> dict:
+        import os
+
+        from api.ticker_detail import get_ticker_detail as _get
+        from signals.narrative_packet_mapper import to_packet
+        from signals.narrative_waterfall import build_summary_tiered, make_anthropic_client
+
+        config = _load_config()
+        detail = _get(sym, config)
+
+        scenarios_raw: list = []
+        try:
+            from signals.price_targets import run_price_targets
+            inv = detail.get("investor_summary") or {}
+            rb = inv.get("regime_bull_pct") or 0
+            regime = "UP" if rb >= 60 else "DOWN" if rb <= 40 else "NEUTRAL"
+            pt = run_price_targets(sym, market_regime=regime, config=config, fair_value=inv.get("fair_value"))
+            scenarios_raw = pt.get("scenarios") or []
+        except Exception as e:
+            logger.warning("[narrative] scenarios unavailable for %s: %s", sym, e)
+
+        pkt = to_packet(detail, mode_norm, scenarios_raw=scenarios_raw)
+
+        api_key = os.getenv("ANTHROPIC_API_KEY") or config.get("data", {}).get("anthropic_api_key")
+        llm = make_anthropic_client() if api_key else None
+
+        summary = build_summary_tiered(pkt, llm=llm, on_view=True)
+        if summary.get("status") == "blocked":
+            logger.warning("[narrative] %s (%s) blocked: %s", sym, mode_norm, summary.get("errors"))
+            return {"status": "blocked", "ticker": sym, "mode": mode_norm}
+        return summary
+
+    try:
+        return await run_in_threadpool(_build)
+    except Exception as e:
+        logger.exception("[narrative] failed for %s (%s): %s", sym, mode_norm, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/confidence/{ticker}")
 async def get_confidence(ticker: str):
     """

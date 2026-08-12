@@ -23,6 +23,9 @@ redis>=5.0.0
 # Chat copilot (optional – needs OPENAI_API_KEY)
 openai>=1.0.0
 
+# Narrative waterfall guarded LLM narrative (optional – needs ANTHROPIC_API_KEY)
+anthropic>=0.40.0
+
 # SEC EDGAR 13F parsing (institutional pipeline — optional but recommended)
 edgartools>=5.0.0
 

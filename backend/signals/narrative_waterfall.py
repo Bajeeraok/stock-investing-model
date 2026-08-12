@@ -1,0 +1,746 @@
+"""
+Thrive Alpha — Narrative Waterfall v2.2 (tiered LLM strategy)
+======================================================
+Layers flow strictly downward — lower layers narrate upper layers, never
+contradict them.
+
+    Layer 0   SignalPacket     canonical validated snapshot (single source of truth)
+              + scenario EV cross-checks
+    Layer 1   ActionContract   deterministic executable instruction (no LLM)
+    Layer 2   Explanations     templated gate "why" + scenario summary + catalysts (no LLM)
+    Layer 3   Narrative        LLM prose composed ONLY from packet + catalysts,
+                               number-guarded, hash-cached, provider-agnostic
+
+Integration:
+    pkt = to_packet(your_engine_output_dict)     # see signals/narrative_packet_mapper.py
+    summary = build_summary(pkt, llm=make_anthropic_client())   # or any (sys,user)->str
+    # render UI ONLY from `summary` — never from a second data source.
+
+v2.2 changes (integration hardening, see backend/signals/narrative_waterfall.py review):
+    - render_scenarios() no longer crashes when all scenario probabilities are 0
+      (scenario_ev() can return None in that degenerate case).
+    - guard_numbers() also catches bare numbers (not just $amounts/percentages),
+      symmetric with numeric_universe() which already allows bare numbers.
+    - render_explanations() tolerates non-numeric / missing template fields
+      (our engine's gate `detail` is a pre-formatted string, not a numeric dict)
+      and falls back to a plain "label: text" line instead of crashing.
+    - NarrativeEngine cache is Redis-backed (signals/cache.py) when available,
+      so Layer 3 output survives backend restarts; falls back to in-memory only
+      when Redis is unavailable (same optional/no-op pattern as the rest of the app).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import dataclass, field, asdict
+from datetime import date, timedelta
+from enum import Enum
+from typing import Callable, Optional
+
+# ═════════════════════════════════════════════════════════════
+# LAYER 0 — CANONICAL SIGNAL PACKET
+# ═════════════════════════════════════════════════════════════
+
+@dataclass(frozen=True)
+class Band:
+    lo: float
+    hi: float
+
+    def contains(self, px: float) -> bool:
+        return self.lo <= px <= self.hi
+
+    def fmt(self) -> str:
+        return f"${self.lo:,.2f}-${self.hi:,.2f}"
+
+
+@dataclass
+class Gate:
+    name: str          # valuation | market_weather | momentum_chop | ml_probability | confidence
+    passed: bool
+    detail: dict       # numeric facts (template keys) + always a "text" fallback string
+
+
+@dataclass
+class Scenario:
+    name: str
+    ret_pct: float
+    prob_pct: float
+
+
+@dataclass
+class SignalPacket:
+    # identity
+    ticker: str
+    mode: str                      # swing | scout | owner
+    asof: str                      # ISO date
+    spot: float
+    trend: str                     # UP | DOWN
+    verdict: str                   # BRIDGE_PARTIAL | WATCH_ZONE | DO_NOT_CHASE | TACTICAL_ENTRY
+    score: int
+
+    # gates
+    gates: list[Gate] = field(default_factory=list)
+
+    # levels (None-safe when engine doesn't emit)
+    entry_band: Optional[Band] = None
+    stop: Optional[float] = None
+    invalidation: Optional[float] = None
+    target: Optional[float] = None
+    rr: Optional[float] = None
+    st_band: Optional[Band] = None          # ONE canonical short-term band
+    bridge_band: Optional[Band] = None
+    bridge_levels: list[float] = field(default_factory=list)
+    catch_levels: list[float] = field(default_factory=list)
+    anchor_levels: list[float] = field(default_factory=list)
+    t1: Optional[Band] = None
+    t2: Optional[Band] = None
+    ma200_zone: Optional[Band] = None
+
+    # sizing / execution
+    entry_mode: str = "WAIT"                # FULL | STARTER_ONLY | BRIDGE_ONLY | WAIT
+    max_tranche_pct: float = 0.0
+    roadmap: list[dict] = field(default_factory=list)
+
+    # model internals
+    hmm_bull_pct: float = 0.0
+    hmm_transition_pct: float = 0.0
+    rsi: Optional[float] = None
+    ml_prob_pct: Optional[float] = None
+    ml_threshold_pct: Optional[float] = None
+    fused_confidence_pct: Optional[float] = None
+    options_pc: Optional[float] = None
+    options_class: str = ""
+    options_score_pct: Optional[float] = None
+
+    # unlock logic — derived from failed gates upstream, never hand-written
+    unlock_conditions: list[str] = field(default_factory=list)
+
+    # scenarios & context
+    scenarios: list[Scenario] = field(default_factory=list)
+    expected_value_pct: Optional[float] = None      # engine's displayed EV
+    sensitivities: list[str] = field(default_factory=list)
+    street_median: Optional[float] = None
+    street_analysts: Optional[int] = None
+    street_bullish_pct: Optional[float] = None
+    news_sentiment: str = ""
+
+    # ---- derived --------------------------------------------------
+    def scenario_ev(self) -> Optional[float]:
+        """Probability-weighted EV, normalized (probs need not sum to 100)."""
+        if not self.scenarios:
+            return None
+        tot = sum(s.prob_pct for s in self.scenarios)
+        if tot <= 0:
+            return None
+        return round(sum(s.ret_pct * s.prob_pct for s in self.scenarios) / tot, 1)
+
+    # ---- integrity ------------------------------------------------
+    def validate(self) -> list[str]:
+        """Render-time consistency checks. Empty list == safe to publish."""
+        errs: list[str] = []
+        failed = [g.name for g in self.gates if not g.passed]
+
+        # unlock conditions must cover ALL failed gates (footer-mismatch bug)
+        for g in failed:
+            if not any(g.replace("_", " ") in c.lower() or g in c.lower()
+                       for c in self.unlock_conditions):
+                errs.append(f"unlock_conditions missing failed gate '{g}'")
+
+        # verdict vs gates coherence (Score-100-with-red-gate class of bug)
+        if self.verdict == "TACTICAL_ENTRY" and failed:
+            errs.append(f"verdict TACTICAL_ENTRY but gates failed: {failed}")
+
+        # probability bounds
+        for name, v in [("hmm_bull_pct", self.hmm_bull_pct),
+                        ("ml_prob_pct", self.ml_prob_pct),
+                        ("fused_confidence_pct", self.fused_confidence_pct)]:
+            if v is not None and not (0 <= v <= 100):
+                errs.append(f"{name} out of range: {v}")
+
+        # ordering sanity
+        if self.stop and self.entry_band and self.stop >= self.entry_band.lo:
+            errs.append("stop >= entry band low")
+        if self.target and self.target <= self.spot and self.trend == "UP":
+            errs.append("target below spot on UP trend")
+
+        # scenario sanity (BLK "Base Case 1% prob" class of bug)
+        if self.scenarios:
+            base = next((s for s in self.scenarios if "base" in s.name.lower()), None)
+            modal = max(self.scenarios, key=lambda s: s.prob_pct)
+            # flag only degenerate weights (e.g. base 1%), not legitimate spreads
+            if base and base.prob_pct < max(10.0, 0.25 * modal.prob_pct):
+                errs.append(f"base case prob {base.prob_pct}% far below modal "
+                            f"'{modal.name}' {modal.prob_pct}% — weights suspect")
+            for s in self.scenarios:
+                if not (0 <= s.prob_pct <= 100):
+                    errs.append(f"scenario '{s.name}' prob out of range: {s.prob_pct}")
+            ev = self.scenario_ev()
+            if (self.expected_value_pct is not None and ev is not None
+                    and abs(ev - self.expected_value_pct) > 3.0):
+                errs.append(f"displayed EV {self.expected_value_pct}% vs "
+                            f"computed {ev}% — scenario math drift")
+        return errs
+
+    def content_hash(self) -> str:
+        blob = json.dumps(asdict(self), sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+    def decision_hash(self) -> str:
+        """Cache key for Layer 3: changes only when DECISION-relevant state moves
+        (gate flips, band/level shifts, RSI or regime crossing a bucket) — NOT on
+        every spot tick. This is what keeps intraday LLM cost near zero."""
+        core = {
+            "gates": [(g.name, g.passed) for g in self.gates],
+            "verdict": self.verdict,
+            "entry_mode": self.entry_mode,
+            "entry_band": asdict(self.entry_band) if self.entry_band else None,
+            "stop": self.stop,
+            "target": self.target,
+            "unlock": self.unlock_conditions,
+            "rsi_bucket": None if self.rsi is None else int(self.rsi // 5),
+            "hmm_bucket": int(self.hmm_bull_pct // 10),
+        }
+        blob = json.dumps(core, sort_keys=True, default=str)
+        return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+    def numeric_universe(self) -> set[float]:
+        """Every number in the packet (+ derived EV) — the ONLY numbers Layer 3 may utter."""
+        out: set[float] = set()
+
+        def walk(x):
+            if isinstance(x, bool):
+                return
+            if isinstance(x, (int, float)):
+                v = abs(float(x))                   # guard extracts unsigned; store abs
+                out.add(round(v, 2))
+                out.add(round(v))                   # allow "$1,083" for 1082.56
+            elif isinstance(x, dict):
+                for v in x.values():
+                    walk(v)
+            elif isinstance(x, (list, tuple)):
+                for v in x:
+                    walk(v)
+        walk(asdict(self))
+        ev = self.scenario_ev()
+        if ev is not None:
+            out.add(abs(ev)); out.add(round(abs(ev)))
+        return out
+
+
+# ═════════════════════════════════════════════════════════════
+# LAYER 1 — ACTION CONTRACT (deterministic)
+# ═════════════════════════════════════════════════════════════
+
+class Action(Enum):
+    WAIT = "WAIT"
+    PLACE_LIMIT = "PLACE_LIMIT"
+    STARTER_BUY = "STARTER_BUY"
+    BUY = "BUY"
+    HOLD = "HOLD"
+    STAND_ASIDE = "STAND_ASIDE"
+
+
+@dataclass
+class ActionContract:
+    action: Action
+    limit_prices: list[float]
+    tranche_pct: float
+    stop: Optional[float]
+    invalidation: Optional[float]
+    review_by: str
+    forbidden: list[str]
+    source_hash: str
+
+
+REVIEW_DAYS = {"swing": 21, "scout": 7, "owner": 60}
+
+
+def derive_action_contract(p: SignalPacket) -> ActionContract:
+    """Pure decision table. Every branch returns exactly one instruction."""
+    review = (date.fromisoformat(p.asof) +
+              timedelta(days=REVIEW_DAYS.get(p.mode, 21))).isoformat()
+    failed = [g.name for g in p.gates if not g.passed]
+    all_pass = not failed
+    in_band = bool(p.entry_band and p.entry_band.contains(p.spot))
+    above_band = bool(p.entry_band and p.spot > p.entry_band.hi)
+    in_bridge = bool(p.bridge_band and p.bridge_band.contains(p.spot))
+    h = p.content_hash()
+
+    # 1) thesis broken
+    if p.invalidation and p.spot < p.invalidation:
+        return ActionContract(Action.STAND_ASIDE, [], 0.0, p.stop, p.invalidation,
+                              review, ["Do not average down until regime reassessed."], h)
+
+    # 2) clean setup: all gates pass AND price inside planned band
+    if all_pass and in_band:
+        limits = sorted([lv for lv in p.catch_levels
+                         if p.entry_band.contains(lv)], reverse=True)[:3] or [p.spot]
+        return ActionContract(Action.BUY, limits, p.max_tranche_pct or 100.0,
+                              p.stop, p.invalidation, review,
+                              ["Do not exceed planned tranche on fill."], h)
+
+    # 3) bridge starter: in bridge sleeve, starter mode, at most one gate failing
+    if in_bridge and p.entry_mode in ("STARTER_ONLY", "BRIDGE_ONLY") and len(failed) <= 1:
+        anchor = min(p.bridge_levels, key=lambda x: abs(x - p.spot)) \
+            if p.bridge_levels else p.spot
+        return ActionContract(Action.STARTER_BUY, [anchor], p.max_tranche_pct,
+                              p.stop, p.invalidation, review,
+                              [f"Do not exceed {p.max_tranche_pct:.0f}% tranche — bridge is a starter, not the plan.",
+                               "Do not add again inside the bridge; next add only in the swing band."], h)
+
+    # 4) stretched above band → limits (if nearly unlocked) or alerts-only wait
+    if above_band:
+        first = p.entry_band.hi
+        scale = sorted([lv for lv in p.catch_levels
+                        if p.entry_band.contains(lv)], reverse=True)
+        limits = ([first] + [lv for lv in scale if lv < first])[:3]
+        forbidden = ["Do not chase at spot.",
+                     "Do not treat the short-term band alone as a buy signal."]
+        act = Action.PLACE_LIMIT if len(failed) <= 1 else Action.WAIT
+        return ActionContract(act, limits if act is Action.PLACE_LIMIT else [],
+                              p.max_tranche_pct if act is Action.PLACE_LIMIT else 0.0,
+                              p.stop, p.invalidation, review, forbidden, h)
+
+    # 5) default
+    return ActionContract(Action.HOLD, [], 0.0, p.stop, p.invalidation, review,
+                          ["No new orders until a gate flips."], h)
+
+
+def render_action(c: ActionContract, p: SignalPacket) -> str:
+    """Templated English. f-strings only — cannot hallucinate."""
+    d = f"by {c.review_by}"
+    if c.action is Action.BUY:
+        lvls = ", ".join(f"${x:,.2f}" for x in c.limit_prices)
+        return (f"BUY {p.ticker}: place limits at {lvls} for a {c.tranche_pct:.0f}% "
+                f"tranche. Stop ${c.stop:,.2f}. Cancel unfilled orders {d}.")
+    if c.action is Action.STARTER_BUY:
+        return (f"STARTER BUY {p.ticker}: up to {c.tranche_pct:.0f}% tranche near "
+                f"${c.limit_prices[0]:,.2f} (bridge). Stop ${c.stop:,.2f}; reassess "
+                f"below ${c.invalidation:,.2f}. " + " ".join(c.forbidden))
+    if c.action is Action.PLACE_LIMIT:
+        lvls = ", ".join(f"${x:,.2f}" for x in c.limit_prices)
+        return (f"WAIT — place GTC limits at {lvls} ({c.tranche_pct:.0f}% tranche if "
+                f"filled). Stop ${c.stop:,.2f}; cancel if {p.ticker} closes below "
+                f"${c.invalidation:,.2f} or {d}. " + " ".join(c.forbidden))
+    if c.action is Action.WAIT:
+        return (f"WAIT — no orders. Set alerts at the catch levels; revisit when a "
+                f"gate flips or {d}. " + " ".join(c.forbidden))
+    if c.action is Action.STAND_ASIDE:
+        return (f"STAND ASIDE — {p.ticker} lost ${c.invalidation:,.2f}. "
+                f"No adds until regime is reassessed.")
+    return f"HOLD {p.ticker} — no new orders. Review {d}."
+
+
+# ═════════════════════════════════════════════════════════════
+# LAYER 2 — TEMPLATED EXPLANATIONS + SCENARIOS + CATALYSTS
+# ═════════════════════════════════════════════════════════════
+
+GATE_TEMPLATES: dict[tuple[str, bool], str] = {
+    ("valuation", True):
+        "Valuation clears: margin of safety {mos_pct:.1f}% vs the {required_pct:.0f}% requirement.",
+    ("valuation", False):
+        "Valuation blocks full size: margin of safety is only {mos_pct:.1f}% vs the {required_pct:.0f}% requirement.",
+    ("market_weather", True):
+        "Regime supports the trade: {tape} tape, stock-specific bull probability {hmm_bull_pct:.0f}%.",
+    ("market_weather", False):
+        "Regime blocks: {tape} tape — bull probability {hmm_bull_pct:.0f}%, needs {need_pct:.0f}%.",
+    ("momentum_chop", True):
+        "Momentum is favorable for entry (RSI {rsi:.0f}).",
+    ("momentum_chop", False):
+        "Momentum blocks: RSI {rsi:.0f} is above neutral — the model wants RSI under 50 before adding.",
+    ("ml_probability", True):
+        "ML setup probability {ml_prob_pct:.0f}% clears the {threshold_pct:.0f}% threshold — a setup exists, though conviction scales with the number.",
+    ("ml_probability", False):
+        "ML setup probability {ml_prob_pct:.0f}% is under the {threshold_pct:.0f}% threshold — no statistical setup.",
+    ("confidence", True):
+        "Fused model confidence is {conf_pct:.0f}% — treat it as timing uncertainty, not thesis certainty.",
+    ("confidence", False):
+        "Fused model confidence is only {conf_pct:.0f}% — signals disagree; sizing stays minimal.",
+}
+
+
+def render_explanations(p: SignalPacket) -> list[str]:
+    out = []
+    for g in p.gates:
+        tpl = GATE_TEMPLATES.get((g.name, g.passed))
+        mark = "✓ " if g.passed else "✗ "
+        if tpl:
+            try:
+                out.append(mark + tpl.format(**g.detail))
+                continue
+            except (KeyError, ValueError, TypeError):
+                pass  # fall through to text fallback below
+        # Fallback: our engine's gate detail is often a pre-formatted string
+        # (`detail["text"]`) rather than the exact numeric keys a template wants.
+        text = g.detail.get("text") if isinstance(g.detail, dict) else None
+        if text:
+            out.append(mark + f"{g.name.replace('_', ' ').title()}: {text}")
+        else:
+            out.append(mark + f"{g.name}: {'pass' if g.passed else 'fail'}")
+    if p.unlock_conditions:
+        out.append("Unlocks when: " + " AND ".join(p.unlock_conditions) + ".")
+    return out
+
+
+def render_scenarios(p: SignalPacket) -> str:
+    if not p.scenarios:
+        return ""
+    bull = [s for s in p.scenarios if s.ret_pct > 0]
+    bear = [s for s in p.scenarios if s.ret_pct <= 0]
+    ev = p.scenario_ev()
+    worst = min(p.scenarios, key=lambda s: s.ret_pct)
+    header = f"{len(p.scenarios)} scenarios ({len(bull)} bullish / {len(bear)} bearish)"
+    if ev is None:
+        # Degenerate case: probabilities summed to 0 — no EV to report.
+        return (f"{header}. Worst case: {worst.name} {worst.ret_pct:+.1f}% at "
+                f"{worst.prob_pct:.0f}% probability.")
+    return (f"{header}; probability-weighted expected return {ev:+.1f}%. "
+            f"Worst case: {worst.name} {worst.ret_pct:+.1f}% at "
+            f"{worst.prob_pct:.0f}% probability.")
+
+
+# ── Catalyst engine ──────────────────────────────────────────
+
+@dataclass
+class Catalyst:
+    name: str
+    direction: str      # "unlocks" | "breaks"
+    mechanism: str      # one sentence, packet numbers only
+    watch: str          # observable trigger
+    horizon: str        # "days" | "1-2 weeks" | "4-12 weeks" | ...
+
+
+def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
+    c: list[Catalyst] = []
+    band = p.entry_band.fmt() if p.entry_band else "the entry band"
+
+    # from gate states
+    for g in p.gates:
+        if g.name == "momentum_chop" and not g.passed:
+            c.append(Catalyst("Technical reset", "unlocks",
+                f"RSI {g.detail.get('rsi', 0):.0f} cooling below 50 on a dip or "
+                f"sideways chop would drag price toward {band}.",
+                "RSI < 50", "1-2 weeks"))
+        if g.name == "market_weather" and not g.passed:
+            c.append(Catalyst("Regime confirmation", "unlocks",
+                f"Stock-specific bull probability rising from {p.hmm_bull_pct:.0f}% "
+                f"to {g.detail.get('need_pct', 60):.0f}% flips the Market Weather gate.",
+                f"HMM bull ≥ {g.detail.get('need_pct', 60):.0f}%", "1-4 weeks"))
+        if g.name == "valuation" and not g.passed:
+            c.append(Catalyst("Price discount", "unlocks",
+                f"A pullback into {band} restores the required margin of safety.",
+                f"price in {band}", "days to a few weeks"))
+
+    # from sensitivity tags — deterministic macro library
+    MACRO: dict[str, list[Catalyst]] = {
+        "USD-sensitive": [
+            Catalyst("Dollar strength", "breaks",
+                "A DXY rally creates immediate downward pressure on the setup.",
+                "DXY breakout", "days"),
+            Catalyst("Higher real yields", "breaks",
+                "Sticky inflation keeping rates higher-for-longer raises the "
+                "opportunity cost of the position.", "CPI/FOMC surprises", "4-12 weeks")],
+        "gold-sensitive": [
+            Catalyst("Safe-haven outflow", "breaks",
+                "Geopolitical de-escalation rotates capital out of defensive assets.",
+                "risk-on tape after de-escalation headlines", "days to weeks")],
+        "volatility-sensitive": [
+            Catalyst("Volatility spike", "unlocks",
+                f"A vol shock typically delivers the pullback into {band} faster "
+                "than a grinding market.", "VIX spike", "days")],
+    }
+    for tag in p.sensitivities:
+        c.extend(MACRO.get(tag, []))
+
+    # thesis breakers from levels — always present
+    if p.invalidation:
+        c.append(Catalyst("Momentum breakdown", "breaks",
+            f"Losing ${p.invalidation:,.2f} with momentum invalidates the "
+            "add-on-pullback plan — reassess, don't average.",
+            f"close < ${p.invalidation:,.2f}", "any time"))
+    if p.scenarios:
+        worst = min(p.scenarios, key=lambda s: s.ret_pct)
+        c.append(Catalyst(worst.name, "breaks",
+            f"Engine's downside scenario: {worst.ret_pct:+.1f}% at "
+            f"{worst.prob_pct:.0f}% probability.", "scenario triggers", "—"))
+    return c
+
+
+def render_catalysts(cats: list[Catalyst]) -> list[str]:
+    unlock = [x for x in cats if x.direction == "unlocks"]
+    breaks = [x for x in cats if x.direction == "breaks"]
+    out: list[str] = []
+    if unlock:
+        out.append("What gets you your entry:")
+        out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in unlock]
+    if breaks:
+        out.append("What breaks the thesis:")
+        out += [f"  • {x.name}: {x.mechanism} Watch: {x.watch}" for x in breaks]
+    return out
+
+
+# ═════════════════════════════════════════════════════════════
+# LAYER 3 — LLM NARRATIVE (guarded, cached, provider-agnostic)
+# ═════════════════════════════════════════════════════════════
+
+LLMFn = Callable[[str, str], str]   # (system, user) -> completion text
+
+SYSTEM_PROMPT = """You write a brief market narrative for a quantitative trading signal.
+HARD RULES:
+1. Every dollar figure and percentage you write MUST appear verbatim in the JSON packet. Never invent a price, level, or probability.
+2. Never contradict ACTION_CONTRACT. You explain it; you do not second-guess it. Do not use the words BUY/SELL except as they appear in the contract.
+3. Use ONLY the catalysts listed in CATALYSTS — do not introduce others. Weave them into flowing prose with their horizons.
+4. Structure (plain prose, ~150-220 words, no headers/bullets):
+   (a) one-sentence thesis consistent with the verdict,
+   (b) what unlocks the setup, with realistic timelines from the catalysts,
+   (c) what breaks it (invalidation level, downside scenario),
+   (d) close with the single most important thing to watch.
+5. Tone: measured. No hype, no certainty language."""
+
+
+def build_user_prompt(p: SignalPacket, contract: ActionContract,
+                      cats: list[Catalyst]) -> str:
+    return json.dumps({
+        "PACKET": asdict(p),
+        "ACTION_CONTRACT": {**asdict(contract), "action": contract.action.value},
+        "CATALYSTS": [asdict(x) for x in cats],
+    }, default=str)
+
+
+# Matches "$1,234.56", "12.3%", and bare decimal numbers (>=2 sig figs) so a
+# hallucinated RSI/R:R/analyst-count value can't slip past the $ / % cases.
+_NUM_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s?%|\b(\d+\.\d+)\b")
+
+
+def guard_numbers(text: str, p: SignalPacket) -> list[str]:
+    """Numbers in `text` NOT present in the packet."""
+    allowed = p.numeric_universe()
+    bad = []
+    for m in _NUM_RE.finditer(text):
+        raw = (m.group(1) or m.group(2) or m.group(3)).replace(",", "")
+        v = round(float(raw), 2)
+        if v not in allowed and round(v) not in allowed:
+            bad.append(m.group(0))
+    return bad
+
+
+class NarrativeEngine:
+    """Layer-3 orchestrator. Cache is Redis-backed when available (survives
+    backend restarts / shared across workers) with an in-memory dict fallback
+    when Redis isn't configured — same optional/no-op pattern as the rest of
+    this app's caching (see backend/signals/cache.py)."""
+
+    _CACHE_TTL_SECONDS = 5 * 24 * 3600  # 5 days — comfortably longer than any
+                                          # single day's decision-hash lifetime
+
+    def __init__(self, llm: Optional[LLMFn] = None, max_retries: int = 2):
+        self.llm = llm
+        self.max_retries = max_retries
+        self._mem_cache: dict[str, str] = {}   # fallback when Redis unavailable
+
+    def _cache_get(self, key: str) -> Optional[str]:
+        try:
+            from signals.cache import get_cached
+            val = get_cached(key, as_json=False)
+            if val is not None:
+                return val
+        except Exception:
+            pass
+        return self._mem_cache.get(key)
+
+    def _cache_set(self, key: str, value: str) -> None:
+        self._mem_cache[key] = value
+        try:
+            from signals.cache import set_cached
+            set_cached(key, value, self._CACHE_TTL_SECONDS)
+        except Exception:
+            pass
+
+    def generate(self, p: SignalPacket, contract: ActionContract,
+                 cats: list[Catalyst]) -> tuple[str, str]:
+        """Returns (narrative, status). status ∈ ok|cached|skipped|fallback.
+        Cache key = ticker + asof date + decision_hash: regenerates only when a
+        gate flips, a band moves, or RSI/regime crosses a bucket — never on a
+        mere spot tick. The date prefix prevents a stale narrative from a
+        previous day resurfacing just because the decision state happens to
+        match."""
+        if self.llm is None:
+            return "", "skipped"
+        key = f"narrative:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached, "cached"
+        user = build_user_prompt(p, contract, cats)
+        for attempt in range(self.max_retries + 1):
+            text = self.llm(SYSTEM_PROMPT, user).strip()
+            bad = guard_numbers(text, p)
+            if not bad:
+                self._cache_set(key, text)
+                return text, "ok"
+            user += (f"\n\nREJECTED attempt {attempt + 1}: these numbers are not "
+                     f"in the packet: {bad}. Rewrite using only packet numbers.")
+        return "", "fallback"                # Layers 1+2 stand alone
+
+
+# ═════════════════════════════════════════════════════════════
+# WATERFALL ORCHESTRATOR
+# ═════════════════════════════════════════════════════════════
+
+_ENGINE_SINGLETON: Optional[NarrativeEngine] = None
+
+
+def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
+                  engine: Optional[NarrativeEngine] = None) -> dict:
+    """The one entry point. UI renders ONLY from this dict."""
+    global _ENGINE_SINGLETON
+    errors = p.validate()
+    if errors:
+        return {"status": "blocked", "errors": errors, "ticker": p.ticker}
+
+    contract = derive_action_contract(p)
+    cats = derive_catalysts(p)
+
+    why = render_explanations(p)
+    sc = render_scenarios(p)
+    if sc:
+        why.append(sc)
+    why += render_catalysts(cats)
+
+    if engine is None:
+        if _ENGINE_SINGLETON is None or _ENGINE_SINGLETON.llm is not llm:
+            _ENGINE_SINGLETON = NarrativeEngine(llm)   # persist cache across calls
+        engine = _ENGINE_SINGLETON
+    narrative, l3_status = engine.generate(p, contract, cats)
+
+    return {
+        "status": "ok",
+        "ticker": p.ticker,
+        "mode": p.mode,
+        "asof": p.asof,
+        "action": {**asdict(contract), "action": contract.action.value,
+                   "text": render_action(contract, p)},
+        "why": why,
+        "catalysts": [asdict(x) for x in cats],
+        "scenario_ev_pct": p.scenario_ev(),
+        "narrative": narrative,
+        "narrative_status": l3_status,
+        "packet_hash": p.content_hash(),
+    }
+
+
+# ═════════════════════════════════════════════════════════════
+# TIERED LLM STRATEGY (pre-revenue cost control)
+# ═════════════════════════════════════════════════════════════
+# Layers 1+2 (action, gates, scenarios, catalysts) run for EVERY ticker at $0.
+# Layer 3 (LLM narrative) runs only for tickers on the allowlist — the curated
+# demo set — plus lazy on-view generation so non-listed tickers still get a
+# narrative the moment someone actually opens them.
+#
+#   Scheduled runs:  build_summary_tiered(p, llm)            ~2x/day, allowlist only
+#   Page view:       build_summary_tiered(p, llm, on_view=True)   generate + cache
+#   Demo prep:       prewarm(packets, llm)                   morning of a demo
+#
+# Cost at 10-25 allowlisted tickers x 2 intraday runs: ~$2.50-$6/month on Haiku.
+
+import os
+
+def load_allowlist() -> set[str]:
+    """Env-var driven so you can add a prospect's ticker without redeploying:
+    export THRIVE_LLM_TICKERS='AMZN,BLK,GLD,NVDA,META'   (or back with a DB table)"""
+    raw = os.environ.get("THRIVE_LLM_TICKERS", "")
+    return {t.strip().upper() for t in raw.split(",") if t.strip()}
+
+
+def build_summary_tiered(p: SignalPacket, llm: Optional[LLMFn] = None,
+                         allowlist: Optional[set[str]] = None,
+                         on_view: bool = False,
+                         engine: Optional[NarrativeEngine] = None) -> dict:
+    """Drop-in replacement for build_summary in scheduled jobs AND page views.
+
+    - Scheduled run (on_view=False): LLM only for allowlisted tickers.
+    - Page view (on_view=True): LLM for any ticker — first view generates,
+      cache serves every view after, so the product never looks tiered.
+    """
+    allow = load_allowlist() if allowlist is None else allowlist
+    use_llm = llm if (on_view or p.ticker.upper() in allow) else None
+    if use_llm is None:
+        # never route through a shared engine here — it carries its own LLM
+        # reference and would silently bypass the tier decision
+        return build_summary(p, llm=None, engine=NarrativeEngine(None))
+    return build_summary(p, llm=use_llm, engine=engine)
+
+
+def prewarm(packets: list[SignalPacket], llm: LLMFn,
+            engine: Optional[NarrativeEngine] = None) -> dict[str, str]:
+    """Run before a demo so nobody watches a generation spinner live.
+    Returns {ticker: narrative_status}."""
+    eng = engine or NarrativeEngine(llm)
+    out = {}
+    for p in packets:
+        s = build_summary(p, engine=eng)
+        out[p.ticker] = s.get("narrative_status", s.get("status", "blocked"))
+    return out
+
+
+# ═════════════════════════════════════════════════════════════
+# LLM ADAPTERS (swap freely — any (system, user) -> str works)
+# ═════════════════════════════════════════════════════════════
+
+def make_anthropic_client(model: str = "claude-haiku-4-5-20251001") -> LLMFn:
+    import anthropic                                   # pip install anthropic
+    client = anthropic.Anthropic()                     # ANTHROPIC_API_KEY env var
+    def call(system: str, user: str) -> str:
+        msg = client.messages.create(
+            model=model, max_tokens=600, system=system,
+            messages=[{"role": "user", "content": user}])
+        return "".join(b.text for b in msg.content if b.type == "text")
+    return call
+
+
+# ═════════════════════════════════════════════════════════════
+# DEMO — AMZN swing snapshot (2026-08-11 screenshots)
+# ═════════════════════════════════════════════════════════════
+
+def example_packet_amzn() -> SignalPacket:
+    return SignalPacket(
+        ticker="AMZN", mode="swing", asof="2026-08-11",
+        spot=272.27, trend="UP", verdict="BRIDGE_PARTIAL", score=100,
+        gates=[
+            Gate("valuation", True, {"mos_pct": 30.4, "required_pct": 25.0}),
+            Gate("market_weather", True, {"tape": "Bull", "hmm_bull_pct": 97.0, "need_pct": 60.0}),
+            Gate("momentum_chop", False, {"rsi": 62.0}),
+            Gate("ml_probability", True, {"ml_prob_pct": 35.0, "threshold_pct": 25.0}),
+            Gate("confidence", True, {"conf_pct": 69.0}),
+        ],
+        entry_band=Band(245.14, 257.52), stop=232.76, invalidation=229.98,
+        target=331.58, rr=2.0,
+        st_band=Band(269.55, 273.63),
+        bridge_band=Band(267.34, 274.36),
+        bridge_levels=[267.34, 269.10, 270.85, 272.60, 274.36],
+        catch_levels=[245.14, 247.62, 248.23, 251.33, 254.42, 257.52],
+        anchor_levels=[247.62],
+        t1=Band(225.24, 248.94), t2=Band(292.76, 310.86),
+        entry_mode="STARTER_ONLY", max_tranche_pct=10.0,
+        roadmap=[{"horizon": "1-3m", "alloc_pct": 35, "band": Band(225.24, 248.94)},
+                 {"horizon": "3-6m", "alloc_pct": 25, "band": Band(225.24, 248.94)}],
+        hmm_bull_pct=97.0, hmm_transition_pct=2.0, rsi=62.0,
+        ml_prob_pct=35.0, ml_threshold_pct=25.0, fused_confidence_pct=69.0,
+        options_pc=0.78, options_class="put-heavy", options_score_pct=50.0,
+        unlock_conditions=["Momentum Chop clears (RSI < 50)"],
+        scenarios=[Scenario("Bull Case", 43.2, 89), Scenario("Base Case", 19.4, 42),
+                   Scenario("Earnings Beat", 11.0, 50), Scenario("Fed Rate Cut", 10.0, 40),
+                   Scenario("Earnings Miss / Guidance Cut", -3.0, 15),
+                   Scenario("Bear Case", -12.5, 5)],
+        expected_value_pct=None,   # set to your engine's displayed EV to enable drift check
+        sensitivities=["USD-sensitive", "volatility-sensitive"],
+        street_median=329.0, street_analysts=94, street_bullish_pct=89.4,
+        news_sentiment="BULLISH",
+    )
+
+
+if __name__ == "__main__":
+    pkt = example_packet_amzn()
+    out = build_summary(pkt, llm=None)   # pass llm=make_anthropic_client() to enable Layer 3
+    print(json.dumps(out, indent=2, default=str, ensure_ascii=False))

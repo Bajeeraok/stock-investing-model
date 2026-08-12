@@ -28,20 +28,21 @@ import { InvestorDecisionSummarySection } from "../InvestorDecisionSummary";
 import { HorizonDivergenceNote } from "../retailActionUX";
 import { ScenarioTeaser } from "../ScenarioTeaser";
 import { apiUrl } from "@/lib/apiBase";
+import { NarrativeWaterfallCard } from "./NarrativeWaterfallCard";
 
 function fmtUsd(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return `$${n.toFixed(2)}`;
 }
 
-function fmtPct(n: number | null | undefined, digits = 1): string {
+export function fmtPct(n: number | null | undefined, digits = 1): string {
   if (n == null || !Number.isFinite(n)) return "—";
   const sign = n >= 0 ? "+" : "−";
   return `${sign}${Math.abs(n).toFixed(digits)}%`;
 }
 
-/** Shared shell for the 6 "reference detail" cards — compact stat rows + optional body + jump-link + optional collapsible extra detail. */
-function ReferenceCard({
+/** Shared shell for the reference-detail cards — compact stat rows + optional body + jump-link + optional collapsible extra detail. */
+export function ReferenceCard({
   icon: Icon,
   title,
   description,
@@ -158,6 +159,7 @@ export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
         <NearBottomCard {...props} />
         <ConfidenceCard {...props} />
         <FundamentalsCard {...props} />
+        <NarrativeWaterfallCard ticker={props.detail.ticker} mode={props.decisionMode} />
       </div>
     </div>
   );

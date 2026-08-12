@@ -1802,6 +1802,9 @@ def _build_investor_summary(
                 catalyst=response.get("catalyst") if isinstance(response.get("catalyst"), dict) else None,
                 earnings_days_since=int(earnings_days_since) if earnings_days_since is not None else None,
             )
+            # Raw numbers alongside the narrative text, for UI stats that want the figure directly.
+            move_narrative["day_change_pct"] = day_change_pct
+            move_narrative["spy_day_change_pct"] = spy_day_change_pct
 
             # Owner persona's valuation framing uses the same tranche-tiered MOS ladder
             # that gates full_go (see signals.retail_action_payload) — required discount

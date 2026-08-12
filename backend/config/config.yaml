@@ -772,6 +772,7 @@ data:
   etf_flows_api_key: ""
   #polygon_api_key: "2XVRQvFBQ48Ozvglzc6uqjP7XHuxpKtv"
   #finnhub_apikey: "d61pbp1r01qgcobqd3dgd61pbp1r01qgcobqd3e0"
+  #anthropic_api_key: ""              # Anthropic (Haiku) – guarded LLM narrative in narrative_waterfall.py; unset = deterministic-only
              # ETF flows (SPY, QQQ, GLD) – placeholder; systematic feeds usually paid
 earnings:
   days_warning: 14  # Flag when earnings within N days

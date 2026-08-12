@@ -22,6 +22,7 @@ _API_KEY_ENV_MAP = {
     "POLYGON_API_KEY": ("data", "polygon_api_key"),
     "FINNHUB_API_KEY": ("data", "finnhub_apikey"),
     "OPENAI_API_KEY": ("data", "openai_api_key"),
+    "ANTHROPIC_API_KEY": ("data", "anthropic_api_key"),
 }
 
 ROOT = Path(__file__).resolve().parent
