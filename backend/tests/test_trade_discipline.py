@@ -49,6 +49,8 @@ def test_journal_append_and_list(discipline_file):
     assert len(entries) == 3
     assert entries[0]["ticker"] == "NVDA"
     assert entries[0]["action"] == "note"
+    assert entries[1]["ticker"] == "TSLA"
+    assert entries[1]["action"] == "trim"
 
 
 def test_expired_cooldown_allows_add(discipline_file):

@@ -100,7 +100,9 @@ export function DecisionJournalPanel({ defaultOpen = false }: { defaultOpen?: bo
                         ? "text-amber-400"
                         : e.action === "add"
                           ? "text-emerald-400"
-                          : "text-slate-400"
+                          : e.action === "note"
+                            ? "text-sky-400"
+                            : "text-slate-400"
                     }
                   >
                     {e.action}

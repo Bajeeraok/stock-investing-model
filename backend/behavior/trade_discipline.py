@@ -120,7 +120,7 @@ def record_trim_cooldown(ticker: str, config: dict, *, note: str | None = None) 
 
 
 def append_journal(ticker: str, action: str, note: str, config: dict) -> dict[str, Any]:
-    """Append one-line journal entry (add | trim)."""
+    """Append one-line journal entry (add | trim | note)."""
     t = (ticker or "").strip().upper()
     text = (note or "").strip()
     if not t or not text:

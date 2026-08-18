@@ -959,9 +959,9 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     {data.news_sentiment_layer.summary_label && (
                       <p className="text-xs text-slate-400 mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
                     )}
-                    {(data.news_sentiment_layer.catalyst_cards?.length ?? 0) > 0 && (
+                    {(data.news_sentiment_layer.catalyst_cards ?? []).length > 0 && (
                       <ul className="space-y-1.5 text-xs text-slate-300 mb-2">
-                        {data.news_sentiment_layer.catalyst_cards!.map((c) => (
+                        {(data.news_sentiment_layer.catalyst_cards ?? []).map((c) => (
                           <li key={c.event_type || c.name} className="leading-snug">
                             <span className="uppercase text-[10px] text-slate-500 mr-1">{c.direction}</span>
                             {c.name}: {c.mechanism}

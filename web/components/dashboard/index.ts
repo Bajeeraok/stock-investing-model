@@ -104,6 +104,7 @@ export {
   MiniEquityCurve,
   MiniPriceSparkline,
   NewsSentimentRail,
+  type CatalystNoteCard,
   SignalDetailRail,
   SignalSparklineCell,
   StickyTickerQuoteBar,
