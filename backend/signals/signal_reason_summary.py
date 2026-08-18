@@ -378,12 +378,27 @@ def _build_wait_plain(
         try:
             lo_f, hi_f, cp = float(lo), float(hi), float(current_price)
             if lo_f > 0 and hi_f > 0:
-                if cp > hi_f:
+                if persona == "owner":
+                    if cp > hi_f:
+                        parts.append(
+                            f"Planned add ceiling ≤ ${hi_f:.2f} — any print at or below that level counts (gaps through the window included)."
+                        )
+                    else:
+                        parts.append(
+                            f"Price is at or below the T1 ceiling ${hi_f:.2f} — waiting on gates, not a tighter band window."
+                        )
+                elif cp > hi_f:
                     parts.append(
-                        f"Planned entry zone ${lo_f:.0f}–${hi_f:.0f} — reach it on a normal pullback (often days to a few weeks)."
+                        f"Planned entry zone ${lo_f:.2f}–${hi_f:.2f} — reach it on a normal pullback (often days to a few weeks)."
                     )
                 elif lo_f <= cp <= hi_f:
-                    parts.append(f"Price is already in the entry band ${lo_f:.0f}–${hi_f:.0f} — waiting on gates, not price.")
+                    parts.append(
+                        f"Price is already in the entry band ${lo_f:.2f}–${hi_f:.2f} — waiting on gates, not price."
+                    )
+                elif cp < lo_f:
+                    parts.append(
+                        f"Spot is below the entry band ${lo_f:.2f}–${hi_f:.2f} — first add is at/through the floor, not a bounce back into the window."
+                    )
         except (TypeError, ValueError):
             pass
 

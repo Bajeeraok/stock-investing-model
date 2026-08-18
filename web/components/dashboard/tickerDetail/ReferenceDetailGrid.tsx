@@ -197,6 +197,10 @@ function ChartLevelsCard({
     if (horizon.target != null) levelLines.push({ label: "Target", value: horizon.target, color: "#34d399" });
     if (horizon.stop_loss != null) levelLines.push({ label: "Stop", value: horizon.stop_loss, color: "#fb7185" });
     if (horizon.entry_zone?.low != null) levelLines.push({ label: "Entry", value: horizon.entry_zone.low, color: "#38bdf8" });
+    const ns = horizon.nearby_sr?.next_support;
+    const nr = horizon.nearby_sr?.next_resistance;
+    if (ns?.price) levelLines.push({ label: ns.label || "Support", value: ns.price, color: "#f59e0b" });
+    if (nr?.price) levelLines.push({ label: nr.label || "Resist", value: nr.price, color: "#22d3ee" });
   }
   if (detail.ma50 != null) levelLines.push({ label: "MA50", value: detail.ma50, color: "#f59e0b" });
   if (detail.ma200 != null) levelLines.push({ label: "MA200", value: detail.ma200, color: "#a78bfa" });

@@ -292,6 +292,13 @@ export interface HorizonSignalPayload {
       role?: string;
     }>;
   };
+  /** Next support / resistance for this horizon (omitted when none sits nearby). */
+  nearby_sr?: {
+    next_support?: { price: number; label: string; dist_pct: number } | null;
+    next_resistance?: { price: number; label: string; dist_pct: number } | null;
+    support_stack?: Array<{ price: number; label: string; dist_pct: number }>;
+    resistance_stack?: Array<{ price: number; label: string; dist_pct: number }>;
+  } | null;
   /** Historical EOD touch stats for this entry band (not paper trades). */
   entry_touch_forecast?: {
     horizon?: string;

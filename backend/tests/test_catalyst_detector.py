@@ -8,6 +8,7 @@ import pytest
 from signals.catalyst_detector import (
     CatalystPayload,
     detect_catalysts,
+    build_catalyst_note_cards,
     _classify_headline,
 )
 
@@ -134,3 +135,32 @@ class TestDetectCatalysts:
         assert result.headline_summary is not None
         assert result.hours_since_catalyst is not None
         assert result.hours_since_catalyst < 12
+
+
+class TestCatalystNoteCards:
+    def test_clusters_by_type_and_drafts_note(self):
+        headlines = [
+            _make_article("NVDA earnings beat expectations: revenue surpasses $40B", hours_ago=3),
+            _make_article("Another NVDA earnings beat on data-center demand", hours_ago=5),
+            _make_article("SEC charges company with fraud in accounting scandal", hours_ago=4),
+            _make_article("Markets close mixed on light volume", hours_ago=1),
+        ]
+        cards = build_catalyst_note_cards(headlines, ticker="NVDA")
+        types = {c["event_type"] for c in cards}
+        assert "EARNINGS_BEAT" in types or "EARNINGS_BLOWOUT" in types
+        assert "LEGAL_RISK" in types
+        beat = next(c for c in cards if "EARNINGS" in c["event_type"])
+        assert beat["headline_count"] == 2
+        assert beat["direction"] == "unlocks"
+        assert "NVDA" in beat["draft_note"]
+        assert "does not change bands" in beat["draft_note"].lower()
+        legal = next(c for c in cards if c["event_type"] == "LEGAL_RISK")
+        assert legal["direction"] == "breaks"
+
+    def test_empty_and_unclassified(self):
+        assert build_catalyst_note_cards([], ticker="X") == []
+        cards = build_catalyst_note_cards(
+            [_make_article("Markets close mixed on light trading volume")],
+            ticker="SPY",
+        )
+        assert cards == []

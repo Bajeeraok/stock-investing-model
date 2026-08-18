@@ -18,14 +18,27 @@ def test_watch_zone_action_title():
     assert light == "yellow"
 
 
-def test_in_tier_accumulate():
+def test_in_tier_wait_for_gates_when_blocked():
     title, light = derive_zone_aware_action_title(
         "WAIT",
         False,
         long_spot={"state": "in_tier", "active_tier_id": "T2"},
     )
+    assert "WAIT FOR GATES" in title
+    assert "T2" in title
+    assert "ACCUMULATE" not in title
+    assert light == "yellow"
+
+
+def test_in_tier_accumulate_when_gates_clear():
+    title, light = derive_zone_aware_action_title(
+        "BUY",
+        True,
+        long_spot={"state": "in_tier", "active_tier_id": "T2"},
+    )
     assert "ACCUMULATE" in title
     assert "T2" in title
+    assert light == "green"
 
 
 def test_unlock_summary_regime():

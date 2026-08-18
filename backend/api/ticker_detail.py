@@ -773,7 +773,21 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     return response
 
 
-def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = None) -> dict | None:
+def _catalyst_cards_for_layer(headlines: list[dict], ticker: str) -> list[dict]:
+    try:
+        from signals.catalyst_detector import build_catalyst_note_cards
+
+        return build_catalyst_note_cards(headlines, ticker=ticker)
+    except Exception:
+        return []
+
+
+def _build_news_sentiment_layer_for_ui(
+    conf: dict | None,
+    config: dict | None = None,
+    *,
+    ticker: str = "",
+) -> dict | None:
     """
     Sanitized news/NLP payload for the roadmap UI — same run_confidence() pass as ML/HMM/pattern inputs.
     Includes booleans fmp_key_configured / alpha_vantage_key_configured (no secrets) for deploy debugging.
@@ -822,6 +836,8 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = 
                         "score": h.get("score"),
                         "label": h.get("label"),
                         "url": h.get("url") or None,
+                        "published": h.get("published") or h.get("publishedDate"),
+                        "text": (h.get("text") or None),
                     }
                 )
             elif isinstance(h, str):
@@ -870,6 +886,7 @@ def _build_news_sentiment_layer_for_ui(conf: dict | None, config: dict | None = 
         "source": nlp.get("source") if isinstance(nlp, dict) else None,
         "method": nlp.get("method") if isinstance(nlp, dict) else None,
         "headlines": headlines_out,
+        "catalyst_cards": _catalyst_cards_for_layer(headlines_out, ticker),
         "layer_weight": weight,
         "layer_available": available,
         "message": msg,
@@ -1514,6 +1531,35 @@ def _build_investor_summary(
         except Exception:
             pass
 
+    try:
+        from signals.nearby_sr_levels import attach_nearby_sr
+        from signals.target_bands import compute_swing_high_low
+
+        swing_high = swing_low = None
+        closes = None
+        if close_ticker is not None and getattr(close_ticker, "iloc", None) is not None:
+            try:
+                swing_high, swing_low = compute_swing_high_low(close_ticker, 20)
+                closes = [float(x) for x in close_ticker.iloc[-80:].tolist() if x is not None]
+            except Exception:
+                closes = None
+        attach_nearby_sr(
+            payload,
+            spot=float(current_price),
+            ma20=_safe_float(response.get("ma20")),
+            ma50=ma50,
+            ma200=ma200,
+            low_52w=low_52w,
+            high_52w=high_52w,
+            swing_low=swing_low,
+            swing_high=swing_high,
+            support_level=support_level,
+            resistance_level=resistance_level,
+            closes=closes,
+        )
+    except Exception:
+        pass
+
     out: dict = {
         "fair_value": round(fair_value, 2),
         "overall_verdict": overall,
@@ -1669,7 +1715,7 @@ def _build_investor_summary(
         conf_snapshot=conf_snapshot,
         config=config,
     )
-    news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config)
+    news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config, ticker=ticker)
     if news_layer and isinstance(out.get("trade_roadmap"), dict):
         out["trade_roadmap"] = {**out["trade_roadmap"], "news_sentiment_layer": news_layer}
     out["scenario_target"] = (out.get("trade_roadmap") or {}).get("scenario_target")

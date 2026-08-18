@@ -653,6 +653,7 @@ export function TickerDetailModal({
       headlineCount: roadmapNews?.headline_count ?? null,
       headlines: (roadmapNews?.headlines ?? []).map((h) => ({ title: h.title, url: h.url })),
       catalystNote: catalyst ?? detail?.catalyst?.override_note ?? null,
+      catalystCards: roadmapNews?.catalyst_cards ?? [],
     };
   }, [detail]);
 
@@ -991,11 +992,13 @@ export function TickerDetailModal({
                   />
                   <div className="lg:hidden space-y-3">
                     <NewsSentimentRail
+                      ticker={detail.ticker}
                       label={modalNewsRail.label}
                       score={modalNewsRail.score}
                       headlineCount={modalNewsRail.headlineCount}
                       headlines={modalNewsRail.headlines}
                       catalystNote={modalNewsRail.catalystNote}
+                      catalystCards={modalNewsRail.catalystCards}
                     />
                     <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />
                   </div>
@@ -1086,11 +1089,13 @@ export function TickerDetailModal({
                 </div>
                 <aside className="hidden lg:block sticky top-28 space-y-3 self-start">
                   <NewsSentimentRail
+                    ticker={detail.ticker}
                     label={modalNewsRail.label}
                     score={modalNewsRail.score}
                     headlineCount={modalNewsRail.headlineCount}
                     headlines={modalNewsRail.headlines}
                     catalystNote={modalNewsRail.catalystNote}
+                    catalystCards={modalNewsRail.catalystCards}
                   />
                   <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />
                 </aside>

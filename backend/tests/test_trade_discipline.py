@@ -44,10 +44,11 @@ def test_journal_append_and_list(discipline_file):
     config = {"behavior": {"journal_max_entries": 5}}
     td.append_journal("AAPL", "add", "Pullback to MA50", config)
     td.append_journal("TSLA", "trim", "Score dropped", config)
+    td.append_journal("NVDA", "note", "NVDA · earnings beat (unlocks) — print held. Advisory only.", config)
     entries = td.list_journal(10)
-    assert len(entries) == 2
-    assert entries[0]["ticker"] == "TSLA"
-    assert entries[0]["action"] == "trim"
+    assert len(entries) == 3
+    assert entries[0]["ticker"] == "NVDA"
+    assert entries[0]["action"] == "note"
 
 
 def test_expired_cooldown_allows_add(discipline_file):

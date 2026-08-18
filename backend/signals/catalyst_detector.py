@@ -17,6 +17,60 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 
+FRIENDLY_LABELS = {
+    "M&A": "M&A / acquisition",
+    "MAJOR_DEAL": "major deal",
+    "PARTNERSHIP": "strategic partnership",
+    "FDA_APPROVAL": "FDA / regulatory approval",
+    "REGULATORY_ACTION": "regulatory action",
+    "EARNINGS_BLOWOUT": "earnings blowout",
+    "EARNINGS_BEAT": "earnings beat",
+    "EARNINGS_MISS": "earnings miss",
+    "GUIDANCE_RAISE": "guidance raise",
+    "GUIDANCE_CUT": "guidance cut",
+    "ANALYST_UPGRADE": "analyst upgrade",
+    "ANALYST_DOWNGRADE": "analyst downgrade",
+    "PT_RAISE": "price target raise",
+    "PT_CUT": "price target cut",
+    "CEO_CHANGE": "CEO change",
+    "RESTRUCTURING": "restructuring",
+    "CAPITAL_RETURN": "capital return (buyback/dividend)",
+    "LEGAL_RISK": "legal / fraud risk",
+    "IPO_SPINOFF": "IPO / spin-off",
+}
+
+BULLISH_EVENTS = {
+    "M&A", "MAJOR_DEAL", "PARTNERSHIP", "FDA_APPROVAL",
+    "EARNINGS_BLOWOUT", "EARNINGS_BEAT", "GUIDANCE_RAISE",
+    "ANALYST_UPGRADE", "CAPITAL_RETURN", "IPO_SPINOFF", "PT_RAISE",
+}
+BEARISH_EVENTS = {
+    "REGULATORY_ACTION", "EARNINGS_MISS", "GUIDANCE_CUT",
+    "ANALYST_DOWNGRADE", "LEGAL_RISK", "PT_CUT",
+}
+_WATCH_HINTS = {
+    "M&A": "deal terms / close risk",
+    "MAJOR_DEAL": "contract follow-through",
+    "PARTNERSHIP": "named partner confirmation",
+    "FDA_APPROVAL": "label / commercial timing",
+    "REGULATORY_ACTION": "probe headlines vs price hold",
+    "EARNINGS_BLOWOUT": "gap hold vs fade next session",
+    "EARNINGS_BEAT": "gap hold vs fade next session",
+    "EARNINGS_MISS": "stabilization after the print",
+    "GUIDANCE_RAISE": "estimate revisions catch up",
+    "GUIDANCE_CUT": "estimate revisions catch down",
+    "ANALYST_UPGRADE": "follow-through vs one-day pop",
+    "ANALYST_DOWNGRADE": "follow-through vs one-day dump",
+    "PT_RAISE": "street cluster vs your band",
+    "PT_CUT": "street cluster vs your stop",
+    "CEO_CHANGE": "succession / strategy note",
+    "RESTRUCTURING": "charge size vs core thesis",
+    "CAPITAL_RETURN": "buyback pace vs dilution",
+    "LEGAL_RISK": "case status vs thesis break",
+    "IPO_SPINOFF": "when-issued / listing date",
+}
+
+
 # ── Event type patterns ─────────────────────────────────────────────────
 # Each tuple: (compiled regex on lowercased title+body, event_type, impact 1-3)
 
@@ -179,44 +233,16 @@ def detect_catalysts(
     events.sort(key=lambda e: (-e.impact, e.age_hours))
     top = events[0]
 
-    _FRIENDLY_LABELS = {
-        "M&A": "M&A / acquisition",
-        "MAJOR_DEAL": "major deal",
-        "PARTNERSHIP": "strategic partnership",
-        "FDA_APPROVAL": "FDA / regulatory approval",
-        "REGULATORY_ACTION": "regulatory action",
-        "EARNINGS_BLOWOUT": "earnings blowout",
-        "EARNINGS_BEAT": "earnings beat",
-        "EARNINGS_MISS": "earnings miss",
-        "GUIDANCE_RAISE": "guidance raise",
-        "GUIDANCE_CUT": "guidance cut",
-        "ANALYST_UPGRADE": "analyst upgrade",
-        "ANALYST_DOWNGRADE": "analyst downgrade",
-        "PT_RAISE": "price target raise",
-        "PT_CUT": "price target cut",
-        "CEO_CHANGE": "CEO change",
-        "RESTRUCTURING": "restructuring",
-        "CAPITAL_RETURN": "capital return (buyback/dividend)",
-        "LEGAL_RISK": "legal / fraud risk",
-        "IPO_SPINOFF": "IPO / spin-off",
-    }
-
-    friendly = _FRIENDLY_LABELS.get(top.event_type, top.event_type.lower().replace("_", " "))
+    friendly = FRIENDLY_LABELS.get(top.event_type, top.event_type.lower().replace("_", " "))
     age_label = f"{top.age_hours:.0f}h ago" if top.age_hours < 24 else f"{top.age_hours / 24:.0f}d ago"
 
-    bullish_events = {"M&A", "MAJOR_DEAL", "PARTNERSHIP", "FDA_APPROVAL",
-                      "EARNINGS_BLOWOUT", "EARNINGS_BEAT", "GUIDANCE_RAISE",
-                      "ANALYST_UPGRADE", "CAPITAL_RETURN", "IPO_SPINOFF"}
-    bearish_events = {"REGULATORY_ACTION", "EARNINGS_MISS", "GUIDANCE_CUT",
-                      "ANALYST_DOWNGRADE", "LEGAL_RISK"}
-
-    if top.event_type in bullish_events:
+    if top.event_type in BULLISH_EVENTS:
         override = (
             f"Catalyst active ({friendly}, {age_label}) \u2014 "
             "momentum regime may dominate standard valuation model. "
             "Price action near the event is news-driven, not pattern-driven."
         )
-    elif top.event_type in bearish_events:
+    elif top.event_type in BEARISH_EVENTS:
         override = (
             f"Catalyst active ({friendly}, {age_label}) \u2014 "
             "negative event may override bullish technicals. "
@@ -237,3 +263,104 @@ def detect_catalysts(
         override_note=override,
         hours_since_catalyst=top.age_hours,
     )
+
+
+def _direction_for(event_type: str) -> str:
+    if event_type in BULLISH_EVENTS:
+        return "unlocks"
+    if event_type in BEARISH_EVENTS:
+        return "breaks"
+    return "watch"
+
+
+def _horizon_from_age(hours: float) -> str:
+    if hours < 24:
+        return "days"
+    if hours < 168:
+        return "1-2 weeks"
+    return "4-12 weeks"
+
+
+def _age_label(hours: float) -> str:
+    if hours >= 900:
+        return ""
+    if hours < 24:
+        return f"{hours:.0f}h ago"
+    return f"{hours / 24:.0f}d ago"
+
+
+def build_catalyst_note_cards(
+    headlines: list[dict[str, Any]] | None,
+    *,
+    ticker: str = "",
+    max_cards: int = 4,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Cluster classified headlines into 2–4 advisory cards for the news rail.
+
+    Advisory only — never mutates bands, gates, or scores. Draft notes are
+    meant for the user to confirm into the decision journal.
+    """
+    if not headlines:
+        return []
+
+    clusters: dict[str, dict[str, Any]] = {}
+    for item in headlines:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or item.get("headline") or "").strip()
+        if not title:
+            continue
+        body = str(item.get("text") or item.get("description") or item.get("summary") or "")
+        pub = item.get("published") or item.get("publishedDate") or item.get("published_at") or item.get("date")
+        url = str(item.get("url") or item.get("link") or "")
+        age = _article_age_hours(str(pub) if pub else None, now)
+        hits = _classify_headline(title, body)
+        if not hits:
+            continue
+        event_type, impact = max(hits, key=lambda h: h[1])
+        row = clusters.get(event_type)
+        if row is None or impact > row["impact"] or (impact == row["impact"] and age < row["age_hours"]):
+            clusters[event_type] = {
+                "event_type": event_type,
+                "impact": impact,
+                "title": title[:180],
+                "url": url or None,
+                "source": _extract_domain(url),
+                "age_hours": round(age, 1),
+                "headline_count": (row["headline_count"] + 1) if row else 1,
+            }
+        else:
+            row["headline_count"] = int(row["headline_count"]) + 1
+
+    ranked = sorted(clusters.values(), key=lambda r: (-int(r["impact"]), float(r["age_hours"])))
+    cards: list[dict[str, Any]] = []
+    sym = (ticker or "").strip().upper()
+    for row in ranked[: max(1, min(4, max_cards))]:
+        et = str(row["event_type"])
+        friendly = FRIENDLY_LABELS.get(et, et.lower().replace("_", " "))
+        direction = _direction_for(et)
+        age_h = float(row["age_hours"])
+        age_l = _age_label(age_h)
+        source = row["source"] if row["source"] != "unknown" else ""
+        draft_bits = [f"{sym} · {friendly} ({direction}) — {row['title']}"]
+        meta = " · ".join(x for x in (source, age_l) if x)
+        if meta:
+            draft_bits.append(meta)
+        draft_bits.append("Advisory only — does not change bands or gates.")
+        cards.append({
+            "name": friendly,
+            "event_type": et,
+            "direction": direction,
+            "mechanism": row["title"],
+            "watch": _WATCH_HINTS.get(et, "price reaction vs your plan"),
+            "horizon": _horizon_from_age(age_h),
+            "source": source or None,
+            "age_hours": None if age_h >= 900 else age_h,
+            "age_label": age_l or None,
+            "url": row["url"],
+            "headline_count": int(row["headline_count"]),
+            "draft_note": " ".join(draft_bits)[:500],
+        })
+    return cards
+

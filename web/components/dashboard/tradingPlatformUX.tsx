@@ -11,6 +11,7 @@ import {
 } from "./retailActionUX";
 import { gatesForSignal } from "@/lib/signalsTableViewGates";
 import { MiniPriceSparkline } from "./MiniPriceSparkline";
+import { apiUrl } from "@/lib/apiBase";
 
 /** U1 — compact SVG sparkline from EOD closes (mobile + desktop). */
 export { MiniPriceSparkline };
@@ -226,20 +227,40 @@ export function SignalDetailRail({
 }
 
 /** U3 — compact news rail for ticker modal. */
+export type CatalystNoteCard = {
+  name: string;
+  event_type?: string;
+  direction: "unlocks" | "breaks" | "watch" | string;
+  mechanism: string;
+  watch?: string;
+  horizon?: string;
+  source?: string | null;
+  age_label?: string | null;
+  url?: string | null;
+  headline_count?: number;
+  draft_note: string;
+};
+
 export function NewsSentimentRail({
+  ticker,
   label,
   score,
   headlineCount,
   headlines,
   catalystNote,
+  catalystCards,
 }: {
+  ticker?: string;
   label?: string | null;
   score?: number | null;
   headlineCount?: number | null;
   headlines?: Array<{ title?: string; url?: string | null }>;
   catalystNote?: string | null;
+  catalystCards?: CatalystNoteCard[] | null;
 }) {
-  if (!headlineCount && !headlines?.length && !catalystNote) return null;
+  const [saved, setSaved] = React.useState<Record<string, "idle" | "saving" | "ok" | "err">>({});
+  const cards = (catalystCards ?? []).slice(0, 4);
+  if (!headlineCount && !headlines?.length && !catalystNote && !cards.length) return null;
   const sentiment =
     score != null
       ? score >= 0.55
@@ -248,6 +269,23 @@ export function NewsSentimentRail({
           ? "Bearish"
           : "Neutral"
       : label ?? "Neutral";
+
+  async function addNote(card: CatalystNoteCard) {
+    if (!ticker) return;
+    const key = card.event_type || card.name;
+    setSaved((s) => ({ ...s, [key]: "saving" }));
+    try {
+      const r = await fetch(apiUrl("/api/behavior/journal"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker, action: "note", note: card.draft_note }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setSaved((s) => ({ ...s, [key]: "ok" }));
+    } catch {
+      setSaved((s) => ({ ...s, [key]: "err" }));
+    }
+  }
 
   return (
     <div className="rounded-lg border border-sky-500/25 bg-sky-950/15 p-3 space-y-2">
@@ -262,6 +300,55 @@ export function NewsSentimentRail({
       </div>
       {catalystNote && (
         <p className="text-[11px] text-amber-200/90 leading-snug">{catalystNote}</p>
+      )}
+      {cards.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] text-slate-500">
+            Catalyst cards — advisory only; does not change bands or gates.
+          </p>
+          {cards.map((c) => {
+            const key = c.event_type || c.name;
+            const st = saved[key] || "idle";
+            const tone =
+              c.direction === "unlocks"
+                ? "border-emerald-500/30 text-emerald-300"
+                : c.direction === "breaks"
+                  ? "border-red-500/30 text-red-300"
+                  : "border-slate-500/30 text-slate-300";
+            return (
+              <div key={key} className="rounded-md border border-slate-700/70 bg-slate-950/40 p-2 space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={clsx("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border", tone)}>
+                    {c.direction}
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-200">{c.name}</span>
+                  {c.age_label && <span className="text-[10px] text-slate-500">{c.age_label}</span>}
+                  {c.source && <span className="text-[10px] text-slate-600 truncate">{c.source}</span>}
+                </div>
+                {c.url ? (
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-slate-300 leading-snug hover:text-sky-300 line-clamp-2">
+                    {c.mechanism}
+                  </a>
+                ) : (
+                  <p className="text-[11px] text-slate-300 leading-snug line-clamp-2">{c.mechanism}</p>
+                )}
+                {c.watch && (
+                  <p className="text-[10px] text-slate-500">Watch: {c.watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
+                )}
+                {ticker && (
+                  <button
+                    type="button"
+                    onClick={() => addNote(c)}
+                    disabled={st === "saving" || st === "ok"}
+                    className="text-[10px] font-semibold text-sky-300 hover:text-sky-200 disabled:text-slate-500"
+                  >
+                    {st === "ok" ? "Saved to notes" : st === "saving" ? "Saving…" : st === "err" ? "Retry add to note" : "Add to note"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
       <ul className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
         {(headlines ?? []).slice(0, 8).map((h, i) => (

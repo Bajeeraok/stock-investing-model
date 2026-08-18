@@ -302,12 +302,24 @@ def build_long_setup(
         if active_t:
             add_triggers.insert(
                 0,
-                f"Active tier {active_t.get('label')}: ${active_t['low']:.2f}–${active_t['high']:.2f}.",
+                f"Active tier {active_t.get('label')}: ≤ ${active_t['high']:.2f} (threshold — gaps below still count).",
             )
+    t1 = next((t for t in compact_tiers if t.get("id") == "T1"), None)
+    if t1 and not active_id:
+        add_triggers.insert(
+            0,
+            f"T1 ceiling ≤ ${t1['high']:.2f} — owner trigger is at-or-below, not a ${t1['low']:.2f}–${t1['high']:.2f} window.",
+        )
 
     exit_triggers = []
-    if inv_price:
-        exit_triggers.append(f"Structural invalidation below ${inv_price:.2f} — review long-term thesis.")
+    if inv_price and current_price is not None and inv_price < float(current_price):
+        exit_triggers.append(
+            f"Structural invalidation below ${inv_price:.2f} — a close BELOW that floor reviews the long-term thesis."
+        )
+    elif inv_price:
+        exit_triggers.append(
+            f"Structural reference ${inv_price:.2f} is not below spot — use the tactical stop, not this level, as live invalidation."
+        )
     exit_triggers.append("Trim tactical slice only on extended moves + weak scores — not core on volatility alone.")
 
     stance = "accumulate" if verdict in ("BUY", "STRONG BUY") else "watch" if verdict == "WATCH" else "wait"
@@ -336,12 +348,22 @@ def build_long_setup(
             "exit": exit_triggers,
             "reduce": ["Trim extended tactical slice >20% gain pre-earnings if not core thesis."],
             "wait": [
-                "Wait for price inside target tier before sizing up."
-            ] if stance == "wait" else [],
+                f"Wait for price ≤ ${t1['high']:.2f} (T1 ceiling) before sizing up."
+            ] if stance == "wait" and t1 else (
+                ["Wait for price inside target tier before sizing up."] if stance == "wait" else []
+            ),
         },
         "thesis_breaks": [
             f"{ticker} thesis broken: guidance cut, moat erosion, or sector obsolescence.",
-            f"Close below structural invalidation ${inv_price:.2f}." if inv_price else "Structural invalidation level breached.",
+            (
+                f"Close BELOW structural invalidation ${inv_price:.2f} (a floor, not a ceiling)."
+                if inv_price and current_price is not None and inv_price < float(current_price)
+                else (
+                    f"Structural reference ${inv_price:.2f} is not below spot — do not treat a close above it as invalidation."
+                    if inv_price
+                    else "Structural invalidation level breached."
+                )
+            ),
             "Regime shifts to sustained bear + credit stress — reduce concentration.",
         ],
         "disclaimer": "Decision support only — long-term framework; not personalized financial advice.",

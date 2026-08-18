@@ -444,6 +444,33 @@ export function DecisionDeck({
           </div>
         )}
 
+        {(primary.nearby_sr?.next_support || primary.nearby_sr?.next_resistance) && (
+          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+            {primary.nearby_sr?.next_support && (
+              <div className="rounded-lg bg-slate-900/60 border border-amber-500/25 px-2.5 py-2">
+                <p className="text-[10px] uppercase text-amber-200/80 font-semibold mb-0.5">Next support</p>
+                <p className="text-amber-100 tabular-nums font-semibold">
+                  ${primary.nearby_sr.next_support.price.toFixed(2)}
+                </p>
+                <p className="text-[10px] text-slate-500 font-sans mt-0.5">
+                  {primary.nearby_sr.next_support.label} · {primary.nearby_sr.next_support.dist_pct.toFixed(1)}%
+                </p>
+              </div>
+            )}
+            {primary.nearby_sr?.next_resistance && (
+              <div className="rounded-lg bg-slate-900/60 border border-cyan-500/25 px-2.5 py-2">
+                <p className="text-[10px] uppercase text-cyan-200/80 font-semibold mb-0.5">Next resist</p>
+                <p className="text-cyan-100 tabular-nums font-semibold">
+                  ${primary.nearby_sr.next_resistance.price.toFixed(2)}
+                </p>
+                <p className="text-[10px] text-slate-500 font-sans mt-0.5">
+                  {primary.nearby_sr.next_resistance.label} · +{primary.nearby_sr.next_resistance.dist_pct.toFixed(1)}%
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {one_answer && (
           <ExecutionPlanRationale
             summary={summary}

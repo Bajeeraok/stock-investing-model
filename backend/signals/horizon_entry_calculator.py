@@ -276,7 +276,12 @@ def resolve_active_tier(tiers: list[EntryTier], price: float) -> EntryTier | Non
 
 
 def resolve_target_tier_id(tiers: list[EntryTier], price: float) -> str | None:
-    """Nearest accumulation tier when spot is outside all bands (not the lowest stress tier)."""
+    """Nearest accumulation tier when spot is outside all bands (not the lowest stress tier).
+
+    Between-tier gaps: next add is the floor (don't chase the ceiling), unless
+    spot is already within 1.5% of the ceiling band — then the ceiling is the
+    imminent add, not a chase.
+    """
     active = resolve_active_tier(tiers, price)
     if active:
         return active.id
@@ -284,6 +289,14 @@ def resolve_target_tier_id(tiers: list[EntryTier], price: float) -> str | None:
         return None
     spot = classify_spot_tier_position(tiers, price)
     if spot.get("state") == "between_tiers" and spot.get("next_add_tier_id"):
+        ceiling_lo = spot.get("ceiling_band_low")
+        ceiling_id = spot.get("ceiling_tier_id")
+        if (
+            ceiling_lo is not None
+            and ceiling_id
+            and (float(ceiling_lo) - price) / price <= 0.015
+        ):
+            return str(ceiling_id)
         return spot["next_add_tier_id"]
     best = tiers[0]
     best_dist = float("inf")
@@ -312,6 +325,22 @@ def classify_spot_tier_position(tiers: list[EntryTier], price: float) -> dict[st
             "active_tier_id": active.id,
             "next_add_tier_id": active.id,
         }
+    t1 = next((t for t in tiers if str(t.id).upper() == "T1"), None)
+    if t1 is not None:
+        t1_hi = max(t1.low, t1.high)
+        if price <= t1_hi + 1e-6:
+            return {
+                "state": "at_or_below_ceiling",
+                "ceiling_tier_id": "T1",
+                "ceiling": _r(t1_hi),
+                "next_add_tier_id": "T1",
+                "label": "At or below T1 ceiling ${:.2f}".format(t1_hi),
+                "detail": (
+                    "Owner trigger is threshold-based (price ≤ T1 high ${:.2f}). "
+                    "Gaps through the narrow T1 window still count — scale at spot, "
+                    "do not wait for a bounce back into the rectangle."
+                ).format(t1_hi),
+            }
     floor_tier: EntryTier | None = None
     for t in sorted(tiers, key=lambda x: x.high):
         if price > t.high:
@@ -369,13 +398,45 @@ def classify_spot_band_position(
     band_high: float,
     *,
     band_label: str = "entry band",
+    threshold_ceiling: bool = False,
 ) -> dict[str, Any]:
-    """Spot vs a single horizon entry band (short / swing / long primary zone)."""
+    """Spot vs a single horizon entry band (short / swing / long primary zone).
+
+    threshold_ceiling: owner/long T1 — in-band if price ≤ high (gaps through the
+    window still count). Range-gated bands keep lo ≤ price ≤ hi.
+    """
     if not (price > 0 and band_low > 0 and band_high > 0):
         return {"state": "unknown"}
     lo, hi = min(band_low, band_high), max(band_low, band_high)
     if hi <= lo:
         return {"state": "unknown"}
+    if threshold_ceiling:
+        if price <= hi + 1e-6:
+            return {
+                "state": "in_band",
+                "band_low": _r(lo),
+                "band_high": _r(hi),
+                "trigger_kind": "at_or_below",
+                "label": f"At or below {band_label} ceiling",
+                "detail": (
+                    f"Spot ${price:.2f} ≤ ceiling ${hi:.2f} — owner trigger is threshold-based. "
+                    f"Scale toward ${lo:.2f}; do not wait for a bounce into a narrow window."
+                ),
+            }
+        gap_pct = _r((price - hi) / hi * 100, 1)
+        return {
+            "state": "above_band",
+            "band_low": _r(lo),
+            "band_high": _r(hi),
+            "gap_pct": gap_pct,
+            "next_add_at": _r(hi),
+            "trigger_kind": "at_or_below",
+            "label": f"{gap_pct:.1f}% above {band_label} ceiling",
+            "detail": (
+                f"Wait for price ≤ ${hi:.2f} (T1 ceiling). "
+                f"Any print at or below that level counts — including gaps through ${lo:.2f}–${hi:.2f}."
+            ),
+        }
     if lo <= price <= hi:
         return {
             "state": "in_band",
@@ -574,13 +635,16 @@ def _compute_long_tactical_stop(
     tier_ref: EntryTier,
     atr: float | None,
     structural_stop: float,
+    entry_floor: float | None = None,
 ) -> tuple[float, str]:
     """
-    Actionable stop for long accumulate — always below spot and tier support.
+    Actionable stop for long accumulate — always below spot and the owner add floor.
     Structural invalidation (often MA200×0.97 on ETFs) is reference-only.
     """
     p = float(current_price)
     lo = float(tier_ref.low)
+    if entry_floor is not None and entry_floor > 0:
+        lo = min(lo, float(entry_floor))
     atr_buf = (float(atr) if atr and atr > 0 else p * 0.02) * ST_ATR_STOP_MULT
     min_buf = p * (ST_MIN_STOP_DISTANCE_PCT_OF_SPOT / 100.0)
     buf = max(atr_buf, min_buf, lo * 0.025)
@@ -589,6 +653,8 @@ def _compute_long_tactical_stop(
     if tactical >= p - 1e-6:
         tactical = _r(min(lo * 0.97, p * 0.97))
     tactical = min(tactical, max_tactical)
+    if entry_floor is not None and entry_floor > 0 and tactical >= float(entry_floor) - 1e-6:
+        tactical = _r(min(tactical, float(entry_floor) * 0.995, float(entry_floor) - max(buf * 0.25, 0.05)))
     if tactical <= 0:
         tactical = _r(p * 0.95)
     dist_pct = abs((p - tactical) / p * 100)
@@ -780,9 +846,43 @@ def _enrich_horizon_entry_zone_extras(
             {"id": "mos_cap", "label": f"MOS cap · max add ${cap:.2f}", "price": round(cap, 2), "role": "entry", "sort": 1}
         ]
         long_ez["spot_position"] = classify_spot_band_position(
-            current_price, lt_lo, lt_hi, band_label="long-term band"
+            current_price, lt_lo, lt_hi, band_label="long-term band",
+            threshold_ceiling=True,
         )
+        long_ez["trigger_kind"] = "at_or_below"
+        long_ez["trigger_ceiling"] = _r(lt_hi)
         long_h["entry_zone"] = long_ez
+        payload["long"] = long_h
+
+
+def _flag_cross_horizon_invariants(payload: dict[str, Any]) -> None:
+    """Packet-time check: owner floor must not sit above swing/scout add levels."""
+    medium = payload.get("medium") or {}
+    long_h = payload.get("long") or {}
+    mt_ez = medium.get("entry_zone") or {}
+    lt_ez = long_h.get("entry_zone") or {}
+    mt_lo = mt_ez.get("low")
+    lt_lo = lt_ez.get("low")
+    mt_levels = mt_ez.get("levels") or []
+    swing_floor = mt_lo
+    for row in mt_levels:
+        if isinstance(row, dict) and row.get("price") is not None:
+            px = float(row["price"])
+            if swing_floor is None or px < float(swing_floor):
+                swing_floor = px
+    if swing_floor is None or lt_lo is None:
+        return
+    if float(lt_lo) > float(swing_floor) + 0.02:
+        warns = list(long_h.get("warnings") or [])
+        warns.append(
+            f"INVARIANT: owner entry floor ${float(lt_lo):.2f} sits above swing add "
+            f"${float(swing_floor):.2f} — long-term capital would skip a print the swing trader takes."
+        )
+        long_h["warnings"] = warns
+        long_h["cross_horizon_invariant_ok"] = False
+        payload["long"] = long_h
+    else:
+        long_h["cross_horizon_invariant_ok"] = True
         payload["long"] = long_h
 
 
@@ -873,6 +973,30 @@ def _compress_entry_zone_for_display(
     min_pad = max(0.01, current_price * 0.002)
     new_high = max(min(new_high, high), low + min_pad)
     return _r(low), _r(new_high), True
+
+
+def _clamp_entry_high_to_spot(
+    el: float,
+    eh: float,
+    spot: float,
+) -> tuple[float, float, bool]:
+    """Pullback / wait bands must not have a ceiling above spot (that would buy a rally)."""
+    if not (spot > 0 and eh > spot + 1e-6):
+        return el, eh, False
+    new_eh = _r(spot)
+    new_el = min(el, new_eh * 0.995)
+    if new_el >= new_eh - 1e-6:
+        new_el = _r(max(0.01, new_eh * 0.99))
+    return _r(new_el), new_eh, True
+
+
+def _rr_from_displayed_levels(spot: float, stop: float, target: float) -> float:
+    """R:R from the same stop/target/spot the UI paints — not a stale floor like 2.0x."""
+    risk = spot - stop
+    reward = target - spot
+    if risk > 0 and reward > 0:
+        return _r(reward / risk, 2)
+    return 0.0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -969,6 +1093,12 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
         zone_anchor = zone_anchor + " | Actionable-width cap applied"
         warnings.append("Short-term entry zone was too wide; narrowed for actionable execution.")
 
+    if quality in ("Stretched", "Waiting") or "pullback" in zone_anchor.lower() or "wait for" in zone_anchor.lower():
+        el, eh, clamped = _clamp_entry_high_to_spot(el, eh, inp.current_price)
+        if clamped:
+            zone_anchor = zone_anchor + " | Ceiling clamped to spot (no chase)"
+            warnings.append("Entry ceiling capped at spot — pullback setup must not buy a rally.")
+
     # ── Stop & target ────────────────────────────────────────────────────
     stop_dist = max(
         inp.atr * ST_ATR_STOP_MULT,
@@ -996,8 +1126,7 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
             )
 
     target_pct    = _r((target - eh) / eh * 100, 1)
-    risk          = eh - stop_loss
-    rr            = _r((target - eh) / risk, 2) if risk > 0 else 0.0
+    rr            = _rr_from_displayed_levels(inp.current_price, stop_loss, target)
 
     # ── Warnings ─────────────────────────────────────────────────────────
     if rr < ST_MIN_RR:
@@ -1041,11 +1170,18 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
         inp.ml_prob, "above" if inp.ml_prob >= ST_MIN_ML_PROB else "below",
         ST_MIN_ML_PROB, inp.rsi, rsi_note, rr, inp.pattern_score)
 
-    trigger = (
-        "Price pulls back to ${el}–${eh} "
-        "AND RSI < {rsi_thresh:.0f} "
-        "AND ML prob > {ml_thresh:.0f}%"
-    ).format(el=el, eh=eh, rsi_thresh=ST_RSI_OVERSOLD, ml_thresh=ST_MIN_ML_PROB)
+    in_zone = el <= inp.current_price <= eh
+    if in_zone:
+        trigger = (
+            "Price is already in ${el}–${eh} — waiting on RSI < {rsi_thresh:.0f} "
+            "and ML prob > {ml_thresh:.0f}%, not a further pullback"
+        ).format(el=el, eh=eh, rsi_thresh=ST_RSI_OVERSOLD, ml_thresh=ST_MIN_ML_PROB)
+    else:
+        trigger = (
+            "Price pulls back to ${el}–${eh} "
+            "AND RSI < {rsi_thresh:.0f} "
+            "AND ML prob > {ml_thresh:.0f}%"
+        ).format(el=el, eh=eh, rsi_thresh=ST_RSI_OVERSOLD, ml_thresh=ST_MIN_ML_PROB)
 
     return HorizonSignal(
         label="Short-term", duration="1 month",
@@ -1156,41 +1292,36 @@ def _medium_term_signal_from_zone(
 
     target_pct = _r(inp.ml_prob / 100 * 25 * quality_mult, 1)
     target     = _r(eh * (1 + target_pct / 100))
-    risk       = eh - stop_loss
-    rr         = _r((target - eh) / risk, 2) if risk > 0 else 0.0
+    risk       = max(p - stop_loss, eh - stop_loss)
+    rr         = _rr_from_displayed_levels(p, stop_loss, target)
 
     # Enforce minimum 2:1 R/R — but do not mechanical-bump above fair value (else 3m target looks like 40%+ upside)
-    if rr < MT_MIN_RR:
-        target_rr = _r(eh + risk * MT_MIN_RR)
+    if rr < MT_MIN_RR and risk > 0:
+        target_rr = _r(p + risk * MT_MIN_RR)
         if inp.fair_value and inp.fair_value > 0:
             fv_cap = _r(max(inp.fair_value * 1.12, eh * 1.05))
             if target_rr > fv_cap:
                 target = _r(min(target_rr, fv_cap))
-                target_pct = _r((target - eh) / eh * 100, 1)
-                rr = _r((target - eh) / risk, 2) if risk > 0 else 0.0
                 warnings.append(
-                    "Swing target capped vs fair value (${:.2f}) — R/R {:.1f}x below {:.1f}x without implying a huge 3m upside"
-                    .format(inp.fair_value, rr, MT_MIN_RR)
+                    "Swing target capped vs fair value (${:.2f}) — R/R from displayed levels without implying a huge 3m upside"
+                    .format(inp.fair_value)
                 )
             else:
                 target = target_rr
-                target_pct = _r((target - eh) / eh * 100, 1)
-                rr = MT_MIN_RR
                 warnings.append(
                     "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
         else:
             target = target_rr
-            target_pct = _r((target - eh) / eh * 100, 1)
-            rr = MT_MIN_RR
             warnings.append(
                 "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
 
     # Final guard: medium horizon target should not sit far above FV when FV is known
     if inp.fair_value and inp.fair_value > 0 and target > inp.fair_value * 1.15 + 1e-6:
         target = _r(min(target, inp.fair_value * 1.12))
-        target_pct = _r((target - eh) / eh * 100, 1)
-        rr = _r((target - eh) / risk, 2) if risk > 0 else 0.0
         warnings.append("3m target aligned to fair value band (~+12% vs FV max for swing)")
+
+    target_pct = _r((target - p) / p * 100, 1) if p > 0 else 0.0
+    rr = _rr_from_displayed_levels(p, stop_loss, target)
 
     # ── Earnings flag ────────────────────────────────────────────────────
     earnings_flag = bool(inp.days_to_earnings and inp.days_to_earnings <= MT_EARNINGS_WINDOW)
@@ -1247,15 +1378,25 @@ def _medium_term_signal_from_zone(
         fund=inp.fundamentals_score,
         rr=rr)
 
-    trigger = (
-        "Price pulls back to MA50 zone (${el}–${eh}) "
-        "AND ML prob >= {ml:.0f}% "
-        "AND regime Bull >= 45%"
-        "{earn}"
-    ).format(
-        el=el, eh=eh, ml=MT_MIN_ML_PROB,
-        earn=" — OR enter pre-earnings ({}d) with half position".format(
-            inp.days_to_earnings) if earnings_flag else "")
+    if el <= p <= eh:
+        trigger = (
+            "Price is already in the MA50 zone (${el}–${eh}) — waiting on "
+            "ML prob >= {ml:.0f}% and regime Bull >= 45%, not a further pullback"
+            "{earn}"
+        ).format(
+            el=el, eh=eh, ml=MT_MIN_ML_PROB,
+            earn=" — OR enter pre-earnings ({}d) with half position".format(
+                inp.days_to_earnings) if earnings_flag else "")
+    else:
+        trigger = (
+            "Price pulls back to MA50 zone (${el}–${eh}) "
+            "AND ML prob >= {ml:.0f}% "
+            "AND regime Bull >= 45%"
+            "{earn}"
+        ).format(
+            el=el, eh=eh, ml=MT_MIN_ML_PROB,
+            earn=" — OR enter pre-earnings ({}d) with half position".format(
+                inp.days_to_earnings) if earnings_flag else "")
 
     return HorizonSignal(
         label="Medium-term", duration="3 months",
@@ -1316,6 +1457,12 @@ def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
         zone_anchor = zone_anchor + " | Actionable-width cap applied"
         warnings.append("Medium-term entry zone was too wide; narrowed for clearer timing.")
 
+    if quality in ("Stretched", "Waiting") or "pullback" in zone_anchor.lower() or "wait for" in zone_anchor.lower():
+        el, eh, clamped = _clamp_entry_high_to_spot(el, eh, inp.current_price)
+        if clamped:
+            zone_anchor = zone_anchor + " | Ceiling clamped to spot (no chase)"
+            warnings.append("Swing entry ceiling capped at spot — pullback setup must not buy a rally.")
+
     return _medium_term_signal_from_zone(inp, el, eh, quality, q_color, zone_anchor, warnings)
 
 
@@ -1350,8 +1497,9 @@ class LongTermInputs:
     # When set (e.g. from build_all_horizons_payload), primary entry must not start above short-term buy zone
     short_entry_low: Optional[float] = None
     short_entry_high: Optional[float] = None
-    # Swing (medium) entry zone high — Tier 1 MA200 ceiling never above this (investor core ≤ swing top)
+    # Swing (medium) entry zone — T1 ceiling never above swing high; T1 floor never above swing low
     medium_entry_high: Optional[float] = None
+    medium_entry_low: Optional[float] = None
     # Dynamic T1/T2/T3 % (shared with trade roadmap) — ATR + distance vs MA200 + fused model confidence
     atr: Optional[float] = None
     model_confidence_pct: Optional[float] = None
@@ -1370,29 +1518,34 @@ def _harmonize_long_entry_zone_with_short(
     warnings: list,
 ) -> EntryZone:
     """
-    Tier 1 is MA200 ± 5%. If price is below MA200, tier1.low can sit entirely above the short-term
-    band — implying a *higher* minimum entry for long-term than short-term. Widen the card entry
-    range so the low is at most short_entry_low (tiers table unchanged).
+    Owner/long entry is a T1 *ceiling*, not a tighter window than swing.
+
+    A multi-year accumulator must accept at least as much discount as the
+    swing trader: entry_zone.low never sits above nearer-horizon floors.
+    Ceiling stays at T1.high (already capped to swing high).
     """
-    st_lo = inp.short_entry_low
-    if st_lo is None or entry_zone.low <= st_lo + 1e-6:
+    floors = [v for v in (inp.short_entry_low, inp.medium_entry_low) if v is not None and v > 0]
+    if not floors:
+        return entry_zone
+    nearer_floor = min(floors)
+    if entry_zone.low <= nearer_floor + 1e-6:
         return entry_zone
 
-    el = _r(min(entry_zone.low, st_lo))
-    st_hi = inp.short_entry_high if inp.short_entry_high is not None else entry_zone.high
-    eh = _r(max(entry_zone.high, st_hi))
+    el = _r(min(entry_zone.low, nearer_floor))
+    eh = entry_zone.high
     if el >= eh - 1e-6:
         eh = _r(max(el * 1.02, tier1.high))
 
     warnings.append(
-        "Tier 1 MA200 band started above the short-term buy zone — "
-        "horizon entry range widened so long-term is not a higher minimum price than short-term."
+        "Owner entry floor lowered to the swing/scout add zone (${:.2f}) — "
+        "long-term capital must accept at least as much discount as nearer horizons."
+        .format(nearer_floor)
     )
     return EntryZone(
         el,
         eh,
-        anchor="MA200 Tier 1 (${:.2f}) — includes area down to short-term zone through MA200".format(
-            inp.ma200
+        anchor="T1 ceiling ${:.2f} (≤ MA200 zone) — floor includes nearer-horizon add levels through ${:.2f}".format(
+            eh, el
         ),
         quality=entry_zone.quality,
         quality_color=entry_zone.quality_color,
@@ -1568,23 +1721,10 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             spot_position = dict(spot_position)
             spot_position["bridge_band"] = bridge
             spot_position["in_bridge_band"] = bridge["low"] <= p <= bridge["high"]
-        ez_lo, ez_hi, zone_compressed = entry_zone.low, entry_zone.high, False
-    else:
-        ez_lo, ez_hi, zone_compressed = _compress_entry_zone_for_display(
-            band_key="long",
-            low=entry_zone.low,
-            high=entry_zone.high,
-            current_price=inp.current_price,
-        )
-    if zone_compressed:
-        warnings.append("Long-term entry zone was too wide; narrowed for actionable use.")
-        entry_zone = EntryZone(
-            low=ez_lo,
-            high=ez_hi,
-            anchor=entry_zone.anchor + " | Actionable-width cap applied",
-            quality=entry_zone.quality,
-            quality_color=entry_zone.quality_color,
-        )
+    elif spot_position.get("state") == "at_or_below_ceiling":
+        warnings.append(spot_position.get("detail") or "T1 ceiling reached — gaps through the window still count.")
+    # Do not compress long zones: T1 is a ceiling. Narrowing the high recreates
+    # "patient horizon has the shallowest band."
 
     # ── Structural invalidation (thesis-broken reference — not the displayed stop) ──
     tkey_lt = _norm_ticker_sym(inp.ticker)
@@ -1625,14 +1765,12 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         tier_ref=tier_ref,
         atr=inp.atr,
         structural_stop=structural_stop,
+        entry_floor=entry_zone.low,
     )
     stop_loss_pct = _r((stop_loss - p) / p * 100, 1)
     target        = fv
     target_pct    = _r((fv - p) / p * 100, 1) if p > 0 else 0.0
-    entry_ref     = p if active_tier else tier1.high
-    risk          = entry_ref - stop_loss
-    reward        = fv - entry_ref
-    rr            = _r(reward / risk, 2) if risk > 0 and reward > 0 else 0.0
+    rr            = _rr_from_displayed_levels(p, stop_loss, target)
 
     if inp.regime_bull_pct < 40 and target_pct > 12:
         warnings.append(
@@ -1678,6 +1816,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             100 - inp.regime_bull_pct))
     rationale = " ".join(parts) or "Conditions approaching entry. Monitor tier levels closely."
 
+    t1_ceiling = display_tier.high if display_tier.id == "T1" else tier1.high
     if active_tier:
         trigger = (
             "Price is in {label} (${low}–${high}) — scale per tier plan; "
@@ -1687,41 +1826,40 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             low=display_tier.low,
             high=display_tier.high,
         )
+    elif spot_position.get("state") == "at_or_below_ceiling":
+        trigger = (
+            "Price ≤ ${ceiling:.2f} (T1 ceiling) — owner trigger is threshold-based; "
+            "gaps through the T1 window still count. Scale at spot when HMM Bull >= 60% and ML prob > 25%"
+        ).format(ceiling=t1_ceiling)
     else:
         if spot_position.get("state") == "between_tiers":
             floor_t = next((t for t in all_tiers if t.id == spot_position.get("floor_tier_id")), tier1)
             trigger = (
                 "Hold at spot — no new long-term adds in the ${gap_lo:.2f}–${gap_hi:.2f} gap. "
-                "Next add on pullback to {label} (${low}–${high}) when HMM Bull >= 60% and ML prob > 25%"
+                "Next add on pullback to {label} (≤ ${high:.2f}) when HMM Bull >= 60% and ML prob > 25%"
             ).format(
                 gap_lo=spot_position.get("floor_band_high", floor_t.high),
                 gap_hi=spot_position.get("ceiling_band_low", display_tier.low),
                 label=floor_t.label.split("—")[0].strip() if "—" in floor_t.label else floor_t.id,
-                low=floor_t.low,
                 high=floor_t.high,
             )
         elif spot_position.get("below_all_within_mos") and assess_verdict in ("BUY", "PARTIAL"):
             trigger = (
                 "Full MOS at spot (${:.2f} ≤ ${:.2f} full-size ceiling) — {} on valuation; "
-                "scale tranches toward {} (${:.2f}–${:.2f}) when timing/regime confirm"
+                "scale tranches toward {} (≤ ${:.2f}) when timing/regime confirm"
             ).format(
                 p,
                 min_price_to_buy,
                 "full size justified" if assess_verdict == "BUY" else "partial size OK",
                 display_tier.id,
-                display_tier.low,
                 display_tier.high,
             )
         else:
             trigger = (
-                "Price enters {label} (${low}–${high}) "
+                "Price ≤ ${ceiling:.2f} (T1 ceiling) "
                 "AND HMM Bull >= 60% "
                 "AND ML prob > 25%"
-            ).format(
-                label=display_tier.label.split("—")[0].strip() if "—" in display_tier.label else display_tier.id,
-                low=display_tier.low,
-                high=display_tier.high,
-            )
+            ).format(ceiling=t1_ceiling)
 
     from signals.tranche_heuristic import compute_long_horizon_tier_percentages
 
@@ -1948,6 +2086,7 @@ def build_all_horizons_payload(
         short_entry_low=short.entry_zone.low,
         short_entry_high=short.entry_zone.high,
         medium_entry_high=medium.entry_zone.high,
+        medium_entry_low=medium.entry_zone.low,
         atr=atr,
         model_confidence_pct=model_confidence_pct,
         horizon_confidence_pct=lt_confidence_pct,
@@ -1975,6 +2114,7 @@ def build_all_horizons_payload(
         support_level=support_level,
         ma50=ma50,
     )
+    _flag_cross_horizon_invariants(payload)
     try:
         from signals.entry_band_touch import enrich_horizons_entry_touch
 

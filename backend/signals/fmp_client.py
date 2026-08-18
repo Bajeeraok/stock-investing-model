@@ -469,6 +469,8 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
                     "score": _fmp_item_sentiment_raw(item),
                     "label": "Neutral",
                     "url": item.get("url") or None,
+                    "published": item.get("publishedDate") or item.get("published") or item.get("date"),
+                    "text": (item.get("text") or item.get("description") or "")[:240] or None,
                 }
             )
         return {
@@ -488,7 +490,14 @@ def _stock_news_summary_from_items(rows: list[dict], ticker: str, limit: int) ->
     headlines = []
     for item in raw_items[:10]:
         title = (item.get("title") or item.get("headline") or "")[:120]
-        headlines.append({"title": title, "score": None, "label": "Neutral", "url": item.get("url") or None})
+        headlines.append({
+            "title": title,
+            "score": None,
+            "label": "Neutral",
+            "url": item.get("url") or None,
+            "published": item.get("publishedDate") or item.get("published") or item.get("date"),
+            "text": (item.get("text") or item.get("description") or "")[:240] or None,
+        })
 
     if kw_hit and kw_avg is not None:
         label = "Bullish" if kw_avg > 0.15 else "Bearish" if kw_avg < -0.15 else "Neutral"

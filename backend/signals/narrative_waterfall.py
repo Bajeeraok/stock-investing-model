@@ -38,6 +38,9 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, timedelta
 from enum import Enum
 from typing import Callable, Optional
+import logging
+
+logger = logging.getLogger("signals.narrative_waterfall")
 
 # ═════════════════════════════════════════════════════════════
 # LAYER 0 — CANONICAL SIGNAL PACKET
@@ -50,6 +53,10 @@ class Band:
 
     def contains(self, px: float) -> bool:
         return self.lo <= px <= self.hi
+
+    def at_or_below(self, px: float) -> bool:
+        """Owner/long T1 ceiling: any print at or below hi counts (gaps included)."""
+        return px <= self.hi
 
     def fmt(self) -> str:
         return f"${self.lo:,.2f}-${self.hi:,.2f}"
@@ -164,6 +171,57 @@ class SignalPacket:
             errs.append("stop >= entry band low")
         if self.target and self.target <= self.spot and self.trend == "UP":
             errs.append("target below spot on UP trend")
+        if self.invalidation is not None and self.invalidation >= self.spot:
+            errs.append(
+                f"invalidation ${self.invalidation:.2f} is not below spot ${self.spot:.2f} "
+                "— thesis-broken level is already on the wrong side of price"
+            )
+        if (
+            self.mode == "owner"
+            and self.invalidation is not None
+            and self.entry_band is not None
+            and self.invalidation >= self.entry_band.lo
+        ):
+            errs.append(
+                f"owner invalidation ${self.invalidation:.2f} sits at/above entry floor "
+                f"${self.entry_band.lo:.2f} — would negate the plan before the add zone"
+            )
+        if (
+            self.stop
+            and self.target
+            and self.spot
+            and self.rr is not None
+            and self.spot > self.stop
+            and self.target > self.spot
+        ):
+            computed = (self.target - self.spot) / (self.spot - self.stop)
+            if abs(computed - float(self.rr)) > 0.75:
+                errs.append(
+                    f"R:R {self.rr} vs displayed stop/target {computed:.1f} "
+                    "(label must match the levels panel)"
+                )
+        if (
+            self.mode == "scout"
+            and self.st_band
+            and self.entry_band
+            and (
+                abs(self.st_band.lo - self.entry_band.lo) > 0.02
+                or abs(self.st_band.hi - self.entry_band.hi) > 0.02
+            )
+        ):
+            errs.append(
+                f"scout st_band ${self.st_band.lo:.2f}–${self.st_band.hi:.2f} != "
+                f"entry_band ${self.entry_band.lo:.2f}–${self.entry_band.hi:.2f}"
+            )
+        if (
+            self.mode in ("scout", "swing")
+            and self.entry_band
+            and self.spot + 1e-6 < self.entry_band.hi
+            and self.verdict in ("WATCH_ZONE", "DO_NOT_CHASE", "WAIT")
+        ):
+            # Pullback thesis with a ceiling above spot = buy-the-rally.
+            # Soft: only flag when clearly stretched above the band's *intent*.
+            pass
 
         # scenario sanity (BLK "Base Case 1% prob" class of bug)
         if self.scenarios:
@@ -201,6 +259,8 @@ class SignalPacket:
             "unlock": self.unlock_conditions,
             "rsi_bucket": None if self.rsi is None else int(self.rsi // 5),
             "hmm_bucket": int(self.hmm_bull_pct // 10),
+            # Coarse spot so Layer 3 cannot keep a stale quote while the header ticks.
+            "spot_bucket": round(self.spot, 1) if self.spot < 250 else round(self.spot),
         }
         blob = json.dumps(core, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
@@ -263,12 +323,16 @@ def derive_action_contract(p: SignalPacket) -> ActionContract:
               timedelta(days=REVIEW_DAYS.get(p.mode, 21))).isoformat()
     failed = [g.name for g in p.gates if not g.passed]
     all_pass = not failed
-    in_band = bool(p.entry_band and p.entry_band.contains(p.spot))
-    above_band = bool(p.entry_band and p.spot > p.entry_band.hi)
+    if p.mode == "owner" and p.entry_band:
+        in_band = p.entry_band.at_or_below(p.spot)
+        above_band = p.spot > p.entry_band.hi
+    else:
+        in_band = bool(p.entry_band and p.entry_band.contains(p.spot))
+        above_band = bool(p.entry_band and p.spot > p.entry_band.hi)
     in_bridge = bool(p.bridge_band and p.bridge_band.contains(p.spot))
     h = p.content_hash()
 
-    # 1) thesis broken
+    # 1) thesis broken — invalidation is a FLOOR (close below), never a ceiling
     if p.invalidation and p.spot < p.invalidation:
         return ActionContract(Action.STAND_ASIDE, [], 0.0, p.stop, p.invalidation,
                               review, ["Do not average down until regime reassessed."], h)
@@ -429,9 +493,14 @@ def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
                 f"to {g.detail.get('need_pct', 60):.0f}% flips the Market Weather gate.",
                 f"HMM bull ≥ {g.detail.get('need_pct', 60):.0f}%", "1-4 weeks"))
         if g.name == "valuation" and not g.passed:
-            c.append(Catalyst("Price discount", "unlocks",
-                f"A pullback into {band} restores the required margin of safety.",
-                f"price in {band}", "days to a few weeks"))
+            if p.mode == "owner" and p.entry_band:
+                c.append(Catalyst("Price discount", "unlocks",
+                    f"A print at or below ${p.entry_band.hi:,.2f} (T1 ceiling) restores the required margin of safety.",
+                    f"price ≤ ${p.entry_band.hi:,.2f}", "days to a few weeks"))
+            else:
+                c.append(Catalyst("Price discount", "unlocks",
+                    f"A pullback into {band} restores the required margin of safety.",
+                    f"price in {band}", "days to a few weeks"))
 
     # from sensitivity tags — deterministic macro library
     MACRO: dict[str, list[Catalyst]] = {
@@ -498,7 +567,8 @@ HARD RULES:
    Paragraph 3 — what breaks it (invalidation level, downside scenario).
    Paragraph 4 — a single sentence naming the most important thing to watch.
    Total length ~150-220 words across all 4 paragraphs.
-5. Tone: measured. No hype, no certainty language."""
+5. Invalidation is a FLOOR: losing / a close BELOW that price. Never write "close above" for invalidation.
+6. Tone: measured. No hype, no certainty language."""
 
 
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
@@ -609,6 +679,14 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         why.append(sc)
     why += render_catalysts(cats)
 
+    layer2_text = " ".join(why)
+    layer2_bad = guard_numbers(layer2_text, p)
+    if layer2_bad:
+        logger.warning(
+            "[narrative] %s (%s) Layer 2 cited numbers not in packet: %s",
+            p.ticker, p.mode, layer2_bad[:8],
+        )
+
     if engine is None:
         if _ENGINE_SINGLETON is None or _ENGINE_SINGLETON.llm is not llm:
             _ENGINE_SINGLETON = NarrativeEngine(llm)   # persist cache across calls
@@ -628,6 +706,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         "narrative": narrative,
         "narrative_status": l3_status,
         "packet_hash": p.content_hash(),
+        "layer2_guard_violations": layer2_bad or None,
     }
 
 

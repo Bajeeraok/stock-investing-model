@@ -83,15 +83,72 @@ def _bridge_band_and_levels(horizon: dict, mode: str) -> tuple[Band | None, list
     return band, levels
 
 
-def _invalidation(horizon: dict, mode: str, stop_loss: float | None) -> float | None:
+def _usable_live_floor(
+    candidate: float | None,
+    *,
+    spot: float,
+    entry_floor: float | None,
+) -> float | None:
+    """A live invalidation/stop must sit below spot and below the add-zone floor."""
+    if candidate is None:
+        return None
+    px = float(candidate)
+    if px <= 0:
+        return None
+    if spot > 0 and px >= spot:
+        return None
+    if entry_floor is not None and px >= float(entry_floor):
+        return None
+    return px
+
+
+def _invalidation(horizon: dict, mode: str, stop_loss: float | None, spot: float) -> float | None:
+    """Thesis-broken floor. Must sit below spot (and below owner entry floor).
+
+    Commodity/index structural invalidation can land above spot or above T1 —
+    that is reference-only. The packet uses the tactical stop in those cases
+    so Layer 3 cannot say 'close above $X negates' when price is already above X.
+    """
+    ez = horizon.get("entry_zone") or {}
+    floor = ez.get("low")
+    floor_f = float(floor) if floor is not None else None
+
+    struct_inv: float | None = None
     if mode == "owner":
         struct = ((horizon.get("entry_tiers") or {}).get("structural_invalidation")) or {}
         if struct.get("price") is not None:
-            return float(struct["price"])
-    # Short/medium horizons don't distinguish a thesis-invalidation level from
-    # the trailing stop — reuse stop_loss so derive_action_contract's
-    # "spot < invalidation" thesis-broken check still has something to check.
-    return stop_loss
+            struct_inv = float(struct["price"])
+    stop_f = float(stop_loss) if stop_loss is not None else None
+
+    inv = _usable_live_floor(struct_inv, spot=spot, entry_floor=floor_f)
+    if inv is None:
+        inv = _usable_live_floor(stop_f, spot=spot, entry_floor=floor_f)
+    if inv is None and stop_f is not None and spot > 0 and stop_f < spot:
+        # Last resort: still never publish a floor on the wrong side of spot.
+        inv = stop_f if floor_f is None or stop_f < floor_f else None
+    return inv
+
+
+def _owner_entry_band(horizons: dict, long_h: dict) -> Band | None:
+    """T1 ceiling + floor at least as deep as swing/scout add levels."""
+    band = _band_from_entry_zone(long_h.get("entry_zone"))
+    if band is None:
+        tiers = ((long_h.get("entry_tiers") or {}).get("tiers")) or []
+        t1 = next((t for t in tiers if str(t.get("id")) == "T1"), None)
+        if isinstance(t1, dict) and t1.get("high") is not None:
+            lo = float(t1.get("low") or t1["high"])
+            band = Band(lo, float(t1["high"]))
+    if band is None:
+        return None
+    floors = [band.lo]
+    for key in ("medium", "short"):
+        ez = (horizons.get(key) or {}).get("entry_zone") or {}
+        if ez.get("low") is not None:
+            floors.append(float(ez["low"]))
+        for lv in ez.get("levels") or []:
+            if isinstance(lv, dict) and lv.get("price") is not None:
+                floors.append(float(lv["price"]))
+    return Band(min(floors), band.hi)
 
 
 def _entry_mode(retail_action: dict) -> str:
@@ -112,10 +169,15 @@ def _verdict(retail_action: dict) -> str:
 
 
 def _trend(regime_bull_pct: float | None) -> str:
-    """UP/DOWN simplification — the >=60/<=40 UP/DOWN/NEUTRAL threshold used
-    elsewhere (horizon_entry_calculator.py) is computed there but not persisted
-    to the response, so this recomputes just the two-way split the packet needs."""
-    return "UP" if (regime_bull_pct or 0) >= 50 else "DOWN"
+    """UP/DOWN simplification — SignalPacket.trend has no NEUTRAL slot, so this
+    collapses the app's real 3-way regime (CLAUDE.md: UP >=60, DOWN <=40, else
+    NEUTRAL) into two buckets. Uses the >=60 boundary (not a naive >=50 split)
+    so a marginal/NEUTRAL regime (e.g. 55%) doesn't get misclassified as "UP" —
+    that misclassification previously made validate()'s "target below spot on
+    UP trend" check fire for tickers whose long-horizon target is a fair-value
+    anchor (legitimately below spot when a stock trades above fair value),
+    not a bullish upside number."""
+    return "UP" if (regime_bull_pct or 0) >= 60 else "DOWN"
 
 
 def _unlock_conditions(gates: list[Gate]) -> list[str]:
@@ -190,6 +252,7 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
     )
     ml_prob_pct = horizon.get("ml_prob")
     ml_threshold_pct = (ml_horizons.get(horizon_key) or {}).get("threshold_pct")
+    hmm_bull_pct = round(float(regime_bull_pct or 0.0), 1)
 
     # ── gates: rename ids to canonical names, synthesize confidence gate ──
     raw_gates = list(retail_action.get("gates") or [])
@@ -202,7 +265,7 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         gates.append(Gate(
             name=canonical,
             passed=bool(g.get("pass")),
-            detail=_gate_detail(canonical, g, rsi=rsi, hmm_bull_pct=regime_bull_pct,
+            detail=_gate_detail(canonical, g, rsi=rsi, hmm_bull_pct=hmm_bull_pct,
                                  ml_prob_pct=ml_prob_pct, fused_confidence_pct=fused_confidence_pct),
         ))
         seen_canonical.add(canonical)
@@ -215,8 +278,23 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         ))
 
     entry_band = _band_from_entry_zone(horizon.get("entry_zone"))
+    if mode == "owner":
+        entry_band = _owner_entry_band(investor.get("horizons") or {}, horizon) or entry_band
+    short_h = (investor.get("horizons") or {}).get("short") or {}
+    st_band = _band_from_entry_zone(short_h.get("entry_zone"))
+    if mode == "scout":
+        st_band = entry_band or st_band
     bridge_band, bridge_levels = _bridge_band_and_levels(horizon, mode)
     stop_loss = horizon.get("stop_loss")
+    inv = _invalidation(horizon, mode, stop_loss, spot)
+    rr = None
+    if horizon.get("risk_reward") is not None:
+        rr = float(horizon["risk_reward"])
+    if stop_loss is not None and horizon.get("target") is not None and spot > float(stop_loss):
+        tgt = float(horizon["target"])
+        if tgt > spot:
+            computed_rr = (tgt - spot) / (spot - float(stop_loss))
+            rr = round(computed_rr, 2)
 
     scenarios = [
         Scenario(
@@ -239,16 +317,16 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         gates=gates,
         entry_band=entry_band,
         stop=float(stop_loss) if stop_loss is not None else None,
-        invalidation=_invalidation(horizon, mode, stop_loss),
+        invalidation=inv,
         target=float(horizon["target"]) if horizon.get("target") is not None else None,
-        rr=float(horizon["risk_reward"]) if horizon.get("risk_reward") is not None else None,
-        st_band=entry_band,
+        rr=rr,
+        st_band=st_band,
         bridge_band=bridge_band,
         bridge_levels=bridge_levels,
         catch_levels=_catch_levels(horizon.get("entry_zone")),
         entry_mode=_entry_mode(retail_action),
         max_tranche_pct=float(retail_action.get("max_sizing_pct") or 0.0),
-        hmm_bull_pct=float(regime_bull_pct or 0.0),
+        hmm_bull_pct=hmm_bull_pct,
         hmm_transition_pct=round(float(hmm.get("transition_probability") or 0.0) * 100, 1),
         rsi=float(rsi) if rsi is not None else None,
         ml_prob_pct=float(ml_prob_pct) if ml_prob_pct is not None else None,

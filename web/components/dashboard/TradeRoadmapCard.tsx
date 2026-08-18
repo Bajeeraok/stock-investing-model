@@ -66,6 +66,19 @@ export interface NewsSentimentLayerPayload {
   source?: string | null;
   method?: string | null;
   headlines?: { title: string; score?: number | null; label?: string | null; url?: string | null }[];
+  catalyst_cards?: Array<{
+    name: string;
+    event_type?: string;
+    direction: string;
+    mechanism: string;
+    watch?: string;
+    horizon?: string;
+    source?: string | null;
+    age_label?: string | null;
+    url?: string | null;
+    headline_count?: number;
+    draft_note: string;
+  }>;
   layer_weight?: number | null;
   layer_available?: boolean | null;
   message?: string | null;
@@ -945,6 +958,16 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                     )}
                     {data.news_sentiment_layer.summary_label && (
                       <p className="text-xs text-slate-400 mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
+                    )}
+                    {(data.news_sentiment_layer.catalyst_cards?.length ?? 0) > 0 && (
+                      <ul className="space-y-1.5 text-xs text-slate-300 mb-2">
+                        {data.news_sentiment_layer.catalyst_cards!.map((c) => (
+                          <li key={c.event_type || c.name} className="leading-snug">
+                            <span className="uppercase text-[10px] text-slate-500 mr-1">{c.direction}</span>
+                            {c.name}: {c.mechanism}
+                          </li>
+                        ))}
+                      </ul>
                     )}
                     {(data.news_sentiment_layer.headlines?.length ?? 0) > 0 && (
                       <ul className="space-y-1.5 text-xs text-slate-300 border-t border-slate-600/40 pt-2">

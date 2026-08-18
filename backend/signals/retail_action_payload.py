@@ -737,11 +737,12 @@ def derive_zone_aware_action_title(
     state = (spot.get("state") or "").lower()
     tier_id = spot.get("tier_id") or spot.get("active_tier_id") or spot.get("next_add_tier_id")
 
-    if state == "in_tier" and tier_id:
+    if state in ("in_tier", "at_or_below_ceiling") and tier_id:
         tier = str(tier_id).upper()
         if gate_cleared:
             return f"ACCUMULATE · {tier}", "green"
-        return f"ACCUMULATE · {tier} (partial)", "yellow"
+        # Failed gates: still in the add zone, but do not advertise Accumulate vs Hold.
+        return f"{tier} IN RANGE · WAIT FOR GATES", "yellow"
 
     if state in ("in_band",) and gate_cleared:
         return "TACTICAL ENTRY", "green"
@@ -1020,11 +1021,11 @@ def enrich_investor_summary_retail_action(
 ) -> dict[str, Any]:
     """Attach retail_action block to investor_summary dict (mutates copy).
 
-    real_st_band, when provided, is the same signals.target_bands-derived band the
-    dashboard list row uses for its "inside buy band" gate check. Pass it so Ticker
-    Detail's gate agrees with the dashboard row for the same ticker/day — without it,
-    this function fell back to deriving a same-named st_band from the short horizon's
-    entry_zone, a different calculation that could independently disagree.
+    Ticker-detail copy (unlock line, wait_plain, inside-band chip) must cite the
+    same horizon `entry_zone` the levels panel paints. The scanner `st_band`
+    (`real_st_band`) is a different pipeline — using it here recreated the
+    sticky-footer mismatch (narrative 43.96–45.77 vs ENTRY $44.90–$47.16).
+    Fall back to the scanner band only when the horizon zone is missing.
     """
     horizons = investor_out.get("horizons") or {}
     short = horizons.get("short") or {}
@@ -1041,12 +1042,11 @@ def enrich_investor_summary_retail_action(
             confidence_mid = (float(m.group(1)) + float(m.group(2))) / 2.0
 
     st_band = None
-    if real_st_band and real_st_band.get("low") is not None and real_st_band.get("high") is not None:
+    ez = short.get("entry_zone") or {}
+    if ez.get("low") is not None and ez.get("high") is not None:
+        st_band = {"low": ez["low"], "high": ez["high"]}
+    elif real_st_band and real_st_band.get("low") is not None and real_st_band.get("high") is not None:
         st_band = {"low": real_st_band["low"], "high": real_st_band["high"]}
-    else:
-        ez = short.get("entry_zone") or {}
-        if ez.get("low") is not None and ez.get("high") is not None:
-            st_band = {"low": ez["low"], "high": ez["high"]}
 
     long_h = horizons.get("long") or {}
     rr = long_h.get("risk_reward")

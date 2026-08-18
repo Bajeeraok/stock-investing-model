@@ -56,6 +56,41 @@ function pctFromSpot(level: number | null | undefined, spot: number | null | und
 }
 
 /** Levels row: long/owner uses the tier ladder when present, everyone else uses entry_zone/target/stop. */
+function SrRow({
+  tag,
+  level,
+}: {
+  tag: "Support" | "Resist";
+  level: { price: number; label: string; dist_pct: number } | null | undefined;
+}) {
+  if (!level || !(level.price > 0)) return null;
+  const below = level.dist_pct < 0;
+  return (
+    <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/40 border border-slate-800">
+      <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">{tag}</span>
+      <span className="text-[13px] font-mono font-semibold text-slate-200 tabular-nums">
+        {fmt(level.price)}
+        <span className="ml-1.5 text-[10px] font-sans font-medium text-slate-500 normal-case">{level.label}</span>
+      </span>
+      <span className={clsx("text-[10px] font-mono tabular-nums", below ? "text-red-400/80" : "text-emerald-400/80")}>
+        {level.dist_pct >= 0 ? "+" : "−"}
+        {Math.abs(level.dist_pct).toFixed(1)}%
+      </span>
+    </div>
+  );
+}
+
+function NearbySrRows({ horizon }: { horizon: HorizonSignalPayload }) {
+  const sr = horizon.nearby_sr;
+  if (!sr?.next_support && !sr?.next_resistance) return null;
+  return (
+    <>
+      <SrRow tag="Support" level={sr.next_support} />
+      <SrRow tag="Resist" level={sr.next_resistance} />
+    </>
+  );
+}
+
 function LevelRows({
   mode,
   horizon,
@@ -83,6 +118,7 @@ function LevelRows({
             </span>
           </div>
         ))}
+        <NearbySrRows horizon={horizon} />
       </div>
     );
   }
@@ -113,6 +149,7 @@ function LevelRows({
           {horizon.risk_reward ? ` · R:R ${horizon.risk_reward.toFixed(1)}` : ""}
         </span>
       </div>
+      <NearbySrRows horizon={horizon} />
     </div>
   );
 }
