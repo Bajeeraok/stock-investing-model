@@ -423,6 +423,17 @@ _RETAIL_BANNED = (
     "margin of safety",
 )
 
+# Extra jargon Layer 3 trading notes must not use (packet still has the numbers).
+_LAYER3_BANNED = _RETAIL_BANNED + (
+    "hmm",
+    "fused model",
+    "bull tape",
+    "bear tape",
+    "unlocks when",
+    "starter zone",
+    "true entry",
+)
+
 _RETAIL_TIMING = {
     "scout": "Usually takes days to get there.",
     "swing": "Usually takes days to a few weeks to get there.",
@@ -500,6 +511,48 @@ def render_retail_scan(p: SignalPacket, c: ActionContract) -> dict:
 def retail_scan_banned_hits(text: str) -> list[str]:
     low = (text or "").lower()
     return [w for w in _RETAIL_BANNED if w in low]
+
+
+def layer3_banned_hits(text: str) -> list[str]:
+    low = (text or "").lower()
+    return [w for w in _LAYER3_BANNED if w in low]
+
+
+def render_plain_trading_notes(
+    p: SignalPacket,
+    c: ActionContract,
+    cats: list["Catalyst"] | None = None,
+) -> str:
+    """Deterministic notes when Layer 3 is skipped — same job as the LLM, no jargon."""
+    headline, reason = _retail_headline_reason(p, c)
+    bits = [f"{headline.replace('⏸ ', '').replace('🟡 ', '').replace('✅ ', '')}. {reason}"]
+    starter = _starter_watch_zone(p)
+    if p.entry_band:
+        cool = ""
+        if p.rsi is not None and float(p.rsi) >= 50:
+            cool = " after it cools off"
+        if starter:
+            bits.append(
+                f"A dip into {p.entry_band.fmt()}{cool} is a small first slice at most — "
+                "not a full buy."
+            )
+            if p.full_size_price:
+                bits.append(
+                    f"A full-size buy still needs a cheaper price, around ${p.full_size_price:,.2f}."
+                )
+        else:
+            bits.append(f"The planned buy area is {p.entry_band.fmt()}{cool}.")
+    unlock = [x for x in (cats or []) if x.direction == "unlocks"][:2]
+    if unlock:
+        bits.append(
+            "What would change the wait: "
+            + "; ".join(x.mechanism.rstrip(".") for x in unlock)
+            + "."
+        )
+    walk = p.stop if p.stop is not None else p.invalidation
+    if walk is not None:
+        bits.append(f"Give up if it closes below ${walk:,.2f} — don't add more.")
+    return " ".join(bits)
 
 
 # ═════════════════════════════════════════════════════════════
@@ -788,21 +841,28 @@ def render_catalysts(cats: list[Catalyst]) -> list[str]:
 
 LLMFn = Callable[[str, str], str]   # (system, user) -> completion text
 
-SYSTEM_PROMPT = """You write a brief market narrative for a quantitative trading signal.
+SYSTEM_PROMPT = """You write TRADING NOTES for a retail investor — not a quant recap.
+
+Audience: someone who will decide wait / small slice / walk away in 20 seconds.
+They already see the 5-line scan (RETAIL_SCAN). Your job is to explain WHAT TO DO
+and WHAT IS BEHIND THE SIGNAL in plain English.
+
 HARD RULES:
-1. Every dollar figure and percentage you write MUST appear verbatim in the JSON packet. Never invent a price, level, or probability.
-2. Never contradict ACTION_CONTRACT or RETAIL_SCAN. You explain them; you do not second-guess them. Do not use the words BUY/SELL except as they appear in the contract.
-3. Use ONLY the catalysts listed in CATALYSTS — do not introduce others. Weave them into flowing prose with their horizons.
-4. Output EXACTLY 4 short paragraphs, each 1-3 sentences, separated by a single blank line (one "\\n\\n" between each — no headers, no bullets, no bold):
-   Paragraph 1 — one-sentence setup consistent with the verdict.
-   Paragraph 2 — what unlocks the setup, with realistic timelines from the catalysts.
-   Paragraph 3 — what breaks it (walk-away floor, downside scenario).
-   Paragraph 4 — a single sentence naming the most important thing to watch.
-   Total length ~150-220 words across all 4 paragraphs.
-5. Invalidation is a FLOOR: losing / a close BELOW that price. Never write "close above" for invalidation.
-6. Never claim the entry band restores a valuation discount or is the true full-size entry unless a catalyst explicitly says the band clears full size. If catalysts say starter only, that dip is a starter — not full size.
-7. Do not attach gold / safe-haven / geopolitical de-escalation logic unless those catalysts are listed.
-8. Tone: measured. No hype, no certainty language."""
+1. Every dollar figure and percentage you write MUST appear verbatim in PACKET, RETAIL_SCAN, or CATALYSTS. Never invent a price, RSI band, or probability. Do not write "40–50" unless those numbers are in the packet.
+2. Never contradict ACTION_CONTRACT or RETAIL_SCAN. Do not use BUY/SELL except as they appear there.
+3. Use ONLY the catalysts listed in CATALYSTS. Translate them into everyday reasons (what would let you act; what would make you walk away). Do not introduce new catalysts.
+4. Output EXACTLY 4 short paragraphs, 1–3 sentences each, separated by a blank line. No headers, bullets, or bold.
+   Paragraph 1 — What to do today (wait / small slice / don't chase), one plain reason. No model names.
+   Paragraph 2 — What is behind the signal: the 1–2 real-world conditions that would let a small entry happen, with the timelines from the catalysts. If catalysts say starter only, say small first slice — never a full buy.
+   Paragraph 3 — When to give up (close below the walk-away price) and the worst case already in CATALYSTS.
+   Paragraph 4 — One thing to watch this week, in plain words.
+   Total ~120–180 words.
+5. Walk-away is a FLOOR: a close BELOW that price. Never write "close above" for that level.
+6. Never claim the buy zone restores a full discount unless a catalyst says the band clears full size.
+7. Do not attach gold / safe-haven / de-escalation logic unless those catalysts are listed.
+8. FORBIDDEN WORDS (never use): margin of safety, tape, HMM, confluence, thesis, momentum chop, invalidation, fused, bull tape, starter zone, true entry. Say "not cheap enough for a full buy", "ran up too fast", "walk away below", "price and a cooler reading both line up" instead.
+9. Do not name RSI as a personality. You may say "after the move cools off" and cite the packet's RSI number only if you must.
+10. Tone: calm, specific, no hype."""
 
 
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
@@ -873,24 +933,30 @@ class NarrativeEngine:
         gate flips, a band moves, or RSI/regime crosses a bucket — never on a
         mere spot tick. The date prefix prevents a stale narrative from a
         previous day resurfacing just because the decision state happens to
-        match. v3 busts cached Layer 3 prose that claimed a nearby band restored MOS.
+        match. v4 busts cached Layer 3 that still read like a quant recap.
         """
         if self.llm is None:
             return "", "skipped"
-        key = f"narrative:v3:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        key = f"narrative:v4:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
         cached = self._cache_get(key)
         if cached is not None:
             return cached, "cached"
         user = build_user_prompt(p, contract, cats, retail_scan=retail_scan)
         for attempt in range(self.max_retries + 1):
             text = self.llm(SYSTEM_PROMPT, user).strip()
-            bad = guard_numbers(text, p)
-            if not bad:
+            bad_n = guard_numbers(text, p)
+            bad_w = layer3_banned_hits(text)
+            if not bad_n and not bad_w:
                 self._cache_set(key, text)
                 return text, "ok"
-            user += (f"\n\nREJECTED attempt {attempt + 1}: these numbers are not "
-                     f"in the packet: {bad}. Rewrite using only packet numbers.")
-        return "", "fallback"                # Layers 1+2 stand alone
+            extra = []
+            if bad_n:
+                extra.append(f"illegal numbers {bad_n}")
+            if bad_w:
+                extra.append(f"forbidden jargon {bad_w} — rewrite in plain English")
+            user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
+                     "Rewrite using only packet numbers and no forbidden words.")
+        return "", "fallback"
 
 
 # ═════════════════════════════════════════════════════════════
@@ -940,6 +1006,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
             _ENGINE_SINGLETON = NarrativeEngine(llm)   # persist cache across calls
         engine = _ENGINE_SINGLETON
     narrative, l3_status = engine.generate(p, contract, cats, retail_scan=scan)
+    trading_notes = narrative or render_plain_trading_notes(p, contract, cats)
 
     return {
         "status": "ok",
@@ -949,6 +1016,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         "action": {**asdict(contract), "action": contract.action.value,
                    "text": render_action(contract, p)},
         "retail_scan": scan,
+        "trading_notes": trading_notes,
         "why": why,
         "catalysts": [asdict(x) for x in cats],
         "scenario_ev_pct": p.scenario_ev(),

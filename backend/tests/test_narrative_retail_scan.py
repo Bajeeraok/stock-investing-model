@@ -207,3 +207,61 @@ def test_to_packet_copies_sector_and_does_not_attach_gold_to_amd():
     out = build_summary(pkt, llm=None)
     assert out["status"] == "ok"
     assert out["retail_scan"]["starter_only_zone"] is True
+
+
+def test_trading_notes_come_with_summary_without_llm():
+    out = build_summary(_amd_like(), llm=None)
+    notes = out["trading_notes"]
+    assert notes
+    assert "don't buy today" in notes.lower() or "wait" in notes.lower()
+    from signals.narrative_waterfall import layer3_banned_hits
+    assert layer3_banned_hits(notes) == []
+
+
+def test_layer3_banned_hits_flags_quant_recap():
+    from signals.narrative_waterfall import layer3_banned_hits
+    blob = (
+        "BlackRock trades at a 14.2% margin of safety in a bull tape "
+        "with HMM conviction — that confluence is the true entry."
+    )
+    hits = layer3_banned_hits(blob)
+    assert "margin of safety" in hits
+    assert "tape" in hits
+    assert "hmm" in hits
+    assert "confluence" in hits
+
+
+def test_layer3_retries_jargon_then_accepts_plain():
+    from signals.narrative_waterfall import (
+        NarrativeEngine,
+        derive_action_contract,
+        derive_catalysts,
+        example_packet_amzn,
+        render_retail_scan,
+    )
+    p = example_packet_amzn()
+    calls = {"n": 0}
+
+    def llm(_sys: str, _user: str) -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return (
+                "AMZN has a 30.4% margin of safety on a bull tape. "
+                "HMM is 97%."
+            )
+        return (
+            "Do not add a full position today. Price ran up too fast.\n\n"
+            "A small first slice only if it pulls into $245.14-$257.52 after it cools off.\n\n"
+            "Walk away if it closes below $232.76.\n\n"
+            "Watch for a calmer pullback over 1-2 weeks."
+        )
+
+    eng = NarrativeEngine(llm)
+    contract = derive_action_contract(p)
+    cats = derive_catalysts(p)
+    scan = render_retail_scan(p, contract)
+    text, status = eng.generate(p, contract, cats, retail_scan=scan)
+    assert status == "ok"
+    assert calls["n"] >= 2
+    assert "margin of safety" not in text.lower()
+    assert "hmm" not in text.lower()

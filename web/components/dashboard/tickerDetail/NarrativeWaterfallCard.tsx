@@ -41,6 +41,7 @@ export type NarrativeWaterfall = {
   asof?: string;
   action?: NarrativeAction;
   retail_scan?: RetailScan | null;
+  trading_notes?: string | null;
   why?: string[];
   catalysts?: NarrativeCatalyst[];
   scenario_ev_pct?: number | null;
@@ -81,21 +82,16 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   if (!loading && !data) return null;
 
   const scan = data?.retail_scan;
-  const hasLlm = Boolean(
-    data?.narrative && (data.narrative_status === "ok" || data.narrative_status === "cached"),
-  );
-  const narrativeParagraphs = hasLlm
-    ? (data!.narrative as string)
-        .split(/\n\s*\n/)
-        .map((p) => p.trim())
-        .filter(Boolean)
+  const notes = (data?.trading_notes || data?.narrative || "").trim();
+  const noteParagraphs = notes
+    ? notes.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)
     : [];
 
   return (
     <ReferenceCard
       icon={Sparkles}
       title="What to do"
-      description="Verdict first, then the four numbers that matter. Detail lives under Why."
+      description="Verdict first, then the four numbers that matter. Why opens trading notes, then the model checks."
       body={
         loading ? (
           <p className="text-xs text-slate-500 italic animate-pulse">Building the 10-second scan…</p>
@@ -120,20 +116,22 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
       }
       toggleLabel="Why? →"
     >
-      {data?.why && data.why.length > 0 && (
-        <div className="space-y-1">
-          {data.why.map((line, i) => (
-            <p key={i} className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">
-              {line}
+      {noteParagraphs.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-wide text-emerald-400/90 font-semibold">Trading notes</p>
+          {noteParagraphs.map((p, i) => (
+            <p key={i} className="text-xs text-slate-200 leading-relaxed">
+              {p}
             </p>
           ))}
         </div>
       )}
-      {hasLlm && (
-        <div className="mt-3 space-y-2 border-t border-slate-800 pt-2">
-          {narrativeParagraphs.map((p, i) => (
-            <p key={i} className="text-xs text-slate-400 leading-relaxed">
-              {p}
+      {data?.why && data.why.length > 0 && (
+        <div className={noteParagraphs.length > 0 ? "mt-3 space-y-1 border-t border-slate-800 pt-2" : "space-y-1"}>
+          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model checks</p>
+          {data.why.map((line, i) => (
+            <p key={i} className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">
+              {line}
             </p>
           ))}
         </div>
