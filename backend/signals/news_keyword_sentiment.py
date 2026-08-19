@@ -44,6 +44,8 @@ BEARISH_KEYWORDS = frozenset({
     "recession", "risk", "risks", "bearish", "downside", "crash", "selloff",
     "bankruptcy", "probe", "fraud", "slashes", "slashed",
     "reduces", "reduced", "trimmed", "trims", "trimming", "unloaded",
+    "drop", "drops", "dropped", "plunge", "plunges", "plunged",
+    "tumble", "tumbles", "tumbled", "slump", "slumps",
     # NOTE: "cut"/"cuts", "stake", and "guidance" deliberately excluded as bare
     # words — each is too context-dependent to score on its own ("rate cuts"/
     # "cost cuts" are commonly bullish, "increases stake" is bullish, "raises
@@ -97,6 +99,13 @@ _BEARISH_PHRASES = (
     "cuts dividend",
     "cuts jobs",
     "job cuts",
+    "shares drop",
+    "shares dropped",
+    "shares fall",
+    "shares plunged",
+    "stock drops",
+    "stock drop",
+    "profit warning",
 )
 
 DEFAULT_MIN_QUALITY_WEIGHT = 0.20

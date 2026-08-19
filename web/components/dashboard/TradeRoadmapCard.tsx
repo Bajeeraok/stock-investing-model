@@ -79,6 +79,9 @@ export interface NewsSentimentLayerPayload {
     headline_count?: number;
     draft_note: string;
   }>;
+  display_label?: string | null;
+  sentiment_caveat?: string | null;
+  sentiment_disagreement?: boolean | null;
   layer_weight?: number | null;
   layer_available?: boolean | null;
   message?: string | null;
@@ -887,7 +890,10 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                   <span className="flex-1 min-w-0">
                     <span className="text-xs text-cyan-200/90 font-medium block">Headlines (news sentiment layer)</span>
                     <span className="text-sm text-slate-500 block mt-0.5">
-                      {data.news_sentiment_layer.sentiment_label && (
+                      {data.news_sentiment_layer.display_label && (
+                        <span className="text-slate-400">{data.news_sentiment_layer.display_label}</span>
+                      )}
+                      {!data.news_sentiment_layer.display_label && data.news_sentiment_layer.sentiment_label && (
                         <span className="text-slate-400">{data.news_sentiment_layer.sentiment_label}</span>
                       )}
                       {data.news_sentiment_layer.score_0_1 != null && (
@@ -918,6 +924,11 @@ export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; tic
                 </button>
                 {newsExpanded && (
                   <div className="px-3 pb-2.5 pt-0 border-t border-cyan-500/15">
+                    {data.news_sentiment_layer.sentiment_caveat && (
+                      <p className="text-sm text-amber-200/85 mb-2 leading-snug">
+                        {data.news_sentiment_layer.sentiment_caveat}
+                      </p>
+                    )}
                     {data.news_sentiment_layer.pipeline_note && (
                       <p className="text-sm text-slate-500 mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
                     )}

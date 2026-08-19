@@ -773,11 +773,29 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     return response
 
 
-def _catalyst_cards_for_layer(headlines: list[dict], ticker: str) -> list[dict]:
+def _catalyst_cards_for_layer(
+    headlines: list[dict],
+    ticker: str,
+    *,
+    earnings: dict | None = None,
+) -> list[dict]:
     try:
-        from signals.catalyst_detector import build_catalyst_note_cards
+        from signals.catalyst_detector import (
+            build_catalyst_note_cards,
+            build_earnings_event_card,
+            merge_known_event_cards,
+        )
 
-        return build_catalyst_note_cards(headlines, ticker=ticker)
+        cards = build_catalyst_note_cards(headlines, ticker=ticker)
+        earn = None
+        if isinstance(earnings, dict):
+            earn = build_earnings_event_card(
+                ticker=ticker,
+                days_until=earnings.get("days_until"),
+                days_since=earnings.get("days_since"),
+                report_date=earnings.get("date") or earnings.get("report_date"),
+            )
+        return merge_known_event_cards(cards, earn)
     except Exception:
         return []
 
@@ -787,6 +805,8 @@ def _build_news_sentiment_layer_for_ui(
     config: dict | None = None,
     *,
     ticker: str = "",
+    earnings: dict | None = None,
+    hmm_bull_pct: float | None = None,
 ) -> dict | None:
     """
     Sanitized news/NLP payload for the roadmap UI — same run_confidence() pass as ML/HMM/pattern inputs.
@@ -871,6 +891,17 @@ def _build_news_sentiment_layer_for_ui(
             "Other layers still drive the roadmap; weights may be redistributed."
         )
 
+    cards = _catalyst_cards_for_layer(headlines_out, ticker, earnings=earnings)
+    from signals.news_sentiment_reconcile import reconcile_news_display
+
+    recon = reconcile_news_display(
+        sentiment_label=nlp.get("sentiment_label") if isinstance(nlp, dict) else None,
+        score_0_1=nlp.get("score") if isinstance(nlp, dict) else None,
+        headlines=headlines_out,
+        cards=cards,
+        hmm_bull_pct=hmm_bull_pct,
+    )
+
     return {
         "pipeline_note": (
             "Headlines feed the news sentiment layer in the same confidence run that supplies "
@@ -882,11 +913,14 @@ def _build_news_sentiment_layer_for_ui(
         "raw_score_neg1_to_1": nlp.get("raw_score") if isinstance(nlp, dict) else None,
         "summary_label": (nlp.get("label") if isinstance(nlp, dict) else None) or label_bd,
         "sentiment_label": nlp.get("sentiment_label") if isinstance(nlp, dict) else None,
+        "display_label": recon.get("display_label"),
+        "sentiment_caveat": recon.get("caveat"),
+        "sentiment_disagreement": recon.get("disagreement"),
         "headline_count": nlp.get("headline_count") if isinstance(nlp, dict) else None,
         "source": nlp.get("source") if isinstance(nlp, dict) else None,
         "method": nlp.get("method") if isinstance(nlp, dict) else None,
         "headlines": headlines_out,
-        "catalyst_cards": _catalyst_cards_for_layer(headlines_out, ticker),
+        "catalyst_cards": cards,
         "layer_weight": weight,
         "layer_available": available,
         "message": msg,
@@ -1715,7 +1749,13 @@ def _build_investor_summary(
         conf_snapshot=conf_snapshot,
         config=config,
     )
-    news_layer = _build_news_sentiment_layer_for_ui(conf_snapshot, config, ticker=ticker)
+    news_layer = _build_news_sentiment_layer_for_ui(
+        conf_snapshot,
+        config,
+        ticker=ticker,
+        earnings=response.get("earnings") if isinstance(response.get("earnings"), dict) else None,
+        hmm_bull_pct=out.get("regime_bull_pct"),
+    )
     if news_layer and isinstance(out.get("trade_roadmap"), dict):
         out["trade_roadmap"] = {**out["trade_roadmap"], "news_sentiment_layer": news_layer}
     out["scenario_target"] = (out.get("trade_roadmap") or {}).get("scenario_target")

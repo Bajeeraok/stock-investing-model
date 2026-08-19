@@ -648,11 +648,12 @@ export function TickerDetailModal({
     const roadmapNews = detail?.investor_summary?.trade_roadmap?.news_sentiment_layer;
     const catalyst = detail?.catalyst?.headline_summary;
     return {
-      label: roadmapNews?.sentiment_label ?? null,
+      label: roadmapNews?.display_label ?? roadmapNews?.sentiment_label ?? null,
       score: roadmapNews?.score_0_1 ?? null,
       headlineCount: roadmapNews?.headline_count ?? null,
       headlines: (roadmapNews?.headlines ?? []).map((h) => ({ title: h.title, url: h.url })),
       catalystNote: catalyst ?? detail?.catalyst?.override_note ?? null,
+      sentimentCaveat: roadmapNews?.sentiment_caveat ?? null,
       catalystCards: roadmapNews?.catalyst_cards ?? [],
     };
   }, [detail]);
@@ -999,6 +1000,7 @@ export function TickerDetailModal({
                       headlineCount={modalNewsRail.headlineCount}
                       headlines={modalNewsRail.headlines}
                       catalystNote={modalNewsRail.catalystNote}
+                      sentimentCaveat={modalNewsRail.sentimentCaveat}
                       catalystCards={modalNewsRail.catalystCards}
                     />
                     <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />
@@ -1097,6 +1099,7 @@ export function TickerDetailModal({
                     headlineCount={modalNewsRail.headlineCount}
                     headlines={modalNewsRail.headlines}
                     catalystNote={modalNewsRail.catalystNote}
+                    sentimentCaveat={modalNewsRail.sentimentCaveat}
                     catalystCards={modalNewsRail.catalystCards}
                   />
                   <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />

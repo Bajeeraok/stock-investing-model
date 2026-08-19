@@ -37,6 +37,8 @@ FRIENDLY_LABELS = {
     "CAPITAL_RETURN": "capital return (buyback/dividend)",
     "LEGAL_RISK": "legal / fraud risk",
     "IPO_SPINOFF": "IPO / spin-off",
+    "EARNINGS_CALENDAR": "earnings date (known event)",
+    "POST_EARNINGS": "post-earnings digest",
 }
 
 BULLISH_EVENTS = {
@@ -68,6 +70,8 @@ _WATCH_HINTS = {
     "CAPITAL_RETURN": "buyback pace vs dilution",
     "LEGAL_RISK": "case status vs thesis break",
     "IPO_SPINOFF": "when-issued / listing date",
+    "EARNINGS_CALENDAR": "size down into the print — binary event, not a headline read",
+    "POST_EARNINGS": "let the first 1–2 sessions settle before adding",
 }
 
 
@@ -363,4 +367,80 @@ def build_catalyst_note_cards(
             "draft_note": " ".join(draft_bits)[:500],
         })
     return cards
+
+
+def build_earnings_event_card(
+    *,
+    ticker: str = "",
+    days_until: int | float | None = None,
+    days_since: int | float | None = None,
+    report_date: str | None = None,
+) -> dict[str, Any] | None:
+    """Calendar known-event card — not a transcript scrape, not a score input."""
+    sym = (ticker or "").strip().upper()
+    date_bit = f" ({report_date})" if report_date else ""
+    if days_until is not None:
+        try:
+            d = int(days_until)
+        except (TypeError, ValueError):
+            d = None
+        if d is not None and 0 <= d <= 21:
+            when = "today" if d == 0 else f"in {d} day{'s' if d != 1 else ''}"
+            title = f"Earnings {when}{date_bit} — known event, not a headline read."
+            return {
+                "name": FRIENDLY_LABELS["EARNINGS_CALENDAR"],
+                "event_type": "EARNINGS_CALENDAR",
+                "direction": "watch",
+                "mechanism": title,
+                "watch": _WATCH_HINTS["EARNINGS_CALENDAR"],
+                "horizon": "this earnings cycle",
+                "source": "calendar",
+                "age_hours": None,
+                "age_label": None,
+                "url": None,
+                "headline_count": 1,
+                "draft_note": (
+                    f"{sym} · earnings {when}{date_bit} — advisory only; "
+                    "does not change bands or gates."
+                )[:500],
+            }
+    if days_since is not None:
+        try:
+            s = int(days_since)
+        except (TypeError, ValueError):
+            s = None
+        if s is not None and 0 <= s <= 2:
+            title = f"Earnings printed {s} day{'s' if s != 1 else ''} ago{date_bit}."
+            return {
+                "name": FRIENDLY_LABELS["POST_EARNINGS"],
+                "event_type": "POST_EARNINGS",
+                "direction": "watch",
+                "mechanism": title,
+                "watch": _WATCH_HINTS["POST_EARNINGS"],
+                "horizon": "days",
+                "source": "calendar",
+                "age_hours": float(s) * 24.0,
+                "age_label": f"{s}d ago" if s else "today",
+                "url": None,
+                "headline_count": 1,
+                "draft_note": (
+                    f"{sym} · post-earnings digest — advisory only; "
+                    "does not change bands or gates."
+                )[:500],
+            }
+    return None
+
+
+def merge_known_event_cards(
+    cards: list[dict[str, Any]],
+    extra: dict[str, Any] | None,
+    *,
+    max_cards: int = 4,
+) -> list[dict[str, Any]]:
+    out = list(cards or [])
+    if extra:
+        et = extra.get("event_type")
+        out = [c for c in out if c.get("event_type") != et]
+        out = [extra] + out
+    return out[: max(1, min(4, max_cards))]
 

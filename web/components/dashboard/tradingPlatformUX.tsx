@@ -252,6 +252,7 @@ export function NewsSentimentRail({
   headlineCount,
   headlines,
   catalystNote,
+  sentimentCaveat,
   catalystCards,
 }: {
   ticker?: string;
@@ -261,6 +262,7 @@ export function NewsSentimentRail({
   headlineCount?: number | null;
   headlines?: Array<{ title?: string; url?: string | null }>;
   catalystNote?: string | null;
+  sentimentCaveat?: string | null;
   catalystCards?: CatalystNoteCard[] | null;
 }) {
   const [saved, setSaved] = React.useState<Record<string, "idle" | "saving" | "ok" | "err">>({});
@@ -305,14 +307,15 @@ export function NewsSentimentRail({
   }, [ticker, mode, cardsKey]);
 
   if (!headlineCount && !headlines?.length && !catalystNote && !cards.length) return null;
-  const sentiment =
-    score != null
+  const sentiment = (label || "").trim()
+    ? label
+    : score != null
       ? score >= 0.55
         ? "Bullish"
         : score <= 0.45
           ? "Bearish"
           : "Neutral"
-      : label ?? "Neutral";
+      : "Neutral";
   const wrapping = wrapStatus === "ok" || wrapStatus === "cached";
 
   async function addNote(card: CatalystNoteCard) {
@@ -344,6 +347,9 @@ export function NewsSentimentRail({
           <span className="text-[10px] text-slate-500">{headlineCount} headlines</span>
         )}
       </div>
+      {sentimentCaveat && (
+        <p className="text-[11px] text-amber-200/90 leading-snug">{sentimentCaveat}</p>
+      )}
       {catalystNote && (
         <p className="text-[11px] text-amber-200/90 leading-snug">{catalystNote}</p>
       )}
