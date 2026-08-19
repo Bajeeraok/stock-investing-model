@@ -4425,8 +4425,9 @@ def eod_status():
     if not dates:
         eod_dir = get_data_root() / "eod"
         if eod_dir.exists():
-            dates = sorted(p.stem for p in eod_dir.glob("*.json") if p.stem[:4].isdigit())
-    latest = dates[-1] if dates else None
+            dates = [p.stem for p in eod_dir.glob("*.json") if p.stem[:4].isdigit()]
+    # Redis list_eod_dates_redis is descending; disk glob is unordered — always take max.
+    latest = max(dates) if dates else None
     today_path = get_data_root() / "eod" / f"{today_est}.json"
     scheduler: dict = {}
     try:

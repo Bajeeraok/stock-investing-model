@@ -40,8 +40,9 @@ logger = logging.getLogger(__name__)
 
 
 def _default_data_root() -> Path:
-    # backend/signals/ -> backend/
-    return Path(__file__).resolve().parent.parent / "data"
+    from config_loader import get_data_root
+
+    return get_data_root()
 
 
 def _paper_file(data_root: Path | None = None) -> Path:

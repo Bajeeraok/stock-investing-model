@@ -237,6 +237,18 @@ def startup():
         eod_scheduler.start()
     except Exception as e:
         logger.warning("EOD scheduler failed to start: %s", e)
+
+    def _startup_eod_catchup(delay_s: float = 90.0) -> None:
+        time.sleep(delay_s)
+        try:
+            from api.eod_job import trigger_full_eod_background_if_missing
+
+            queued = trigger_full_eod_background_if_missing(min_hour_et=20)
+            logger.info("[startup] stale EOD session catch-up queued=%s", queued)
+        except Exception as e:
+            logger.warning("[startup] EOD catch-up failed: %s", e)
+
+    threading.Thread(target=_startup_eod_catchup, name="eod-catchup", daemon=True).start()
     try:
         from api import market_scheduler
 
@@ -278,16 +290,19 @@ def shutdown():
 @app.get("/api/health")
 def health():
     from signals.time_et import now_iso_et
-    from api.eod_scheduler import resolve_eod_schedule
+    from api.eod_scheduler import scheduler_status
 
-    eod_schedule = resolve_eod_schedule()
+    sched = scheduler_status()
     return {
         "status": "ok",
         "timestamp": now_iso_et(),
         "eod_scheduler": {
-            "enabled": eod_schedule is not None,
-            "cron": eod_schedule[0] if eod_schedule else None,
-            "tz": eod_schedule[1] if eod_schedule else None,
+            "enabled": sched.get("enabled"),
+            "running": sched.get("running"),
+            "cron": sched.get("cron"),
+            "tz": sched.get("tz"),
+            "next_run_at": sched.get("next_run_at"),
+            "off_reason": sched.get("off_reason"),
         },
     }
 

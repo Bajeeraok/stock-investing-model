@@ -10,15 +10,18 @@ import json
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any
 
+from config_loader import resolve_existing_data_file, writable_data_path
 from signals.edgar_common import ensure_edgar_identity, shares_for_ticker_in_report
 
 logger = logging.getLogger(__name__)
 
 TTL_CIK_MAP = 30 * 86400
-_CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "edgar_13f_cache" / "holder_cik_map.json"
+
+
+def _cik_map_rel() -> tuple[str, str]:
+    return ("edgar_13f_cache", "holder_cik_map.json")
 
 # Parent 13F filer CIKs (not subsidiary names Yahoo often shows)
 _KEYWORD_FILERS: list[tuple[tuple[str, ...], int, str]] = [
@@ -57,18 +60,20 @@ def _normalize_holder_name(name: str) -> str:
 
 
 def _load_cik_map() -> dict[str, Any]:
-    if not _CACHE_PATH.exists():
+    path = resolve_existing_data_file(*_cik_map_rel())
+    if path is None:
         return {}
     try:
-        return json.loads(_CACHE_PATH.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
 def _save_cik_map(data: dict[str, Any]) -> None:
     try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        path = writable_data_path(*_cik_map_rel())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception as exc:
         logger.debug("holder cik map write failed: %s", exc)
 

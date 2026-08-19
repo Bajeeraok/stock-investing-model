@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger("api.eod_job")
@@ -42,40 +43,41 @@ def eod_job_state() -> dict[str, Any]:
         }
 
 
-def trigger_full_eod_background_if_missing(
+def last_completed_session_date(
+    now: datetime | None = None,
     *,
     min_hour_et: int = 20,
-    force_retry: bool = False,
-) -> bool:
+) -> str:
     """
-    Start full EOD in a daemon thread when today's full cohort snapshot is missing.
-    Returns True if a new background job was started.
+    Market date the in-process job should persist.
 
-    Retries after failure/skip once _RETRY_COOLDOWN_SEC has elapsed (unless force_retry).
+    Before 8pm ET on a session day, today's close is not final — use the previous
+    NYSE session. After 8pm, use today. Weekends/holidays always use the last session.
     """
     try:
-        from datetime import datetime
         from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
 
-        from config_loader import load_config
-        from scripts.run_daily import full_eod_snapshot_exists, is_us_equity_session_day
+    from scripts.run_daily import is_us_equity_session_day
 
+    if now is None:
         now = datetime.now(ZoneInfo("America/New_York"))
-        date_str = now.strftime("%Y-%m-%d")
-        if not is_us_equity_session_day(date_str):
-            return False
-        if now.hour < min_hour_et:
-            return False
+    today = now.date() if hasattr(now, "date") else datetime.strptime(now.strftime("%Y-%m-%d"), "%Y-%m-%d").date()
+    today_s = today.isoformat()
+    hour = int(getattr(now, "hour", 0))
+    if hour >= min_hour_et and is_us_equity_session_day(today_s):
+        return today_s
+    d = today - timedelta(days=1)
+    for _ in range(14):
+        s = d.isoformat()
+        if is_us_equity_session_day(s):
+            return s
+        d -= timedelta(days=1)
+    return today_s
 
-        config = load_config()
-        if full_eod_snapshot_exists(date_str, config):
-            with _lock:
-                _state["last_success_date"] = date_str
-            return False
-    except Exception as exc:
-        logger.debug("[eod-job] preflight skipped: %s", exc)
-        return False
 
+def _start_full_eod_thread(date_str: str, *, force_retry: bool = False) -> bool:
     with _lock:
         if _state.get("running"):
             return False
@@ -110,10 +112,8 @@ def trigger_full_eod_background_if_missing(
             elif result.get("skipped"):
                 reason = f"skipped:{result.get('reason') or 'unknown'}"
                 logger.info("[eod-job] skipped: %s", result.get("reason"))
-                # non_trading_day / full_snapshot_exists — treat exists as success
-                if result.get("reason") == "full_snapshot_exists" or not result.get("reason"):
-                    if result.get("reason") == "full_snapshot_exists":
-                        ok = True
+                if result.get("reason") == "full_snapshot_exists":
+                    ok = True
             else:
                 ok = True
                 reason = "ok"
@@ -132,7 +132,6 @@ def trigger_full_eod_background_if_missing(
                 _state["last_result"] = reason
                 if ok:
                     _state["last_success_date"] = date_str
-                # On failure: leave last_attempt_* so cooldown applies, then retry
             if ok:
                 try:
                     from api.dashboard_warm import trigger_post_eod_dashboard_sync
@@ -144,3 +143,40 @@ def trigger_full_eod_background_if_missing(
 
     threading.Thread(target=_worker, name="eod-full-snapshot", daemon=True).start()
     return True
+
+
+def trigger_full_eod_background_if_missing(
+    *,
+    min_hour_et: int = 20,
+    force_retry: bool = False,
+) -> bool:
+    """
+    Start full EOD in a daemon thread when the last completed session snapshot is missing.
+    Returns True if a new background job was started.
+
+    Before 8pm ET this backfills the prior session (Railway often misses 8pm if the
+    process was asleep or restarted). After 8pm it runs today's session.
+
+    Retries after failure/skip once _RETRY_COOLDOWN_SEC has elapsed (unless force_retry).
+    """
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+
+    try:
+        from config_loader import load_config
+        from scripts.run_daily import full_eod_snapshot_exists
+
+        now = datetime.now(ZoneInfo("America/New_York"))
+        date_str = last_completed_session_date(now, min_hour_et=min_hour_et)
+        config = load_config()
+        if full_eod_snapshot_exists(date_str, config):
+            with _lock:
+                _state["last_success_date"] = date_str
+            return False
+    except Exception as exc:
+        logger.debug("[eod-job] preflight skipped: %s", exc)
+        return False
+
+    return _start_full_eod_thread(date_str, force_retry=force_retry)

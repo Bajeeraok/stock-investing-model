@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from config_loader import get_data_root
+from config_loader import resolve_existing_data_file, writable_data_path
 from signals.edgar_common import ensure_edgar_identity, shares_for_ticker_in_report
 from signals.edgar_filer_resolve import resolve_filers_from_yahoo_holders
 from signals.edgar_insider import get_ticker_to_cik, _sec_request
@@ -22,10 +22,7 @@ TTL_13F_CACHE = 24 * 3600
 MAX_FILERS_DEFAULT = 5
 _CHANGE_THRESHOLD_PCT = 1.0
 
-# Routed through get_data_root() (not a hardcoded source-tree path) so this
-# survives Railway redeploys when DATA_ROOT points at a mounted Volume —
-# otherwise every deploy resets it and forces a full SEC EDGAR re-crawl.
-_CACHE_DIR = get_data_root() / "edgar_13f_cache"
+# Writes go to DATA_ROOT; reads also check packaged backend/data (image bake).
 
 
 def _shares_for_ticker(report: Any, ticker: str, issuer_hint: str | None = None) -> int:
@@ -163,8 +160,12 @@ def resolve_cusip(ticker: str, config: dict | None = None) -> tuple[str | None, 
     return None, f"CUSIP not found in sampled 13F filings for {sym}"
 
 
+def _snapshot_cache_rel(ticker: str) -> tuple[str, str]:
+    return ("edgar_13f_cache", f"snapshot_{ticker.upper()}.json")
+
+
 def _snapshot_cache_path(ticker: str) -> Path:
-    return _CACHE_DIR / f"snapshot_{ticker.upper()}.json"
+    return writable_data_path(*_snapshot_cache_rel(ticker))
 
 
 def fetch_edgar_13f_snapshot(
@@ -185,8 +186,8 @@ def fetch_edgar_13f_snapshot(
     if not sym:
         return {"error": "No ticker", "source": "sec_edgar_13f"}
 
-    cache_path = _snapshot_cache_path(sym)
-    if use_cache and cache_path.exists():
+    cache_path = resolve_existing_data_file(*_snapshot_cache_rel(sym))
+    if use_cache and cache_path is not None:
         try:
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
             if time.time() - float(cached.get("ts", 0)) <= TTL_13F_CACHE:
@@ -320,7 +321,7 @@ def _fetch_edgar_13f_live(
 
     cache_path = _snapshot_cache_path(sym)
     try:
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(
             json.dumps({"ts": time.time(), "payload": payload}, default=str),
             encoding="utf-8",

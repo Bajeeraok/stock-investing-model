@@ -10,26 +10,22 @@ from __future__ import annotations
 import json
 import logging
 import time
-from pathlib import Path
 from typing import Any
 
-from config_loader import get_data_root
+from config_loader import resolve_existing_data_file, writable_data_path
 
 logger = logging.getLogger(__name__)
 
 TTL_CACHE_SEC = 12 * 3600
-# Routed through get_data_root() (not a hardcoded source-tree path) so this
-# survives Railway redeploys when DATA_ROOT points at a mounted Volume.
-_CACHE_DIR = get_data_root() / "institutional_cache"
 
 
-def _cache_path(ticker: str) -> Path:
-    return _CACHE_DIR / f"{ticker.upper()}.json"
+def _cache_rel(ticker: str) -> tuple[str, str]:
+    return ("institutional_cache", f"{ticker.upper()}.json")
 
 
 def _read_cache(ticker: str) -> dict | None:
-    path = _cache_path(ticker)
-    if not path.exists():
+    path = resolve_existing_data_file(*_cache_rel(ticker))
+    if path is None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -42,8 +38,9 @@ def _read_cache(ticker: str) -> dict | None:
 
 def _write_cache(ticker: str, payload: dict) -> None:
     try:
-        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _CACHE_DIR.joinpath(f"{ticker.upper()}.json").write_text(
+        path = writable_data_path(*_cache_rel(ticker))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
             json.dumps({"ts": time.time(), "payload": payload}, default=str),
             encoding="utf-8",
         )

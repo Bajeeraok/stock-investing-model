@@ -36,7 +36,36 @@ def get_data_root() -> Path:
     raw = os.environ.get("DATA_ROOT", "").strip()
     if raw:
         return Path(raw).resolve()
+    return bundled_data_root()
+
+
+def bundled_data_root() -> Path:
+    """Packaged ``backend/data`` (Docker image / git tree), independent of DATA_ROOT."""
     return (ROOT / "data").resolve()
+
+
+def writable_data_path(*relative: str) -> Path:
+    """Path under DATA_ROOT for new cache/EOD writes."""
+    return get_data_root().joinpath(*relative)
+
+
+def resolve_existing_data_file(*relative: str) -> Path | None:
+    """
+    Find a cache file: DATA_ROOT first, then packaged backend/data.
+
+    After moving caches to DATA_ROOT, an empty Railway volume would otherwise
+    miss files still sitting in the image at /app/data and force a SEC re-crawl.
+    """
+    seen: set[str] = set()
+    for root in (get_data_root(), bundled_data_root()):
+        key = str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        path = root.joinpath(*relative)
+        if path.is_file():
+            return path
+    return None
 
 
 def _overrides_path() -> Path:

@@ -28,6 +28,20 @@ def _scheduler_disabled() -> bool:
     )
 
 
+def unix_dow_field_to_apscheduler(day_of_week: str) -> str:
+    """
+    APScheduler 3 weekday numbers are Mon=0 … Sun=6.
+    UNIX cron (and our docs) use Sun=0 … Sat=6, so ``1-5`` means Mon–Fri there
+    but Tuesday–Saturday inside APScheduler — Mondays never fire.
+
+    Map the common UNIX Mon–Fri forms to APScheduler ``mon-fri``.
+    """
+    raw = (day_of_week or "").strip().lower()
+    if raw in ("1-5", "1,2,3,4,5"):
+        return "mon-fri"
+    return day_of_week
+
+
 def resolve_eod_schedule() -> tuple[str, str] | None:
     """
     Return (cron_5field, tz_name) or None when scheduling should stay off.
@@ -38,6 +52,10 @@ def resolve_eod_schedule() -> tuple[str, str] | None:
     cron = (os.environ.get("EOD_SCHEDULER_CRON") or "").strip()
     tz_name = (os.environ.get("EOD_SCHEDULER_TZ") or "").strip() or "America/New_York"
     if cron:
+        parts = cron.split()
+        if len(parts) == 5:
+            parts[4] = unix_dow_field_to_apscheduler(parts[4])
+            cron = " ".join(parts)
         return cron, tz_name
 
     try:
@@ -53,7 +71,7 @@ def resolve_eod_schedule() -> tuple[str, str] | None:
         minute = int(parts[1]) if len(parts) > 1 else 0
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise ValueError(f"invalid eod_schedule_time: {schedule_time!r}")
-        cron = f"{minute} {hour} * * 1-5"
+        cron = f"{minute} {hour} * * mon-fri"
         return cron, tz_name
     except Exception as e:
         logger.warning("EOD schedule from config failed (%s) — scheduler off", e)
@@ -146,6 +164,7 @@ def start() -> None:
         logger.warning("EOD_SCHEDULER_TZ unrecognised; falling back to America/New_York")
 
     minute, hour, day, month, day_of_week = parts
+    day_of_week = unix_dow_field_to_apscheduler(day_of_week)
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -169,13 +188,19 @@ def start() -> None:
     from datetime import datetime as _dt
 
     _now_local = _dt.now(_tz_obj)
+    next_run = None
+    try:
+        job = _scheduler.get_job("eod_snapshot")
+        if job is not None and job.next_run_time is not None:
+            next_run = job.next_run_time.isoformat()
+    except Exception:
+        next_run = None
     logger.info(
-        "EOD scheduler on: cron=%s tz=%s (now=%s — next fire ~%s:%02s ET weekdays)",
+        "EOD scheduler on: cron=%s tz=%s now=%s next_run_at=%s",
         cron,
         tz_name,
         _now_local.strftime("%Y-%m-%d %H:%M %Z"),
-        hour,
-        int(minute),
+        next_run,
     )
 
 

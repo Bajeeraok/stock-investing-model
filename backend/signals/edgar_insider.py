@@ -11,9 +11,10 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
+
+from config_loader import resolve_existing_data_file, writable_data_path
 
 logger = logging.getLogger(__name__)
 
@@ -43,22 +44,18 @@ def _sec_request(url: str) -> tuple[str | None, str | None]:
         return None, str(e)
 
 
-def _tickers_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "data" / "edgar_company_tickers.json"
-
-
 def get_ticker_to_cik(tickers: list[str]) -> dict[str, str]:
     """Map ticker -> CIK (zero-padded 10 digits). Uses SEC company_tickers.json; caches to disk."""
     want = {t.upper().strip() for t in tickers if t and t.strip()}
     if not want:
         return {}
-    cache_path = _tickers_path()
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    read_path = resolve_existing_data_file("edgar_company_tickers.json")
+    write_path = writable_data_path("edgar_company_tickers.json")
     now = time.time()
     cache_data: dict[str, Any] = {}
-    if cache_path.exists() and (now - cache_path.stat().st_mtime) < TTL_TICKERS_JSON:
+    if read_path is not None and (now - read_path.stat().st_mtime) < TTL_TICKERS_JSON:
         try:
-            with open(cache_path) as f:
+            with open(read_path) as f:
                 cache_data = json.load(f)
         except Exception:
             pass
@@ -70,7 +67,8 @@ def get_ticker_to_cik(tickers: list[str]) -> dict[str, str]:
         try:
             data = json.loads(body)
             cache_data = {"data": data, "ts": now}
-            with open(cache_path, "w") as f:
+            write_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(write_path, "w") as f:
                 json.dump(cache_data, f)
         except Exception as e:
             logger.debug("EDGAR company_tickers parse failed: %s", e)

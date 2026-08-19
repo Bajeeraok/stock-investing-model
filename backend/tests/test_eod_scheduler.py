@@ -9,7 +9,7 @@ def test_resolve_eod_schedule_from_config_defaults(monkeypatch):
     resolved = eod_scheduler.resolve_eod_schedule()
     assert resolved is not None
     cron, tz = resolved
-    assert cron == "0 20 * * 1-5"
+    assert cron == "0 20 * * mon-fri"
     assert tz == "America/New_York"
 
 
@@ -18,8 +18,13 @@ def test_resolve_eod_schedule_env_overrides_config(monkeypatch):
     monkeypatch.setenv("EOD_SCHEDULER_TZ", "America/Chicago")
     monkeypatch.delenv("EOD_SCHEDULER_OFF", raising=False)
     cron, tz = eod_scheduler.resolve_eod_schedule()
-    assert cron == "15 21 * * 1-5"
+    assert cron == "15 21 * * mon-fri"
     assert tz == "America/Chicago"
+
+
+def test_unix_dow_1_5_maps_to_mon_fri():
+    assert eod_scheduler.unix_dow_field_to_apscheduler("1-5") == "mon-fri"
+    assert eod_scheduler.unix_dow_field_to_apscheduler("mon-fri") == "mon-fri"
 
 
 def test_resolve_eod_schedule_off_flag(monkeypatch):
