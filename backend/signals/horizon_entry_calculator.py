@@ -999,6 +999,26 @@ def _rr_from_displayed_levels(spot: float, stop: float, target: float) -> float:
     return 0.0
 
 
+def refresh_horizon_rr_from_levels(horizon: dict, spot: float | None) -> None:
+    """Keep risk_reward / target_pct / stop_loss_pct in lockstep with painted levels.
+
+    Call after any mutation of stop or target (e.g. scenario-target sync).
+    """
+    if not isinstance(horizon, dict):
+        return
+    try:
+        px = float(spot) if spot is not None else None
+        stop = float(horizon["stop_loss"]) if horizon.get("stop_loss") is not None else None
+        target = float(horizon["target"]) if horizon.get("target") is not None else None
+    except (TypeError, ValueError):
+        return
+    if px is None or not (px > 0) or stop is None or target is None:
+        return
+    horizon["risk_reward"] = _rr_from_displayed_levels(px, stop, target)
+    horizon["target_pct"] = _r((target - px) / px * 100, 1)
+    horizon["stop_loss_pct"] = _r((stop - px) / px * 100, 1)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SHORT-TERM CALCULATOR  (1 month)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -2115,6 +2135,8 @@ def build_all_horizons_payload(
         ma50=ma50,
     )
     _flag_cross_horizon_invariants(payload)
+    for key in ("short", "medium", "long"):
+        refresh_horizon_rr_from_levels(payload.get(key) or {}, current_price)
     try:
         from signals.entry_band_touch import enrich_horizons_entry_touch
 

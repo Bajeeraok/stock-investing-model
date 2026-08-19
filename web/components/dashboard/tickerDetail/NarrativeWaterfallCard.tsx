@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import type { DecisionMode } from "@/lib/decisionMode";
-import { ReferenceCard, fmtPct } from "./ReferenceDetailGrid";
+import { ReferenceCard } from "./ReferenceDetailGrid";
 
 export type NarrativeAction = {
   action: "WAIT" | "PLACE_LIMIT" | "STARTER_BUY" | "BUY" | "HOLD" | "STAND_ASIDE";
@@ -25,12 +25,22 @@ export type NarrativeCatalyst = {
   horizon: string;
 };
 
+export type RetailScan = {
+  headline: string;
+  reason: string;
+  lines: string[];
+  timing: string;
+  text: string;
+  starter_only_zone?: boolean;
+};
+
 export type NarrativeWaterfall = {
   status: "ok" | "blocked";
   ticker?: string;
   mode?: string;
   asof?: string;
   action?: NarrativeAction;
+  retail_scan?: RetailScan | null;
   why?: string[];
   catalysts?: NarrativeCatalyst[];
   scenario_ev_pct?: number | null;
@@ -40,15 +50,6 @@ export type NarrativeWaterfall = {
 };
 
 const NARRATIVE_TIMEOUT_MS = 30000;
-
-const ACTION_LABEL: Record<NarrativeAction["action"], string> = {
-  WAIT: "Wait",
-  PLACE_LIMIT: "Place limit",
-  STARTER_BUY: "Starter buy",
-  BUY: "Buy",
-  HOLD: "Hold",
-  STAND_ASIDE: "Stand aside",
-};
 
 export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode: DecisionMode }) {
   const [data, setData] = useState<NarrativeWaterfall | null>(null);
@@ -79,11 +80,11 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   if (data?.status === "blocked") return null;
   if (!loading && !data) return null;
 
-  const action = data?.action;
-  const usingNarrative = Boolean(
+  const scan = data?.retail_scan;
+  const hasLlm = Boolean(
     data?.narrative && (data.narrative_status === "ok" || data.narrative_status === "cached"),
   );
-  const narrativeParagraphs = usingNarrative
+  const narrativeParagraphs = hasLlm
     ? (data!.narrative as string)
         .split(/\n\s*\n/)
         .map((p) => p.trim())
@@ -93,38 +94,46 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   return (
     <ReferenceCard
       icon={Sparkles}
-      title="Trade narrative"
-      description="Deterministic action contract, explained — plus a guarded narrative that can only cite numbers already in the data."
-      stats={
-        action
-          ? [
-              { label: "Action", value: ACTION_LABEL[action.action] },
-              { label: "Scenario EV", value: fmtPct(data?.scenario_ev_pct ?? null) },
-            ]
-          : undefined
-      }
+      title="What to do"
+      description="Verdict first, then the four numbers that matter. Detail lives under Why."
       body={
         loading ? (
-          <p className="text-xs text-slate-500 italic animate-pulse">Building trade narrative…</p>
-        ) : usingNarrative ? (
+          <p className="text-xs text-slate-500 italic animate-pulse">Building the 10-second scan…</p>
+        ) : scan ? (
           <div className="space-y-2">
-            {narrativeParagraphs.map((p, i) => (
-              <p key={i} className="text-xs text-slate-300 leading-relaxed">
-                {p}
-              </p>
-            ))}
+            <p className="text-sm font-semibold text-slate-100 leading-snug">{scan.headline}</p>
+            <p className="text-xs text-slate-400 leading-relaxed">{scan.reason}</p>
+            <ul className="space-y-1">
+              {scan.lines.map((line, i) => (
+                <li key={i} className="text-xs text-slate-200 leading-relaxed">
+                  {line}
+                </li>
+              ))}
+            </ul>
+            {scan.timing ? (
+              <p className="text-[11px] text-slate-500 italic">{scan.timing}</p>
+            ) : null}
           </div>
-        ) : action ? (
-          <p className="text-xs text-slate-300 leading-relaxed">{action.text}</p>
+        ) : data?.action ? (
+          <p className="text-xs text-slate-300 leading-relaxed">{data.action.text}</p>
         ) : undefined
       }
-      toggleLabel="Full explanation & catalysts"
+      toggleLabel="Why? →"
     >
       {data?.why && data.why.length > 0 && (
         <div className="space-y-1">
           {data.why.map((line, i) => (
             <p key={i} className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">
               {line}
+            </p>
+          ))}
+        </div>
+      )}
+      {hasLlm && (
+        <div className="mt-3 space-y-2 border-t border-slate-800 pt-2">
+          {narrativeParagraphs.map((p, i) => (
+            <p key={i} className="text-xs text-slate-400 leading-relaxed">
+              {p}
             </p>
           ))}
         </div>

@@ -55,6 +55,7 @@ CATALOG: list[dict[str, Any]] = [
     {"group": "Ticker", "method": "GET", "path": "/api/thrive-phase2", "description": "Thrive phase-2 intraday", "query": {"ticker": "MSFT"}},
     {"group": "Ticker", "method": "GET", "path": "/api/signal-diagnostics/{ticker}", "description": "Signal diagnostics", "path_params": {"ticker": "SPY"}},
     {"group": "Ticker", "method": "GET", "path": "/api/ticker/{ticker}/narrative", "description": "Validated action-contract + guarded LLM narrative", "path_params": {"ticker": "SPY"}, "query": {"mode": "scout"}},
+    {"group": "Ticker", "method": "GET", "path": "/api/ticker/{ticker}/catalyst-notes", "description": "On-view number-guarded LLM wrap of news catalyst cards", "path_params": {"ticker": "SPY"}, "query": {"mode": "scout"}},
     # Market
     {"group": "Market", "method": "GET", "path": "/api/pre-market", "description": "Pre-market rotation / ES-NQ"},
     {"group": "Market", "method": "GET", "path": "/api/market-state", "description": "Market state snapshot"},

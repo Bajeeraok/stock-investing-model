@@ -239,10 +239,14 @@ export type CatalystNoteCard = {
   url?: string | null;
   headline_count?: number;
   draft_note: string;
+  wrap?: string | null;
 };
+
+const CATALYST_WRAP_TIMEOUT_MS = 25000;
 
 export function NewsSentimentRail({
   ticker,
+  mode,
   label,
   score,
   headlineCount,
@@ -251,6 +255,7 @@ export function NewsSentimentRail({
   catalystCards,
 }: {
   ticker?: string;
+  mode?: string;
   label?: string | null;
   score?: number | null;
   headlineCount?: number | null;
@@ -259,7 +264,46 @@ export function NewsSentimentRail({
   catalystCards?: CatalystNoteCard[] | null;
 }) {
   const [saved, setSaved] = React.useState<Record<string, "idle" | "saving" | "ok" | "err">>({});
+  const [wraps, setWraps] = React.useState<Record<string, CatalystNoteCard>>({});
+  const [wrapStatus, setWrapStatus] = React.useState<"idle" | "loading" | "ok" | "cached" | "skipped" | "fallback">("idle");
   const cards = (catalystCards ?? []).slice(0, 4);
+  const cardsKey = cards.map((c) => c.event_type || c.name).join("|");
+
+  React.useEffect(() => {
+    if (!ticker || cards.length === 0) return;
+    setWraps({});
+    setWrapStatus("loading");
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), CATALYST_WRAP_TIMEOUT_MS);
+    const q = mode ? `?mode=${encodeURIComponent(mode)}` : "";
+    fetch(apiUrl(`/api/ticker/${encodeURIComponent(ticker)}/catalyst-notes${q}`), {
+      signal: ac.signal,
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j) {
+          setWrapStatus("fallback");
+          return;
+        }
+        const st = String(j.wrap_status || "skipped");
+        setWrapStatus(st === "ok" || st === "cached" || st === "skipped" || st === "fallback" ? st : "skipped");
+        const next: Record<string, CatalystNoteCard> = {};
+        for (const c of j.cards || []) {
+          if (c?.event_type) next[c.event_type] = c;
+        }
+        setWraps(next);
+      })
+      .catch(() => setWrapStatus("fallback"))
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      ac.abort();
+      window.clearTimeout(timer);
+    };
+    // cardsKey stands in for the card cluster; avoid refetching on new array identity
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, mode, cardsKey]);
+
   if (!headlineCount && !headlines?.length && !catalystNote && !cards.length) return null;
   const sentiment =
     score != null
@@ -269,16 +313,18 @@ export function NewsSentimentRail({
           ? "Bearish"
           : "Neutral"
       : label ?? "Neutral";
+  const wrapping = wrapStatus === "ok" || wrapStatus === "cached";
 
   async function addNote(card: CatalystNoteCard) {
     if (!ticker) return;
     const key = card.event_type || card.name;
+    const merged = (card.event_type && wraps[card.event_type]) || card;
     setSaved((s) => ({ ...s, [key]: "saving" }));
     try {
       const r = await fetch(apiUrl("/api/behavior/journal"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticker, action: "note", note: card.draft_note }),
+        body: JSON.stringify({ ticker, action: "note", note: merged.draft_note }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setSaved((s) => ({ ...s, [key]: "ok" }));
@@ -305,10 +351,14 @@ export function NewsSentimentRail({
         <div className="space-y-2">
           <p className="text-[10px] text-slate-500">
             Catalyst cards — advisory only; does not change bands or gates.
+            {wrapStatus === "loading" ? " Summarizing…" : wrapping ? " Guarded wrap." : ""}
           </p>
           {cards.map((c) => {
             const key = c.event_type || c.name;
             const st = saved[key] || "idle";
+            const merged = (c.event_type && wraps[c.event_type]) || c;
+            const wrapText = merged.wrap || null;
+            const watch = merged.watch || c.watch;
             const tone =
               c.direction === "unlocks"
                 ? "border-emerald-500/30 text-emerald-300"
@@ -325,15 +375,18 @@ export function NewsSentimentRail({
                   {c.age_label && <span className="text-[10px] text-slate-500">{c.age_label}</span>}
                   {c.source && <span className="text-[10px] text-slate-600 truncate">{c.source}</span>}
                 </div>
+                {wrapText && (
+                  <p className="text-[11px] text-slate-200 leading-snug">{wrapText}</p>
+                )}
                 {c.url ? (
-                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-slate-300 leading-snug hover:text-sky-300 line-clamp-2">
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-slate-400 leading-snug hover:text-sky-300 line-clamp-2">
                     {c.mechanism}
                   </a>
                 ) : (
-                  <p className="text-[11px] text-slate-300 leading-snug line-clamp-2">{c.mechanism}</p>
+                  <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">{c.mechanism}</p>
                 )}
-                {c.watch && (
-                  <p className="text-[10px] text-slate-500">Watch: {c.watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
+                {watch && (
+                  <p className="text-[10px] text-slate-500">Watch: {watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
                 )}
                 {ticker && (
                   <button

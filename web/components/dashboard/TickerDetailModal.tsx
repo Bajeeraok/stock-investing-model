@@ -993,6 +993,7 @@ export function TickerDetailModal({
                   <div className="lg:hidden space-y-3">
                     <NewsSentimentRail
                       ticker={detail.ticker}
+                      mode={decisionMode}
                       label={modalNewsRail.label}
                       score={modalNewsRail.score}
                       headlineCount={modalNewsRail.headlineCount}
@@ -1090,6 +1091,7 @@ export function TickerDetailModal({
                 <aside className="hidden lg:block sticky top-28 space-y-3 self-start">
                   <NewsSentimentRail
                     ticker={detail.ticker}
+                    mode={decisionMode}
                     label={modalNewsRail.label}
                     score={modalNewsRail.score}
                     headlineCount={modalNewsRail.headlineCount}

@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from signals.horizon_entry_calculator import refresh_horizon_rr_from_levels
+
 
 def _sf(v: Any) -> float | None:
     if v is None:
@@ -34,10 +36,15 @@ def compute_initial_scenario_target(
     return float(mt or lt or fv or 0.0)
 
 
-def sync_medium_horizon_target(horizons: dict[str, Any], scenario: float) -> None:
+def sync_medium_horizon_target(
+    horizons: dict[str, Any],
+    scenario: float,
+    *,
+    spot: float | None = None,
+) -> None:
     """
     Set `horizons["medium"]["target"]` to the canonical scenario target (post roadmap alignment).
-    Mutates horizons in place.
+    Mutates horizons in place and refreshes R:R from the painted stop/target/spot.
     """
     if scenario <= 0:
         return
@@ -45,3 +52,4 @@ def sync_medium_horizon_target(horizons: dict[str, Any], scenario: float) -> Non
     if not isinstance(med, dict):
         return
     med["target"] = round(scenario, 2)
+    refresh_horizon_rr_from_levels(med, spot)

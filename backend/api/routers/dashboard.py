@@ -4032,6 +4032,63 @@ async def get_ticker_narrative(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
+@router.get("/ticker/{ticker}/catalyst-notes")
+async def get_ticker_catalyst_notes(
+    ticker: str,
+    mode: str = Query("scout", description="scout | swing | owner"),
+):
+    """On-view LLM wrap of Phase-1 news catalyst cards.
+
+    Deterministic cards always return. Haiku wrap runs only when
+    ANTHROPIC_API_KEY is set; number-guarded against packet + headline facts;
+    cached on ticker+mode+asof+headline hash. Never mutates bands or gates.
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    mode_norm = (mode or "scout").lower().strip()
+    if mode_norm not in ("scout", "swing", "owner"):
+        mode_norm = "scout"
+    sym = ticker.upper().strip()
+
+    def _build() -> dict:
+        import os
+
+        from api.ticker_detail import get_ticker_detail as _get
+        from signals.catalyst_detector import build_catalyst_note_cards
+        from signals.catalyst_llm_wrap import wrap_catalyst_cards
+        from signals.narrative_packet_mapper import to_packet
+        from signals.narrative_waterfall import make_anthropic_client
+        from signals.time_et import today_est
+
+        config = _load_config()
+        detail = _get(sym, config) or {}
+        inv = detail.get("investor_summary") or {}
+        layer = ((inv.get("trade_roadmap") or {}).get("news_sentiment_layer") or {})
+        cards = layer.get("catalyst_cards") or []
+        if not cards:
+            cards = build_catalyst_note_cards(layer.get("headlines") or [], ticker=sym)
+
+        packet = None
+        try:
+            packet = to_packet(detail, mode_norm, scenarios_raw=[])
+        except Exception as e:
+            logger.warning("[catalyst_notes] packet unavailable for %s: %s", sym, e)
+
+        asof = getattr(packet, "asof", None) or today_est()
+        api_key = os.getenv("ANTHROPIC_API_KEY") or config.get("data", {}).get("anthropic_api_key")
+        llm = make_anthropic_client() if api_key else None
+        return wrap_catalyst_cards(
+            cards, ticker=sym, asof=asof, mode=mode_norm,
+            packet=packet, llm=llm, on_view=True,
+        )
+
+    try:
+        return await run_in_threadpool(_build)
+    except Exception as e:
+        logger.exception("[catalyst_notes] failed for %s (%s): %s", sym, mode_norm, e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @router.get("/confidence/{ticker}")
 async def get_confidence(ticker: str):
     """

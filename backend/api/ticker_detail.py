@@ -2959,7 +2959,7 @@ def _build_trade_roadmap(
     try:
         st = float(scenario_target)
         if st > 0:
-            sync_medium_horizon_target(horizons, st)
+            sync_medium_horizon_target(horizons, st, spot=current_price)
             medium = horizons.get("medium") or {}
     except Exception:
         pass

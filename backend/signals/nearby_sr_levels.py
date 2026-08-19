@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 _MAX_DIST_PCT = {"short": 8.0, "medium": 12.0, "long": 30.0}
 _CLUSTER_PCT = 0.45  # merge levels within this % of each other
-_MIN_AWAY_PCT = 0.15  # ignore prints hugging spot
+_MIN_AWAY_PCT = {"short": 0.8, "medium": 2.0, "long": 3.0}
 
 
 def _r(v: float, n: int = 2) -> float:
@@ -28,6 +28,7 @@ def _add(
     label: str,
     spot: float,
     side: str,
+    min_away_pct: float,
 ) -> None:
     if price is None:
         return
@@ -38,7 +39,7 @@ def _add(
     if not (px > 0 and spot > 0):
         return
     gap = abs(px - spot) / spot * 100
-    if gap < _MIN_AWAY_PCT:
+    if gap < min_away_pct:
         return
     if side == "support" and px >= spot:
         return
@@ -118,39 +119,42 @@ def pick_nearby_sr(
     if not (spot and spot > 0):
         return None
     max_pct = _MAX_DIST_PCT.get(horizon_key, 12.0)
+    min_away = _MIN_AWAY_PCT.get(horizon_key, 1.5)
     supports: list[dict[str, Any]] = []
     resists: list[dict[str, Any]] = []
+    # Model entry/T1/T2 bands are not market structure — never echo them as S/R.
+    _ = (entry_low, entry_high, t1_high, t2_high)
 
-    _add(supports, price=swing_low, label="20d swing low", spot=spot, side="support")
-    _add(supports, price=support_level, label="Named support", spot=spot, side="support")
-    _add(supports, price=ma20, label="MA20", spot=spot, side="support")
-    _add(supports, price=ma50, label="MA50", spot=spot, side="support")
-    _add(supports, price=ma200, label="MA200", spot=spot, side="support")
-    _add(supports, price=low_52w, label="52w low", spot=spot, side="support")
-    _add(supports, price=entry_low, label="Entry floor", spot=spot, side="support")
-    _add(supports, price=entry_high, label="Entry high", spot=spot, side="support")
-    if horizon_key == "long":
-        _add(supports, price=t1_high, label="T1 ceiling", spot=spot, side="support")
-        _add(supports, price=t2_high, label="T2 ceiling", spot=spot, side="support")
+    swing_lo_label = "Near-term pivot" if horizon_key == "short" else "20d swing low"
+    swing_hi_label = "Near-term pivot" if horizon_key == "short" else "20d swing high"
 
-    _add(resists, price=swing_high, label="20d swing high", spot=spot, side="resistance")
-    _add(resists, price=resistance_level, label="Named resistance", spot=spot, side="resistance")
-    _add(resists, price=ma20, label="MA20", spot=spot, side="resistance")
-    _add(resists, price=ma50, label="MA50", spot=spot, side="resistance")
-    _add(resists, price=ma200, label="MA200", spot=spot, side="resistance")
-    _add(resists, price=high_52w, label="52w high", spot=spot, side="resistance")
-    _add(resists, price=entry_high, label="Entry ceiling", spot=spot, side="resistance")
-    _add(resists, price=entry_low, label="Entry floor", spot=spot, side="resistance")
-    if horizon_key == "long":
-        _add(resists, price=t1_high, label="T1 ceiling", spot=spot, side="resistance")
-        _add(resists, price=t2_high, label="T2 ceiling", spot=spot, side="resistance")
+    def add(bucket, *, price, label, side):
+        _add(bucket, price=price, label=label, spot=spot, side=side, min_away_pct=min_away)
+
+    add(supports, price=swing_low, label=swing_lo_label, side="support")
+    add(supports, price=support_level, label="Named support", side="support")
+    add(supports, price=ma20, label="MA20", side="support")
+    add(supports, price=ma50, label="MA50", side="support")
+    add(supports, price=ma200, label="MA200", side="support")
+    add(supports, price=low_52w, label="52w low", side="support")
+
+    add(resists, price=swing_high, label=swing_hi_label, side="resistance")
+    add(resists, price=resistance_level, label="Named resistance", side="resistance")
+    add(resists, price=ma20, label="MA20", side="resistance")
+    add(resists, price=ma50, label="MA50", side="resistance")
+    add(resists, price=ma200, label="MA200", side="resistance")
+    add(resists, price=high_52w, label="52w high", side="resistance")
 
     if closes:
         p_lo, p_hi = _pivots_from_closes(closes, spot)
+        lo_lab = "Near-term pivot" if horizon_key == "short" else "Swing low"
+        hi_lab = "Near-term pivot" if horizon_key == "short" else "Swing high"
+        prior_lo = "Prior pivot" if horizon_key == "short" else "Prior swing low"
+        prior_hi = "Prior pivot" if horizon_key == "short" else "Prior swing high"
         for i, px in enumerate(p_lo[:2]):
-            _add(supports, price=px, label="Swing low" if i == 0 else "Prior swing low", spot=spot, side="support")
+            add(supports, price=px, label=lo_lab if i == 0 else prior_lo, side="support")
         for i, px in enumerate(p_hi[:2]):
-            _add(resists, price=px, label="Swing high" if i == 0 else "Prior swing high", spot=spot, side="resistance")
+            add(resists, price=px, label=hi_lab if i == 0 else prior_hi, side="resistance")
 
     supports = _dedupe(supports, spot)
     resists = _dedupe(resists, spot)

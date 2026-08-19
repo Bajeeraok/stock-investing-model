@@ -19,8 +19,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from signals.narrative_waterfall import Band, Gate, Scenario, SignalPacket
-from signals.retail_action_payload import ST_ML_GATE
+from signals.narrative_waterfall import Band, Gate, Scenario, SignalPacket, full_size_price_from_mos
+from signals.retail_action_payload import (
+    ST_ML_GATE,
+    VALUATION_GATE_PASS_PCT,
+    required_mos_pct as _ladder_mos_pct,
+    tranche_idx_from_tier_id,
+)
 from signals.time_et import today_est
 
 _HORIZON_BY_MODE = {"scout": "short", "swing": "medium", "owner": "long"}
@@ -197,13 +202,18 @@ def _unlock_conditions(gates: list[Gate]) -> list[str]:
 
 
 def _gate_detail(canonical: str, gate: dict, *, rsi, hmm_bull_pct, ml_prob_pct,
-                  fused_confidence_pct) -> dict:
+                  fused_confidence_pct, mos_pct=None, required_mos_pct=None) -> dict:
     """Structured numeric fields where cheaply available (renders the nicer
     GATE_TEMPLATES copy); `text` is always present as a safe fallback
     (narrative_waterfall.render_explanations degrades to it gracefully)."""
     detail: dict[str, Any] = {"text": gate.get("detail") or ""}
     if canonical == "momentum_chop" and rsi is not None:
         detail["rsi"] = float(rsi)
+    elif canonical == "valuation":
+        if mos_pct is not None:
+            detail["mos_pct"] = float(mos_pct)
+        if required_mos_pct is not None:
+            detail["required_pct"] = float(required_mos_pct)
     elif canonical == "market_weather" and hmm_bull_pct is not None:
         detail["hmm_bull_pct"] = float(hmm_bull_pct)
         detail["need_pct"] = _MARKET_WEATHER_NEED_PCT
@@ -253,6 +263,25 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
     ml_prob_pct = horizon.get("ml_prob")
     ml_threshold_pct = (ml_horizons.get(horizon_key) or {}).get("threshold_pct")
     hmm_bull_pct = round(float(regime_bull_pct or 0.0), 1)
+    mos_pct = retail_action.get("assessment_pct")
+    if mos_pct is not None:
+        mos_pct = float(mos_pct)
+    fair_value = investor.get("fair_value")
+    if fair_value is not None:
+        fair_value = float(fair_value)
+
+    if mode == "owner":
+        long_spot = ((horizon.get("entry_tiers") or {}).get("spot_position")) or {}
+        tranche_idx = tranche_idx_from_tier_id(
+            long_spot.get("active_tier_id") or long_spot.get("tier_id") or long_spot.get("next_add_tier_id")
+        )
+        required_mos = float(_ladder_mos_pct(tranche_idx, regime_bull_pct))
+    else:
+        # Swing/scout "full-size" copy uses the historical 25% bar (same as
+        # signal_reason_summary when required_mos_pct_value is omitted).
+        required_mos = float(VALUATION_GATE_PASS_PCT)
+
+    full_size_price = full_size_price_from_mos(fair_value, required_mos)
 
     # ── gates: rename ids to canonical names, synthesize confidence gate ──
     raw_gates = list(retail_action.get("gates") or [])
@@ -265,8 +294,11 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         gates.append(Gate(
             name=canonical,
             passed=bool(g.get("pass")),
-            detail=_gate_detail(canonical, g, rsi=rsi, hmm_bull_pct=hmm_bull_pct,
-                                 ml_prob_pct=ml_prob_pct, fused_confidence_pct=fused_confidence_pct),
+            detail=_gate_detail(
+                canonical, g, rsi=rsi, hmm_bull_pct=hmm_bull_pct,
+                ml_prob_pct=ml_prob_pct, fused_confidence_pct=fused_confidence_pct,
+                mos_pct=mos_pct, required_mos_pct=required_mos,
+            ),
         ))
         seen_canonical.add(canonical)
     if "confidence" not in seen_canonical and fused_confidence_pct is not None:
@@ -326,6 +358,11 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         catch_levels=_catch_levels(horizon.get("entry_zone")),
         entry_mode=_entry_mode(retail_action),
         max_tranche_pct=float(retail_action.get("max_sizing_pct") or 0.0),
+        sector=str(ticker_detail.get("sector") or ""),
+        fair_value=fair_value,
+        mos_pct=mos_pct,
+        required_mos_pct=required_mos,
+        full_size_price=full_size_price,
         hmm_bull_pct=hmm_bull_pct,
         hmm_transition_pct=round(float(hmm.get("transition_probability") or 0.0) * 100, 1),
         rsi=float(rsi) if rsi is not None else None,

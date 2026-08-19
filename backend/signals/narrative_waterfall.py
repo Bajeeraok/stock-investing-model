@@ -109,6 +109,11 @@ class SignalPacket:
     entry_mode: str = "WAIT"                # FULL | STARTER_ONLY | BRIDGE_ONLY | WAIT
     max_tranche_pct: float = 0.0
     roadmap: list[dict] = field(default_factory=list)
+    sector: str = ""
+    fair_value: Optional[float] = None
+    mos_pct: Optional[float] = None          # (FV − spot) / spot × 100
+    required_mos_pct: Optional[float] = None
+    full_size_price: Optional[float] = None  # spot that would clear required MOS
 
     # model internals
     hmm_bull_pct: float = 0.0
@@ -195,7 +200,7 @@ class SignalPacket:
             and self.target > self.spot
         ):
             computed = (self.target - self.spot) / (self.spot - self.stop)
-            if abs(computed - float(self.rr)) > 0.75:
+            if abs(computed - float(self.rr)) > 0.2:
                 errs.append(
                     f"R:R {self.rr} vs displayed stop/target {computed:.1f} "
                     "(label must match the levels panel)"
@@ -253,12 +258,15 @@ class SignalPacket:
             "gates": [(g.name, g.passed) for g in self.gates],
             "verdict": self.verdict,
             "entry_mode": self.entry_mode,
+            "sector": (self.sector or "").lower(),
             "entry_band": asdict(self.entry_band) if self.entry_band else None,
             "stop": self.stop,
             "target": self.target,
             "unlock": self.unlock_conditions,
             "rsi_bucket": None if self.rsi is None else int(self.rsi // 5),
             "hmm_bucket": int(self.hmm_bull_pct // 10),
+            "full_size_price": self.full_size_price,
+            "required_mos_pct": self.required_mos_pct,
             # Coarse spot so Layer 3 cannot keep a stale quote while the header ticks.
             "spot_bucket": round(self.spot, 1) if self.spot < 250 else round(self.spot),
         }
@@ -286,6 +294,11 @@ class SignalPacket:
         ev = self.scenario_ev()
         if ev is not None:
             out.add(abs(ev)); out.add(round(abs(ev)))
+        out.add(50.0)  # RSI < 50 is a fixed retail-scan threshold
+        if self.target is not None and self.spot:
+            pct = abs((float(self.target) - float(self.spot)) / float(self.spot) * 100.0)
+            out.add(round(pct, 2))
+            out.add(round(pct))
         return out
 
 
@@ -397,6 +410,98 @@ def render_action(c: ActionContract, p: SignalPacket) -> str:
     return f"HOLD {p.ticker} — no new orders. Review {d}."
 
 
+# ── Retail 10-second scan (Layer 2 primary body) ─────────────
+# Verdict → numbers → reason. Catalysts / Mix EV / jargon live in Why.
+
+_RETAIL_BANNED = (
+    "momentum chop",
+    "technical reset",
+    "invalidation level",
+    "confluence",
+    "thesis",
+    "tape",
+    "margin of safety",
+)
+
+_RETAIL_TIMING = {
+    "scout": "Usually takes days to get there.",
+    "swing": "Usually takes days to a few weeks to get there.",
+    "owner": "Usually takes weeks to months to get there.",
+}
+
+
+def _retail_headline_reason(p: SignalPacket, c: ActionContract) -> tuple[str, str]:
+    """First line = action + plain-English why. No numbers in the headline."""
+    if c.action is Action.STAND_ASIDE:
+        return "⏸ WALK AWAY — plan is broken", "Price closed through the walk-away level."
+    if c.action is Action.BUY:
+        return "✅ BUY — checks line up", "Price and the model's checks agree."
+    if c.action is Action.STARTER_BUY:
+        return "🟡 STARTER — small slice only", "Only a small starter — full size is not cleared."
+    mom_hot = p.rsi is not None and float(p.rsi) >= 50
+    val_failed = any(g.name == "valuation" and not g.passed for g in p.gates)
+    if mom_hot:
+        reason = "Price ran up too fast. Good company, bad entry."
+    elif val_failed:
+        reason = "Price is too expensive here. Good company, bad entry."
+    else:
+        reason = "Wait for the remaining checks to clear."
+    if c.action is Action.HOLD:
+        return "⏸ HOLD — don't add today", reason
+    return "⏸ WAIT — don't buy today", reason
+
+
+def _starter_watch_zone(p: SignalPacket) -> bool:
+    """True when the painted band is a starter at most — not a full-size MOS unlock."""
+    if p.entry_mode == "FULL":
+        return False
+    if band_clears_full_mos(p):
+        return False
+    val_failed = any(g.name == "valuation" and not g.passed for g in p.gates)
+    return val_failed or p.entry_mode in ("STARTER_ONLY", "BRIDGE_ONLY", "WAIT")
+
+
+def render_retail_scan(p: SignalPacket, c: ActionContract) -> dict:
+    """Cover-the-prose test: 5 lines must answer buy-today / at-what-price / give-up."""
+    headline, reason = _retail_headline_reason(p, c)
+    lines: list[str] = []
+    starter = _starter_watch_zone(p)
+    rsi_clause = ""
+    if p.rsi is not None and float(p.rsi) >= 50:
+        rsi_clause = " and RSI drops below 50"
+    if p.entry_band:
+        buy = f"✅ Buy zone: {p.entry_band.fmt()}{rsi_clause}"
+        if starter:
+            buy += " — starter only, not full size"
+        lines.append(buy)
+        lines.append(f"❌ Never chase above ${p.entry_band.hi:,.2f}")
+    walk = p.stop if p.stop is not None else p.invalidation
+    if walk is not None:
+        lines.append(f"🛑 Walk away if it closes below ${walk:,.2f}")
+    if p.target is not None:
+        payoff = f"🎯 If it works: ${p.target:,.2f}"
+        if p.spot:
+            pct = (float(p.target) - float(p.spot)) / float(p.spot) * 100.0
+            payoff += f" ({pct:+.0f}%)"
+        lines.append(payoff)
+    lines = lines[:4]
+    timing = _RETAIL_TIMING.get(p.mode, _RETAIL_TIMING["swing"])
+    text = "\n".join([headline, reason, *lines, timing])
+    return {
+        "headline": headline,
+        "reason": reason,
+        "lines": lines,
+        "timing": timing,
+        "text": text,
+        "starter_only_zone": starter,
+    }
+
+
+def retail_scan_banned_hits(text: str) -> list[str]:
+    low = (text or "").lower()
+    return [w for w in _RETAIL_BANNED if w in low]
+
+
 # ═════════════════════════════════════════════════════════════
 # LAYER 2 — TEMPLATED EXPLANATIONS + SCENARIOS + CATALYSTS
 # ═════════════════════════════════════════════════════════════
@@ -460,8 +565,8 @@ def render_scenarios(p: SignalPacket) -> str:
         # Degenerate case: probabilities summed to 0 — no EV to report.
         return (f"{header}. Worst case: {worst.name} {worst.ret_pct:+.1f}% at "
                 f"{worst.prob_pct:.0f}% probability.")
-    return (f"{header}; probability-weighted expected return {ev:+.1f}%. "
-            f"Worst case: {worst.name} {worst.ret_pct:+.1f}% at "
+    return (f"{header}; probability-weighted mix {ev:+.1f}% (scenario mix — not this "
+            f"horizon's painted target). Worst case: {worst.name} {worst.ret_pct:+.1f}% at "
             f"{worst.prob_pct:.0f}% probability.")
 
 
@@ -476,33 +581,126 @@ class Catalyst:
     horizon: str        # "days" | "1-2 weeks" | "4-12 weeks" | ...
 
 
+def mos_at_price(fair_value: float | None, price: float | None) -> float | None:
+    if fair_value is None or price is None or price <= 0:
+        return None
+    return (float(fair_value) - float(price)) / float(price) * 100.0
+
+
+def full_size_price_from_mos(fair_value: float | None, required_mos_pct: float | None) -> float | None:
+    if fair_value is None or required_mos_pct is None or required_mos_pct <= -100:
+        return None
+    fv = float(fair_value)
+    if fv <= 0:
+        return None
+    return round(fv / (1.0 + float(required_mos_pct) / 100.0), 2)
+
+
+def band_clears_full_mos(p: SignalPacket) -> bool:
+    if not p.entry_band or p.required_mos_pct is None:
+        return False
+    mos = mos_at_price(p.fair_value, p.entry_band.hi)
+    if mos is None:
+        return False
+    return mos + 1e-6 >= float(p.required_mos_pct)
+
+
+_TECH_SECTORS = {
+    "technology", "information technology", "communication services", "communications",
+}
+_SAFE_HAVEN_SECTORS = {
+    "basic materials", "materials", "utilities",
+}
+_SAFE_HAVEN_TICKERS = {"GLD", "IAU", "SGOL", "GLDM", "GDX", "GDXJ", "SLV", "SIVR", "PPLT"}
+_SAFE_HAVEN_CATALYST_NAMES = {"Safe-haven outflow"}
+
+
+def _sector_key(p: SignalPacket) -> str:
+    return (p.sector or "").strip().lower()
+
+
+def is_risk_on_sector(p: SignalPacket) -> bool:
+    sec = _sector_key(p)
+    return sec in _TECH_SECTORS or sec.startswith("tech")
+
+
+def allows_safe_haven_macro(p: SignalPacket) -> bool:
+    if (p.ticker or "").upper() in _SAFE_HAVEN_TICKERS:
+        return True
+    if is_risk_on_sector(p):
+        return False
+    sec = _sector_key(p)
+    return sec in _SAFE_HAVEN_SECTORS or "gold" in sec or "precious" in sec
+
+
 def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
     c: list[Catalyst] = []
     band = p.entry_band.fmt() if p.entry_band else "the entry band"
+    val_failed = any(g.name == "valuation" and not g.passed for g in p.gates)
+    starter_not_full = val_failed and not band_clears_full_mos(p)
+    full_px = p.full_size_price
 
-    # from gate states
     for g in p.gates:
         if g.name == "momentum_chop" and not g.passed:
-            c.append(Catalyst("Technical reset", "unlocks",
-                f"RSI {g.detail.get('rsi', 0):.0f} cooling below 50 on a dip or "
-                f"sideways chop would drag price toward {band}.",
-                "RSI < 50", "1-2 weeks"))
-        if g.name == "market_weather" and not g.passed:
-            c.append(Catalyst("Regime confirmation", "unlocks",
-                f"Stock-specific bull probability rising from {p.hmm_bull_pct:.0f}% "
-                f"to {g.detail.get('need_pct', 60):.0f}% flips the Market Weather gate.",
-                f"HMM bull ≥ {g.detail.get('need_pct', 60):.0f}%", "1-4 weeks"))
-        if g.name == "valuation" and not g.passed:
-            if p.mode == "owner" and p.entry_band:
-                c.append(Catalyst("Price discount", "unlocks",
-                    f"A print at or below ${p.entry_band.hi:,.2f} (T1 ceiling) restores the required margin of safety.",
-                    f"price ≤ ${p.entry_band.hi:,.2f}", "days to a few weeks"))
+            if starter_not_full:
+                rsi_now = float(g.detail.get("rsi", p.rsi or 0) or 0)
+                c.append(Catalyst(
+                    "Cooler RSI for a starter",
+                    "unlocks",
+                    f"RSI {rsi_now:.0f} dropping below 50 on a dip into {band} "
+                    f"is a small starter at most — it does not clear full-size valuation.",
+                    "RSI < 50 (starter only)",
+                    "1-2 weeks",
+                ))
             else:
-                c.append(Catalyst("Price discount", "unlocks",
-                    f"A pullback into {band} restores the required margin of safety.",
-                    f"price in {band}", "days to a few weeks"))
+                c.append(Catalyst(
+                    "Price + RSI line up",
+                    "unlocks",
+                    f"RSI {g.detail.get('rsi', 0):.0f} cooling below 50 on a dip would drag "
+                    f"price toward {band}.",
+                    "RSI < 50",
+                    "1-2 weeks",
+                ))
+        if g.name == "market_weather" and not g.passed:
+            c.append(Catalyst(
+                "Regime confirmation",
+                "unlocks",
+                f"Stock-specific bull probability rising from {p.hmm_bull_pct:.0f}% "
+                f"to {g.detail.get('need_pct', 60):.0f}% flips Market Weather.",
+                f"HMM bull ≥ {g.detail.get('need_pct', 60):.0f}%",
+                "1-4 weeks",
+            ))
+        if g.name == "valuation" and not g.passed:
+            if band_clears_full_mos(p) and p.entry_band:
+                if p.mode == "owner":
+                    c.append(Catalyst(
+                        "Price discount",
+                        "unlocks",
+                        f"A print at or below ${p.entry_band.hi:,.2f} restores the required "
+                        f"{p.required_mos_pct:.0f}% discount to full size.",
+                        f"price ≤ ${p.entry_band.hi:,.2f}",
+                        "days to a few weeks",
+                    ))
+                else:
+                    c.append(Catalyst(
+                        "Price discount",
+                        "unlocks",
+                        f"A pullback into {band} restores the required "
+                        f"{p.required_mos_pct:.0f}% discount to full size.",
+                        f"price in {band}",
+                        "days to a few weeks",
+                    ))
+            else:
+                deeper = f"${full_px:,.2f}" if full_px else "a much deeper discount"
+                c.append(Catalyst(
+                    "Starter watch — not full size",
+                    "unlocks",
+                    f"A print in {band} is a small starter at most. It does not clear "
+                    f"full-size valuation (need about {deeper}).",
+                    f"price in {band} (starter only)",
+                    "days to a few weeks",
+                ))
 
-    # from sensitivity tags — deterministic macro library
     MACRO: dict[str, list[Catalyst]] = {
         "USD-sensitive": [
             Catalyst("Dollar strength", "breaks",
@@ -514,20 +712,27 @@ def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
         "gold-sensitive": [
             Catalyst("Safe-haven outflow", "breaks",
                 "Geopolitical de-escalation rotates capital out of defensive assets.",
-                "risk-on tape after de-escalation headlines", "days to weeks")],
+                "risk-on rotation after de-escalation headlines", "days to weeks")],
         "volatility-sensitive": [
             Catalyst("Volatility spike", "unlocks",
-                f"A vol shock typically delivers the pullback into {band} faster "
-                "than a grinding market.", "VIX spike", "days")],
+                (
+                    f"A vol shock often delivers a dip into {band} faster than a grinding market "
+                    "— still a starter, not full size."
+                    if starter_not_full else
+                    f"A vol shock often delivers a dip into {band} faster than a grinding market."
+                ),
+                "VIX spike", "days")],
     }
     for tag in p.sensitivities:
-        c.extend(MACRO.get(tag, []))
+        rows = MACRO.get(tag, [])
+        if tag == "gold-sensitive" and not allows_safe_haven_macro(p):
+            continue
+        c.extend(rows)
 
-    # thesis breakers from levels — always present
     if p.invalidation:
-        c.append(Catalyst("Momentum breakdown", "breaks",
-            f"Losing ${p.invalidation:,.2f} with momentum invalidates the "
-            "add-on-pullback plan — reassess, don't average.",
+        c.append(Catalyst("Plan break", "breaks",
+            f"A close below ${p.invalidation:,.2f} with momentum means walk away — "
+            "reassess, don't average down.",
             f"close < ${p.invalidation:,.2f}", "any time"))
     if p.scenarios:
         worst = min(p.scenarios, key=lambda s: s.ret_pct)
@@ -535,6 +740,33 @@ def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
             f"Engine's downside scenario: {worst.ret_pct:+.1f}% at "
             f"{worst.prob_pct:.0f}% probability.", "scenario triggers", "—"))
     return c
+
+
+def validate_catalysts(p: SignalPacket, cats: list[Catalyst]) -> list[str]:
+    """Catalysts must not promise a MOS unlock the band cannot deliver, or
+    attach safe-haven logic to a risk-on sector."""
+    errs: list[str] = []
+    mos_lie = (
+        not band_clears_full_mos(p)
+        and any(g.name == "valuation" and not g.passed for g in p.gates)
+    )
+    for x in cats:
+        mech = (x.mechanism or "").lower()
+        if mos_lie and x.direction == "unlocks" and (
+            "margin of safety" in mech or "restores the required" in mech
+        ) and "starter" not in mech:
+            errs.append(
+                f"catalyst '{x.name}' claims a full-size valuation unlock from a band "
+                "that does not clear required MOS"
+            )
+        if x.name in _SAFE_HAVEN_CATALYST_NAMES and (
+            is_risk_on_sector(p) or "technology" in _sector_key(p)
+        ):
+            errs.append(
+                f"safe-haven catalyst '{x.name}' cannot attach to {p.ticker} "
+                f"sector={p.sector or 'unknown'} (Technology/risk-on)"
+            )
+    return errs
 
 
 def render_catalysts(cats: list[Catalyst]) -> list[str]:
@@ -545,7 +777,7 @@ def render_catalysts(cats: list[Catalyst]) -> list[str]:
         out.append("What gets you your entry:")
         out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in unlock]
     if breaks:
-        out.append("What breaks the thesis:")
+        out.append("What would break this plan:")
         out += [f"  • {x.name}: {x.mechanism} Watch: {x.watch}" for x in breaks]
     return out
 
@@ -559,23 +791,27 @@ LLMFn = Callable[[str, str], str]   # (system, user) -> completion text
 SYSTEM_PROMPT = """You write a brief market narrative for a quantitative trading signal.
 HARD RULES:
 1. Every dollar figure and percentage you write MUST appear verbatim in the JSON packet. Never invent a price, level, or probability.
-2. Never contradict ACTION_CONTRACT. You explain it; you do not second-guess it. Do not use the words BUY/SELL except as they appear in the contract.
+2. Never contradict ACTION_CONTRACT or RETAIL_SCAN. You explain them; you do not second-guess them. Do not use the words BUY/SELL except as they appear in the contract.
 3. Use ONLY the catalysts listed in CATALYSTS — do not introduce others. Weave them into flowing prose with their horizons.
 4. Output EXACTLY 4 short paragraphs, each 1-3 sentences, separated by a single blank line (one "\\n\\n" between each — no headers, no bullets, no bold):
-   Paragraph 1 — one-sentence thesis consistent with the verdict.
+   Paragraph 1 — one-sentence setup consistent with the verdict.
    Paragraph 2 — what unlocks the setup, with realistic timelines from the catalysts.
-   Paragraph 3 — what breaks it (invalidation level, downside scenario).
+   Paragraph 3 — what breaks it (walk-away floor, downside scenario).
    Paragraph 4 — a single sentence naming the most important thing to watch.
    Total length ~150-220 words across all 4 paragraphs.
 5. Invalidation is a FLOOR: losing / a close BELOW that price. Never write "close above" for invalidation.
-6. Tone: measured. No hype, no certainty language."""
+6. Never claim the entry band restores a valuation discount or is the true full-size entry unless a catalyst explicitly says the band clears full size. If catalysts say starter only, that dip is a starter — not full size.
+7. Do not attach gold / safe-haven / geopolitical de-escalation logic unless those catalysts are listed.
+8. Tone: measured. No hype, no certainty language."""
 
 
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
-                      cats: list[Catalyst]) -> str:
+                      cats: list[Catalyst],
+                      retail_scan: dict | None = None) -> str:
     return json.dumps({
         "PACKET": asdict(p),
         "ACTION_CONTRACT": {**asdict(contract), "action": contract.action.value},
+        "RETAIL_SCAN": retail_scan or {},
         "CATALYSTS": [asdict(x) for x in cats],
     }, default=str)
 
@@ -630,20 +866,22 @@ class NarrativeEngine:
             pass
 
     def generate(self, p: SignalPacket, contract: ActionContract,
-                 cats: list[Catalyst]) -> tuple[str, str]:
+                 cats: list[Catalyst],
+                 retail_scan: dict | None = None) -> tuple[str, str]:
         """Returns (narrative, status). status ∈ ok|cached|skipped|fallback.
         Cache key = ticker + asof date + decision_hash: regenerates only when a
         gate flips, a band moves, or RSI/regime crosses a bucket — never on a
         mere spot tick. The date prefix prevents a stale narrative from a
         previous day resurfacing just because the decision state happens to
-        match."""
+        match. v3 busts cached Layer 3 prose that claimed a nearby band restored MOS.
+        """
         if self.llm is None:
             return "", "skipped"
-        key = f"narrative:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        key = f"narrative:v3:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
         cached = self._cache_get(key)
         if cached is not None:
             return cached, "cached"
-        user = build_user_prompt(p, contract, cats)
+        user = build_user_prompt(p, contract, cats, retail_scan=retail_scan)
         for attempt in range(self.max_retries + 1):
             text = self.llm(SYSTEM_PROMPT, user).strip()
             bad = guard_numbers(text, p)
@@ -672,6 +910,16 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
 
     contract = derive_action_contract(p)
     cats = derive_catalysts(p)
+    cat_errs = validate_catalysts(p, cats)
+    if cat_errs:
+        logger.error("[narrative] %s (%s) catalyst validation: %s", p.ticker, p.mode, cat_errs)
+        cats = [c for c in cats if not validate_catalysts(p, [c])]
+
+    scan = render_retail_scan(p, contract)
+    banned = retail_scan_banned_hits(scan.get("text") or "")
+    if banned:
+        logger.error("[narrative] %s (%s) retail scan used banned vocab: %s",
+                     p.ticker, p.mode, banned)
 
     why = render_explanations(p)
     sc = render_scenarios(p)
@@ -691,7 +939,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         if _ENGINE_SINGLETON is None or _ENGINE_SINGLETON.llm is not llm:
             _ENGINE_SINGLETON = NarrativeEngine(llm)   # persist cache across calls
         engine = _ENGINE_SINGLETON
-    narrative, l3_status = engine.generate(p, contract, cats)
+    narrative, l3_status = engine.generate(p, contract, cats, retail_scan=scan)
 
     return {
         "status": "ok",
@@ -700,13 +948,16 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         "asof": p.asof,
         "action": {**asdict(contract), "action": contract.action.value,
                    "text": render_action(contract, p)},
+        "retail_scan": scan,
         "why": why,
         "catalysts": [asdict(x) for x in cats],
         "scenario_ev_pct": p.scenario_ev(),
+        "scenario_ev_horizon": "scenario mix · not the painted target",
         "narrative": narrative,
         "narrative_status": l3_status,
         "packet_hash": p.content_hash(),
         "layer2_guard_violations": layer2_bad or None,
+        "catalyst_validation": cat_errs or None,
     }
 
 
@@ -795,7 +1046,7 @@ def example_packet_amzn() -> SignalPacket:
             Gate("confidence", True, {"conf_pct": 69.0}),
         ],
         entry_band=Band(245.14, 257.52), stop=232.76, invalidation=229.98,
-        target=331.58, rr=2.0,
+        target=331.58, rr=1.5,
         st_band=Band(269.55, 273.63),
         bridge_band=Band(267.34, 274.36),
         bridge_levels=[267.34, 269.10, 270.85, 272.60, 274.36],

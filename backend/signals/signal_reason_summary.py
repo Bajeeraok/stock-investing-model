@@ -363,7 +363,8 @@ def _build_wait_plain(
                 )
             else:
                 parts.append(
-                    f"Full-size entry needs ~{gap:.0f}% more discount — often a few weeks in a grinding market, faster in a pullback."
+                    f"Full-size entry needs ~{gap:.0f}% more discount — that is a deeper "
+                    "price than the nearby buy zone, which is a starter watch at most."
                 )
 
     mom_gate = next((g for g in gates if g.get("id") == "momentum"), None)
