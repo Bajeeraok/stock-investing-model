@@ -12,9 +12,10 @@ const AUTO_REFRESH_MARKET_MIN = (() => {
   const raw = process.env.NEXT_PUBLIC_AUTO_REFRESH_MARKET_MIN;
   if (raw) {
     const n = parseInt(raw, 10);
-    if (!Number.isNaN(n) && n >= 5 && n <= 120) return n;
+    if (!Number.isNaN(n) && n >= 5 && n <= 180) return n;
   }
-  return 30;
+  // Align with backend signal warm (~2h on Railway); quote ticks still update prices server-side.
+  return 120;
 })();
 // Off-hours auto-refresh is disabled to reduce API usage (FMP calls) and noise.
 const AUTO_REFRESH_OFF_HOURS_MIN = 0;

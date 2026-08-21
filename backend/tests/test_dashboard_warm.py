@@ -62,7 +62,7 @@ def test_refresh_endpoint_starts_async_job():
 
     shell = {"as_of_date": "2026-06-14", "config": {"watchlist": []}, "data_freshness": {}}
     with patch("signals.cache.get_cached_dashboard", return_value=shell), patch(
-        "api.dashboard_warm.compute_for_background_refresh"
+        "api.dashboard_warm.compute_signal_warm_sync"
     ) as compute_fn, patch("api.dashboard_job.trigger_background_refresh", return_value=True) as trigger:
         client = TestClient(app)
         resp = client.get("/api/dashboard?refresh=true")
@@ -116,3 +116,37 @@ def test_trigger_post_eod_dashboard_sync():
         ok = trigger_post_eod_dashboard_sync()
     assert ok is True
     trigger.assert_called_once()
+
+
+def test_background_refresh_quote_tick_when_signals_fresh():
+    from api.dashboard_warm import compute_for_background_refresh
+    from signals.time_et import now_iso_et
+
+    cached = {
+        "signals": [{"ticker": "AAPL", "close": 100.0}],
+        "config": {},
+        "data_freshness": {"signals_updated_at": now_iso_et()},
+    }
+    with patch("alerts.market_hours.is_signal_warm_window", return_value=True), patch(
+        "signals.cache.get_cached_dashboard", return_value=None
+    ), patch(
+        "signals.cache.get_last_dashboard_snapshot", return_value=cached
+    ), patch("api.dashboard_warm._signals_warm_skip_if_fresh_min", return_value=60.0), patch(
+        "api.dashboard_warm.compute_quote_tick_sync", return_value={"warm_kind": "quote_tick"}
+    ) as quote, patch("api.dashboard_warm.compute_signal_warm_sync") as warm:
+        out = compute_for_background_refresh()
+    quote.assert_called_once()
+    warm.assert_not_called()
+    assert out["warm_kind"] == "quote_tick"
+
+
+def test_background_refresh_skipped_overnight():
+    from api.dashboard_warm import compute_for_background_refresh
+
+    cached = {"signals": [{"ticker": "AAPL"}], "config": {}}
+    with patch("alerts.market_hours.is_signal_warm_window", return_value=False), patch(
+        "signals.cache.get_cached_dashboard", return_value=cached
+    ), patch("api.dashboard_warm.compute_signal_warm_sync") as warm:
+        out = compute_for_background_refresh()
+    warm.assert_not_called()
+    assert out is cached

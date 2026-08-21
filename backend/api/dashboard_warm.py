@@ -240,11 +240,17 @@ def _signals_warm_skip_if_fresh_min() -> float:
     raw = (os.environ.get("SIGNAL_WARM_SKIP_IF_FRESH_MIN") or "").strip()
     if raw:
         try:
-            return max(0.0, min(120.0, float(raw)))
+            return max(0.0, min(180.0, float(raw)))
         except ValueError:
             pass
+    # Keep skip ≥ warm interval so a short-TTL key miss does not re-run ~100 tickers.
     if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
-        return 25.0
+        try:
+            from api.market_scheduler import _dashboard_warm_interval_min
+
+            return float(_dashboard_warm_interval_min())
+        except Exception:
+            return 120.0
     return 0.0
 
 
@@ -807,10 +813,34 @@ def trigger_post_eod_dashboard_sync() -> bool:
 
 
 def compute_for_background_refresh() -> dict:
-    """Background job: signal warm when cache exists, else full pipeline."""
+    """Background job: quote tick if signals still fresh, else signal warm, else full pipeline."""
+    from alerts.market_hours import is_signal_warm_window
     from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
-    if get_cached_dashboard() or get_last_dashboard_snapshot():
+    cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+    if not is_signal_warm_window():
+        logger.info(
+            "[dashboard-warm] background refresh skipped outside 8:30–16:00 ET — serving cached snapshot"
+        )
+        return cached if isinstance(cached, dict) else {}
+
+    if cached:
+        age = _cached_signals_age_minutes(cached)
+        skip_min = _signals_warm_skip_if_fresh_min()
+        if (
+            skip_min > 0
+            and age is not None
+            and age < skip_min
+            and isinstance(cached.get("signals"), list)
+            and len(cached.get("signals") or []) > 0
+        ):
+            logger.info(
+                "[dashboard-warm] background refresh → quote tick (signals %.0f min old < %.0f)",
+                age,
+                skip_min,
+            )
+            out = compute_quote_tick_sync()
+            return out if isinstance(out, dict) else cached
         return compute_signal_warm_sync()
     from api.routers.dashboard import _compute_full_dashboard_sync
 

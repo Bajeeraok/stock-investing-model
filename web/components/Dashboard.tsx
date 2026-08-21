@@ -352,38 +352,77 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     if (activeTab !== "signals") return;
     if (lazySignals !== null) return;
     let cancelled = false;
-    setSignalsLoading(true);
-    setSignalsFetchErr(null);
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const url = API_BASE ? `${API_BASE}/api/dashboard/signals-panel` : "/api/dashboard/signals-panel";
-    fetch(url)
-      .then((r) => {
-        if (!r.ok) {
-          throw new Error(
-            r.status === 503
-              ? "Signals cache unavailable — click Refresh on the dashboard, then open Signals again."
-              : `HTTP ${r.status}`
+    const SIGNALS_PANEL_TIMEOUT_MS = 45_000;
+    const MAX_WARMING_RETRIES = 24; // ~2 min of 5s polls while backend recomputes
+
+    const load = (attempt: number) => {
+      if (cancelled) return;
+      setSignalsLoading(true);
+      setSignalsFetchErr(null);
+      const ac = new AbortController();
+      const kill = setTimeout(() => ac.abort(), SIGNALS_PANEL_TIMEOUT_MS);
+      fetch(url, { signal: ac.signal })
+        .then((r) => {
+          if (!r.ok) {
+            throw new Error(
+              r.status === 503
+                ? "Signals cache unavailable — click Refresh on the dashboard, then open Signals again."
+                : `HTTP ${r.status}`
+            );
+          }
+          return r.json();
+        })
+        .then((j) => {
+          if (cancelled || !j || typeof j !== "object") return;
+          if (j.warming) {
+            if (attempt < MAX_WARMING_RETRIES) {
+              retryTimer = setTimeout(() => load(attempt + 1), 5000);
+              return;
+            }
+            setSignalsFetchErr("Signals still warming — wait a moment, then open Signals again or click Refresh.");
+            return;
+          }
+          if (Array.isArray(j.signals) && j.signals.length === 0 && (j as unknown as Record<string, unknown>).message) {
+            setSignalsFetchErr((j as unknown as Record<string, unknown>).message as string);
+            return;
+          }
+          if (Array.isArray(j.signals) && j.signals.length > 0) {
+            setLazySignals(j.signals);
+            return;
+          }
+          if (attempt < MAX_WARMING_RETRIES) {
+            retryTimer = setTimeout(() => load(attempt + 1), 5000);
+            return;
+          }
+          setSignalsFetchErr("No signals rows yet — click Refresh, then reopen Signals.");
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          const aborted = e instanceof Error && e.name === "AbortError";
+          if (aborted && attempt < MAX_WARMING_RETRIES) {
+            retryTimer = setTimeout(() => load(attempt + 1), 5000);
+            return;
+          }
+          setSignalsFetchErr(
+            aborted
+              ? "Signals request timed out — backend may be busy. Retry in a moment or click Refresh."
+              : e instanceof Error
+                ? e.message
+                : "Failed to load signals"
           );
-        }
-        return r.json();
-      })
-      .then((j) => {
-        if (cancelled || !j || typeof j !== "object") return;
-        if (j.warming) return;
-        // Empty response with message → show error so user knows to Refresh
-        if (Array.isArray(j.signals) && j.signals.length === 0 && (j as unknown as Record<string, unknown>).message) {
-          setSignalsFetchErr((j as unknown as Record<string, unknown>).message as string);
-          return;
-        }
-        if (Array.isArray(j.signals)) setLazySignals(j.signals);
-      })
-      .catch((e) => {
-        if (!cancelled) setSignalsFetchErr(e instanceof Error ? e.message : "Failed to load signals");
-      })
-      .finally(() => {
-        if (!cancelled) setSignalsLoading(false);
-      });
+        })
+        .finally(() => {
+          clearTimeout(kill);
+          if (!cancelled && !retryTimer) setSignalsLoading(false);
+        });
+    };
+
+    load(0);
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
   }, [data.warming, data.signals_deferred, refreshCacheKey, activeTab, lazySignals]);
 
@@ -1384,9 +1423,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           </p>
             </div>
           </ToggleSection>
-          {(data.warming || (data.signals_deferred && signalsLoading)) && (
+          {(data.warming || (data.signals_deferred && signalsLoading && lazySignals === null)) && (
             <div className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-400 text-sm">
-              {data.warming ? "Waiting for first dashboard load…" : "Loading full signals table…"}
+              {data.warming
+                ? "Waiting for first dashboard load…"
+                : "Loading full signals table… (backend may still be recomputing — usually 1–5 min)"}
             </div>
           )}
           {data.signals_deferred && signalsFetchErr && (

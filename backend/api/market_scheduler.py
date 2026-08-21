@@ -8,7 +8,8 @@ Pre-market (Mon–Fri ET): 4:00, 6:00, 7:00, 8:00, 8:30, 9:00, 9:15
 
 Retail refresh (Mon–Fri ET):
   - Quote tick every DASHBOARD_QUOTE_TICK_MIN (default 5) during regular session (9:30–16:00)
-  - Signal warm every DASHBOARD_WARM_INTERVAL_MIN (default 30) from 8:30 through 16:00
+  - Signal warm every DASHBOARD_WARM_INTERVAL_MIN (default 120 on Railway / 60 local) from 8:30–16:00 only
+  - Outside that window: serve last post-EOD / last dashboard snapshot (no overnight full recompute)
 
 After-hours earnings (Mon–Fri ET): 4:30 PM and 6:00 PM — only if portfolio∪watchlist has earnings today
   → writes after_hours_latest.json + merges after_hours_earnings into dashboard cache
@@ -19,7 +20,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, time
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -47,12 +47,13 @@ def _dashboard_warm_interval_min() -> int:
     raw = (os.environ.get("DASHBOARD_WARM_INTERVAL_MIN") or "").strip()
     if raw:
         try:
-            return max(10, min(60, int(raw)))
+            return max(30, min(180, int(raw)))
         except ValueError:
             pass
+    # Railway default 2h — full ~100-ticker warm is memory-heavy; quotes still tick separately.
     if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
-        return 60
-    return 30
+        return 120
+    return 60
 
 
 def _dashboard_quote_tick_min() -> int:
@@ -60,7 +61,7 @@ def _dashboard_quote_tick_min() -> int:
     raw = (os.environ.get("DASHBOARD_QUOTE_TICK_MIN") or "").strip()
     if raw:
         try:
-            return max(1, min(15, int(raw)))
+            return max(1, min(30, int(raw)))
         except ValueError:
             pass
     return 5
@@ -78,13 +79,9 @@ def _scheduler_tz():
 
 def _is_signal_warm_window() -> bool:
     """Weekday 8:30–16:00 ET — includes pre-open warm at 8:30."""
-    from alerts.market_hours import ET, is_weekday
+    from alerts.market_hours import is_signal_warm_window
 
-    dt = datetime.now(ET)
-    if not is_weekday(dt):
-        return False
-    t = dt.timetz().replace(tzinfo=None)
-    return time(8, 30) <= t < time(16, 0)
+    return is_signal_warm_window()
 
 
 def _run_premarket_job() -> None:

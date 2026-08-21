@@ -2,7 +2,8 @@
 Redis cache layer for non–signal-critical data.
 
 Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
-  - dashboard: full dashboard JSON – TTL via DASHBOARD_CACHE_TTL_SECONDS (default 2700s / 45 min);
+  - dashboard: full dashboard JSON – TTL via DASHBOARD_CACHE_TTL_SECONDS
+    (intraday ~2h; overnight until next 8:30 ET warm window);
     avoids re-run on retry/refresh; warm scripts can pre-populate
   - backtest, next_day_backtest (24h)
   - economic_calendar (6h)
@@ -55,14 +56,34 @@ TTL_PRICE_TARGET_SCENARIOS = 15 * 60  # 15 min – internal scenario-EV engine (
 
 
 def _dashboard_ttl_seconds() -> int:
-    """Full dashboard JSON in Redis; default 45 min. Env DASHBOARD_CACHE_TTL_SECONDS (60–3600)."""
+    """
+    Full dashboard JSON in Redis.
+
+    - Env DASHBOARD_CACHE_TTL_SECONDS overrides (60–20h).
+    - Outside signal-warm window (after 16:00 ET / weekends): TTL until next 8:30 ET
+      so overnight page loads keep serving the post-EOD snapshot.
+    - Intraday: align with DASHBOARD_WARM_INTERVAL_MIN (default 2h on Railway).
+    """
     raw = (os.environ.get("DASHBOARD_CACHE_TTL_SECONDS") or "").strip()
     if raw:
         try:
-            return max(60, min(3600, int(raw)))
+            return max(60, min(20 * 3600, int(raw)))
         except ValueError:
             pass
-    return 45 * 60  # 45 min – aligns with 30 min UI auto-refresh + warm cron
+    try:
+        from alerts.market_hours import is_signal_warm_window, seconds_until_next_signal_warm_open
+
+        if not is_signal_warm_window():
+            # Cap weekend so Redis key still refreshes Monday morning window
+            return min(20 * 3600, max(6 * 3600, seconds_until_next_signal_warm_open()))
+    except Exception:
+        pass
+    try:
+        from api.market_scheduler import _dashboard_warm_interval_min
+
+        return max(30 * 60, min(3 * 3600, _dashboard_warm_interval_min() * 60))
+    except Exception:
+        return 2 * 3600
 
 
 TTL_THRIVE_PHASE2 = 15 * 60  # 15 min – intraday + FMP + composite gate (UI-friendly)

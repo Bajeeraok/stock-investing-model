@@ -56,6 +56,33 @@ def next_market_open(now: datetime | None = None, window: MarketWindow | None = 
     return dt
 
 
+# Signal warm window: pre-open through regular close (Mon–Fri ET). Outside this,
+# serve last EOD/dashboard snapshot — do not re-run ~100-ticker signal warm.
+SIGNAL_WARM_WINDOW = MarketWindow(start=time(8, 30), end=time(16, 0))
+
+
+def is_signal_warm_window(now: datetime | None = None) -> bool:
+    """Weekday 8:30–16:00 ET — heavy dashboard signal recompute allowed."""
+    w = SIGNAL_WARM_WINDOW
+    dt = (now or datetime.now(tz=w.tz)).astimezone(w.tz)
+    return is_weekday(dt) and is_in_window(dt, w)
+
+
+def next_signal_warm_open(now: datetime | None = None) -> datetime:
+    """Next weekday 8:30 ET (or now if already inside the warm window)."""
+    return next_market_open(now, SIGNAL_WARM_WINDOW)
+
+
+def seconds_until_next_signal_warm_open(now: datetime | None = None) -> int:
+    """Redis TTL helper: keep overnight snapshot until next 8:30 ET warm."""
+    w = SIGNAL_WARM_WINDOW
+    dt = (now or datetime.now(tz=w.tz)).astimezone(w.tz)
+    if is_signal_warm_window(dt):
+        return 0
+    target = next_signal_warm_open(dt)
+    return max(60, int((target - dt).total_seconds()))
+
+
 def seconds_until_next_scan(
     *,
     scan_interval_seconds: int,

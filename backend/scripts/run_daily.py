@@ -653,13 +653,16 @@ def run_signals(
     # hosts: 111 tickers × many workers can spike RSS into many GB of pandas frames.
     import os as _os
 
-    _max_w = 4 if (_os.environ.get("RAILWAY_ENVIRONMENT") or _os.environ.get("RAILWAY_SERVICE_NAME")) else 6
+    _max_w = 2 if (_os.environ.get("RAILWAY_ENVIRONMENT") or _os.environ.get("RAILWAY_SERVICE_NAME")) else 6
     _raw_w = (_os.environ.get("RUN_SIGNALS_MAX_WORKERS") or "").strip()
     if _raw_w:
         try:
             _max_w = max(1, min(16, int(_raw_w)))
         except ValueError:
             pass
+    # MEMORY_CONSTRAINED / Railway: never fan out too wide — concurrent 5y frames dominate RSS.
+    if (_os.environ.get("MEMORY_CONSTRAINED") or "").strip().lower() in ("1", "true", "yes", "on"):
+        _max_w = min(_max_w, 2)
     _workers = min(_max_w, len(watchlist)) if watchlist else 1
     from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _ac
     with _TPE(max_workers=_workers) as pool:

@@ -57,6 +57,10 @@ def _hmm_cache_max() -> int:
             return max(8, min(256, int(raw)))
         except ValueError:
             pass
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return 24
+    if (os.environ.get("MEMORY_CONSTRAINED") or "").strip().lower() in ("1", "true", "yes", "on"):
+        return 24
     return _HMM_MODEL_CACHE_MAX
 
 

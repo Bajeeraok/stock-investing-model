@@ -173,6 +173,17 @@ def _startup_background_refresh(delay_s: float = 10.0, max_age_min: float = 20.0
 
     time.sleep(max(1.0, delay_s))
 
+    try:
+        from alerts.market_hours import is_signal_warm_window
+
+        if not is_signal_warm_window():
+            logger.info(
+                "[startup] outside 8:30–16:00 ET — skip heavy refresh; serving last snapshot until next warm window"
+            )
+            return
+    except Exception:
+        pass
+
     # Check cache freshness before triggering
     try:
         from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
@@ -249,6 +260,12 @@ def startup():
             logger.warning("[startup] EOD catch-up failed: %s", e)
 
     threading.Thread(target=_startup_eod_catchup, name="eod-catchup", daemon=True).start()
+    try:
+        from signals.process_memory import start_idle_memory_trim_loop
+
+        start_idle_memory_trim_loop()
+    except Exception as e:
+        logger.warning("Idle memory trim failed to start: %s", e)
     try:
         from api import market_scheduler
 

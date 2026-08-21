@@ -1272,9 +1272,10 @@ async def get_dashboard(
     from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
     if refresh:
-        from api.dashboard_warm import compute_for_background_refresh
+        from api.dashboard_warm import compute_signal_warm_sync
 
-        started = trigger_background_refresh(compute_for_background_refresh)
+        # Manual Force refresh always allowed (including overnight); scheduled path stays gated.
+        started = trigger_background_refresh(compute_signal_warm_sync)
         if not started:
             logger.info("[dashboard] refresh=true coalesced — compute already running")
             return _shell_while_compute_running(coalesced=True)
@@ -1319,16 +1320,26 @@ async def get_dashboard(
         logger.debug("[dashboard] last snapshot read failed: %s", e)
 
     if stale is not None:
-        logger.info("[dashboard] serving stale snapshot; triggering background signal warm")
+        from alerts.market_hours import is_signal_warm_window
         from api.dashboard_warm import compute_for_background_refresh
 
-        trigger_background_refresh(compute_for_background_refresh)
+        # Overnight / weekend: serve last good snapshot — do not re-run ~100 tickers.
+        if is_signal_warm_window():
+            logger.info("[dashboard] serving stale snapshot; triggering background signal warm")
+            trigger_background_refresh(compute_for_background_refresh)
+        else:
+            logger.info(
+                "[dashboard] serving post-session snapshot (no overnight signal warm) — "
+                "next heavy recompute at weekday 8:30 ET"
+            )
         shell = build_shell_from_full(stale, include_full_signals=False)
         shell["stale"] = False
         shell["refresh_status"] = "running" if is_refresh_running() else get_refresh_status().get("status", "idle")
         df = shell.get("data_freshness") or {}
         if isinstance(df, dict):
             df["snapshot_source"] = "last_snapshot"
+            if not is_signal_warm_window():
+                df["serving_post_session"] = True
         shell = enrich_shell_snapshot_meta(shell)
         df2 = shell.get("data_freshness") or {}
         if isinstance(df2, dict):
@@ -1347,9 +1358,13 @@ async def get_dashboard(
         )
 
     if not is_refresh_running():
+        from alerts.market_hours import is_signal_warm_window
         from api.dashboard_warm import compute_for_background_refresh
 
-        trigger_background_refresh(compute_for_background_refresh)
+        if is_signal_warm_window():
+            trigger_background_refresh(compute_for_background_refresh)
+        else:
+            logger.info("[dashboard] no cache overnight — waiting for weekday 8:30 ET warm / manual Refresh")
     logger.info("[dashboard] serving warming shell (no cache yet; compute in progress)")
     shell = build_warming_shell(_load_config())
     shell["refresh_status"] = "running" if is_refresh_running() else job_status.get("status", "running")
@@ -3191,53 +3206,36 @@ async def get_dashboard_signals_panel():
         return out
 
     try:
-        from signals.cache import get_signals_panel
+        from signals.cache import get_signals_panel, get_universe_signals
 
-        # Priority 1: dedicated signals-panel key (written after every dashboard run, already stripped)
+        # Priority 1: dedicated signals-panel key (already stripped; survives Redis pressure)
         sp = get_signals_panel()
         if sp and isinstance(sp.get("signals"), list) and len(sp["signals"]) > 0:
             logger.info("[signals-panel] signals_panel key hit: %d rows", len(sp["signals"]))
             return {"signals": sp["signals"]}
 
-        logger.info("[signals-panel] signals_panel key miss — falling back to dashboard cache")
+        # Priority 2: compact universe_signals — never deserialize the full dashboard blob
+        # (multi‑MB JSON under memory pressure hangs the single worker for minutes).
+        logger.info("[signals-panel] signals_panel miss — trying universe_signals")
+        try:
+            uni = get_universe_signals()
+            if uni and isinstance(uni.get("rows"), list) and len(uni["rows"]) > 0:
+                slim = _slim(uni["rows"])
+                logger.info("[signals-panel] universe_signals hit: %d rows", len(slim))
+                return {"signals": slim}
+        except Exception as e:
+            logger.warning("[signals-panel] universe_signals fallback error: %s", e)
 
-        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+        if _is_dashboard_warming():
+            logger.info("[signals-panel] warming — compact caches empty")
+            return {"signals": [], "warming": True}
 
-        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
-        if cached is None:
-            if _is_dashboard_warming():
-                logger.info("[signals-panel] dashboard warming — returning empty")
-                return {"signals": [], "warming": True}
-            raise HTTPException(
-                status_code=503,
-                detail="Dashboard cache unavailable. Load the dashboard once or click Refresh, then open Signals again.",
-            )
-
-        sigs = cached.get("signals")
-        cache_label = "dashboard_cache"
-
-        # Fallback: dashboard cache signals empty → try universe_signals (compact but has key fields)
-        if not isinstance(sigs, list) or len(sigs) == 0:
-            logger.info("[signals-panel] dashboard cache signals empty — trying universe_signals")
-            try:
-                from signals.cache import get_universe_signals
-                uni = get_universe_signals()
-                if uni and uni.get("rows"):
-                    sigs = uni["rows"]
-                    cache_label = "universe_signals"
-                    logger.info("[signals-panel] universe_signals fallback: %d rows", len(sigs))
-            except Exception as e:
-                logger.warning("[signals-panel] universe_signals fallback error: %s", e)
-
-        if not isinstance(sigs, list) or len(sigs) == 0:
-            if _is_dashboard_warming():
-                return {"signals": [], "warming": True}
-            logger.warning("[signals-panel] all sources empty; dashboard may need a full Refresh")
-            return {"signals": [], "warming": False, "message": "No signals found. Click Refresh to populate."}
-
-        slim = _slim(sigs)
-        logger.info("[signals-panel] returning %d rows (source=%s)", len(slim), cache_label)
-        return {"signals": slim}
+        logger.warning("[signals-panel] compact caches empty; dashboard may need a full Refresh")
+        return {
+            "signals": [],
+            "warming": False,
+            "message": "No signals found. Click Refresh to populate.",
+        }
     except HTTPException:
         raise
     except Exception as e:

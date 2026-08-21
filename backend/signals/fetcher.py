@@ -340,7 +340,7 @@ def _ohlcv_cache_max_entries() -> int:
             return max(50, min(5000, int(raw)))
         except ValueError:
             pass
-    return 150 if _memory_constrained_host() else 400
+    return 80 if _memory_constrained_host() else 400
 
 
 class _CacheEntry(NamedTuple):

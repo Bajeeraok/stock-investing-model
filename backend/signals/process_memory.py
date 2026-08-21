@@ -23,7 +23,7 @@ def dashboard_parallel_max_workers() -> int:
         except ValueError:
             pass
     if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
-        return 6
+        return 4
     return 12
 
 
@@ -180,3 +180,70 @@ def memory_snapshot() -> dict[str, Any]:
     except Exception as e:
         snap["lgbm_model_cache"] = {"error": str(e)}
     return snap
+
+
+def _idle_trim_interval_sec() -> float:
+    raw = (os.environ.get("MEMORY_IDLE_TRIM_SEC") or "").strip()
+    if raw:
+        try:
+            return max(60.0, min(3600.0, float(raw)))
+        except ValueError:
+            pass
+    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_SERVICE_NAME"):
+        return 900.0  # 15 min
+    return 0.0  # off locally unless env set
+
+
+def _idle_trim_rss_mb() -> float:
+    raw = (os.environ.get("MEMORY_IDLE_TRIM_RSS_MB") or "").strip()
+    if raw:
+        try:
+            return max(400.0, float(raw))
+        except ValueError:
+            pass
+    return 1200.0
+
+
+def start_idle_memory_trim_loop() -> bool:
+    """
+    Daemon: when no dashboard refresh is running and RSS is high, aggressively
+    release in-process caches + malloc_trim. Does not fix native fragmentation
+    entirely, but knocks the sawtooth down between warms.
+    """
+    import threading
+    import time
+
+    interval = _idle_trim_interval_sec()
+    if interval <= 0:
+        return False
+
+    def _loop() -> None:
+        while True:
+            time.sleep(interval)
+            try:
+                from api.dashboard_job import is_refresh_running
+
+                if is_refresh_running():
+                    continue
+            except Exception:
+                pass
+            rss = process_rss_mb()
+            if rss is None or rss < _idle_trim_rss_mb():
+                continue
+            try:
+                stats = release_process_caches(aggressive=True)
+                logger.info(
+                    "[memory] idle trim rss_before=%.0f stats=%s",
+                    rss,
+                    {k: stats.get(k) for k in ("ohlcv", "hmm_models", "lgbm_models", "rss_mb", "malloc_trim")},
+                )
+            except Exception:
+                logger.debug("[memory] idle trim failed", exc_info=True)
+
+    threading.Thread(target=_loop, name="memory-idle-trim", daemon=True).start()
+    logger.info(
+        "[memory] idle trim loop on interval=%.0fs threshold_rss_mb=%.0f",
+        interval,
+        _idle_trim_rss_mb(),
+    )
+    return True
