@@ -134,6 +134,32 @@ def _invalidation(horizon: dict, mode: str, stop_loss: float | None, spot: float
     return inv
 
 
+
+def _stop_below_entry_floor(
+    stop_loss: float | None,
+    entry_band,
+    spot: float,
+) -> float | None:
+    """Tactical stop must sit below the add-zone floor (never inside the band).
+
+    Skip when spot is already above the band (Owner wait-above / stretch): stop
+    then legitimately sits between spot and a deeper harmonized floor.
+    """
+    if stop_loss is None:
+        return None
+    stop = float(stop_loss)
+    if entry_band is None:
+        return stop
+    # Wait-above: do not yank stop under a deep Owner floor.
+    if spot > float(entry_band.hi) + 1e-6:
+        return stop
+    floor = float(entry_band.lo)
+    if stop < floor - 1e-9:
+        return stop
+    buf = max(spot * 0.015, floor * 0.008, 0.05) if spot > 0 else max(floor * 0.008, 0.05)
+    return round(floor - buf, 2)
+
+
 def _owner_entry_band(horizons: dict, long_h: dict) -> Band | None:
     """T1 ceiling + floor at least as deep as swing/scout add levels."""
     band = _band_from_entry_zone(long_h.get("entry_zone"))
@@ -343,6 +369,8 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         st_band = entry_band or st_band
     bridge_band, bridge_levels = _bridge_band_and_levels(horizon, mode)
     stop_loss = horizon.get("stop_loss")
+    if stop_loss is not None:
+        stop_loss = _stop_below_entry_floor(float(stop_loss), entry_band, spot)
     inv = _invalidation(horizon, mode, stop_loss, spot)
     rr = None
     if horizon.get("risk_reward") is not None:

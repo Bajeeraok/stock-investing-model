@@ -145,8 +145,10 @@ def adjust_scenario_probabilities(
             adj_prob = s.base_probability * inv_factor
             adj_prob = max(adj_prob, min_bear_prob)
         else:
-            # Neutral scenarios (base_case) — small adjustment toward bear in bear regime
+            # Neutral scenarios (base_case) — small adjustment toward bear in bear regime.
+            # Floor so UI never shows "Base Case · 0% prob" after renormalization.
             adj_prob = s.base_probability * (1.0 + (factor - 1.0) * 0.3)
+            adj_prob = max(adj_prob, max(0.08, 0.35 * float(s.base_probability or 0.0)))
 
         raw_adjusted.append((s, adj_prob))
 
@@ -158,8 +160,18 @@ def adjust_scenario_probabilities(
     adjusted_scenarios = []
     weighted_ev_total = 0.0
 
+    # Re-floor base after renorm so UI never shows Base Case · 0% prob.
+    POST_RENORM_BASE_FLOOR = 0.08
+    renormed = []
     for s, raw_prob in raw_adjusted:
         adj_prob = raw_prob / total
+        if s.scenario_type == "base_case" or "base" in (s.name or "").lower():
+            adj_prob = max(adj_prob, POST_RENORM_BASE_FLOOR)
+        renormed.append((s, adj_prob))
+    total2 = sum(p for _, p in renormed) or 1.0
+
+    for s, raw_prob in renormed:
+        adj_prob = raw_prob / total2
         adj_factor = adj_prob / s.base_probability if s.base_probability > 0 else 1.0
         wev = adj_prob * s.return_pct
         weighted_ev_total += wev

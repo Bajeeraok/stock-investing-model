@@ -388,7 +388,7 @@ export function buildGatesFromInvestorSummary(
 
   const assessmentPct =
     currentPrice > 0 && inv.fair_value > 0
-      ? ((inv.fair_value - currentPrice) / currentPrice) * 100
+      ? ((inv.fair_value - currentPrice) / inv.fair_value) * 100
       : 0;
   const band = inv.trade_roadmap?.tldr?.model_confidence_band?.match(/(\d+)\s*-\s*(\d+)/);
   const confidenceMid =
@@ -691,6 +691,9 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
                   </span>
                 </div>
                 <p className="text-slate-300 leading-snug pl-0 sm:pl-0">{g.detail}</p>
+                {g.id === "confidence" ? (
+                  <p className="text-[10px] text-slate-500 mt-0.5">Sizing signal — not counted in the 4-of-4 go/no-go total.</p>
+                ) : null}
               </div>
             </div>
           </li>
@@ -2121,7 +2124,7 @@ export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentP
     const pct =
       ra.assessment_pct ??
       (currentPrice > 0 && summary.fair_value > 0
-        ? ((summary.fair_value - currentPrice) / currentPrice) * 100
+        ? ((summary.fair_value - currentPrice) / summary.fair_value) * 100
         : 0);
     const good =
       pct >= 5
@@ -2141,7 +2144,7 @@ export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentP
   }
 
   const fv = summary.fair_value;
-  const pct = currentPrice > 0 ? ((fv - currentPrice) / currentPrice) * 100 : 0;
+  const pct = currentPrice > 0 && fv > 0 ? ((fv - currentPrice) / fv) * 100 : 0;
   const oa = summary.one_answer;
   const short = summary.horizons.short;
 

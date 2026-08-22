@@ -222,7 +222,7 @@ export function DecisionDeck({
     short,
     medium,
     long,
-    currentPrice > 0 ? ((summary.fair_value - currentPrice) / currentPrice) * 100 : 0,
+    currentPrice > 0 && summary.fair_value > 0 ? ((summary.fair_value - currentPrice) / summary.fair_value) * 100 : 0,
     currentPrice,
     regime_bull_pct,
     rsi ?? null

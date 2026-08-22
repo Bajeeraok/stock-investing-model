@@ -118,7 +118,7 @@ export function buildExecutionPlanViewModel(
   const primary = horizonForMode(mode, horizons);
 
   const assessmentPct =
-    currentPrice > 0 && fair_value > 0 ? ((fair_value - currentPrice) / currentPrice) * 100 : 0;
+    currentPrice > 0 && fair_value > 0 ? ((fair_value - currentPrice) / fair_value) * 100 : 0; // MOS vs FV
 
   const tldr = trade_roadmap?.tldr ?? null;
   const dual = tldr?.dual_signal ?? null;

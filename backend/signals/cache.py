@@ -11,7 +11,7 @@ Cached (when REDIS_URL or REDIS_PRIVATE_URL etc. is set):
   - insider_stats, financial_estimates, key_metrics (12h)
   - long_horizon_risk (24h)
   - target_bands (4–24h, move-dependent) – prior ST/MT/LT for optional trailing re-anchor
-  - ticker_detail (5 min), edgar_insider_flow (12h)
+  - ticker_detail (5 min), edgar_insider_flow (24h)
   - thrive_phase2 (15 min) – GET /api/thrive-phase2
   - earnings_quality (14d; 1d when earnings ≤7 days away) – statements move quarterly
   - institutional_bundle (12h) – insider weighted, short float %, ownership %, 13F trend
@@ -47,7 +47,7 @@ TTL_NEXT_DAY_BACKTEST = 24 * 3600  # 24h – next-day bias state stats
 TTL_LONG_HORIZON_RISK = 24 * 3600  # 24h – max drawdown, stress bear (monthly data)
 TTL_TICKER_DETAIL = 5 * 60  # 5 min – full ticker detail (many fetches; repeat views)
 TTL_CONFIDENCE = 5 * 60  # 5 min – 7-layer confidence (shared by ticker detail + /confidence route)
-TTL_EDGAR_INSIDER = 12 * 3600  # 12h – Form 4 insider flow (SEC EDGAR)
+TTL_EDGAR_INSIDER = 24 * 3600  # 24h – Form 4 insider flow (once-daily refresh)
 TTL_NEWS_GENERAL = 3600  # 1h – FMP general news for pre-IPO keyword filter
 TTL_EARNINGS_QUALITY = 14 * 24 * 3600  # 14d – statements/revisions move quarterly
 TTL_EARNINGS_QUALITY_NEAR = 24 * 3600  # 1d – earnings nearby: re-fetch daily to catch new report
@@ -379,6 +379,21 @@ def _set_persistent(key: str, value: Any) -> bool:
         return False
 
 
+def delete_cached(key: str) -> bool:
+    """Delete one Redis key. Returns True when deleted or already absent."""
+    r = _redis_client()
+    if r is None:
+        return False
+    try:
+        r.delete(key)
+        return True
+    except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
+        logger.warning("Cache delete failed for %s: %s", key[:50], e)
+        return False
+
+
 def cache_key(prefix: str, *parts: str) -> str:
     """Build cache key: prefix:part1:part2..."""
     return ":".join([prefix] + [str(p).upper() for p in parts if p])
@@ -660,18 +675,46 @@ def cached_next_day_backtest(ticker: str, fetch_fn):
     return out
 
 
-def cached_edgar_insider_flow(tickers: list[str], fetch_fn):
-    """Cache SEC EDGAR insider flow (Form 4) by watchlist. TTL 12h."""
+def cached_edgar_insider_flow(tickers: list[str], fetch_fn, force_refresh: bool = False):
+    """Cache SEC EDGAR insider flow (Form 4) by watchlist. TTL 24h (daily refresh)."""
     import hashlib
     tag = ",".join(sorted(t.strip().upper() for t in tickers if t)[:80])
-    key = cache_key("edgar_insider", hashlib.md5(tag.encode()).hexdigest()[:16])
-    hit = get_cached(key)
-    if hit is not None and isinstance(hit, dict):
-        return hit
+    # v2: newest-first Form 4 sort + daily TTL (busts pre-fix Redis blobs stuck on June/July).
+    key = cache_key("edgar_insider", "v2", hashlib.md5(tag.encode()).hexdigest()[:16])
+    if not force_refresh:
+        hit = get_cached(key)
+        if hit is not None and isinstance(hit, dict):
+            return hit
     out = fetch_fn()
-    if out and isinstance(out, dict):
+    # Do not pin error payloads for a full day.
+    if out and isinstance(out, dict) and not out.get("message"):
         set_cached(key, out, TTL_EDGAR_INSIDER)
     return out
+
+
+def invalidate_edgar_insider_caches(tickers: list[str] | None = None) -> int:
+    """Drop Form 4 flow cache (+ analysis slice/bundle) so the next load re-fetches EDGAR."""
+    import hashlib
+    n = 0
+    if tickers:
+        tag = ",".join(sorted(t.strip().upper() for t in tickers if t)[:80])
+        key = cache_key("edgar_insider", "v2", hashlib.md5(tag.encode()).hexdigest()[:16])
+        if delete_cached(key):
+            n += 1
+    else:
+        r = _redis_client()
+        if r is not None:
+            try:
+                for key in r.scan_iter(match="edgar_insider:*", count=100):
+                    if delete_cached(key):
+                        n += 1
+            except Exception as e:
+                logger.warning("invalidate_edgar_insider_caches scan failed: %s", e)
+    if delete_cached("analysis:slice:insider_flow"):
+        n += 1
+    if delete_cached(ANALYSIS_BUNDLE_KEY):
+        n += 1
+    return n
 
 
 def get_cached_dashboard() -> dict | None:
@@ -1010,6 +1053,63 @@ def list_eod_dates_redis() -> list[str]:
             _reset_redis_pool()
         logger.debug("Redis EOD list failed: %s", e)
         return []
+
+
+def build_eod_snapshot_index() -> list[dict]:
+    """Live Redis ∪ disk EOD date index (no blob reads).
+
+    Dashboard Force refresh often reuses a cached ``eod_snapshots`` list baked
+    into the last full compute — that list can stay stuck on an old max date
+    (e.g. 2026-08-02) while ``GET /api/eod/status`` already sees today's file.
+    Call this on every shell serve so the UI file list matches status.
+    """
+    by_date: dict[str, dict] = {}
+    try:
+        for date_str in list_eod_dates_redis() or []:
+            if not date_str or len(date_str) < 10:
+                continue
+            by_date[date_str] = {
+                "date": date_str,
+                "size_bytes": 0,
+                "run_date": None,
+                "tickers_count": 0,
+                "universe": None,
+                "source": "redis",
+            }
+    except Exception as e:
+        logger.debug("EOD Redis index failed: %s", e)
+
+    try:
+        from config_loader import get_data_root
+
+        eod_dir = get_data_root() / "eod"
+        if eod_dir.exists():
+            for p in eod_dir.glob("*.json"):
+                stem = p.stem
+                if len(stem) != 10 or stem[4] != "-" or stem[7] != "-":
+                    continue
+                try:
+                    size = p.stat().st_size
+                except Exception:
+                    size = 0
+                prev = by_date.get(stem)
+                if prev is None:
+                    by_date[stem] = {
+                        "date": stem,
+                        "size_bytes": size,
+                        "run_date": None,
+                        "tickers_count": 0,
+                        "universe": None,
+                        "source": "disk",
+                    }
+                else:
+                    prev["size_bytes"] = size or prev.get("size_bytes") or 0
+                    if prev.get("source") == "redis":
+                        prev["source"] = "redis+disk"
+    except Exception as e:
+        logger.debug("EOD disk index failed: %s", e)
+
+    return sorted(by_date.values(), key=lambda x: x["date"], reverse=True)
 
 
 def delete_eod_snapshot_redis(date_str: str) -> bool:

@@ -729,7 +729,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
             if watchlist_tickers_for_insider:
                 out = cached_edgar_insider_flow(
                     watchlist_tickers_for_insider,
-                    lambda: run_insider_flow(watchlist_tickers_for_insider, max_form4_per_ticker=2, days_lookback=90),
+                    lambda: run_insider_flow(watchlist_tickers_for_insider, max_form4_per_ticker=5, days_lookback=90),
                 )
                 return ("insider_flow", out if isinstance(out, dict) else {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": "No data"})
             return ("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
@@ -1762,50 +1762,18 @@ def _compute_full_dashboard_sync() -> dict:
     # def _task_pre_market(): ...
 
     def _task_eod_redis():
-        # Lightweight listing only — never deserialize full multi‑MB EOD blobs here.
-        # Loading every date via get_eod_snapshot_redis caused Redis socket timeouts
-        # (``Timeout reading from socket``) and left the UI stuck on an old date.
+        # Live Redis ∪ disk index — never deserialize full multi‑MB blobs here.
         eod_snapshots_out: list = []
         try:
-            from signals.cache import list_eod_dates_redis
-            seen: set = set()
-            for date_str in list_eod_dates_redis() or []:
-                if not date_str or date_str in seen:
-                    continue
-                seen.add(date_str)
-                eod_snapshots_out.append({
-                    "date": date_str,
-                    "size_bytes": 0,
-                    "run_date": None,
-                    "tickers_count": 0,
-                    "universe": None,
-                    "source": "redis",
-                })
-            eod_dir = data_root / "eod"
-            if eod_dir.exists():
-                for p in sorted(eod_dir.glob("*.json"), reverse=True):
-                    try:
-                        stem = p.stem
-                        if stem in seen:
-                            continue
-                        if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
-                            seen.add(stem)
-                            eod_snapshots_out.append({
-                                "date": stem,
-                                "size_bytes": p.stat().st_size,
-                                "run_date": None,
-                                "tickers_count": 0,
-                                "universe": None,
-                                "source": "disk",
-                            })
-                    except Exception:
-                        pass
-            eod_snapshots_out.sort(key=lambda x: x["date"], reverse=True)
+            from signals.cache import build_eod_snapshot_index
+
+            eod_snapshots_out = build_eod_snapshot_index()
         except Exception as e:
             logger.debug("EOD snapshot list failed: %s", e)
         redis_status_out = {"configured": False, "connected": False}
         try:
             from signals.cache import redis_status as _redis_status
+
             redis_status_out = _redis_status()
         except Exception:
             pass
@@ -1818,7 +1786,7 @@ def _compute_full_dashboard_sync() -> dict:
             if watchlist_tickers_for_insider:
                 out = cached_edgar_insider_flow(
                     watchlist_tickers_for_insider,
-                    lambda: run_insider_flow(watchlist_tickers_for_insider, max_form4_per_ticker=2, days_lookback=90),
+                    lambda: run_insider_flow(watchlist_tickers_for_insider, max_form4_per_ticker=5, days_lookback=90),
                 )
                 return ("insider_flow", out if isinstance(out, dict) else {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": "No data"})
             return ("insider_flow", {"insider_buys": [], "insider_sells": [], "ticker_activities": [], "message": None})
@@ -4023,8 +3991,14 @@ async def get_ticker_narrative(
 
         summary = build_summary_tiered(pkt, llm=llm, on_view=True)
         if summary.get("status") == "blocked":
-            logger.warning("[narrative] %s (%s) blocked: %s", sym, mode_norm, summary.get("errors"))
-            return {"status": "blocked", "ticker": sym, "mode": mode_norm}
+            errs = summary.get("errors") or []
+            logger.warning("[narrative] %s (%s) blocked: %s", sym, mode_norm, errs)
+            return {
+                "status": "blocked",
+                "ticker": sym,
+                "mode": mode_norm,
+                "errors": errs,
+            }
         return summary
 
     try:
@@ -4419,16 +4393,22 @@ def eod_status():
     eod_uni = get_eod_signal_universe(config)
     dates: list[str] = []
     try:
-        from signals.cache import list_eod_dates_redis
+        from signals.cache import build_eod_snapshot_index
 
-        dates = list_eod_dates_redis() or []
+        # Union Redis + disk (never Redis-only — that hid newer files on disk).
+        dates = [s["date"] for s in build_eod_snapshot_index() if s.get("date")]
     except Exception:
-        pass
-    if not dates:
+        try:
+            from signals.cache import list_eod_dates_redis
+
+            dates = list(list_eod_dates_redis() or [])
+        except Exception:
+            dates = []
         eod_dir = get_data_root() / "eod"
         if eod_dir.exists():
-            dates = [p.stem for p in eod_dir.glob("*.json") if p.stem[:4].isdigit()]
-    # Redis list_eod_dates_redis is descending; disk glob is unordered — always take max.
+            for p in eod_dir.glob("*.json"):
+                if p.stem[:4].isdigit() and p.stem not in dates:
+                    dates.append(p.stem)
     latest = max(dates) if dates else None
     today_path = get_data_root() / "eod" / f"{today_est}.json"
     scheduler: dict = {}
@@ -4484,6 +4464,22 @@ def eod_status():
             "POST /api/eod/run?force=true&refresh_dashboard=true&universe=eod re-runs today's snapshot "
             "and refreshes the dashboard cache (use after 8pm scheduler if you want a fresh pass)."
         ),
+    }
+
+
+@router.get("/eod/snapshots")
+def eod_snapshots_list():
+    """Live Redis ∪ disk EOD file index (no blob loads). Used by the Analysis panel."""
+    from config_loader import get_data_root
+    from signals.cache import build_eod_snapshot_index
+
+    snaps = build_eod_snapshot_index()
+    latest = snaps[0]["date"] if snaps else None
+    return {
+        "latest_date": latest,
+        "count": len(snaps),
+        "snapshots": snaps,
+        "data_root": str(get_data_root()),
     }
 
 

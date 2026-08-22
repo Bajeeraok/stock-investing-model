@@ -157,9 +157,10 @@ def _run_insider_flow_edgartools(
     ensure_edgar_identity(config)
     from signals.time_et import now_et
 
+    as_of = now_et()
     cutoff = None
     if days_lookback:
-        cutoff = (now_et() - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
+        cutoff = (as_of - timedelta(days=days_lookback)).strftime("%Y-%m-%d")
 
     ticker_activities: list[dict] = []
     insider_buys: list[dict] = []
@@ -176,13 +177,22 @@ def _run_insider_flow_edgartools(
             continue
         if filings is None or len(filings) == 0:
             continue
+        # Newest first — unsorted EDGAR lists were burning the per-ticker cap on old Form 4s.
+        try:
+            filing_list = list(filings)
+        except TypeError:
+            filing_list = [f for f in filings]
+        filing_list.sort(
+            key=lambda f: str(getattr(f, "filing_date", "") or "")[:10],
+            reverse=True,
+        )
         n = 0
-        for filing in filings:
+        for filing in filing_list:
             if n >= max_form4_per_ticker:
                 break
             fdate = str(getattr(filing, "filing_date", "") or "")[:10]
             if cutoff and fdate and fdate < cutoff:
-                continue
+                break  # remaining are older after sort
             try:
                 form4 = filing.obj()
             except Exception as exc:
@@ -217,12 +227,17 @@ def _run_insider_flow_edgartools(
                 })
             n += 1
 
+    insider_buys.sort(key=lambda r: r.get("filing_date") or "", reverse=True)
+    insider_sells.sort(key=lambda r: r.get("filing_date") or "", reverse=True)
     return {
         "ticker_activities": ticker_activities[:100],
         "insider_buys": insider_buys[:80],
         "insider_sells": insider_sells[:80],
         "message": None,
         "parser": "edgartools",
+        "fetched_at": as_of.isoformat(),
+        "as_of_date": as_of.strftime("%Y-%m-%d"),
+        "cache_ttl_hours": 24,
     }
 
 
@@ -363,12 +378,19 @@ def _run_insider_flow_legacy(
                     "shares": sells,
                     "edgar_url": edgar_url,
                 })
+    from signals.time_et import now_et as _now_et
+    _as_of = _now_et()
+    insider_buys.sort(key=lambda r: r.get("filing_date") or "", reverse=True)
+    insider_sells.sort(key=lambda r: r.get("filing_date") or "", reverse=True)
     return {
         "ticker_activities": ticker_activities[:100],
         "insider_buys": insider_buys[:80],
         "insider_sells": insider_sells[:80],
         "message": None,
         "parser": "legacy_xml",
+        "fetched_at": _as_of.isoformat(),
+        "as_of_date": _as_of.strftime("%Y-%m-%d"),
+        "cache_ttl_hours": 24,
     }
 
 
@@ -398,4 +420,28 @@ def run_insider_flow(
         tickers,
         max_form4_per_ticker=max_form4_per_ticker,
         days_lookback=days_lookback,
+    )
+
+
+def refresh_insider_flow_daily(
+    tickers: list[str],
+    *,
+    config: dict | None = None,
+    max_form4_per_ticker: int = MAX_FORM4_PER_TICKER,
+    days_lookback: int | None = 90,
+) -> dict[str, Any]:
+    """Bust Redis cache and re-fetch Form 4 flow (intended for once-daily EOD)."""
+    from signals.cache import cached_edgar_insider_flow, invalidate_edgar_insider_caches
+
+    cleaned = [t.strip().upper() for t in (tickers or []) if t and str(t).strip()]
+    invalidate_edgar_insider_caches(cleaned or None)
+    return cached_edgar_insider_flow(
+        cleaned,
+        lambda: run_insider_flow(
+            cleaned,
+            max_form4_per_ticker=max_form4_per_ticker,
+            days_lookback=days_lookback,
+            config=config,
+        ),
+        force_refresh=True,
     )

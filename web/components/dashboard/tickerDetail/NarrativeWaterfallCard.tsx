@@ -48,6 +48,7 @@ export type NarrativeWaterfall = {
   narrative?: string;
   narrative_status?: "ok" | "cached" | "skipped" | "fallback";
   packet_hash?: string;
+  errors?: string[];
 };
 
 const NARRATIVE_TIMEOUT_MS = 30000;
@@ -78,8 +79,22 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
     };
   }, [ticker, mode]);
 
-  if (data?.status === "blocked") return null;
   if (!loading && !data) return null;
+
+  if (data?.status === "blocked") {
+    return (
+      <ReferenceCard
+        icon={Sparkles}
+        title="What to do"
+        description="Plan levels did not line up for this persona — notes are withheld until the packet is consistent."
+        body={
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Trading notes unavailable in this mode right now. Try Swing or Scout, or refresh after the next signal run.
+          </p>
+        }
+      />
+    );
+  }
 
   const scan = data?.retail_scan;
   const notes = (data?.trading_notes || data?.narrative || "").trim();

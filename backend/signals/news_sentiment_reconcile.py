@@ -12,7 +12,7 @@ from typing import Any
 _BEAR_TITLE = re.compile(
     r"\b(drop|drops|dropped|plunge|plunges|plunged|tumble|tumbles|slump|slumps|"
     r"warning|warnings|miss|misses|downgrade|lawsuit|probe|fraud|selloff|"
-    r"crash|layoff)\b",
+    r"crash|layoff|competitive|rival|takes share|losing share|custom silicon|google tpu|in-house chip)\b",
     re.I,
 )
 _BULL_TITLE = re.compile(
@@ -97,20 +97,38 @@ def reconcile_news_display(
         (chip == "bullish" and evidence == "bearish")
         or (chip == "bearish" and evidence == "bullish")
     )
+    # Stormy tape + bullish chip without clear bullish headline evidence → Mixed
+    if (
+        not disagree
+        and chip == "bullish"
+        and evidence in ("unknown", "mixed")
+        and hmm_bull_pct is not None
+        and float(hmm_bull_pct) < 20.0
+    ):
+        disagree = True
 
     display = (sentiment_label or "Neutral").strip() or "Neutral"
     caveat = None
     if disagree:
         display = "Mixed"
-        if chip == "bullish":
+        if chip == "bullish" and evidence == "bearish":
             caveat = (
                 "Headlines look negative while the news chip is bullish — "
                 "treat this as a caveat, not a buy signal."
             )
-        else:
+        elif chip == "bearish" and evidence == "bullish":
             caveat = (
                 "Headlines look constructive while the news chip is bearish — "
                 "treat this as a caveat, not a trim signal."
+            )
+        elif chip == "bullish":
+            caveat = (
+                "News chip is bullish but tape is stormy and headlines are not clearly "
+                "constructive — treat as Mixed, not a buy signal."
+            )
+        else:
+            caveat = (
+                "News chip disagrees with headline/tape evidence — treat as a caveat."
             )
         if hmm_bull_pct is not None:
             caveat += f" Regime is {float(hmm_bull_pct):.0f}% bull."

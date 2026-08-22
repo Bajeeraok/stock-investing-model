@@ -1098,7 +1098,7 @@ export function InvestorDecisionSummarySection({
     trader_roadmap,
     investor_roadmap,
   } = summary;
-  const assessmentPct = currentPrice > 0 ? ((fair_value - currentPrice) / currentPrice) * 100 : 0;
+  const assessmentPct = currentPrice > 0 && fair_value > 0 ? ((fair_value - currentPrice) / fair_value) * 100 : 0; // MOS vs FV (not upside-to-FV)
   const short = horizons.short;
   const medium = horizons.medium;
   const long = horizons.long;
@@ -1198,7 +1198,7 @@ export function InvestorDecisionSummarySection({
   const gateRows: Array<{ label: string; value: number | null; target: number; unit: "%" | "pts" }> = [
     { label: "Regime", value: regime_bull_pct ?? null, target: 60, unit: "%" },
     { label: "Pattern", value: pattern_score ?? null, target: 60, unit: "pts" },
-    { label: "Confidence", value: confidenceBandMid ?? null, target: 55, unit: "%" },
+    { label: "Confidence (sizing, not in 4-of-4)", value: confidenceBandMid ?? null, target: 55, unit: "%" },
   ];
   const gateTone = (v: number | null, t: number): string =>
     v == null
@@ -1611,7 +1611,7 @@ export function InvestorDecisionSummarySection({
             const pass = val != null && val >= g.target;
             const isRegime = g.label === "Regime";
             const isPattern = g.label === "Pattern";
-            const isConfidenceRow = g.label === "Confidence";
+            const isConfidenceRow = g.label.startsWith("Confidence");
             const confidenceRowHot = isConfidenceRow && confidenceNearlyThere;
             return React.createElement(
               "div",

@@ -48,6 +48,7 @@ import {
   StickyTickerQuoteBar,
 } from "./tradingPlatformUX";
 import { apiUrl, fetchJsonWithRetry, formatFetchError, isMobileLikeBrowser } from "@/lib/apiBase";
+import { pctPriceVsFairValue } from "@/lib/valuationPct";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -658,11 +659,14 @@ export function TickerDetailModal({
     };
   }, [detail]);
 
+  // Header "vs FV" must be (price−FV)/FV — NOT (FV−price)/price (upside-to-FV),
+  // which was misread as MOS surplus (AVGO +42% badge vs true −30% discount).
+  // Header "vs FV" = (price-FV)/FV. Not (FV-price)/price (upside-to-FV / false MOS).
   const assessmentPctForHeader = useMemo(() => {
     const inv = detail?.investor_summary;
     const cp = effectivePrice;
-    if (!inv || !cp) return 0;
-    return ((inv.fair_value - cp) / cp) * 100;
+    if (!inv || !cp || !(inv.fair_value > 0)) return 0;
+    return pctPriceVsFairValue(cp, inv.fair_value);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail, effectivePrice]);
 
@@ -747,7 +751,8 @@ export function TickerDetailModal({
                   <p
                     className={clsx(
                       "text-[10px] font-mono tabular-nums",
-                      assessmentPctForHeader >= 0 ? "text-teal-400" : "text-red-400",
+                      // (price-FV)/FV: negative = discount (constructive), positive = premium
+                      assessmentPctForHeader <= 0 ? "text-teal-400" : "text-amber-400",
                     )}
                   >
                     {assessmentPctForHeader >= 0 ? "+" : "−"}

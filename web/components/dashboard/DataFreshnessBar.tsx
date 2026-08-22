@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Info, Clock } from "lucide-react";
 import { clsx } from "clsx";
-import { formatSnapshotAge, formatSnapshotEt, snapshotAgeTone } from "@/lib/dashboardCache";
+import { formatSnapshotAge, formatSnapshotEt, snapshotAgeTone, isUsEquityRth } from "@/lib/dashboardCache";
 
 export type DataFreshness = {
   as_of_et?: string;
@@ -70,6 +70,11 @@ function SnapshotMetaLine({
         <span className="text-slate-600">·</span>
         <span className="text-slate-400">Signals as of</span>
         <span className="font-mono text-slate-200">{signalsLabel}</span>
+        {!isUsEquityRth() && (
+          <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
+            After close
+          </span>
+        )}
         {data.serving_stale && (
           <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
             Loading first snapshot

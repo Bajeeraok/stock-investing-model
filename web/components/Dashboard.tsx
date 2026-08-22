@@ -10,7 +10,7 @@ import type {
   PortfolioDoctorRecommendation,
 } from "@/app/page";
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
-import { formatSnapshotAge, formatSnapshotEt } from "@/lib/dashboardCache";
+import { formatSnapshotAge, formatSnapshotEt, formatFreshnessLabel, isUsEquityRth } from "@/lib/dashboardCache";
 import { clsx } from "clsx";
 import {
   AddTickerBar,
@@ -843,8 +843,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 }
               >
                 {data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
-                  ? `Prices ${formatSnapshotAge(data.data_freshness?.quotes_updated_at ?? undefined) || "—"} · Signals ${formatSnapshotAge(data.data_freshness?.signals_updated_at ?? undefined) || "—"}`
-                  : `Snapshot ${snapshotAge || formatSnapshotAge(snapshotIso)}`}
+                  ? `${isUsEquityRth() ? "" : "After close · "}Prices ${formatFreshnessLabel(data.data_freshness?.quotes_updated_at ?? undefined) || "—"} · Signals ${formatFreshnessLabel(data.data_freshness?.signals_updated_at ?? undefined) || "—"}`
+                  : `${isUsEquityRth() ? "Snapshot" : "After close"} ${formatFreshnessLabel(snapshotIso) || snapshotAge || "—"}`}
               </span>
             )}
             <TradingLensSelector

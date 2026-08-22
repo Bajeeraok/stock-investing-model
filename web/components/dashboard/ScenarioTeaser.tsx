@@ -20,7 +20,8 @@ export function buildScenarioTeaser(data: PriceTargetsData | null | undefined): 
     bearCount: scenarios.filter((s) => s.return_pct < 0).length,
     baseName: base?.name ?? null,
     baseReturnPct: base?.return_pct ?? null,
-    baseProbPct: base?.probability ?? null,
+    // API stores probability as 0–1; PriceTargetsPanel multiplies by 100 for display.
+    baseProbPct: base?.probability != null ? base.probability * 100 : null,
   };
 }
 

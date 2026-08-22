@@ -241,7 +241,7 @@ export function OverviewAtAGlance({
         </h3>
         {skippedSuggested > 0 && (
           <p className="text-[11px] text-slate-400 mb-2">
-            {skippedSuggested} ticker{skippedSuggested === 1 ? "" : "s"} already in Today&apos;s 3 moves above.
+            {skippedSuggested} ticker{skippedSuggested === 1 ? "" : "s"} already in Priority alerts above.
           </p>
         )}
         <ul className="space-y-2">

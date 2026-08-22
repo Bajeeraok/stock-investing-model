@@ -109,7 +109,7 @@ def test_owner_stop_sits_below_harmonized_floor():
     assert sig.stop_loss < 404.92
 
 
-def test_packet_rejects_invalidation_above_spot():
+def test_packet_rejects_invalidation_on_wrong_side_of_spot():
     pkt = SignalPacket(
         ticker="GLD",
         mode="owner",
@@ -121,14 +121,40 @@ def test_packet_rejects_invalidation_above_spot():
         gates=[Gate("valuation", False, {"text": "mos", "mos_pct": 8.0, "required_pct": 25.0})],
         entry_band=Band(377.87, 396.96),
         stop=383.0,
-        invalidation=399.71,
+        invalidation=410.0,
         target=480.0,
         rr=13.0,
         unlock_conditions=["Valuation clears"],
         hmm_bull_pct=4.0,
     )
     errs = pkt.validate()
-    assert any("invalidation" in e for e in errs)
+    assert any("wrong side of price" in e for e in errs)
+
+
+def test_owner_wait_above_band_allows_stop_above_deep_floor():
+    """Stretched Owner (e.g. LLY): deep harmonized floor + stop under spot must still publish."""
+    pkt = SignalPacket(
+        ticker="LLY",
+        mode="owner",
+        asof="2026-08-21",
+        spot=1230.0,
+        trend="UP",
+        verdict="WATCH_ZONE",
+        score=72,
+        gates=[Gate("valuation", False, {"text": "rich", "mos_pct": -1.0, "required_pct": 25.0})],
+        entry_band=Band(960.0, 1180.0),
+        stop=1190.0,
+        invalidation=1185.0,
+        target=1220.0,  # fair value slightly below spot when rich
+        rr=None,
+        entry_mode="WAIT",
+        unlock_conditions=["Valuation clears"],
+        hmm_bull_pct=98.0,
+        fair_value=1220.0,
+        mos_pct=-1.0,
+    )
+    assert pkt.waiting_above_entry()
+    assert pkt.validate() == []
 
 
 def test_packet_rejects_rr_mismatch():

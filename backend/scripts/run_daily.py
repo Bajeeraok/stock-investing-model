@@ -1088,6 +1088,33 @@ def run_eod_snapshot_only(
         if snapshot_path:
             result["snapshot_path"] = str(snapshot_path)
             result["snapshot_date"] = snapshot_path.stem
+
+        try:
+            # Form 4 insider/institutional flow — refresh once per EOD (24h cache).
+            from config_loader import get_dashboard_signal_universe
+            from signals.edgar_insider import refresh_insider_flow_daily
+
+            insider_tickers = list(get_dashboard_signal_universe(config))[:40]
+            if insider_tickers:
+                insider_out = refresh_insider_flow_daily(insider_tickers, config=config) or {}
+                buys = insider_out.get("insider_buys") or []
+                sells = insider_out.get("insider_sells") or []
+                result["insider_flow"] = {
+                    "ok": True,
+                    "buys": len(buys),
+                    "sells": len(sells),
+                    "as_of_date": insider_out.get("as_of_date"),
+                }
+                logger.info(
+                    "insider_flow daily refresh buys=%s sells=%s as_of=%s",
+                    result["insider_flow"]["buys"],
+                    result["insider_flow"]["sells"],
+                    result["insider_flow"]["as_of_date"],
+                )
+        except Exception as e:
+            result["insider_flow"] = {"ok": False, "error": str(e)}
+            logger.warning("insider_flow daily refresh failed: %s", e)
+
         retention = config.get("eod_retention_days", 0)
         if retention > 0:
             result["pruned"] = prune_old_eod_snapshots(retention)

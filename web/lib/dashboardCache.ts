@@ -82,6 +82,40 @@ export function parseSnapshotDate(iso: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+
+/** US equities RTH: Mon–Fri 09:30–16:00 America/New_York. */
+export function isUsEquityRth(nowMs = Date.now()): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(new Date(nowMs));
+  const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
+  if (weekday === "Sat" || weekday === "Sun") return false;
+  const hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+  const minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
+  const total = hour * 60 + minute;
+  return total >= 9 * 60 + 30 && total < 16 * 60;
+}
+
+/**
+ * Relative age for UI. Off-hours, prefer clock time so "13 min ago" does not
+ * read as a live lag after the session already closed.
+ */
+export function formatFreshnessLabel(
+  iso: string | null | undefined,
+  nowMs = Date.now(),
+): string {
+  const d = parseSnapshotDate(iso);
+  if (!d) return "";
+  if (!isUsEquityRth(nowMs)) {
+    return formatSnapshotEt(iso);
+  }
+  return formatSnapshotAge(iso, nowMs);
+}
+
 export function formatSnapshotAge(iso: string | null | undefined, nowMs = Date.now()): string {
   const d = parseSnapshotDate(iso);
   if (!d) return "";

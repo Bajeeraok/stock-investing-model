@@ -26,6 +26,8 @@ export interface InsiderFlowData {
   insider_sells: InsiderSell[];
   ticker_activities?: { ticker: string; filing_date: string; edgar_url: string; buys_shares: number; sells_shares: number }[];
   message?: string | null;
+  as_of_date?: string | null;
+  fetched_at?: string | null;
 }
 
 interface InsiderFlowTrackerProps {
@@ -42,7 +44,7 @@ export function InsiderFlowTracker({ data }: InsiderFlowTrackerProps) {
   if (!data) {
     return (
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 text-sm text-slate-500">
-        No insider flow data. Data is from SEC EDGAR Form 4 (free); cached 12h.
+        No insider flow data. Data is from SEC EDGAR Form 4 (free); updated once daily after the close.
       </div>
     );
   }
@@ -50,11 +52,13 @@ export function InsiderFlowTracker({ data }: InsiderFlowTrackerProps) {
   const buys = data.insider_buys ?? [];
   const sells = data.insider_sells ?? [];
   const message = data.message;
+  const asOf = data.as_of_date || (data.fetched_at ? String(data.fetched_at).slice(0, 10) : null);
 
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-4">
       <p className="text-xs text-slate-500">
-        Form 4 filings (insider buys/sells) from SEC EDGAR. Multiple insiders buying in the same quarter is a strong medium/long-term signal. Cached 12h.
+        Form 4 filings (insider buys/sells) from SEC EDGAR. Multiple insiders buying in the same quarter is a strong medium/long-term signal. Updated once daily after the close
+        {asOf ? <> · as of <span className="font-mono text-slate-400">{asOf}</span></> : null}.
       </p>
       {message && (
         <p className="text-xs text-amber-400">{message}</p>

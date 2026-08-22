@@ -270,6 +270,22 @@ def enrich_shell_snapshot_meta(shell: dict) -> dict:
                 shell["as_of_date"] = meta["as_of_date"]
     except Exception:
         pass
+
+    # Always overlay a live EOD file index — Force refresh does not rewrite the
+    # baked-in eod_snapshots from the last full compute, so the Analysis panel
+    # can show Aug-2 while /api/eod/status already reports today.
+    try:
+        from signals.cache import build_eod_snapshot_index
+
+        snaps = build_eod_snapshot_index()
+        shell["eod_snapshots"] = snaps
+        latest = snaps[0]["date"] if snaps else None
+        if latest:
+            shell["eod_snapshot_latest_date"] = latest
+            df["eod_snapshot_latest_date"] = latest
+    except Exception:
+        pass
+
     shell["data_freshness"] = df
     return shell
 

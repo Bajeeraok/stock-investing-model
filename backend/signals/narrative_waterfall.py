@@ -150,11 +150,23 @@ class SignalPacket:
             return None
         return round(sum(s.ret_pct * s.prob_pct for s in self.scenarios) / tot, 1)
 
+    def waiting_above_entry(self) -> bool:
+        """True when spot is above the add zone (pullback / stretch wait).
+
+        Owner packets deepen entry_band.lo with swing/scout floors, so stop and
+        invalidation often sit *between* spot and that deep floor. That is a
+        coherent wait plan (structure first, then fill) — not a publish block.
+        """
+        if self.entry_band is None:
+            return False
+        return self.spot > self.entry_band.hi + 1e-6
+
     # ---- integrity ------------------------------------------------
     def validate(self) -> list[str]:
         """Render-time consistency checks. Empty list == safe to publish."""
         errs: list[str] = []
         failed = [g.name for g in self.gates if not g.passed]
+        waiting = self.waiting_above_entry()
 
         # unlock conditions must cover ALL failed gates (footer-mismatch bug)
         for g in failed:
@@ -173,11 +185,19 @@ class SignalPacket:
             if v is not None and not (0 <= v <= 100):
                 errs.append(f"{name} out of range: {v}")
 
-        # ordering sanity
-        if self.stop and self.entry_band and self.stop >= self.entry_band.lo:
+        # ordering sanity — in-zone buys need stop under the zone; wait-above
+        # plans keep stop/invalidation between spot and a deeper floor.
+        if (
+            self.stop
+            and self.entry_band
+            and self.stop >= self.entry_band.lo
+            and not waiting
+        ):
             errs.append("stop >= entry band low")
         if self.target and self.target <= self.spot and self.trend == "UP":
-            errs.append("target below spot on UP trend")
+            # Fair-value / LT targets can sit below spot when rich (Owner WAIT).
+            if not waiting and self.entry_mode not in ("WAIT",):
+                errs.append("target below spot on UP trend")
         if self.invalidation is not None and self.invalidation >= self.spot:
             errs.append(
                 f"invalidation ${self.invalidation:.2f} is not below spot ${self.spot:.2f} "
@@ -188,6 +208,7 @@ class SignalPacket:
             and self.invalidation is not None
             and self.entry_band is not None
             and self.invalidation >= self.entry_band.lo
+            and not waiting
         ):
             errs.append(
                 f"owner invalidation ${self.invalidation:.2f} sits at/above entry floor "
@@ -484,7 +505,28 @@ def _starter_watch_zone(p: SignalPacket) -> bool:
     return val_failed or p.entry_mode in ("STARTER_ONLY", "BRIDGE_ONLY", "WAIT")
 
 
-def render_retail_scan(p: SignalPacket, c: ActionContract) -> dict:
+
+def _retail_catalyst_line(p: SignalPacket, cats: list["Catalyst"]) -> str | None:
+    """Optional scan line — calendar/news facts only; omit when irrelevant."""
+    for x in cats:
+        mech = (x.mechanism or "").lower()
+        name = (x.name or "")
+        if not name:
+            continue
+        if mech.startswith("known event:") or "earnings" in name.lower() or "earnings" in mech:
+            tip = "binary event — don't size up into it" if x.direction != "unlocks" else "watch for confirmation"
+            return f"⚡ Catalyst: {name} — {tip}"
+    for x in cats:
+        if not _is_news_catalyst(x):
+            continue
+        if x.direction == "breaks":
+            return f"⚡ Catalyst: {x.name} — adds risk to the wait, not a buy cue"
+        if x.direction == "unlocks":
+            return f"⚡ Catalyst: {x.name} — could unlock the wait if gates clear"
+    return None
+
+
+def render_retail_scan(p: SignalPacket, c: ActionContract, cats: list["Catalyst"] | None = None) -> dict:
     """Cover-the-prose test: 5 lines must answer buy-today / at-what-price / give-up."""
     headline, reason = _retail_headline_reason(p, c)
     lines: list[str] = []
@@ -493,21 +535,40 @@ def render_retail_scan(p: SignalPacket, c: ActionContract) -> dict:
     if p.rsi is not None and float(p.rsi) >= 50:
         rsi_clause = " and RSI drops below 50"
     if p.entry_band:
+        in_band = p.entry_band.contains(float(p.spot))
+        if in_band:
+            zone = f"📍 Zone: ${float(p.spot):,.2f} is INSIDE buy zone {p.entry_band.fmt()}"
+        elif float(p.spot) > p.entry_band.hi:
+            zone = (
+                f"📍 Zone: ${float(p.spot):,.2f} is ABOVE buy zone {p.entry_band.fmt()} "
+                "— wait for pullback"
+            )
+        else:
+            zone = f"📍 Zone: ${float(p.spot):,.2f} is BELOW buy zone {p.entry_band.fmt()}"
+        if starter:
+            zone += " (starter only)"
+        lines.append(zone)
         buy = f"✅ Buy zone: {p.entry_band.fmt()}{rsi_clause}"
         if starter:
             buy += " — starter only, not full size"
         lines.append(buy)
         lines.append(f"❌ Never chase above ${p.entry_band.hi:,.2f}")
+    cat_line = _retail_catalyst_line(p, cats or [])
+    if cat_line:
+        lines.append(cat_line)
     walk = p.stop if p.stop is not None else p.invalidation
     if walk is not None:
-        lines.append(f"🛑 Walk away if it closes below ${walk:,.2f}")
+        dd = ""
+        if p.spot and float(walk) < float(p.spot):
+            dd = f" ({(float(walk) - float(p.spot)) / float(p.spot) * 100.0:.1f}%)"
+        lines.append(f"🛑 If it breaks down: exit below ${walk:,.2f}{dd}")
     if p.target is not None:
-        payoff = f"🎯 If it works: ${p.target:,.2f}"
+        payoff = f"🎯 If it works: target ${p.target:,.2f}"
         if p.spot:
             pct = (float(p.target) - float(p.spot)) / float(p.spot) * 100.0
             payoff += f" ({pct:+.0f}%)"
         lines.append(payoff)
-    lines = lines[:4]
+    lines = lines[:6]
     timing = _RETAIL_TIMING.get(p.mode, _RETAIL_TIMING["swing"])
     text = "\n".join([headline, reason, *lines, timing])
     return {
@@ -568,14 +629,30 @@ def render_plain_trading_notes(
         cool = ""
         if p.rsi is not None and float(p.rsi) >= 50:
             cool = " after the move cools off"
-        if starter:
+        in_band = p.entry_band.contains(float(p.spot))
+        above = float(p.spot) > p.entry_band.hi + 1e-6
+        if in_band:
             bits.append(
-                f"A dip into {p.entry_band.fmt()}{cool} is a small first slice at most — "
-                "not a full buy."
+                f"Price is already INSIDE the buy zone {p.entry_band.fmt()}"
+                f"{' — starter only, not full size' if starter else ''}."
             )
-            if p.full_size_price:
+            if starter and p.full_size_price:
                 bits.append(
                     f"A full-size buy still needs a cheaper price, around ${p.full_size_price:,.2f}."
+                )
+        elif above:
+            if starter:
+                bits.append(
+                    f"Wait for a pullback into {p.entry_band.fmt()}{cool} — small first slice at most, "
+                    "not a full buy."
+                )
+                if p.full_size_price:
+                    bits.append(
+                        f"A full-size buy still needs a cheaper price, around ${p.full_size_price:,.2f}."
+                    )
+            else:
+                bits.append(
+                    f"Wait for a pullback into {p.entry_band.fmt()}{cool} before adding."
                 )
         else:
             bits.append(f"The planned buy area is {p.entry_band.fmt()}{cool}.")
@@ -958,7 +1035,9 @@ HARD RULES:
 8. FORBIDDEN WORDS/PHRASES (never use): margin of safety, tape, HMM, confluence, thesis, momentum chop, invalidation, fused, bull tape, starter zone, true entry, bull conditions, 0% bull, institutions are buying, institutional selling, regime confirmation. Say "not cheap enough for a full buy", "ran up too fast", "walk away below", "price and a cooler reading both line up", "broader market support" instead.
 9. Do not name RSI. Say "after the move cools off" if you need momentum language.
 10. If CATALYSTS has no News:/Known event: items, you MUST say there is no fresh company catalyst in the packet (earnings, deal, guidance) — then stick to timing/price conditions. Never invent institutions buying, bull conditions, or a headline.
-11. Tone: calm, specific, no hype."""
+11. Tone: calm, specific, no hype.
+12. ZONE STATE (hard fact): If RETAIL_SCAN says price is INSIDE the buy zone, you MUST NOT say wait for a pullback into that same zone. Say price is already in the band and name the real blocker (gates / weather / confidence).
+13. Catalysts: only use CATALYSTS listed. Frame competitive-threat headlines relative to the verdict — never re-label them as independently bullish."""
 
 
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
@@ -1077,7 +1156,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         logger.error("[narrative] %s (%s) catalyst validation: %s", p.ticker, p.mode, cat_errs)
         cats = [c for c in cats if not validate_catalysts(p, [c])]
 
-    scan = render_retail_scan(p, contract)
+    scan = render_retail_scan(p, contract, cats)
     banned = retail_scan_banned_hits(scan.get("text") or "")
     if banned:
         logger.error("[narrative] %s (%s) retail scan used banned vocab: %s",

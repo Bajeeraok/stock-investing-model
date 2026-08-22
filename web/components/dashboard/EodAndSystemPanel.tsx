@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * EOD snapshots list, Redis status, and EOD snapshot upload.
- * Data from dashboard: eod_snapshots, redis_status.
+ * EOD snapshots list, Redis status, and upload.
+ * File list loads live from GET /api/eod/snapshots so Force refresh / dashboard
+ * cache cannot leave this panel stuck on an old max date (e.g. Aug 2).
  */
 
-import { useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Database, RefreshCw, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
@@ -16,6 +17,7 @@ export interface EodSnapshotItem {
   run_date?: string | null;
   tickers_count?: number;
   universe?: string | null;
+  source?: string | null;
 }
 
 export interface RedisStatus {
@@ -27,14 +29,15 @@ export interface RedisStatus {
 }
 
 interface EodAndSystemPanelProps {
+  /** Fallback while live fetch loads (may be stale from dashboard cache). */
   eodSnapshots: EodSnapshotItem[];
   redisStatus: RedisStatus | undefined;
-  /** Backend-resolved DATA_ROOT (from env or default /app/data) */
   dataRoot?: string | null;
   onRefresh?: () => void;
 }
 
 function formatBytes(n: number): string {
+  if (!n) return "—";
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / (1024 * 1024)).toFixed(2)} MB`;
@@ -53,12 +56,53 @@ function formatRunDateEt(runDate: string | null | undefined): string {
   );
 }
 
-export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefresh }: EodAndSystemPanelProps) {
+function preferNewerList(a: EodSnapshotItem[], b: EodSnapshotItem[]): EodSnapshotItem[] {
+  const aMax = a[0]?.date ?? "";
+  const bMax = b[0]?.date ?? "";
+  if (bMax > aMax) return b;
+  if (aMax > bMax) return a;
+  return b.length >= a.length ? b : a;
+}
+
+export function EodAndSystemPanel({
+  eodSnapshots,
+  redisStatus,
+  dataRoot,
+  onRefresh,
+}: EodAndSystemPanelProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [snapshotDateOverride, setSnapshotDateOverride] = useState("");
+  const [liveSnapshots, setLiveSnapshots] = useState<EodSnapshotItem[] | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveLatest, setLiveLatest] = useState<string | null>(null);
+  const [liveDataRoot, setLiveDataRoot] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchLiveList = useCallback(async () => {
+    setLiveLoading(true);
+    setLiveError(null);
+    try {
+      const url = API_BASE ? `${API_BASE}/api/eod/snapshots` : "/api/eod/snapshots";
+      const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const snaps = Array.isArray(data?.snapshots) ? (data.snapshots as EodSnapshotItem[]) : [];
+      setLiveSnapshots(snaps);
+      setLiveLatest(typeof data?.latest_date === "string" ? data.latest_date : snaps[0]?.date ?? null);
+      if (typeof data?.data_root === "string") setLiveDataRoot(data.data_root);
+    } catch (err) {
+      setLiveError(err instanceof Error ? err.message : "Failed to load EOD list");
+    } finally {
+      setLiveLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchLiveList();
+  }, [fetchLiveList]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,11 +120,14 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefre
       const res = await fetch(url, { method: "POST", body: formData });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.detail || `HTTP ${res.status}`);
+        throw new Error(
+          typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`
+        );
       }
       setUploadSuccess(
-        `Saved as ${data.snapshot_date}.json (${data.tickers_count ?? 0} tickers). Refresh to see in list.`
+        `Saved as ${data.snapshot_date}.json (${data.tickers_count ?? 0} tickers).`
       );
+      await fetchLiveList();
       onRefresh?.();
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
@@ -91,15 +138,42 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefre
   };
 
   const redis = redisStatus ?? { configured: false, connected: false };
+  const displaySnapshots = liveSnapshots
+    ? preferNewerList(eodSnapshots ?? [], liveSnapshots)
+    : eodSnapshots ?? [];
+  const rootLabel = liveDataRoot || dataRoot;
 
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Database className="h-4 w-4 text-slate-400 shrink-0" />
-        <span className="text-sm font-semibold text-slate-300">EOD snapshots &amp; system</span>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2">
+          <Database className="h-4 w-4 text-slate-400 shrink-0" />
+          <span className="text-sm font-semibold text-slate-300">EOD snapshots &amp; system</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => void fetchLiveList()}
+          disabled={liveLoading}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-slate-600 text-slate-400 hover:bg-slate-800 text-xs disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3 w-3 ${liveLoading ? "animate-spin" : ""}`} />
+          Refresh list
+        </button>
       </div>
 
-      {/* Redis status */}
+      {liveLatest && (
+        <p className="text-xs text-emerald-400/90">
+          Live latest: <span className="font-mono">{liveLatest}</span>
+          {displaySnapshots.length ? ` · ${displaySnapshots.length} files` : ""}
+        </p>
+      )}
+      {liveError && (
+        <p className="text-xs text-amber-400">
+          Live list failed ({liveError}) — showing dashboard cache
+          {eodSnapshots?.[0]?.date ? ` (top: ${eodSnapshots[0].date})` : ""}.
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-xs text-slate-500 uppercase tracking-wider">Redis</span>
         {!redis.configured ? (
@@ -116,7 +190,8 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefre
           <span className="inline-flex items-center gap-1.5 text-xs text-amber-400">
             <XCircle className="h-3.5 w-3.5" />
             <span title={redis.error ?? undefined}>
-              Not connected{redis.source ? ` (${redis.source}${redis.scheme ? `, ${redis.scheme}` : ""})` : ""}
+              Not connected
+              {redis.source ? ` (${redis.source}${redis.scheme ? `, ${redis.scheme}` : ""})` : ""}
             </span>
           </span>
         )}
@@ -127,61 +202,55 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefre
         </p>
       )}
 
-      {/* EOD snapshot list */}
       <div>
         <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
-          EOD snapshot files ({eodSnapshots.length})
+          EOD snapshot files ({displaySnapshots.length})
         </p>
         <p className="text-xs text-slate-500 mb-2">
           Files under{" "}
           <code className="bg-slate-800 px-1 rounded">
-            {dataRoot ? `${dataRoot.replace(/\/$/, "")}/eod/` : "DATA_ROOT/eod/"}
+            {rootLabel ? `${rootLabel.replace(/\/$/, "")}/eod/` : "DATA_ROOT/eod/"}
           </code>
-          {dataRoot === "/data" && (
-            <span className="text-slate-400">
-              {" "}
-              — OK if a Railway volume is mounted at <code className="bg-slate-800 px-1 rounded">/data</code>.
-              Without a volume, remove <code className="bg-slate-800 px-1 rounded">DATA_ROOT</code> (defaults to{" "}
-              <code className="bg-slate-800 px-1 rounded">/app/data</code>); EOD still persists in Redis when connected.
-            </span>
-          )}
-          {dataRoot && dataRoot !== "/data" && (
-            <span className="text-slate-400">
-              {" "}
-              (<code className="bg-slate-800 px-1 rounded">DATA_ROOT</code> env or default)
-            </span>
-          )}
+          <span className="text-slate-400"> — live from /api/eod/snapshots</span>
         </p>
-        {eodSnapshots.length === 0 ? (
-          <p className="text-sm text-slate-500">No EOD snapshots yet. Run EOD or upload below.</p>
+        {displaySnapshots.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            {liveLoading ? "Loading EOD list…" : "No EOD snapshots yet. Run EOD or upload below."}
+          </p>
         ) : (
           <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
-            {eodSnapshots.map((s) => {
+            {displaySnapshots.map((s) => {
               const thin = (s.tickers_count ?? 0) > 0 && (s.tickers_count ?? 0) < 75;
               return (
-              <li key={s.date} className="flex items-center justify-between gap-2 py-0.5 text-slate-300">
-                <span className="font-mono flex items-center gap-2">
-                  {s.date}.json
-                  {(s.tickers_count ?? 0) > 0 && (
-                    <span className={`text-xs font-sans ${thin ? "text-amber-400" : "text-slate-500"}`}>
-                      {s.tickers_count} tickers{thin ? " (dashboard-only)" : ""}
-                    </span>
-                  )}
-                </span>
-                <span className="text-slate-500 text-xs">
-                  {formatBytes(s.size_bytes)}
-                  {s.run_date ? ` · ${formatRunDateEt(s.run_date)}` : ""}
-                </span>
-              </li>
-            );
+                <li
+                  key={s.date}
+                  className="flex items-center justify-between gap-2 py-0.5 text-slate-300"
+                >
+                  <span className="font-mono flex items-center gap-2">
+                    {s.date}.json
+                    {(s.tickers_count ?? 0) > 0 && (
+                      <span
+                        className={`text-xs font-sans ${thin ? "text-amber-400" : "text-slate-500"}`}
+                      >
+                        {s.tickers_count} tickers{thin ? " (dashboard-only)" : ""}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-slate-500 text-xs">
+                    {formatBytes(s.size_bytes ?? 0)}
+                    {s.run_date ? ` · ${formatRunDateEt(s.run_date)}` : ""}
+                  </span>
+                </li>
+              );
             })}
           </ul>
         )}
       </div>
 
-      {/* Upload */}
       <div className="border-t border-slate-700 pt-3">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Upload EOD snapshot</p>
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+          Upload EOD snapshot
+        </p>
         <div className="flex flex-wrap items-end gap-2">
           <div>
             <label className="block text-xs text-slate-500 mb-1">File (JSON)</label>
@@ -204,16 +273,6 @@ export function EodAndSystemPanel({ eodSnapshots, redisStatus, dataRoot, onRefre
               onChange={(e) => setSnapshotDateOverride(e.target.value)}
             />
           </div>
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-slate-600 text-slate-400 hover:bg-slate-800 text-xs"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Refresh
-            </button>
-          )}
         </div>
         {uploading && <p className="text-xs text-slate-500 mt-1">Uploading…</p>}
         {uploadError && (

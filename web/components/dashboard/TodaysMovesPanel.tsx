@@ -93,9 +93,9 @@ export function TodaysMovesPanel({
     <div className="rounded-xl border border-emerald-500/25 bg-gradient-to-br from-emerald-950/30 to-slate-900/60 p-4">
       <div className="flex items-center justify-between gap-2 mb-3">
         <div>
-          <h2 className="font-semibold text-emerald-300 text-sm">Today&apos;s 3 moves</h2>
+          <h2 className="font-semibold text-emerald-300 text-sm">Priority alerts</h2>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Composite (MT) story & trim · ST earnings — hover chips for what drove each alert
+            Action triage — not price movers. Mixed story, trim, and earnings — hover chips for drivers.
           </p>
         </div>
         {onViewAll && (

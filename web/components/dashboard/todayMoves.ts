@@ -150,29 +150,51 @@ export function buildTodayMoves(input: {
     });
   }
 
+  // Round-robin across kinds so Owner/Swing don't fill all 3 slots with "consider trim".
   const moves: TodayMove[] = [];
-  for (const kind of order) {
-    for (const m of pools[kind]) {
-      if (moves.length >= max) break;
-      if (
-        m.ticker &&
-        moves.some(
-          (x) =>
-            x.ticker === m.ticker ||
-            (x.tickers?.some((t) => t === m.ticker) ?? false)
-        )
-      ) {
-        continue;
-      }
-      moves.push(m);
+  const usedTickers = new Set<string>();
+  const kindCounts: Partial<Record<TodayMove["kind"], number>> = {};
+  const maxPerKind = Math.max(1, Math.ceil(max / 2)); // at most 2 of 3 same kind
+
+  const tryPush = (m: TodayMove): boolean => {
+    if (moves.length >= max) return false;
+    if ((kindCounts[m.kind] ?? 0) >= maxPerKind) return false;
+    if (m.ticker) {
+      const key = m.ticker.toUpperCase();
+      if (usedTickers.has(key)) return false;
+      if (m.tickers?.some((t) => usedTickers.has(t.toUpperCase()))) return false;
     }
+    moves.push(m);
+    kindCounts[m.kind] = (kindCounts[m.kind] ?? 0) + 1;
+    if (m.tickers?.length) {
+      for (const t of m.tickers) usedTickers.add(t.toUpperCase());
+    } else if (m.ticker) {
+      usedTickers.add(m.ticker.toUpperCase());
+    }
+    return true;
+  };
+
+  // Pass 1: one from each kind in lens order (mix story / trim / earnings / …).
+  for (const kind of order) {
     if (moves.length >= max) break;
+    for (const m of pools[kind]) {
+      if (tryPush(m)) break;
+    }
+  }
+  // Pass 2: fill remaining slots still respecting per-kind cap.
+  for (const kind of order) {
+    if (moves.length >= max) break;
+    for (const m of pools[kind]) {
+      if (moves.some((x) => x.id === m.id)) continue;
+      tryPush(m);
+      if (moves.length >= max) break;
+    }
   }
 
   return moves.slice(0, max);
 }
 
-/** Tickers already surfaced in Today's 3 moves (for deduping briefing actions). */
+/** Tickers already surfaced in Priority alerts (for deduping briefing actions). */
 export function todayMoveTickers(moves: TodayMove[]): Set<string> {
   const out = new Set<string>();
   for (const m of moves) {

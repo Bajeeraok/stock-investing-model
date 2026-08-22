@@ -32,7 +32,7 @@ BULLISH_KEYWORDS = frozenset({
     "beat", "beats", "record", "surge", "surges", "rally", "rallies", "rallying",
     "upgrade", "upgrades", "upgraded", "outperform", "buy", "growth", "profit",
     "profits", "strong", "stronger", "raised", "raises", "exceeds", "exceeded",
-    "positive", "optimism", "optimistic", "ceasefire", "deal", "deals", "partnership",
+    "positive", "optimism", "optimistic", "ceasefire", "partnership",
     "partnerships", "breakthrough", "expands", "expansion", "gain", "gains", "win",
     "wins", "bullish", "upside", "rebound", "recovery", "recoveries", "momentum",
 })
@@ -71,6 +71,18 @@ COMMODITY_BEARISH_KEYWORDS = frozenset({
 
 # Institutional / 13F-style phrasing (not the same as “stock drops”)
 _BEARISH_PHRASES = (
+    "competitive threat",
+    "competitor win",
+    "loses share",
+    "losing share",
+    "takes share",
+    "taking share",
+    "market share loss",
+    "custom silicon",
+    "in-house chip",
+    "google tpu",
+    "rival chip",
+
     "shares sold",
     "sold shares",
     "reduces stake",
