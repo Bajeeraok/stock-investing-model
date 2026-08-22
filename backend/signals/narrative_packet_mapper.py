@@ -258,29 +258,119 @@ def _gate_detail(canonical: str, gate: dict, *, rsi, hmm_bull_pct, ml_prob_pct,
     return detail
 
 
+def _earnings_card_from_detail(ticker_detail: dict) -> dict | None:
+    """Always surface next/last earnings when the calendar says it matters."""
+    earnings = ticker_detail.get("earnings")
+    if not isinstance(earnings, dict):
+        return None
+    try:
+        from signals.catalyst_detector import build_earnings_event_card
+    except Exception:
+        build_earnings_event_card = None
+    if build_earnings_event_card is not None:
+        card = build_earnings_event_card(
+            ticker=str(ticker_detail.get("ticker") or ""),
+            days_until=earnings.get("days_until"),
+            days_since=earnings.get("days_since"),
+            report_date=earnings.get("date") or earnings.get("report_date"),
+        )
+        if isinstance(card, dict) and card:
+            card = dict(card)
+            card.setdefault("source", "earnings_calendar")
+            return card
+    # Fallback when detector is unavailable
+    days = earnings.get("days_until")
+    try:
+        d = int(days) if days is not None else None
+    except (TypeError, ValueError):
+        d = None
+    if d is None or d < 0 or d > 21:
+        return None
+    when = "today" if d == 0 else f"in {d} day{'s' if d != 1 else ''}"
+    date_bit = earnings.get("date") or earnings.get("report_date") or ""
+    mech = f"Earnings {when}" + (f" ({date_bit})" if date_bit else "")
+    return {
+        "name": "Earnings",
+        "event_type": "EARNINGS_CALENDAR",
+        "direction": "neutral",
+        "mechanism": mech,
+        "watch": "Size down into the print",
+        "horizon": "days",
+        "source": "earnings_calendar",
+        "date": date_bit or None,
+    }
+
+
+def _normalize_news_card(card: dict, *, source: str = "catalyst_card") -> dict:
+    return {
+        "name": card.get("name") or card.get("title"),
+        "event_type": card.get("event_type") or card.get("type"),
+        "direction": card.get("direction"),
+        "mechanism": card.get("mechanism") or card.get("title") or card.get("headline"),
+        "title": card.get("title") or card.get("headline"),
+        "watch": card.get("watch"),
+        "horizon": card.get("horizon"),
+        "source": card.get("source") or source,
+        "published_at": card.get("published_at") or card.get("asof") or card.get("date"),
+        "age_hours": card.get("age_hours"),
+        "date": card.get("date"),
+    }
+
+
 def _news_events_from_detail(ticker_detail: dict, investor: dict) -> list[dict]:
-    """Advisory catalyst cards from the news rail — never gate inputs."""
+    """Advisory catalysts: earnings calendar + catalyst cards + headlines."""
     roadmap = investor.get("trade_roadmap") or {}
     layer = roadmap.get("news_sentiment_layer") or {}
+    if not isinstance(layer, dict):
+        layer = {}
+
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(card: dict | None) -> None:
+        if not isinstance(card, dict):
+            return
+        row = _normalize_news_card(card, source=str(card.get("source") or "catalyst_card"))
+        key = f"{row.get('event_type')}|{str(row.get('mechanism') or '')[:80].lower()}"
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(row)
+
+    _add(_earnings_card_from_detail(ticker_detail))
+
     cards = layer.get("catalyst_cards")
     if not isinstance(cards, list) or not cards:
         cards = ticker_detail.get("catalyst_cards")
-    if not isinstance(cards, list):
-        return []
-    out: list[dict] = []
-    for card in cards[:4]:
-        if not isinstance(card, dict):
-            continue
-        out.append({
-            "name": card.get("name"),
-            "event_type": card.get("event_type"),
-            "direction": card.get("direction"),
-            "mechanism": card.get("mechanism") or card.get("title"),
-            "title": card.get("title"),
-            "watch": card.get("watch"),
-            "horizon": card.get("horizon"),
-        })
-    return out
+    if isinstance(cards, list):
+        for card in cards[:6]:
+            _add(card if isinstance(card, dict) else None)
+
+    headlines = layer.get("headlines") or ticker_detail.get("headlines") or []
+    if isinstance(headlines, list):
+        for h in headlines[:4]:
+            if isinstance(h, dict):
+                title = h.get("title") or h.get("headline")
+                if not title:
+                    continue
+                _add({
+                    "name": title,
+                    "title": title,
+                    "mechanism": title,
+                    "event_type": h.get("event_type"),
+                    "direction": h.get("direction") or h.get("label"),
+                    "published_at": h.get("published_at") or h.get("date"),
+                    "source": "headline",
+                })
+            elif isinstance(h, str) and h.strip():
+                _add({
+                    "name": h.strip()[:180],
+                    "title": h.strip()[:180],
+                    "mechanism": h.strip()[:180],
+                    "source": "headline",
+                })
+
+    return out[:8]
 
 
 def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
@@ -289,19 +379,30 @@ def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
     if not isinstance(conf, dict):
         conf = {}
 
-    si = conf.get("short_interest")
+    # Live confidence payload uses short_interest + penalty_audit + breakdown.
+    si = conf.get("short_interest") or ticker_detail.get("short_interest")
     if isinstance(si, dict) and si:
         ctx["short_interest"] = si
 
     insider: dict = {}
-    pa = conf.get("penalty_audit") or {}
-    if isinstance(pa, dict) and (pa.get("insider_sell_penalty") or {}).get("triggered"):
+    pa = conf.get("penalty_audit") or conf.get("penalty_audit") or {}
+    sell_pen = {}
+    if isinstance(pa, dict):
+        sell_pen = (
+            pa.get("insider_sell_penalty")
+            or pa.get("insider_sell_penalty")
+            or {}
+        )
+    if isinstance(sell_pen, dict) and sell_pen.get("triggered"):
         insider = {"signal": "selling", "sell_count": 3}
     else:
-        bd = ((conf.get("breakdown") or {}).get("insider_signal") or {})
+        bd = (
+            (conf.get("breakdown") or {}).get("insider_signal")
+            or (conf.get("breakdown") or {}).get("insider_signal")
+            or {}
+        )
         label = str(bd.get("label") or "").lower()
-        if "net selling" in label or "selling" in label:
-            # Rough share count from label when present: "(12,345 shares sold)"
+        if "net selling" in label or ("selling" in label and "buying" not in label):
             sells = None
             m = re.search(r"([\d,]+)\s+shares\s+sold", label)
             if m:
@@ -314,9 +415,12 @@ def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
                 "sell_count": 3 if sells is None else max(3, 1),
                 "label": bd.get("label"),
             }
-    stats = ticker_detail.get("insider_stats")
+    stats = (
+        ticker_detail.get("insider_stats")
+        or ticker_detail.get("insider_stats")
+        or {}
+    )
     if isinstance(stats, dict) and not insider:
-        # FMP insider stats shapes vary; treat heavy sell share as bearish.
         sell_ratio = stats.get("sell_ratio") or stats.get("totalSellRatio")
         try:
             sr = float(sell_ratio) if sell_ratio is not None else None
@@ -329,12 +433,15 @@ def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
     if insider:
         ctx["insider"] = insider
 
-    # Light macro from cross-asset badges / optional macro block on detail.
     macro = ticker_detail.get("macro") if isinstance(ticker_detail.get("macro"), dict) else {}
     if macro:
         ctx["macro"] = macro
 
-    cal = ticker_detail.get("economic_calendar") or ticker_detail.get("macro_events")
+    cal = (
+        ticker_detail.get("economic_calendar")
+        or ticker_detail.get("macro_events")
+        or ticker_detail.get("economic_calendar")
+    )
     if isinstance(cal, list) and cal:
         ctx["economic_calendar"] = cal[:6]
 

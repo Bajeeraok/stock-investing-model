@@ -1,4 +1,4 @@
-"""Catalyst Translation Matrix — 6-category classify + PRIMARY_DRIVER ranking."""
+"""Catalyst Translation Matrix — classify, freshness, mode tilt, PRIMARY_DRIVER."""
 
 from __future__ import annotations
 
@@ -73,8 +73,9 @@ def test_binary_beats_technical_for_primary_driver():
         ],
     )
     cats = derive_catalysts(pkt)
-    board = build_driver_board(pkt, cats)
+    board = build_driver_board(pkt, cats, mode="swing")
     assert board["primary_driver"]["category"] == "BINARY_EVENT"
+    assert board.get("chip_label")
     assert "9 days" in board["primary_driver"]["headline"].lower() or "reports" in board[
         "primary_driver"
     ]["headline"].lower()
@@ -112,6 +113,35 @@ def test_insider_context_outranks_technical_when_no_news():
     assert board["primary_driver"]["category"] == "SMART_MONEY"
     plain = primary_driver_plain(board)
     assert "institutional" in plain.lower() or "insider" in plain.lower()
+
+
+def test_freshness_downranks_stale_technical():
+    fresh = map_catalyst_like(
+        name="Tape",
+        mechanism="RSI overbought breakdown",
+        age_hours=2,
+    )
+    stale = map_catalyst_like(
+        name="Tape",
+        mechanism="RSI overbought breakdown",
+        age_hours=80,
+    )
+    assert fresh.stale is False
+    assert stale.stale is True
+    assert stale.score < fresh.score
+
+
+def test_owner_mode_prefers_macro_over_insider_when_both_present():
+    board = build_driver_board(
+        None,
+        None,
+        context={
+            "insider": {"signal": "selling", "sell_count": 4},
+            "macro": {"cpi_yoy": 4.2},
+        },
+        mode="owner",
+    )
+    assert board["primary_driver"]["category"] == "MACRO_RATES"
 
 
 def test_map_catalyst_boosts_near_earnings():

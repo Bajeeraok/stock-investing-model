@@ -740,6 +740,7 @@ def build_trading_note_payload(
         p,
         cats,
         context=context if context is not None else (p.driver_context or None),
+        mode=p.mode,
     )
     top_from_board = [
         str(d.get("headline") or "").strip()
@@ -756,6 +757,7 @@ def build_trading_note_payload(
         "PRIMARY_DRIVER": primary_driver,
         "PRIMARY_DRIVER_PLAIN": primary_driver_plain(board),
         "DRIVER_CATEGORY": primary_driver.get("category") or "TECHNICAL",
+        "DRIVER_CHIP": board.get("chip_label") or primary_driver.get("category") or "TECHNICAL",
         "TOP_CATALYSTS": top,
         "BUY_ZONE": _buy_zone_label(p),
         "STOP_LOSS": _stop_label(p),
@@ -1333,7 +1335,7 @@ class NarrativeEngine:
         """
         if self.llm is None:
             return "", "skipped"
-        key = f"narrative:v7:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        key = f"narrative:v8:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
         cached = self._cache_get(key)
         if cached is not None:
             return cached, "cached"
@@ -1406,6 +1408,8 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         engine = _ENGINE_SINGLETON
     narrative, l3_status = engine.generate(p, contract, cats, retail_scan=scan)
     trading_notes = narrative or render_plain_trading_notes(p, contract, cats)
+    note_payload = build_trading_note_payload(p, contract, cats)
+    primary_driver = note_payload.get("PRIMARY_DRIVER") or {}
 
     return {
         "status": "ok",
@@ -1416,6 +1420,9 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
                    "text": render_action(contract, p)},
         "retail_scan": scan,
         "trading_notes": trading_notes,
+        "primary_driver": primary_driver,
+        "driver_category": note_payload.get("DRIVER_CATEGORY") or "TECHNICAL",
+        "driver_chip": note_payload.get("DRIVER_CHIP") or "Technical",
         "why": why,
         "catalysts": [asdict(x) for x in cats],
         "scenario_ev_pct": p.scenario_ev(),
