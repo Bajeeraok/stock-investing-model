@@ -214,6 +214,15 @@ export interface InvestorDecisionSummary {
   valuation_deck?: import("./valuationDeckTypes").ValuationDeckPayload | null;
   /** Short-term pattern score (0-100); when low, show signal-deterioration banner. */
   pattern_score?: number | null;
+  /** Confidence-adjusted headline (gates × fused confidence). setup_quality = raw pattern. */
+  actionable_score?: {
+    setup_quality?: number | null;
+    actionable?: number | null;
+    stale?: boolean;
+    suppressed?: boolean;
+    note?: string;
+    factors?: Record<string, number | null | undefined>;
+  } | null;
   /** Backend-enriched gates, rsi_status, gate_cleared (source of truth for UI styling). */
   retail_action?: import("./retailActionUX").RetailActionPayload | null;
   /** Composed swing play sheet — levels from horizons.short. */

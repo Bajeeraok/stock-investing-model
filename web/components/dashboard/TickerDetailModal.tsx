@@ -49,6 +49,7 @@ import {
 } from "./tradingPlatformUX";
 import { apiUrl, fetchJsonWithRetry, formatFetchError, isMobileLikeBrowser } from "@/lib/apiBase";
 import { pctPriceVsFairValue } from "@/lib/valuationPct";
+import { computeActionableScore } from "@/lib/actionableScore";
 
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
@@ -633,6 +634,49 @@ export function TickerDetailModal({
     [tradingGates],
   );
 
+  const headlineScore = useMemo(() => {
+    const inv = detail?.investor_summary as
+      | (InvestorDecisionSummary & {
+          actionable_score?: {
+            setup_quality?: number | null;
+            actionable?: number | null;
+            stale?: boolean;
+            note?: string;
+          };
+        })
+      | null
+      | undefined;
+    const fromApi = inv?.actionable_score;
+    const setup =
+      detail?.score_breakdown?.composite ?? inv?.pattern_score ?? null;
+    const conf =
+      inv?.model_confidence_pct ??
+      inv?.trade_roadmap?.tldr?.model_confidence_pct ??
+      null;
+    if (fromApi && (fromApi.actionable != null || fromApi.stale || fromApi.setup_quality != null)) {
+      return {
+        actionable: fromApi.actionable ?? null,
+        setup: fromApi.setup_quality ?? (setup != null ? Number(setup) : null),
+        stale: !!fromApi.stale,
+        note: fromApi.note ?? null,
+        confidencePct: conf != null ? Number(conf) : null,
+      };
+    }
+    const computed = computeActionableScore({
+      setupQuality: setup != null ? Number(setup) : null,
+      gatesPassed: tradingGates.length ? gatesPassedCount : null,
+      gatesTotal,
+      fusedConfidencePct: conf != null ? Number(conf) : null,
+    });
+    return {
+      actionable: computed.actionable,
+      setup: computed.setup_quality,
+      stale: computed.stale,
+      note: computed.note,
+      confidencePct: conf != null ? Number(conf) : null,
+    };
+  }, [detail, tradingGates.length, gatesPassedCount, gatesTotal]);
+
   const quoteDailyMovePct = useMemo(() => {
     // Prefer live intraday change pct (1D chart, from open) when available
     if (liveChangePct != null) return liveChangePct;
@@ -825,7 +869,10 @@ export function TickerDetailModal({
               ticker={ticker}
               price={effectivePrice}
               dailyMovePct={quoteDailyMovePct}
-              score={detail.score_breakdown?.composite ?? detail.investor_summary?.pattern_score}
+              score={headlineScore.actionable}
+              setupQuality={headlineScore.setup}
+              scoreNote={headlineScore.note}
+              scoreStale={headlineScore.stale}
               regime={(() => {
                 const inv = detail.investor_summary;
                 if (inv?.regime_momentum_extended) return "EXTENDED";
@@ -837,6 +884,7 @@ export function TickerDetailModal({
               actionTitle={headerActionStatus.title}
               gatesPassed={tradingGates.length ? gatesPassedCount : null}
               gatesTotal={gatesTotal}
+              confidencePct={headlineScore.confidencePct}
               earningsLabel={
                 detail.earnings?.days_until != null && detail.earnings.days_until <= 14
                   ? `Earnings T+${detail.earnings.days_until}d`

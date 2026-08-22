@@ -76,23 +76,43 @@ export function StickyTickerQuoteBar({
   price,
   dailyMovePct,
   score,
+  setupQuality,
+  scoreNote,
+  scoreStale,
   regime,
   actionTitle,
   gatesPassed,
   gatesTotal = 4,
+  confidencePct,
+  confidenceTarget = 55,
   earningsLabel,
 }: {
   ticker: string;
   price?: number | null;
   dailyMovePct?: number | null;
+  /** Confidence-adjusted headline (act-today). Prefer over raw setup. */
   score?: number | null;
+  /** Raw setup quality 0–100 when different from headline */
+  setupQuality?: number | null;
+  scoreNote?: string | null;
+  scoreStale?: boolean;
   regime?: string | null;
   actionTitle?: string | null;
   gatesPassed?: number | null;
   gatesTotal?: number;
+  /** Fused confidence — shown as meta, not in 4/4 buy-gate bar */
+  confidencePct?: number | null;
+  confidenceTarget?: number;
   earningsLabel?: string | null;
 }) {
   const move = formatDailyMovePct(dailyMovePct);
+  const showSetup =
+    setupQuality != null &&
+    score != null &&
+    Math.abs(Number(setupQuality) - Number(score)) >= 3;
+  const confFail =
+    confidencePct != null && Number(confidencePct) < Number(confidenceTarget);
+
   return (
     <div className="sticky top-0 z-[20] border-b border-slate-700/80 bg-slate-950/95 backdrop-blur-md px-3 sm:px-5 py-2.5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -106,11 +126,41 @@ export function StickyTickerQuoteBar({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {score != null && (
-            <span className="px-2 py-0.5 rounded border border-slate-600 bg-slate-800/80 tabular-nums">
-              Score <span className="text-emerald-300 font-semibold">{Math.round(score)}</span>
+          {scoreStale ? (
+            <span
+              className="px-2 py-0.5 rounded border border-amber-500/45 bg-amber-950/40 text-amber-200"
+              title={scoreNote || "Price data may be delayed — score suppressed"}
+            >
+              Score <span className="font-semibold">STALE</span>
             </span>
-          )}
+          ) : score != null ? (
+            <span
+              className={clsx(
+                "px-2 py-0.5 rounded border tabular-nums",
+                Number(score) >= 55
+                  ? "border-emerald-500/40 bg-emerald-950/30"
+                  : Number(score) >= 30
+                    ? "border-amber-500/40 bg-amber-950/30"
+                    : "border-slate-600 bg-slate-800/80",
+              )}
+              title={scoreNote || "Confidence-adjusted — gates × fused confidence applied to setup quality"}
+            >
+              Score{" "}
+              <span
+                className={clsx(
+                  "font-semibold",
+                  Number(score) >= 55 ? "text-emerald-300" : Number(score) >= 30 ? "text-amber-300" : "text-slate-300",
+                )}
+              >
+                {Math.round(Number(score))}
+              </span>
+              {showSetup && (
+                <span className="text-slate-500 font-normal ml-1">
+                  (setup {Math.round(Number(setupQuality))})
+                </span>
+              )}
+            </span>
+          ) : null}
           {regime && (
             <span
               className={clsx(
@@ -131,8 +181,20 @@ export function StickyTickerQuoteBar({
           )}
         </div>
         {gatesPassed != null && (
-          <div className="w-full sm:w-32 shrink-0">
+          <div className="w-full sm:w-36 shrink-0 space-y-1">
             <GateProgressBar passed={gatesPassed} total={gatesTotal} variant="buy" />
+            {confidencePct != null && (
+              <p
+                className={clsx(
+                  "text-[10px] leading-tight",
+                  confFail ? "text-amber-400/90" : "text-slate-500",
+                )}
+                title="Sizing / meta-confidence — not counted in the 4-of-4 buy-gate bar"
+              >
+                Meta-confidence {Math.round(Number(confidencePct))}%
+                {confFail ? ` (needs ${Math.round(Number(confidenceTarget))}%)` : ""}
+              </p>
+            )}
           </div>
         )}
         {earningsLabel && (

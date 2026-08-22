@@ -564,10 +564,13 @@ trim_gates:
 paper_trading:
   min_completed_for_summary: 60   # lower (e.g. 15) to unlock full stats sooner while building history
   min_actionable_buy_summary: 8   # min completed STRONG BUY/BUY/HOLD/ADD rows for buy-only sub-summary
-  backfill_from_eod_days: 90      # rebuild paper_trades.csv from EOD when CSV is empty/stale after redeploy
+  # Fresh restart (2026-08-22): old CSV archived under data/paper_trades_archive_*.
+  # Keep 0 until you want historical GO fills replayed into a new book.
+  backfill_from_eod_days: 0       # was 90 — set >0 only to rebuild from EOD after wipe
   require_gates_cleared: true     # only log GO signals (all 4 gates pass); legacy EOD without gates still backfills
   entry_mode: limit_touch          # limit_touch (patient limit at reference) | market (legacy close fill)
-  reference_entry: st_band_low           # st_band_low (ST ATR/swing) | suggested_buy_price (MA50/200) | support_level
+  # Prefer suggested_buy_price when available so fill ≠ ST stop floor (cleaner R:R / stop stats).
+  reference_entry: suggested_buy_price   # suggested_buy_price | st_band_low | support_level
   limit_max_wait_days: 10         # business days after GO signal to wait for limit touch
   require_actionable_signal: true # BUY / STRONG BUY / HOLD-ADD only (skip GO+HOLD rows)
   benchmark_ticker: SPY
@@ -595,7 +598,7 @@ velocity_tactical:
   require_rvol_or_bb: true
   log_paper_trades: true
   require_buy_side_for_paper: true   # skip REDUCE/TRIM/SELL velocity rows (long-only paper)
-  min_gates_for_paper: 0            # set 2 to align with tactical_min_gates_for_alert
+  min_gates_for_paper: 2            # align with tactical_min_gates_for_alert (was 0 — logged hard_lock noise)
   tactical_min_gates_for_alert: 2
 
 # Scout overview: 1-day event risk strip (earnings + ATR + velocity ranking)

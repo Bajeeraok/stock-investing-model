@@ -1997,6 +1997,13 @@ def _build_investor_summary(
     except Exception:
         pass
 
+    try:
+        from signals.actionable_score import attach_actionable_score
+
+        attach_actionable_score(out)
+    except Exception:
+        pass
+
     return out
 
 

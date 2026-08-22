@@ -260,6 +260,8 @@ def _reference_entry_from_row(r: dict[str, Any], ref_key: str) -> float | None:
         if px is None:
             st = r.get("st_band") if isinstance(r.get("st_band"), dict) else {}
             px = _safe_float(st.get("low"))
+        if px is None:
+            px = _safe_float(r.get("support_level"))
     else:
         st = r.get("st_band") if isinstance(r.get("st_band"), dict) else {}
         px = _safe_float(st.get("low"))

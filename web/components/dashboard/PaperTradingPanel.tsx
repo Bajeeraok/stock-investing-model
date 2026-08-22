@@ -86,10 +86,15 @@ function filteredPaperStats(rows: any[]) {
   const returns = withReturn.map((r) => Number(r.return_pct));
   const wins = returns.filter((x) => x > 0).length;
   const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const excessRows = withReturn.filter((r) => hasNumericValue(r.excess_vs_benchmark_pct));
+  const excessRows = withReturn.filter(
+    (r) => hasNumericValue(r.excess_return_pct) || hasNumericValue(r.excess_vs_benchmark_pct),
+  );
   const avgExcess =
     excessRows.length > 0
-      ? excessRows.reduce((a, r) => a + Number(r.excess_vs_benchmark_pct), 0) / excessRows.length
+      ? excessRows.reduce(
+          (a, r) => a + Number(r.excess_return_pct ?? r.excess_vs_benchmark_pct),
+          0,
+        ) / excessRows.length
       : null;
   return {
     n: rows.length,
@@ -143,7 +148,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
       if (sf && !String(r.signal || "").toUpperCase().includes(sf)) return false;
       if (statusFilter === "OPEN" && r.outcome) return false;
       if (statusFilter === "DONE" && !r.outcome) return false;
-      if (modeFilter !== "ALL" && (r.entry_mode || "") !== modeFilter) return false;
+      if (modeFilter !== "ALL" && (r.gate_mode || r.entry_mode || "") !== modeFilter) return false;
       return true;
     });
   }, [allRecent, tickerFilter, dateRange, signalFilter, statusFilter, modeFilter]);
@@ -503,6 +508,8 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <td className="py-1.5 pr-2 text-xs">
                     {String(r.track || "accumulate") === "velocity" ? (
                       <span className="text-violet-300">tactical</span>
+                    ) : String(r.track || "") === "swing" ? (
+                      <span className="text-sky-300">swing</span>
                     ) : (
                       <span className="text-emerald-400/90">accumulate</span>
                     )}
@@ -510,7 +517,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <td className="py-1.5 pr-2 text-slate-400">{r.signal}</td>
                   <td className="py-1.5 pr-2 text-slate-400 text-xs">
                     {r.gates_passed != null && r.gates_total != null ? (
-                      <span className={r.entry_mode === "full_go" ? "text-emerald-400" : r.entry_mode === "starter_only" ? "text-amber-300" : "text-slate-500"}>
+                      <span className={(r.gate_mode || r.entry_mode) === "full_go" ? "text-emerald-400" : (r.gate_mode || r.entry_mode) === "starter_only" ? "text-amber-300" : "text-slate-500"}>
                         {r.gates_passed}/{r.gates_total}
                       </span>
                     ) : (
@@ -518,7 +525,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     )}
                   </td>
                   <td className="py-1.5 pr-2">
-                    <EntryModePill mode={r.entry_mode} />
+                    <EntryModePill mode={r.gate_mode || r.entry_mode} />
                   </td>
                   <td className="py-1.5 pr-2 text-slate-300">
                     {hasNumericValue(r.reference_entry_price) && Number(r.reference_entry_price) > 0
@@ -537,6 +544,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                         "px-2 py-0.5 rounded text-xs font-medium",
                         r.outcome === "HIT" && "bg-emerald-500/15 text-emerald-300",
                         r.outcome === "MISS" && "bg-red-500/15 text-red-300",
+                        r.outcome === "STOP_HIT" && "bg-amber-500/15 text-amber-200",
                       )}>
                         {r.outcome}
                       </span>
