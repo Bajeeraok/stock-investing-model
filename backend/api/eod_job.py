@@ -134,10 +134,16 @@ def _start_full_eod_thread(date_str: str, *, force_retry: bool = False) -> bool:
                     _state["last_success_date"] = date_str
             if ok:
                 try:
+                    from alerts.market_hours import is_signal_warm_window
                     from api.dashboard_warm import trigger_post_eod_dashboard_sync
 
-                    queued = trigger_post_eod_dashboard_sync()
-                    logger.info("[eod-job] post-EOD dashboard cache sync queued=%s", queued)
+                    if is_signal_warm_window():
+                        queued = trigger_post_eod_dashboard_sync()
+                        logger.info("[eod-job] post-EOD dashboard cache sync queued=%s", queued)
+                    else:
+                        logger.info(
+                            "[eod-job] EOD ok — deferred post-EOD dashboard sync until weekday 8:30 ET"
+                        )
                 except Exception:
                     logger.exception("[eod-job] post-EOD dashboard cache sync failed to queue")
 

@@ -249,13 +249,23 @@ def startup():
     except Exception as e:
         logger.warning("EOD scheduler failed to start: %s", e)
 
-    def _startup_eod_catchup(delay_s: float = 90.0) -> None:
+    def _startup_eod_catchup(delay_s: float | None = None) -> None:
+        # After the 8pm ET session, catch up quickly so a late deploy still writes today.
+        if delay_s is None:
+            try:
+                from datetime import datetime
+                from zoneinfo import ZoneInfo
+
+                hour = datetime.now(ZoneInfo("America/New_York")).hour
+                delay_s = 15.0 if hour >= 20 else 90.0
+            except Exception:
+                delay_s = 90.0
         time.sleep(delay_s)
         try:
             from api.eod_job import trigger_full_eod_background_if_missing
 
             queued = trigger_full_eod_background_if_missing(min_hour_et=20)
-            logger.info("[startup] stale EOD session catch-up queued=%s", queued)
+            logger.info("[startup] stale EOD session catch-up queued=%s (delay=%.0fs)", queued, delay_s)
         except Exception as e:
             logger.warning("[startup] EOD catch-up failed: %s", e)
 

@@ -4572,15 +4572,25 @@ def run_eod_now(
             "reload_hint": "Poll /api/dashboard/status until idle, then reload dashboard or GET /api/dashboard/shell",
         }
     else:
+        # Prefer light post-EOD merge from last_run; skip overnight to avoid OOM after the EOD write.
         try:
+            from alerts.market_hours import is_signal_warm_window
             from api.dashboard_warm import trigger_post_eod_dashboard_sync
 
-            started = trigger_post_eod_dashboard_sync()
-            dash_refresh = {
-                "triggered": started,
-                "mode": "post_eod_cache_sync",
-                "poll_status_url": "/api/dashboard/status",
-            }
+            if is_signal_warm_window():
+                started = trigger_post_eod_dashboard_sync()
+                dash_refresh = {
+                    "triggered": started,
+                    "mode": "post_eod_cache_sync",
+                    "poll_status_url": "/api/dashboard/status",
+                }
+            else:
+                dash_refresh = {
+                    "triggered": False,
+                    "mode": "deferred_until_warm_window",
+                    "hint": "EOD/audit saved; dashboard cache sync waits until weekday 8:30 ET (or Force refresh).",
+                }
+                logger.info("[eod/run] deferred post-EOD dashboard sync until next warm window")
         except Exception as e:
             logger.debug("[eod/run] post-EOD cache sync queue failed: %s", e)
 
