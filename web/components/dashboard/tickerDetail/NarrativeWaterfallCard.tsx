@@ -99,14 +99,14 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   const scan = data?.retail_scan;
   const notes = (data?.trading_notes || data?.narrative || "").trim();
   const noteParagraphs = notes
-    ? notes.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)
+    ? notes.split(/\n/).map((p) => p.trim()).filter(Boolean)
     : [];
 
   return (
     <ReferenceCard
       icon={Sparkles}
       title="What to do"
-      description="Verdict first, then the four numbers that matter. Why opens trading notes, then the model checks."
+      description="Verdict first, then the four numbers that matter. Trading notes are a 10-second execution scan."
       body={
         loading ? (
           <p className="text-xs text-slate-500 italic animate-pulse">Building the 10-second scan…</p>

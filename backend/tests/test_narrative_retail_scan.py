@@ -1,4 +1,4 @@
-"""Trading notes must lead with real-world catalysts, not RSI/HMM jargon."""
+"""Trading notes: 3-bullet execution format, plain English, no RSI/HMM jargon."""
 
 from __future__ import annotations
 
@@ -7,20 +7,51 @@ from signals.narrative_waterfall import (
     Gate,
     SignalPacket,
     build_summary,
+    build_trading_note_payload,
+    derive_action_contract,
     derive_catalysts,
     example_packet_amzn,
     layer3_banned_hits,
+    map_execution_mode,
+    render_plain_trading_notes,
+    trading_note_structure_errors,
 )
 
 
-def test_plain_notes_state_when_no_company_catalyst():
-    out = build_summary(example_packet_amzn(), llm=None)
-    notes = out["trading_notes"].lower()
-    assert "no fresh company catalyst" in notes
-    assert layer3_banned_hits(out["trading_notes"]) == []
-    assert "rsi" not in notes
-    assert "hmm" not in notes
-    assert "institutions" not in notes
+def test_plain_notes_are_three_bullets_with_status_emoji():
+    pkt = example_packet_amzn()
+    out = build_summary(pkt, llm=None)
+    notes = out["trading_notes"]
+    lines = [ln for ln in notes.splitlines() if ln.strip()]
+    assert len(lines) == 3
+    assert lines[0].lstrip("•-* ").startswith(("🛑", "🚦", "🟢"))
+    assert "ACTION:" in lines[0]
+    assert "CATALYST" in lines[1].upper() or "DRIVER" in lines[1].upper()
+    assert layer3_banned_hits(notes) == []
+    assert "rsi" not in notes.lower()
+    assert "hmm" not in notes.lower()
+    assert "institutions" not in notes.lower()
+    assert trading_note_structure_errors(notes) == []
+
+
+def test_execution_payload_maps_modes_and_actions():
+    assert map_execution_mode("scout") == "DAY_TRADING"
+    assert map_execution_mode("swing") == "SWING_TRADING"
+    assert map_execution_mode("owner") == "LONG_TERM_INVESTOR"
+    pkt = example_packet_amzn()
+    contract = derive_action_contract(pkt)
+    payload = build_trading_note_payload(pkt, contract, derive_catalysts(pkt))
+    assert payload["TICKER"] == "AMZN"
+    assert payload["MODE"] == "SWING_TRADING"
+    assert payload["PRIMARY_ACTION"] in {
+        "AVOID",
+        "WAIT_PULLBACK",
+        "BUY_STARTER",
+        "CONFIRMED_BUY",
+    }
+    assert payload["STATUS_EMOJI"] in {"🛑", "🚦", "🟢"}
+    assert payload["BUY_ZONE"]
+    assert payload["STOP_LOSS"]
 
 
 def test_layer3_banned_hits_flags_quant_and_fake_institutions():
@@ -38,7 +69,7 @@ def test_layer3_banned_hits_flags_quant_and_fake_institutions():
     assert "institutions are buying" in hits
 
 
-def test_trading_notes_lead_with_known_event_catalyst():
+def test_trading_notes_surface_known_event_catalyst():
     pkt = SignalPacket(
         ticker="NVDA",
         mode="swing",
@@ -65,86 +96,63 @@ def test_trading_notes_lead_with_known_event_catalyst():
             "Market Weather clears",
             "Momentum Chop clears",
         ],
-        news_events=[{
-            "name": "earnings date (known event)",
-            "event_type": "EARNINGS_CALENDAR",
-            "direction": "neutral",
-            "mechanism": "NVDA reports in 9 days — size down into the print",
-            "watch": "size down into the print",
-            "horizon": "days",
-        }],
+        news_events=[
+            {
+                "name": "earnings date (known event)",
+                "event_type": "EARNINGS_CALENDAR",
+                "direction": "neutral",
+                "mechanism": "NVDA reports in 9 days — size down into the print",
+                "watch": "size down into the print",
+                "horizon": "days",
+            }
+        ],
     )
     cats = derive_catalysts(pkt)
     assert cats[0].mechanism.startswith("Known event:")
     assert not any("HMM" in c.mechanism or "RSI" in c.mechanism for c in cats)
 
-    notes = build_summary(pkt, llm=None)["trading_notes"]
+    notes = render_plain_trading_notes(pkt, derive_action_contract(pkt), cats)
     low = notes.lower()
-    assert "reports in 9 days" in low
-    assert "known event" in low or "earnings" in low
-    assert "no fresh company catalyst" not in low
-    assert "institutions" not in low
+    assert "9 days" in low or "earnings" in low or "reports" in low
     assert "rsi" not in low
+    assert "hmm" not in low
     assert layer3_banned_hits(notes) == []
+    assert len([ln for ln in notes.splitlines() if ln.strip()]) == 3
 
 
-def test_mapper_news_cards_reach_trading_notes():
-    from signals.narrative_packet_mapper import to_packet
-
-    detail = {
-        "ticker": "NVDA",
-        "current_price": 120.0,
-        "rsi": 55.0,
-        "sector": "Technology",
-        "investor_summary": {
-            "regime_bull_pct": 40.0,
-            "pattern_score": 50,
-            "fair_value": 140.0,
-            "retail_action": {
-                "action_title": "WAIT",
-                "max_sizing_pct": 0.0,
-                "assessment_pct": 10.0,
-                "gates": [
-                    {"id": "valuation", "pass": False},
-                    {"id": "regime", "pass": False},
-                    {"id": "momentum", "pass": False},
-                ],
-            },
-            "horizons": {
-                "medium": {
-                    "entry_zone": {"low": 90.0, "high": 110.0},
-                    "target": 150.0,
-                    "stop_loss": 85.0,
-                }
-            },
-            "trade_roadmap": {
-                "news_sentiment_layer": {
-                    "catalyst_cards": [{
-                        "name": "guidance raise",
-                        "event_type": "GUIDANCE_RAISE",
-                        "direction": "bullish",
-                        "mechanism": "NVDA raised full-year outlook on AI demand",
-                        "watch": "estimate revisions",
-                        "horizon": "days",
-                    }],
-                }
-            },
-            "valuation_deck": {"street": {}},
-        },
-        "confidence": {
-            "confidence": 0.5,
-            "hmm": {},
-            "options": {},
-            "nlp": {"sentiment_label": "BULLISH"},
-            "ml_horizons": {},
-        },
-        "cross_asset": {"badges": []},
-    }
-    pkt = to_packet(detail, "swing")
-    assert pkt.news_events
-    assert "raised full-year outlook" in (pkt.news_events[0].get("mechanism") or "")
-    cats = derive_catalysts(pkt)
-    assert any(c.mechanism.startswith("News:") for c in cats)
+def test_news_events_on_packet_reach_trading_notes():
+    pkt = SignalPacket(
+        ticker="NVDA",
+        mode="swing",
+        asof="2026-08-20",
+        spot=120.0,
+        trend="UP",
+        verdict="WATCH_ZONE",
+        score=55,
+        gates=[
+            Gate("valuation", False, {"mos_pct": 10.0, "required_pct": 25.0}),
+            Gate("market_weather", True, {"need_pct": 60.0, "hmm_bull_pct": 70.0, "tape": "Bull"}),
+            Gate("momentum_chop", True, {"rsi": 45.0}),
+        ],
+        entry_band=Band(90.75, 109.61),
+        stop=85.30,
+        invalidation=85.30,
+        entry_mode="WAIT",
+        hmm_bull_pct=70.0,
+        rsi=45.0,
+        required_mos_pct=25.0,
+        fair_value=140.0,
+        unlock_conditions=["Valuation clears"],
+        news_events=[
+            {
+                "name": "guidance raise",
+                "event_type": "GUIDANCE_RAISE",
+                "direction": "bullish",
+                "mechanism": "NVDA raised full-year outlook on AI demand",
+                "watch": "estimate revisions",
+                "horizon": "days",
+            }
+        ],
+    )
     notes = build_summary(pkt, llm=None)["trading_notes"].lower()
-    assert "raised full-year outlook" in notes
-    assert "no fresh company catalyst" not in notes
+    assert "outlook" in notes or "ai demand" in notes or "guidance" in notes

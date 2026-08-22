@@ -76,6 +76,23 @@ class Scenario:
     prob_pct: float
 
 
+def _driver_context_hash_key(ctx: dict | None) -> tuple:
+    """Coarse fingerprint for Layer-3 cache invalidation."""
+    if not isinstance(ctx, dict) or not ctx:
+        return ()
+    insider = ctx.get("insider") if isinstance(ctx.get("insider"), dict) else {}
+    si = ctx.get("short_interest") if isinstance(ctx.get("short_interest"), dict) else {}
+    macro = ctx.get("macro") if isinstance(ctx.get("macro"), dict) else {}
+    return (
+        str(insider.get("signal") or insider.get("net_sentiment") or ""),
+        int(insider.get("sell_count") or insider.get("sells") or 0),
+        round(float(si.get("short_pct") or si.get("shortPercentOfFloat") or 0), 2),
+        round(float(macro.get("cpi_yoy") or macro.get("cpi") or 0), 1),
+        round(float(macro.get("dgs10") or macro.get("yield_10y") or 0), 2),
+        round(float(macro.get("dxy") or 0), 1),
+    )
+
+
 @dataclass
 class SignalPacket:
     # identity
@@ -139,6 +156,8 @@ class SignalPacket:
     news_sentiment: str = ""
     # Advisory news / known-event cards from the news rail (not gate inputs).
     news_events: list[dict] = field(default_factory=list)
+    # Optional live feeds for Catalyst Translation Matrix (insider / SI / macro).
+    driver_context: dict = field(default_factory=dict)
 
     # ---- derived --------------------------------------------------
     def scenario_ev(self) -> Optional[float]:
@@ -297,6 +316,8 @@ class SignalPacket:
                 for e in (self.news_events or [])[:4]
                 if isinstance(e, dict)
             ],
+            # Coarse driver feeds so notes refresh when insider/SI/macro flips.
+            "driver_ctx": _driver_context_hash_key(self.driver_context),
         }
         blob = json.dumps(core, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
@@ -591,85 +612,265 @@ def layer3_banned_hits(text: str) -> list[str]:
     return [w for w in _LAYER3_BANNED if w in low]
 
 
+# ── Execution-note payload (LLM + deterministic share this contract) ──
+
+_MODE_TO_EXEC = {
+    "scout": "DAY_TRADING",
+    "swing": "SWING_TRADING",
+    "owner": "LONG_TERM_INVESTOR",
+}
+
+_PRIMARY_ACTION_EMOJI = {
+    "AVOID": "🛑",
+    "WAIT_PULLBACK": "🚦",
+    "BUY_STARTER": "🚦",
+    "CONFIRMED_BUY": "🟢",
+}
+
+
+def map_execution_mode(mode: str) -> str:
+    return _MODE_TO_EXEC.get((mode or "").strip().lower(), "SWING_TRADING")
+
+
+def map_primary_action(c: ActionContract) -> str:
+    if c.action is Action.STAND_ASIDE:
+        return "AVOID"
+    if c.action is Action.BUY:
+        return "CONFIRMED_BUY"
+    if c.action in (Action.STARTER_BUY, Action.PLACE_LIMIT):
+        return "BUY_STARTER"
+    return "WAIT_PULLBACK"
+
+
+def primary_action_emoji(primary: str) -> str:
+    return _PRIMARY_ACTION_EMOJI.get(primary, "🚦")
+
+
+def _plain_catalyst_text(x: "Catalyst") -> str:
+    """Strip News:/Known event: prefixes and fin-tech jargon for retail bullets."""
+    mech = (x.mechanism or x.name or "").strip()
+    for prefix in ("News:", "Known event:", "Known Event:"):
+        if mech.startswith(prefix):
+            mech = mech[len(prefix):].strip()
+    low = mech.lower()
+    replacements = (
+        ("hmm bear", "momentum is weak"),
+        ("hmm bull", "momentum is firm"),
+        ("put-heavy", "big traders are betting against this stock"),
+        ("high p/c", "big traders are betting against this stock"),
+        ("overbought", "overpriced right now — don't chase"),
+        ("insider selling", "company insiders are selling shares"),
+        ("margin of safety", "discount to fair value"),
+    )
+    out = mech
+    for a, b in replacements:
+        if a in low:
+            out = re.sub(re.escape(a), b, out, flags=re.IGNORECASE)
+    return out.rstrip(".")
+
+
+def _top_catalysts(cats: list["Catalyst"] | None) -> list[str]:
+    rows = list(cats or [])
+    news = [x for x in rows if _is_news_catalyst(x)]
+    ordered = news + [x for x in rows if x not in news]
+    out: list[str] = []
+    for x in ordered:
+        t = _plain_catalyst_text(x)
+        if t and t not in out:
+            out.append(t)
+        if len(out) >= 2:
+            break
+    if not out:
+        out = ["No fresh company catalyst in the packet"]
+    return out
+
+
+def _binary_event_label(cats: list["Catalyst"] | None, board: dict | None = None) -> str:
+    for x in cats or []:
+        blob = f"{x.name or ''} {x.mechanism or ''}"
+        m = re.search(r"in\s+(\d+)\s+days?", blob, flags=re.IGNORECASE)
+        if m:
+            name = (x.name or "Event").split("(")[0].strip() or "Event"
+            return f"{name} in {m.group(1)} days"
+    if board:
+        pd = board.get("primary_driver") or {}
+        if str(pd.get("category") or "") == "BINARY_EVENT":
+            headline = str(pd.get("headline") or "").strip()
+            if headline:
+                return headline[:80]
+        for d in board.get("top_drivers") or []:
+            if str(d.get("category") or "") == "BINARY_EVENT":
+                headline = str(d.get("headline") or "").strip()
+                if headline:
+                    return headline[:80]
+    return "NONE"
+
+
+def _buy_zone_label(p: SignalPacket) -> str:
+    if p.entry_band:
+        return p.entry_band.fmt()
+    return "n/a"
+
+
+def _stop_label(p: SignalPacket) -> str:
+    walk = p.stop if p.stop is not None else p.invalidation
+    if walk is None:
+        return "n/a"
+    if p.spot and float(p.spot) > 0:
+        pct = (float(walk) - float(p.spot)) / float(p.spot) * 100.0
+        return f"{pct:.1f}% (${walk:,.2f})"
+    return f"${walk:,.2f}"
+
+
+def build_trading_note_payload(
+    p: SignalPacket,
+    c: ActionContract,
+    cats: list["Catalyst"] | None = None,
+    *,
+    context: dict | None = None,
+) -> dict:
+    """Deterministic JSON fed to the LLM — keeps notes reproducible."""
+    from signals.catalyst_category_mapper import (
+        build_driver_board,
+        primary_driver_plain,
+    )
+
+    primary = map_primary_action(c)
+    board = build_driver_board(
+        p,
+        cats,
+        context=context if context is not None else (p.driver_context or None),
+    )
+    top_from_board = [
+        str(d.get("headline") or "").strip()
+        for d in (board.get("top_drivers") or [])
+        if str(d.get("headline") or "").strip()
+    ]
+    top = top_from_board[:2] if top_from_board else _top_catalysts(cats)
+    primary_driver = board.get("primary_driver") or {}
+    return {
+        "MODE": map_execution_mode(p.mode),
+        "TICKER": (p.ticker or "").upper(),
+        "PRIMARY_ACTION": primary,
+        "STATUS_EMOJI": primary_action_emoji(primary),
+        "PRIMARY_DRIVER": primary_driver,
+        "PRIMARY_DRIVER_PLAIN": primary_driver_plain(board),
+        "DRIVER_CATEGORY": primary_driver.get("category") or "TECHNICAL",
+        "TOP_CATALYSTS": top,
+        "BUY_ZONE": _buy_zone_label(p),
+        "STOP_LOSS": _stop_label(p),
+        "BINARY_EVENT": _binary_event_label(cats, board),
+        "SPOT": p.spot,
+        "PACKET_MODE": p.mode,
+        "DRIVER_BOARD": {
+            "top_drivers": board.get("top_drivers") or [],
+            "category_counts": board.get("category_counts") or {},
+            "matrix_version": board.get("matrix_version") or "v1",
+        },
+    }
+
+
+def _count_words(text: str) -> int:
+    return len(re.findall(r"\b[\w']+\b", text or ""))
+
+
+def trading_note_structure_errors(text: str) -> list[str]:
+    """Enforce 3 bullets + 35–50 words for Layer-3 trading notes."""
+    errs: list[str] = []
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    if len(lines) != 3:
+        errs.append(f"need exactly 3 bullet lines, got {len(lines)}")
+    for ln in lines:
+        if not ln.lstrip().startswith(("•", "-", "*")):
+            errs.append("each line must start with a bullet")
+            break
+    if lines and not any(lines[0].startswith(e) or e in lines[0][:4] for e in ("🛑", "🚦", "🟢")):
+        # emoji may sit after the bullet
+        first = lines[0].lstrip("•-* ").strip()
+        if not first[:2] in ("🛑", "🚦") and not first.startswith("🟢"):
+            errs.append("first bullet must start with 🛑, 🚦, or 🟢")
+    n = _count_words(text)
+    if n < 30 or n > 55:
+        errs.append(f"word count {n} outside 30–55")
+    return errs
+
+
 def render_plain_trading_notes(
     p: SignalPacket,
     c: ActionContract,
     cats: list["Catalyst"] | None = None,
 ) -> str:
-    """Deterministic notes when Layer 3 is skipped — same job as the LLM, no jargon."""
-    headline, reason = _retail_headline_reason(p, c)
-    bits = [f"{headline.replace('⏸ ', '').replace('🟡 ', '').replace('✅ ', '')}. {reason}"]
-    news_unlock = [
-        x for x in (cats or [])
-        if x.direction == "unlocks" and _is_news_catalyst(x)
-    ][:2]
-    news_break = [
-        x for x in (cats or [])
-        if x.direction == "breaks" and _is_news_catalyst(x)
-    ][:1]
-    if news_unlock:
-        bits.append(
-            "What could change the wait (from the news): "
-            + "; ".join(x.mechanism.rstrip(".") for x in news_unlock)
-            + "."
-        )
-    elif news_break:
-        bits.append(
-            "News risk to watch: "
-            + "; ".join(x.mechanism.rstrip(".") for x in news_break)
-            + "."
-        )
-    else:
-        bits.append(
-            "No fresh company catalyst (earnings, deal, guidance) is in the packet — "
-            "this wait is about price and market support, not a headline."
-        )
+    """Deterministic 10-second note: exactly 3 bullets, plain English, mode-aware."""
+    payload = build_trading_note_payload(p, c, cats)
+    emoji = payload["STATUS_EMOJI"]
+    primary = payload["PRIMARY_ACTION"]
+    mode = payload["MODE"]
+    ticker = payload["TICKER"]
+    zone = payload["BUY_ZONE"]
+    stop = payload["STOP_LOSS"]
+    cats_txt = payload["TOP_CATALYSTS"]
+    driver_cat = str(payload.get("DRIVER_CATEGORY") or "TECHNICAL")
+    primary_driver = payload.get("PRIMARY_DRIVER") or {}
+
+    def _short(s: str, n: int = 70) -> str:
+        s = (s or "").strip()
+        return s if len(s) <= n else (s[: n - 1].rstrip() + "…")
+
+    cat1 = _short(cats_txt[0] if cats_txt else "No fresh company catalyst")
+    binary = payload["BINARY_EVENT"]
     starter = _starter_watch_zone(p)
-    if p.entry_band:
-        cool = ""
-        if p.rsi is not None and float(p.rsi) >= 50:
-            cool = " after the move cools off"
-        in_band = p.entry_band.contains(float(p.spot))
-        above = float(p.spot) > p.entry_band.hi + 1e-6
-        if in_band:
-            bits.append(
-                f"Price is already INSIDE the buy zone {p.entry_band.fmt()}"
-                f"{' — starter only, not full size' if starter else ''}."
-            )
-            if starter and p.full_size_price:
-                bits.append(
-                    f"A full-size buy still needs a cheaper price, around ${p.full_size_price:,.2f}."
-                )
-        elif above:
-            if starter:
-                bits.append(
-                    f"Wait for a pullback into {p.entry_band.fmt()}{cool} — small first slice at most, "
-                    "not a full buy."
-                )
-                if p.full_size_price:
-                    bits.append(
-                        f"A full-size buy still needs a cheaper price, around ${p.full_size_price:,.2f}."
-                    )
-            else:
-                bits.append(
-                    f"Wait for a pullback into {p.entry_band.fmt()}{cool} before adding."
-                )
-        else:
-            bits.append(f"The planned buy area is {p.entry_band.fmt()}{cool}.")
-    unlock = [
-        x for x in (cats or [])
-        if x.direction == "unlocks" and not _is_news_catalyst(x)
-    ][:1]
-    if unlock and not news_unlock:
-        bits.append(
-            "Timing still needs: "
-            + "; ".join(x.mechanism.rstrip(".") for x in unlock)
-            + "."
+    in_band = bool(p.entry_band and p.entry_band.contains(float(p.spot)))
+
+    if primary == "AVOID":
+        action = f"Avoid new buys in {ticker} — plan is broken for now."
+    elif primary == "CONFIRMED_BUY":
+        action = f"Buy plan is clear for {ticker} — size only in the zone."
+    elif primary == "BUY_STARTER":
+        action = f"Small starter only in {ticker} — not a full buy."
+    else:
+        action = f"Wait on {ticker} — do not chase; buy the pullback only."
+
+    headline = _short(str(primary_driver.get("headline") or cat1))
+    plain = str(primary_driver.get("plain_english") or "")
+    if binary != "NONE" or driver_cat == "BINARY_EVENT":
+        driver = f"Near-term driver: {binary if binary != 'NONE' else headline}."
+    elif driver_cat != "TECHNICAL" and headline:
+        driver = f"Main driver ({plain}): {headline}." if plain else f"Main driver: {headline}."
+    elif "no fresh company catalyst" in cat1.lower() or "no fresh catalyst" in headline.lower():
+        driver = "No fresh company catalyst — this wait is about price and support."
+    else:
+        driver = f"Main driver: {cat1}."
+
+    if mode == "DAY_TRADING":
+        level = (
+            f"Scalp only in {zone}; hard exit at {stop}."
+            if zone != "n/a"
+            else f"No clean scalp zone — stay flat; hard exit at {stop}."
         )
-    walk = p.stop if p.stop is not None else p.invalidation
-    if walk is not None:
-        bits.append(f"Give up if it closes below ${walk:,.2f} — don't add more.")
-    return " ".join(bits)
+        line3 = f"• 🎯 SCALP LEVEL: {level}"
+    elif mode == "LONG_TERM_INVESTOR":
+        if starter:
+            plan = f"Starter-size adds only in {zone}; walk away below {stop}."
+        elif in_band:
+            plan = f"Accumulate in {zone}; walk away below {stop}."
+        else:
+            plan = f"Add on a deeper dip into {zone}; walk away below {stop}."
+        line3 = f"• 🎯 ACCUMULATION PLAN: {plan}"
+    else:
+        if in_band:
+            band = f"Already in buy zone {zone}; hard stop at {stop}."
+        elif starter:
+            band = f"Starter slice only in {zone}; hard stop at {stop}."
+        else:
+            band = f"Buy the pullback in {zone}; hard stop at {stop}."
+        line3 = f"• 🎯 BUY ZONE & STOP: {band}"
+
+    return chr(10).join([
+        f"• {emoji} ACTION: {action}",
+        f"• ⚠️ CATALYST & DRIVER: {driver}",
+        line3,
+    ])
+
 
 
 def _is_news_catalyst(x: "Catalyst") -> bool:
@@ -1013,37 +1214,57 @@ def render_catalysts(cats: list[Catalyst]) -> list[str]:
 
 LLMFn = Callable[[str, str], str]   # (system, user) -> completion text
 
-SYSTEM_PROMPT = """You write TRADING NOTES for a retail investor — not a quant recap.
+SYSTEM_PROMPT = """You are a plain-English trading execution assistant for retail equity traders.
+Convert the EXECUTION_NOTE payload into an immediate, scannable 10-second trading note.
 
-Audience: someone who will decide wait / small slice / walk away in 20 seconds.
-They already see the 5-line scan (RETAIL_SCAN). Your job is to explain WHAT TO DO
-and WHAT REAL-WORLD CATALYSTS matter — in plain English.
+CORE RULES:
+1. STRICT LENGTH: 35 to 50 words TOTAL. Never exceed 50 words.
+2. NO FIN-TECH JARGON. Translate metrics into everyday language:
+   - HMM bear / low fused score -> Momentum is weak / Overall signal is cautious
+   - Put-heavy / high P/C -> Big traders are betting against this stock
+   - Extended / overbought -> Overpriced right now / Don't chase
+   - Insider selling -> Company insiders are selling shares
+   - Yield / dollar spikes -> Broader market drag from interest rates
+   - High beta / volatility -> Wild daily swings / High risk
+3. DYNAMIC STATUS EMOJI on the first bullet (use STATUS_EMOJI when provided):
+   - 🛑 if PRIMARY_ACTION is AVOID
+   - 🚦 if PRIMARY_ACTION is WAIT_PULLBACK or BUY_STARTER
+   - 🟢 if PRIMARY_ACTION is CONFIRMED_BUY
+4. STRUCTURE: Output EXACTLY 3 bullet lines. No intro, no outro, no blank lines.
+5. Every dollar figure and percentage MUST appear in EXECUTION_NOTE or PACKET. Never invent prices.
+6. Never contradict PRIMARY_ACTION. Do not say buy when action is AVOID or WAIT_PULLBACK.
+7. Lead the CATALYST & DRIVER bullet with PRIMARY_DRIVER / DRIVER_CATEGORY (already ranked).
+   Prefer BINARY_EVENT > SMART_MONEY > MACRO_RATES > GEOPOLITICAL > CROSS_ASSET over TECHNICAL.
+   Use PRIMARY_DRIVER_PLAIN or TOP_CATALYSTS; do not invent a different main driver.
+8. Prefer BINARY_EVENT when present over chart-only chatter.
+9. Forbidden words: margin of safety, tape, HMM, confluence, thesis, invalidation, fused, RSI (say "after the move cools off").
 
-HARD RULES:
-1. Every dollar figure and percentage you write MUST appear verbatim in PACKET, RETAIL_SCAN, or CATALYSTS. Never invent a price, RSI band, or probability. Do not write "40–50" unless those numbers are in the packet.
-2. Never contradict ACTION_CONTRACT or RETAIL_SCAN. Do not use BUY/SELL except as they appear there.
-3. Use ONLY the catalysts listed in CATALYSTS. Prefer catalysts whose mechanism starts with "News:" or "Known event:" — those are real headlines / calendar items. Do not invent earnings, deals, upgrades, "institutions buying", or "bull conditions".
-4. Output EXACTLY 4 short paragraphs, 1–3 sentences each, separated by a blank line. No headers, bullets, or bold.
-   Paragraph 1 — What to do today (wait / small slice / don't chase), one plain reason. No model names.
-   Paragraph 2 — Lead with real-world news or known events from CATALYSTS when any exist (earnings, guidance, deals, upgrades, regulation). Say what the headline/event means for waiting or sizing. Only after that, mention timing (pullback / cooler reading / broader market support) if listed.
-   Paragraph 3 — When to give up (close below the walk-away price) and the worst case already in CATALYSTS.
-   Paragraph 4 — One thing to watch this week: prefer a news reaction or upcoming print if listed; else a price level in plain words.
-   Total ~120–180 words.
-5. Walk-away is a FLOOR: a close BELOW that price. Never write "close above" for that level.
-6. Never claim the buy zone restores a full discount unless a catalyst says the band clears full size.
-7. Do not attach gold / safe-haven / de-escalation logic unless those catalysts are listed.
-8. FORBIDDEN WORDS/PHRASES (never use): margin of safety, tape, HMM, confluence, thesis, momentum chop, invalidation, fused, bull tape, starter zone, true entry, bull conditions, 0% bull, institutions are buying, institutional selling, regime confirmation. Say "not cheap enough for a full buy", "ran up too fast", "walk away below", "price and a cooler reading both line up", "broader market support" instead.
-9. Do not name RSI. Say "after the move cools off" if you need momentum language.
-10. If CATALYSTS has no News:/Known event: items, you MUST say there is no fresh company catalyst in the packet (earnings, deal, guidance) — then stick to timing/price conditions. Never invent institutions buying, bull conditions, or a headline.
-11. Tone: calm, specific, no hype.
-12. ZONE STATE (hard fact): If RETAIL_SCAN says price is INSIDE the buy zone, you MUST NOT say wait for a pullback into that same zone. Say price is already in the band and name the real blocker (gates / weather / confidence).
-13. Catalysts: only use CATALYSTS listed. Frame competitive-threat headlines relative to the verdict — never re-label them as independently bullish."""
+OUTPUT BY MODE (EXECUTION_NOTE.MODE):
+
+IF MODE == DAY_TRADING:
+• [EMOJI] ACTION: [1 sentence intraday verdict]
+• ⚠️ CATALYST & DRIVER: [today's flow / news / big-trader positioning]
+• 🎯 SCALP LEVEL: [exact entry band + hard intraday stop]
+
+IF MODE == SWING_TRADING:
+• [EMOJI] ACTION: [1 sentence 1-2 week verdict]
+• ⚠️ CATALYST & DRIVER: [earnings / macro / insider driver]
+• 🎯 BUY ZONE & STOP: [pullback band + hard exit]
+
+IF MODE == LONG_TERM_INVESTOR:
+• [EMOJI] ACTION: [1 sentence long-term portfolio verdict]
+• ⚠️ CATALYST & DRIVER: [valuation / rates / policy risk]
+• 🎯 ACCUMULATION PLAN: [dip-buying zone for long-term adds]
+
+Output bullets only."""
 
 
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
                       cats: list[Catalyst],
                       retail_scan: dict | None = None) -> str:
+    """Structured execution payload first — keeps Layer-3 notes reproducible."""
     return json.dumps({
+        "EXECUTION_NOTE": build_trading_note_payload(p, contract, cats),
         "PACKET": asdict(p),
         "ACTION_CONTRACT": {**asdict(contract), "action": contract.action.value},
         "RETAIL_SCAN": retail_scan or {},
@@ -1108,11 +1329,11 @@ class NarrativeEngine:
         gate flips, a band moves, or RSI/regime crosses a bucket — never on a
         mere spot tick. The date prefix prevents a stale narrative from a
         previous day resurfacing just because the decision state happens to
-        match. v5 prioritizes news/known-event catalysts in plain English over technicals.
+        match. v6 uses execution-note bullets (35–50 words, mode-aware).
         """
         if self.llm is None:
             return "", "skipped"
-        key = f"narrative:v5:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        key = f"narrative:v7:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
         cached = self._cache_get(key)
         if cached is not None:
             return cached, "cached"
@@ -1121,7 +1342,8 @@ class NarrativeEngine:
             text = self.llm(SYSTEM_PROMPT, user).strip()
             bad_n = guard_numbers(text, p)
             bad_w = layer3_banned_hits(text)
-            if not bad_n and not bad_w:
+            bad_s = trading_note_structure_errors(text)
+            if not bad_n and not bad_w and not bad_s:
                 self._cache_set(key, text)
                 return text, "ok"
             extra = []
@@ -1129,6 +1351,8 @@ class NarrativeEngine:
                 extra.append(f"illegal numbers {bad_n}")
             if bad_w:
                 extra.append(f"forbidden jargon {bad_w} — rewrite in plain English")
+            if bad_s:
+                extra.append(f"structure errors {bad_s} — exactly 3 bullets, 35-50 words, status emoji on bullet 1")
             user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
                      "Rewrite using only packet numbers and no forbidden words.")
         return "", "fallback"

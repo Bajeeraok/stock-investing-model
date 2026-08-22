@@ -17,6 +17,7 @@ fallback, EV computation, trend derivation, asof).
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from signals.narrative_waterfall import Band, Gate, Scenario, SignalPacket, full_size_price_from_mos
@@ -282,6 +283,64 @@ def _news_events_from_detail(ticker_detail: dict, investor: dict) -> list[dict]:
     return out
 
 
+def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
+    """Attach insider / short-interest / light macro hooks for catalyst matrix."""
+    ctx: dict = {}
+    if not isinstance(conf, dict):
+        conf = {}
+
+    si = conf.get("short_interest")
+    if isinstance(si, dict) and si:
+        ctx["short_interest"] = si
+
+    insider: dict = {}
+    pa = conf.get("penalty_audit") or {}
+    if isinstance(pa, dict) and (pa.get("insider_sell_penalty") or {}).get("triggered"):
+        insider = {"signal": "selling", "sell_count": 3}
+    else:
+        bd = ((conf.get("breakdown") or {}).get("insider_signal") or {})
+        label = str(bd.get("label") or "").lower()
+        if "net selling" in label or "selling" in label:
+            # Rough share count from label when present: "(12,345 shares sold)"
+            sells = None
+            m = re.search(r"([\d,]+)\s+shares\s+sold", label)
+            if m:
+                try:
+                    sells = int(m.group(1).replace(",", ""))
+                except ValueError:
+                    sells = None
+            insider = {
+                "signal": "selling",
+                "sell_count": 3 if sells is None else max(3, 1),
+                "label": bd.get("label"),
+            }
+    stats = ticker_detail.get("insider_stats")
+    if isinstance(stats, dict) and not insider:
+        # FMP insider stats shapes vary; treat heavy sell share as bearish.
+        sell_ratio = stats.get("sell_ratio") or stats.get("totalSellRatio")
+        try:
+            sr = float(sell_ratio) if sell_ratio is not None else None
+        except (TypeError, ValueError):
+            sr = None
+        if sr is not None and sr > 1.0:
+            sr = sr / 100.0
+        if sr is not None and sr >= 0.6:
+            insider = {"signal": "selling", "sell_count": 3}
+    if insider:
+        ctx["insider"] = insider
+
+    # Light macro from cross-asset badges / optional macro block on detail.
+    macro = ticker_detail.get("macro") if isinstance(ticker_detail.get("macro"), dict) else {}
+    if macro:
+        ctx["macro"] = macro
+
+    cal = ticker_detail.get("economic_calendar") or ticker_detail.get("macro_events")
+    if isinstance(cal, list) and cal:
+        ctx["economic_calendar"] = cal[:6]
+
+    return ctx
+
+
 def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None = None) -> SignalPacket:
     """Build a SignalPacket for one persona (`mode`) from an already-computed
     ticker_detail response, plus the scenario list from price_targets.py's
@@ -434,4 +493,5 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         street_bullish_pct=(street.get("ratings") or {}).get("bullish_pct"),
         news_sentiment=nlp.get("sentiment_label") or "",
         news_events=_news_events_from_detail(ticker_detail, investor),
+        driver_context=_driver_context_from_detail(ticker_detail, conf),
     )
