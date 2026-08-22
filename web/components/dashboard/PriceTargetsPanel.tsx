@@ -83,6 +83,11 @@ export interface Scenario {
   is_base:           boolean;
   macro_note?:       string;
   analyst_anchored?: boolean;
+  /** Set by scenario_integrity when trigger was fact-checked / rewritten */
+  trigger_fact_checked?: boolean;
+  regime_cross_checked?: boolean;
+  modal_enforced?: boolean;
+  prob_normalized?: boolean;
 }
 
 export interface TechnicalLevels {
@@ -170,6 +175,9 @@ export interface PriceTargetsData {
     long?:   HorizonTargets;
   };
   scenarios: Scenario[];
+  /** Exclusive Σ(p×r) after integrity — prefer over client re-weighting */
+  scenario_ev_pct?: number | null;
+  scenario_probs_exclusive?: boolean;
   valuation_guard?: ValuationGuardSummary;
   error?: string;
 }
@@ -908,7 +916,7 @@ export function PriceTargetsPanel({
                 <ScenarioRow key={i} s={s} price={data.current_price} />
               ))}
 
-              {/* Expected value footer */}
+              {/* Expected value footer — exclusive probs only (sum ≈ 100%) */}
               <div className="bg-slate-800/40 rounded-xl border border-slate-700/30 px-4 py-3">
                 <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">
                   Portfolio-Weighted Expected Value
@@ -916,19 +924,36 @@ export function PriceTargetsPanel({
                 <div className="flex items-center gap-4 flex-wrap">
                   {(() => {
                     const totalWeight = scenarios.reduce((s, sc) => s + sc.probability, 0);
-                    const ev = totalWeight > 0
-                      ? scenarios.reduce((s, sc) => s + sc.return_pct * sc.probability, 0) / totalWeight
-                      : null;
-                    const evPct = ev != null ? Math.round(ev * 10) / 10 : null;
+                    // Prefer backend exclusive EV; else Σ(p×r) when probs already sum ~1.
+                    // Never use Σ(p×r)/Σ(p) on non-exclusive weights — that inflated MU to +44%.
+                    const backendEv = data.scenario_ev_pct;
+                    const exclusive =
+                      data.scenario_probs_exclusive === true ||
+                      (totalWeight > 0.9 && totalWeight < 1.1);
+                    const clientEv =
+                      exclusive && totalWeight > 0
+                        ? scenarios.reduce((s, sc) => s + sc.return_pct * sc.probability, 0)
+                        : null;
+                    const evPct =
+                      backendEv != null
+                        ? Math.round(backendEv * 10) / 10
+                        : clientEv != null
+                          ? Math.round(clientEv * 10) / 10
+                          : null;
+                    const sumPct = Math.round(totalWeight * 100);
                     return (
                       <>
                         <div>
                           <p className={clsx("text-xl font-mono font-bold", returnColor(evPct))}>
                             {evPct != null ? fmtPct(evPct) : "—"}
                           </p>
-                          <p className="text-[10px] text-slate-500">Prob-weighted return across all scenarios</p>
+                          <p className="text-[10px] text-slate-500">
+                            Exclusive probs (sum {sumPct}%) · Σ(p × return)
+                          </p>
                         </div>
                         <div className="text-xs text-slate-400 leading-relaxed max-w-sm">
+                          {evPct == null &&
+                            "Scenario weights are not exclusive yet — EV withheld until probabilities sum to 100%."}
                           {evPct != null && evPct >= 3 && "Positive expected value — the odds favor entry with proper position sizing and a defined stop."}
                           {evPct != null && evPct >= 0 && evPct < 3 && "Marginally positive — wait for a better entry in the buy zone or a higher ML probability signal."}
                           {evPct != null && evPct < 0 && "Negative expected value — do not enter until regime or ML signal improves."}

@@ -258,17 +258,19 @@ _ASSET_SCENARIOS: dict[str, list[dict]] = {
     "EQUITY_SPECULATIVE": [
         {
             "name":    "Momentum Squeeze",
-            "trigger": "Short interest >20% + positive catalyst",
-            "rationale": "High short interest creates a coiled spring. A positive catalyst "
-                         "(earnings beat, partnership, product launch) forces short covering.",
+            # Trigger rewritten by scenario_integrity with live SI, or scenario is dropped.
+            "trigger": "Elevated short interest + positive catalyst",
+            "rationale": "When short interest is genuinely elevated, a positive catalyst "
+                         "(earnings beat, partnership, product launch) can force covering.",
             "return_adj":  +0.12,
             "prob_adj":    +0.20,
         },
         {
             "name":    "Institutional Exit",
-            "trigger": "Major fund filing 13G/D showing reduced stake",
-            "rationale": "Large fund exits in high-beta names create sustained selling pressure. "
-                         "Retail sentiment alone cannot absorb the supply.",
+            # Hypothetical risk class — never imply a filing already happened.
+            "trigger": "Large holder reduces position (13F/13G-class risk)",
+            "rationale": "Hypothetical downside catalyst class: a major holder trimming could "
+                         "pressure a high-beta name. Not a claim that a filing has occurred.",
             "return_adj":  -0.12,
             "prob_adj":    -0.25,
         },
@@ -1187,6 +1189,20 @@ def run_price_targets(
     except Exception as _vg_exc:
         logger.debug("Scenario valuation guard failed for %s: %s", ticker, _vg_exc)
 
+    # ── Scenario integrity: exclusive probs, base modal, fact-check triggers ─
+    scenario_ev_pct = None
+    try:
+        from signals.scenario_integrity import finalize_scenarios, portfolio_ev_pct
+
+        scenarios = finalize_scenarios(
+            scenarios,
+            hmm_probs=regime_hmm_probs,
+            short_interest=si_data,
+        )
+        scenario_ev_pct = portfolio_ev_pct(scenarios)
+    except Exception as _si_exc:
+        logger.debug("Scenario integrity failed for %s: %s", ticker, _si_exc)
+
     return {
         "ticker":          ticker,
         "analysis_date": __import__("signals.time_et", fromlist=["today_est"]).today_est(),
@@ -1236,4 +1252,7 @@ def run_price_targets(
         "valuation_guard": valuation_guard,
         "horizons":  horizons_out,
         "scenarios": scenarios,
+        # Exclusive Σ(p×r) after integrity — UI must not re-weight by Σp.
+        "scenario_ev_pct": scenario_ev_pct,
+        "scenario_probs_exclusive": True,
     }
