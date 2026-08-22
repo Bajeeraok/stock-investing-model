@@ -17,8 +17,16 @@ const AUTO_REFRESH_MARKET_MIN = (() => {
   // Align with backend signal warm (~2h on Railway); quote ticks still update prices server-side.
   return 120;
 })();
-// Off-hours auto-refresh is disabled to reduce API usage (FMP calls) and noise.
-const AUTO_REFRESH_OFF_HOURS_MIN = 0;
+// Off-hours: still poll the cheap shell when WebSocket is dead (Railway proxies
+// often drop WS). Shell reads Redis only — no FMP. Override with NEXT_PUBLIC_AUTO_REFRESH_OFF_HOURS_MIN.
+const AUTO_REFRESH_OFF_HOURS_MIN = (() => {
+  const raw = process.env.NEXT_PUBLIC_AUTO_REFRESH_OFF_HOURS_MIN;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!Number.isNaN(n) && n >= 0 && n <= 180) return n;
+  }
+  return 15;
+})();
 const DASHBOARD_FETCH_DEBOUNCE_MS = 2000;
 /** Min ms between dashboard fetches (avoids loop + duplicate from Strict Mode). */
 const DASHBOARD_MIN_INTERVAL_MS = 30_000;
@@ -238,15 +246,20 @@ export default function Home() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refresh]);
 
-  // Auto-refresh: only during US market hours on weekdays (ET).
+  // Auto-refresh: market hours on a long cadence; off-hours still refresh the shell
+  // when WebSocket is down so desktop/mobile don't stick on yesterday's localStorage.
   useEffect(() => {
     if (error || !data) return;
-    const minutes = isUSMarketHours() ? AUTO_REFRESH_MARKET_MIN : AUTO_REFRESH_OFF_HOURS_MIN;
+    const minutes = isUSMarketHours()
+      ? AUTO_REFRESH_MARKET_MIN
+      : wsLive
+        ? 0
+        : AUTO_REFRESH_OFF_HOURS_MIN;
     if (!minutes || minutes <= 0) return;
     const intervalMs = minutes * 60 * 1000;
-    const id = setInterval(() => refresh(), intervalMs);
+    const id = setInterval(() => refresh(false, false, true), intervalMs);
     return () => clearInterval(id);
-  }, [data, error, refresh]);
+  }, [data, error, refresh, wsLive]);
 
   // HTTP poll fallback when WebSocket unavailable (cold start / proxy) or first-load warming.
   useEffect(() => {
@@ -255,9 +268,9 @@ export default function Home() {
       data?.refresh_status === "running" ||
       data?.refresh_coalesced === true;
     const shouldPoll =
-      jobRunning &&
       !error &&
-      (!wsLive || data?.warming === true);
+      (jobRunning || !wsLive) &&
+      (!wsLive || data?.warming === true || jobRunning);
     if (!shouldPoll) {
       if (stalePollRef.current) {
         clearInterval(stalePollRef.current);
@@ -265,25 +278,28 @@ export default function Home() {
       }
       return;
     }
+    const pollMs = jobRunning ? STALE_POLL_MS : Math.max(60_000, (AUTO_REFRESH_OFF_HOURS_MIN || 15) * 60_000);
     const poll = async () => {
       try {
-        const statusUrl = API_BASE ? `${API_BASE}/api/dashboard/status` : "/api/dashboard/status";
-        const st = await fetch(statusUrl).then((r) => r.json());
-        // Cache is ready and no compute in flight — pull fresh shell only.
-        // Do NOT use ?refresh=true here; that would restart a 5-min full recompute.
-        const ready =
-          st?.ready === true ||
-          (st?.cache_fresh === true && st?.is_running === false && st?.status !== "running");
-        if (ready) {
+        if (jobRunning) {
+          const statusUrl = API_BASE ? `${API_BASE}/api/dashboard/status` : "/api/dashboard/status";
+          const st = await fetch(statusUrl, { cache: "no-store" }).then((r) => r.json());
+          const ready =
+            st?.ready === true ||
+            (st?.cache_fresh === true && st?.is_running === false && st?.status !== "running");
+          if (ready) {
+            await refresh(false, false, true);
+            setIsRefreshing(false);
+          }
+        } else {
           await refresh(false, false, true);
-          setIsRefreshing(false);
         }
       } catch {
         // ignore poll errors
       }
     };
     void poll();
-    stalePollRef.current = setInterval(poll, STALE_POLL_MS);
+    stalePollRef.current = setInterval(poll, pollMs);
     return () => {
       if (stalePollRef.current) clearInterval(stalePollRef.current);
     };

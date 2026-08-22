@@ -133,14 +133,41 @@ def _redis_attempt_urls(url: str) -> list[str]:
     return out
 
 
+def _redis_socket_timeout() -> float:
+    """Read timeout for Redis commands.
+
+    EOD snapshots are multi‑MB JSON; a 3s socket_timeout causes
+    ``Timeout reading from socket`` on Railway and leaves the UI on a
+    stale ``eod:dates`` member (e.g. stuck on 2026-08-02). Override with
+    ``REDIS_SOCKET_TIMEOUT`` (seconds).
+    """
+    raw = (os.environ.get("REDIS_SOCKET_TIMEOUT") or "").strip()
+    if raw:
+        try:
+            return max(3.0, min(120.0, float(raw)))
+        except ValueError:
+            pass
+    return 15.0
+
+
+def _redis_connect_timeout() -> float:
+    raw = (os.environ.get("REDIS_CONNECT_TIMEOUT") or "").strip()
+    if raw:
+        try:
+            return max(1.0, min(30.0, float(raw)))
+        except ValueError:
+            pass
+    return 5.0
+
+
 def _try_connect(url: str):
     import redis
     r = redis.from_url(
         url,
         decode_responses=True,
-        socket_connect_timeout=3,
-        socket_timeout=3,
-        retry_on_timeout=False,
+        socket_connect_timeout=_redis_connect_timeout(),
+        socket_timeout=_redis_socket_timeout(),
+        retry_on_timeout=True,
     )
     r.ping()
     return r
@@ -188,9 +215,9 @@ def _get_redis_pool():
                 pool = redis.ConnectionPool.from_url(
                     u,
                     decode_responses=True,
-                    socket_connect_timeout=3,
-                    socket_timeout=3,
-                    retry_on_timeout=False,
+                    socket_connect_timeout=_redis_connect_timeout(),
+                    socket_timeout=_redis_socket_timeout(),
+                    retry_on_timeout=True,
                     max_connections=_redis_max_connections(),
                     health_check_interval=30,
                 )

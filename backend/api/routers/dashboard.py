@@ -598,22 +598,29 @@ def _pick_best_eod_snapshot(
     try:
         from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
 
+        # Newest first; stop at the first full (non-thin) hit so we don't pull
+        # every historical multi‑MB blob (Redis socket timeouts on Railway).
         for d in sorted(list_eod_dates_redis() or [], reverse=True)[:_EOD_SNAPSHOT_SCAN_LIMIT]:
             _consider(get_eod_snapshot_redis(d), f"eod_redis:{d}", d)
+            if best_rows:
+                break
     except Exception as e:
         logger.debug("[eod-pick] redis scan: %s", e)
 
-    try:
-        eod_dir = Path(get_data_root()) / "eod"
-        if eod_dir.exists():
-            for path in sorted(eod_dir.glob("*.json"), reverse=True)[:_EOD_SNAPSHOT_SCAN_LIMIT]:
-                try:
-                    raw = _json.loads(path.read_text(encoding="utf-8"))
-                except Exception:
-                    continue
-                _consider(raw, f"eod_disk:{path.name}", path.stem)
-    except Exception as e:
-        logger.debug("[eod-pick] disk scan: %s", e)
+    if not best_rows:
+        try:
+            eod_dir = Path(get_data_root()) / "eod"
+            if eod_dir.exists():
+                for path in sorted(eod_dir.glob("*.json"), reverse=True)[:_EOD_SNAPSHOT_SCAN_LIMIT]:
+                    try:
+                        raw = _json.loads(path.read_text(encoding="utf-8"))
+                    except Exception:
+                        continue
+                    _consider(raw, f"eod_disk:{path.name}", path.stem)
+                    if best_rows:
+                        break
+        except Exception as e:
+            logger.debug("[eod-pick] disk scan: %s", e)
 
     if best_rows:
         return best_rows, best_as_of, best_source
@@ -1374,7 +1381,19 @@ async def get_dashboard(
 @router.get("/dashboard/shell")
 async def get_dashboard_shell():
     """Instant read-only shell — never runs full compute. Same as GET /dashboard without refresh."""
-    return await get_dashboard(refresh=False)
+    from fastapi.responses import JSONResponse
+
+    body = await get_dashboard(refresh=False)
+    # get_dashboard returns a plain dict; encode so datetimes/numpy stay JSON-safe.
+    from fastapi.encoders import jsonable_encoder
+
+    return JSONResponse(
+        content=jsonable_encoder(body),
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 @router.get("/dashboard/status")
@@ -1743,29 +1762,25 @@ def _compute_full_dashboard_sync() -> dict:
     # def _task_pre_market(): ...
 
     def _task_eod_redis():
+        # Lightweight listing only — never deserialize full multi‑MB EOD blobs here.
+        # Loading every date via get_eod_snapshot_redis caused Redis socket timeouts
+        # (``Timeout reading from socket``) and left the UI stuck on an old date.
         eod_snapshots_out: list = []
         try:
-            from signals.cache import get_eod_snapshot_redis, list_eod_dates_redis
+            from signals.cache import list_eod_dates_redis
             seen: set = set()
-            for date_str in list_eod_dates_redis():
-                if date_str in seen:
+            for date_str in list_eod_dates_redis() or []:
+                if not date_str or date_str in seen:
                     continue
                 seen.add(date_str)
-                try:
-                    data = get_eod_snapshot_redis(date_str)
-                    size_bytes = len(json.dumps(data, default=str)) if data else 0
-                    run_date = data.get("run_date") or data.get("snapshot_date") if isinstance(data, dict) else None
-                    tickers_count = len(data.get("run_results") or []) if isinstance(data, dict) else 0
-                    universe = data.get("universe") if isinstance(data, dict) else None
-                    eod_snapshots_out.append({
-                        "date": date_str,
-                        "size_bytes": size_bytes,
-                        "run_date": run_date,
-                        "tickers_count": tickers_count,
-                        "universe": universe,
-                    })
-                except Exception:
-                    pass
+                eod_snapshots_out.append({
+                    "date": date_str,
+                    "size_bytes": 0,
+                    "run_date": None,
+                    "tickers_count": 0,
+                    "universe": None,
+                    "source": "redis",
+                })
             eod_dir = data_root / "eod"
             if eod_dir.exists():
                 for p in sorted(eod_dir.glob("*.json"), reverse=True):
@@ -1775,24 +1790,13 @@ def _compute_full_dashboard_sync() -> dict:
                             continue
                         if len(stem) == 10 and stem[4] == "-" and stem[7] == "-":
                             seen.add(stem)
-                            size_bytes = p.stat().st_size
-                            run_date = None
-                            tickers_count = 0
-                            universe = None
-                            try:
-                                with open(p) as _f:
-                                    data = json.load(_f)
-                                run_date = data.get("run_date") or data.get("snapshot_date")
-                                tickers_count = len(data.get("run_results") or [])
-                                universe = data.get("universe")
-                            except Exception:
-                                pass
                             eod_snapshots_out.append({
                                 "date": stem,
-                                "size_bytes": size_bytes,
-                                "run_date": run_date,
-                                "tickers_count": tickers_count,
-                                "universe": universe,
+                                "size_bytes": p.stat().st_size,
+                                "run_date": None,
+                                "tickers_count": 0,
+                                "universe": None,
+                                "source": "disk",
                             })
                     except Exception:
                         pass
@@ -4469,6 +4473,13 @@ def eod_status():
         "scheduler": scheduler,
         "eod_job": job_state,
         "safety_net_queued": safety_net_queued,
+        "stale_warning": (
+            f"Latest EOD in Redis/disk is {latest} ({gap_days}d behind {today_est}). "
+            "Dashboard signals can still be fresh while this badge stays old — "
+            "POST /api/eod/run?force=true&refresh_dashboard=true&universe=eod to catch up."
+            if latest and gap_days is not None and gap_days >= 2
+            else None
+        ),
         "manual_run_hint": (
             "POST /api/eod/run?force=true&refresh_dashboard=true&universe=eod re-runs today's snapshot "
             "and refreshes the dashboard cache (use after 8pm scheduler if you want a fresh pass)."

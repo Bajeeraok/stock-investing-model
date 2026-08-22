@@ -137,6 +137,8 @@ class SignalPacket:
     street_analysts: Optional[int] = None
     street_bullish_pct: Optional[float] = None
     news_sentiment: str = ""
+    # Advisory news / known-event cards from the news rail (not gate inputs).
+    news_events: list[dict] = field(default_factory=list)
 
     # ---- derived --------------------------------------------------
     def scenario_ev(self) -> Optional[float]:
@@ -269,6 +271,11 @@ class SignalPacket:
             "required_mos_pct": self.required_mos_pct,
             # Coarse spot so Layer 3 cannot keep a stale quote while the header ticks.
             "spot_bucket": round(self.spot, 1) if self.spot < 250 else round(self.spot),
+            "news_events": [
+                (e.get("event_type") or e.get("name"), e.get("direction"))
+                for e in (self.news_events or [])[:4]
+                if isinstance(e, dict)
+            ],
         }
         blob = json.dumps(core, sort_keys=True, default=str)
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
@@ -432,6 +439,11 @@ _LAYER3_BANNED = _RETAIL_BANNED + (
     "unlocks when",
     "starter zone",
     "true entry",
+    "bull conditions",
+    "0% bull",
+    "institutions are buying",
+    "institutional selling",
+    "regime confirmation",
 )
 
 _RETAIL_TIMING = {
@@ -526,11 +538,36 @@ def render_plain_trading_notes(
     """Deterministic notes when Layer 3 is skipped — same job as the LLM, no jargon."""
     headline, reason = _retail_headline_reason(p, c)
     bits = [f"{headline.replace('⏸ ', '').replace('🟡 ', '').replace('✅ ', '')}. {reason}"]
+    news_unlock = [
+        x for x in (cats or [])
+        if x.direction == "unlocks" and _is_news_catalyst(x)
+    ][:2]
+    news_break = [
+        x for x in (cats or [])
+        if x.direction == "breaks" and _is_news_catalyst(x)
+    ][:1]
+    if news_unlock:
+        bits.append(
+            "What could change the wait (from the news): "
+            + "; ".join(x.mechanism.rstrip(".") for x in news_unlock)
+            + "."
+        )
+    elif news_break:
+        bits.append(
+            "News risk to watch: "
+            + "; ".join(x.mechanism.rstrip(".") for x in news_break)
+            + "."
+        )
+    else:
+        bits.append(
+            "No fresh company catalyst (earnings, deal, guidance) is in the packet — "
+            "this wait is about price and market support, not a headline."
+        )
     starter = _starter_watch_zone(p)
     if p.entry_band:
         cool = ""
         if p.rsi is not None and float(p.rsi) >= 50:
-            cool = " after it cools off"
+            cool = " after the move cools off"
         if starter:
             bits.append(
                 f"A dip into {p.entry_band.fmt()}{cool} is a small first slice at most — "
@@ -542,10 +579,13 @@ def render_plain_trading_notes(
                 )
         else:
             bits.append(f"The planned buy area is {p.entry_band.fmt()}{cool}.")
-    unlock = [x for x in (cats or []) if x.direction == "unlocks"][:2]
-    if unlock:
+    unlock = [
+        x for x in (cats or [])
+        if x.direction == "unlocks" and not _is_news_catalyst(x)
+    ][:1]
+    if unlock and not news_unlock:
         bits.append(
-            "What would change the wait: "
+            "Timing still needs: "
             + "; ".join(x.mechanism.rstrip(".") for x in unlock)
             + "."
         )
@@ -553,6 +593,19 @@ def render_plain_trading_notes(
     if walk is not None:
         bits.append(f"Give up if it closes below ${walk:,.2f} — don't add more.")
     return " ".join(bits)
+
+
+def _is_news_catalyst(x: "Catalyst") -> bool:
+    name = (x.name or "").lower()
+    mech = (x.mechanism or "").lower()
+    if mech.startswith("news:") or mech.startswith("known event:"):
+        return True
+    news_markers = (
+        "earnings", "guidance", "deal", "m&a", "acquisition", "fda", "partnership",
+        "upgrade", "downgrade", "buyback", "dividend", "ceo", "lawsuit", "probe",
+        "regulatory", "spin-off", "ipo",
+    )
+    return any(m in name for m in news_markers)
 
 
 # ═════════════════════════════════════════════════════════════
@@ -686,8 +739,41 @@ def allows_safe_haven_macro(p: SignalPacket) -> bool:
     return sec in _SAFE_HAVEN_SECTORS or "gold" in sec or "precious" in sec
 
 
+def news_catalysts_from_packet(p: SignalPacket) -> list[Catalyst]:
+    """Map advisory news/known-event cards into Layer-3 CATALYSTS (plain English)."""
+    out: list[Catalyst] = []
+    for card in (p.news_events or [])[:4]:
+        if not isinstance(card, dict):
+            continue
+        name = str(card.get("name") or "").strip() or "Company news"
+        title = str(card.get("mechanism") or card.get("title") or "").strip()
+        if not title and not name:
+            continue
+        raw_dir = str(card.get("direction") or "").lower()
+        if raw_dir in ("bullish", "unlocks", "positive"):
+            direction = "unlocks"
+        elif raw_dir in ("bearish", "breaks", "negative"):
+            direction = "breaks"
+        else:
+            direction = "breaks" if "earnings" in name.lower() else "unlocks"
+        et = str(card.get("event_type") or "")
+        prefix = "Known event:" if et in ("EARNINGS_CALENDAR", "POST_EARNINGS") else "News:"
+        mech = f"{prefix} {title}" if title else f"{prefix} {name}."
+        out.append(Catalyst(
+            name=name[:80],
+            direction=direction,
+            mechanism=mech[:240],
+            watch=str(card.get("watch") or "how the stock reacts to the news")[:120],
+            horizon=str(card.get("horizon") or "days to a few weeks")[:40],
+        ))
+    return out
+
+
 def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
     c: list[Catalyst] = []
+    # Real-world news / calendar first — Layer 3 must lead with these when present.
+    c.extend(news_catalysts_from_packet(p))
+
     band = p.entry_band.fmt() if p.entry_band else "the entry band"
     val_failed = any(g.name == "valuation" and not g.passed for g in p.gates)
     starter_not_full = val_failed and not band_clears_full_mos(p)
@@ -696,50 +782,52 @@ def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
     for g in p.gates:
         if g.name == "momentum_chop" and not g.passed:
             if starter_not_full:
-                rsi_now = float(g.detail.get("rsi", p.rsi or 0) or 0)
                 c.append(Catalyst(
-                    "Cooler RSI for a starter",
+                    "Cooler pullback for a starter",
                     "unlocks",
-                    f"RSI {rsi_now:.0f} dropping below 50 on a dip into {band} "
-                    f"is a small starter at most — it does not clear full-size valuation.",
-                    "RSI < 50 (starter only)",
+                    f"Price ran ahead of itself; a cooler pullback into {band} "
+                    f"is a small first slice at most — not a full buy.",
+                    "pullback into the buy area after the move cools",
                     "1-2 weeks",
                 ))
             else:
                 c.append(Catalyst(
-                    "Price + RSI line up",
+                    "Price and cooler reading line up",
                     "unlocks",
-                    f"RSI {g.detail.get('rsi', 0):.0f} cooling below 50 on a dip would drag "
-                    f"price toward {band}.",
-                    "RSI < 50",
+                    f"A cooler pullback that brings price toward {band} "
+                    f"would be the first clean chance to act.",
+                    "pullback into the buy area after the move cools",
                     "1-2 weeks",
                 ))
         if g.name == "market_weather" and not g.passed:
+            need = float(g.detail.get("need_pct", 60) or 60)
             c.append(Catalyst(
-                "Regime confirmation",
+                "Broader market support",
                 "unlocks",
-                f"Stock-specific bull probability rising from {p.hmm_bull_pct:.0f}% "
-                f"to {g.detail.get('need_pct', 60):.0f}% flips Market Weather.",
-                f"HMM bull ≥ {g.detail.get('need_pct', 60):.0f}%",
+                f"The broader market check is weak right now "
+                f"({p.hmm_bull_pct:.0f}% supportive vs needing about {need:.0f}%). "
+                f"Wait until risk appetite looks healthier — usually one to four weeks — "
+                f"before even a small add.",
+                "broader market and this stock both look healthier",
                 "1-4 weeks",
             ))
         if g.name == "valuation" and not g.passed:
             if band_clears_full_mos(p) and p.entry_band:
                 if p.mode == "owner":
                     c.append(Catalyst(
-                        "Price discount",
+                        "Cheaper price",
                         "unlocks",
-                        f"A print at or below ${p.entry_band.hi:,.2f} restores the required "
-                        f"{p.required_mos_pct:.0f}% discount to full size.",
+                        f"A print at or below ${p.entry_band.hi:,.2f} would finally "
+                        f"look cheap enough for a full-size buy.",
                         f"price ≤ ${p.entry_band.hi:,.2f}",
                         "days to a few weeks",
                     ))
                 else:
                     c.append(Catalyst(
-                        "Price discount",
+                        "Cheaper price",
                         "unlocks",
-                        f"A pullback into {band} restores the required "
-                        f"{p.required_mos_pct:.0f}% discount to full size.",
+                        f"A pullback into {band} would finally look cheap enough "
+                        f"for a full-size buy.",
                         f"price in {band}",
                         "days to a few weeks",
                     ))
@@ -757,8 +845,8 @@ def derive_catalysts(p: SignalPacket) -> list[Catalyst]:
     MACRO: dict[str, list[Catalyst]] = {
         "USD-sensitive": [
             Catalyst("Dollar strength", "breaks",
-                "A DXY rally creates immediate downward pressure on the setup.",
-                "DXY breakout", "days"),
+                "A stronger dollar creates immediate downward pressure on the setup.",
+                "dollar breakout", "days"),
             Catalyst("Higher real yields", "breaks",
                 "Sticky inflation keeping rates higher-for-longer raises the "
                 "opportunity cost of the position.", "CPI/FOMC surprises", "4-12 weeks")],
@@ -825,13 +913,20 @@ def validate_catalysts(p: SignalPacket, cats: list[Catalyst]) -> list[str]:
 def render_catalysts(cats: list[Catalyst]) -> list[str]:
     unlock = [x for x in cats if x.direction == "unlocks"]
     breaks = [x for x in cats if x.direction == "breaks"]
+    news_u = [x for x in unlock if _is_news_catalyst(x)]
+    tech_u = [x for x in unlock if not _is_news_catalyst(x)]
+    news_b = [x for x in breaks if _is_news_catalyst(x)]
+    tech_b = [x for x in breaks if not _is_news_catalyst(x)]
     out: list[str] = []
-    if unlock:
-        out.append("What gets you your entry:")
-        out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in unlock]
-    if breaks:
+    if news_u or news_b:
+        out.append("Company / event catalysts:")
+        out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in news_u + news_b]
+    if tech_u:
+        out.append("What gets you your entry (timing):")
+        out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in tech_u]
+    if tech_b:
         out.append("What would break this plan:")
-        out += [f"  • {x.name}: {x.mechanism} Watch: {x.watch}" for x in breaks]
+        out += [f"  • {x.name}: {x.mechanism} Watch: {x.watch}" for x in tech_b]
     return out
 
 
@@ -845,24 +940,25 @@ SYSTEM_PROMPT = """You write TRADING NOTES for a retail investor — not a quant
 
 Audience: someone who will decide wait / small slice / walk away in 20 seconds.
 They already see the 5-line scan (RETAIL_SCAN). Your job is to explain WHAT TO DO
-and WHAT IS BEHIND THE SIGNAL in plain English.
+and WHAT REAL-WORLD CATALYSTS matter — in plain English.
 
 HARD RULES:
 1. Every dollar figure and percentage you write MUST appear verbatim in PACKET, RETAIL_SCAN, or CATALYSTS. Never invent a price, RSI band, or probability. Do not write "40–50" unless those numbers are in the packet.
 2. Never contradict ACTION_CONTRACT or RETAIL_SCAN. Do not use BUY/SELL except as they appear there.
-3. Use ONLY the catalysts listed in CATALYSTS. Translate them into everyday reasons (what would let you act; what would make you walk away). Do not introduce new catalysts.
+3. Use ONLY the catalysts listed in CATALYSTS. Prefer catalysts whose mechanism starts with "News:" or "Known event:" — those are real headlines / calendar items. Do not invent earnings, deals, upgrades, "institutions buying", or "bull conditions".
 4. Output EXACTLY 4 short paragraphs, 1–3 sentences each, separated by a blank line. No headers, bullets, or bold.
    Paragraph 1 — What to do today (wait / small slice / don't chase), one plain reason. No model names.
-   Paragraph 2 — What is behind the signal: the 1–2 real-world conditions that would let a small entry happen, with the timelines from the catalysts. If catalysts say starter only, say small first slice — never a full buy.
+   Paragraph 2 — Lead with real-world news or known events from CATALYSTS when any exist (earnings, guidance, deals, upgrades, regulation). Say what the headline/event means for waiting or sizing. Only after that, mention timing (pullback / cooler reading / broader market support) if listed.
    Paragraph 3 — When to give up (close below the walk-away price) and the worst case already in CATALYSTS.
-   Paragraph 4 — One thing to watch this week, in plain words.
+   Paragraph 4 — One thing to watch this week: prefer a news reaction or upcoming print if listed; else a price level in plain words.
    Total ~120–180 words.
 5. Walk-away is a FLOOR: a close BELOW that price. Never write "close above" for that level.
 6. Never claim the buy zone restores a full discount unless a catalyst says the band clears full size.
 7. Do not attach gold / safe-haven / de-escalation logic unless those catalysts are listed.
-8. FORBIDDEN WORDS (never use): margin of safety, tape, HMM, confluence, thesis, momentum chop, invalidation, fused, bull tape, starter zone, true entry. Say "not cheap enough for a full buy", "ran up too fast", "walk away below", "price and a cooler reading both line up" instead.
-9. Do not name RSI as a personality. You may say "after the move cools off" and cite the packet's RSI number only if you must.
-10. Tone: calm, specific, no hype."""
+8. FORBIDDEN WORDS/PHRASES (never use): margin of safety, tape, HMM, confluence, thesis, momentum chop, invalidation, fused, bull tape, starter zone, true entry, bull conditions, 0% bull, institutions are buying, institutional selling, regime confirmation. Say "not cheap enough for a full buy", "ran up too fast", "walk away below", "price and a cooler reading both line up", "broader market support" instead.
+9. Do not name RSI. Say "after the move cools off" if you need momentum language.
+10. If CATALYSTS has no News:/Known event: items, you MUST say there is no fresh company catalyst in the packet (earnings, deal, guidance) — then stick to timing/price conditions. Never invent institutions buying, bull conditions, or a headline.
+11. Tone: calm, specific, no hype."""
 
 
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
@@ -933,11 +1029,11 @@ class NarrativeEngine:
         gate flips, a band moves, or RSI/regime crosses a bucket — never on a
         mere spot tick. The date prefix prevents a stale narrative from a
         previous day resurfacing just because the decision state happens to
-        match. v4 busts cached Layer 3 that still read like a quant recap.
+        match. v5 prioritizes news/known-event catalysts in plain English over technicals.
         """
         if self.llm is None:
             return "", "skipped"
-        key = f"narrative:v4:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        key = f"narrative:v5:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
         cached = self._cache_get(key)
         if cached is not None:
             return cached, "cached"

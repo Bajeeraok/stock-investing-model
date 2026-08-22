@@ -231,6 +231,31 @@ def _gate_detail(canonical: str, gate: dict, *, rsi, hmm_bull_pct, ml_prob_pct,
     return detail
 
 
+def _news_events_from_detail(ticker_detail: dict, investor: dict) -> list[dict]:
+    """Advisory catalyst cards from the news rail — never gate inputs."""
+    roadmap = investor.get("trade_roadmap") or {}
+    layer = roadmap.get("news_sentiment_layer") or {}
+    cards = layer.get("catalyst_cards")
+    if not isinstance(cards, list) or not cards:
+        cards = ticker_detail.get("catalyst_cards")
+    if not isinstance(cards, list):
+        return []
+    out: list[dict] = []
+    for card in cards[:4]:
+        if not isinstance(card, dict):
+            continue
+        out.append({
+            "name": card.get("name"),
+            "event_type": card.get("event_type"),
+            "direction": card.get("direction"),
+            "mechanism": card.get("mechanism") or card.get("title"),
+            "title": card.get("title"),
+            "watch": card.get("watch"),
+            "horizon": card.get("horizon"),
+        })
+    return out
+
+
 def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None = None) -> SignalPacket:
     """Build a SignalPacket for one persona (`mode`) from an already-computed
     ticker_detail response, plus the scenario list from price_targets.py's
@@ -380,4 +405,5 @@ def to_packet(ticker_detail: dict, mode: str, scenarios_raw: list[dict] | None =
         street_analysts=street.get("analyst_count"),
         street_bullish_pct=(street.get("ratings") or {}).get("bullish_pct"),
         news_sentiment=nlp.get("sentiment_label") or "",
+        news_events=_news_events_from_detail(ticker_detail, investor),
     )

@@ -3,6 +3,20 @@ import type { DashboardData } from "@/app/page";
 
 export const DASHBOARD_CACHE_KEY = "thrive-dashboard-v2";
 
+/** Drop localStorage shells older than this so overnight tabs don't keep Aug‑20 forever. */
+const CACHE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+function _freshnessMs(data: DashboardData): number | null {
+  const iso =
+    data?.data_freshness?.signals_updated_at ||
+    data?.data_freshness?.quotes_updated_at ||
+    data?.data_freshness?.snapshot_updated_at ||
+    null;
+  if (!iso || typeof iso !== "string") return null;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : null;
+}
+
 export function loadCachedDashboard(): DashboardData | null {
   if (typeof window === "undefined") return null;
   try {
@@ -10,6 +24,11 @@ export function loadCachedDashboard(): DashboardData | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DashboardData;
     if (!parsed || typeof parsed !== "object") return null;
+    const ts = _freshnessMs(parsed);
+    if (ts != null && Date.now() - ts > CACHE_MAX_AGE_MS) {
+      localStorage.removeItem(DASHBOARD_CACHE_KEY);
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -30,8 +49,16 @@ export function mergeDashboardData(
   patch: Partial<DashboardData>
 ): DashboardData {
   const merged: DashboardData = { ...base, ...patch };
+  // Prefer the patch's freshness wholesale when present — never keep an older
+  // signals_updated_at / eod_snapshot_latest_date from localStorage.
   if (patch.data_freshness && typeof patch.data_freshness === "object") {
     merged.data_freshness = { ...(base.data_freshness ?? {}), ...patch.data_freshness };
+  }
+  if (patch.eod_snapshot_latest_date != null) {
+    merged.eod_snapshot_latest_date = patch.eod_snapshot_latest_date;
+  }
+  if (Array.isArray(patch.eod_snapshots)) {
+    merged.eod_snapshots = patch.eod_snapshots;
   }
   // Explicitly clear transient refresh flags when server says data is fresh.
   if (patch.stale === false) {
