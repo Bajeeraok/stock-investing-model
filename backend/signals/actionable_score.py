@@ -126,6 +126,7 @@ def attach_actionable_score(
     *,
     price_age_hours: float | None = None,
     ml_calibration_factor: float | None = None,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Mutate investor_out with actionable_score from retail_action + confidence."""
     ra = investor_out.get("retail_action") if isinstance(investor_out.get("retail_action"), dict) else {}
@@ -147,13 +148,22 @@ def attach_actionable_score(
         tldr = ((investor_out.get("trade_roadmap") or {}).get("tldr") or {})
         conf = tldr.get("model_confidence_pct")
 
+    cal = ml_calibration_factor
+    if cal is None:
+        try:
+            from signals.ml_calibration_store import get_ml_calibration_factor
+
+            cal = get_ml_calibration_factor(config)
+        except Exception:
+            cal = 1.0
+
     block = compute_actionable_score(
         investor_out.get("pattern_score"),
         gates_passed=int(passed) if passed is not None else None,
         gates_total=int(total) if total is not None else 4,
         fused_confidence_pct=_sf(conf),
         price_age_hours=price_age_hours,
-        ml_calibration_factor=ml_calibration_factor,
+        ml_calibration_factor=cal,
     )
     investor_out["actionable_score"] = block
     return investor_out

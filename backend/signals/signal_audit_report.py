@@ -24,6 +24,7 @@ CSV_COLUMNS: list[tuple[str, str]] = [
     ("market_cap_bucket", "category"),
     ("retail_verdict", "retail_verdict"),
     ("ml_signal", "ml_signal"),
+    ("ml_short_prob", "ml_short_prob"),
     ("confidence_low", "confidence_low"),
     ("confidence_high", "confidence_high"),
     ("price_at_signal", "price_at_signal"),

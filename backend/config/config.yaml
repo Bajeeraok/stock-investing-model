@@ -720,7 +720,10 @@ confidence:
     news_weight_fraction: 0.35      # used when mode=fraction
     news_weight_floor: 0.05         # used when mode=taper (see signals/news_weight_cap.py)
   calibration:
-    enabled: false                        # set true after running scripts/fit_probability_calibration.py
+    # Platt map for displayed ML horizon probs + actionable_score discount (ml_calibration_factor).
+    # Fit: python scripts/_run_fit_ml_cal.py  (or scripts/fit_ml_calibration_from_audit.py)
+    enabled: true
+    actionable_factor_enabled: true       # load ml_calibration_factor from artifact into actionable_score
     path: data/calibration/ml_horizons.json  # relative to backend/
 
 # Unified evaluation: scripts/run_evaluation_harness.py — rows per (ticker, date) + fwd returns + baselines

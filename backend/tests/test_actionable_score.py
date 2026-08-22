@@ -58,8 +58,28 @@ def test_attach_uses_primary_gates_only():
             ],
         },
     }
-    attach_actionable_score(inv)
+    attach_actionable_score(inv, ml_calibration_factor=1.0)
     block = inv["actionable_score"]
     assert block["factors"]["gates_total"] == 4
     assert block["factors"]["gates_passed"] == 2
     assert 18.0 <= block["actionable"] <= 25.0
+
+
+def test_ml_calibration_factor_discounts_actionable():
+    raw = compute_actionable_score(
+        80.0,
+        gates_passed=4,
+        gates_total=4,
+        fused_confidence_pct=70.0,
+        ml_calibration_factor=1.0,
+    )
+    discounted = compute_actionable_score(
+        80.0,
+        gates_passed=4,
+        gates_total=4,
+        fused_confidence_pct=70.0,
+        ml_calibration_factor=0.75,
+    )
+    assert raw["actionable"] == 80.0
+    assert discounted["actionable"] == 60.0
+    assert discounted["factors"]["ml_calibration_factor"] == 0.75
