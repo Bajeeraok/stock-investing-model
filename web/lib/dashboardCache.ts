@@ -50,12 +50,9 @@ export function mergeDashboardData(
 ): DashboardData {
   const merged: DashboardData = { ...base, ...patch };
   // Prefer the patch's freshness wholesale when present — never keep an older
-  // signals_updated_at / eod_snapshot_latest_date from localStorage.
+  // signals_updated_at / eod_snapshot_latest_date (nested under data_freshness) from localStorage.
   if (patch.data_freshness && typeof patch.data_freshness === "object") {
     merged.data_freshness = { ...(base.data_freshness ?? {}), ...patch.data_freshness };
-  }
-  if (patch.eod_snapshot_latest_date != null) {
-    merged.eod_snapshot_latest_date = patch.eod_snapshot_latest_date;
   }
   if (Array.isArray(patch.eod_snapshots)) {
     merged.eod_snapshots = patch.eod_snapshots;
