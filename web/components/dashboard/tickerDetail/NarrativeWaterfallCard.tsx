@@ -42,6 +42,14 @@ export type NarrativeWaterfall = {
   action?: NarrativeAction;
   retail_scan?: RetailScan | null;
   trading_notes?: string | null;
+  primary_driver?: {
+    category?: string;
+    plain_english?: string;
+    headline?: string;
+    source?: string;
+  } | null;
+  driver_category?: string | null;
+  driver_chip?: string | null;
   why?: string[];
   catalysts?: NarrativeCatalyst[];
   scenario_ev_pct?: number | null;
@@ -68,7 +76,9 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
       .then((j) => {
         if (j) setData(j as NarrativeWaterfall);
       })
-      .catch(() => {/* optional card — quietly stay empty */})
+      .catch(() => {
+        /* optional card — quietly stay empty */
+      })
       .finally(() => {
         window.clearTimeout(timer);
         setLoading(false);
@@ -101,18 +111,37 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   const noteParagraphs = notes
     ? notes.split(/\n/).map((p) => p.trim()).filter(Boolean)
     : [];
+  const driverChip = (data?.driver_chip || data?.driver_category || "").trim();
+  const driverHeadline = (data?.primary_driver?.headline || "").trim();
+  // retail_scan already covers action / zone / catalyst / stop — do not repeat
+  // the same story again under a "Trading notes" header in this card.
+  const showTradingNotes = !scan && noteParagraphs.length > 0;
+  const whyLines = data?.why ?? [];
+  const hasWhy = whyLines.length > 0;
 
   return (
     <ReferenceCard
       icon={Sparkles}
       title="What to do"
-      description="Verdict first, then the four numbers that matter. Trading notes are a 10-second execution scan."
+      description="Verdict first, then the levels that matter. Open Why for gate checks."
       body={
         loading ? (
           <p className="text-xs text-slate-500 italic animate-pulse">Building the 10-second scan…</p>
         ) : scan ? (
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-slate-100 leading-snug">{scan.headline}</p>
+            <div className="flex flex-wrap items-start gap-2">
+              <p className="text-sm font-semibold text-slate-100 leading-snug flex-1 min-w-0">
+                {scan.headline}
+              </p>
+              {driverChip ? (
+                <span
+                  className="shrink-0 rounded border border-emerald-800/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300/90"
+                  title={driverHeadline || undefined}
+                >
+                  {driverChip}
+                </span>
+              ) : null}
+            </div>
             <p className="text-xs text-slate-400 leading-relaxed">{scan.reason}</p>
             <ul className="space-y-1">
               {scan.lines.map((line, i) => (
@@ -125,32 +154,43 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
               <p className="text-[11px] text-slate-500 italic">{scan.timing}</p>
             ) : null}
           </div>
+        ) : showTradingNotes ? (
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] uppercase tracking-wide text-emerald-400/90 font-semibold">
+                Trading notes
+              </p>
+              {driverChip ? (
+                <span
+                  className="rounded border border-emerald-800/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300/90"
+                  title={driverHeadline || undefined}
+                >
+                  {driverChip}
+                </span>
+              ) : null}
+            </div>
+            {noteParagraphs.map((p, i) => (
+              <p key={i} className="text-xs text-slate-200 leading-relaxed">
+                {p}
+              </p>
+            ))}
+          </div>
         ) : data?.action ? (
           <p className="text-xs text-slate-300 leading-relaxed">{data.action.text}</p>
         ) : undefined
       }
-      toggleLabel="Why? →"
+      toggleLabel={hasWhy ? "Why? →" : undefined}
     >
-      {noteParagraphs.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-emerald-400/90 font-semibold">Trading notes</p>
-          {noteParagraphs.map((p, i) => (
-            <p key={i} className="text-xs text-slate-200 leading-relaxed">
-              {p}
-            </p>
-          ))}
-        </div>
-      )}
-      {data?.why && data.why.length > 0 && (
-        <div className={noteParagraphs.length > 0 ? "mt-3 space-y-1 border-t border-slate-800 pt-2" : "space-y-1"}>
+      {hasWhy ? (
+        <div className="space-y-1">
           <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model checks</p>
-          {data.why.map((line, i) => (
+          {whyLines.map((line, i) => (
             <p key={i} className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">
               {line}
             </p>
           ))}
         </div>
-      )}
+      ) : null}
     </ReferenceCard>
   );
 }
