@@ -118,6 +118,8 @@ _FIELDS = [
     "entry_mode",
     # Gate-mode: full_go / starter_only / hard_lock (distinct from entry_mode execution mode)
     "gate_mode",
+    # Plan size: 100 full_go, starter_size_pct (default 25) for starter_only
+    "size_pct",
 ]
 
 
@@ -288,6 +290,51 @@ def _is_actionable_signal(sig: str) -> bool:
     return "STRONG BUY" in s or s.strip() == "BUY" or "HOLD/ADD" in s
 
 
+def _is_paperable_row(row: dict[str, Any], *, require_actionable: bool) -> bool:
+    """
+    True when the row should enter the paper book.
+
+    Full BUY/STRONG BUY/HOLD-ADD always qualify when require_actionable.
+    starter_only rows that were capped to WATCH still qualify via signal_uncapped /
+    signal_gate_capped so partial-size starters are not dropped from the track.
+    """
+    from signals.tracking_gate import _is_starter_only_row
+
+    sig = str(row.get("signal") or row.get("short_suggestion") or "HOLD")
+    if not require_actionable:
+        return True
+    if _is_actionable_signal(sig):
+        return True
+    if _is_starter_only_row(row):
+        uncapped = str(row.get("signal_uncapped") or "").upper()
+        if _is_actionable_signal(uncapped):
+            return True
+        # EOD may only have capped WATCH + entry_mode/signal_gate_capped — still paper.
+        return True
+    return False
+
+
+def _paper_size_pct(row: dict[str, Any], config: dict | None) -> int:
+    """Plan size for paper PnL weighting: full_go 100, starter_only config default 25."""
+    from signals.tracking_gate import _is_starter_only_row, _row_entry_mode
+
+    pt = _paper_cfg(config)
+    starter_pct = int(pt.get("starter_size_pct", 25))
+    starter_pct = max(1, min(100, starter_pct))
+    em = _row_entry_mode(row)
+    if em == "full_go" or (row.get("gate_cleared") is True and em != "starter_only"):
+        return 100
+    if _is_starter_only_row(row) or em == "starter_only":
+        raw = row.get("max_sizing_pct")
+        try:
+            if raw is not None:
+                return max(1, min(100, int(float(raw))))
+        except (TypeError, ValueError):
+            pass
+        return starter_pct
+    return 100
+
+
 def _result_to_paper_record(
     r: dict[str, Any],
     date_str: str,
@@ -369,6 +416,12 @@ def _result_to_paper_record(
     gm = r.get("entry_mode")
     if gm in ("full_go", "starter_only", "hard_lock"):
         row["gate_mode"] = gm
+    # size_pct set by callers that have config; default full until enriched
+    if row.get("size_pct") is None:
+        if gm == "starter_only":
+            row["size_pct"] = 25
+        elif gm == "full_go":
+            row["size_pct"] = 100
     return row
 
 
@@ -693,13 +746,15 @@ class PaperTradeLogger:
                 if not passes_tracking_gate(r, config, "paper_trading"):
                     n_skipped_gate += 1
                     continue
-                sig = r.get("signal") or r.get("short_suggestion") or "HOLD"
-                if only_actionable and not _is_actionable_signal(str(sig)):
+                if only_actionable and not _is_paperable_row(r, require_actionable=True):
                     continue
                 row = _result_to_paper_record(r, date_str, horizon_trading_days)
                 if row is None:
                     continue
                 row["entry_mode"] = "market"
+                row["size_pct"] = _paper_size_pct(r, config)
+                if str(row.get("gate_mode") or "") == "starter_only":
+                    row["signal"] = f"STARTER:{r.get('signal_uncapped') or 'BUY'}"
                 n_seen += 1
                 if self.log_signal_row(row):
                     n_appended += 1
@@ -785,8 +840,9 @@ class PaperTradeLogger:
                     if not passes_tracking_gate(row_copy, config, "paper_trading"):
                         skipped_gate += 1
                         continue
-                    sig = str(row_copy.get("signal") or row_copy.get("short_suggestion") or "HOLD")
-                    if require_actionable and not _is_actionable_signal(sig):
+                    if require_actionable and not _is_paperable_row(
+                        row_copy, require_actionable=True
+                    ):
                         continue
                     signals_scanned += 1
                     ref_px = _reference_entry_from_row(row_copy, ref_key)
@@ -815,6 +871,12 @@ class PaperTradeLogger:
                     )
                     if rec_row is None:
                         continue
+                    rec_row["size_pct"] = _paper_size_pct(row_copy, config)
+                    # Keep display signal as logged; annotate starter plan for the book.
+                    if str(rec_row.get("gate_mode") or "") == "starter_only":
+                        rec_row["signal"] = (
+                            f"STARTER:{row_copy.get('signal_uncapped') or 'BUY'}"
+                        )
                     key = self._dedupe_key(rec_row)
                     if key in existing:
                         continue

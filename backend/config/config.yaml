@@ -568,6 +568,9 @@ paper_trading:
   # Keep 0 until you want historical GO fills replayed into a new book.
   backfill_from_eod_days: 0       # was 90 — set >0 only to rebuild from EOD after wipe
   require_gates_cleared: true     # only log GO signals (all 4 gates pass); legacy EOD without gates still backfills
+  # Starter path: still paper when entry_mode=starter_only even if display signal is WATCH.
+  log_starter_only: true
+  starter_size_pct: 25            # plan size for starter_only rows (full_go stays 100)
   entry_mode: limit_touch          # limit_touch (patient limit at reference) | market (legacy close fill)
   # Prefer suggested_buy_price when available so fill ≠ ST stop floor (cleaner R:R / stop stats).
   reference_entry: suggested_buy_price   # suggested_buy_price | st_band_low | support_level

@@ -876,16 +876,23 @@ def render_plain_trading_notes(
 
 
 def _is_news_catalyst(x: "Catalyst") -> bool:
+    if (getattr(x, "origin", None) or "").lower() == "news":
+        return True
     name = (x.name or "").lower()
     mech = (x.mechanism or "").lower()
-    if mech.startswith("news:") or mech.startswith("known event:"):
+    if (
+        name.startswith("news:")
+        or name.startswith("known event:")
+        or mech.startswith("news:")
+        or mech.startswith("known event:")
+    ):
         return True
     news_markers = (
         "earnings", "guidance", "deal", "m&a", "acquisition", "fda", "partnership",
         "upgrade", "downgrade", "buyback", "dividend", "ceo", "lawsuit", "probe",
         "regulatory", "spin-off", "ipo",
     )
-    return any(m in name for m in news_markers)
+    return any(m in name or m in mech for m in news_markers)
 
 
 # ═════════════════════════════════════════════════════════════
@@ -965,6 +972,7 @@ class Catalyst:
     mechanism: str      # one sentence, packet numbers only
     watch: str          # observable trigger
     horizon: str        # "days" | "1-2 weeks" | "4-12 weeks" | ...
+    origin: str = "technical"  # "news" | "technical" — survives News: stripping
 
 
 def mos_at_price(fair_value: float | None, price: float | None) -> float | None:
@@ -1029,6 +1037,12 @@ def news_catalysts_from_packet(p: SignalPacket) -> list[Catalyst]:
         title = str(card.get("mechanism") or card.get("title") or "").strip()
         if not title and not name:
             continue
+        # Drop redundant "News:" / "Known event:" if upstream already stamped them.
+        for prefix in ("News:", "Known event:", "Known Event:"):
+            if title.startswith(prefix):
+                title = title[len(prefix):].strip()
+            if name.startswith(prefix):
+                name = name[len(prefix):].strip()
         raw_dir = str(card.get("direction") or "").lower()
         if raw_dir in ("bullish", "unlocks", "positive"):
             direction = "unlocks"
@@ -1037,14 +1051,26 @@ def news_catalysts_from_packet(p: SignalPacket) -> list[Catalyst]:
         else:
             direction = "breaks" if "earnings" in name.lower() else "unlocks"
         et = str(card.get("event_type") or "")
-        prefix = "Known event:" if et in ("EARNINGS_CALENDAR", "POST_EARNINGS") else "News:"
-        mech = f"{prefix} {title}" if title else f"{prefix} {name}."
+        # Keep mechanism as the headline only — no "News:" stamp (UI/parser cleans leftovers).
+        mech = title or name
+        if et in ("EARNINGS_CALENDAR", "POST_EARNINGS") and "earnings" not in mech.lower():
+            mech = f"Earnings: {mech}"
+        watch = str(card.get("watch") or "").strip()
+        # Avoid "Watch: how the stock reacts" boilerplate when it adds no information.
+        if watch.lower() in {
+            "",
+            "how the stock reacts to the news",
+            "how the stock reacts",
+            "watch the reaction",
+        }:
+            watch = "price reaction into the event"
         out.append(Catalyst(
             name=name[:80],
             direction=direction,
             mechanism=mech[:240],
-            watch=str(card.get("watch") or "how the stock reacts to the news")[:120],
+            watch=watch[:120],
             horizon=str(card.get("horizon") or "days to a few weeks")[:40],
+            origin="news",
         ))
     return out
 
@@ -1190,6 +1216,43 @@ def validate_catalysts(p: SignalPacket, cats: list[Catalyst]) -> list[str]:
     return errs
 
 
+def _short_horizon(horizon: str) -> str:
+    h = (horizon or "").strip().lower()
+    if not h:
+        return ""
+    # Collapse verbose "days to a few weeks" into a short tag.
+    if "day" in h and "week" in h:
+        return "days–weeks"
+    if h.startswith("1-2 week") or h.startswith("1–2 week"):
+        return "1–2 weeks"
+    if h.startswith("1-4 week") or h.startswith("1–4 week"):
+        return "1–4 weeks"
+    if "week" in h:
+        return h.replace("weeks", "wks")[:24]
+    return horizon[:24]
+
+
+def _format_catalyst_bullet(x: Catalyst, *, include_watch: bool = False) -> str:
+    """One clean retail bullet — no duplicated News:/Watch: boilerplate."""
+    body = _plain_catalyst_text(x)
+    # If name is already the start of the body, don't repeat it.
+    name = (x.name or "").strip()
+    for prefix in ("News:", "Known event:", "Known Event:"):
+        if name.startswith(prefix):
+            name = name[len(prefix):].strip()
+    if name and not body.lower().startswith(name.lower()[: min(12, len(name))]):
+        # Prefer body; only prepend name when it's a short label (e.g. "Earnings").
+        if len(name) <= 28 and name.lower() not in body.lower():
+            body = f"{name} — {body}" if body else name
+    hz = _short_horizon(x.horizon)
+    watch = (x.watch or "").strip()
+    if include_watch and watch and watch.lower() not in body.lower():
+        body = f"{body} (watch: {watch})"
+    if hz:
+        return f"• {body} · {hz}"
+    return f"• {body}"
+
+
 def render_catalysts(cats: list[Catalyst]) -> list[str]:
     unlock = [x for x in cats if x.direction == "unlocks"]
     breaks = [x for x in cats if x.direction == "breaks"]
@@ -1198,16 +1261,288 @@ def render_catalysts(cats: list[Catalyst]) -> list[str]:
     news_b = [x for x in breaks if _is_news_catalyst(x)]
     tech_b = [x for x in breaks if not _is_news_catalyst(x)]
     out: list[str] = []
-    if news_u or news_b:
+    news = (news_u + news_b)[:3]
+    if news:
         out.append("Company / event catalysts:")
-        out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in news_u + news_b]
+        out += [_format_catalyst_bullet(x) for x in news]
     if tech_u:
         out.append("What gets you your entry (timing):")
-        out += [f"  • {x.name} ({x.horizon}): {x.mechanism} Watch: {x.watch}" for x in tech_u]
+        out += [_format_catalyst_bullet(x) for x in tech_u[:3]]
     if tech_b:
         out.append("What would break this plan:")
-        out += [f"  • {x.name}: {x.mechanism} Watch: {x.watch}" for x in tech_b]
+        out += [_format_catalyst_bullet(x) for x in tech_b[:3]]
     return out
+
+
+_GATE_PILL_LABELS: dict[str, str] = {
+    "valuation": "Valuation",
+    "market_weather": "Regime",
+    "momentum_chop": "Momentum",
+    "ml_probability": "ML setup",
+    "confidence": "Confidence",
+}
+
+
+def _gate_pill_label(name: str) -> str:
+    return _GATE_PILL_LABELS.get(name) or name.replace("_", " ").title()
+
+
+def _execution_targets_from_packet(p: SignalPacket) -> list[dict]:
+    """Price levels traders care about — separate from news/catalyst prose."""
+    rows: list[dict] = []
+    if p.entry_band:
+        rows.append({
+            "kind": "buy_zone",
+            "label": "Buy zone",
+            "value": p.entry_band.fmt(),
+            "detail": "Wait for price here before sizing up",
+        })
+    if p.target is not None:
+        rows.append({
+            "kind": "target",
+            "label": "Target",
+            "value": f"${float(p.target):,.2f}",
+            "detail": "If the plan works",
+        })
+    walk = p.stop if p.stop is not None else p.invalidation
+    if walk is not None:
+        dd = ""
+        if p.spot and float(p.spot) > 0 and float(walk) < float(p.spot):
+            dd = f" ({(float(walk) - float(p.spot)) / float(p.spot) * 100.0:.1f}%)"
+        rows.append({
+            "kind": "stop",
+            "label": "Hard exit",
+            "value": f"${float(walk):,.2f}{dd}",
+            "detail": "Walk away if broken",
+        })
+    if p.full_size_price is not None and (
+        not p.entry_band or abs(float(p.full_size_price) - float(p.entry_band.lo)) > 0.02
+    ):
+        rows.append({
+            "kind": "full_size",
+            "label": "Full-size price",
+            "value": f"${float(p.full_size_price):,.2f}",
+            "detail": "Where valuation clears full size",
+        })
+    return rows
+
+
+# Category → gates this catalyst can *contextually* relate to (never auto-clears).
+_CATEGORY_RELATED_GATES: dict[str, tuple[str, ...]] = {
+    "BINARY_EVENT": ("confidence", "ml_probability"),
+    "SMART_MONEY": ("confidence",),
+    "MACRO_RATES": ("market_weather",),
+    "GEOPOLITICAL": ("market_weather", "confidence"),
+    "CROSS_ASSET": ("market_weather",),
+    "TECHNICAL": ("momentum_chop",),
+}
+
+_ROLE_SORT = {"drove_signal": 0, "unlock_context": 1, "risk": 2}
+
+
+def _catalyst_display_name(x: Catalyst) -> str:
+    name = (x.name or "").strip()
+    for prefix in ("News:", "Known event:", "Known Event:"):
+        if name.startswith(prefix):
+            name = name[len(prefix):].strip()
+    return name[:80] or "Catalyst"
+
+
+def _news_driver_cards(cats: list[Catalyst], *, limit: int = 3) -> list[dict]:
+    """Legacy slim news list — prefer gate_linked_catalysts in UI."""
+    news = [x for x in cats if _is_news_catalyst(x)][:limit]
+    out: list[dict] = []
+    for x in news:
+        body = _plain_catalyst_text(x)
+        out.append({
+            "name": _catalyst_display_name(x) or "News",
+            "direction": x.direction,
+            "summary": body[:160],
+            "horizon": _short_horizon(x.horizon),
+        })
+    return out
+
+
+def _classify_catalyst_category(x: Catalyst) -> str:
+    try:
+        from signals.catalyst_category_mapper import classify_text
+    except Exception:
+        return "TECHNICAL"
+    blob = f"{x.name or ''} {x.mechanism or ''} {x.watch or ''}"
+    return classify_text(blob) or "TECHNICAL"
+
+
+def _related_gates_for_catalyst(
+    category: str,
+    x: Catalyst,
+    failed: set[str],
+) -> list[str]:
+    gates = list(_CATEGORY_RELATED_GATES.get(category, ()))
+    blob = f"{x.name or ''} {x.mechanism or ''} {x.watch or ''}".lower()
+    if category == "TECHNICAL" or any(
+        k in blob for k in ("pullback", "buy zone", "entry band", "cooler")
+    ):
+        if "momentum_chop" not in gates:
+            gates.append("momentum_chop")
+        if "valuation" in failed and "valuation" not in gates:
+            gates.append("valuation")
+    if "earnings" in blob or "guidance" in blob:
+        for g in ("confidence", "ml_probability"):
+            if g not in gates:
+                gates.append(g)
+    # Failed gates first so the UI can emphasize unlock context.
+    return sorted(set(gates), key=lambda g: (0 if g in failed else 1, g))
+
+
+def _valuation_locked_watch(p: SignalPacket) -> str:
+    if p.entry_band:
+        return f"price into buy zone ({p.entry_band.fmt()})"
+    return "price into buy zone"
+
+
+def _assign_catalyst_role(
+    *,
+    direction: str,
+    category: str,
+    related: list[str],
+    failed: set[str],
+    is_news: bool,
+    summary: str,
+    name: str,
+    primary_driver: dict | None,
+) -> str:
+    if direction == "breaks":
+        return "risk"
+    pd = primary_driver or {}
+    primary_cat = str(pd.get("category") or "").upper()
+    primary_hl = str(pd.get("headline") or "").strip().lower()
+    blob = f"{name} {summary}".lower()
+    if primary_cat and category == primary_cat and category != "TECHNICAL":
+        return "drove_signal"
+    if primary_hl and (
+        primary_hl[:48] in blob
+        or (name and name.lower() in primary_hl)
+        or (summary and summary.lower()[:48] in primary_hl)
+    ):
+        return "drove_signal"
+    if any(g in failed for g in related):
+        return "unlock_context"
+    if is_news and direction == "unlocks":
+        return "drove_signal"
+    return "unlock_context"
+
+
+def build_gate_linked_catalyst_cards(
+    p: SignalPacket,
+    cats: list[Catalyst] | None = None,
+    *,
+    primary_driver: dict | None = None,
+    limit: int = 5,
+) -> list[dict]:
+    """Gate-linked catalyst cards — context only; news never clears a gate."""
+    cats = list(cats or [])
+    failed = {g.name for g in (p.gates or []) if not g.passed}
+    valuation_locked = "valuation" in failed
+    cards: list[dict] = []
+
+    for x in cats:
+        is_news = _is_news_catalyst(x)
+        # Prefer news + catalysts tied to failed gates; skip soft technical noise
+        # when we already have enough news cards.
+        category = _classify_catalyst_category(x)
+        related = _related_gates_for_catalyst(category, x, failed)
+        name = _catalyst_display_name(x)
+        summary = _plain_catalyst_text(x)[:160]
+        direction = (x.direction or "unlocks").lower()
+        if direction not in ("unlocks", "breaks"):
+            direction = "unlocks"
+
+        role = _assign_catalyst_role(
+            direction=direction,
+            category=category,
+            related=related,
+            failed=failed,
+            is_news=is_news,
+            summary=summary,
+            name=name,
+            primary_driver=primary_driver,
+        )
+
+        if valuation_locked:
+            watch = _valuation_locked_watch(p)
+        else:
+            watch = (x.watch or "").strip() or "price reaction into the event"
+
+        # News never clears a gate (backtest proof required later).
+        # Technical templates also stay clears_gate=false — watch is the tell.
+        cards.append({
+            "role": role,
+            "related_gates": related,
+            "clears_gate": False,
+            "watch": watch[:140],
+            "name": name,
+            "summary": summary,
+            "direction": direction,
+            "horizon": _short_horizon(x.horizon),
+            "category": category,
+            "origin": "news" if is_news else "technical",
+        })
+
+    # Prefer: drove_signal → unlock_context → risk; within role, news first.
+    cards.sort(
+        key=lambda c: (
+            _ROLE_SORT.get(str(c.get("role")), 9),
+            0 if c.get("origin") == "news" else 1,
+        )
+    )
+    # Drop pure-technical noise that isn't unlock/risk when we have news.
+    has_news = any(c.get("origin") == "news" for c in cards)
+    if has_news:
+        trimmed: list[dict] = []
+        for c in cards:
+            if c.get("origin") == "news":
+                trimmed.append(c)
+            elif c.get("role") in ("unlock_context", "risk") and any(
+                g in failed for g in (c.get("related_gates") or [])
+            ):
+                trimmed.append(c)
+        cards = trimmed or cards
+    return cards[:limit]
+
+
+def build_model_checks(
+    p: SignalPacket,
+    cats: list[Catalyst] | None = None,
+    *,
+    primary_driver: dict | None = None,
+) -> dict:
+    """Structured Model Checks payload for the Why panel (no string scraping)."""
+    cats = list(cats or [])
+    unlock = ""
+    if p.unlock_conditions:
+        unlock = "Unlocks when: " + " AND ".join(p.unlock_conditions) + "."
+    gates = [
+        {
+            "id": g.name,
+            "label": _gate_pill_label(g.name),
+            "passed": bool(g.passed),
+            "detail": (
+                (g.detail.get("text") if isinstance(g.detail, dict) else None)
+                or ""
+            )[:160],
+        }
+        for g in (p.gates or [])
+    ]
+    linked = build_gate_linked_catalyst_cards(
+        p, cats, primary_driver=primary_driver, limit=5
+    )
+    return {
+        "unlock_when": unlock,
+        "gates": gates,
+        "execution_targets": _execution_targets_from_packet(p),
+        "news_drivers": _news_driver_cards(cats, limit=3),
+        "gate_linked_catalysts": linked,
+    }
 
 
 # ═════════════════════════════════════════════════════════════
@@ -1410,6 +1745,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
     trading_notes = narrative or render_plain_trading_notes(p, contract, cats)
     note_payload = build_trading_note_payload(p, contract, cats)
     primary_driver = note_payload.get("PRIMARY_DRIVER") or {}
+    model_checks = build_model_checks(p, cats, primary_driver=primary_driver)
 
     return {
         "status": "ok",
@@ -1424,6 +1760,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         "driver_category": note_payload.get("DRIVER_CATEGORY") or "TECHNICAL",
         "driver_chip": note_payload.get("DRIVER_CHIP") or "Technical",
         "why": why,
+        "model_checks": model_checks,
         "catalysts": [asdict(x) for x in cats],
         "scenario_ev_pct": p.scenario_ev(),
         "scenario_ev_horizon": "scenario mix · not the painted target",

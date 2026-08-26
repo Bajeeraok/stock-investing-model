@@ -15,9 +15,49 @@ def test_passes_tracking_gate_when_cleared():
 
 
 def test_blocks_when_gates_locked():
-    row = {"gate_cleared": False, "go_no_go": "no_go"}
+    row = {"gate_cleared": False, "go_no_go": "no_go", "entry_mode": "hard_lock"}
     cfg = {"paper_trading": {"require_gates_cleared": True}}
     assert passes_tracking_gate(row, cfg, "paper_trading") is False
+
+
+def test_starter_only_passes_paper_gate_when_locked():
+    row = {
+        "gate_cleared": False,
+        "go_no_go": "no_go",
+        "entry_mode": "starter_only",
+        "signal": "WATCH",
+        "signal_uncapped": "BUY",
+        "signal_gate_capped": "starter_only",
+    }
+    cfg = {"paper_trading": {"require_gates_cleared": True, "log_starter_only": True}}
+    assert passes_tracking_gate(row, cfg, "paper_trading") is True
+
+
+def test_starter_only_blocked_when_log_disabled():
+    row = {
+        "gate_cleared": False,
+        "go_no_go": "no_go",
+        "entry_mode": "starter_only",
+    }
+    cfg = {"paper_trading": {"require_gates_cleared": True, "log_starter_only": False}}
+    assert passes_tracking_gate(row, cfg, "paper_trading") is False
+
+
+def test_paperable_and_size_pct_for_starter():
+    from signals.paper_trade_logger import _is_paperable_row, _paper_size_pct
+
+    row = {
+        "signal": "WATCH",
+        "entry_mode": "starter_only",
+        "signal_uncapped": "BUY",
+        "signal_gate_capped": "starter_only",
+        "gate_cleared": False,
+    }
+    cfg = {"paper_trading": {"starter_size_pct": 25}}
+    assert _is_paperable_row(row, require_actionable=True) is True
+    assert _paper_size_pct(row, cfg) == 25
+    full = {"signal": "BUY", "entry_mode": "full_go", "gate_cleared": True}
+    assert _paper_size_pct(full, cfg) == 100
 
 
 def test_mark_to_market_daily_delta_from_prior_eod(tmp_path):

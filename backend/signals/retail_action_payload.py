@@ -1294,6 +1294,7 @@ def align_ml_signal_with_retail_gates(row: dict[str, Any]) -> None:
     Downgrade ML `signal` when retail gates block a full entry.
 
     BUY/STRONG BUY without full_go inflates audit win rate (technical BUY but gates say wait).
+    Preserves ``signal_uncapped`` so paper trading can still log starter_only at partial size.
     """
     sig = str(row.get("signal") or "").strip().upper()
     if sig not in ("BUY", "STRONG BUY"):
@@ -1302,6 +1303,7 @@ def align_ml_signal_with_retail_gates(row: dict[str, Any]) -> None:
     # Only full_go unlocks BUY/STRONG BUY — 4/4 gates with starter/hard_lock is not a full entry.
     if em == "full_go":
         return
+    row["signal_uncapped"] = sig
     if em == "starter_only":
         row["signal"] = "WATCH"
         row["signal_gate_capped"] = "starter_only"

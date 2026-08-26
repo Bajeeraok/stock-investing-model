@@ -4483,6 +4483,53 @@ def eod_snapshots_list():
     }
 
 
+@router.get("/eod/snapshots/{snapshot_date}")
+def eod_snapshot_get(snapshot_date: str):
+    """
+    Return one full EOD snapshot JSON (Redis first, then DATA_ROOT/eod).
+
+    Used for local audits / fill walkthroughs against prod Railway data.
+    ``snapshot_date`` must be YYYY-MM-DD.
+    """
+    import re
+
+    date_str = (snapshot_date or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str):
+        raise HTTPException(status_code=400, detail="snapshot_date must be YYYY-MM-DD")
+
+    snap: dict | None = None
+    source = None
+    try:
+        from signals.cache import get_eod_snapshot_redis
+
+        snap = get_eod_snapshot_redis(date_str)
+        if snap:
+            source = "redis"
+    except Exception:
+        snap = None
+
+    if not snap:
+        path = get_data_root() / "eod" / f"{date_str}.json"
+        if path.is_file():
+            try:
+                snap = json.loads(path.read_text(encoding="utf-8"))
+                source = "disk"
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to read {path.name}: {e}") from e
+
+    if not snap or not isinstance(snap, dict):
+        raise HTTPException(status_code=404, detail=f"No EOD snapshot for {date_str}")
+
+    # Keep payload lean for clients that only need run_results + meta.
+    out = dict(snap)
+    out["_meta"] = {
+        "snapshot_date": date_str,
+        "source": source,
+        "tickers": len(out.get("run_results") or []),
+    }
+    return out
+
+
 @router.post("/eod/run")
 def run_eod_now(
     snapshot_date: str | None = None,

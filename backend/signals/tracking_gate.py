@@ -128,10 +128,33 @@ def enrich_tracking_row(
     return row
 
 
+def _row_entry_mode(row: dict[str, Any]) -> str:
+    em = str(row.get("entry_mode") or row.get("gate_mode") or "").strip().lower()
+    if em in ("full_go", "starter_only", "hard_lock"):
+        return em
+    rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
+    ra = row.get("retail_action") if isinstance(row.get("retail_action"), dict) else {}
+    for src in (rs, ra):
+        em2 = str(src.get("entry_mode") or "").strip().lower()
+        if em2 in ("full_go", "starter_only", "hard_lock"):
+            return em2
+    return ""
+
+
+def _is_starter_only_row(row: dict[str, Any]) -> bool:
+    if _row_entry_mode(row) == "starter_only":
+        return True
+    return str(row.get("signal_gate_capped") or "").lower() == "starter_only"
+
+
 def passes_tracking_gate(row: dict[str, Any], config: dict | None, section: str) -> bool:
     """
     When require_gates_cleared is true, only rows with gate_cleared=True are tracked.
     Legacy EOD rows without gate data are included so history is not dropped.
+
+    Paper trading may also admit ``starter_only`` (partial size) when
+    ``paper_trading.log_starter_only`` is true (default), so starters are not
+    capped out of the track while display signal stays WATCH.
     """
     cfg = (config or {}).get(section) or {}
     if not cfg.get("require_gates_cleared", False):
@@ -139,11 +162,24 @@ def passes_tracking_gate(row: dict[str, Any], config: dict | None, section: str)
     cleared = _as_bool(row.get("gate_cleared"))
     if cleared is True:
         return True
+    # Starter path: value OK but tech gates incomplete — still paper at partial size.
+    if (
+        section == "paper_trading"
+        and bool(cfg.get("log_starter_only", True))
+        and _is_starter_only_row(row)
+    ):
+        return True
     if cleared is False:
         return False
     go = str(row.get("go_no_go") or "").lower()
     if go == "go":
         return True
     if go == "no_go":
+        if (
+            section == "paper_trading"
+            and bool(cfg.get("log_starter_only", True))
+            and _is_starter_only_row(row)
+        ):
+            return True
         return False
     return True
