@@ -180,9 +180,11 @@ export function StickyTickerQuoteBar({
             </span>
           )}
         </div>
-        {gatesPassed != null && (
+        {(gatesPassed != null || confidencePct != null) && (
           <div className="w-full sm:w-36 shrink-0 space-y-1">
-            <GateProgressBar passed={gatesPassed} total={gatesTotal} variant="buy" />
+            {gatesPassed != null && (
+              <GateProgressBar passed={gatesPassed} total={gatesTotal} variant="buy" />
+            )}
             {confidencePct != null && (
               <p
                 className={clsx(

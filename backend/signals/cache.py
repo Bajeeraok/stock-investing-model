@@ -626,6 +626,35 @@ def cached_long_horizon_risk(ticker: str, period: str, fetch_fn) -> dict | None:
     return out
 
 
+TTL_OHLCV_DEFAULT = 900  # 15 min default — see get_cached_ohlcv() for why this must stay short
+
+
+def _ohlcv_redis_ttl() -> int:
+    """Override via OHLCV_REDIS_TTL_SECONDS (60-3600s, same bounds as the in-process OHLCV cache)."""
+    raw = (os.environ.get("OHLCV_REDIS_TTL_SECONDS") or "").strip()
+    if raw:
+        try:
+            return max(60, min(3600, int(raw)))
+        except ValueError:
+            pass
+    return TTL_OHLCV_DEFAULT
+
+
+def get_cached_ohlcv(key: str) -> Any | None:
+    """
+    Cross-process OHLCV cache — dedupes 5y history fetches (FMP/yfinance) across the
+    backend's worker processes and survives a mid-cycle restart. Deliberately short TTL:
+    the most recent bar is today's still-forming session, which is signal-critical data
+    ("not cached (by design)" per this module's own docstring) — this cache only removes
+    *redundant* fetches within one signal-warm interval, not the refresh cadence itself.
+    """
+    return get_cached(cache_key("ohlcv", key))
+
+
+def set_cached_ohlcv(key: str, value: Any) -> bool:
+    return set_cached(cache_key("ohlcv", key), value, _ohlcv_redis_ttl())
+
+
 def get_cached_bands(ticker: str) -> dict | None:
     """Last computed target bands for optional ST trailing re-anchor."""
     key = cache_key("target_bands", ticker)

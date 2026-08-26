@@ -365,9 +365,17 @@ def _result_to_paper_record(
     ml = r.get("ml_short_prob")
     ml_conf = round(float(ml) * 100, 1) if _safe_float(ml) is not None else None
     reg = r.get("_global_market_regime") or r.get("regime")
-    entry = _safe_float(r.get("paper_entry_price") or r.get("close") or r.get("price"))
+    # Swing entries fill at the setup's own anchor (MA21 / resistance / EMA8 / recent low —
+    # whichever the stop/target/R:R were actually measured from), not spot/close — the
+    # classifier can trigger before price has reached that anchor.
+    swing_anchor = _safe_float(r.get("swing_entry_anchor")) if track == "swing" else None
+    entry = _safe_float(
+        swing_anchor or r.get("paper_entry_price") or r.get("close") or r.get("price")
+    )
     entry_src = None
-    if _safe_float(r.get("paper_entry_price")) is not None:
+    if swing_anchor is not None:
+        entry_src = "swing_entry_anchor"
+    elif _safe_float(r.get("paper_entry_price")) is not None:
         entry_src = str(r.get("paper_entry_source") or "live_quote")
     elif entry is not None:
         entry_src = "ohlcv_last_bar"

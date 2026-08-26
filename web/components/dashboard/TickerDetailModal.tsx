@@ -395,6 +395,7 @@ export function TickerDetailModal({
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
   const [modalTab, setModalTab] = useState<"today" | "levels" | "why">(initialTab);
   const [whySubTab, setWhySubTab] = useState<WhySubTab>("valuation");
 
@@ -881,9 +882,6 @@ export function TickerDetailModal({
                 if (rb != null && rb <= 40) return "DOWN";
                 return "NEUTRAL";
               })()}
-              actionTitle={headerActionStatus.title}
-              gatesPassed={tradingGates.length ? gatesPassedCount : null}
-              gatesTotal={gatesTotal}
               confidencePct={headlineScore.confidencePct}
               earningsLabel={
                 detail.earnings?.days_until != null && detail.earnings.days_until <= 14
@@ -1338,14 +1336,35 @@ export function TickerDetailModal({
                     />
                   )}
                   {detail.investor_summary && (detail.current_price ?? 0) > 0 && (
-                    <FairValueDebugPanel
-                      currentPrice={detail.current_price ?? 0}
-                      displayFairValue={detail.investor_summary.fair_value}
-                      ttmPeUsed={detail.investor_summary.ttm_pe_used}
-                      forwardPeUsed={detail.investor_summary.forward_pe_used}
-                      metadata={detail.investor_summary.fair_value_metadata}
-                      external={detail.investor_summary.fair_value_vs_external}
-                    />
+                    <section className="rounded-xl border border-slate-700/50 bg-slate-900/40 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setDebugPanelOpen((o) => !o)}
+                        className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-800/40 transition-colors"
+                        aria-expanded={debugPanelOpen}
+                      >
+                        <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
+                          Show model internals
+                        </span>
+                        {debugPanelOpen ? (
+                          <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" aria-hidden />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" aria-hidden />
+                        )}
+                      </button>
+                      {debugPanelOpen && (
+                        <div className="border-t border-slate-800 px-4 py-3">
+                          <FairValueDebugPanel
+                            currentPrice={detail.current_price ?? 0}
+                            displayFairValue={detail.investor_summary.fair_value}
+                            ttmPeUsed={detail.investor_summary.ttm_pe_used}
+                            forwardPeUsed={detail.investor_summary.forward_pe_used}
+                            metadata={detail.investor_summary.fair_value_metadata}
+                            external={detail.investor_summary.fair_value_vs_external}
+                          />
+                        </div>
+                      )}
+                    </section>
                   )}
                   {priceTargets ? (
                     <div className="rounded-xl border border-slate-700/50 bg-slate-900/60 px-4 py-4">
@@ -1516,7 +1535,7 @@ export function TickerDetailModal({
                       </p>
                     )}
                     {!detail.thesis && !detail.exit_condition && (
-                      <p className="text-slate-500 italic">No written thesis yet. Add in data/theses.yaml or via add_thesis.py</p>
+                      <p className="text-slate-500 italic">No written thesis for this ticker yet.</p>
                     )}
                   </div>
                 </section>

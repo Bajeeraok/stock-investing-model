@@ -4527,6 +4527,33 @@ def _apply_sell_roadmap_band_alignment(
         if "horizon" not in c.lower():
             sell_stages[4]["condition"] = c + " — fair value / LT band"
 
+    # Buy/sell invariant: the "1-3 months" and "3-6 months" trim zones must not overlap the
+    # active T2 accumulation tier (horizon_entry_calculator's FV x MOS band) — otherwise Owner
+    # mode can show "add here" and "sell half here" at the same price. Confirmed to actually
+    # happen for high_quality_defensive (10% MOS) and large_cap_growth (15% MOS) classes, where
+    # T2 lands inside the default 82-92% of FV Major-trim zone.
+    entry_tiers = (long_h.get("entry_tiers") or {}) if isinstance(long_h, dict) else {}
+    tiers = entry_tiers.get("tiers") if isinstance(entry_tiers, dict) else None
+    t2 = next(
+        (t for t in (tiers or []) if isinstance(t, dict) and str(t.get("id") or "").upper() == "T2"),
+        None,
+    )
+    t2_ceiling = _safe_float(t2.get("high")) if t2 else None
+    if t2_ceiling:
+        floor = t2_ceiling + pad
+        for i in (2, 3):
+            lo = _safe_float(sell_stages[i].get("price_zone_low"))
+            hi = _safe_float(sell_stages[i].get("price_zone_high"))
+            if lo is None or hi is None or lo >= floor:
+                continue
+            new_lo = min(floor, hi - pad) if hi > floor else floor
+            new_hi = max(hi, new_lo + pad)
+            sell_stages[i]["price_zone_low"] = round(new_lo, 2)
+            sell_stages[i]["price_zone_high"] = round(new_hi, 2)
+            c = sell_stages[i].get("condition") or ""
+            if "T2 accumulation" not in c:
+                sell_stages[i]["condition"] = c + " — floored above active T2 accumulation tier"
+
     # Profit-taking ladder: each stage floor should not sit below the prior stage ceiling
     prev_hi: float | None = None
     for i in (1, 2, 3, 4):

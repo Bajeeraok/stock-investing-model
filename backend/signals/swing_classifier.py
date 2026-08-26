@@ -252,10 +252,19 @@ def build_swing_exit_plan(
 
     rr = (t1 - entry_anchor) / risk if risk > 0 else None
 
+    # Actionable entry band is centered on entry_anchor — the same price stop/target/R:R
+    # are measured from — not on `el`/`eh` (a generic, spot-centered band from st_band).
+    # Anchor and spot diverge exactly when a setup hasn't triggered yet (e.g. DIP_TO_MA
+    # before the pullback happens), which is when a spot-centered "entry zone" would
+    # misreport readiness and mis-size the position.
+    band_pad = max(entry_anchor * 0.005, 0.15 * atr)
+    entry_band_low = entry_anchor - band_pad
+    entry_band_high = entry_anchor + band_pad
+
     return {
         "setup_type": setup_type.value,
-        "entry_low": round(min(el, eh), 2),
-        "entry_high": round(max(el, eh), 2),
+        "entry_low": round(min(entry_band_low, entry_band_high), 2),
+        "entry_high": round(max(entry_band_low, entry_band_high), 2),
         "entry_anchor": round(entry_anchor, 2),
         "hard_stop": round(stop, 2),
         "stop_pct": round((entry_anchor - stop) / entry_anchor * 100, 1) if entry_anchor else None,

@@ -179,6 +179,7 @@ def compute_swing_fields(
             {
                 "swing_entry_low": exits.get("entry_low"),
                 "swing_entry_high": exits.get("entry_high"),
+                "swing_entry_anchor": exits.get("entry_anchor"),
                 "swing_stop": exits.get("hard_stop"),
                 "swing_t1": exits.get("target_1"),
                 "swing_t2": exits.get("target_2"),

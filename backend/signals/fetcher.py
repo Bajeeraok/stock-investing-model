@@ -387,21 +387,94 @@ def ohlcv_cache_stats() -> dict[str, int]:
         return {"size": len(_ohlcv_store), "max_entries": _ohlcv_cache_max_entries()}
 
 
+def _ohlcv_to_redis_payload(value: object) -> dict | None:
+    """JSON-safe encoding for the OHLCV in-process cache's value shapes (Series/DataFrame/
+    (Series, Series) tuple/None). Returns None for any other shape — caller skips Redis."""
+    if value is None:
+        return {"kind": "none"}
+    if isinstance(value, pd.Series):
+        return {
+            "kind": "series",
+            "name": value.name,
+            "index": value.index.astype(str).tolist(),
+            "values": value.tolist(),
+        }
+    if isinstance(value, pd.DataFrame):
+        return {
+            "kind": "frame",
+            "index": value.index.astype(str).tolist(),
+            "columns": {str(c): value[c].tolist() for c in value.columns},
+        }
+    if isinstance(value, tuple) and len(value) == 2:
+        a, b = value
+        return {"kind": "series_pair", "a": _ohlcv_to_redis_payload(a), "b": _ohlcv_to_redis_payload(b)}
+    return None
+
+
+def _ohlcv_from_redis_payload(payload: object) -> tuple[bool, object]:
+    """Returns (decodable, value). decodable=False means the payload was unrecognized/corrupt."""
+    if not isinstance(payload, dict):
+        return False, None
+    kind = payload.get("kind")
+    if kind == "none":
+        return True, None
+    if kind == "series":
+        try:
+            idx = pd.to_datetime(payload["index"])
+            return True, pd.Series(payload["values"], index=idx, name=payload.get("name"))
+        except Exception:
+            return False, None
+    if kind == "frame":
+        try:
+            idx = pd.to_datetime(payload["index"])
+            return True, pd.DataFrame(payload.get("columns") or {}, index=idx)
+        except Exception:
+            return False, None
+    if kind == "series_pair":
+        ok_a, a = _ohlcv_from_redis_payload(payload.get("a"))
+        ok_b, b = _ohlcv_from_redis_payload(payload.get("b"))
+        if ok_a and ok_b:
+            return True, (a, b)
+        return False, None
+    return False, None
+
+
 def _cache_get(key: str) -> tuple[bool, object]:
     with _ohlcv_lock:
         entry = _ohlcv_store.get(key)
-        if entry is None:
-            return False, None
-        if time.monotonic() - entry.ts > _ohlcv_cache_ttl():
+        if entry is not None:
+            if time.monotonic() - entry.ts <= _ohlcv_cache_ttl():
+                return True, entry.value
             del _ohlcv_store[key]
-            return False, None
-        return True, entry.value
+
+    # Cross-process fallback (multiple workers / a mid-cycle restart) — see get_cached_ohlcv().
+    try:
+        from signals.cache import get_cached_ohlcv
+
+        payload = get_cached_ohlcv(key)
+    except Exception:
+        payload = None
+    if payload is not None:
+        ok, value = _ohlcv_from_redis_payload(payload)
+        if ok:
+            with _ohlcv_lock:
+                _ohlcv_store[key] = _CacheEntry(value=value, ts=time.monotonic())
+            return True, value
+    return False, None
 
 
 def _cache_set(key: str, value: object) -> None:
     with _ohlcv_lock:
         _ohlcv_store[key] = _CacheEntry(value=value, ts=time.monotonic())
         _cache_prune_locked()
+    try:
+        from signals.cache import set_cached_ohlcv
+
+        payload = _ohlcv_to_redis_payload(value)
+        if payload is not None:
+            set_cached_ohlcv(key, payload)
+    except Exception:
+        pass
 
 
 def _ohlcv_key(ticker: str, period: str, kind: str = "close") -> str:
