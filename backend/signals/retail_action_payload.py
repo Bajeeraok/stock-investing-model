@@ -118,8 +118,32 @@ def _assessment_pct(current_price: float | None, fair_value: float | None) -> fl
     return 100.0 * (fair_value - current_price) / current_price
 
 
-def _assessment_from_lt_band(current_price: float | None, lt_band: dict | None) -> float:
-    if not lt_band or current_price is None or current_price <= 0:
+def _assessment_from_lt_band(
+    current_price: float | None,
+    lt_band: dict | None,
+    fair_value_mid: float | None = None,
+) -> float:
+    """
+    % gap between current price and long-term fair value (positive = cheap).
+
+    Prefers ``fair_value_mid`` (target_bands' uncapped fair-value/consensus midpoint,
+    ``row["lt_fair_value_mid"]``) over the ``lt_band`` midpoint — ``lt_band`` is capped
+    to +/-35% of spot purely so the UI stays readable (see
+    ``target_bands._cap_band_width_for_display``), and that capped high/low pair
+    understates upside for any name where the true fair-value range is wider, which
+    silently biases this gate more negative as spot runs up. Falls back to the
+    (capped) lt_band midpoint for legacy rows saved before ``lt_fair_value_mid`` existed.
+    """
+    if current_price is None or current_price <= 0:
+        return 0.0
+    if fair_value_mid is not None:
+        try:
+            fv = float(fair_value_mid)
+            if fv > 0:
+                return 100.0 * (fv - current_price) / current_price
+        except (TypeError, ValueError):
+            pass
+    if not lt_band:
         return 0.0
     lo = lt_band.get("low")
     hi = lt_band.get("high")
@@ -1193,7 +1217,7 @@ def enrich_dashboard_signal_row(
     conf = row.get("plan_confidence")
     conf_mid = float(conf) * 100.0 if conf is not None and conf <= 1 else conf
 
-    assessment = _assessment_from_lt_band(cp, row.get("lt_band"))
+    assessment = _assessment_from_lt_band(cp, row.get("lt_band"), row.get("lt_fair_value_mid"))
     st_band = row.get("st_band")
 
     payload = build_retail_action_payload(

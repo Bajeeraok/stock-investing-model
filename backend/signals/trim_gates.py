@@ -245,7 +245,7 @@ def attach_trim_gates_to_row(
         rb = _global_regime_bull_pct(row.get("_global_market_regime"))
 
     ml_raw = row.get("ml_short_prob")
-    assessment = _assessment_from_lt_band(cp, row.get("lt_band"))
+    assessment = _assessment_from_lt_band(cp, row.get("lt_band"), row.get("lt_fair_value_mid"))
 
     gates = build_trim_gates(
         current_price=cp,

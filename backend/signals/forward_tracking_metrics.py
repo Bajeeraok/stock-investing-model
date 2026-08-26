@@ -137,6 +137,26 @@ def st_stop_target_from_row(row: dict[str, Any]) -> tuple[float | None, float | 
     return stop, target
 
 
+def entry_band_position(close_at_signal: float | None, band_low: float | None, band_high: float | None) -> str:
+    """
+    Where the signal-day close sat vs the model's own entry band (st_band, same band that
+    gates ``inside_buy_band`` in retail_action_payload and the paper-trading limit_touch fill).
+
+    "above" = the model would call this chasing (price already ran past the buy zone) —
+    a naive close-to-close forward return still scores it as if it filled there today.
+    """
+    if close_at_signal is None or band_low is None or band_high is None:
+        return "unknown"
+    lo, hi = min(band_low, band_high), max(band_low, band_high)
+    if hi <= lo:
+        return "unknown"
+    if close_at_signal < lo:
+        return "below"
+    if close_at_signal > hi:
+        return "above"
+    return "inside"
+
+
 def _f(x: Any) -> float | None:
     try:
         if x is None:

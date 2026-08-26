@@ -341,6 +341,9 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
             if lt_note:
                 row["lt_band_dispersion_note"] = lt_note
+        # Uncapped midpoint for valuation-gate math (assessment_pct) — the display cap below
+        # exists only to keep the UI band readable and must not silently bias BUY/TRIM gates.
+        row["lt_fair_value_mid"] = round((float(lt_low) + float(lt_high)) / 2, 2)
         lt_low, lt_high, lt_capped = _cap_band_width_for_display(
             float(lt_low), float(lt_high), spot=P, band_key="lt"
         )
@@ -373,6 +376,7 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
                 lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
                 if lt_note:
                     row["lt_band_dispersion_note"] = lt_note
+            row["lt_fair_value_mid"] = round((float(lt_low) + float(lt_high)) / 2, 2)
             lt_low, lt_high, lt_capped = _cap_band_width_for_display(
                 float(lt_low), float(lt_high), spot=P, band_key="lt"
             )
@@ -390,6 +394,7 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             row["lt_band"] = None
             row["lt_checkpoints"] = None
             row["lt_scenarios"] = None
+            row["lt_fair_value_mid"] = None
 
     # Backtest-based confidence for ST/MT targets (from regime × ATR-distance hit-rate table)
     try:

@@ -250,6 +250,7 @@ def get_forward_tracking(
             aggregate_horizon_stats,
             bars_between_dates,
             compute_validated_forward_return,
+            entry_band_position,
             path_metrics,
             read_frozen_gates,
             read_frozen_trim_gates,
@@ -331,6 +332,9 @@ def get_forward_tracking(
                 go_key = str(gate.get("go_no_go") or "unknown").lower()
                 if go_key not in ("go", "no_go"):
                     go_key = "unknown"
+                close_at_signal_val = float(row_work.get("close") or prior)
+                stop, target = st_stop_target_from_row(row_work)
+                entry_band_pos = entry_band_position(close_at_signal_val, stop, target)
 
                 if data_quality == "stale_session":
                     rec = {
@@ -344,8 +348,9 @@ def get_forward_tracking(
                         "forward_status": "pending",
                         "data_quality": data_quality,
                         "pending_reason": "No new OHLCV session between snapshots (holiday or duplicate EOD)",
-                        "close_at_signal": round(float(row_work.get("close") or prior), 4),
+                        "close_at_signal": round(close_at_signal_val, 4),
                         "close_at_forward": round(float(row_next.get("close") or actual), 4),
+                        "entry_band_position": entry_band_pos,
                         "gate_cleared": gate.get("gate_cleared"),
                         "go_no_go": gate.get("go_no_go"),
                         "entry_mode": (
@@ -370,7 +375,6 @@ def get_forward_tracking(
                 if ret_pct is None:
                     continue
 
-                stop, target = st_stop_target_from_row(row_work)
                 path_bars = bars_between_dates(
                     dates, start_idx, horizon, tk, _load_snapshot_mem, eod_dir
                 )
@@ -393,8 +397,9 @@ def get_forward_tracking(
                     "actual_return_pct": ret_pct,
                     "forward_status": "complete",
                     "data_quality": data_quality,
-                    "close_at_signal": round(float(row_work.get("close") or prior), 4),
+                    "close_at_signal": round(close_at_signal_val, 4),
                     "close_at_forward": round(float(row_next.get("close") or actual), 4),
+                    "entry_band_position": entry_band_pos,
                     "gate_cleared": gate.get("gate_cleared"),
                     "go_no_go": gate.get("go_no_go"),
                     "entry_mode": (
@@ -480,6 +485,42 @@ def get_forward_tracking(
         summary_actionable_buy = aggregate_horizon_stats(actionable_buy_rows)
         summary_actionable_buy["avg_return_20d_pct"] = summary_actionable_buy.get("avg_return_pct")
         summary_actionable_buy["label"] = "full_go + HOLD/ADD (entry slice)"
+        band_counts: dict[str, int] = {}
+        for r in actionable_buy_rows:
+            k = str(r.get("entry_band_position") or "unknown")
+            band_counts[k] = band_counts.get(k, 0) + 1
+        summary_actionable_buy["entry_band_breakdown"] = band_counts
+
+    # "Filled at the buy band, not chasing" slice — same full_go + HOLD/ADD cohort as
+    # summary_actionable_buy, restricted to rows where signal-day close was actually inside
+    # the model's own entry band (st_band). Mirrors paper_trade_logger's limit_touch discipline
+    # so we can see whether entry-band-only fills change the win rate / avg return.
+    in_band_buy_rows = [r for r in actionable_buy_rows if r.get("entry_band_position") == "inside"]
+    summary_actionable_buy_in_band: dict[str, Any] = {}
+    if in_band_buy_rows:
+        summary_actionable_buy_in_band = aggregate_horizon_stats(in_band_buy_rows)
+        summary_actionable_buy_in_band["avg_return_20d_pct"] = summary_actionable_buy_in_band.get(
+            "avg_return_pct"
+        )
+        summary_actionable_buy_in_band["label"] = (
+            "full_go + HOLD/ADD, entry-band fills only (excludes chasing above band)"
+        )
+
+    summary_by_entry_band_position: dict[str, dict[str, Any]] = {}
+    for pos_key in ("inside", "above", "below"):
+        pos_rows = [
+            r
+            for r in records
+            if r.get("horizon_days") == 20 and r.get("entry_band_position") == pos_key
+        ]
+        if pos_rows:
+            summary_by_entry_band_position[pos_key] = aggregate_horizon_stats(pos_rows)
+            summary_by_entry_band_position[pos_key]["avg_return_20d_pct"] = (
+                summary_by_entry_band_position[pos_key].get("avg_return_pct")
+            )
+            summary_by_entry_band_position[pos_key]["hit_rate_pct"] = (
+                summary_by_entry_band_position[pos_key].get("win_rate_pct")
+            )
 
     summary_by_gates = aggregate_by_gates([r for r in records if r.get("horizon_days") == 20])
     summary_by_trim_gates = aggregate_by_trim_gates(
@@ -509,6 +550,10 @@ def get_forward_tracking(
         "summary_by_go_no_go": summary_by_go_no_go,
         "summary_by_entry_mode": summary_by_entry_mode,
         "summary_actionable_buy": summary_actionable_buy if summary_actionable_buy else None,
+        "summary_actionable_buy_in_band": (
+            summary_actionable_buy_in_band if summary_actionable_buy_in_band else None
+        ),
+        "summary_by_entry_band_position": summary_by_entry_band_position,
         "summary_by_gates": summary_by_gates,
         "summary_by_trim_gates": summary_by_trim_gates,
         "signal_source_counts": signal_source_counts,
@@ -518,7 +563,10 @@ def get_forward_tracking(
             "(not paper trades). Stale holiday duplicates and impossible close jumps are "
             "excluded; 1d rows may use daily_move_pct when close chain is broken. "
             "HOLD/ADD bucket requires full_go entry_mode; ML BUY without full_go is downgraded. "
-            "See summary_actionable_buy for entry slice. Gate buckets differ from audit verdict rules."
+            "See summary_actionable_buy for entry slice; summary_actionable_buy_in_band restricts "
+            "that slice to signals where price was inside the entry band (not chasing) at signal "
+            "time, mirroring the paper-trading book's limit_touch fill discipline. "
+            "Gate buckets differ from audit verdict rules."
         ),
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }
