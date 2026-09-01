@@ -101,6 +101,34 @@ function NearbySrRows({ horizon }: { horizon: HorizonSignalPayload }) {
   );
 }
 
+function StopTargetRows({
+  horizon,
+  currentPrice,
+}: {
+  horizon: HorizonSignalPayload;
+  currentPrice: number | null | undefined;
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Stop</span>
+        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(horizon.stop_loss)}</span>
+        <span className="text-[10px] font-mono text-red-400/80 tabular-nums">
+          {pctFromSpot(horizon.stop_loss, currentPrice)}
+        </span>
+      </div>
+      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Target</span>
+        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(horizon.target)}</span>
+        <span className="text-[10px] font-mono text-emerald-400/80 tabular-nums">
+          {pctFromSpot(horizon.target, currentPrice)}
+          {horizon.risk_reward ? ` · R:R ${horizon.risk_reward.toFixed(1)}` : ""}
+        </span>
+      </div>
+    </>
+  );
+}
+
 function LevelRows({
   mode,
   horizon,
@@ -133,6 +161,44 @@ function LevelRows({
     );
   }
   const ez = horizon.entry_zone;
+  const ezWidthPct =
+    ez?.low != null && ez?.high != null && currentPrice ? ((ez.high - ez.low) / currentPrice) * 100 : 0;
+  // Wide bands (e.g. medium-term "bridge to MA50" during a real pullback) read as imprecise
+  // when flattened into one range — show the staged scale-in rungs instead (data already
+  // computed server-side via build_entry_band_levels, just unused in this compact card until now).
+  const stagedLevels =
+    ezWidthPct >= 8 ? (ez?.levels ?? []).filter((l) => l.role !== "anchor") : [];
+  if (stagedLevels.length > 0) {
+    const picked = [
+      stagedLevels[0],
+      stagedLevels[Math.floor((stagedLevels.length - 1) / 2)],
+      stagedLevels[stagedLevels.length - 1],
+    ].filter((l, i, arr) => arr.findIndex((x) => x.id === l.id) === i);
+    const RUNG_TAG = ["1st add", "Scale", "Last add"];
+    return (
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[10px] text-slate-500 leading-snug -mt-0.5 mb-0.5">
+          Wide zone — scale in across these levels, not one price
+        </p>
+        {picked.map((lvl, i) => (
+          <div
+            key={lvl.id}
+            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70"
+          >
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500 truncate">
+              {RUNG_TAG[i] ?? lvl.label}
+            </span>
+            <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(lvl.price)}</span>
+            <span className="text-[10px] font-mono text-slate-500 tabular-nums">
+              {pctFromSpot(lvl.price, currentPrice)}
+            </span>
+          </div>
+        ))}
+        <StopTargetRows horizon={horizon} currentPrice={currentPrice} />
+        <NearbySrRows horizon={horizon} />
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col gap-1.5">
       <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
@@ -144,21 +210,7 @@ function LevelRows({
           {pctFromSpot(ez?.low, currentPrice)}
         </span>
       </div>
-      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Stop</span>
-        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(horizon.stop_loss)}</span>
-        <span className="text-[10px] font-mono text-red-400/80 tabular-nums">
-          {pctFromSpot(horizon.stop_loss, currentPrice)}
-        </span>
-      </div>
-      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Target</span>
-        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(horizon.target)}</span>
-        <span className="text-[10px] font-mono text-emerald-400/80 tabular-nums">
-          {pctFromSpot(horizon.target, currentPrice)}
-          {horizon.risk_reward ? ` · R:R ${horizon.risk_reward.toFixed(1)}` : ""}
-        </span>
-      </div>
+      <StopTargetRows horizon={horizon} currentPrice={currentPrice} />
       <NearbySrRows horizon={horizon} />
     </div>
   );
