@@ -34,6 +34,12 @@ REGIME_GATE = float(_RG_CFG.get("regime_bull_pct_min", 60))
 CONFIDENCE_GATE = float(_RG_CFG.get("confidence_gate_pct", 55))
 MOMENTUM_RSI_MAX = float(_RG_CFG.get("momentum_rsi_max", 50))
 MOMENTUM_PATTERN_MIN = float(_RG_CFG.get("momentum_pattern_min", 45))
+# OBV 10d trend thresholds — accumulation/distribution confirmation for the momentum gate.
+# A single day's volume_ratio can't tell "nobody's interested" from "sellers dried up";
+# a multi-day OBV slope can. Kept as soft (visual_status only, not pass/fail) since this
+# hasn't been backtested against the RSI/pattern rule the way momentum_ok itself has.
+MOMENTUM_OBV_ACCUMULATION_PCT = float(_RG_CFG.get("momentum_obv_accumulation_pct", 5.0))
+MOMENTUM_OBV_DISTRIBUTION_PCT = float(_RG_CFG.get("momentum_obv_distribution_pct", -8.0))
 
 # Tranche-tiered MOS ladder: required valuation discount scales with tranche depth
 # (T1 = first dollar in, T3 = final/deepest tranche) instead of one flat number applied
@@ -206,12 +212,28 @@ def _regime_gate_detail(
     return line1
 
 
+def _obv_divergence_note(volume_ratio: float | None, obv_trend_pct: float | None, rsi_val: float) -> str:
+    """Disambiguate a low volume_ratio: OBV rising = lack of sellers, OBV falling = lack of interest."""
+    if obv_trend_pct is None:
+        return ""
+    if volume_ratio is not None and volume_ratio < 0.75 and rsi_val < 50:
+        if obv_trend_pct >= MOMENTUM_OBV_ACCUMULATION_PCT:
+            return " · but OBV rising (accumulation — lack of sellers, not lack of interest)"
+        if obv_trend_pct <= MOMENTUM_OBV_DISTRIBUTION_PCT:
+            return " · OBV falling too (lack of interest — chop likely genuine exhaustion)"
+        return ""
+    if obv_trend_pct <= MOMENTUM_OBV_DISTRIBUTION_PCT:
+        return " · OBV distribution over 10d (quiet selling beneath the price)"
+    return ""
+
+
 def _momentum_gate_detail(
     *,
     rsi_val: float,
     pattern_score: float | None,
     momentum_ok: bool,
     volume_ratio: float | None = None,
+    obv_trend_pct: float | None = None,
 ) -> str:
     vol_note = ""
     if volume_ratio is not None and volume_ratio > 0:
@@ -221,6 +243,7 @@ def _momentum_gate_detail(
             vol_note = " · high-volume chop (distribution risk if support breaks)"
         elif volume_ratio >= 2.0:
             vol_note = " · unusual volume (≥2× 20d avg — confirm direction)"
+    vol_note += _obv_divergence_note(volume_ratio, obv_trend_pct, rsi_val)
     if momentum_ok:
         base = f"RSI {rsi_val:.0f} · pattern {round(pattern_score or 0)}/100"
         return base + vol_note if vol_note else base
@@ -433,6 +456,7 @@ def build_trading_gates(
     regime_transition_pct: float | None = None,
     market_regime_bull_pct: float | None = None,
     volume_ratio: float | None = None,
+    obv_trend_pct: float | None = None,
     momentum_extended: bool = False,
     tranche_idx: int = 0,
 ) -> list[dict[str, Any]]:
@@ -446,6 +470,15 @@ def build_trading_gates(
     )
     regime_ok = regime_bull_pct is not None and regime_bull_pct >= REGIME_GATE
     momentum_ok = rsi_val < MOMENTUM_RSI_MAX and (pattern_score or 0) >= MOMENTUM_PATTERN_MIN
+    # Momentum passes the RSI/pattern check but OBV shows quiet distribution underneath —
+    # flag it as a marginal pass (still tradeable, still counts toward gate_cleared) rather
+    # than silently treating it the same as a clean pass. Not applied to a failing gate:
+    # OBV can't rescue a fail here, it only tempers confidence in a pass.
+    momentum_marginal = (
+        momentum_ok
+        and obv_trend_pct is not None
+        and obv_trend_pct <= MOMENTUM_OBV_DISTRIBUTION_PCT
+    )
     ml_detail, ml_visual, ml_ok = _ml_gate_detail(short_ml_prob)
     conf_ok = (confidence_mid or 0) >= CONFIDENCE_GATE
 
@@ -487,13 +520,15 @@ def build_trading_gates(
                 pattern_score=pattern_score,
                 momentum_ok=momentum_ok,
                 volume_ratio=volume_ratio,
+                obv_trend_pct=obv_trend_pct,
             ),
             "pass": momentum_ok,
             "gate_cleared": momentum_ok,
-            "visual_status": "cleared" if momentum_ok else "hot",
+            "visual_status": "marginal" if momentum_marginal else ("cleared" if momentum_ok else "hot"),
             "rsi_status": rsi_status(rsi),
             "icon": "📉" if momentum_ok else "📈",
             "blocker_weight": 0 if momentum_ok else (40 if rsi_val >= 50 else 25),
+            "marginal_pass": momentum_marginal,
         },
         {
             "id": "ml",
@@ -929,6 +964,7 @@ def build_retail_action_payload(
     market_regime_bull_pct: float | None = None,
     regime_transition_days: int | None = None,
     volume_ratio: float | None = None,
+    obv_trend_pct: float | None = None,
     institutional_conviction: dict[str, Any] | None = None,
     momentum_extended: bool = False,
     tranche_idx: int = 0,
@@ -947,6 +983,7 @@ def build_retail_action_payload(
         regime_transition_pct=regime_transition_pct,
         market_regime_bull_pct=market_regime_bull_pct,
         volume_ratio=volume_ratio,
+        obv_trend_pct=obv_trend_pct,
         momentum_extended=momentum_extended,
         tranche_idx=tranche_idx,
     )
@@ -1040,6 +1077,7 @@ def enrich_investor_summary_retail_action(
     ticker: str | None = None,
     market_regime_bull_pct: float | None = None,
     volume_ratio: float | None = None,
+    obv_trend_pct: float | None = None,
     institutional_conviction: dict[str, Any] | None = None,
     real_st_band: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -1113,6 +1151,7 @@ def enrich_investor_summary_retail_action(
         else investor_out.get("market_regime_bull_pct"),
         regime_transition_days=investor_out.get("regime_transition_days_estimate"),
         volume_ratio=volume_ratio,
+        obv_trend_pct=obv_trend_pct,
         institutional_conviction=institutional_conviction,
         momentum_extended=bool(investor_out.get("regime_momentum_extended")),
         tranche_idx=tranche_idx,
@@ -1232,6 +1271,8 @@ def enrich_dashboard_signal_row(
         st_band=st_band,
         risk_reward=None,
         include_confidence_gate=False,
+        volume_ratio=row.get("volume_ratio"),
+        obv_trend_pct=row.get("obv_trend_10d_pct"),
     )
     # List view uses LT band proxy — override valuation detail when no FV.
     # tranche_idx defaults to 0 (T1, first-dollar rung) — this path has no entry-tier

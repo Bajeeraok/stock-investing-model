@@ -538,7 +538,8 @@ def _build_features_index_etf_vix(
 ) -> np.ndarray | None:
     """
     Same scaling/clipping as :func:`_build_features`, plus VIX daily return and
-    rolling z-score of VIX level (126d) for macro stress co-movement with equities.
+    rolling z-score of VIX level (126d) for macro stress co-movement with equities,
+    plus a signed 5-day trend feature (see :func:`_signed_trend_feature`).
     """
     ret = close.pct_change().dropna()
     if len(ret) < MIN_BARS_TO_FIT:
@@ -559,6 +560,7 @@ def _build_features_index_etf_vix(
 
     feats.append(vix_ret.values.astype(float))
     feats.append(vix_z.values.astype(float))
+    feats.append(_signed_trend_feature(ret))
 
     arr = np.column_stack(feats)
     mask = np.all(np.isfinite(arr), axis=1)
@@ -581,7 +583,8 @@ def _build_features_index_etf_macro(
     yield_short: pd.Series,
 ) -> np.ndarray | None:
     """
-    VIX features plus 10y–short-rate **spread** level and changes (recession / steepening signal).
+    VIX features plus 10y–short-rate **spread** level and changes (recession / steepening signal),
+    plus a signed 5-day trend feature (see :func:`_signed_trend_feature`).
     First column remains equity daily return for state ordering in :func:`get_hmm_regime`.
     """
     ret = close.pct_change().dropna()
@@ -615,6 +618,7 @@ def _build_features_index_etf_macro(
             vix_z.values.astype(float),
             spread_d.values.astype(float),
             spread_z.values.astype(float),
+            _signed_trend_feature(ret),
         ]
     )
 
@@ -988,9 +992,25 @@ def get_hmm_regime(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _signed_trend_feature(ret: pd.Series, window: int = 5) -> np.ndarray:
+    """
+    Rolling N-day cumulative return, aligned to ret.index, warm-up filled with 0.
+
+    Direction-aware complement to |daily_return|: a single day's magnitude can't
+    tell a sharp rally from a selloff of the same size (both produce the same
+    |return|), which was letting real rallies register as continued bear/high-vol
+    regime on tickers where the elevated-|return| state also carries bearish weight.
+    A signed multi-day trend gives the model the direction that magnitude alone
+    can't — without removing the existing volatility-clustering signal.
+    """
+    cum = (1.0 + ret).rolling(window, min_periods=1).apply(lambda x: x.prod() - 1.0, raw=True)
+    return cum.fillna(0.0).values.astype(float)
+
+
 def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | None:
     """
-    Build standardised [daily_return, |daily_return|, log_vol_change] feature matrix.
+    Build standardised [daily_return, |daily_return|, log_vol_change?, trend_5d]
+    feature matrix (log_vol_change present only when volume is provided).
 
     Features are z-score standardised AND clipped to ±4σ before fitting.
     Clipping removes flash-crash outliers (e.g. -20% in a single day) that
@@ -1008,6 +1028,8 @@ def _build_features(close: pd.Series, volume: pd.Series | None) -> np.ndarray | 
         log_vol = np.log(vol_aligned.values.clip(1))
         log_vol_change = np.diff(log_vol, prepend=log_vol[0])
         feats.append(log_vol_change)
+
+    feats.append(_signed_trend_feature(ret))
 
     arr = np.column_stack(feats)
     # Remove rows with NaN / inf (can appear at boundaries)

@@ -173,6 +173,32 @@ def remove_ticker(ticker: str) -> bool:
     return True
 
 
+_RISK_PROFILES = ("conservative", "moderate", "aggressive")
+
+
+def get_risk_profile(config: dict | None = None) -> str:
+    """
+    User-set risk profile (persisted override) with config.yaml's static
+    portfolio_doctor.risk_appetite as fallback — same additional_tickers layering
+    the rest of user_overrides.json already uses.
+    """
+    override = _load_overrides().get("risk_profile")
+    if override in _RISK_PROFILES:
+        return override
+    return ((config or {}).get("portfolio_doctor") or {}).get("risk_appetite", "moderate")
+
+
+def set_risk_profile(profile: str) -> bool:
+    """Persist the user's risk profile. Returns False if profile is invalid."""
+    profile = (profile or "").strip().lower()
+    if profile not in _RISK_PROFILES:
+        return False
+    data = _load_overrides()
+    data["risk_profile"] = profile
+    _save_overrides(data)
+    return True
+
+
 def add_uploaded_portfolio(name: str, holdings: list[dict]) -> None:
     """Add or replace uploaded portfolio."""
     data = _load_overrides()

@@ -333,6 +333,17 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     else:
         response_avg_volume_20d = None
 
+    # OBV 10d trend — disambiguates a low volume_ratio (accumulation vs distribution)
+    # for the momentum gate. See indicators.obv_trend_pct.
+    obv_trend_10d = None
+    if volume is not None and close_ticker is not None and len(volume) >= 11:
+        try:
+            from signals.indicators import obv_trend_pct as _obv_trend_pct
+
+            obv_trend_10d = _obv_trend_pct(close_ticker, volume, window=10)
+        except Exception:
+            obv_trend_10d = None
+
     # 52-week range and drawdown from price history (252 trading days)
     range_low = range_high = high_52w = low_52w = drawdown_52w = None
     if close_ticker is not None and len(close_ticker) >= 252 and current_price:
@@ -616,6 +627,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "price_reasoning": price_reasoning,
         "volume_ratio": volume_ratio,
         "volume_unusual": volume_unusual,
+        "obv_trend_10d_pct": obv_trend_10d,
         "avg_volume_20d": response_avg_volume_20d,
         "drawdown_52w": drawdown_52w,
         "high_52w": round(high_52w, 2) if high_52w is not None else None,
@@ -708,6 +720,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 ticker=ticker,
                 market_regime_bull_pct=ctx.get("hmm_bull_pct"),
                 volume_ratio=_safe_float(response.get("volume_ratio")),
+                obv_trend_pct=_safe_float(response.get("obv_trend_10d_pct")),
                 institutional_conviction=inv.get("institutional_conviction"),
                 real_st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
             )
@@ -1840,6 +1853,7 @@ def _build_investor_summary(
             current_price,
             ticker=ticker,
             volume_ratio=_safe_float(response.get("volume_ratio")),
+            obv_trend_pct=_safe_float(response.get("obv_trend_10d_pct")),
             institutional_conviction=inst_conv,
             real_st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
         )

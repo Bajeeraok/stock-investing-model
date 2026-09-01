@@ -36,6 +36,31 @@ def _macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> 
     return macd_line, signal_line, histogram
 
 
+def compute_obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+    """On-Balance Volume: cumulative volume signed by daily price direction."""
+    direction = np.sign(close.diff().fillna(0.0))
+    return (direction * volume).fillna(0.0).cumsum()
+
+
+def obv_trend_pct(close: pd.Series, volume: pd.Series, window: int = 10) -> float | None:
+    """% change in OBV over the trailing `window` sessions.
+
+    Positive = net accumulation (buying pressure) over the window even if a given day's
+    raw volume is low; negative = net distribution. Disambiguates "low volume because
+    nobody's interested" from "low volume because sellers have dried up" — a single
+    day's volume_ratio can't tell those apart, a multi-day OBV slope can.
+    """
+    if close is None or volume is None or len(close) < window + 1 or len(volume) < window + 1:
+        return None
+    obv = compute_obv(close, volume)
+    start = float(obv.iloc[-window - 1])
+    end = float(obv.iloc[-1])
+    denom = abs(start) if abs(start) > 1e-9 else max(abs(end), float(volume.iloc[-window:].mean()) or 1.0)
+    if denom <= 0:
+        return None
+    return round((end - start) / denom * 100.0, 2)
+
+
 def compute_indicators(close: pd.Series) -> pd.DataFrame:
     """Compute MA20, MA50, MA200, RSI(14), MACD. Drops leading NaNs where needed."""
     df = pd.DataFrame({"close": close})

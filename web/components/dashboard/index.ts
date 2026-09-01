@@ -55,6 +55,7 @@ export { FMPPlanStatus } from "./FMPPlanStatus";
 export { ChatCopilot } from "./ChatCopilot";
 export { AccuracyPriceTargets, AccuracyPriceTargetsWithBoundary } from "./AccuracyPriceTargets";
 export { PortfolioDoctorRecommendations } from "./PortfolioDoctorRecommendations";
+export { RiskProfileSelector, type RiskProfile } from "./RiskProfileSelector";
 export { PortfolioRiskMetricsPanel } from "./PortfolioRiskMetricsPanel";
 export { MarketReversalBanner } from "./MarketReversalBanner";
 export { MarketCatalystBoardPanel, type MarketCatalystBoard } from "./MarketCatalystBoard";

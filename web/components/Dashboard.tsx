@@ -50,6 +50,7 @@ import {
   AccuracyPriceTargetsWithBoundary,
   PortfolioDoctorRecommendations,
   PortfolioRiskMetricsPanel,
+  RiskProfileSelector,
   MarketReversalBanner,
   MarketScenarios,
   PerformanceVsBenchmark,
@@ -1504,8 +1505,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 regimeCounts={selectedReport?.regime_counts}
                 onTickerClick={openTickerDetail}
               />
-              {/* Portfolio Doctor v2 — answers "what do I do this week?" first */}
+              {/* Portfolio Doctor v2 — answers "what do I do this week?" first.
+                  Risk profile governs everything below it: health score context,
+                  trim/add sizing, and (cross-referenced) the Tier1 Kelly engine in
+                  Risk Management — one persisted setting, not three disconnected ones. */}
               <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen>
+                <div className="mb-4">
+                  <RiskProfileSelector value={data.risk_profile} onChanged={() => onRefresh(true)} />
+                </div>
                 <PortfolioDoctorPanel
                   data={data.portfolio_doctor_v2}
                   portfolioRiskMetrics={data.portfolio_risk_metrics}
@@ -1517,6 +1524,23 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   holdings={selectedReport?.per_holding}
                   onTickerClick={openTickerDetail}
                 />
+                <div className="mt-6 space-y-6">
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
+                    <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
+                  )}
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
+                    <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
+                  )}
+                  <div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Portfolio risk (holdings)</p>
+                    <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
+                  </div>
+                  <PortfolioDoctorRecommendations
+                    recommendation={mergedDoctorRec?.[selectedPortfolio]}
+                    selectedPortfolio={selectedPortfolio}
+                    onTickerClick={openTickerDetail}
+                  />
+                </div>
               </ToggleSection>
               <ToggleSection id="portfolio-summary" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1560,36 +1584,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
                 <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={openTickerDetail} />
               </ToggleSection>
-              <ToggleSection
-                id="portfolio-doctor-legacy"
-                title="Trim / Add Recommendations"
-                icon={<Target />}
-                badge={
-                  (mergedDoctorRec?.[selectedPortfolio]?.trim?.length ?? 0) +
-                    (mergedDoctorRec?.[selectedPortfolio]?.add?.length ?? 0) || undefined
-                }
-                defaultOpen={false}
-              >
-                <div className="space-y-6">
-                  {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
-                    <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
-                  )}
-                  {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
-                    <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
-                  )}
-                  <div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Portfolio risk (holdings)</p>
-                    <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
-                  </div>
-                  <PortfolioDoctorRecommendations
-                    recommendation={mergedDoctorRec?.[selectedPortfolio]}
-                    selectedPortfolio={selectedPortfolio}
-                    onTickerClick={openTickerDetail}
-                  />
-                </div>
-              </ToggleSection>
               <ToggleSection id="portfolio-risk" title="Risk Management" icon={<Shield />} defaultOpen={false}>
                 <RiskDashboard
+                  riskProfile={data.risk_profile}
                   positionSizing={data.position_sizing}
                   drawdownSim={data.drawdown_sim}
                   exitLevels={data.exit_levels}

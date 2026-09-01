@@ -72,6 +72,22 @@ export function entryModeSortKey(mode: EntryMode | null | undefined): number {
 }
 
 /**
+ * Reward:risk from the ST band (stop = low, target = high) vs close — the ratio a
+ * retail trader actually sizes off of, vs. a dollar risk figure that only makes sense
+ * next to a specific account size.
+ */
+export function riskRewardRatio(r: Signal): number | null {
+  const close = r.close;
+  const stop = r.st_band?.low;
+  const target = r.st_band?.high;
+  if (close == null || stop == null || target == null) return null;
+  const risk = close - stop;
+  const reward = target - close;
+  if (risk <= 0 || reward <= 0) return null;
+  return reward / risk;
+}
+
+/**
  * "Best conditions to buy" composite: entry_mode tier first (full_go clears all gates and is
  * actually fillable; starter_only is partial size; hard_lock is blocked regardless of how good
  * the technicals look), then Confluence as the tie-break within a tier. Confluence alone (the

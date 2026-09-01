@@ -51,10 +51,12 @@ from config_loader import (
     get_dashboard_signal_universe,
     get_data_root,
     get_forward_tracking_tickers,
+    get_risk_profile,
     get_signal_universe,
     get_universe_meta,
     load_config,
     remove_ticker as _remove_ticker,
+    set_risk_profile,
 )
 from scripts.run_daily import (
     load_last_run,
@@ -97,8 +99,10 @@ from signals.market_forecast_brief import build_market_forecast_brief
 
 try:
     from signals.tier1_api_bridge import generate_tier1_payload
+    from signals.tier1_risk_engine import RiskTolerance
 except ImportError:
     generate_tier1_payload = None
+    RiskTolerance = None
 
 
 def _forward_tracking_params(config: dict) -> dict[str, int]:
@@ -109,16 +113,24 @@ def _forward_tracking_params(config: dict) -> dict[str, int]:
     }
 
 
+# Kept identical to allocation_recommendations()'s max_position_pct table
+# (backend/portfolio/doctor.py) so the Tier1 fallback's concentration cap agrees with
+# the primary portfolio-doctor engine instead of an independent hardcoded number.
+_TIER1_MAX_POSITION_PCT_BY_PROFILE = {"conservative": 15, "moderate": 20, "aggressive": 25}
+
+
 def _tier1_lightweight_fallback(
     report: dict,
     results: list[dict],
     *,
     portfolio_value: float,
+    risk_profile: str = "moderate",
 ) -> dict[str, Any]:
     """
     Portfolio-only risk payload when Tier 1 yfinance path fails or is unavailable.
     Ensures Risk Management tab is not empty when holdings exist.
     """
+    max_position_pct = _TIER1_MAX_POSITION_PCT_BY_PROFILE.get(risk_profile, 20)
     per_holding = [h for h in (report.get("per_holding") or []) if isinstance(h, dict) and h.get("ticker")]
     if not per_holding or portfolio_value <= 0:
         return {}
@@ -144,7 +156,7 @@ def _tier1_lightweight_fallback(
             "ticker": ticker,
             "recommended_dollars": rs.get("size_dollars") or round(portfolio_value * 0.01, 0),
             "recommended_shares": rs.get("shares") or (max(1, int(value / price)) if price > 0 else 0),
-            "max_position_dollars": round(portfolio_value * 0.08, 0),
+            "max_position_dollars": round(portfolio_value * max_position_pct / 100, 0),
             "current_pct": round(100 * value / portfolio_value, 1),
             "target_pct": min(10.0, round(100 * value / portfolio_value, 1)),
             "risk_per_trade_dollars": rs.get("risk_budget_dollars") or round(portfolio_value * 0.01, 0),
@@ -354,6 +366,9 @@ def _doctor_recommendations_for_portfolios(
     doctor_cfg = dict(config.get("portfolio_doctor") or {})
     doctor_cfg["model_rules"] = config.get("model_rules") or {}
     doctor_cfg["cash_deploy_min_score"] = config.get("cash_deploy_min_score", 70)
+    # User-persisted risk profile overrides the static config default — same value the
+    # Tier1 Kelly engine (generate_tier1_payload) and its fallback are resolved from.
+    doctor_cfg["risk_appetite"] = get_risk_profile(config)
     out: dict = {}
     for pname, rep in portfolios_out.items():
         try:
@@ -2682,6 +2697,7 @@ def _compute_full_dashboard_sync() -> dict:
                     signals=signals_for_tier1,
                     portfolio_value=portfolio_value_t1,
                     regime=regime_t1,
+                    risk_tolerance=RiskTolerance(get_risk_profile(config)),
                     horizon="medium",
                 )
                 logger.info("[dashboard] Tier 1 risk payload: sizing=%d drawdown=%d exits=%d earnings=%d",
@@ -2699,6 +2715,7 @@ def _compute_full_dashboard_sync() -> dict:
                 report,
                 results,
                 portfolio_value=float(report.get("total_value") or 0),
+                risk_profile=get_risk_profile(config),
             )
             if tier1_payload:
                 logger.info(
@@ -2966,6 +2983,7 @@ def _compute_full_dashboard_sync() -> dict:
         "portfolios": portfolios_out,
         "portfolio_names": portfolio_names,
         "portfolio_doctor_recommendations": portfolio_doctor_recommendations,
+        "risk_profile": get_risk_profile(config),
         "performance_vs_benchmark": performance_vs_benchmark,
         "tax_aware_exits": tax_aware_exits_out,
         "trim_candidates": trim_candidates,
@@ -3513,6 +3531,17 @@ async def remove_ticker_api(ticker: str):
     if _remove_ticker(ticker):
         return {"ok": True, "ticker": ticker.upper()}
     return {"ok": False, "message": "Ticker not in additional list"}
+
+
+@router.post("/portfolio/risk-profile")
+async def set_risk_profile_api(body: dict):
+    """Persist the user's risk profile — drives portfolio doctor sizing + Tier1 position sizing."""
+    profile = str(body.get("profile") or "").strip().lower()
+    if not set_risk_profile(profile):
+        raise HTTPException(
+            status_code=400, detail="profile must be conservative, moderate, or aggressive"
+        )
+    return {"ok": True, "profile": profile}
 
 
 @router.post("/portfolio/upload")

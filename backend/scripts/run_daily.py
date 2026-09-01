@@ -96,7 +96,7 @@ from signals.fetcher import (
     fetch_ohlcv_with_volume,
     fetch_ohlcv_close_and_volume,
 )
-from signals.indicators import multi_horizon_scores
+from signals.indicators import multi_horizon_scores, obv_trend_pct
 from signals.score_interpretation import detect_interpretation_style, effective_buy_min
 from signals.providers import get_next_earnings
 from signals.regime import (
@@ -415,6 +415,12 @@ def run_signals(
                 volume_ratio = round(today_vol / avg_vol, 2)
                 volume_unusual = volume_ratio >= 2.0
 
+        # OBV trend (10d) — disambiguates low volume_ratio: accumulation (lack of
+        # sellers) vs distribution (lack of interest). See indicators.obv_trend_pct.
+        obv_trend_10d = None
+        if volume is not None and len(volume) >= 11:
+            obv_trend_10d = obv_trend_pct(close, volume, window=10)
+
         # Drawdown (52w high) and ATR (14d)
         drawdown_52w = None
         high_52w = None
@@ -594,6 +600,7 @@ def run_signals(
             "story_change_horizon_flips": story_patch.get("story_change_horizon_flips"),
             "volume_ratio": volume_ratio,
             "volume_unusual": volume_unusual,
+            "obv_trend_10d_pct": obv_trend_10d,
             "drawdown_52w": drawdown_52w,
             "high_52w": high_52w,
             "low_52w": low_52w,

@@ -205,7 +205,14 @@ function Collapsible({ title, children, defaultOpen = true, badgeEl }: {
 //  FEATURE 1 â€” POSITION SIZING PANEL
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export function PositionSizingPanel({ items }: { items: PositionSizingData[] }) {
+export function PositionSizingPanel({
+  items,
+  riskProfile,
+}: {
+  items: PositionSizingData[];
+  /** conservative | moderate | aggressive — informational only, same value driving the sizing math server-side */
+  riskProfile?: string;
+}) {
   const [selected, setSelected] = useState(items[0]?.ticker ?? "");
   const data = items.find(i => i.ticker === selected) ?? items[0];
 
@@ -772,6 +779,8 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
 type ExitHorizon = "short" | "medium" | "long";
 
 interface RiskDashboardProps {
+  /** conservative | moderate | aggressive — same value driving Portfolio Doctor's trim/add sizing */
+  riskProfile?:          string;
   positionSizing?:       PositionSizingData[];
   drawdownSim?:          DrawdownSimData[];
   exitLevels?:           ExitLevelsData[];
@@ -788,6 +797,7 @@ const HORIZON_LABELS: Record<ExitHorizon, string> = {
 };
 
 export function RiskDashboard({
+  riskProfile,
   positionSizing, drawdownSim, exitLevels, exitLevelsByHorizon,
   earningsImpacts, concentration, portfolioValue = 0,
 }: RiskDashboardProps) {
@@ -837,9 +847,14 @@ export function RiskDashboard({
       {positionSizing?.length ? (
         <Collapsible
           title="Position Sizing (Kelly Criterion)"
-          badgeEl={<Badge label={`${positionSizing.length} tickers`} color="green" />}
+          badgeEl={
+            <>
+              <Badge label={`${positionSizing.length} tickers`} color="green" />
+              {riskProfile && <Badge label={riskProfile} color="blue" />}
+            </>
+          }
         >
-          <PositionSizingPanel items={positionSizing} />
+          <PositionSizingPanel items={positionSizing} riskProfile={riskProfile} />
         </Collapsible>
       ) : null}
 

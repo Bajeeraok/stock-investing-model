@@ -42,6 +42,9 @@ export function PortfolioDoctorRecommendations({
             </>
           )}
           <span><strong className="text-slate-400">Profile:</strong> {profile}</span>
+          {inputs.max_position_pct != null && (
+            <span><strong className="text-slate-400">Max position:</strong> {inputs.max_position_pct}%</span>
+          )}
         </div>
       </div>
 
@@ -58,6 +61,7 @@ export function PortfolioDoctorRecommendations({
                   <th className="px-4 py-3 font-medium">Ticker</th>
                   <th className="px-4 py-3 font-medium">Current %</th>
                   <th className="px-4 py-3 font-medium">Current $</th>
+                  <th className="px-4 py-3 font-medium" title="Max position size for the selected risk profile">Cap</th>
                   <th className="px-4 py-3 font-medium">Trim %</th>
                   <th className="px-4 py-3 font-medium">Trim $</th>
                   <th className="px-4 py-3 font-medium">Sell at</th>
@@ -78,6 +82,7 @@ export function PortfolioDoctorRecommendations({
                     </td>
                     <td className="px-4 py-3 text-slate-300">{r.current_pct}%</td>
                     <td className="px-4 py-3 text-slate-300">${r.current_value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-3 text-slate-500">{r.max_position_pct != null ? `${r.max_position_pct}%` : "—"}</td>
                     <td className="px-4 py-3 text-amber-400">{r.suggest_trim_pct}%</td>
                     <td className="px-4 py-3 text-amber-400">${r.suggest_trim_dollars.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                     <td className="px-4 py-3 text-slate-300">{r.sell_price != null ? `$${r.sell_price.toFixed(2)}` : "—"}</td>

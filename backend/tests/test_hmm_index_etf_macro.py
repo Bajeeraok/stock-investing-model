@@ -78,7 +78,7 @@ def test_vix_augmented_feature_matrix_has_expected_width():
     vol = pd.Series(np.ones(400) * 1e6, index=idx)
     arr = _build_features_index_etf_vix(close, vol, vix)
     assert arr is not None
-    assert arr.shape[1] == 5
+    assert arr.shape[1] == 6  # ret, |ret|, log_vol_change, vix_ret, vix_z, trend_5d
 
 
 def test_long_term_entry_index_etf_structural_stop_uses_ma200_cap():

@@ -753,6 +753,8 @@ export interface DashboardData {
   portfolios?: Record<string, PortfolioReport>;
   portfolio_names?: string[];
   portfolio_doctor_recommendations?: Record<string, PortfolioDoctorRecommendation>;
+  /** conservative | moderate | aggressive — drives allocation_recommendations + Tier1 position sizing */
+  risk_profile?: "conservative" | "moderate" | "aggressive";
   performance_vs_benchmark?: {
     periods: { period: string; portfolio_pct: number | null; spy_pct: number | null; qqq_pct: number | null; vs_spy: number | null; vs_qqq: number | null }[];
     as_of?: string | null;
@@ -1438,6 +1440,7 @@ export interface PortfolioDoctorTrim {
   ticker: string;
   current_pct: number;
   current_value: number;
+  max_position_pct?: number;
   suggest_trim_pct: number;
   suggest_trim_dollars: number;
   sell_price: number | null;
@@ -1461,7 +1464,13 @@ export interface PortfolioDoctorAdd {
 }
 
 export interface PortfolioDoctorRecommendation {
-  inputs: { risk_appetite: string; goal: string; target_portfolio_value: number | null; time_period_years: number };
+  inputs: {
+    risk_appetite: string;
+    goal: string;
+    target_portfolio_value: number | null;
+    time_period_years: number;
+    max_position_pct?: number;
+  };
   implied_cagr_pct: number | null;
   profile: string;
   trim: PortfolioDoctorTrim[];

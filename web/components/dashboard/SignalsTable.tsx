@@ -28,6 +28,7 @@ import {
   resolveConfidencePct,
   resolveEntryMode,
   resolveGatesCount,
+  riskRewardRatio,
 } from "@/lib/signalsTableAudit";
 import { TickerFilterBar } from "./TickerFilterBar";
 import {
@@ -620,7 +621,7 @@ function SignalsMobileQuickCard({
   const swipeActions: SwipeRevealAction[] = [
     {
       id: "gates",
-      label: expanded ? "Hide" : "Gates",
+      label: expanded ? "Hide" : "More",
       tone: "sky",
       onClick: () => onToggleExpand(r.ticker),
     },
@@ -653,7 +654,7 @@ function SignalsMobileQuickCard({
             type="button"
             onClick={(e) => onToggleExpand(r.ticker, e)}
             className="p-1 text-slate-500 hover:text-slate-200 touch-manipulation shrink-0"
-            aria-label={expanded ? "Collapse gates" : "Expand gates"}
+            aria-label={expanded ? "Collapse detail" : "Expand detail"}
           >
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
@@ -682,7 +683,7 @@ function SignalsMobileQuickCard({
         <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(status.light))}>
           {status.title}
         </span>
-        <span className="text-[10px] font-mono text-slate-500">{tradingGateSummaryLabel(gates)}</span>
+        <TradingGateMiniPills gates={gates} />
       </div>
       {r.story_change && (
         <p className="mt-1 pl-8 text-amber-400/90 text-xs line-clamp-2 leading-snug">{r.story_change}</p>
@@ -702,9 +703,6 @@ function SignalsMobileQuickCard({
       )}
       {expanded && (
         <div className="mt-2 pl-8 space-y-2">
-          {gates && gates.length > 0 && (
-            <GateProgressBar passed={gates.filter((g) => g.pass).length} total={4} variant="buy" />
-          )}
           <CompactSignalActionStrip
             signal={r}
             listContext={gateContext}
@@ -806,16 +804,24 @@ function SignalsMobileFullCard({
               {formatDailyMovePct(r.daily_move_pct).text}
             </span>
           )}
-          {r.risk_sizing && (
-            <span className="text-[10px] text-slate-500" title="Risk budget if stop hits">
-              Risk ~$
-              {(r.risk_sizing.risk_budget_dollars != null
-                ? r.risk_sizing.risk_budget_dollars
-                : Math.round((r.risk_sizing.size_dollars * r.risk_sizing.stop_pct) / 100)
-              ).toLocaleString(undefined, { maximumFractionDigits: 0 })}{" "}
-              · {r.risk_sizing.shares} sh · {r.risk_sizing.stop_pct}% stop
-            </span>
-          )}
+          {(() => {
+            const rr = riskRewardRatio(r);
+            if (rr == null) return null;
+            return (
+              <span
+                className={clsx(
+                  "text-[10px] font-semibold tabular-nums",
+                  rr >= 2 ? "text-emerald-400" : rr >= 1 ? "text-slate-400" : "text-amber-400"
+                )}
+                title={`Reward:risk from ST stop $${r.st_band!.low.toFixed(2)} / target $${r.st_band!.high.toFixed(2)} vs close`}
+              >
+                R:R {rr.toFixed(1)}
+                {r.risk_sizing?.stop_pct != null && (
+                  <span className="text-slate-500 font-normal"> · {r.risk_sizing.stop_pct}% stop</span>
+                )}
+              </span>
+            );
+          })()}
         </div>
       </div>
       {showModelDetail && (
@@ -1337,9 +1343,9 @@ export function SignalsTable({
         )}
       </div>
 
-      {/* Mobile: card list — swipe left for Open / Gates */}
+      {/* Mobile: card list — gates always visible; swipe left for Open / More */}
       <p className="md:hidden text-[10px] text-slate-500 px-4 py-1.5 border-b border-slate-700/40 bg-slate-900/30">
-        Tap chevron for gates · swipe left for Detail (disabled while gates open)
+        Gates shown inline · tap chevron for more · swipe left for full detail
       </p>
       <div className="md:hidden">
         {isQuick && actionGroups
