@@ -47,11 +47,15 @@ export function primaryHorizonKey(lens: TradingLens): "short" | "medium" | "long
   return "short";
 }
 
-/** Default Signals tab preset when lens changes. */
+/**
+ * Default Signals tab preset when lens changes — the morning-login promise is "opportunities
+ * for my time horizon," so this must resolve to a buy-side filter for every lens. Scout keeps
+ * its own short-term-specific filter (UP regime + RSI reset); Swing/Owner previously defaulted
+ * to "earnings_week"/"trim_candidates" — a caution list and a sell list, not opportunities.
+ */
 export function defaultPresetForLens(lens: TradingLens): SignalsPresetId {
   if (lens === "scout") return "pullback_buys";
-  if (lens === "swing") return "earnings_week";
-  return "trim_candidates";
+  return "opportunities";
 }
 
 /** Order ST/MT/LT cards on Overview for visual emphasis. */

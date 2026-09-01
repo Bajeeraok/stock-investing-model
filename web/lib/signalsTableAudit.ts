@@ -70,3 +70,17 @@ export function resolveConfidencePct(r: Signal): number | null {
 export function entryModeSortKey(mode: EntryMode | null | undefined): number {
   return ENTRY_MODE_ORDER[mode ?? ""] ?? 9;
 }
+
+/**
+ * "Best conditions to buy" composite: entry_mode tier first (full_go clears all gates and is
+ * actually fillable; starter_only is partial size; hard_lock is blocked regardless of how good
+ * the technicals look), then Confluence as the tie-break within a tier. Confluence alone (the
+ * old default sort) ranks a blocked hard_lock ticker above an actionable full_go one whenever
+ * its trend/RSI/MACD alignment happens to be higher — that's a technical-agreement score, not
+ * a readiness-to-buy score.
+ */
+export function buyReadinessSortValue(r: Signal): number {
+  const tier = entryModeSortKey(resolveEntryMode(r));
+  const score = r.confluence_score ?? r.composite_buy ?? 0;
+  return tier * 1000 - score;
+}

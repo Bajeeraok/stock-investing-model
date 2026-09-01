@@ -286,7 +286,57 @@ export function SignalDetailRail({
           onOpenDetail={() => onOpenDetail?.(signal.ticker)}
         />
       </div>
+      <SignalLevelsPanel signal={signal} />
     </aside>
+  );
+}
+
+/**
+ * Compact ST/MT/LT levels — moved here from flat "Buy/Sell/Support" and "Horizons ST/MT/LT"
+ * table columns (removed: both were dense text blobs, and Buy/Sell/Support's own tooltip said
+ * to prefer the band columns instead). One place, one row per horizon, consistent with the
+ * ticker-detail hero's level rows rather than a separate visual language.
+ */
+function SignalLevelsPanel({ signal: r }: { signal: Signal }) {
+  const rows: { tag: string; text: string; sub?: string }[] = [];
+  if (r.st_band) {
+    rows.push({
+      tag: "ST",
+      text: `$${r.st_band.low.toFixed(2)} – $${r.st_band.high.toFixed(2)}`,
+      sub: r.short_suggestion ?? undefined,
+    });
+  }
+  if (r.mt_band) {
+    rows.push({
+      tag: "MT",
+      text: `$${r.mt_band.low.toFixed(2)} – $${r.mt_band.high.toFixed(2)}`,
+      sub: r.medium_suggestion ?? undefined,
+    });
+  }
+  if (r.lt_band) {
+    rows.push({
+      tag: "LT",
+      text: `$${r.lt_band.low.toFixed(2)} – $${r.lt_band.high.toFixed(2)}${r.lt_band_low_confidence ? " (low conf)" : ""}`,
+      sub: r.long_suggestion ?? undefined,
+    });
+  }
+  if (rows.length === 0) return null;
+  return (
+    <div className="px-4 pb-4 space-y-1.5">
+      <p className="text-[10px] font-mono uppercase tracking-wider text-slate-600">Levels</p>
+      {rows.map((row) => (
+        <div
+          key={row.tag}
+          className="grid grid-cols-[2.4rem_1fr] items-baseline gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60"
+        >
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">{row.tag}</span>
+          <div className="min-w-0">
+            <span className="text-[12.5px] font-mono font-semibold text-white tabular-nums">{row.text}</span>
+            {row.sub && <p className="text-[10px] text-slate-500 truncate">{row.sub}</p>}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

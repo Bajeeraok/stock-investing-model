@@ -3,12 +3,17 @@
 import type { TradingLens } from "./tradingLens";
 import { defaultPresetForLens } from "./tradingLens";
 
-export type SignalsPresetId = "all" | "pullback_buys" | "trim_candidates" | "earnings_week";
+export type SignalsPresetId = "all" | "opportunities" | "pullback_buys" | "trim_candidates" | "earnings_week";
 
 export const SIGNALS_PRESET_STORAGE_KEY = "thrive-signals-preset";
 
 export const SIGNAL_PRESETS: { id: SignalsPresetId; label: string; hint: string; lens?: TradingLens }[] = [
   { id: "all", label: "All signals", hint: "No action/regime filter" },
+  {
+    id: "opportunities",
+    label: "Opportunities",
+    hint: "Gates clear (full_go / starter) — buy-ready right now, any horizon",
+  },
   {
     id: "pullback_buys",
     label: "Tactical setups",
@@ -40,7 +45,13 @@ export function presetsForLens(lens: TradingLens): typeof SIGNAL_PRESETS {
 export function loadSignalsPreset(): SignalsPresetId {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_PRESET_STORAGE_KEY) : null;
-    if (raw === "all" || raw === "pullback_buys" || raw === "trim_candidates" || raw === "earnings_week") {
+    if (
+      raw === "all" ||
+      raw === "opportunities" ||
+      raw === "pullback_buys" ||
+      raw === "trim_candidates" ||
+      raw === "earnings_week"
+    ) {
       return raw;
     }
   } catch {
@@ -67,12 +78,23 @@ export interface SignalPresetRow {
   signal?: string | null;
   earnings_caution?: boolean | null;
   earnings_days_until?: number | null;
+  entry_mode?: string | null;
+  retail_status?: { entry_mode?: string | null } | null;
+}
+
+/** full_go/starter_only (or legacy go/no_go+gates) — gates actually clear enough to act on, any horizon. */
+function isBuyableEntryMode(signal: SignalPresetRow): boolean {
+  const raw = signal.retail_status?.entry_mode ?? signal.entry_mode ?? null;
+  return raw === "full_go" || raw === "starter_only" || raw === "go";
 }
 
 export function matchesSignalPreset(signal: SignalPresetRow, preset: SignalsPresetId): boolean {
   if (preset === "all") return true;
   const score = signal.confluence_score ?? signal.composite_buy ?? 0;
   const sig = (signal.signal ?? "").toUpperCase();
+  if (preset === "opportunities") {
+    return isBuyableEntryMode(signal);
+  }
   if (preset === "pullback_buys") {
     return signal.regime === "UP" && (signal.rsi ?? 100) < 50 && score >= 55;
   }

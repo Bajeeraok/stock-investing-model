@@ -22,6 +22,7 @@ import {
 } from "@/lib/signalsTableView";
 import { gatesForSignal, tradingGateSummaryLabel } from "@/lib/signalsTableViewGates";
 import {
+  buyReadinessSortValue,
   entryModeLabel,
   entryModeSortKey,
   resolveConfidencePct,
@@ -340,7 +341,15 @@ function LiquidityCell({ signal: r }: { signal: Signal }) {
   );
 }
 
-export type SignalsSortKey = "ticker" | "score" | "regime" | "rsi" | "gates" | "confidence" | "entry_mode";
+export type SignalsSortKey =
+  | "buy_readiness"
+  | "ticker"
+  | "score"
+  | "regime"
+  | "rsi"
+  | "gates"
+  | "confidence"
+  | "entry_mode";
 
 function AuditColumnCells({
   r,
@@ -938,7 +947,7 @@ export function SignalsTable({
 }) {
   const gateContext: SignalListContext = listContext ?? {};
   const h = horizons || DEFAULT_HORIZONS;
-  const [sortBy, setSortBy] = useState<SignalsSortKey>("score");
+  const [sortBy, setSortBy] = useState<SignalsSortKey>("buy_readiness");
   const [scoreRsiDir, setScoreRsiDir] = useState<"asc" | "desc">("desc");
   const [openMobileTicker, setOpenMobileTicker] = useState<string | null>(null);
   const [showModelDetail, setShowModelDetail] = useState(false);
@@ -1024,19 +1033,21 @@ export function SignalsTable({
   useEffect(() => {
     try {
       const raw = typeof window !== "undefined" ? localStorage.getItem(SIGNALS_SORT_STORAGE_KEY) : null;
-      if (raw === "ticker" || raw === "score" || raw === "regime" || raw === "rsi") setSortBy(raw);
+      if (raw === "ticker" || raw === "score" || raw === "regime" || raw === "rsi" || raw === "buy_readiness")
+        setSortBy(raw);
     } catch {
       /* ignore */
     }
   }, []);
 
+  const TOGGLE_DIR_KEYS: SignalsSortKey[] = ["score", "rsi", "gates", "confidence", "buy_readiness"];
   const applySort = (key: SignalsSortKey) => {
     setSortBy((prev) => {
-      if (prev === key && (key === "score" || key === "rsi" || key === "gates" || key === "confidence")) {
+      if (prev === key && TOGGLE_DIR_KEYS.includes(key)) {
         setScoreRsiDir((d) => (d === "desc" ? "asc" : "desc"));
         return prev;
       }
-      if (prev !== key && (key === "score" || key === "rsi" || key === "gates" || key === "confidence")) {
+      if (prev !== key && TOGGLE_DIR_KEYS.includes(key)) {
         setScoreRsiDir("desc");
       }
       if (prev !== key) {
@@ -1100,6 +1111,11 @@ export function SignalsTable({
       }
       if (sortBy === "entry_mode") {
         return entryModeSortKey(resolveEntryMode(a)) - entryModeSortKey(resolveEntryMode(b));
+      }
+      if (sortBy === "buy_readiness") {
+        // Lower buyReadinessSortValue = more buy-ready (full_go tier, then higher Confluence) —
+        // dir=1 (default "desc" toggle state) sorts ascending by that value, i.e. best-first.
+        return dir * (buyReadinessSortValue(a) - buyReadinessSortValue(b));
       }
       return 0;
     });
@@ -1262,6 +1278,7 @@ export function SignalsTable({
             className="text-sm sm:text-xs bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
             aria-label="Sort preset"
           >
+          <option value="buy_readiness">Best to buy</option>
           <option value="score">Confluence</option>
           <option value="ticker">Ticker</option>
           <option value="regime">Regime</option>
@@ -1404,7 +1421,7 @@ export function SignalsTable({
         <table
           className={clsx(
             "w-full text-sm border-collapse",
-            showModelDetail ? "min-w-[1380px]" : isQuick ? "min-w-[520px]" : "min-w-[720px]",
+            showModelDetail ? "min-w-[900px]" : isQuick ? "min-w-[520px]" : "min-w-[720px]",
             showAuditColumns && (isQuick ? "min-w-[680px]" : "min-w-[860px]"),
           )}
         >
@@ -1529,39 +1546,6 @@ export function SignalsTable({
                 >
                   Regime
                 </button>
-              </th>
-              <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help text-left min-w-[7rem]"
-                title="7-layer confidence action — same model as the Roadmaps tab (supporting detail, not the official Now read)."
-              >
-                Model plan
-              </th>
-              <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help whitespace-nowrap"
-                title="Confluence + ML short-term tier (supporting detail). Can differ from Now · Action when gates block."
-              >
-                Confluence tier
-              </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
-                Positioning
-              </th>
-              <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 cursor-help"
-                title="Quick MA-pullback heuristic (MA50/MA200 dip, RSI-overbought exit) — independent of the model's gates/valuation. For the gate-aware entry/exit view, use the ST/MT/LT band column."
-              >
-                Buy / Sell / Support
-              </th>
-              <th
-                className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700 min-w-[11rem]"
-                title="Horizon cues (ST/MT/LT)"
-              >
-                Horizons ST / MT / LT
-              </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
-                Vol / DD
-              </th>
-              <th className="sticky top-0 z-[20] px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700">
-                Notes
               </th>
                 </>
               )}
@@ -1770,120 +1754,6 @@ export function SignalsTable({
                   >
                     {r.regime ?? "-"}
                   </span>
-                </td>
-                <td className="px-3 py-2.5 align-top max-w-[10.5rem]">
-                  <PlanActionBadge action={r.plan_action} conf={r.plan_confidence} />
-                </td>
-                <td className="px-3 py-2.5 align-top">
-                  <SignalBadge signal={r.signal} />
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-400" title="COT positioning (GLD/SLV/USO)">
-                  {cotByTicker?.[r.ticker] ?? "–"}
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  <span className="text-emerald-400/90" title="Add on pullback; confidence = model strength for adding at this level">
-                    {r.suggested_buy_price != null ? `$${r.suggested_buy_price.toFixed(2)}` : "-"}
-                    {r.buy_target_confidence_pct != null && r.suggested_buy_price != null && (
-                      <span className="text-slate-500 text-xs ml-0.5">({r.buy_target_confidence_pct}%)</span>
-                    )}
-                  </span>
-                  <span className="text-slate-500 mx-1">/</span>
-                  <span className="text-red-400/90" title="Consider trim/exit when overbought or weak; confidence = strength of sell signal">
-                    {r.suggested_sell_price != null ? `$${r.suggested_sell_price.toFixed(2)}` : "-"}
-                    {r.sell_target_confidence_pct != null && r.suggested_sell_price != null && (
-                      <span className="text-slate-500 text-xs ml-0.5">({r.sell_target_confidence_pct}%)</span>
-                    )}
-                  </span>
-                  {r.support_level != null && (
-                    <>
-                      <span className="text-slate-500 mx-1">/</span>
-                      <span className="text-amber-400/90" title="Support to watch; break below = caution">${r.support_level.toFixed(2)}</span>
-                    </>
-                  )}
-                </td>
-                <td className="px-3 py-2.5 align-top text-slate-400 max-w-[min(100vw,20rem)]">
-                  <div className="space-y-1.5 text-[11px] leading-snug">
-                    <div className="flex gap-1.5">
-                      <span className="text-slate-600 shrink-0 w-7">ST</span>
-                      <span className="text-slate-300 min-w-0">{r.short_suggestion || "—"}</span>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <span className="text-slate-600 shrink-0 w-7">MT</span>
-                      <span className="text-slate-300 min-w-0">{r.medium_suggestion || "—"}</span>
-                    </div>
-                    <div className="flex gap-1.5">
-                      <span className="text-slate-600 shrink-0 w-7">LT</span>
-                      <span className="text-slate-300 min-w-0">{r.long_suggestion || "—"}</span>
-                    </div>
-                    {(r.st_band || r.mt_band || r.lt_band) && (
-                      <div className="text-[10px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5" title="ST: stop–target. MT: vol band. LT: fair+consensus">
-                        {r.st_band && (
-                          <span className="block font-mono">${r.st_band.low.toFixed(1)}–${r.st_band.high.toFixed(1)} ST band</span>
-                        )}
-                        {r.mt_band && (
-                          <span className="block font-mono">${r.mt_band.low.toFixed(1)}–${r.mt_band.high.toFixed(1)} MT band</span>
-                        )}
-                        {r.lt_band && (
-                          <span className="block font-mono">
-                            ${r.lt_band.low.toFixed(1)}–${r.lt_band.high.toFixed(1)} LT
-                            {r.lt_band_low_confidence && " (low conf)"}
-                          </span>
-                        )}
-                        {r.uncertainty?.st_band_width_pct != null && (
-                          <span className="block text-slate-600">ST width {r.uncertainty.st_band_width_pct}% spot</span>
-                        )}
-                        {r.uncertainty?.typical_range_label && (
-                          <span className="block text-slate-600">{r.uncertainty.typical_range_label}</span>
-                        )}
-                        {r.uncertainty?.mt_narrative && (
-                          <span className="block text-slate-600">{r.uncertainty.mt_narrative}</span>
-                        )}
-                        {r.uncertainty?.lt_narrative && (
-                          <span className="block text-slate-600">{r.uncertainty.lt_narrative}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-sm text-slate-400">
-                  {r.volume_ratio != null && (
-                    <span className={r.volume_unusual ? "text-amber-400 font-medium" : ""} title="Volume vs 20d avg">
-                      {r.volume_ratio.toFixed(1)}x
-                    </span>
-                  )}
-                  {r.drawdown_52w != null && (
-                    <span className="ml-2" title="% below 52w high">
-                      {r.drawdown_52w >= 0 ? "" : ""}{r.drawdown_52w}%
-                    </span>
-                  )}
-                  {r.volume_ratio == null && r.drawdown_52w == null && "-"}
-                </td>
-                <td className="px-4 py-3 text-base">
-                  {r.score_label && ["Extended / high risk of pullback", "Oversold / speculative bounce"].includes(r.score_label) && (
-                    <span className={r.score_label.startsWith("Extended") ? "text-amber-400" : "text-slate-400"} title="Regime-aware label">
-                      • {r.score_label}
-                    </span>
-                  )}
-                  {r.earnings_note && (
-                    <span className="text-amber-400">{r.earnings_note}</span>
-                  )}
-                  {r.story_change && (
-                    <span className="text-amber-400 ml-1">• {r.story_change}</span>
-                  )}
-                  {cotByTicker?.[r.ticker] && (
-                    <span className="block text-amber-200/90 text-xs mt-1">
-                      <span title={String(cotByTicker[r.ticker]).toLowerCase().includes("long")
-                        ? "Crowded Long (CFTC): Speculators (non-commercial traders) hold a very large net long position in the related commodity futures (e.g. gold for GLD, silver for SLV)—typically ≥45% of total open interest. The CFTC publishes this weekly. Historically, such extreme positioning often precedes a pullback, so we flag it as reversal risk and suggest not adding size."
-                        : "Crowded Short (CFTC): Speculators hold a very large net short position in the related commodity futures—typically ≥45% of open interest. Extreme shorts have often preceded short-covering rallies. We flag this as reversal risk."}>
-                        {String(cotByTicker[r.ticker]).toLowerCase().includes("long")
-                          ? "• Positioning: Crowded Long (CFTC) — specs very long, reversal risk."
-                          : "• Positioning: Crowded Short (CFTC) — specs very short, reversal risk."}
-                      </span>
-                      <span className="block text-amber-100/95 text-sm mt-1 font-medium" title="From CFTC Commitment of Traders report: speculative (non-commercial) % of open interest. ≥45% long or short = extreme.">
-                        What it means: Speculators' net position in the related commodity is extreme (≥45% of open interest). Often a contrarian signal; consider not adding size.
-                      </span>
-                    </span>
-                  )}
                 </td>
                   </>
                 )}
