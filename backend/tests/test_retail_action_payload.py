@@ -101,6 +101,53 @@ def test_ml_marginal_pass_at_46_pct():
     assert "marginal" in ml["detail"].lower()
 
 
+def _momentum_gate(**overrides):
+    base = dict(
+        assessment_pct=10.0,
+        regime_bull_pct=70.0,
+        pattern_score=60.0,
+        short_ml_prob=40.0,
+        rsi=40.0,
+        confidence_mid=60.0,
+        include_confidence=False,
+        volume_ratio=0.6,
+    )
+    base.update(overrides)
+    gates = build_trading_gates(**base)
+    return next(g for g in gates if g["id"] == "momentum")
+
+
+def test_momentum_obv_distribution_downgrades_to_marginal():
+    """RSI/pattern clear the gate, but OBV shows net selling under a light-volume tape."""
+    mom = _momentum_gate(obv_trend_pct=-15.0)
+    assert mom["pass"] is True
+    assert mom["visual_status"] == "marginal"
+    assert mom["marginal_pass"] is True
+    assert "lack of interest" in mom["detail"].lower()
+
+
+def test_momentum_obv_accumulation_stays_cleared():
+    """Same light-volume tape, but OBV is rising — lack of sellers, not lack of interest."""
+    mom = _momentum_gate(obv_trend_pct=12.0)
+    assert mom["pass"] is True
+    assert mom["visual_status"] == "cleared"
+    assert "lack of sellers" in mom["detail"].lower()
+
+
+def test_momentum_obv_cannot_rescue_a_failing_gate():
+    """OBV only tempers a pass — it never flips a failing RSI/pattern read to pass."""
+    mom = _momentum_gate(rsi=65.0, pattern_score=20.0, obv_trend_pct=20.0)
+    assert mom["pass"] is False
+    assert mom["visual_status"] == "hot"
+
+
+def test_momentum_no_obv_data_falls_back_to_prior_behavior():
+    mom = _momentum_gate(obv_trend_pct=None)
+    assert mom["pass"] is True
+    assert mom["visual_status"] == "cleared"
+    assert "obv" not in mom["detail"].lower()
+
+
 def test_coherent_story_and_next_trigger():
     from signals.retail_action_payload import build_coherent_setup_story, build_next_trigger
 

@@ -202,7 +202,16 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
         base_mult_hold = 1.0 + extra
     st_atr_mult_buy = base_mult_buy
     st_atr_mult_hold = base_mult_hold
-    # Optional config override (if user wants manual tweak for specific tickers)
+    # Target-side multiplier for directional (BUY/SELL) calls only — a HOLD/neutral band
+    # makes no directional claim, so it stays symmetric. A BUY/SELL band asserts an edge,
+    # so its target distance should exceed its stop distance by this multiple; without it,
+    # target = stop distance and R:R lands at ~1.0 regardless of setup quality (empirically
+    # confirmed: 14/17 real watchlist tickers landed at exactly 1.0 before this fix).
+    RR_TARGET_MULTIPLE = 1.5
+    st_atr_mult_target = st_atr_mult_buy * RR_TARGET_MULTIPLE
+    # Optional config override (if user wants manual tweak for specific tickers) — an
+    # explicit per-ticker override means "use this exact multiplier symmetrically", so it
+    # replaces the RR widening rather than stacking with it.
     if ticker:
         try:
             from config_loader import load_config
@@ -214,6 +223,7 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
                     if mult > 0:
                         st_atr_mult_buy = mult
                         st_atr_mult_hold = mult
+                        st_atr_mult_target = mult
                 except (TypeError, ValueError):
                     pass
         except Exception:
@@ -222,13 +232,12 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     if st_stop is None or st_target is None:
         if st_signal == "BUY":
             st_stop = max(swing_low, P - st_atr_mult_buy * atr) if atr > 0 else P - 0.02 * P
-            if P < ma20:
-                st_target = ma20
-            else:
-                st_target = max(swing_high, P + st_atr_mult_buy * atr) if atr > 0 else P + 0.02 * P
+            atr_target = P + st_atr_mult_target * atr if atr > 0 else P + 0.03 * P
+            st_target = max(swing_high, atr_target, ma20) if P < ma20 else max(swing_high, atr_target)
         elif st_signal == "SELL":
             st_stop = min(swing_high, P + st_atr_mult_buy * atr) if atr > 0 else P + 0.02 * P
-            st_target = min(swing_low, P - st_atr_mult_buy * atr) if atr > 0 else P - 0.02 * P
+            atr_target = P - st_atr_mult_target * atr if atr > 0 else P - 0.03 * P
+            st_target = min(swing_low, atr_target)
         else:
             st_stop = P - st_atr_mult_hold * atr if atr > 0 else P - 0.01 * P
             st_target = P + st_atr_mult_hold * atr if atr > 0 else P + 0.01 * P

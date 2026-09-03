@@ -368,6 +368,7 @@ def _adjust_hmm_probs_for_display(
     b, t, r = bull_prob, transition_prob, bear_prob
     note: str | None = None
     cap = 1.0
+    floor = 0.0
 
     if dominant == "BULL":
         if dominant_validated == "BEAR":
@@ -380,32 +381,65 @@ def _adjust_hmm_probs_for_display(
         if conflict and conflict.get("reason") == "HMM_BULL_BUT_BELOW_MA200":
             cap = min(cap, 0.34)
 
+    # Symmetric counterpart to the BULL-downgrade above: the raw HMM predicts on a fixed
+    # recent window (RECENT_BARS) and can stay pinned near-zero bull for weeks after a
+    # real recovery starts, since the window is still dominated by the prior bear regime's
+    # bars. validate_regime already detects "price back above the MA stack" (TRANSITION /
+    # MOMENTUM_EXTENDED resolved from a BEAR dominant, see validate_regime) — use that,
+    # plus a strong outright 63d return, to floor bull / cap bear the same way a stale
+    # bull read is capped above. Deliberately conservative: this never floors bull past
+    # 0.40, so it can pull dominant_display out of BEAR into TRANSITION but not manufacture
+    # a false BULL — matching validate_regime's own ceiling for a BEAR-start conflict.
+    if dominant == "BEAR":
+        if dominant_validated == "MOMENTUM_EXTENDED":
+            floor = max(floor, 0.40)
+            note = "Bear % floored — price already back above the MA stack (HMM lagging the reversal)"
+        elif dominant_validated == "TRANSITION":
+            floor = max(floor, 0.30)
+            note = "Bear % tempered — price recovering vs MA structure faster than HMM window reflects"
+
     if gap_ma200_pct is not None:
         if gap_ma200_pct <= -8.0:
             cap = min(cap, 0.40)
         elif gap_ma200_pct <= -5.0:
             cap = min(cap, 0.48)
+        elif dominant == "BEAR" and gap_ma200_pct >= 5.0:
+            floor = max(floor, 0.35)
 
     if recent_63d_return_pct is not None:
         if recent_63d_return_pct <= -18.0:
             cap = min(cap, 0.40)
         elif recent_63d_return_pct <= -10.0:
             cap = min(cap, 0.50)
+        elif dominant == "BEAR" and recent_63d_return_pct >= 15.0:
+            floor = max(floor, 0.35)
+        elif dominant == "BEAR" and recent_63d_return_pct >= 8.0:
+            floor = max(floor, 0.25)
 
-    if b <= cap + 1e-9:
+    if b <= cap + 1e-9 and b >= floor - 1e-9:
         return b, t, r, note
 
-    freed = b - cap
-    b = cap
-    if dominant_validated == "BEAR":
-        r += freed * 0.55
-        t += freed * 0.45
-    elif dominant_validated == "TRANSITION":
-        t += freed * 0.62
-        r += freed * 0.38
-    else:
-        t += freed * 0.50
-        r += freed * 0.50
+    if b > cap:
+        freed = b - cap
+        b = cap
+        if dominant_validated == "BEAR":
+            r += freed * 0.55
+            t += freed * 0.45
+        elif dominant_validated == "TRANSITION":
+            t += freed * 0.62
+            r += freed * 0.38
+        else:
+            t += freed * 0.50
+            r += freed * 0.50
+
+    if b < floor:
+        needed = floor - b
+        # Pull mass from bear first (that's the stale read being corrected), transition second.
+        take_r = min(r, needed * 0.7)
+        take_t = min(t, needed - take_r)
+        r -= take_r
+        t -= take_t
+        b += take_r + take_t
 
     s = b + t + r
     if s > 1e-12:
