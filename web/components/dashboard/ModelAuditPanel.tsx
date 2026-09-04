@@ -53,6 +53,8 @@ export type ModelAuditRecord = {
   bb_pct_b?: number | null;
   readiness_tier?: string | null;
   readiness_score?: number | null;
+  /** Which gate/band/regime logic version produced this signal — see signals/model_version.py. */
+  model_version?: string | null;
 };
 
 const ENTRY_MODE_CFG = {
@@ -107,6 +109,8 @@ export type ModelAuditOutcomeSummary = {
   by_ml_signal?: { bucket: string; n: number; win_rate_pct?: number | null }[];
   by_gates_passed?: { bucket: string | number; n: number; win_rate_pct?: number | null }[];
   by_entry_mode?: { bucket: string; n: number; win_rate_pct?: number | null }[];
+  by_model_version?: { bucket: string; n: number; win_rate_pct?: number | null }[];
+  current_model_version?: string | null;
   by_track?: { bucket: string; n: number; win_rate_pct?: number | null }[];
   by_category?: { bucket: string; n: number; win_rate_pct?: number | null }[];
 };
@@ -191,6 +195,7 @@ type ColumnFilters = {
   track: string;
   entryMode: string;
   verdict: string;
+  version: string;
   rsiMin: string;
   rsiMax: string;
   scoreMin: string;
@@ -206,6 +211,7 @@ const EMPTY_COL_FILTERS: ColumnFilters = {
   track: "",
   entryMode: "",
   verdict: "",
+  version: "",
   rsiMin: "",
   rsiMax: "",
   scoreMin: "",
@@ -348,7 +354,13 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [trackFilter, setTrackFilter] = useState<TrackFilter>("all");
   const [recommendedOnly, setRecommendedOnly] = useState(false);
-  const [colFilters, setColFilters] = useState<ColumnFilters>(EMPTY_COL_FILTERS);
+  // Defaults the version filter to the current gate/band/regime logic version (not "All")
+  // so the table/headline you see first reflects today's model, not a blend with pre-fix
+  // signals. See signals/model_version.py.
+  const [colFilters, setColFilters] = useState<ColumnFilters>(() => ({
+    ...EMPTY_COL_FILTERS,
+    version: audit?.outcome_summary?.current_model_version || "",
+  }));
   const [page, setPage] = useState(0);
 
   const setColFilter = (key: keyof ColumnFilters, value: string) => {
@@ -370,6 +382,10 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
   const uniqueTracks = useMemo(() => uniqueSorted(records.map((r) => r.track || "accumulate")), [records]);
   const uniqueEntryModes = useMemo(() => uniqueSorted(records.map((r) => r.entry_mode)), [records]);
   const uniqueVerdicts = useMemo(() => uniqueSorted(records.map((r) => r.verdict)), [records]);
+  const uniqueVersions = useMemo(
+    () => uniqueSorted(records.map((r) => r.model_version || "legacy")),
+    [records],
+  );
 
   const filtered = useMemo(() => {
     const cutoff = cutoffDate(dateRange);
@@ -397,6 +413,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       if (cf.track && track !== cf.track.toLowerCase()) return false;
       if (cf.entryMode && String(r.entry_mode || "") !== cf.entryMode) return false;
       if (cf.verdict && String(r.verdict || "") !== cf.verdict) return false;
+      if (cf.version && String(r.model_version || "legacy") !== cf.version) return false;
       if (rsiMin != null && (r.rsi == null || r.rsi < rsiMin)) return false;
       if (rsiMax != null && (r.rsi == null || r.rsi > rsiMax)) return false;
       if (scoreMin != null && (r.composite_score == null || r.composite_score < scoreMin)) return false;
@@ -859,6 +876,16 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         <BreakdownTable title="By track" rows={audit.breakdown_by_track ?? []} bucketLabel="Track" hint="Velocity uses 5d tactical verdict rules — not in headline win %" />
         <BreakdownTable title="By readiness" rows={audit.breakdown_by_readiness ?? []} bucketLabel="Tier" />
         <BreakdownTable title="By entry mode" rows={audit.breakdown_by_entry_mode ?? []} bucketLabel="Mode" hint="full_go = 4/4 · starter_only = value present, tech blocked · hard_lock = no MOS" />
+        <BreakdownTable
+          title="By model version"
+          rows={audit.outcome_summary?.by_model_version ?? []}
+          bucketLabel="Version"
+          hint={
+            audit.outcome_summary?.current_model_version
+              ? `Current: ${audit.outcome_summary.current_model_version} — "legacy" predates gate/band/regime version tagging`
+              : `"legacy" predates gate/band/regime version tagging`
+          }
+        />
       </div>
 
 
@@ -894,6 +921,19 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               </button>
             ))}
           </div>
+          <select
+            value={colFilters.version}
+            onChange={(e) => setColFilter("version", e.target.value)}
+            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
+            title="Which gate/band/regime logic version produced the signal — defaults to current so win-rate numbers aren't blended with pre-fix history"
+          >
+            <option value="">All versions</option>
+            {uniqueVersions.map((v) => (
+              <option key={v} value={v}>
+                {v === audit?.outcome_summary?.current_model_version ? `${v} (current)` : v}
+              </option>
+            ))}
+          </select>
           {hasActiveFilters && (
             <button
               type="button"

@@ -810,6 +810,7 @@ export interface DashboardData {
       trim_net_score_pct?: number | null;
       trim_outcome_label?: string | null;
       max_drawdown_pct?: number | null;
+      model_version?: string | null;
     }[];
     summary_by_horizon?: Record<
       number,
@@ -865,6 +866,7 @@ export interface DashboardData {
       win_rate_pct?: number;
       hit_rate_pct?: number;
     } | null;
+    summary_by_model_version?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
     data_source_note?: string | null;
     meta?: {
       eod_date_first?: string | null;
@@ -876,6 +878,7 @@ export interface DashboardData {
       as_of_date_max?: string | null;
       newest_completed_as_of?: string | null;
       ticker_count?: number;
+      current_model_version?: string | null;
     };
     message?: string | null;
     summary_by_lens?: import("@/lib/forwardTrackingLens").SummaryByLens;

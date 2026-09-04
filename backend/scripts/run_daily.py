@@ -97,6 +97,7 @@ from signals.fetcher import (
     fetch_ohlcv_close_and_volume,
 )
 from signals.indicators import multi_horizon_scores, obv_trend_pct
+from signals.model_version import MODEL_VERSION
 from signals.score_interpretation import detect_interpretation_style, effective_buy_min
 from signals.providers import get_next_earnings
 from signals.regime import (
@@ -642,6 +643,21 @@ def run_signals(
         except Exception:
             pass
         try:
+            # compute_readiness() below reads row["gates_passed"]/["gates_total"] as
+            # already-frozen inputs — it does not derive them itself (see its docstring:
+            # "frozen gate fields"). Nothing upstream sets those flat fields, so without
+            # this they default to 0/4 inside compute_readiness and that wrong 0 gets
+            # written back onto the row, clobbering the real gate count that already
+            # exists in retail_status.gates. Populate them here from the same source
+            # tracking_gate.gate_snapshot_from_row() uses for paper trading, so the
+            # Signals table's "Gates #" column / min-gates filter and the ticker detail
+            # gate count agree instead of silently disagreeing (0/4 vs the real N/4).
+            from signals.tracking_gate import gate_snapshot_from_row
+
+            row.update(gate_snapshot_from_row(row))
+        except Exception:
+            pass
+        try:
             from signals.readiness_score import compute_readiness
 
             row.update(compute_readiness(row))
@@ -699,6 +715,7 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
     for r in results:
         row = {
             "ticker": r["ticker"],
+            "model_version": MODEL_VERSION,
             "composite_buy": r.get("composite_buy"),
             "signal": r.get("signal"),
             "buy_min": r.get("buy_min"),
@@ -804,6 +821,7 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
 
     return {
         "run_date": now_iso_et(),
+        "model_version": MODEL_VERSION,
         "run_results": run_results,
     }
 

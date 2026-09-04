@@ -27,6 +27,8 @@ interface RecordRow {
   trim_net_score_pct?: number | null;
   trim_outcome_label?: string | null;
   max_drawdown_pct?: number | null;
+  /** Which gate/band/regime logic version produced this signal — see signals/model_version.py. */
+  model_version?: string | null;
 }
 
 interface HorizonSummary {
@@ -64,6 +66,10 @@ interface SummaryByGoNoGo {
   [key: string]: { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number };
 }
 
+interface SummaryByModelVersion {
+  [version: string]: { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number };
+}
+
 interface ForwardMeta {
   eod_date_first?: string | null;
   eod_date_last?: string | null;
@@ -74,6 +80,7 @@ interface ForwardMeta {
   as_of_date_max?: string | null;
   newest_completed_as_of?: string | null;
   ticker_count?: number;
+  current_model_version?: string | null;
 }
 
 interface Props {
@@ -84,6 +91,7 @@ interface Props {
   summary_by_gates?: SummaryByGates;
   summary_actionable_buy?: HorizonSummary & { label?: string; avg_return_20d_pct?: number };
   summary_by_entry_mode?: Record<string, HorizonSummary & { avg_return_20d_pct?: number; hit_rate_pct?: number }>;
+  summary_by_model_version?: SummaryByModelVersion;
   data_source_note?: string | null;
   message?: string | null;
   meta?: ForwardMeta | null;
@@ -146,6 +154,7 @@ export function ForwardTracking({
   summary_by_gates,
   summary_actionable_buy,
   summary_by_entry_mode,
+  summary_by_model_version,
   data_source_note,
   message,
   meta,
@@ -154,10 +163,19 @@ export function ForwardTracking({
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [horizonFilter, setHorizonFilter] = useState<number | "">("");
   const [gateFilter, setGateFilter] = useState<"" | "4" | "0" | "3plus" | "go">("");
+  // Defaults to the current gate/band/regime logic version (not "All") so the headline
+  // numbers you see first reflect today's model, not a blend with pre-fix signals —
+  // switch to "All versions" to see the blended/legacy history. See signals/model_version.py.
+  const [versionFilter, setVersionFilter] = useState(meta?.current_model_version || "");
   const [page, setPage] = useState(0);
 
   const uniqueTickers = useMemo(
     () => Array.from(new Set((allRecords || []).map((r) => r.ticker))).sort(),
+    [allRecords],
+  );
+
+  const versionOptions = useMemo(
+    () => Array.from(new Set((allRecords || []).map((r) => r.model_version || "legacy"))).sort().reverse(),
     [allRecords],
   );
 
@@ -176,6 +194,7 @@ export function ForwardTracking({
       if (tf && r.ticker !== tf) return false;
       if (cutoff && r.as_of_date < cutoff) return false;
       if (horizonFilter !== "" && r.horizon_days !== horizonFilter) return false;
+      if (versionFilter && (r.model_version || "legacy") !== versionFilter) return false;
       if (gateFilter === "4") {
         if ((r.gates_passed ?? 0) < (r.gates_total ?? 4)) return false;
       } else if (gateFilter === "0") {
@@ -192,11 +211,11 @@ export function ForwardTracking({
       if (a.ticker !== b.ticker) return a.ticker.localeCompare(b.ticker);
       return a.horizon_days - b.horizon_days;
     });
-  }, [allRecords, tickerFilter, dateRange, horizonFilter, gateFilter]);
+  }, [allRecords, tickerFilter, dateRange, horizonFilter, gateFilter, versionFilter]);
 
   useEffect(() => {
     setPage(0);
-  }, [tickerFilter, dateRange, horizonFilter, gateFilter]);
+  }, [tickerFilter, dateRange, horizonFilter, gateFilter, versionFilter]);
 
   const pagedRecords = useMemo(
     () => paginateRows(records, page, FORWARD_PAGE_SIZE),
@@ -287,6 +306,19 @@ export function ForwardTracking({
           <option value="3plus">3+ pass</option>
           <option value="go">GO only</option>
         </select>
+        <select
+          value={versionFilter}
+          onChange={(e) => setVersionFilter(e.target.value)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          title="Which gate/band/regime logic version produced the signal — defaults to current so win-rate numbers aren't blended with pre-fix history"
+        >
+          <option value="">All versions</option>
+          {versionOptions.map((v) => (
+            <option key={v} value={v}>
+              {v === meta?.current_model_version ? `${v} (current)` : v}
+            </option>
+          ))}
+        </select>
         <div className="flex rounded border border-slate-600 overflow-hidden">
           {DATE_RANGES.map((dr) => (
             <button
@@ -304,34 +336,78 @@ export function ForwardTracking({
             </button>
           ))}
         </div>
-        {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "") && (
+        {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
           <span className="text-[10px] text-slate-500">
             Showing {records.length} / {allRecords.length} records
           </span>
         )}
       </div>
 
-      {filterStats && (tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "") && (
+      {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
         <div className="mb-3 rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered</span>
-          <span>n={filterStats.n}</span>
-          <span>
-            Win rate{" "}
-            <span className={filterStats.winRate >= 50 ? "text-emerald-400" : "text-amber-300"}>
-              {filterStats.winRate.toFixed(1)}%
+          {filterStats ? (
+            <>
+              <span>n={filterStats.n}</span>
+              <span>
+                Win rate{" "}
+                <span className={filterStats.winRate >= 50 ? "text-emerald-400" : "text-amber-300"}>
+                  {filterStats.winRate.toFixed(1)}%
+                </span>
+              </span>
+              <span>
+                Avg return{" "}
+                <span className={filterStats.avg >= 0 ? "text-emerald-400" : "text-red-400"}>
+                  {fmt(filterStats.avg)}
+                </span>
+              </span>
+              {Object.entries(filterStats.bySignal).slice(0, 4).map(([sig, s]) => (
+                <span key={sig} className="text-slate-400">
+                  {sig}: {fmt(s.avg)} <span className="text-slate-600">(n={s.n})</span>
+                </span>
+              ))}
+            </>
+          ) : versionFilter ? (
+            <span className="text-slate-500">
+              Not enough resolved outcomes yet under {versionFilter} — horizons need trading days to
+              complete after each signal. Switch to "All versions" to see blended/legacy history.
             </span>
-          </span>
-          <span>
-            Avg return{" "}
-            <span className={filterStats.avg >= 0 ? "text-emerald-400" : "text-red-400"}>
-              {fmt(filterStats.avg)}
-            </span>
-          </span>
-          {Object.entries(filterStats.bySignal).slice(0, 4).map(([sig, s]) => (
-            <span key={sig} className="text-slate-400">
-              {sig}: {fmt(s.avg)} <span className="text-slate-600">(n={s.n})</span>
-            </span>
-          ))}
+          ) : (
+            <span className="text-slate-500">No matching records.</span>
+          )}
+        </div>
+      )}
+
+      {meta?.current_model_version && (
+        <div className="mb-3 rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-3 py-2 text-xs">
+          <p className="text-emerald-400/90 font-medium mb-1">
+            Current model ({meta.current_model_version}) · 20d win rate
+          </p>
+          {(() => {
+            const cur = summary_by_model_version?.[meta.current_model_version as string];
+            if (!cur || !cur.n_observations) {
+              return (
+                <p className="text-slate-500">
+                  Not enough resolved 20d outcomes yet — this fills in as new EOD snapshots
+                  accumulate under the current model. See "All versions" for legacy history.
+                </p>
+              );
+            }
+            return (
+              <p className="text-slate-300">
+                Win rate{" "}
+                <span className={(cur.hit_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
+                  {cur.hit_rate_pct != null ? `${cur.hit_rate_pct}%` : "—"}
+                </span>
+                <span className="text-slate-600"> · n={cur.n_observations}</span>
+                <span className="mx-2 text-slate-600">·</span>
+                Avg return{" "}
+                <span className={(cur.avg_return_20d_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                  {fmt(cur.avg_return_20d_pct ?? 0)}
+                </span>
+              </p>
+            );
+          })()}
         </div>
       )}
 

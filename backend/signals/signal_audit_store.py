@@ -18,9 +18,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from signals.model_version import MODEL_VERSION
+
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 # Headline audit win rates = accumulate track (~20d, 4-gate model). Velocity tactical uses 5d rules — keep separate.
 _ACCUMULATE_TRACK_WHERE = " AND COALESCE(e.track, 'accumulate') NOT IN ('velocity', 'swing')"
@@ -41,6 +43,9 @@ _VELOCITY_COLUMNS: list[tuple[str, str]] = [
     ("horizon_trading_days", "INTEGER DEFAULT 20"),
     # entry_mode: full_go / starter_only / hard_lock — finer-grained than binary go_no_go
     ("entry_mode", "TEXT"),
+    # Which gate/band/regime logic version produced this signal — see signals/model_version.py.
+    # NULL for events logged before this column existed (reported as "legacy").
+    ("model_version", "TEXT"),
 ]
 
 _CREATE_SIGNAL_EVENTS = """
@@ -311,6 +316,7 @@ def row_to_signal_event(
     market_cap_bucket: str | None,
     config_hash: str,
     run_source: str,
+    model_version: str | None = None,
 ) -> dict[str, Any] | None:
     ticker = str(row.get("ticker") or "").upper().strip()
     if not ticker or row.get("error"):
@@ -419,6 +425,7 @@ def row_to_signal_event(
         "tactical_t2": tactical_t2,
         "tactical_stop": tactical_stop,
         "horizon_trading_days": horizon_days,
+        "model_version": model_version,
     }
 
 
@@ -514,6 +521,7 @@ class SignalAuditStore:
             "tactical_t2",
             "tactical_stop",
             "horizon_trading_days",
+            "model_version",
         ]
         placeholders = ", ".join("?" for _ in cols)
         col_names = ", ".join(cols)
@@ -1020,6 +1028,20 @@ class SignalAuditStore:
                 """,
                 tuple(params_base),
             ).fetchall()
+            by_model_version = conn.execute(
+                f"""
+                SELECT COALESCE(e.model_version, 'legacy') AS bucket,
+                       COUNT(*) AS n,
+                       SUM(CASE WHEN o.verdict = 'WIN' THEN 1 ELSE 0 END) AS n_win,
+                       SUM(CASE WHEN o.verdict = 'LOSS' THEN 1 ELSE 0 END) AS n_loss
+                FROM signal_outcomes o
+                JOIN signal_events e ON e.id = o.signal_event_id
+                WHERE e.cohort_tag = ? AND e.source = 'live'{_win_breakdown_where}
+                GROUP BY bucket
+                ORDER BY bucket DESC
+                """,
+                tuple(params_base),
+            ).fetchall()
             by_track = conn.execute(
                 f"""
                 SELECT e.track AS bucket,
@@ -1184,6 +1206,8 @@ class SignalAuditStore:
             "by_ml_signal": _win_rate_rows(by_signal),
             "by_gates_passed": _win_rate_rows(by_gates),
             "by_entry_mode": _win_rate_rows(by_entry_mode),
+            "by_model_version": _win_rate_rows(by_model_version),
+            "current_model_version": MODEL_VERSION,
             "by_track": _win_rate_rows(by_track),
             "by_category": _win_rate_rows(by_category),
             "actionable_slices": actionable_slices,
@@ -1218,7 +1242,7 @@ class SignalAuditStore:
                    e.confidence_high, e.run_source, e.gate_detail_json,
                    e.track, e.velocity_triggered, e.velocity_score, e.rvol, e.bb_pct_b,
                    e.readiness_tier, e.readiness_score, e.tactical_t1, e.tactical_t2, e.tactical_stop,
-                   e.horizon_trading_days,
+                   e.horizon_trading_days, e.model_version,
                    o.return_7d_pct, o.return_30d_pct, o.verdict, o.verdict_rule, o.hit_st_target, o.hit_stop_swing,
                    o.max_gain_pct, o.max_drawdown_pct, o.benchmark_return_30d_pct
             FROM signal_events e
@@ -1848,6 +1872,7 @@ def log_signal_audit_from_results(
             market_cap_bucket=meta.get(sym),
             config_hash=cfg_hash,
             run_source=run_source,
+            model_version=MODEL_VERSION,
         )
         if not event:
             missing += 1

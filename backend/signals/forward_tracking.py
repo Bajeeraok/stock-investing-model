@@ -10,6 +10,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from signals.model_version import MODEL_VERSION
+
 logger = logging.getLogger(__name__)
 
 _EOD_DIR_NAME = "eod"
@@ -367,6 +369,7 @@ def get_forward_tracking(
                         "trim_score_triggered": trim_gate.get("trim_score_triggered"),
                         "trim_recommendation": trim_gate.get("trim_recommendation"),
                         "trim_gates_frozen": bool(row_work.get("trim_gates_frozen")),
+                        "model_version": row_work.get("model_version"),
                     }
                     records.append(rec)
                     signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
@@ -422,6 +425,7 @@ def get_forward_tracking(
                     "hit_st_target": path.get("hit_st_target"),
                     "max_gain_pct": path.get("max_gain_pct"),
                     "max_drawdown_pct": path.get("max_drawdown_pct"),
+                    "model_version": row_work.get("model_version"),
                 }
                 if trim_m:
                     rec.update(trim_m)
@@ -527,6 +531,28 @@ def get_forward_tracking(
         [r for r in records if r.get("horizon_days") == 20 and r.get("trim_score_triggered")]
     )
 
+    # Segments win-rate/return stats by which gate/band/regime logic version produced
+    # the signal — mixing pre- and post-fix signals into one number can't tell you
+    # whether the *current* model is any good, only some blend across versions of it.
+    # Versions aren't known ahead of time (hand-bumped in signals/model_version.py), so
+    # this iterates the distinct set actually seen rather than a fixed tuple.
+    summary_by_model_version: dict[str, dict[str, Any]] = {}
+    version_keys = sorted({str(r.get("model_version") or "legacy") for r in records})
+    for v_key in version_keys:
+        v_rows = [
+            r
+            for r in records
+            if r.get("horizon_days") == 20 and str(r.get("model_version") or "legacy") == v_key
+        ]
+        if v_rows:
+            summary_by_model_version[v_key] = aggregate_horizon_stats(v_rows)
+            summary_by_model_version[v_key]["avg_return_20d_pct"] = summary_by_model_version[v_key].get(
+                "avg_return_pct"
+            )
+            summary_by_model_version[v_key]["hit_rate_pct"] = summary_by_model_version[v_key].get(
+                "win_rate_pct"
+            )
+
     total_records = len(records)
     capped = _cap_records_recent(records, record_cap)
     as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
@@ -541,6 +567,7 @@ def get_forward_tracking(
         "as_of_date_max": max(as_of_dates) if as_of_dates else None,
         "newest_completed_as_of": newest_completed_as_of,
         "ticker_count": len(syms),
+        "current_model_version": MODEL_VERSION,
     }
 
     result = {
@@ -549,6 +576,7 @@ def get_forward_tracking(
         "summary_by_signal": summary_by_signal,
         "summary_by_go_no_go": summary_by_go_no_go,
         "summary_by_entry_mode": summary_by_entry_mode,
+        "summary_by_model_version": summary_by_model_version,
         "summary_actionable_buy": summary_actionable_buy if summary_actionable_buy else None,
         "summary_actionable_buy_in_band": (
             summary_actionable_buy_in_band if summary_actionable_buy_in_band else None
@@ -566,7 +594,10 @@ def get_forward_tracking(
             "See summary_actionable_buy for entry slice; summary_actionable_buy_in_band restricts "
             "that slice to signals where price was inside the entry band (not chasing) at signal "
             "time, mirroring the paper-trading book's limit_touch fill discipline. "
-            "Gate buckets differ from audit verdict rules."
+            "Gate buckets differ from audit verdict rules. "
+            "summary_by_model_version segments these stats by which gate/band/regime logic "
+            "version produced the signal (meta.current_model_version is the live one) — "
+            "records predating versioning show as 'legacy'."
         ),
         "message": None if records else "Insufficient EOD snapshots for multi-horizon.",
     }

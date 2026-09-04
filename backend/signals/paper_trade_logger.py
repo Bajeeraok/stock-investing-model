@@ -36,6 +36,8 @@ from typing import Any
 import pandas as pd
 from pandas.tseries.offsets import BDay
 
+from signals.model_version import MODEL_VERSION
+
 logger = logging.getLogger(__name__)
 
 
@@ -120,6 +122,10 @@ _FIELDS = [
     "gate_mode",
     # Plan size: 100 full_go, starter_size_pct (default 25) for starter_only
     "size_pct",
+    # Which gate/band/regime logic version produced this trade — see signals/model_version.py.
+    # Set once at trade-open time (create functions only); never touched by fill/mtm updates,
+    # so it stays frozen to whatever was active when the trade opened.
+    "model_version",
 ]
 
 
@@ -415,6 +421,7 @@ def _result_to_paper_record(
         if v is not None:
             row[k] = v
     row["track"] = track
+    row["model_version"] = r.get("model_version") or MODEL_VERSION
     if track in ("velocity", "swing"):
         row["entry_mode"] = "market"
         if entry is not None:
