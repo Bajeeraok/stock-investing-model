@@ -901,25 +901,36 @@ def _is_news_catalyst(x: "Catalyst") -> bool:
 
 GATE_TEMPLATES: dict[tuple[str, bool], str] = {
     ("valuation", True):
-        "Valuation clears: margin of safety {mos_pct:.1f}% vs the {required_pct:.0f}% requirement.",
+        "Valuation clears: the stock is trading {mos_pct:.1f}% below what the model thinks it's "
+        "worth, more than the {required_pct:.0f}% cushion this plan requires.",
     ("valuation", False):
-        "Valuation blocks full size: margin of safety is only {mos_pct:.1f}% vs the {required_pct:.0f}% requirement.",
+        "Valuation is a partial pass: the stock is only {mos_pct:.1f}% below fair value, short of "
+        "the {required_pct:.0f}% discount this plan wants before sizing up.",
     ("market_weather", True):
-        "Regime supports the trade: {tape} tape, stock-specific bull probability {hmm_bull_pct:.0f}%.",
+        "The market's own trend-reading model backs the trade: it puts {hmm_bull_pct:.0f}% odds on "
+        "this stock being in an uptrend right now.",
     ("market_weather", False):
-        "Regime blocks: {tape} tape — bull probability {hmm_bull_pct:.0f}%, needs {need_pct:.0f}%.",
+        "The market's own trend-reading model isn't confirming yet: only {hmm_bull_pct:.0f}% odds "
+        "on an uptrend, below the {need_pct:.0f}% this plan needs before it counts as confirmed.",
     ("momentum_chop", True):
-        "Momentum is favorable for entry (RSI {rsi:.0f}).",
+        "Recent price action is favorable for adding — the stock's short-term momentum reading is "
+        "{rsi:.0f}, not overheated.",
     ("momentum_chop", False):
-        "Momentum blocks: RSI {rsi:.0f} is above neutral — the model wants RSI under 50 before adding.",
+        "Recent price action says wait — the stock's short-term momentum reading is {rsi:.0f}, "
+        "running hot; the model prefers it cools off before adding.",
     ("ml_probability", True):
-        "ML setup probability {ml_prob_pct:.0f}% clears the {threshold_pct:.0f}% threshold — a setup exists, though conviction scales with the number.",
+        "The model's statistical pattern-match sees a real setup here: {ml_prob_pct:.0f}% "
+        "likelihood, above the {threshold_pct:.0f}% bar it needs — though conviction still scales "
+        "with how far above that bar it is.",
     ("ml_probability", False):
-        "ML setup probability {ml_prob_pct:.0f}% is under the {threshold_pct:.0f}% threshold — no statistical setup.",
+        "The model's statistical pattern-match doesn't see a setup: {ml_prob_pct:.0f}% likelihood, "
+        "below the {threshold_pct:.0f}% bar it needs to clear.",
     ("confidence", True):
-        "Fused model confidence is {conf_pct:.0f}% — treat it as timing uncertainty, not thesis certainty.",
+        "The model's overall confidence is {conf_pct:.0f}% — that reflects timing uncertainty, not "
+        "a guarantee the overall call is right.",
     ("confidence", False):
-        "Fused model confidence is only {conf_pct:.0f}% — signals disagree; sizing stays minimal.",
+        "The model's overall confidence is only {conf_pct:.0f}% — its different signals disagree "
+        "with each other, so position size should stay small.",
 }
 
 
@@ -942,7 +953,7 @@ def render_explanations(p: SignalPacket) -> list[str]:
         else:
             out.append(mark + f"{g.name}: {'pass' if g.passed else 'fail'}")
     if p.unlock_conditions:
-        out.append("Unlocks when: " + " AND ".join(p.unlock_conditions) + ".")
+        out.append("This becomes a full buy once " + " and ".join(p.unlock_conditions) + ".")
     return out
 
 
@@ -1520,7 +1531,7 @@ def build_model_checks(
     cats = list(cats or [])
     unlock = ""
     if p.unlock_conditions:
-        unlock = "Unlocks when: " + " AND ".join(p.unlock_conditions) + "."
+        unlock = "This becomes a full buy once " + " and ".join(p.unlock_conditions) + "."
     gates = [
         {
             "id": g.name,

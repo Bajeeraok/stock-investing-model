@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from signals.narrative_packet_mapper import _invalidation, _unlock_conditions
+from signals.narrative_packet_mapper import _UNLOCK_CONDITION_PHRASES, _invalidation, _unlock_conditions
 from signals.narrative_waterfall import Gate
 
 
@@ -24,8 +24,14 @@ def test_unlock_conditions_covers_failed_confidence_gate():
     ]
     conditions = _unlock_conditions(gates)
     failed = [g.name for g in gates if not g.passed]
+    # Coverage is checked against the actual plain-English phrase map (not a literal
+    # gate-name substring) since the phrasing deliberately avoids repeating jargon-y
+    # raw gate names like "momentum chop" / "ml probability" back to the user.
+    assert len(conditions) == len(failed)
     for name in failed:
-        assert any(name.replace("_", " ") in c.lower() for c in conditions), (
+        expected = _UNLOCK_CONDITION_PHRASES.get(name)
+        assert expected is not None, f"no plain-English phrase mapped for gate '{name}'"
+        assert expected in conditions, (
             f"unlock_conditions missing coverage for failed gate '{name}': {conditions}"
         )
     assert any("confidence" in c.lower() for c in conditions)

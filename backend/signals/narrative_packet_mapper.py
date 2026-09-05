@@ -212,6 +212,17 @@ def _trend(regime_bull_pct: float | None) -> str:
     return "UP" if (regime_bull_pct or 0) >= 60 else "DOWN"
 
 
+# Plain-English phrasing for "Unlocks when: ..." — avoids surfacing raw gate IDs
+# (e.g. "Momentum Chop clears", "Ml Probability clears") in a user-facing sentence.
+_UNLOCK_CONDITION_PHRASES: dict[str, str] = {
+    "valuation": "the discount to fair value deepens",
+    "market_weather": "the market's own trend-reading model confirms an uptrend",
+    "momentum_chop": "short-term momentum cools off",
+    "ml_probability": "the statistical pattern-match model agrees",
+    "confidence": "the model's overall confidence improves",
+}
+
+
 def _unlock_conditions(gates: list[Gate]) -> list[str]:
     """Built from the final canonical gate list (post confidence-synthesis) —
     not just the primary 4 — because SignalPacket.validate() requires
@@ -223,8 +234,8 @@ def _unlock_conditions(gates: list[Gate]) -> list[str]:
     out = []
     for g in gates:
         if not g.passed:
-            label = g.name.replace("_", " ").title()
-            out.append(f"{label} clears")
+            phrase = _UNLOCK_CONDITION_PHRASES.get(g.name) or f"{g.name.replace('_', ' ')} clears"
+            out.append(phrase)
     return out
 
 
