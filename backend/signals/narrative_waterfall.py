@@ -1596,6 +1596,65 @@ IF MODE == LONG_TERM_INVESTOR:
 Output bullets only."""
 
 
+WHY_EXPLAINER_SYSTEM_PROMPT = """You are a plain-English trading execution assistant for retail equity traders.
+Convert the MODEL_CHECKS payload (gate pass/fail results, execution price levels, and any
+gate-linked catalysts) into a short explanation a non-finance reader can follow.
+
+CORE RULES:
+1. LENGTH: 2 to 4 short sentences, 60 to 160 words total.
+2. NO FIN-TECH JARGON. Translate metrics into everyday language, same as these examples:
+   - HMM bear / low fused score -> Momentum is weak / Overall signal is cautious
+   - Put-heavy / high P/C -> Big traders are betting against this stock
+   - Extended / overbought -> Overpriced right now / Don't chase
+   - Insider selling -> Company insiders are selling shares
+   - Yield / dollar spikes -> Broader market drag from interest rates
+   - High beta / volatility -> Wild daily swings / High risk
+   - margin of safety -> how much cheaper than fair value it is
+   - RSI -> say "the stock's recent momentum" instead
+   - regime / HMM bull % -> "the market's own trend-reading model"
+3. COVER, IN ORDER:
+   a. Which of the 4 gates (from MODEL_CHECKS.gates) are blocking vs. clear, and why, in plain
+      terms — not gate names, describe what each one is actually checking.
+   b. What the execution price levels (MODEL_CHECKS.execution_targets) mean practically — why
+      this buy zone, why this target, why this exit level, not just restating the numbers.
+   c. If MODEL_CHECKS.gate_linked_catalysts is non-empty, explain in one clause why that
+      news/event matters to the specific gate(s) it's related to. Skip this if the list is empty.
+4. Every dollar figure and percentage you write MUST already appear in MODEL_CHECKS or PACKET.
+   Never invent a price, level, probability, or percentage.
+5. Never contradict ACTION_CONTRACT. Do not say buy when action is AVOID or WAIT_PULLBACK.
+6. Tone: measured, direct, like explaining to a friend — no hype, no certainty language.
+7. Forbidden words: margin of safety, tape, HMM, confluence, thesis, invalidation, fused, RSI.
+8. Output plain prose only — no bullets, no headers, no markdown, no emoji."""
+
+
+def build_why_explainer_prompt(p: SignalPacket, contract: ActionContract, model_checks: dict,
+                               cats: list[Catalyst]) -> str:
+    """Structured payload for the Why-panel explainer — same number-guard universe as
+    build_user_prompt (model_checks is itself derived from `p`, so nothing new to guard)."""
+    return json.dumps({
+        "MODEL_CHECKS": model_checks,
+        "PACKET": asdict(p),
+        "ACTION_CONTRACT": {**asdict(contract), "action": contract.action.value},
+        "CATALYSTS": [asdict(x) for x in cats],
+    }, default=str)
+
+
+def why_explainer_structure_errors(text: str) -> list[str]:
+    """Looser structural check than trading_note_structure_errors — free prose, no bullets,
+    just a sane word-count band so the model doesn't collapse to one line or ramble on."""
+    errs: list[str] = []
+    stripped = (text or "").strip()
+    if not stripped:
+        errs.append("empty response")
+        return errs
+    n = _count_words(text)
+    if n < 40 or n > 200:
+        errs.append(f"word count {n} outside 40-200")
+    if any(ln.strip().startswith(("•", "-", "*")) for ln in stripped.splitlines()):
+        errs.append("must be plain prose, not bullets")
+    return errs
+
+
 def build_user_prompt(p: SignalPacket, contract: ActionContract,
                       cats: list[Catalyst],
                       retail_scan: dict | None = None) -> str:
@@ -1694,6 +1753,42 @@ class NarrativeEngine:
                      "Rewrite using only packet numbers and no forbidden words.")
         return "", "fallback"
 
+    def generate_why_explainer(self, p: SignalPacket, contract: ActionContract,
+                                model_checks: dict, cats: list[Catalyst]) -> tuple[str, str]:
+        """Plain-English translation of the Why-panel's gates/execution targets/catalysts.
+
+        Separate cache namespace and separate structural contract from generate() — the
+        top-summary trading note is a rigid 3-bullet/35-50-word format; this is a few
+        sentences of free prose, so mixing the two into one call would risk either
+        blowing the note's word budget or diluting this explainer's coverage. Same
+        decision-hash cache key shape, same number/jargon guards, same retry contract.
+        """
+        if self.llm is None:
+            return "", "skipped"
+        key = f"why_explainer:v1:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        cached = self._cache_get(key)
+        if cached is not None:
+            return cached, "cached"
+        user = build_why_explainer_prompt(p, contract, model_checks, cats)
+        for attempt in range(self.max_retries + 1):
+            text = self.llm(WHY_EXPLAINER_SYSTEM_PROMPT, user).strip()
+            bad_n = guard_numbers(text, p)
+            bad_w = layer3_banned_hits(text)
+            bad_s = why_explainer_structure_errors(text)
+            if not bad_n and not bad_w and not bad_s:
+                self._cache_set(key, text)
+                return text, "ok"
+            extra = []
+            if bad_n:
+                extra.append(f"illegal numbers {bad_n}")
+            if bad_w:
+                extra.append(f"forbidden jargon {bad_w} — rewrite in plain English")
+            if bad_s:
+                extra.append(f"structure errors {bad_s} — 2-4 plain sentences, 60-160 words, no bullets")
+            user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
+                     "Rewrite using only packet numbers and no forbidden words.")
+        return "", "fallback"
+
 
 # ═════════════════════════════════════════════════════════════
 # WATERFALL ORCHESTRATOR
@@ -1746,6 +1841,7 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
     note_payload = build_trading_note_payload(p, contract, cats)
     primary_driver = note_payload.get("PRIMARY_DRIVER") or {}
     model_checks = build_model_checks(p, cats, primary_driver=primary_driver)
+    why_explainer, why_explainer_status = engine.generate_why_explainer(p, contract, model_checks, cats)
 
     return {
         "status": "ok",
@@ -1761,6 +1857,8 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
         "driver_chip": note_payload.get("DRIVER_CHIP") or "Technical",
         "why": why,
         "model_checks": model_checks,
+        "why_explainer": why_explainer,
+        "why_explainer_status": why_explainer_status,
         "catalysts": [asdict(x) for x in cats],
         "scenario_ev_pct": p.scenario_ev(),
         "scenario_ev_horizon": "scenario mix · not the painted target",

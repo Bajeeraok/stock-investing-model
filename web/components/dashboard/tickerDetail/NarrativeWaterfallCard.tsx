@@ -99,6 +99,10 @@ export type NarrativeWaterfall = {
   scenario_ev_pct?: number | null;
   narrative?: string;
   narrative_status?: "ok" | "cached" | "skipped" | "fallback";
+  /** Plain-English translation of model_checks (gates/execution targets/catalysts) —
+   * a second, separately-guarded LLM call from `narrative`. Empty when skipped/fallback. */
+  why_explainer?: string | null;
+  why_explainer_status?: "ok" | "cached" | "skipped" | "fallback";
   packet_hash?: string;
   errors?: string[];
 };
@@ -272,7 +276,7 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
     >
       {hasWhy ? (
         hasStructuredWhy && checks ? (
-          <ModelChecksPanel checks={checks} />
+          <ModelChecksPanel checks={checks} whyExplainer={data?.why_explainer} />
         ) : (
           <div className="space-y-1">
             <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model checks</p>
@@ -288,17 +292,33 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
   );
 }
 
-function ModelChecksPanel({ checks }: { checks: ModelChecks }) {
+function ModelChecksPanel({
+  checks,
+  whyExplainer,
+}: {
+  checks: ModelChecks;
+  whyExplainer?: string | null;
+}) {
   const unlock = (checks.unlock_when || "").trim();
   const gates = checks.gates ?? [];
   const targets = checks.execution_targets ?? [];
   const linked = (checks.gate_linked_catalysts ?? []).slice(0, 5);
   const newsFallback =
     linked.length === 0 ? (checks.news_drivers ?? []).slice(0, 3) : [];
+  const explainer = (whyExplainer || "").trim();
 
   return (
     <div className="space-y-3">
       <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model checks</p>
+
+      {/* Plain-English translation of the gates/targets/catalysts below — the numbers and
+          pills stay put underneath as the verifiable detail; this is a reading aid on top
+          of them, not a replacement. Silently absent when the LLM path is unavailable. */}
+      {explainer ? (
+        <p className="text-xs text-slate-300 leading-relaxed rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-2">
+          {explainer}
+        </p>
+      ) : null}
 
       {unlock ? (
         <div className="rounded-lg border border-amber-500/35 bg-amber-950/25 px-2.5 py-2">
