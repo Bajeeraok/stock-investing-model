@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from signals.retail_action_payload import (
+    _price_anchor_clause,
     build_retail_action_payload,
     build_trading_gates,
     enrich_dashboard_signal_row,
@@ -204,3 +205,93 @@ def test_enrich_dashboard_signal_row():
     assert row["rsi_status"] == "hot"
     assert "retail_status" in row
     assert row["retail_status"]["action_title"]
+
+
+def _anchor(**overrides):
+    base = dict(
+        close=95.0,
+        ma50=100.0,
+        high_52w=150.0,
+        low_52w=92.0,
+        momentum_extended=False,
+        regime_ok=False,
+    )
+    base.update(overrides)
+    return _price_anchor_clause(**base)
+
+
+def test_price_anchor_below_ma50_and_near_low():
+    clause = _anchor()
+    assert "5.0% below its 50-day average ($100.00)" in clause
+    assert "near its 52-week low ($92.00)" in clause
+    assert "close back above that level" in clause
+
+
+def test_price_anchor_below_ma50_not_near_low_omits_low_clause():
+    clause = _anchor(low_52w=50.0)
+    assert "below its 50-day average" in clause
+    assert "52-week low" not in clause
+
+
+def test_price_anchor_momentum_extended_near_high():
+    clause = _anchor(close=148.0, ma50=140.0, momentum_extended=True, regime_ok=False)
+    assert "near its 52-week high ($150.00)" in clause
+    assert "mean-reversion risk" in clause
+    # Momentum-extended framing takes priority over the below-MA50 framing when both
+    # could technically apply (shouldn't happen in practice — high price, low MA50 —
+    # but the branch order should still prefer the near-high read).
+
+
+def test_price_anchor_near_low_only_when_regime_ok():
+    """A confirmed bull regime that happens to be near its 52w low still gets flagged —
+    the anchor is about price proximity, not gate state, when momentum isn't extended."""
+    clause = _anchor(regime_ok=True)
+    assert "within 5% of its 52-week low ($92.00)" in clause
+
+
+def test_price_anchor_no_data_returns_empty():
+    assert _price_anchor_clause(
+        close=None, ma50=None, high_52w=None, low_52w=None,
+        momentum_extended=False, regime_ok=False,
+    ) == ""
+
+
+def test_price_anchor_bull_far_from_any_extreme_is_empty():
+    clause = _anchor(close=120.0, ma50=115.0, regime_ok=True)
+    assert clause == ""
+
+
+def test_build_trading_gates_regime_detail_includes_price_anchor():
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=25.0,
+        pattern_score=60.0,
+        short_ml_prob=40.0,
+        rsi=45.0,
+        confidence_mid=60.0,
+        include_confidence=False,
+        ticker="AMZN",
+        close=95.0,
+        ma50=100.0,
+        high_52w=150.0,
+        low_52w=92.0,
+    )
+    regime = next(g for g in gates if g["id"] == "regime")
+    assert "below its 50-day average" in regime["detail"]
+    assert "$100.00" in regime["detail"]
+
+
+def test_build_trading_gates_regime_detail_degrades_without_price_data():
+    """No new params supplied -> exactly today's text, no trailing clause."""
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=25.0,
+        pattern_score=60.0,
+        short_ml_prob=40.0,
+        rsi=45.0,
+        confidence_mid=60.0,
+        include_confidence=False,
+        ticker="AMZN",
+    )
+    regime = next(g for g in gates if g["id"] == "regime")
+    assert regime["detail"] == "Stormy Tape — AMZN HMM non-bull (25% bull)"

@@ -729,6 +729,8 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             "close": r.get("close"),
             "high": r.get("high"),
             "low": r.get("low"),
+            "high_52w": r.get("high_52w"),
+            "low_52w": r.get("low_52w"),
             "short_suggestion": r.get("short_suggestion"),
             "medium_suggestion": r.get("medium_suggestion"),
             "long_suggestion": r.get("long_suggestion"),

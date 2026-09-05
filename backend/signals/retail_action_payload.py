@@ -170,6 +170,55 @@ def _inside_st_band(current_price: float | None, st_band: dict | None) -> bool:
     return low <= float(current_price) <= high
 
 
+# Matches pattern_signals.near_bottom_score's own "within 5% of 52w low" component — reused
+# here for consistency rather than inventing a separate proximity cutoff.
+_NEAR_52W_LOW_PCT = 5.0
+
+
+def _price_anchor_clause(
+    *,
+    close: float | None,
+    ma50: float | None,
+    high_52w: float | None,
+    low_52w: float | None,
+    momentum_extended: bool,
+    regime_ok: bool,
+) -> str:
+    """Ties the bull/bear percentage split to an actual price level — 'what would need to
+    happen', not just the raw split. Reuses the exact thresholds validate_regime() /
+    detect_momentum_extended() (hmm_regime.py) already trust internally for overriding a
+    stale HMM read, rather than inventing a new cutoff. Returns "" (no clause) when close
+    isn't available, so callers degrade to exactly today's text.
+    """
+    if close is None or close <= 0:
+        return ""
+
+    near_low = (
+        low_52w is not None and low_52w > 0
+        and (close - low_52w) / low_52w * 100.0 <= _NEAR_52W_LOW_PCT
+    )
+    near_high = high_52w is not None and high_52w > 0 and close >= high_52w * 0.94
+
+    if momentum_extended and near_high:
+        return (
+            f". Trading near its 52-week high (${high_52w:,.2f}) — the model flags "
+            f"mean-reversion risk here, not a broken trend; a pullback wouldn't invalidate "
+            f"the bigger picture."
+        )
+    if not regime_ok and ma50 is not None and ma50 > 0:
+        gap_ma50_pct = (close - ma50) / ma50 * 100.0
+        if gap_ma50_pct < 0:
+            low_note = f", and is near its 52-week low (${low_52w:,.2f})" if near_low else ""
+            return (
+                f". Trading {abs(gap_ma50_pct):.1f}% below its 50-day average (${ma50:,.2f})"
+                f"{low_note} — a close back above that level is what the model would need "
+                f"to call this confirmed."
+            )
+    if near_low and not momentum_extended:
+        return f". Trading within {_NEAR_52W_LOW_PCT:.0f}% of its 52-week low (${low_52w:,.2f})."
+    return ""
+
+
 def _regime_gate_detail(
     *,
     ticker: str | None,
@@ -179,10 +228,23 @@ def _regime_gate_detail(
     regime_transition_pct: float | None = None,
     market_bull_pct: float | None = None,
     momentum_extended: bool = False,
+    close: float | None = None,
+    ma50: float | None = None,
+    high_52w: float | None = None,
+    low_52w: float | None = None,
 ) -> str:
+    anchor = _price_anchor_clause(
+        close=close,
+        ma50=ma50,
+        high_52w=high_52w,
+        low_52w=low_52w,
+        momentum_extended=momentum_extended,
+        regime_ok=regime_ok,
+    )
+
     if regime_ok:
         sym = ticker or "Stock"
-        return f"Bull tape · {sym} HMM bull {round(stock_bull_pct)}%"
+        return f"Bull tape · {sym} HMM bull {round(stock_bull_pct)}%{anchor}"
 
     sym = ticker or "This name"
     if momentum_extended:
@@ -191,8 +253,8 @@ def _regime_gate_detail(
             f"HMM bull {round(stock_bull_pct)}% (pullback-risk signal, not structural bear)"
         )
         if market_bull_pct is not None and market_bull_pct >= REGIME_GATE:
-            return f"{line1} · Broader market {round(market_bull_pct)}% bull"
-        return line1
+            return f"{line1} · Broader market {round(market_bull_pct)}% bull{anchor}"
+        return f"{line1}{anchor}"
 
     label = (regime_hmm_label or "non-bull").replace("_", " ").strip()
     trans = regime_transition_pct
@@ -208,8 +270,8 @@ def _regime_gate_detail(
             line1 = f"Stormy Tape — {sym} in {label.lower()} regime ({round(stock_bull_pct)}% bull)"
 
     if market_bull_pct is not None and market_bull_pct >= REGIME_GATE and stock_bull_pct < REGIME_GATE:
-        return f"{line1} · Market overall: {round(market_bull_pct)}% bull · → Stock lagging the broader market"
-    return line1
+        return f"{line1} · Market overall: {round(market_bull_pct)}% bull · → Stock lagging the broader market{anchor}"
+    return f"{line1}{anchor}"
 
 
 def _obv_divergence_note(volume_ratio: float | None, obv_trend_pct: float | None, rsi_val: float) -> str:
@@ -459,6 +521,10 @@ def build_trading_gates(
     obv_trend_pct: float | None = None,
     momentum_extended: bool = False,
     tranche_idx: int = 0,
+    close: float | None = None,
+    ma50: float | None = None,
+    high_52w: float | None = None,
+    low_52w: float | None = None,
 ) -> list[dict[str, Any]]:
     """Primary + optional confidence gates with pass flags and visual_status tokens."""
     rb = regime_bull_pct if regime_bull_pct is not None else 50.0
@@ -504,6 +570,10 @@ def build_trading_gates(
                 regime_transition_pct=regime_transition_pct,
                 market_bull_pct=market_regime_bull_pct,
                 momentum_extended=momentum_extended,
+                close=close,
+                ma50=ma50,
+                high_52w=high_52w,
+                low_52w=low_52w,
             ),
             "pass": regime_ok,
             "gate_cleared": regime_ok,
@@ -968,6 +1038,9 @@ def build_retail_action_payload(
     institutional_conviction: dict[str, Any] | None = None,
     momentum_extended: bool = False,
     tranche_idx: int = 0,
+    ma50: float | None = None,
+    high_52w: float | None = None,
+    low_52w: float | None = None,
 ) -> dict[str, Any]:
     assessment_pct = _assessment_pct(current_price, fair_value)
     gates = build_trading_gates(
@@ -986,6 +1059,10 @@ def build_retail_action_payload(
         obv_trend_pct=obv_trend_pct,
         momentum_extended=momentum_extended,
         tranche_idx=tranche_idx,
+        close=current_price,
+        ma50=ma50,
+        high_52w=high_52w,
+        low_52w=low_52w,
     )
     primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS]
     locked = sum(1 for g in primary if not g.get("pass"))
@@ -1080,6 +1157,9 @@ def enrich_investor_summary_retail_action(
     obv_trend_pct: float | None = None,
     institutional_conviction: dict[str, Any] | None = None,
     real_st_band: dict[str, Any] | None = None,
+    ma50: float | None = None,
+    high_52w: float | None = None,
+    low_52w: float | None = None,
 ) -> dict[str, Any]:
     """Attach retail_action block to investor_summary dict (mutates copy).
 
@@ -1155,6 +1235,9 @@ def enrich_investor_summary_retail_action(
         institutional_conviction=institutional_conviction,
         momentum_extended=bool(investor_out.get("regime_momentum_extended")),
         tranche_idx=tranche_idx,
+        ma50=ma50,
+        high_52w=high_52w,
+        low_52w=low_52w,
     )
 
     short_spot = (short.get("entry_zone") or {}).get("spot_position") or {}
@@ -1273,6 +1356,9 @@ def enrich_dashboard_signal_row(
         include_confidence_gate=False,
         volume_ratio=row.get("volume_ratio"),
         obv_trend_pct=row.get("obv_trend_10d_pct"),
+        ma50=row.get("ma50"),
+        high_52w=row.get("high_52w"),
+        low_52w=row.get("low_52w"),
     )
     # List view uses LT band proxy — override valuation detail when no FV.
     # tranche_idx defaults to 0 (T1, first-dollar rung) — this path has no entry-tier
