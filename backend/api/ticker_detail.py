@@ -708,6 +708,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     except Exception:
         response["market_context"] = None
 
+    try:
+        from signals.session_vwap import compute_session_vwap
+
+        response["session_vwap"] = compute_session_vwap(ticker)
+    except Exception:
+        response["session_vwap"] = None
+
     inv = response.get("investor_summary")
     if isinstance(inv, dict):
         try:
@@ -723,6 +730,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 obv_trend_pct=_safe_float(response.get("obv_trend_10d_pct")),
                 institutional_conviction=inv.get("institutional_conviction"),
                 real_st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
+                ma50=_safe_float(response.get("ma50")),
+                high_52w=_safe_float(response.get("high_52w")),
+                low_52w=_safe_float(response.get("low_52w")),
             )
         except Exception:
             pass
@@ -1856,6 +1866,9 @@ def _build_investor_summary(
             obv_trend_pct=_safe_float(response.get("obv_trend_10d_pct")),
             institutional_conviction=inst_conv,
             real_st_band=response.get("st_band") if isinstance(response.get("st_band"), dict) else None,
+            ma50=_safe_float(response.get("ma50")),
+            high_52w=_safe_float(response.get("high_52w")),
+            low_52w=_safe_float(response.get("low_52w")),
         )
         try:
             from signals.signal_reason_summary import build_signal_reason_summary

@@ -220,6 +220,28 @@ export interface ConfidenceData {
   market_regime:   string;
   n_layers_active: number;
   pre_flight?:     PreFlightData;   // new — asset classification + coherence + playbook
+  /** Raw options-chain read (yfinance, free) — siblings of breakdown.options_sentiment's
+   * scored layer. `error` set when the ticker has no listed options. */
+  options?: {
+    error?:              string | null;
+    options_label?:      string;
+    pc_ratio?:           number;
+    atm_iv?:             number | null;
+    iv_rank?:            number | null;
+    max_pain?:           number | null;
+    options_score?:      number;
+    pc_interpretation?:  "contrarian" | "directional";
+  } | null;
+  /** Raw short-interest read (FINRA via yfinance, free). Null when unavailable for this ticker. */
+  short_interest?: {
+    short_pct_display?: string;
+    days_to_cover?:     number | null;
+    dtc_label?:          string | null;
+    trend?:              "increasing" | "decreasing" | "stable" | "unknown";
+    squeeze_risk?:        "none" | "low" | "moderate" | "elevated" | "high" | "extreme";
+    bear_signal?:         boolean;
+    label?:               string;
+  } | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

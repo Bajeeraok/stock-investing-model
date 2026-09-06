@@ -3,12 +3,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { clsx } from "clsx";
 import {
+  AlertTriangle,
   BarChart3,
   Building2,
   ChevronDown,
   ChevronRight,
   DollarSign,
   Newspaper,
+  Percent,
   RefreshCw,
   Target,
   type LucideIcon,
@@ -157,6 +159,8 @@ export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
         <WhyMovedCard {...props} />
         <NearBottomCard {...props} />
         <ConfidenceCard {...props} />
+        <OptionsCard {...props} />
+        <ShortInterestCard {...props} />
         <FundamentalsCard {...props} />
       </div>
     </div>
@@ -218,6 +222,21 @@ function ChartLevelsCard({
             </div>
           )}
           <IntradayChart ticker={detail.ticker} levelLines={levelLines} />
+          {detail.session_vwap && (
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Session VWAP{" "}
+              <span className="font-mono text-slate-300">{fmtUsd(detail.session_vwap.vwap)}</span>
+              {" — price is "}
+              <span
+                className={
+                  detail.session_vwap.close_vs_vwap_pct >= 0 ? "text-emerald-400" : "text-red-400"
+                }
+              >
+                {fmtPct(detail.session_vwap.close_vs_vwap_pct)}
+              </span>{" "}
+              vs. VWAP today.
+            </p>
+          )}
         </div>
       }
       footer={{ label: "View full chart & levels", onClick: onOpenLevels }}
@@ -378,6 +397,100 @@ function ConfidenceCard({ detail, confidence, onOpenProof }: ReferenceDetailGrid
           {unlockText?.trim() && (
             <p className="text-xs text-emerald-300/90 leading-snug">
               <span aria-hidden>🔓</span> {unlockText.replace(/^Unlocks when:\s*/i, "Unlocks when: ")}
+            </p>
+          )}
+        </div>
+      }
+      footer={{ label: "See layer weights", onClick: onOpenProof }}
+    />
+  );
+}
+
+const SQUEEZE_RISK_CLASS: Record<string, string> = {
+  none: "text-slate-400 bg-slate-500/10 border-slate-500/30",
+  low: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
+  moderate: "text-amber-300 bg-amber-500/10 border-amber-500/30",
+  elevated: "text-orange-300 bg-orange-500/10 border-orange-500/30",
+  high: "text-red-300 bg-red-500/10 border-red-500/30",
+  extreme: "text-rose-300 bg-rose-600/15 border-rose-500/40",
+};
+
+function SqueezeBadge({ risk }: { risk: string }) {
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide",
+        SQUEEZE_RISK_CLASS[risk] ?? SQUEEZE_RISK_CLASS.none,
+      )}
+    >
+      {risk} squeeze risk
+    </span>
+  );
+}
+
+/** Put/call ratio, IV rank, and max pain from the options chain — free (yfinance), already
+ * computed for every ticker-detail request via confidence_engine.py. Hidden entirely when
+ * the ticker has no listed options (confidence.options.error set). */
+function OptionsCard({ confidence, onOpenProof }: ReferenceDetailGridProps) {
+  const opts = confidence?.options;
+  if (!opts || opts.error) return null;
+
+  const pcRatio = opts.pc_ratio;
+  const leaning =
+    pcRatio == null
+      ? null
+      : pcRatio >= 1.2
+        ? "put-heavy — traders positioned for downside or hedging"
+        : pcRatio <= 0.7
+          ? "call-heavy — traders leaning bullish"
+          : "roughly balanced between calls and puts";
+
+  return (
+    <ReferenceCard
+      icon={Percent}
+      title="Options market"
+      description="Put/call positioning and implied volatility from the options chain — a smart-money positioning signal, not a stand-alone buy/sell call."
+      stats={[
+        { label: "Put/call ratio", value: pcRatio != null ? pcRatio.toFixed(2) : "—" },
+        { label: "IV rank", value: opts.iv_rank != null ? `${Math.round(opts.iv_rank)} / 100` : "—" },
+        { label: "Max pain", value: fmtUsd(opts.max_pain) },
+      ]}
+      body={
+        <p className="text-xs text-slate-400 leading-relaxed">
+          {opts.options_label || (leaning ? `Options are ${leaning}.` : "No options read available yet.")}
+        </p>
+      }
+      footer={{ label: "See layer weights", onClick: onOpenProof }}
+    />
+  );
+}
+
+/** Short % of float, days-to-cover, and squeeze-risk classification from FINRA data (free,
+ * via yfinance) — already computed for every ticker-detail request. Hidden when the ticker
+ * has no short-interest data available. */
+function ShortInterestCard({ confidence, onOpenProof }: ReferenceDetailGridProps) {
+  const si = confidence?.short_interest;
+  if (!si) return null;
+
+  return (
+    <ReferenceCard
+      icon={AlertTriangle}
+      title="Short interest"
+      description="Short position sizing and days-to-cover from FINRA data — flags squeeze setups and crowded-short risk."
+      stats={[
+        { label: "Short % of float", value: si.short_pct_display ?? "—" },
+        {
+          label: "Days to cover",
+          value: si.dtc_label ?? (si.days_to_cover != null ? si.days_to_cover.toFixed(1) : "—"),
+        },
+      ]}
+      body={
+        <div className="space-y-1.5">
+          <SqueezeBadge risk={si.squeeze_risk ?? "none"} />
+          {si.label && <p className="text-xs text-slate-400 leading-relaxed">{si.label}</p>}
+          {si.bear_signal && (
+            <p className="text-[11px] text-red-300/90 leading-relaxed">
+              Heavy short interest with no bullish technical setup — a risk factor, not a squeeze signal.
             </p>
           )}
         </div>
