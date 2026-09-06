@@ -376,15 +376,26 @@ export interface TickerDetail {
   };
 }
 
+export interface PortfolioImpactContext {
+  totalValue: number;
+  sectorAllocation: { sector: string; pct: number }[];
+  /** Top holdings by value, already capped (e.g. top 5) — used for a correlation-to-holdings check. */
+  topHoldings: { ticker: string; value: number }[];
+  heldTickers: Set<string>;
+}
+
 export function TickerDetailModal({
   ticker,
   onClose,
   initialTab = "today",
+  portfolioImpactContext = null,
 }: {
   ticker: string;
   onClose: () => void;
   /** Which hub tab to show first (e.g. Levels when opening from roadmap expand). */
   initialTab?: "today" | "levels" | "why";
+  /** Current portfolio's holdings context, for the pre-trade impact card. Null when no portfolio is configured/selected. */
+  portfolioImpactContext?: PortfolioImpactContext | null;
 }) {
   const [detail, setDetail]               = useState<TickerDetail | null>(null);
   const [confidence, setConfidence]        = useState<ConfidenceData | null>(null);
@@ -1098,6 +1109,7 @@ export function TickerDetailModal({
                 onOpenValuation={openWhyValuation}
                 onOpenProof={() => { setModalTab("why"); setWhySubTab("proof"); }}
                 onOpenContext={() => { setModalTab("why"); setWhySubTab("context"); }}
+                portfolioImpactContext={portfolioImpactContext}
               />
 
               {!detail.investor_summary && (

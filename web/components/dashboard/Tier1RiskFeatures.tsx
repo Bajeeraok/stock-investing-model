@@ -226,6 +226,12 @@ export function PositionSizingPanel({
 
   return (
     <div className="space-y-4">
+      <p className="text-[11px] text-slate-600">
+        Kelly-criterion trade sizing: sized for a new/incremental buy from today&apos;s signal
+        quality, capped at the same {riskProfile || "current"} profile limit as Portfolio
+        Doctor. Portfolio Doctor&apos;s trim/add panel uses a different method (equal-weight
+        rebalancing) — the two $ figures for one ticker won&apos;t match, by design.
+      </p>
       {/* Ticker selector */}
       {items.length > 1 && (
         <div className="flex flex-wrap gap-2">

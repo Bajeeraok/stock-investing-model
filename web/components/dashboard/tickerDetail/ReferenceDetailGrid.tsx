@@ -9,13 +9,15 @@ import {
   ChevronDown,
   ChevronRight,
   DollarSign,
+  History,
   Newspaper,
   Percent,
   RefreshCw,
+  Scale,
   Target,
   type LucideIcon,
 } from "lucide-react";
-import type { TickerDetail } from "../TickerDetailModal";
+import type { TickerDetail, PortfolioImpactContext } from "../TickerDetailModal";
 import type { ConfidenceData } from "../ConfidenceBreakdown";
 import type { PriceTargetsData } from "../PriceTargetsPanel";
 import type { InstitutionalBundle } from "../InstitutionalInsightsPanel";
@@ -145,6 +147,7 @@ interface ReferenceDetailGridProps {
   onOpenValuation: () => void;
   onOpenProof: () => void;
   onOpenContext: () => void;
+  portfolioImpactContext?: PortfolioImpactContext | null;
 }
 
 export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
@@ -161,7 +164,9 @@ export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
         <ConfidenceCard {...props} />
         <OptionsCard {...props} />
         <ShortInterestCard {...props} />
+        <TrackRecordCard {...props} />
         <FundamentalsCard {...props} />
+        <PreTradeImpactCard {...props} />
       </div>
     </div>
   );
@@ -500,6 +505,217 @@ function ShortInterestCard({ confidence, onOpenProof }: ReferenceDetailGridProps
   );
 }
 
+const TRACK_RECORD_TIMEOUT_MS = 15000;
+
+interface TrackRecordHorizonStats {
+  n_observations?: number;
+  win_rate_pct?: number;
+  avg_return_pct?: number;
+}
+
+interface TrackRecordResponse {
+  available: boolean;
+  ticker?: string;
+  current_model_version?: string | null;
+  current?: TrackRecordHorizonStats | null;
+  legacy?: TrackRecordHorizonStats | null;
+}
+
+/**
+ * "Has our own model been right on THIS ticker?" — reads a cheap, already-cached
+ * watchlist-wide forward-tracking slice filtered server-side to one ticker (see
+ * signals/forward_tracking_metrics.py::build_ticker_track_record). Own fetch-on-mount, same
+ * pattern as FundamentalsCard below — never blocks the rest of the page.
+ */
+function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
+  const [data, setData] = useState<TrackRecordResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const ticker = detail.ticker;
+
+  useEffect(() => {
+    if (!ticker) return;
+    setData(null);
+    setLoading(true);
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), TRACK_RECORD_TIMEOUT_MS);
+    fetch(apiUrl(`/api/ticker/${ticker}/track-record`), { signal: ac.signal, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j) setData(j as TrackRecordResponse);
+      })
+      .catch(() => {
+        /* optional card — quietly stay empty */
+      })
+      .finally(() => {
+        window.clearTimeout(timer);
+        setLoading(false);
+      });
+    return () => {
+      ac.abort();
+      window.clearTimeout(timer);
+    };
+  }, [ticker]);
+
+  if (!loading && !data) return null;
+  if (data && !data.available) return null;
+
+  const current = data?.current;
+  const legacy = data?.legacy;
+  const version = data?.current_model_version;
+  if (!current && !legacy) return null;
+
+  return (
+    <ReferenceCard
+      icon={History}
+      title="Signal track record"
+      description="What we said vs. what happened, for this ticker specifically — from the same forward-tracking data behind the Analysis tab."
+      body={
+        <div className="space-y-2">
+          {current && (current.n_observations ?? 0) > 0 ? (
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Since <span className="font-mono text-slate-200">{version}</span>: right{" "}
+              <span className={(current.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
+                {current.win_rate_pct != null ? `${current.win_rate_pct.toFixed(0)}%` : "—"}
+              </span>{" "}
+              of the time <span className="text-slate-600">(n={current.n_observations})</span>
+              {current.avg_return_pct != null && (
+                <>
+                  {" · avg return "}
+                  <span className={current.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                    {fmtPct(current.avg_return_pct)}
+                  </span>
+                </>
+              )}
+              .
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Not enough resolved signals on {ticker} yet under {version || "the current model"} —
+              this fills in as new EOD snapshots accumulate.
+            </p>
+          )}
+          {legacy && (legacy.n_observations ?? 0) > 0 && (
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              Pre-{version || "current"} history: {legacy.win_rate_pct != null ? `${legacy.win_rate_pct.toFixed(0)}%` : "—"}{" "}
+              (n={legacy.n_observations}) — kept separate, not blended into the number above.
+            </p>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
+const CORRELATION_TIMEOUT_MS = 15000;
+/** Illustrative hypothetical add size for the pre-trade impact estimate — 5% of current
+ * portfolio value, rounded to the nearest $100. Not a sizing recommendation (Tier-1's
+ * Kelly panel and Portfolio Doctor's add table own that); this card only answers "if I put
+ * a normal-sized position here, what would it do to my sector weight and correlation?" */
+function hypotheticalAddDollars(totalValue: number): number {
+  return Math.max(100, Math.round((totalValue * 0.05) / 100) * 100);
+}
+
+interface CorrelationToHoldingsResponse {
+  available: boolean;
+  correlations?: { ticker: string; correlation: number }[];
+  avg_correlation?: number | null;
+}
+
+/**
+ * Pre-trade portfolio impact — "if I add here, what happens to my book?" Sector-weight and
+ * top-3-concentration deltas are pure arithmetic on data Dashboard.tsx already has in scope
+ * (selectedReport's per_holding/sector_allocation/total_value — see portfolioImpactContext
+ * in Dashboard.tsx), computed client-side with no extra fetch. Only the correlation-to-
+ * holdings number needs a backend round trip (it needs price history), via the new
+ * GET /api/ticker/{ticker}/correlation-to-holdings endpoint. Hidden entirely when the
+ * ticker is already held or no portfolio is configured/selected.
+ */
+function PreTradeImpactCard({ detail, portfolioImpactContext }: ReferenceDetailGridProps) {
+  const ctx = portfolioImpactContext;
+  const ticker = detail.ticker;
+  const isHeld = !!ctx && ctx.heldTickers.has((ticker || "").toUpperCase());
+
+  const [corrData, setCorrData] = useState<CorrelationToHoldingsResponse | null>(null);
+
+  useEffect(() => {
+    if (!ctx || isHeld || !ticker || ctx.topHoldings.length === 0) {
+      setCorrData(null);
+      return;
+    }
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => ac.abort(), CORRELATION_TIMEOUT_MS);
+    const tickersParam = ctx.topHoldings.map((h) => h.ticker).join(",");
+    fetch(apiUrl(`/api/ticker/${ticker}/correlation-to-holdings?tickers=${encodeURIComponent(tickersParam)}`), {
+      signal: ac.signal,
+      cache: "no-store",
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j) setCorrData(j as CorrelationToHoldingsResponse);
+      })
+      .catch(() => {
+        /* optional — quietly stay empty */
+      })
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      ac.abort();
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, isHeld, ctx?.topHoldings.map((h) => h.ticker).join(",")]);
+
+  if (!ctx || isHeld) return null;
+
+  const dollarAmount = hypotheticalAddDollars(ctx.totalValue);
+  const newTotal = ctx.totalValue + dollarAmount;
+  const sector = detail.sector || "Unknown";
+  const currentSectorPct = ctx.sectorAllocation.find((s) => s.sector === sector)?.pct ?? 0;
+  const currentSectorValue = (currentSectorPct / 100) * ctx.totalValue;
+  const newSectorPct = ((currentSectorValue + dollarAmount) / newTotal) * 100;
+  const newPositionPct = (dollarAmount / newTotal) * 100;
+
+  const strongCorrelations = (corrData?.correlations ?? []).filter((p) => Math.abs(p.correlation) >= 0.6);
+
+  return (
+    <ReferenceCard
+      icon={Scale}
+      title="Pre-trade portfolio impact"
+      description={`Not held yet. Illustrative $${dollarAmount.toLocaleString()} add (~5% of your book) — what it would do to your allocation.`}
+      body={
+        <div className="space-y-2">
+          <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-2.5 py-2 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500">New position size</span>
+              <span className="font-mono text-slate-200">{newPositionPct.toFixed(1)}% of book</span>
+            </div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-slate-500">{sector} weight</span>
+              <span className="font-mono text-slate-200">
+                {currentSectorPct.toFixed(1)}% → <span className="text-amber-300">{newSectorPct.toFixed(1)}%</span>
+              </span>
+            </div>
+          </div>
+          {corrData?.available && (corrData.correlations?.length ?? 0) > 0 && (
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              1y correlation to top holdings:{" "}
+              {corrData.correlations!.map((p, i) => (
+                <span key={p.ticker}>
+                  {i > 0 && ", "}
+                  <span className="font-mono text-slate-400">{p.ticker}</span>{" "}
+                  <span className={Math.abs(p.correlation) >= 0.6 ? "text-amber-300" : "text-slate-500"}>
+                    {p.correlation.toFixed(2)}
+                  </span>
+                </span>
+              ))}
+              {strongCorrelations.length > 0 && " — moves closely with what you already own."}
+            </p>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
 const INSIGHTS_TIMEOUT_MS = 90000;
 
 function FundamentalsCard({ detail, onOpenContext }: ReferenceDetailGridProps) {
@@ -527,6 +743,22 @@ function FundamentalsCard({ detail, onOpenContext }: ReferenceDetailGridProps) {
   const trend = institutional?.edgar_13f?.trend;
   const peers = (detail.peers ?? []).slice(0, 4).join(", ");
 
+  // Relative-strength ranking — current ticker + every peer with a usable 1-month
+  // return (a ~20-trading-day figure, the closest bucket to "20-day momentum" already
+  // computed; see _returns_over_periods in ticker_detail.py). Needs at least one peer
+  // return alongside our own to be a ranking, not just a solo number.
+  const ownReturn1m = detail.returns?.["1m"];
+  const rankRows = [
+    { ticker: detail.ticker, ret: ownReturn1m, isSelf: true },
+    ...(detail.peer_returns ?? []).map((p) => ({
+      ticker: p.ticker,
+      ret: p.returns?.["1m"],
+      isSelf: false,
+    })),
+  ].filter((r): r is { ticker: string; ret: number; isSelf: boolean } => r.ret != null);
+  rankRows.sort((a, b) => b.ret - a.ret);
+  const selfRank = rankRows.findIndex((r) => r.isSelf) + 1;
+
   return (
     <ReferenceCard
       icon={Building2}
@@ -537,10 +769,38 @@ function FundamentalsCard({ detail, onOpenContext }: ReferenceDetailGridProps) {
         { label: "13F trend (qtr)", value: trend ?? "—" },
       ]}
       body={
-        <p className="text-xs text-slate-500 leading-relaxed">
-          {detail.sector ?? "—"}
-          {peers ? ` · Peers: ${peers}` : ""}
-        </p>
+        <div className="space-y-2">
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {detail.sector ?? "—"}
+            {peers ? ` · Peers: ${peers}` : ""}
+          </p>
+          {rankRows.length >= 2 && (
+            <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">
+                1-month relative strength — {detail.ticker} ranks #{selfRank} of {rankRows.length}
+              </p>
+              <ul className="space-y-0.5">
+                {rankRows.map((r, i) => (
+                  <li
+                    key={r.ticker}
+                    className={clsx(
+                      "flex items-center justify-between gap-2 text-[11px]",
+                      r.isSelf ? "text-slate-100 font-semibold" : "text-slate-500",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-slate-600 w-3 shrink-0 text-right tabular-nums">{i + 1}</span>
+                      <span className="font-mono truncate">{r.ticker}</span>
+                    </span>
+                    <span className={clsx("tabular-nums shrink-0", r.ret >= 0 ? "text-emerald-400" : "text-red-400")}>
+                      {fmtPct(r.ret)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       }
       footer={{ label: "Open context", onClick: onOpenContext }}
     />

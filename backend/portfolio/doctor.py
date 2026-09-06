@@ -299,28 +299,26 @@ def portfolio_report(
     except Exception:
         sector_allocation = []
 
-    # Pairwise correlation (simplified: flag if any pair > 0.8)
+    # Pairwise correlation (simplified: flag if any pair > 0.8) — shared implementation
+    # with portfolio_risk_model.py::compute_correlation_matrix (used elsewhere for
+    # candidate-ticker-vs-holdings lookups) so the app never shows two different
+    # correlation numbers for the same ticker pair. 1y window (252 trading days) matches
+    # this panel's existing lookback, not the 5y default used for pre-trade sizing checks.
     correlation_alerts = []
     try:
-        from signals.fetcher import fetch_ohlcv_safe
+        from signals.portfolio_risk_model import compute_correlation_matrix
+
         tickers_with_value = [h["ticker"] for h in per_holding if h.get("value") and h.get("pct")]
         if len(tickers_with_value) >= 2:
-            returns_dict = {}
-            for t in tickers_with_value[:8]:  # limit to 8 to avoid slowdown
-                close = fetch_ohlcv_safe(t, "1y")
-                if close is not None and len(close) >= 60:
-                    ret = close.pct_change().dropna()
-                    returns_dict[t] = ret
-            if returns_dict:
-                import pandas as pd
-                df = pd.DataFrame(returns_dict).dropna(how="all")
-                if len(df) >= 20:
-                    corr = df.corr()
-                    for i, t1 in enumerate(corr.columns):
-                        for t2 in corr.columns[i + 1:]:
-                            c = corr.loc[t1, t2]
-                            if pd.notna(c) and c > 0.8:
-                                correlation_alerts.append(f"{t1}-{t2}: {c:.2f}")
+            import pandas as pd
+
+            corr, _err = compute_correlation_matrix(tickers_with_value[:8], lookback_days=252)
+            if corr is not None:
+                for i, t1 in enumerate(corr.columns):
+                    for t2 in corr.columns[i + 1:]:
+                        c = corr.loc[t1, t2]
+                        if pd.notna(c) and c > 0.8:
+                            correlation_alerts.append(f"{t1}-{t2}: {c:.2f}")
     except Exception:
         pass
 

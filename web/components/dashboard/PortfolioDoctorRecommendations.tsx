@@ -26,6 +26,12 @@ export function PortfolioDoctorRecommendations({
   return (
     <div className="space-y-6">
       <p className="text-slate-500 text-sm">When you have multiple accounts (e.g. IRA + Taxable), prefer trimming in IRA first to avoid taxable gains; trim in Taxable when you want to realize losses or rebalance.</p>
+      <p className="text-[11px] text-slate-600 -mt-4">
+        Rebalance-based sizing: trims/adds bring existing holdings back toward equal-weight
+        targets under your {profile} profile&apos;s cap. The Tier-1 panel elsewhere uses a
+        different method (Kelly-criterion new-trade sizing) with the same cap — the two $
+        figures for one ticker won&apos;t match, by design.
+      </p>
       {/* Inputs summary + audit */}
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
         <h4 className="text-sm font-medium text-slate-400 mb-2">Settings & assumptions (from config)</h4>

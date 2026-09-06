@@ -3963,6 +3963,46 @@ async def get_roadmaps(tickers: str = ""):
     return {"roadmaps": out}
 
 
+@router.get("/ticker/{ticker}/track-record")
+async def get_ticker_track_record(ticker: str):
+    """
+    Per-ticker signal-accuracy summary — has our own model been right on THIS ticker?
+
+    Reads the already-cached watchlist-wide forward-tracking slice
+    (analysis_bundle_job.py refreshes it ~every 6h via set_analysis_slices) and filters it
+    to one ticker in-memory. Deliberately does NOT call get_forward_tracking() fresh here —
+    that call's cost is dominated by EOD snapshot I/O, not ticker count, so a "single
+    ticker" call is not meaningfully cheaper than the full-watchlist one. Stays a cheap
+    Redis read; a cold cache just means "not available yet" until the next scheduled run,
+    not a live recompute.
+    """
+    from signals.cache import get_analysis_slice
+    from signals.forward_tracking_metrics import build_ticker_track_record
+    from signals.model_version import MODEL_VERSION
+
+    sym = ticker.upper().strip()
+    slice_data = get_analysis_slice("forward_tracking")
+    if not isinstance(slice_data, dict):
+        return {"available": False, "ticker": sym, "reason": "forward-tracking data not cached yet"}
+
+    records = slice_data.get("records") or []
+    return build_ticker_track_record(records, sym, current_model_version=MODEL_VERSION)
+
+
+@router.get("/ticker/{ticker}/correlation-to-holdings")
+async def get_ticker_correlation_to_holdings(ticker: str, tickers: str = ""):
+    """
+    Pre-trade check: how correlated is this candidate to the portfolio's current top
+    holdings (by value)? `tickers` is a comma-separated list of holding tickers the caller
+    already knows from the loaded dashboard's per_holding (no portfolio/config lookup here)
+    — capped at 5 to keep this a bounded, one-time fetch.
+    """
+    from signals.portfolio_risk_model import correlation_to_holdings
+
+    holding_syms = [t for t in tickers.split(",") if t.strip()][:5]
+    return correlation_to_holdings(ticker, holding_syms)
+
+
 @router.get("/ticker/{ticker}/narrative")
 async def get_ticker_narrative(
     ticker: str,

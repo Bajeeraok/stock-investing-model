@@ -30,7 +30,10 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-_MAX_PEERS_RETURNS = 2  # Fewer peer fetches = faster (was 4)
+_MAX_PEERS_RETURNS = 6  # All available peers (list itself capped at 6) — needed for a
+# meaningful "ranked #N of M peers" comparison; was 2 for speed, but a rank against 2 peers
+# isn't a real ranking. Thread-pooled fetch (see ThreadPoolExecutor below), same pattern,
+# just more of it — a bounded, one-time cost on ticker-detail load.
 
 # 52w min() on metal/commodity ETFs can pick a single bad bar or mixed vendor scale; prefer 5th pct when insane
 _METAL_ETF_52W_SANITY = frozenset(
@@ -1194,8 +1197,17 @@ def _build_investor_summary(
                 if 25 <= ttm_pe_recomputed <= 100:
                     ttm_pe = ttm_pe_recomputed
 
-        # Sanity: forward PE much lower than TTM (e.g. NVDA 17x fwd vs 38x TTM) often indicates
-        # split-adjustment or GAAP/non-GAAP mismatch. Cross-check with yfinance forwardEps.
+        # Sanity: forward PE much lower than TTM can mean either (a) a split-adjustment /
+        # GAAP-vs-non-GAAP mismatch between the TTM and forward EPS sources, or (b)
+        # genuinely fast-ramping forward earnings (real for names like NVDA/AVGO, which is
+        # exactly why they're in _HIGH_PE_GROWTH above). The ratio alone can't tell these
+        # apart. Cross-check against an independently-recomputed forward PE (price /
+        # yfinance forwardEps): if the two agree, the low number is real and must be kept
+        # no matter how low it is — a hardcoded "plausible minimum" (e.g. 18x) previously
+        # discarded NVDA's genuinely-low forward P/E just because it looked low, which
+        # silently starved the fair-value model of its forward-earnings input. Only an
+        # actual disagreement between sources indicates the data problem this check exists
+        # to catch.
         if (
             ttm_pe is not None
             and ttm_pe > 0
@@ -1207,8 +1219,11 @@ def _build_investor_summary(
             forward_eps_yf = _safe_float(info.get("forwardEps"))
             if forward_eps_yf and forward_eps_yf > 0:
                 forward_pe_yf = round(current_price / forward_eps_yf, 2)
-                # If yfinance forward PE is in a more plausible range (e.g. 20–50), prefer it
-                if 18 <= forward_pe_yf <= 60:
+                if abs(forward_pe_yf - forward_pe) / forward_pe <= 0.20:
+                    # Sources agree — low forward P/E is real, not a data glitch
+                    forward_pe = forward_pe_yf
+                elif 18 <= forward_pe_yf <= 60:
+                    # Sources disagree; the independent figure looks plausible — prefer it
                     forward_pe = forward_pe_yf
                 else:
                     forward_pe = None  # exclude from fair value; use TTM only
@@ -1217,11 +1232,19 @@ def _build_investor_summary(
                 forward_pe = None  # exclude suspicious FMP forward PE from fair value
                 forward_pe_discarded = True
 
+        # revenueGrowth/earningsGrowth from both FMP and yfinance are always decimal
+        # fractions (0.18 = 18% growth), never pre-converted percentages — so this must
+        # convert unconditionally. The old `< 1` guard assumed any value >= 1 was already a
+        # percent, but for hypergrowth names (NVDA: revenueGrowth=1.06, i.e. +106% YoY) the
+        # decimal fraction itself exceeds 1.0, so the guard skipped the conversion and fed
+        # ~1% growth into the fair-value model instead of ~106% — collapsing the PEG-based
+        # fair PE and dragging fair value far below both spot and street consensus. Same
+        # blind spot hit any ticker with negative growth (guard also required `> 0`).
         revenue_growth = _safe_float(info.get("revenueGrowth"))
-        if revenue_growth is not None and revenue_growth < 1 and revenue_growth > 0:
+        if revenue_growth is not None:
             revenue_growth = revenue_growth * 100
         earnings_growth = _safe_float(info.get("earningsGrowth"))
-        if earnings_growth is not None and earnings_growth < 1 and earnings_growth > 0:
+        if earnings_growth is not None:
             earnings_growth = earnings_growth * 100
         margin = _safe_float(info.get("profitMargins"))
         if margin is not None and margin < 1:

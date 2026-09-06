@@ -44,6 +44,57 @@ def detect_horizon_suggestion_flips(
     return flips
 
 
+def _safe_num(row: dict[str, Any] | None, key: str) -> float | None:
+    if not row:
+        return None
+    v = row.get(key)
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _detect_ma50_transition(
+    prev: dict[str, Any] | None,
+    current_row: dict[str, Any] | None,
+) -> tuple[str, str] | None:
+    """Edge-cross on the same price-anchor fields _price_anchor_clause() explains
+    (retail_action_payload.py) — was below/near-high yesterday, crossed the line today.
+    Same prev-vs-curr edge-cross shape as scanner/engine.py's RSI_OVERSOLD/ML_PROB_CROSSED
+    checks, applied to the daily EOD diff instead of the intraday scanner since only the
+    daily row carries ma50/52w hi-lo.
+    """
+    prev_close, cur_close = _safe_num(prev, "close"), _safe_num(current_row, "close")
+    prev_ma50, cur_ma50 = _safe_num(prev, "ma50"), _safe_num(current_row, "ma50")
+    if prev_close is None or cur_close is None or prev_ma50 is None or cur_ma50 is None:
+        return None
+    if prev_ma50 <= 0 or cur_ma50 <= 0:
+        return None
+
+    if prev_close < prev_ma50 and cur_close >= cur_ma50:
+        return (
+            f"MA50 RECLAIM: closed at {cur_close:.2f}, back above its 50-day average "
+            f"({cur_ma50:.2f})",
+            "ma50_reclaim",
+        )
+
+    prev_high_52w = _safe_num(prev, "high_52w")
+    if (
+        prev_high_52w is not None
+        and prev_high_52w > 0
+        and prev_close >= prev_high_52w * 0.94
+        and cur_close < cur_ma50
+    ):
+        return (
+            f"PULLBACK FROM HIGHS: closed at {cur_close:.2f}, below its 50-day average "
+            f"({cur_ma50:.2f}) after trading near its 52-week high",
+            "momentum_extended_breakdown",
+        )
+    return None
+
+
 def detect_story_change(
     prev: dict | None,
     *,
@@ -73,13 +124,18 @@ def detect_story_change(
     if prev_regime and regime and prev_regime != regime:
         story_change = f"REGIME: {prev_regime} -> {regime}"
         trigger = "regime_flip"
-    elif prev_score is not None and composite_buy is not None:
+    elif prev_score is not None and composite_buy is not None and (
+        float(prev_score) - float(composite_buy) >= alert_delta
+    ):
         delta = float(prev_score) - float(composite_buy)
-        if delta >= alert_delta:
-            story_change = (
-                f"SCORE DROP: {float(prev_score):.0f} -> {float(composite_buy):.0f} (-{delta:.0f})"
-            )
-            trigger = "score_drop"
+        story_change = (
+            f"SCORE DROP: {float(prev_score):.0f} -> {float(composite_buy):.0f} (-{delta:.0f})"
+        )
+        trigger = "score_drop"
+    else:
+        ma50_transition = _detect_ma50_transition(prev, current_row)
+        if ma50_transition:
+            story_change, trigger = ma50_transition
 
     if story_change is None and not horizon_flips:
         return None

@@ -421,3 +421,52 @@ def aggregate_by_signal(rows: list[dict[str, Any]], horizon: int) -> dict[str, d
             "st_stop_hit_rate_pct": stats.get("st_stop_hit_rate_pct"),
         }
     return out
+
+
+def build_ticker_track_record(
+    records: list[dict[str, Any]],
+    ticker: str,
+    *,
+    current_model_version: str | None = None,
+    horizon_days: int = 20,
+) -> dict[str, Any]:
+    """Per-ticker signal-accuracy summary, filtered from an already-computed records array
+    (the watchlist-wide forward-tracking result — see signals/cache.py::get_analysis_slice).
+    This function does no I/O and no snapshot loading; it's a cheap in-memory filter/rollup
+    over data the caller already has, split by model_version so a ticker's current-model
+    accuracy isn't blended with pre-fix history (see signals/model_version.py).
+    """
+    tk = str(ticker or "").upper().strip()
+    ticker_records = [
+        r for r in records
+        if isinstance(r, dict)
+        and str(r.get("ticker") or "").upper() == tk
+        and r.get("horizon_days") == horizon_days
+    ]
+    if not ticker_records:
+        return {"available": False, "ticker": tk, "horizon_days": horizon_days}
+
+    by_version: dict[str, list[dict[str, Any]]] = {}
+    for r in ticker_records:
+        v = str(r.get("model_version") or "legacy")
+        by_version.setdefault(v, []).append(r)
+
+    current_rows = by_version.get(current_model_version, []) if current_model_version else []
+    legacy_rows = [
+        r for v, rows in by_version.items() if v != current_model_version for r in rows
+    ]
+
+    def _stats_or_none(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if not rows:
+            return None
+        stats = aggregate_horizon_stats(rows)
+        return stats if stats.get("n_observations") else None
+
+    return {
+        "available": True,
+        "ticker": tk,
+        "horizon_days": horizon_days,
+        "current_model_version": current_model_version,
+        "current": _stats_or_none(current_rows),
+        "legacy": _stats_or_none(legacy_rows),
+    }

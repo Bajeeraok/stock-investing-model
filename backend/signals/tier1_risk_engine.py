@@ -69,8 +69,13 @@ class PositionSizingEngine:
     - Half-Kelly safety factor (standard for retail)
     """
 
-    # Portfolio concentration hard limits
-    MAX_SINGLE_POSITION_PCT = 0.10     # 10% max per ticker
+    # Portfolio concentration hard limits.
+    # MAX_SINGLE_POSITION_PCT is a class-level fallback only (used if a caller constructs
+    # this engine without a risk_tolerance-aware max_position_pct) — normal construction
+    # overrides it per-instance in __init__ to match the SAME 15/20/25% risk-profile ladder
+    # portfolio/doctor.py already uses, instead of silently disagreeing with it at a
+    # hardcoded 10% regardless of the user's selected profile.
+    MAX_SINGLE_POSITION_PCT = 0.10     # 10% max per ticker (fallback default)
     MAX_SECTOR_PCT          = 0.25     # 25% max per sector
     MIN_SIGNAL_SCORE        = 55.0     # Don't size into weak signals
 
@@ -78,6 +83,17 @@ class PositionSizingEngine:
         RiskTolerance.CONSERVATIVE: 0.01,
         RiskTolerance.MODERATE:     0.02,
         RiskTolerance.AGGRESSIVE:   0.03,
+    }
+
+    # Same 15/20/25% ladder as portfolio/doctor.py's max_position_pct and
+    # dashboard.py::_TIER1_MAX_POSITION_PCT_BY_PROFILE (the lightweight-fallback path) —
+    # keeps the position-size CAP consistent across risk profiles even though the sizing
+    # ALGORITHM underneath (Kelly here vs. equal-weight rebalancing in doctor.py) stays
+    # deliberately different; see docs/signals/RETAIL_DATA_SURFACING.md.
+    _MAX_POSITION_PCT_BY_TOLERANCE = {
+        RiskTolerance.CONSERVATIVE: 0.15,
+        RiskTolerance.MODERATE:     0.20,
+        RiskTolerance.AGGRESSIVE:   0.25,
     }
 
     ATR_STOP_MULTIPLIER    = 2.0       # Stop at 2× ATR below entry
@@ -88,10 +104,16 @@ class PositionSizingEngine:
         self,
         portfolio_value:  float,
         risk_tolerance:   RiskTolerance = RiskTolerance.MODERATE,
+        max_position_pct: float | None = None,
     ):
         self.portfolio_value = portfolio_value
         self.risk_tolerance  = risk_tolerance
         self.risk_per_trade  = self.RISK_PER_TRADE[risk_tolerance]
+        self.MAX_SINGLE_POSITION_PCT = (
+            max_position_pct
+            if max_position_pct is not None
+            else self._MAX_POSITION_PCT_BY_TOLERANCE.get(risk_tolerance, self.MAX_SINGLE_POSITION_PCT)
+        )
 
     # ── Core sizing method ────────────────────────────────────────────────
 

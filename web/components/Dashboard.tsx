@@ -741,6 +741,25 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const watchlistTickerList = useMemo(() => data.watchlist ?? [], [data.watchlist]);
 
+  // Pre-trade portfolio-impact context for the ticker detail modal — top holdings by
+  // value (for a correlation-to-holdings check) + sector allocation/total value (for a
+  // client-side "what would adding here do to my {sector} weight" estimate). All already
+  // computed by the selected portfolio's report; no extra fetch needed for this part.
+  const portfolioImpactContext = useMemo(() => {
+    const perHolding = selectedReport?.per_holding ?? [];
+    const totalValue = selectedReport?.total_value ?? 0;
+    if (!perHolding.length || totalValue <= 0) return null;
+    const topHoldings = perHolding
+      .filter((h) => h.value != null && h.ticker)
+      .map((h) => ({ ticker: h.ticker, value: h.value as number }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+    const heldTickers = new Set(
+      perHolding.map((h) => h.ticker?.toUpperCase()).filter(Boolean) as string[],
+    );
+    return { totalValue, sectorAllocation: selectedReport?.sector_allocation ?? [], topHoldings, heldTickers };
+  }, [selectedReport]);
+
   // All tickers visible in the current dashboard session — deduped for live-price polling
   const livePriceTickers = useMemo(() => {
     const seen: Record<string, true> = {};
@@ -1918,6 +1937,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           ticker={selectedTicker}
           initialTab={modalInitialTab}
           onClose={() => setSelectedTicker(null)}
+          portfolioImpactContext={portfolioImpactContext}
         />
       )}
 

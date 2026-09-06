@@ -15,6 +15,21 @@ from signals.beta_utils import compute_beta
 logger = logging.getLogger(__name__)
 
 
+def _period_for_lookback_days(lookback_days: int) -> str:
+    """Nearest yfinance period string for a trading-day lookback window."""
+    if lookback_days <= 35:
+        return "1mo"
+    if lookback_days <= 95:
+        return "3mo"
+    if lookback_days <= 200:
+        return "6mo"
+    if lookback_days <= 380:
+        return "1y"
+    if lookback_days <= 800:
+        return "3y"
+    return "5y"
+
+
 def compute_correlation_matrix(
     tickers: list[str],
     lookback_days: int = 1260,
@@ -22,7 +37,12 @@ def compute_correlation_matrix(
 ) -> tuple[pd.DataFrame | None, str | None]:
     """
     Pairwise correlation of daily returns. fetch_close(ticker, period) -> Series or None.
-    Uses 5-year history by default for more diverse regime coverage.
+    `lookback_days` picks the fetch window (default 1260 ~= 5y, for stable estimates
+    spanning the 2020 crash + 2022 bear) — the single shared correlation implementation for
+    the whole app (portfolio/doctor.py's holdings-concentration check and any future
+    candidate-ticker lookup both call this instead of each maintaining their own pairwise
+    calc), so callers with a shorter/longer legitimate window pass their own lookback_days
+    rather than every caller being forced onto one fixed window.
     """
     if fetch_close is None:
         from signals.fetcher import fetch_ohlcv_safe
@@ -31,9 +51,9 @@ def compute_correlation_matrix(
             s = fetch_ohlcv_safe(t, period)
             return s
 
-    # 5y: ~1,260 data points — stable correlation estimates spanning 2020 crash + 2022 bear.
-    # run_signals fetches "5y" for every ticker, so this hits the in-process cache at ~0 ms.
-    period = "5y"
+    # run_signals fetches "5y" for every ticker, so the default hits the in-process cache
+    # at ~0 ms; shorter windows (e.g. a 1y portfolio-health check) cost a real fetch.
+    period = _period_for_lookback_days(lookback_days)
 
     prices: dict[str, pd.Series] = {}
     for t in tickers:
@@ -53,6 +73,38 @@ def compute_correlation_matrix(
     if len(df) < 30:
         return None, "Insufficient overlapping history"
     return df.corr(), None
+
+
+def correlation_to_holdings(
+    ticker: str,
+    holding_tickers: list[str],
+    lookback_days: int = 252,
+    fetch_close=None,
+) -> dict[str, Any]:
+    """
+    Pre-trade check: how correlated is a candidate ticker to a shortlist of current
+    holdings (by value)? Thin shaping layer over compute_correlation_matrix() — same
+    shared implementation portfolio/doctor.py's holdings-concentration check uses, so this
+    number and that one never disagree for the same pair. Caller is expected to have
+    already capped holding_tickers (e.g. top 5 by value) to keep this a bounded fetch.
+    """
+    sym = (ticker or "").upper().strip()
+    holdings = [t.upper().strip() for t in holding_tickers if t and t.strip()]
+    if not sym or not holdings:
+        return {"available": False}
+
+    corr, err = compute_correlation_matrix([sym] + holdings, lookback_days=lookback_days, fetch_close=fetch_close)
+    if corr is None or sym not in corr.columns:
+        return {"available": False, "reason": err}
+
+    pairs = [
+        {"ticker": h, "correlation": round(float(corr.loc[sym, h]), 2)}
+        for h in holdings
+        if h in corr.columns and h != sym
+    ]
+    pairs.sort(key=lambda p: -abs(p["correlation"]))
+    avg_corr = round(sum(p["correlation"] for p in pairs) / len(pairs), 2) if pairs else None
+    return {"available": True, "ticker": sym, "correlations": pairs, "avg_correlation": avg_corr}
 
 
 def correlation_adjusted_sizing(
