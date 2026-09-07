@@ -552,7 +552,13 @@ def _enrich_mos_ceiling_context(
         elif assess_verdict == "PARTIAL":
             flags["position_mode"] = "partial_ok"
 
-    if within and sp.get("state") == "below_all":
+    if within and sp.get("state") in ("below_all", "at_or_below_ceiling"):
+        # "at_or_below_ceiling" (spot <= T1's high, classified before the floor/ceiling-tier
+        # scan below ever runs) covers the same "off the bottom of the ladder" ground
+        # "below_all" used to own on its own — T1 is always the lowest-anchored tier, so
+        # reaching this state already implies spot is below every tier's low in practice.
+        # Enrich both alike so a deep crash still gets "full MOS met at spot" framing
+        # instead of only the generic T1-window copy.
         ceiling_tier = next(
             (t for t in sorted(all_tiers, key=lambda x: x.low) if price < t.low),
             all_tiers[0] if all_tiers else None,
@@ -1846,6 +1852,20 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             low=display_tier.low,
             high=display_tier.high,
         )
+    elif spot_position.get("below_all_within_mos") and assess_verdict in ("BUY", "PARTIAL"):
+        # Takes priority over the generic "at_or_below_ceiling" copy below: a spot that's
+        # off the bottom of the whole ladder but still within the full-size MOS ceiling
+        # should say so explicitly, not just "T1 window gaps still count".
+        trigger = (
+            "Full MOS at spot (${:.2f} ≤ ${:.2f} full-size ceiling) — {} on valuation; "
+            "scale tranches toward {} (≤ ${:.2f}) when timing/regime confirm"
+        ).format(
+            p,
+            min_price_to_buy,
+            "full size justified" if assess_verdict == "BUY" else "partial size OK",
+            display_tier.id,
+            display_tier.high,
+        )
     elif spot_position.get("state") == "at_or_below_ceiling":
         trigger = (
             "Price ≤ ${ceiling:.2f} (T1 ceiling) — owner trigger is threshold-based; "
@@ -1862,17 +1882,6 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                 gap_hi=spot_position.get("ceiling_band_low", display_tier.low),
                 label=floor_t.label.split("—")[0].strip() if "—" in floor_t.label else floor_t.id,
                 high=floor_t.high,
-            )
-        elif spot_position.get("below_all_within_mos") and assess_verdict in ("BUY", "PARTIAL"):
-            trigger = (
-                "Full MOS at spot (${:.2f} ≤ ${:.2f} full-size ceiling) — {} on valuation; "
-                "scale tranches toward {} (≤ ${:.2f}) when timing/regime confirm"
-            ).format(
-                p,
-                min_price_to_buy,
-                "full size justified" if assess_verdict == "BUY" else "partial size OK",
-                display_tier.id,
-                display_tier.high,
             )
         else:
             trigger = (

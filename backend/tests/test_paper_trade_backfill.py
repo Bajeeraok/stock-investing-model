@@ -59,7 +59,11 @@ def test_fill_outcomes_completes_old_open_trade(tmp_path):
             dates.append(d.strftime("%Y-%m-%d"))
         d += pd.Timedelta(days=1)
 
-    snaps = {ds: _make_snap(ds, "SPY", 500.0) for ds in dates}
+    # Price must vary across snapshots — _pair_has_new_price_bar() treats an identical
+    # start/end close (with no ohlcv_last_date set) as a stale holiday-duplicate snapshot
+    # and skips the row, same reason test_backfill_from_eod_appends_missing_rows uses
+    # `500.0 + i` instead of a flat price.
+    snaps = {ds: _make_snap(ds, "SPY", 500.0 + i) for i, ds in enumerate(dates)}
 
     def fake_load(date_str: str):
         return snaps.get(date_str)

@@ -108,7 +108,10 @@ def test_trading_notes_surface_known_event_catalyst():
         ],
     )
     cats = derive_catalysts(pkt)
-    assert cats[0].mechanism.startswith("Known event:")
+    # EARNINGS_CALENDAR events get an "Earnings:" prefix (more specific than the generic
+    # "Known event:" label) when the raw mechanism text doesn't already say "earnings" — see
+    # narrative_waterfall.py::news_catalysts_from_packet.
+    assert cats[0].mechanism.startswith("Earnings:")
     assert not any("HMM" in c.mechanism or "RSI" in c.mechanism for c in cats)
 
     notes = render_plain_trading_notes(pkt, derive_action_contract(pkt), cats)

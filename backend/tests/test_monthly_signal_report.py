@@ -6,7 +6,13 @@ from signals.forward_tracking import signal_bucket_from_row
 
 
 def test_signal_bucket_from_row():
-    assert signal_bucket_from_row({"composite_buy": 80}, buy_min=70, sell_max=30) == "HOLD/ADD"
+    # HOLD/ADD requires entry_mode="full_go" — a high composite score alone is not an add
+    # signal (avoids inflating HOLD/ADD forward stats with names that never actually cleared
+    # gates). See signals/forward_tracking.py::signal_bucket_from_row.
+    assert signal_bucket_from_row(
+        {"composite_buy": 80, "entry_mode": "full_go"}, buy_min=70, sell_max=30
+    ) == "HOLD/ADD"
+    assert signal_bucket_from_row({"composite_buy": 80}, buy_min=70, sell_max=30) == "HOLD"
     assert signal_bucket_from_row({"composite_buy": 25}, buy_min=70, sell_max=30) == "CONSIDER TRIM"
     assert signal_bucket_from_row({"composite_buy": 50}, buy_min=70, sell_max=30) == "HOLD"
 

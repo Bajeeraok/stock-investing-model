@@ -47,7 +47,12 @@ def test_below_all_tiers_but_within_mos_ceiling():
     assert ca["within_full_mos_ceiling"] is True
     assert ca["full_size_eligible_at_spot"] is True
     assert sp.get("below_all_within_mos") is True
-    assert sp.get("state") == "below_all"
+    # T1's ceiling check runs before the floor/ceiling-tier scan that used to produce a
+    # dedicated "below_all" state, so a crash below every tier is classified as
+    # "at_or_below_ceiling" (T1 is always the lowest-anchored tier) — the richer "full MOS
+    # met at spot" framing is layered on top via below_all_within_mos regardless of which
+    # of the two states got there. See horizon_entry_calculator.py::_enrich_mos_ceiling_context.
+    assert sp.get("state") == "at_or_below_ceiling"
     assert "full-size ceiling" in (sp.get("detail") or "").lower()
     assert "full-size ceiling" in sig.trigger_buy.lower() or "full mos" in sig.trigger_buy.lower()
 

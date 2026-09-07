@@ -82,14 +82,17 @@ def test_rc2_preserves_band_width_when_flooring_at_fv():
         scenario_target=100.0,
         buy_tiers=[],
         sell_tiers=[
-            SellTier("m", "Partial exit", PriceZone(90.0, 110.0), "x"),
+            # RC-2 only fires when zone.low is *deeply* below fair value (< 65% FV) — a
+            # modestly-below-FV trim zone (e.g. 90% of FV) is left alone. 50.0 is well under
+            # the fv*0.65=65.0 trigger, so this exercises the floor+width-preserve fix.
+            SellTier("m", "Partial exit", PriceZone(50.0, 110.0), "x"),
         ],
     )
     RoadmapFixer()._fix_fv_sell_zones(r)
     t = r.sell_tiers[0]
     assert t.zone is not None
     assert t.zone.low == 100.0
-    assert abs((t.zone.high - t.zone.low) - 20.0) < 0.02
+    assert abs((t.zone.high - t.zone.low) - 60.0) < 0.02
 
 
 def test_apply_roadmap_consistency_sets_roadmap_auto_adjusted():
