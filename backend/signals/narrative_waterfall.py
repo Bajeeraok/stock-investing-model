@@ -205,6 +205,18 @@ class SignalPacket:
             return False
         return self.spot > self.entry_band.hi + 1e-6
 
+    def zone_position(self) -> str | None:
+        """above / inside / below the entry band — the exact fact render_retail_scan()
+        narrates ("Zone: $X is INSIDE/ABOVE/BELOW buy zone") and the LLM is told to defer
+        to. None when there's no band to compare against."""
+        if self.entry_band is None:
+            return None
+        if self.spot > self.entry_band.hi + 1e-6:
+            return "above"
+        if self.spot < self.entry_band.lo - 1e-6:
+            return "below"
+        return "inside"
+
     # ---- integrity ------------------------------------------------
     def validate(self) -> list[str]:
         """Render-time consistency checks. Empty list == safe to publish."""
@@ -338,6 +350,12 @@ class SignalPacket:
             "required_mos_pct": self.required_mos_pct,
             # Coarse spot so Layer 3 cannot keep a stale quote while the header ticks.
             "spot_bucket": round(self.spot, 1) if self.spot < 250 else round(self.spot),
+            # Exact zone-position fact, independent of spot_bucket's dollar-level rounding —
+            # a boundary at e.g. $495.63 can sit inside one spot_bucket on both sides of it
+            # (496.10 "above" and 495.63 "inside" both round to 496), letting a cached
+            # narrative claim "above the buy zone" survive a real crossing into it. This
+            # field changes exactly when that claim would stop being true.
+            "zone_position": self.zone_position(),
             "news_events": [
                 (e.get("event_type") or e.get("name"), e.get("direction"))
                 for e in (self.news_events or [])[:4]
@@ -583,10 +601,10 @@ def render_retail_scan(p: SignalPacket, c: ActionContract, cats: list["Catalyst"
     if p.rsi is not None and float(p.rsi) >= 50:
         rsi_clause = " and RSI drops below 50"
     if p.entry_band:
-        in_band = p.entry_band.contains(float(p.spot))
-        if in_band:
+        pos = p.zone_position()
+        if pos == "inside":
             zone = f"📍 Zone: ${float(p.spot):,.2f} is INSIDE buy zone {p.entry_band.fmt()}"
-        elif float(p.spot) > p.entry_band.hi:
+        elif pos == "above":
             zone = (
                 f"📍 Zone: ${float(p.spot):,.2f} is ABOVE buy zone {p.entry_band.fmt()} "
                 "— wait for pullback"
