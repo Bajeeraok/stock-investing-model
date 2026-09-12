@@ -5,6 +5,7 @@ from signals.retail_action_payload import (
     build_unlock_summary,
     build_zone_context,
     derive_zone_aware_action_title,
+    enrich_investor_summary_retail_action,
 )
 
 
@@ -70,6 +71,36 @@ def test_unlock_summary_already_in_st_band():
     assert "206" in line
     assert "HMM bull" in line
     assert "price enters" not in line.lower()
+
+
+def test_action_title_by_mode_does_not_leak_owner_tier_to_scout_or_swing():
+    """Regression: SPCX showed 'T2 IN RANGE · WAIT FOR GATES' in Scout AND Swing mode —
+    an owner-only long-term-tier label. The flat action_title always prefers long_spot
+    whenever long-term tiers exist (basically every ticker), regardless of persona.
+    action_title_by_mode must give scout/swing only their own horizon's zone."""
+    inv = {
+        "fair_value": 200.0,
+        "regime_bull_pct": 40.0,
+        "pattern_score": 51.0,
+        "rsi": 59.0,
+        "overall_verdict": "WATCH",
+        "horizons": {
+            "short": {"ml_prob": 40.0, "entry_zone": {"low": 133.72, "high": 140.47}},
+            "medium": {"entry_zone": {"low": 133.72, "high": 140.47}},
+            "long": {
+                "entry_tiers": {
+                    "spot_position": {"state": "in_tier", "active_tier_id": "T2"},
+                }
+            },
+        },
+    }
+    out = enrich_investor_summary_retail_action(inv, 151.21, ticker="SPCX")
+    ra = out["retail_action"]
+
+    by_mode = ra["action_title_by_mode"]
+    assert "T2" in by_mode["owner"]["title"]
+    assert "T2" not in by_mode["scout"]["title"]
+    assert "T2" not in by_mode["swing"]["title"]
 
 
 def test_build_zone_context_between_tiers():

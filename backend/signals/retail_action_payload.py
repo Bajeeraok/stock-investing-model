@@ -1265,6 +1265,7 @@ def enrich_investor_summary_retail_action(
     )
 
     short_spot = (short.get("entry_zone") or {}).get("spot_position") or {}
+    medium_spot = (horizons.get("medium") or {}).get("entry_zone", {}).get("spot_position") or {}
     zone_ctx = build_zone_context(investor_out, current_price)
     ra = investor_out["retail_action"]
     if zone_ctx:
@@ -1278,6 +1279,33 @@ def enrich_investor_summary_retail_action(
         )
         ra["action_title"] = title
         ra["action_light"] = light
+
+        # Mode-aware variants: the flat action_title above always prefers long_spot
+        # (owner's T1/T2/T3 tier language) whenever long-term tiers exist — which is
+        # basically every ticker — so a Scout/Swing user saw "T2 IN RANGE" language
+        # that only means anything in Owner mode. Each persona gets only its own
+        # horizon's zone here instead of the long-biased fallback chain. Mirrors the
+        # signal_reason_by_persona pattern (ticker_detail.py) for the same class of
+        # "one field, three personas" problem.
+        scout_title, scout_light = derive_zone_aware_action_title(
+            investor_out.get("overall_verdict"),
+            ra.get("gate_cleared", False),
+            long_spot=None,
+            short_spot=short_spot,
+            in_bridge_band=bool(zone_ctx.get("in_bridge_band")),
+        )
+        swing_title, swing_light = derive_zone_aware_action_title(
+            investor_out.get("overall_verdict"),
+            ra.get("gate_cleared", False),
+            long_spot=None,
+            short_spot=medium_spot,
+            in_bridge_band=bool(zone_ctx.get("in_bridge_band")),
+        )
+        ra["action_title_by_mode"] = {
+            "scout": {"title": scout_title, "light": scout_light},
+            "swing": {"title": swing_title, "light": swing_light},
+            "owner": {"title": title, "light": light},
+        }
 
     assessment_pct = float(ra.get("assessment_pct") or 0)
     entry = derive_entry_mode(
