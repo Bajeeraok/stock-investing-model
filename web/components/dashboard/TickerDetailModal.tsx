@@ -40,7 +40,6 @@ import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
 import { WatchZoneCallout } from "./zoneContextUX";
 import { LevelsPageHeader } from "./levels/LevelsPageHeader";
 import { AnchorBentoGrid, anchorsFromTechnicalLevels } from "./levels/AnchorBentoGrid";
-import { TierThermometerPanel } from "./levels/TierThermometerPanel";
 import { DensityProvider, DensityToggle, Comfort } from "./levels/DensityToggle";
 import { IntradayChart } from "./IntradayChart";
 import {
@@ -1258,17 +1257,6 @@ export function TickerDetailModal({
                   );
                 })()}
 
-                {/* ── Price Thermometer + Tier Ladder (collapsed by default) ─── */}
-                {detail.investor_summary?.horizons?.long?.entry_tiers?.tiers?.length && detail.current_price != null && (
-                  <TierThermometerPanel
-                    entryTiers={detail.investor_summary.horizons.long.entry_tiers}
-                    currentPrice={detail.current_price}
-                    structuralStop={detail.investor_summary.horizons.long.entry_tiers?.structural_invalidation?.price ?? null}
-                    ma200={priceTargets?.technical_levels?.ma200 ?? null}
-                    defaultThermometerOpen={false}
-                  />
-                )}
-
                 {/* ── Roadmap summaries (fallback only — hidden when horizon playbooks
                     are present because playbooks show the same short/medium/long data
                     in a richer format from the same horizons.* source) ─── */}
@@ -1279,7 +1267,8 @@ export function TickerDetailModal({
                   />
                 )}
 
-                {/* ── Horizon playbooks ─── */}
+                {/* ── Horizon playbooks (Thesis & Tiers tab embeds the Price Thermometer
+                    + tier ladder — single canonical place these render, see HorizonPlaybookCard) ─── */}
                 {horizonPlaybooksBundle && (
                   <HorizonPlaybooksPanel
                     ticker={detail.ticker}
@@ -1296,12 +1285,21 @@ export function TickerDetailModal({
                         }
                       }
                     }}
+                    decisionMode={decisionMode}
+                    entryTiers={detail.investor_summary?.horizons?.long?.entry_tiers ?? null}
+                    currentPrice={detail.current_price}
+                    structuralStop={detail.investor_summary?.horizons?.long?.entry_tiers?.structural_invalidation?.price ?? null}
+                    ma200={priceTargets?.technical_levels?.ma200 ?? null}
                   />
                 )}
 
                 {/* ── Trade roadmap card ─── */}
                 {detail.investor_summary?.trade_roadmap ? (
-                  <TradeRoadmapCard data={detail.investor_summary.trade_roadmap} ticker={detail.ticker} />
+                  <TradeRoadmapCard
+                    data={detail.investor_summary.trade_roadmap}
+                    ticker={detail.ticker}
+                    decisionMode={decisionMode}
+                  />
                 ) : !horizonPlaybooksBundle && !detail.investor_summary?.horizons?.long?.entry_tiers ? (
                   <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center text-slate-400">
                     <p className="text-sm">Levels not available for this ticker.</p>

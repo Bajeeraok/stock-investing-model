@@ -11,10 +11,11 @@ import {
   AlertTriangle,
   Ban,
   CheckCircle2,
-  Layers,
   BookOpen,
 } from "lucide-react";
 import { clsx } from "clsx";
+import { TierThermometerPanel } from "./levels/TierThermometerPanel";
+import type { HorizonSignalPayload } from "./InvestorDecisionSummary";
 
 /** Shared play sheet shape — short/medium swing-style + long thesis variant */
 export interface HorizonPlaybookPayload {
@@ -183,12 +184,21 @@ export function HorizonPlaybookCard({
   data,
   compact,
   omitNarrativeLines = [],
+  entryTiers,
+  currentPrice,
+  structuralStop,
+  ma200,
 }: {
   data: HorizonPlaybookPayload;
   /** Secondary playbooks — collapsed header by default */
   compact?: boolean;
   /** Shared context lines rendered once in the panel header */
   omitNarrativeLines?: string[];
+  /** Long-term tier ladder (thesis_tiers kind only) — raw source object, see LongTermTierLadder. */
+  entryTiers?: NonNullable<HorizonSignalPayload["entry_tiers"]> | null;
+  currentPrice?: number | null;
+  structuralStop?: number | null;
+  ma200?: number | null;
 }) {
   if (!data?.active) return null;
 
@@ -346,39 +356,19 @@ export function HorizonPlaybookCard({
         </div>
       )}
 
-      <div className="mx-4 sm:mx-6 mb-3 rounded-xl border border-slate-600/70 bg-slate-950/60 overflow-hidden">
-        {isThesis && data.tiers && data.tiers.length > 0 && (
-          <SectionToggle title="Tier ladder" icon={<Layers className="h-3.5 w-3.5" />} defaultOpen={!compact}>
-            <ul className="space-y-2">
-              {data.tiers.map((tier) => (
-                <li
-                  key={tier.id ?? tier.label}
-                  className={clsx(
-                    "rounded-lg border px-2.5 py-2 text-sm",
-                    tier.active || tier.target
-                      ? "border-emerald-500/40 bg-emerald-500/10"
-                      : "border-slate-700/60 bg-slate-900/50"
-                  )}
-                >
-                  <p className="font-medium text-slate-200">{tier.label}</p>
-                  <p className="font-mono text-emerald-300/90 tabular-nums">
-                    ${tier.low.toFixed(2)}–${tier.high.toFixed(2)}
-                  </p>
-                  {(tier.active || tier.target) && (
-                    <p className="text-[10px] uppercase text-emerald-400/90 mt-0.5">
-                      {tier.active
-                        ? tier.id === "T2" || tier.id === "tier2"
-                          ? "Partial position only"
-                          : "Active band"
-                        : "Target tier"}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </SectionToggle>
-        )}
+      {isThesis && entryTiers?.tiers?.length && currentPrice != null && (
+        <div className="mx-4 sm:mx-6 mb-3">
+          <TierThermometerPanel
+            entryTiers={entryTiers}
+            currentPrice={currentPrice}
+            structuralStop={structuralStop ?? null}
+            ma200={ma200 ?? null}
+            defaultThermometerOpen={false}
+          />
+        </div>
+      )}
 
+      <div className="mx-4 sm:mx-6 mb-3 rounded-xl border border-slate-600/70 bg-slate-950/60 overflow-hidden">
         {t && (
           <SectionToggle
             title={isGo && !isThesis ? (data.kind === "position_build" ? "Build plan" : "Trade plan") : "Wait plan"}

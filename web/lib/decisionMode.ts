@@ -60,6 +60,12 @@ export function primaryHorizonFromMode(mode: DecisionMode): "short" | "medium" |
   return "short";
 }
 
+export function traderTypeFromMode(mode: DecisionMode): "day_trader" | "swing_trader" | "investor" {
+  if (mode === "owner") return "investor";
+  if (mode === "swing") return "swing_trader";
+  return "day_trader";
+}
+
 export function intentFromMode(mode: DecisionMode): PositionIntent | null {
   if (mode === "scout") return "trade";
   if (mode === "owner") return "invest";

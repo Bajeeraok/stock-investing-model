@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { TD } from "./tickerDetailTypography";
+import { traderTypeFromMode, type DecisionMode } from "@/lib/decisionMode";
 
 export interface BuyRoadmapStage {
   timeline_key: string;
@@ -406,9 +407,20 @@ function SellRoadmapMobileCard({
   );
 }
 
-export function TradeRoadmapCard({ data, ticker }: { data: TradeRoadmapData; ticker?: string }) {
+export function TradeRoadmapCard({
+  data,
+  ticker,
+  decisionMode,
+}: {
+  data: TradeRoadmapData;
+  ticker?: string;
+  /** Defaults the "View" selector to match the persona already chosen in the modal. */
+  decisionMode?: DecisionMode;
+}) {
   const [tab, setTab] = useState<"buy" | "sell" | "full">("buy");
-  const [traderType, setTraderType] = useState<"day_trader" | "swing_trader" | "investor">("swing_trader");
+  const [traderType, setTraderType] = useState<"day_trader" | "swing_trader" | "investor">(
+    () => (decisionMode ? traderTypeFromMode(decisionMode) : "swing_trader"),
+  );
   const [timelineIndex, setTimelineIndex] = useState(0);
   const [expanded, setExpanded] = useState(true);
   /** News block collapsed by default — expand to verify headlines / NLP inputs */

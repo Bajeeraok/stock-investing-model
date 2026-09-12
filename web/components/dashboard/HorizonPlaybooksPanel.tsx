@@ -13,13 +13,15 @@ import {
   primaryHorizonFromIntent,
   type PositionIntent,
 } from "@/lib/positionIntent";
+import { horizonLabel, primaryHorizonFromMode, type DecisionMode } from "@/lib/decisionMode";
+import type { HorizonSignalPayload } from "./InvestorDecisionSummary";
 
 type HorizonKey = "short" | "medium" | "long";
 
-const TAB_META: Record<HorizonKey, { label: string }> = {
-  short: { label: "Swing" },
-  medium: { label: "Position build" },
-  long: { label: "Thesis & tiers" },
+const TAB_META: Record<HorizonKey, { label: string; anchor: string }> = {
+  short: { label: "Swing", anchor: "ATR/VWAP band, weeks" },
+  medium: { label: "Position build", anchor: "MA50 + earnings band, ~1–3 mo" },
+  long: { label: "Thesis & tiers", anchor: "MA200/fair-value tiers, 6–18 mo" },
 };
 
 function pickPlaybook(bundle: HorizonPlaybooksBundle, horizon: HorizonKey): HorizonPlaybookPayload | null {
@@ -53,11 +55,23 @@ export function HorizonPlaybooksPanel({
   playbooks,
   intent: intentProp,
   onIntentChange,
+  decisionMode,
+  entryTiers,
+  currentPrice,
+  structuralStop,
+  ma200,
 }: {
   ticker: string;
   playbooks: HorizonPlaybooksBundle | null | undefined;
   intent?: PositionIntent | null;
   onIntentChange?: (intent: PositionIntent | null) => void;
+  /** Falls back to this persona's default horizon when no trade/invest intent is set. */
+  decisionMode?: DecisionMode;
+  /** Long-term tier ladder — rendered inside the "Thesis & tiers" tab (single source, see LongTermTierLadder). */
+  entryTiers?: NonNullable<HorizonSignalPayload["entry_tiers"]> | null;
+  currentPrice?: number | null;
+  structuralStop?: number | null;
+  ma200?: number | null;
 }) {
   const [intentLocal, setIntentLocal] = useState<PositionIntent | null>(null);
   const [activeHorizon, setActiveHorizon] = useState<HorizonKey>("short");
@@ -76,7 +90,10 @@ export function HorizonPlaybooksPanel({
     onIntentChange?.(next);
   };
 
-  const intentHorizon = useMemo(() => primaryHorizonFromIntent(intent), [intent]);
+  const intentHorizon = useMemo(
+    () => (intent ? primaryHorizonFromIntent(intent) : primaryHorizonFromMode(decisionMode ?? "scout")),
+    [intent, decisionMode],
+  );
 
   useEffect(() => {
     setActiveHorizon(intentHorizon);
@@ -132,6 +149,21 @@ export function HorizonPlaybooksPanel({
         </div>
       )}
 
+      {primary && (
+        <p
+          className={clsx(
+            "mx-4 sm:mx-6 mt-2 text-[10px] font-medium uppercase tracking-wide",
+            activeHorizon === "short"
+              ? "text-emerald-400/80"
+              : activeHorizon === "medium"
+                ? "text-teal-400/80"
+                : "text-violet-400/80"
+          )}
+        >
+          Viewing: {horizonLabel(activeHorizon)} · {TAB_META[activeHorizon].anchor}
+        </p>
+      )}
+
       {sharedLines.length > 0 && (
         <ul className="mx-4 sm:mx-6 mt-3 mb-1 space-y-1 text-sm text-slate-400 border-l-2 border-slate-600 pl-3">
           {sharedLines.map((line) => (
@@ -141,7 +173,14 @@ export function HorizonPlaybooksPanel({
       )}
 
       {primary && (
-        <HorizonPlaybookCard data={primary} omitNarrativeLines={sharedLines} />
+        <HorizonPlaybookCard
+          data={primary}
+          omitNarrativeLines={sharedLines}
+          entryTiers={entryTiers}
+          currentPrice={currentPrice}
+          structuralStop={structuralStop}
+          ma200={ma200}
+        />
       )}
     </div>
   );
