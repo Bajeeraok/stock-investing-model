@@ -291,6 +291,16 @@ def near_bottom_score(
             score = round(float(np.clip(trend_score, 0, 100)), 1)
             details["total_score"] = score
 
+    # Neither setup was well-formed: near_bottom's own signals require real
+    # oversold/climax evidence to clear 50, but the comparison above had no
+    # floor on the *winning* side, so two weak reads (e.g. 8 vs 23) always
+    # declared a confident "trend continuation" — the winner of a coin flip
+    # between two inconclusive scores, on every non-extreme ticker. Only call
+    # a setup when the final score clears a real bar; otherwise say so.
+    MIN_SETUP_SCORE = 30
+    if score < MIN_SETUP_SCORE:
+        details["mode"] = "neutral"
+
     return score, signals, details
 
 

@@ -132,6 +132,7 @@ const DRIVER_CLASS: Record<string, string> = {
 const NEAR_BOTTOM_MODE_LABEL: Record<string, string> = {
   bottom_reversal: "Bottom reversal",
   trend_continuation: "Trend continuation",
+  neutral: "No clear setup",
 };
 
 interface ReferenceDetailGridProps {
