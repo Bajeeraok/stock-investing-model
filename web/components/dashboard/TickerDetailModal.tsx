@@ -614,6 +614,19 @@ export function TickerDetailModal({
 
   const headerActionStatus = useMemo((): RetailActionStatus => {
     const ra = detail?.investor_summary?.retail_action;
+    // action_title_by_mode gives each persona its own horizon's zone (scout=short,
+    // swing=medium, owner=long) — the flat action_title/action_light below always
+    // prefers the long-term tier zone when one exists, which showed owner-only
+    // "T1/T2/T3 IN RANGE" language in Scout/Swing mode. Prefer the mode-keyed
+    // variant; fall back to the flat field for older cached responses.
+    const byMode = ra?.action_title_by_mode?.[decisionMode];
+    if (byMode?.title && byMode?.light) {
+      return {
+        light: byMode.light as RetailActionLight,
+        title: byMode.title,
+        subtitle: ra?.dynamic_subtitle ?? "",
+      };
+    }
     if (ra?.action_title && ra?.action_light) {
       return {
         light: ra.action_light as RetailActionLight,
@@ -630,7 +643,7 @@ export function TickerDetailModal({
       return { light: "red", title: "DO NOT CHASE", subtitle: "Gates are blocking new entries — see checklist below." };
     }
     return { light: "yellow", title: "WATCH OR HOLD", subtitle: "Mixed setup — wait for locked gates to clear." };
-  }, [retailActionStatus, detail?.investor_summary?.retail_action, detail?.investor_summary?.overall_verdict]);
+  }, [retailActionStatus, detail?.investor_summary?.retail_action, detail?.investor_summary?.overall_verdict, decisionMode]);
 
   // Live price from IntradayChart (1-min cadence) overrides the detail snapshot price.
   // Falls back to detail.current_price when the chart hasn't emitted yet.

@@ -1210,6 +1210,7 @@ def run_price_targets(
 
     # ── Scenario integrity: exclusive probs, base modal, fact-check triggers ─
     scenario_ev_pct = None
+    scenario_probs_exclusive = False
     try:
         from signals.scenario_integrity import finalize_scenarios, portfolio_ev_pct
 
@@ -1219,8 +1220,14 @@ def run_price_targets(
             short_interest=si_data,
         )
         scenario_ev_pct = portfolio_ev_pct(scenarios)
+        scenario_probs_exclusive = True
     except Exception as _si_exc:
         logger.debug("Scenario integrity failed for %s: %s", ticker, _si_exc)
+        # scenarios/scenario_ev_pct stay at their pre-integrity (non-exclusive) values —
+        # scenario_probs_exclusive must stay False here, not hardcoded True, or the UI
+        # (PriceTargetsPanel.tsx) trusts the flag and computes Σ(p×r) on raw independent
+        # probabilities that can sum well past 100% — the exact "inflated MU to +44%"
+        # class of bug that flag exists to prevent.
 
     return {
         "ticker":          ticker,
@@ -1273,5 +1280,5 @@ def run_price_targets(
         "scenarios": scenarios,
         # Exclusive Σ(p×r) after integrity — UI must not re-weight by Σp.
         "scenario_ev_pct": scenario_ev_pct,
-        "scenario_probs_exclusive": True,
+        "scenario_probs_exclusive": scenario_probs_exclusive,
     }

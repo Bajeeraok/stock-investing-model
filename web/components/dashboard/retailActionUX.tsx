@@ -61,6 +61,10 @@ export type RetailActionPayload = {
   assessment_pct?: number;
   action_title?: string;
   action_light?: "green" | "yellow" | "red";
+  /** Per-persona variant (scout=short zone, swing=medium zone, owner=long tier zone) —
+   * prefer this over action_title/action_light, which always defaults to the long-term
+   * tier language whenever one exists, regardless of the active persona. */
+  action_title_by_mode?: Record<"scout" | "swing" | "owner", { title: string; light: "green" | "yellow" | "red" }>;
   dynamic_subtitle?: string;
   coherent_story?: string;
   next_trigger?: {

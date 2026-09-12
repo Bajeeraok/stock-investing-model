@@ -974,6 +974,14 @@ def _build_news_sentiment_layer_for_ui(
         )
 
     cards = _catalyst_cards_for_layer(headlines_out, ticker, earnings=earnings)
+    try:
+        from signals.manual_catalysts import manual_cards_for_ticker
+
+        manual_cards = manual_cards_for_ticker(ticker)
+        if manual_cards:
+            cards = (manual_cards + cards)[:4]
+    except Exception:
+        pass
     from signals.news_sentiment_reconcile import reconcile_news_display
 
     recon = reconcile_news_display(
