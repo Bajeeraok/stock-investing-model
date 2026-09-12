@@ -2051,6 +2051,7 @@ class PaperTradeLogger:
             "total_rows": len(rows),
             "oldest_open_date": oldest_open,
             "eod_snapshots": eod_n,
+            "current_model_version": MODEL_VERSION,
         }
 
         # Need enough rows for basic stats; cap at 5 for default (60) runs, allow 3 when caller passes min_completed=3 (e.g. paper vs forward drift).
@@ -2183,6 +2184,23 @@ class PaperTradeLogger:
         if stats.get("by_gate_mode"):
             out["by_gate_mode"] = stats["by_gate_mode"]
 
+        # Per model-version breakdown so Analysis can isolate current logic vs legacy.
+        by_mv: dict[str, dict[str, Any]] = {}
+        for r in completed:
+            bucket = str(r.get("model_version") or "").strip() or "legacy"
+            by_mv.setdefault(bucket, []).append(r)
+        out["summary_by_model_version"] = {
+            ver: {
+                "completed_n": s["completed_n"],
+                "win_rate_pct": s["win_rate_pct"],
+                "avg_return_pct": s["avg_return_pct"],
+                "avg_excess_vs_spy_pct": s["avg_excess_vs_spy_pct"],
+            }
+            for ver, ver_rows in sorted(by_mv.items(), reverse=True)
+            for s in [self._stats_for_completed(ver_rows, benchmark)]
+        }
+        out["current_model_version"] = MODEL_VERSION
+
         out["marketing_note"] = (
             "Headline marketing stats should use accumulate GO cohort only; "
             "velocity and swing tracks are labeled separately."
@@ -2220,6 +2238,9 @@ class PaperTradeLogger:
         for row in rows:
             self._ensure_trade_id(row)
             self._coerce_numeric_fields(row)
+            # Predating model_version stamps → "legacy" so UI version filter is stable.
+            mv = str(row.get("model_version") or "").strip()
+            row["model_version"] = mv or "legacy"
         # newest last in file; return newest first
         out = list(reversed(rows))[:limit]
         return out

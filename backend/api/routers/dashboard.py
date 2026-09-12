@@ -802,7 +802,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
             mtm_history_log = pt.append_mtm_history()
             fill = pt.fill_outcomes()
             summary = pt.get_performance_summary(min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym)
-            recent = pt.enrich_trades_with_benchmark(pt.get_recent(limit=200), benchmark=bench_sym)
+            recent = pt.enrich_trades_with_benchmark(pt.get_recent(limit=1000), benchmark=bench_sym)
             mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
             equity_curve = pt.get_completed_equity_curve(max_points=400)
             return ("paper_trading_async", {
@@ -1070,7 +1070,7 @@ def _refresh_paper_trading_light(
     out["summary"] = pt.get_performance_summary(
         min_completed=min_done, min_actionable=min_buy, benchmark=bench_sym
     )
-    out["recent"] = pt.enrich_trades_with_benchmark(pt.get_recent(limit=200), benchmark=bench_sym)
+    out["recent"] = pt.enrich_trades_with_benchmark(pt.get_recent(limit=1000), benchmark=bench_sym)
     out["equity_curve"] = pt.get_completed_equity_curve(max_points=400)
     out["data_root"] = str(data_root)
     out.setdefault(
@@ -1948,7 +1948,7 @@ def _compute_full_dashboard_sync() -> dict:
                 min_actionable=min_buy,
                 benchmark=bench_sym,
             )
-            recent = pt.get_recent(limit=200)
+            recent = pt.get_recent(limit=1000)
             recent = pt.enrich_trades_with_benchmark(recent, benchmark=bench_sym)
             mtm_history = pt.get_mtm_history_map(recent or [], limit_per_trade=30)
             equity_curve = pt.get_completed_equity_curve(max_points=400)

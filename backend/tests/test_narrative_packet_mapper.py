@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from signals.narrative_packet_mapper import _UNLOCK_CONDITION_PHRASES, _invalidation, _unlock_conditions
-from signals.narrative_waterfall import Gate
+from signals.narrative_waterfall import Gate, SignalPacket, unlock_condition_covers_gate
 
 
 def test_unlock_conditions_covers_failed_confidence_gate():
@@ -34,7 +34,35 @@ def test_unlock_conditions_covers_failed_confidence_gate():
         assert expected in conditions, (
             f"unlock_conditions missing coverage for failed gate '{name}': {conditions}"
         )
+        assert unlock_condition_covers_gate(name, conditions)
     assert any("confidence" in c.lower() for c in conditions)
+
+
+def test_plain_english_unlock_phrases_pass_packet_validate():
+    """PLTR-class bug: phrases like 'short-term momentum cools off' do not
+    contain the gate id 'momentum_chop', so a naive substring check blocked
+    the whole What-to-do card even though unlock_conditions were complete."""
+    gates = [
+        Gate("valuation", False, {"text": "rich"}),
+        Gate("market_weather", False, {"text": "mixed"}),
+        Gate("momentum_chop", False, {"text": "chop"}),
+        Gate("ml_probability", True, {"text": "ok"}),
+        Gate("confidence", False, {"text": "low"}),
+    ]
+    pkt = SignalPacket(
+        ticker="PLTR",
+        mode="owner",
+        asof="2026-09-08",
+        spot=174.33,
+        trend="DOWN",
+        verdict="WATCH_ZONE",
+        score=4,
+        gates=gates,
+        unlock_conditions=_unlock_conditions(gates),
+        entry_mode="WAIT",
+    )
+    errs = [e for e in pkt.validate() if "unlock_conditions missing" in e]
+    assert errs == [], errs
 
 
 def test_unlock_conditions_empty_when_all_gates_pass():

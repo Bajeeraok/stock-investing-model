@@ -959,6 +959,13 @@ export interface DashboardData {
         win_rate_pct?: number | null;
         avg_return_pct?: number | null;
       }> | null;
+      summary_by_model_version?: Record<string, {
+        completed_n: number;
+        win_rate_pct?: number | null;
+        avg_return_pct?: number | null;
+        avg_excess_vs_spy_pct?: number | null;
+      }> | null;
+      current_model_version?: string | null;
       marketing_note?: string | null;
     } | null;
     mtm_history?: Record<string, Array<{ mtm_date: string; mtm_return_pct: number | null; mtm_price: number | null }>> | null;
@@ -1006,6 +1013,8 @@ export interface DashboardData {
       limit_fill_date?: string | null;
       entry_mode?: string | null;
       gate_mode?: "full_go" | "starter_only" | "hard_lock" | null;
+      /** Gate/band/regime logic version frozen at trade open — see signals/model_version.py */
+      model_version?: string | null;
     }>;
     /** Cumulative equity index from completed paper trades (for track record chart) */
     equity_curve?: Array<{

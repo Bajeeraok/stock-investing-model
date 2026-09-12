@@ -69,6 +69,31 @@ class Gate:
     detail: dict       # numeric facts (template keys) + always a "text" fallback string
 
 
+# Plain-English "Unlocks when…" phrases — avoid raw gate IDs in user-facing copy.
+# Shared with narrative_packet_mapper; validate() matches these phrases (not gate-name
+# substrings), because e.g. "short-term momentum cools off" does not contain "momentum chop".
+UNLOCK_CONDITION_PHRASES: dict[str, str] = {
+    "valuation": "the discount to fair value deepens",
+    "market_weather": "the market's own trend-reading model confirms an uptrend",
+    "momentum_chop": "short-term momentum cools off",
+    "ml_probability": "the statistical pattern-match model agrees",
+    "confidence": "the model's overall confidence improves",
+}
+
+
+def unlock_condition_covers_gate(gate_name: str, conditions: list[str]) -> bool:
+    """True when unlock_conditions cover a failed gate (phrase map or legacy ID text)."""
+    phrase = (UNLOCK_CONDITION_PHRASES.get(gate_name) or "").strip().lower()
+    g_space = gate_name.replace("_", " ")
+    for c in conditions:
+        cl = (c or "").lower()
+        if phrase and phrase in cl:
+            return True
+        if g_space in cl or gate_name in cl:
+            return True
+    return False
+
+
 @dataclass
 class Scenario:
     name: str
@@ -187,10 +212,12 @@ class SignalPacket:
         failed = [g.name for g in self.gates if not g.passed]
         waiting = self.waiting_above_entry()
 
-        # unlock conditions must cover ALL failed gates (footer-mismatch bug)
+        # unlock conditions must cover ALL failed gates (footer-mismatch bug).
+        # Match the canonical plain-English phrase first — phrases deliberately
+        # avoid raw IDs like "momentum_chop" / "valuation", so a naive
+        # gate-name substring check false-blocked real packets (e.g. PLTR).
         for g in failed:
-            if not any(g.replace("_", " ") in c.lower() or g in c.lower()
-                       for c in self.unlock_conditions):
+            if not unlock_condition_covers_gate(g, self.unlock_conditions):
                 errs.append(f"unlock_conditions missing failed gate '{g}'")
 
         # verdict vs gates coherence (Score-100-with-red-gate class of bug)

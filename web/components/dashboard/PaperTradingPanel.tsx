@@ -77,6 +77,10 @@ function cutoffDate(range: DateRange): string | null {
   return d.toISOString().slice(0, 10);
 }
 
+function rowModelVersion(r: { model_version?: string | null }): string {
+  return (r.model_version || "").trim() || "legacy";
+}
+
 function filteredPaperStats(rows: any[]) {
   const completed = rows.filter((r) => r.outcome && String(r.outcome).trim() !== "");
   const withReturn = completed.filter((r) => hasNumericValue(r.return_pct));
@@ -122,11 +126,14 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const summary = pt.summary ?? null;
   const allRecent = pt.recent ?? [];
   const backfill = pt.backfill;
+  const currentModelVersion = summary?.current_model_version || "";
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [signalFilter, setSignalFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [modeFilter, setModeFilter] = useState<ModeFilter>("ALL");
+  // Defaults to current gate/band/regime logic version (not "All") — same as ForwardTracking.
+  const [versionFilter, setVersionFilter] = useState(currentModelVersion);
 
   const uniqueTickers = useMemo(
     () => Array.from(new Set(allRecent.map((r: any) => (r.ticker || "").toUpperCase()))).sort(),
@@ -135,6 +142,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
 
   const uniqueSignals = useMemo(
     () => Array.from(new Set(allRecent.map((r: any) => String(r.signal || "").trim()).filter(Boolean))).sort(),
+    [allRecent],
+  );
+
+  const versionOptions = useMemo(
+    () => Array.from(new Set(allRecent.map((r: any) => rowModelVersion(r)))).sort().reverse(),
     [allRecent],
   );
 
@@ -149,11 +161,23 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
       if (statusFilter === "OPEN" && r.outcome) return false;
       if (statusFilter === "DONE" && !r.outcome) return false;
       if (modeFilter !== "ALL" && (r.gate_mode || r.entry_mode || "") !== modeFilter) return false;
+      if (versionFilter && rowModelVersion(r) !== versionFilter) return false;
       return true;
     });
-  }, [allRecent, tickerFilter, dateRange, signalFilter, statusFilter, modeFilter]);
+  }, [allRecent, tickerFilter, dateRange, signalFilter, statusFilter, modeFilter, versionFilter]);
 
   const filterStats = useMemo(() => filteredPaperStats(recent), [recent]);
+  const versionSummary =
+    versionFilter && summary?.summary_by_model_version
+      ? summary.summary_by_model_version[versionFilter]
+      : null;
+  const filtersActive =
+    !!tickerFilter ||
+    dateRange !== "ALL" ||
+    !!signalFilter ||
+    statusFilter !== "ALL" ||
+    modeFilter !== "ALL" ||
+    !!versionFilter;
 
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-3">
@@ -221,6 +245,22 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           <option value="starter_only">Starter Only</option>
           <option value="hard_lock">Hard Lock</option>
         </select>
+        <select
+          value={versionFilter}
+          onChange={(e) => setVersionFilter(e.target.value)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          title="Which gate/band/regime logic version opened the trade — defaults to current so win-rate isn't blended with pre-fix history"
+        >
+          <option value="">All versions</option>
+          {versionOptions.map((v) => (
+            <option key={v} value={v}>
+              {v === currentModelVersion ? `${v} (current)` : v}
+            </option>
+          ))}
+          {currentModelVersion && !versionOptions.includes(currentModelVersion) ? (
+            <option value={currentModelVersion}>{currentModelVersion} (current)</option>
+          ) : null}
+        </select>
         <div className="flex rounded border border-slate-600 overflow-hidden">
           {DATE_RANGES.map((dr) => (
             <button
@@ -238,14 +278,14 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             </button>
           ))}
         </div>
-        {(tickerFilter || dateRange !== "ALL" || signalFilter || statusFilter !== "ALL") && (
+        {filtersActive && (
           <span className="text-[10px] text-slate-500">
             Showing {recent.length} / {allRecent.length} trades
           </span>
         )}
       </div>
 
-      {(tickerFilter || dateRange !== "ALL" || signalFilter || statusFilter !== "ALL") && (
+      {filtersActive && (
         <div className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered slice</span>
           <span>{filterStats.n} rows</span>
@@ -265,6 +305,13 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           )}
           {filterStats.avgExcess != null && (
             <span>Excess vs bench {fmtPct(filterStats.avgExcess)}</span>
+          )}
+          {versionSummary && (
+            <span className="text-slate-500">
+              Book {versionFilter}: n={versionSummary.completed_n}
+              {versionSummary.win_rate_pct != null ? ` · win ${versionSummary.win_rate_pct.toFixed(1)}%` : ""}
+              {versionSummary.avg_return_pct != null ? ` · avg ${fmtPct(versionSummary.avg_return_pct)}` : ""}
+            </span>
           )}
         </div>
       )}
@@ -420,6 +467,40 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               </p>
             </div>
           )}
+          {summary.summary_by_model_version && Object.keys(summary.summary_by_model_version).length > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                By model version
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(summary.summary_by_model_version).map(([ver, s]) => (
+                  <button
+                    key={ver}
+                    type="button"
+                    onClick={() => setVersionFilter(ver === versionFilter ? "" : ver)}
+                    className={clsx(
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors",
+                      ver === versionFilter
+                        ? "border-emerald-500/50 bg-emerald-950/30 text-emerald-200"
+                        : "border-slate-600/50 bg-slate-800/40 text-slate-400 hover:border-slate-500",
+                    )}
+                    title={ver === currentModelVersion ? "Current model version" : undefined}
+                  >
+                    <span className="font-medium text-[10px] tracking-wide">
+                      {ver === currentModelVersion ? `${ver} (current)` : ver}
+                    </span>
+                    <span className="text-slate-500 text-[10px]">n={s.completed_n}</span>
+                    {s.win_rate_pct != null && <span>Win {s.win_rate_pct.toFixed(0)}%</span>}
+                    {s.avg_return_pct != null && (
+                      <span className={s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                        {fmtPct(s.avg_return_pct)}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {summary.marketing_note && (
             <p className="text-[11px] text-slate-600 leading-snug">{summary.marketing_note}</p>
           )}
@@ -452,6 +533,9 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   Track
                 </th>
                 <th className="py-1.5 pr-2 font-medium">Signal</th>
+                <th className="py-1.5 pr-2 font-medium" title="Gate/band/regime logic version at trade open">
+                  Version
+                </th>
                 <th className="py-1.5 pr-2 font-medium" title="4 primary gates at signal time (valuation, regime, momentum, ML)">
                   Gates
                 </th>
@@ -515,6 +599,9 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     )}
                   </td>
                   <td className="py-1.5 pr-2 text-slate-400">{r.signal}</td>
+                  <td className="py-1.5 pr-2 text-[11px] text-slate-500 font-mono">
+                    {rowModelVersion(r)}
+                  </td>
                   <td className="py-1.5 pr-2 text-slate-400 text-xs">
                     {r.gates_passed != null && r.gates_total != null ? (
                       <span className={(r.gate_mode || r.entry_mode) === "full_go" ? "text-emerald-400" : (r.gate_mode || r.entry_mode) === "starter_only" ? "text-amber-300" : "text-slate-500"}>
@@ -612,7 +699,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           </table>
         </div>
       ) : (
-        <p className="text-xs text-slate-500">No paper trades logged yet (load dashboard once per day to start logging).</p>
+        <p className="text-xs text-slate-500">
+          {filtersActive
+            ? "No paper trades match these filters. Try All versions if older trades predate model stamps."
+            : "No paper trades logged yet (load dashboard once per day to start logging)."}
+        </p>
       )}
     </div>
   );

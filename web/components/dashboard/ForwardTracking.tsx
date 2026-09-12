@@ -162,6 +162,7 @@ export function ForwardTracking({
   const [tickerFilter, setTickerFilter] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>("ALL");
   const [horizonFilter, setHorizonFilter] = useState<number | "">("");
+  const [signalFilter, setSignalFilter] = useState("");
   const [gateFilter, setGateFilter] = useState<"" | "4" | "0" | "3plus" | "go">("");
   // Defaults to the current gate/band/regime logic version (not "All") so the headline
   // numbers you see first reflect today's model, not a blend with pre-fix signals —
@@ -187,6 +188,12 @@ export function ForwardTracking({
     [allRecords],
   );
 
+  const signalOptions = useMemo(
+    () =>
+      Array.from(new Set((allRecords || []).map((r) => r.our_signal).filter(Boolean))).sort(),
+    [allRecords],
+  );
+
   const records = useMemo(() => {
     const cutoff = cutoffDate(dateRange);
     const tf = tickerFilter.toUpperCase();
@@ -194,6 +201,7 @@ export function ForwardTracking({
       if (tf && r.ticker !== tf) return false;
       if (cutoff && r.as_of_date < cutoff) return false;
       if (horizonFilter !== "" && r.horizon_days !== horizonFilter) return false;
+      if (signalFilter && r.our_signal !== signalFilter) return false;
       if (versionFilter && (r.model_version || "legacy") !== versionFilter) return false;
       if (gateFilter === "4") {
         if ((r.gates_passed ?? 0) < (r.gates_total ?? 4)) return false;
@@ -211,11 +219,11 @@ export function ForwardTracking({
       if (a.ticker !== b.ticker) return a.ticker.localeCompare(b.ticker);
       return a.horizon_days - b.horizon_days;
     });
-  }, [allRecords, tickerFilter, dateRange, horizonFilter, gateFilter, versionFilter]);
+  }, [allRecords, tickerFilter, dateRange, horizonFilter, signalFilter, gateFilter, versionFilter]);
 
   useEffect(() => {
     setPage(0);
-  }, [tickerFilter, dateRange, horizonFilter, gateFilter, versionFilter]);
+  }, [tickerFilter, dateRange, horizonFilter, signalFilter, gateFilter, versionFilter]);
 
   const pagedRecords = useMemo(
     () => paginateRows(records, page, FORWARD_PAGE_SIZE),
@@ -296,6 +304,16 @@ export function ForwardTracking({
           ))}
         </select>
         <select
+          value={signalFilter}
+          onChange={(e) => setSignalFilter(e.target.value)}
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+        >
+          <option value="">All signals</option>
+          {signalOptions.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+        <select
           value={gateFilter}
           onChange={(e) => setGateFilter(e.target.value as "" | "4" | "0" | "3plus" | "go")}
           className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -336,14 +354,14 @@ export function ForwardTracking({
             </button>
           ))}
         </div>
-        {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
+        {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || signalFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
           <span className="text-[10px] text-slate-500">
             Showing {records.length} / {allRecords.length} records
           </span>
         )}
       </div>
 
-      {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
+      {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || signalFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
         <div className="mb-3 rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered</span>
           {filterStats ? (
