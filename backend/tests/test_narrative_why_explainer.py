@@ -15,6 +15,8 @@ from signals.narrative_waterfall import (
     derive_action_contract,
     derive_catalysts,
     example_packet_amzn,
+    guard_zone_claim,
+    render_retail_scan,
     why_explainer_structure_errors,
 )
 
@@ -64,6 +66,34 @@ class TestBuildWhyExplainerPrompt:
         assert "ACTION_CONTRACT" in prompt
         assert "PACKET" in prompt
 
+    def test_includes_retail_scan_zone_fact(self):
+        """RETAIL_SCAN carries the deterministic INSIDE/ABOVE/BELOW zone line — without
+        it the model has to infer spot-vs-band position itself and gets it wrong (the
+        bug this whole module is guarding against, see guard_zone_claim below)."""
+        p, contract, cats, mc = _packet_bits()
+        scan = render_retail_scan(p, contract, cats)
+        prompt = build_why_explainer_prompt(p, contract, mc, cats, retail_scan=scan)
+        assert "RETAIL_SCAN" in prompt
+        assert "INSIDE" in prompt or "ABOVE" in prompt or "BELOW" in prompt
+
+
+class TestGuardZoneClaim:
+    def test_flags_pullback_claim_when_spot_already_inside_zone(self):
+        p = example_packet_amzn()
+        p.spot = 250.0  # entry_band is Band(245.14, 257.52) — spot sits inside it
+        text = "Wait for price to pull back into the buy zone before adding size."
+        assert guard_zone_claim(text, p) != []
+
+    def test_allows_pullback_claim_when_spot_is_actually_above_zone(self):
+        p = example_packet_amzn()  # default spot=272.27 is above entry_band.hi=257.52
+        text = "Wait for price to pull back into the buy zone before adding size."
+        assert guard_zone_claim(text, p) == []
+
+    def test_allows_normal_text_when_spot_is_inside_zone(self):
+        p = example_packet_amzn()
+        p.spot = 250.0
+        assert guard_zone_claim(GOOD_EXPLAINER, p) == []
+
 
 class TestGenerateWhyExplainer:
     def test_skipped_without_llm(self):
@@ -100,6 +130,34 @@ class TestGenerateWhyExplainer:
         p, contract, cats, mc = _packet_bits()
         engine = NarrativeEngine(llm)
         text, status = engine.generate_why_explainer(p, contract, mc, cats)
+        assert status == "ok"
+        assert text == GOOD_EXPLAINER
+        assert calls["n"] == 2
+
+    def test_rejects_pullback_claim_when_spot_already_inside_zone_then_retries_to_ok(self):
+        """Regression for the reported bug: with spot inside the buy zone, the model
+        defaulted to "wait for a pullback into the zone" — factually wrong, and not
+        caught by the number/jargon/structure guards since it invents no bad number."""
+        calls = {"n": 0}
+
+        def llm(system: str, user: str) -> str:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return (
+                    "Wait for AMZN's price to pull back into the buy zone before adding any "
+                    "size here, since the plan only activates once that discount reappears "
+                    "and the model's confidence checks line up behind the wait a bit longer."
+                )
+            return GOOD_EXPLAINER
+
+        p = example_packet_amzn()
+        p.spot = 250.0  # inside entry_band (245.14, 257.52)
+        contract = derive_action_contract(p)
+        cats = derive_catalysts(p)
+        mc = build_model_checks(p, cats)
+        engine = NarrativeEngine(llm)
+        scan = render_retail_scan(p, contract, cats)
+        text, status = engine.generate_why_explainer(p, contract, mc, cats, retail_scan=scan)
         assert status == "ok"
         assert text == GOOD_EXPLAINER
         assert calls["n"] == 2

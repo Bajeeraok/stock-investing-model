@@ -662,8 +662,19 @@ retail_gates:
   ml_short_prob_min: 25
   ml_marginal_abs_pct: 55
   confidence_gate_pct: 55
-  momentum_rsi_max: 50
-  momentum_pattern_min: 45
+  # pattern_signals.py::_bullish_trend_score treats RSI 55-70 as the "strong trend zone"
+  # (its largest bonus) and only discounts above 70 — a flat max of 50 hard-failed every
+  # genuine trend-continuation setup regardless of pattern strength. 70 now matches where
+  # this gate's own detail text already called RSI "extended/overbought"; 65-70 passes but
+  # is flagged marginal.
+  momentum_rsi_max: 70
+  momentum_rsi_marginal_min: 65
+  # 27-43 is pattern_score's documented-normal range for a non-bottom setup (see
+  # near_bottom_score in pattern_signals.py) — the old flat 45 floor sat inside that
+  # range and made this gate nearly unreachable (0% pass rate in gate_backtest.py
+  # walk-forward). 35 is now the hard floor; 35-43 passes but is flagged marginal.
+  momentum_pattern_min: 35
+  momentum_pattern_marginal_max: 43
 
 # Forward tracking panel (Analysis tab)
 forward_tracking:

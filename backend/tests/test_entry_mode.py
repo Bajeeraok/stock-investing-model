@@ -86,7 +86,10 @@ def test_bridge_starter_cap_10_pct():
 
 
 def test_unlock_sequence_orders_blockers():
-    gates = _gates(assessment_pct=27.0, regime_bull_pct=5.0, rsi=58.0)
+    # rsi=72 is genuinely overbought under the 2026.09.3 momentum_rsi_max=70 ceiling
+    # (58 no longer blocks — see test_momentum_rsi_58_passes_in_strong_trend_zone in
+    # test_retail_action_payload.py) — keep two real blockers so ordering is exercised.
+    gates = _gates(assessment_pct=27.0, regime_bull_pct=5.0, rsi=72.0)
     seq = build_unlock_sequence(gates, stock_bull_pct=5.0)
     assert f"Market Weather ≥{REGIME_GATE}%" in seq
     assert "Momentum Chop" in seq

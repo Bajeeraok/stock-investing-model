@@ -1660,20 +1660,27 @@ CORE RULES:
 4. Every dollar figure and percentage you write MUST already appear in MODEL_CHECKS or PACKET.
    Never invent a price, level, probability, or percentage.
 5. Never contradict ACTION_CONTRACT. Do not say buy when action is AVOID or WAIT_PULLBACK.
-6. Tone: measured, direct, like explaining to a friend — no hype, no certainty language.
-7. Forbidden words: margin of safety, tape, HMM, confluence, thesis, invalidation, fused, RSI.
-8. Output plain prose only — no bullets, no headers, no markdown, no emoji."""
+6. RETAIL_SCAN.lines[0] states whether the current price is INSIDE, ABOVE, or BELOW the buy
+   zone — this is the ONLY authoritative source for that fact. Never compute or guess this
+   yourself from PACKET numbers, and never say price needs to "pull back into" or "drop into"
+   the zone when RETAIL_SCAN says it is already INSIDE — in that case the wait is about a gate
+   (see rule 3a), not price.
+7. Tone: measured, direct, like explaining to a friend — no hype, no certainty language.
+8. Forbidden words: margin of safety, tape, HMM, confluence, thesis, invalidation, fused, RSI.
+9. Output plain prose only — no bullets, no headers, no markdown, no emoji."""
 
 
 def build_why_explainer_prompt(p: SignalPacket, contract: ActionContract, model_checks: dict,
-                               cats: list[Catalyst]) -> str:
+                               cats: list[Catalyst], retail_scan: dict | None = None) -> str:
     """Structured payload for the Why-panel explainer — same number-guard universe as
-    build_user_prompt (model_checks is itself derived from `p`, so nothing new to guard)."""
+    build_user_prompt (model_checks is itself derived from `p`, so nothing new to guard).
+    RETAIL_SCAN carries the deterministic zone-position line (see generate_why_explainer)."""
     return json.dumps({
         "MODEL_CHECKS": model_checks,
         "PACKET": asdict(p),
         "ACTION_CONTRACT": {**asdict(contract), "action": contract.action.value},
         "CATALYSTS": [asdict(x) for x in cats],
+        "RETAIL_SCAN": retail_scan or {},
     }, default=str)
 
 
@@ -1709,6 +1716,25 @@ def build_user_prompt(p: SignalPacket, contract: ActionContract,
 # Matches "$1,234.56", "12.3%", and bare decimal numbers (>=2 sig figs) so a
 # hallucinated RSI/R:R/analyst-count value can't slip past the $ / % cases.
 _NUM_RE = re.compile(r"\$\s?([\d,]+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s?%|\b(\d+\.\d+)\b")
+
+# Catches "wait for price to pull back / drop / fall into the buy zone" — the LLM's
+# default framing for a WAIT verdict — when spot is already inside the zone and the
+# real blocker is a gate, not price. RETAIL_SCAN gives the model the correct fact
+# (see generate_why_explainer), but this is a cheap defense-in-depth check since a
+# directional claim like this passes guard_numbers/layer3_banned_hits untouched.
+_ZONE_PULLBACK_RE = re.compile(
+    r"\b(pull\s?back|drop|fall|move|come)\b[^.]{0,25}\binto\b[^.]{0,20}\b(buy|entry)\s?(zone|band)\b",
+    re.IGNORECASE,
+)
+
+
+def guard_zone_claim(text: str, p: SignalPacket) -> list[str]:
+    """Flags a "price needs to move into the buy zone" claim when spot is already inside it."""
+    if not p.entry_band or not p.entry_band.contains(float(p.spot)):
+        return []
+    if _ZONE_PULLBACK_RE.search(text or ""):
+        return ["claims price must move into the buy zone, but spot is already inside it"]
+    return []
 
 
 def guard_numbers(text: str, p: SignalPacket) -> list[str]:
@@ -1777,7 +1803,8 @@ class NarrativeEngine:
             bad_n = guard_numbers(text, p)
             bad_w = layer3_banned_hits(text)
             bad_s = trading_note_structure_errors(text)
-            if not bad_n and not bad_w and not bad_s:
+            bad_z = guard_zone_claim(text, p)
+            if not bad_n and not bad_w and not bad_s and not bad_z:
                 self._cache_set(key, text)
                 return text, "ok"
             extra = []
@@ -1787,12 +1814,15 @@ class NarrativeEngine:
                 extra.append(f"forbidden jargon {bad_w} — rewrite in plain English")
             if bad_s:
                 extra.append(f"structure errors {bad_s} — exactly 3 bullets, 35-50 words, status emoji on bullet 1")
+            if bad_z:
+                extra.append(f"{bad_z} — spot is already inside the buy zone, do not say it needs to move into it")
             user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
                      "Rewrite using only packet numbers and no forbidden words.")
         return "", "fallback"
 
     def generate_why_explainer(self, p: SignalPacket, contract: ActionContract,
-                                model_checks: dict, cats: list[Catalyst]) -> tuple[str, str]:
+                                model_checks: dict, cats: list[Catalyst],
+                                retail_scan: dict | None = None) -> tuple[str, str]:
         """Plain-English translation of the Why-panel's gates/execution targets/catalysts.
 
         Separate cache namespace and separate structural contract from generate() — the
@@ -1800,20 +1830,29 @@ class NarrativeEngine:
         sentences of free prose, so mixing the two into one call would risk either
         blowing the note's word budget or diluting this explainer's coverage. Same
         decision-hash cache key shape, same number/jargon guards, same retry contract.
+
+        `retail_scan` (render_retail_scan output) carries the deterministic
+        "Zone: $X is INSIDE/ABOVE/BELOW buy zone" line — without it the model has to
+        infer spot-vs-band position itself from raw numbers and reliably defaults to
+        the more common "waiting for a pullback" framing even when spot is already
+        inside the zone and the real blocker is a gate (e.g. momentum), producing a
+        factually wrong "currently above its buy zone" claim. generate() already gets
+        this via build_user_prompt's retail_scan param — mirror it here.
         """
         if self.llm is None:
             return "", "skipped"
-        key = f"why_explainer:v1:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
+        key = f"why_explainer:v2:{p.ticker}:{p.mode}:{p.asof}:{p.decision_hash()}"
         cached = self._cache_get(key)
         if cached is not None:
             return cached, "cached"
-        user = build_why_explainer_prompt(p, contract, model_checks, cats)
+        user = build_why_explainer_prompt(p, contract, model_checks, cats, retail_scan=retail_scan)
         for attempt in range(self.max_retries + 1):
             text = self.llm(WHY_EXPLAINER_SYSTEM_PROMPT, user).strip()
             bad_n = guard_numbers(text, p)
             bad_w = layer3_banned_hits(text)
             bad_s = why_explainer_structure_errors(text)
-            if not bad_n and not bad_w and not bad_s:
+            bad_z = guard_zone_claim(text, p)
+            if not bad_n and not bad_w and not bad_s and not bad_z:
                 self._cache_set(key, text)
                 return text, "ok"
             extra = []
@@ -1823,6 +1862,8 @@ class NarrativeEngine:
                 extra.append(f"forbidden jargon {bad_w} — rewrite in plain English")
             if bad_s:
                 extra.append(f"structure errors {bad_s} — 2-4 plain sentences, 60-160 words, no bullets")
+            if bad_z:
+                extra.append(f"{bad_z} — spot is already inside the buy zone, do not say it needs to move into it")
             user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
                      "Rewrite using only packet numbers and no forbidden words.")
         return "", "fallback"
@@ -1879,7 +1920,9 @@ def build_summary(p: SignalPacket, llm: Optional[LLMFn] = None,
     note_payload = build_trading_note_payload(p, contract, cats)
     primary_driver = note_payload.get("PRIMARY_DRIVER") or {}
     model_checks = build_model_checks(p, cats, primary_driver=primary_driver)
-    why_explainer, why_explainer_status = engine.generate_why_explainer(p, contract, model_checks, cats)
+    why_explainer, why_explainer_status = engine.generate_why_explainer(
+        p, contract, model_checks, cats, retail_scan=scan,
+    )
 
     return {
         "status": "ok",

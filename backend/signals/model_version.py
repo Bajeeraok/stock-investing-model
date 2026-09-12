@@ -17,8 +17,19 @@ History:
   ST target-band R:R multiplier fix (stop/target no longer symmetric), gates_passed
   sync fix (flat field was clobbered to 0 by readiness_score before this), OBV
   momentum-gate marginal-pass disambiguation.
+- 2026.09.2 — momentum_chop pattern-score floor lowered 45 -> 35 (45 sat inside
+  pattern_score's documented-normal 27-43 band for non-bottom setups, making the gate
+  nearly unreachable — same "flat threshold => ~0% pass rate" failure already fixed once
+  for the valuation gate); 35-43 now a marginal pass instead of a hard fail.
+- 2026.09.3 — momentum_chop RSI ceiling raised 50 -> 70 (contradicted
+  pattern_signals.py::_bullish_trend_score's own "strong trend zone" of RSI 55-70, hard-
+  failing every genuine trend-continuation setup regardless of pattern strength); 65-70
+  is now a marginal pass. Shipped as its own version (not folded into 2026.09.2) so its
+  forward-tracking effect stays attributable even though 2026.09.2 had only ~3-4 EOD
+  snapshots of runway first — if either change needs unwinding later, this boundary
+  keeps the rollback unambiguous.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.09.1"
+MODEL_VERSION = "2026.09.3"

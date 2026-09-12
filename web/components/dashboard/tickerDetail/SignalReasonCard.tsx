@@ -11,7 +11,7 @@ export type SignalReasonFactor = {
 /** signals.pattern_signals.near_bottom_score — surfaced instead of discarded. */
 export type NearBottomSignal = {
   score?: number;
-  mode?: "bottom_reversal" | "trend_continuation";
+  mode?: "bottom_reversal" | "trend_continuation" | "neutral";
   signals?: string[];
 };
 

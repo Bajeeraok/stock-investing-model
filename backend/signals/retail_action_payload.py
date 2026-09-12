@@ -32,8 +32,23 @@ ST_ML_GATE = float(_RG_CFG.get("ml_short_prob_min", 25))
 ML_MARGINAL_ABS = float(_RG_CFG.get("ml_marginal_abs_pct", 55))  # pass vs threshold but low absolute conviction
 REGIME_GATE = float(_RG_CFG.get("regime_bull_pct_min", 60))
 CONFIDENCE_GATE = float(_RG_CFG.get("confidence_gate_pct", 55))
-MOMENTUM_RSI_MAX = float(_RG_CFG.get("momentum_rsi_max", 50))
-MOMENTUM_PATTERN_MIN = float(_RG_CFG.get("momentum_pattern_min", 45))
+# pattern_signals.py::_bullish_trend_score treats RSI 55-70 as the "strong trend zone"
+# (its single largest bonus) and only starts discounting RSI above 70 ("overbought but in
+# momentum range"). A flat momentum_rsi_max of 50 directly contradicted that — it hard-
+# failed every genuine trend-continuation setup (which by definition tends to sit at
+# RSI 50-70) regardless of how strong pattern_score was. 70 now matches where this
+# module's own _momentum_gate_detail already called RSI "extended/overbought"; 65-70 is
+# a marginal pass instead of a clean one.
+MOMENTUM_RSI_MAX = float(_RG_CFG.get("momentum_rsi_max", 70))
+MOMENTUM_RSI_MARGINAL_MIN = float(_RG_CFG.get("momentum_rsi_marginal_min", 65))
+# pattern_score's 27-43 range is the documented-normal band for a stock that isn't in a
+# near-bottom reversal setup (see near_bottom_score/_bullish_trend_score in pattern_signals.py) —
+# a single hard floor at the old 45 sat inside that normal band and made the gate nearly
+# unreachable for any non-bottom setup, the same "flat threshold => 0% pass rate" failure
+# already fixed once for the valuation gate (see comment on retail_gates in config.yaml).
+# 35-43 now passes but is flagged marginal instead of a clean pass.
+MOMENTUM_PATTERN_MIN = float(_RG_CFG.get("momentum_pattern_min", 35))
+MOMENTUM_PATTERN_MARGINAL_MAX = float(_RG_CFG.get("momentum_pattern_marginal_max", 43))
 # OBV 10d trend thresholds — accumulation/distribution confirmation for the momentum gate.
 # A single day's volume_ratio can't tell "nobody's interested" from "sellers dried up";
 # a multi-day OBV slope can. Kept as soft (visual_status only, not pass/fail) since this
@@ -308,14 +323,16 @@ def _momentum_gate_detail(
     vol_note += _obv_divergence_note(volume_ratio, obv_trend_pct, rsi_val)
     if momentum_ok:
         base = f"RSI {rsi_val:.0f} · pattern {round(pattern_score or 0)}/100"
+        notes = []
+        if rsi_val >= MOMENTUM_RSI_MARGINAL_MIN:
+            notes.append("RSI getting extended")
+        if (pattern_score or 0) < MOMENTUM_PATTERN_MARGINAL_MAX:
+            notes.append("pattern modest — normal range for a non-bottom setup")
+        if notes:
+            base += " (" + "; ".join(notes) + ")"
         return base + vol_note if vol_note else base
-    if rsi_val >= 70:
+    if rsi_val >= MOMENTUM_RSI_MAX:
         return f"RSI extended ({rsi_val:.0f}/100) — overbought; wait for cooldown{vol_note}"
-    if rsi_val >= 50:
-        return (
-            f"RSI above neutral ({rsi_val:.0f}/100) — model prefers RSI < 50 for optimal entry timing"
-            f"{vol_note}"
-        )
     return f"Pattern weak ({round(pattern_score or 0)}/100){vol_note}"
 
 
@@ -536,14 +553,21 @@ def build_trading_gates(
     )
     regime_ok = regime_bull_pct is not None and regime_bull_pct >= REGIME_GATE
     momentum_ok = rsi_val < MOMENTUM_RSI_MAX and (pattern_score or 0) >= MOMENTUM_PATTERN_MIN
-    # Momentum passes the RSI/pattern check but OBV shows quiet distribution underneath —
+    # Momentum passes the RSI/pattern check but one of: (a) OBV shows quiet distribution
+    # underneath, (b) pattern score is only in the 35-43 "normal for a non-bottom setup"
+    # band rather than clearly strong, or (c) RSI is in the 65-70 "getting extended" band —
     # flag it as a marginal pass (still tradeable, still counts toward gate_cleared) rather
     # than silently treating it the same as a clean pass. Not applied to a failing gate:
-    # OBV can't rescue a fail here, it only tempers confidence in a pass.
+    # none of these can rescue a fail here, they only temper confidence in a pass.
+    momentum_pattern_marginal = momentum_ok and (pattern_score or 0) < MOMENTUM_PATTERN_MARGINAL_MAX
+    momentum_rsi_marginal = momentum_ok and rsi_val >= MOMENTUM_RSI_MARGINAL_MIN
     momentum_marginal = (
         momentum_ok
-        and obv_trend_pct is not None
-        and obv_trend_pct <= MOMENTUM_OBV_DISTRIBUTION_PCT
+        and (
+            momentum_pattern_marginal
+            or momentum_rsi_marginal
+            or (obv_trend_pct is not None and obv_trend_pct <= MOMENTUM_OBV_DISTRIBUTION_PCT)
+        )
     )
     ml_detail, ml_visual, ml_ok = _ml_gate_detail(short_ml_prob)
     conf_ok = (confidence_mid or 0) >= CONFIDENCE_GATE

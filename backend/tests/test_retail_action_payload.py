@@ -41,7 +41,9 @@ def test_build_retail_action_payload_gates_locked():
         overall_verdict="WATCH",
     )
     assert p["gate_cleared"] is False
-    assert p["gates_locked_count"] == 2
+    # Only regime is locked here (38% bull < 60% gate) — momentum now passes at RSI 61 /
+    # pattern 52 since momentum_rsi_max raised 50 -> 70 (see model_version.py 2026.09.3).
+    assert p["gates_locked_count"] == 1
     assert p["rsi_status"] == "hot"
     assert p["regime_weather_status"] == "stormy"
     assert p["go_no_go"] == "no_go"
@@ -71,7 +73,10 @@ def test_regime_gate_stock_vs_market_context():
     assert "lagging" in regime["detail"].lower()
 
 
-def test_momentum_rsi_58_above_neutral_not_extended():
+def test_momentum_rsi_58_passes_in_strong_trend_zone():
+    """RSI 58 sits in pattern_signals.py's own "strong trend zone" (55-70) — momentum_chop
+    must not hard-fail it just for being above the old flat 50 cutoff (model_version.py
+    2026.09.3)."""
     gates = build_trading_gates(
         assessment_pct=10.0,
         regime_bull_pct=70.0,
@@ -82,8 +87,58 @@ def test_momentum_rsi_58_above_neutral_not_extended():
         include_confidence=False,
     )
     mom = next(g for g in gates if g["id"] == "momentum")
-    assert "above neutral" in mom["detail"].lower()
+    assert mom["pass"] is True
     assert "extended" not in mom["detail"].lower()
+
+
+def test_momentum_rsi_67_marginal_pass():
+    """65-70 is a marginal pass — still clears the gate, but flagged, not a clean pass."""
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=70.0,
+        pattern_score=60.0,
+        short_ml_prob=30.0,
+        rsi=67.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+    )
+    mom = next(g for g in gates if g["id"] == "momentum")
+    assert mom["pass"] is True
+    assert mom["marginal_pass"] is True
+    assert "extended" in mom["detail"].lower()
+
+
+def test_momentum_rsi_72_still_fails_as_extended():
+    """Above the new 70 ceiling is genuinely overbought — still a hard fail."""
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=70.0,
+        pattern_score=60.0,
+        short_ml_prob=30.0,
+        rsi=72.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+    )
+    mom = next(g for g in gates if g["id"] == "momentum")
+    assert mom["pass"] is False
+    assert "overbought" in mom["detail"].lower()
+
+
+def test_momentum_fails_on_pattern_alone_when_rsi_in_new_passing_range():
+    """RSI 58 no longer blocks — a fail here must be attributed to pattern, not RSI."""
+    gates = build_trading_gates(
+        assessment_pct=10.0,
+        regime_bull_pct=70.0,
+        pattern_score=20.0,
+        short_ml_prob=30.0,
+        rsi=58.0,
+        confidence_mid=50.0,
+        include_confidence=False,
+    )
+    mom = next(g for g in gates if g["id"] == "momentum")
+    assert mom["pass"] is False
+    assert "pattern weak" in mom["detail"].lower()
+    assert "neutral" not in mom["detail"].lower()
 
 
 def test_ml_marginal_pass_at_46_pct():
