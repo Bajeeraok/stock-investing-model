@@ -21,7 +21,7 @@ Stop loss:
 
 Scenarios (asset-type-aware):
   Each scenario has:  name, trigger, probability, short/med/long targets,
-  return_pct, rationale.  Three universal + up to two asset-specific ones.
+  return_pct, rationale.  Three universal + up to four asset-specific ones.
 """
 from __future__ import annotations
 
@@ -245,6 +245,14 @@ _ASSET_SCENARIOS: dict[str, list[dict]] = {
                          "expanding P/E multiples. Growth stocks see the largest re-rating.",
             "return_adj":  +0.05,
             "prob_adj":    +0.10,
+        },
+        {
+            "name":    "Fed Rate Hike",
+            "trigger": "25-50bps hike + hawkish forward guidance",
+            "rationale": "Rate hikes raise the discount rate applied to future earnings, "
+                         "compressing P/E multiples. Growth stocks see the largest de-rating.",
+            "return_adj":  -0.05,
+            "prob_adj":    -0.10,
         },
         {
             "name":    "Earnings Miss / Guidance Cut",
@@ -829,6 +837,10 @@ def _build_scenarios(
     cpi = ctx.get("cpi_yoy")
     inflation_hot = cpi is not None and cpi > 3.5
     inflation_cool = cpi is not None and cpi < 2.5
+    # Hot CPI raises hike odds regardless of where the fed funds rate currently sits —
+    # mirrors rate_cut_ready/rate_cut_prob_adj above, gated on inflation instead of level.
+    rate_hike_risk = inflation_hot
+    rate_hike_prob_adj = +0.10 if rate_hike_risk else -0.05
 
     # ── Universal scenarios (bull / base / bear) ────────────────────────────
     for sk, sv in _UNIVERSAL_SCENARIOS.items():
@@ -889,7 +901,7 @@ def _build_scenarios(
     ml_bullish = (ml_prob_short or 0) >= 0.50
 
     specific = _ASSET_SCENARIOS.get(asset_type, _ASSET_SCENARIOS.get("EQUITY_US", []))
-    for s in specific[:3]:
+    for s in specific[:4]:
         extra_adj = 0.0
         sname = s["name"]
         si_note: str | None = None
@@ -924,6 +936,13 @@ def _build_scenarios(
             if rate_cut_ready:
                 s = dict(s)
                 s["trigger"] = s["trigger"] + f" (Fed currently at {fed:.2f}% — room to cut)"
+
+        # ── Rate-hike scenarios: gate on live inflation, not just fed level ────
+        if "Rate Hike" in sname or "Hawkish" in sname:
+            extra_adj += rate_hike_prob_adj
+            if rate_hike_risk:
+                s = dict(s)
+                s["trigger"] = s["trigger"] + f" (CPI at {cpi:.1f}% YoY — inflation still hot)"
 
         # ── Inflation scenarios ────────────────────────────────────────────
         if "Inflation" in sname and inflation_hot:
