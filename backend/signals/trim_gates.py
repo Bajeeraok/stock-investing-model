@@ -2,6 +2,16 @@
 Trim / exit gates — parallel stack to buy gates (extension + deterioration, not inverted entry).
 
 Hybrid v1: four named gates, default min_pass=2 (not 4/4). Score trigger required for trim candidates.
+
+Relationship to the buy-side momentum_chop gate (retail_action_payload.py, MOMENTUM_RSI_MAX):
+these RSI thresholds are deliberately NOT the same value and NOT sourced from that module —
+"is momentum too hot for a NEW entry" (buy-side, fails above 70, marginal 65-70) and "is an
+EXISTING position overextended enough to consider trimming" (extension_rsi_min=65,
+ml_momentum's hot-RSI floor below) are different questions about different starting positions,
+and can reasonably disagree at the same RSI level (e.g. RSI 66: a new add is still a marginal
+pass, while an already-profitable holding may be worth trimming). Do not "fix" these into
+matching the buy-side constants — see MODEL_VERSIONING.md 2026.09.2/2026.09.3 for that side's
+history instead.
 """
 from __future__ import annotations
 
@@ -20,6 +30,7 @@ DEFAULT_TRIM_CFG: dict[str, Any] = {
     "pattern_weak_max": 40,
     "ml_bear_max_pct": 35,
     "macd_hist_bear_max": 0.0,
+    "ml_momentum_rsi_hot": 55,
 }
 
 
@@ -100,7 +111,7 @@ def build_trim_gates(
 
     ml_bear = ml is not None and ml <= float(c.get("ml_bear_max_pct", 35))
     macd_bear = macd is not None and macd <= float(c.get("macd_hist_bear_max", 0))
-    momentum_hot = rsi_val >= 55
+    momentum_hot = rsi_val >= float(c.get("ml_momentum_rsi_hot", 55))
     ml_momentum_ok = ml_bear or macd_bear or momentum_hot
 
     plan_ok = plan in ("REDUCE", "AVOID", "SELL") or "TRIM" in plan

@@ -559,6 +559,9 @@ trim_gates:
   pattern_weak_max: 40
   ml_bear_max_pct: 35
   macd_hist_bear_max: 0.0
+  # Deliberately separate from retail_gates.momentum_rsi_max above (different question — new
+  # entry vs trim an existing position, see trim_gates.py docstring). Was hardcoded; now tunable.
+  ml_momentum_rsi_hot: 55
 
 # Paper trading panel: summary thresholds + benchmark column (same-date window as each trade)
 paper_trading:

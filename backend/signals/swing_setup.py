@@ -109,11 +109,20 @@ def build_swing_setup(
             narrative.append(
                 f"Pulled back ~{pct_off:.0f}% from 52-week high — check if move is tape-wide fear vs name-specific news."
             )
+    # Read the momentum gate's actual pass/marginal status (build_trading_gates) instead of
+    # re-deriving an RSI cutoff here — this narrative previously hardcoded "RSI >= 50 = extended"
+    # / "RSI <= 45 = cooled", which went stale and actively misleading once the real gate's
+    # RSI ceiling moved to 70 (marginal 65-70) — see model_version.py 2026.09.3.
+    mom_gate = next((g for g in primary if g.get("id") == "momentum"), None)
+    mom_blocked = bool(mom_gate is not None and not mom_gate.get("pass"))
+    mom_marginal = bool(mom_gate is not None and mom_gate.get("marginal_pass"))
     if rsi is not None:
-        if rsi >= 50:
-            narrative.append(f"Short-term RSI {rsi:.0f} — momentum extended; gates may block chasing even inside the band.")
-        elif rsi <= 45:
-            narrative.append(f"RSI cooled to {rsi:.0f} — less chase risk if other gates clear.")
+        if mom_blocked:
+            narrative.append(f"Short-term RSI {rsi:.0f} — momentum gate blocking; gates may block chasing even inside the band.")
+        elif mom_marginal:
+            narrative.append(f"RSI {rsi:.0f} — momentum gate passes but marginally; some chase risk remains.")
+        else:
+            narrative.append(f"RSI {rsi:.0f} — momentum gate clear, not blocking entry.")
     if regime_bull is not None:
         if regime_bull >= 60:
             narrative.append(f"Bull regime intact (HMM ~{regime_bull:.0f}% bull).")
@@ -135,8 +144,10 @@ def build_swing_setup(
     wait_triggers: list[str] = []
     if top_blocker:
         wait_triggers.append(f"Wait until {str(top_blocker.get('label', 'gate')).title()} clears — {top_blocker.get('detail', '')}")
-    if rsi is not None and rsi >= 50:
-        wait_triggers.append("RSI cools below 50 before adding size.")
+    if rsi is not None and mom_blocked:
+        from signals.retail_action_payload import MOMENTUM_RSI_MAX
+
+        wait_triggers.append(f"RSI cools below {MOMENTUM_RSI_MAX:.0f} (or pattern strengthens) before adding size.")
     if not _inside_band(cp, el, eh):
         wait_triggers.append(f"Price returns to entry band ${min(el, eh):.2f}–${max(el, eh):.2f}.")
     wait_triggers.append("All four primary gates show Go in the header above.")

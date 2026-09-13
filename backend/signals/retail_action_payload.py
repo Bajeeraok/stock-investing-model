@@ -855,7 +855,9 @@ def build_unlock_sequence(
         bull = round(float(stock_bull_pct or 0))
         steps.append(f"Market Weather ≥{REGIME_GATE}% (now {bull}%)")
     if not _gate_pass(gates, "momentum"):
-        steps.append(f"Momentum Chop pass (RSI <50, pattern ≥45)")
+        steps.append(
+            f"Momentum Chop pass (RSI <{MOMENTUM_RSI_MAX:.0f}, pattern ≥{MOMENTUM_PATTERN_MIN:.0f})"
+        )
     if not _gate_pass(gates, "ml"):
         steps.append(f"ML probability ≥{ST_ML_GATE}%")
     if not _gate_pass(gates, "valuation"):

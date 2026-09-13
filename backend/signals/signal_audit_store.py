@@ -1339,6 +1339,8 @@ def _merge_breakdown_win_rates(
 
 def _retail_gate_thresholds_payload() -> dict[str, float | int]:
     from signals.retail_action_payload import (
+        MOMENTUM_PATTERN_MIN,
+        MOMENTUM_RSI_MAX,
         REGIME_GATE,
         ST_ML_GATE,
         VALUATION_GATE_PARTIAL_PCT,
@@ -1350,8 +1352,8 @@ def _retail_gate_thresholds_payload() -> dict[str, float | int]:
         "valuation_full_mos_pct": VALUATION_GATE_PASS_PCT,
         "valuation_partial_mos_pct": VALUATION_GATE_PARTIAL_PCT,
         "ml_short_prob_min": ST_ML_GATE,
-        "momentum_rsi_max": 50,
-        "momentum_pattern_min": 45,
+        "momentum_rsi_max": MOMENTUM_RSI_MAX,
+        "momentum_pattern_min": MOMENTUM_PATTERN_MIN,
     }
 
 
@@ -1554,6 +1556,8 @@ def build_gate_calibration_guidance(
     actionable_slices: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """Evidence-based notes on whether to loosen gate thresholds (defaults: keep valuation strict)."""
+    from signals.retail_action_payload import MOMENTUM_PATTERN_MIN, MOMENTUM_RSI_MAX
+
     pass_by_gate = {str(g["gate"]): float(g.get("pass_pct") or 0) for g in gate_pass_rates}
     fail_by_gate = {str(b["gate"]): float(b.get("pct_of_events") or 0) for b in gate_blockers}
     val_fail = fail_by_gate.get("valuation", 0.0)
@@ -1569,8 +1573,10 @@ def build_gate_calibration_guidance(
         )
     if mom_fail >= 35 and mom_pass < 40:
         notes.append(
-            "Momentum (RSI < 50 and pattern ≥ 45) fails often in bull tape. "
-            "Review win rate on 3/4-gate rows before raising RSI cap — do not lower valuation MOS."
+            f"Momentum (RSI < {MOMENTUM_RSI_MAX:.0f} and pattern ≥ {MOMENTUM_PATTERN_MIN:.0f}) "
+            "fails often in bull tape. These caps were already raised once (see MODEL_VERSIONING.md "
+            "2026.09.2/2026.09.3 — old 50/45 sat inside the model's own documented-normal/strong-trend "
+            "ranges) — check the 2026.09.3+ win rate before loosening further; do not lower valuation MOS."
         )
     if regime_fail >= 40:
         notes.append(
