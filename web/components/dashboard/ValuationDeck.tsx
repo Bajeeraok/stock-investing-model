@@ -13,6 +13,14 @@ function fmtUsd(n: number | null | undefined): string {
   return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 }
 
+// Tier/ceiling levels are precise entry prices the user acts on elsewhere at 2 decimals
+// (TickerDecisionHero, MaxBuyPricePillow) — round the same value to whole dollars here
+// and it reads as a different number (e.g. $347.58 vs $348). Match that precision.
+function fmtLevel(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `$${n.toFixed(2)}`;
+}
+
 const BADGE_STYLE: Record<string, string> = {
   ok: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
   review: "border-amber-500/40 bg-amber-500/10 text-amber-200",
@@ -117,12 +125,16 @@ function HouseColumn({
       {fullMos != null && fullMos > 0 && (
         <p className="text-xs text-emerald-200/90">
           Full-size ceiling{" "}
-          <span className="font-semibold tabular-nums">{fmtUsd(fullMos)}</span>
+          <span className="font-semibold tabular-nums">{fmtLevel(fullMos)}</span>
           {h.above_full_mos_ceiling
             ? " (spot above — partial tiers only)"
             : withinCeiling
               ? " (spot at/below — full size OK on valuation)"
               : " (25% MOS to model FV — upper bound, not entry target)"}
+          <span className="text-slate-500">
+            {" "}
+            — a valuation gate, separate from the MA200 tier band below.
+          </span>
         </p>
       )}
       <ul className="space-y-1 text-[11px] text-slate-400">
@@ -136,7 +148,7 @@ function HouseColumn({
             {t.id}: {t.label || t.id}{" "}
             {t.low != null && t.high != null ? (
               <span className="tabular-nums">
-                {fmtUsd(t.low)}–{fmtUsd(t.high)}
+                {fmtLevel(t.low)}–{fmtLevel(t.high)}
               </span>
             ) : null}
             {t.allocation_pct != null ? ` · ~${t.allocation_pct}%` : ""}
@@ -146,11 +158,11 @@ function HouseColumn({
       </ul>
       {currentPrice > 0 && fullMos != null && withinCeiling && h.full_size_eligible_at_spot && (
         <p className="text-[10px] text-emerald-200/90">
-          Now {fmtUsd(currentPrice)} — at/below ceiling; tier bands are scale-in guides, not a higher min price.
+          Now {fmtLevel(currentPrice)} — at/below ceiling; tier bands are scale-in guides, not a higher min price.
         </p>
       )}
       {currentPrice > 0 && fullMos != null && currentPrice > fullMos && (
-        <p className="text-[10px] text-amber-200/90">Now {fmtUsd(currentPrice)} — starter tiers only, not full book.</p>
+        <p className="text-[10px] text-amber-200/90">Now {fmtLevel(currentPrice)} — starter tiers only, not full book.</p>
       )}
     </div>
   );
@@ -202,7 +214,7 @@ export function ValuationDeck({
         {s?.ratings && <AnalystRatingBar ratings={s.ratings} compact />}
         {showHouse && deck.house?.min_price_to_buy != null && (
           <p className="text-[11px] text-emerald-200/80">
-            Full size ≤ {fmtUsd(deck.house.min_price_to_buy)} · see Owner for tiers
+            Full size ≤ {fmtLevel(deck.house.min_price_to_buy)} · see Owner for tiers
           </p>
         )}
         {deck.disclaimer && <p className="text-xs text-slate-500 leading-snug">{deck.disclaimer}</p>}

@@ -15,7 +15,7 @@ export interface HorizonZoneReconciliation {
 }
 
 function fmtZone(lo: number, hi: number): string {
-  return `$${lo.toFixed(0)}–$${hi.toFixed(0)}`;
+  return `$${lo.toFixed(2)}–$${hi.toFixed(2)}`;
 }
 
 /** Prefer API payload; compute client-side when ticker detail was cached before backend shipped split logic. */

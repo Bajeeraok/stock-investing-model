@@ -1103,6 +1103,9 @@ export function TickerDetailModal({
                       ma20={detail.ma20}
                       ma50={detail.ma50}
                       variant="sparkline"
+                      planMode={detail.investor_summary.plan_mode}
+                      chaseBanner={detail.investor_summary.chase_banner}
+                      chaseDetail={detail.investor_summary.chase_detail}
                     />
                   )}
                 </div>
@@ -1348,6 +1351,9 @@ export function TickerDetailModal({
                         fairValue={detail.investor_summary.fair_value}
                         ma20={detail.ma20}
                         ma50={detail.ma50}
+                        planMode={detail.investor_summary.plan_mode}
+                        chaseBanner={detail.investor_summary.chase_banner}
+                        chaseDetail={detail.investor_summary.chase_detail}
                       />
                     </section>
                   )}

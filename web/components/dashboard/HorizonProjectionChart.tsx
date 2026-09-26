@@ -87,7 +87,11 @@ function addCalendarLabels(rows: ChartRow[], anchorDateStr: string): void {
   for (const row of rows) {
     const d = new Date(anchor);
     d.setDate(d.getDate() + row.day);
-    row.calendarLabel = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    row.calendarLabel = d.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "2-digit",
+    });
     if (row.day === 0) row.dateLabel = "Today";
     else if (row.day > 0 && !row.dateLabel) row.dateLabel = row.calendarLabel;
   }
@@ -138,7 +142,10 @@ function buildChartRows(
     days: number;
     target: number;
     stop: number;
+    entryLow: number;
     entryHigh: number;
+    pathStart: number;
+    viable: boolean;
   }[] = (
     [
       {
@@ -147,7 +154,10 @@ function buildChartRows(
         days: parseHorizonDays(short?.duration, "short"),
         target: short?.target ?? currentPrice,
         stop: chartStop(short?.stop_loss ?? currentPrice * 0.95, currentPrice, "short"),
+        entryLow: short?.entry_zone?.low ?? currentPrice,
         entryHigh: short?.entry_zone?.high ?? short?.target ?? currentPrice,
+        pathStart: 0,
+        viable: short?.setup_viable !== false && short?.setup_status !== "no_setup",
       },
       {
         key: "medium" as const,
@@ -155,7 +165,10 @@ function buildChartRows(
         days: parseHorizonDays(medium?.duration, "medium"),
         target: medium?.target ?? currentPrice,
         stop: chartStop(medium?.stop_loss ?? currentPrice * 0.92, currentPrice, "medium"),
+        entryLow: medium?.entry_zone?.low ?? currentPrice,
         entryHigh: medium?.entry_zone?.high ?? medium?.target ?? currentPrice,
+        pathStart: 0,
+        viable: medium?.setup_viable !== false && medium?.setup_status !== "no_setup",
       },
       {
         key: "long" as const,
@@ -163,10 +176,26 @@ function buildChartRows(
         days: parseHorizonDays(long?.duration, "long"),
         target: long?.target ?? currentPrice,
         stop: chartStop(long?.stop_loss ?? currentPrice * 0.88, currentPrice, "long"),
+        entryLow: long?.entry_zone?.low ?? currentPrice,
         entryHigh: long?.entry_zone?.high ?? long?.target ?? currentPrice,
+        pathStart: 0,
+        viable: long?.setup_viable !== false && long?.setup_status !== "no_setup",
       },
     ] as const
-  ).filter((x) => x.h && Number.isFinite(x.target) && x.target > 0);
+  )
+    .map((x) => {
+      // Pullback plans: project from entry mid → target/stop, not spot → crash/target.
+      const mid = (Number(x.entryLow) + Number(x.entryHigh)) / 2;
+      const isPullback =
+        Number.isFinite(mid) &&
+        mid > 0 &&
+        mid < currentPrice * 0.995;
+      return {
+        ...x,
+        pathStart: isPullback ? mid : currentPrice,
+      };
+    })
+    .filter((x) => x.h && Number.isFinite(x.target) && x.target > 0 && x.viable);
 
   const forwardMax =
     horizons.length > 0
@@ -196,9 +225,9 @@ function buildChartRows(
 
     for (const hz of horizons) {
       const t = Math.min(1, d / hz.days);
-      const mid = lerp(currentPrice, hz.target, t);
-      const low = lerp(currentPrice, hz.stop, t);
-      const high = lerp(currentPrice, chartHigh(hz.target, hz.entryHigh, currentPrice), t);
+      const mid = lerp(hz.pathStart, hz.target, t);
+      const low = lerp(hz.pathStart, hz.stop, t);
+      const high = lerp(hz.pathStart, chartHigh(hz.target, hz.entryHigh, hz.pathStart), t);
       if (hz.key === "short") {
         row.shortLow = low;
         row.shortHigh = high;
@@ -400,6 +429,9 @@ export function HorizonProjectionChart({
   ma20,
   ma50,
   variant = "full",
+  planMode,
+  chaseBanner,
+  chaseDetail,
 }: {
   ticker?: string;
   currentPrice: number;
@@ -412,6 +444,9 @@ export function HorizonProjectionChart({
   ma50?: number | null;
   /** full = bands chart; sparkline = compact 90d path (Phase E2) */
   variant?: "full" | "sparkline";
+  planMode?: string | null;
+  chaseBanner?: string | null;
+  chaseDetail?: string | null;
 }) {
   const [expanded, setExpanded] = useState(variant === "full");
   const [visible, setVisible] = useState<Record<HorizonKey, boolean>>({
@@ -499,8 +534,9 @@ export function HorizonProjectionChart({
               ) : null}
             </h3>
             <p className="text-sm text-slate-500 mt-1 leading-snug">
-              Trailing price (left) → today → forward ST / MT / LT channels (stop · target path · band high).
-              {hasFairValue ? " Emerald line = model fair value (fundamentals anchor)." : null}
+              Trailing price (left) → today → forward ST / MT / LT channels.
+              Pullback plans project from the entry band (not a crash-from-spot path).
+              {hasFairValue ? " Emerald dashed line = model fair value." : null}
               {!hasHistory ? " History limited — bands anchored at current price." : null}
             </p>
           </div>
@@ -552,6 +588,17 @@ export function HorizonProjectionChart({
       </div>
 
       <div className="p-3 sm:p-4">
+        {(chaseBanner || planMode === "pullback_conditional") && (
+          <div className="mb-3 rounded-lg border border-rose-500/40 bg-rose-950/30 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-rose-200">
+              {chaseBanner || "DO NOT CHASE"}
+            </p>
+            <p className="text-[11px] text-rose-100/80 mt-0.5 leading-snug">
+              {chaseDetail ||
+                "Spot is extended vs model FV — forward channels are conditional pullback plans from the entry band, not a path that invents a crash from today's print."}
+            </p>
+          </div>
+        )}
         <div className="h-72 sm:h-80">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
@@ -601,7 +648,7 @@ export function HorizonProjectionChart({
                 <Line
                   type="monotone"
                   dataKey="ma50"
-                  stroke="#8b5cf6"
+                  stroke="#64748b"
                   strokeWidth={1}
                   strokeDasharray="5 2"
                   dot={false}
@@ -714,7 +761,16 @@ export function HorizonProjectionChart({
             <ChartLegendItem color="#f59e0b" label="MA20" dashed />
           )}
           {(showMa50 || rows.some((r) => r.ma50 != null)) && (
-            <ChartLegendItem color="#8b5cf6" label="MA50" dashed />
+            <ChartLegendItem color="#64748b" label="MA50" dashed />
+          )}
+          {visible.short && short?.target && short?.setup_status !== "no_setup" && (
+            <ChartLegendItem color={HORIZON_STYLE.short.stroke} label="Short projection" />
+          )}
+          {visible.medium && medium?.target && medium?.setup_status !== "no_setup" && (
+            <ChartLegendItem color={HORIZON_STYLE.medium.stroke} label="Medium projection" />
+          )}
+          {visible.long && long?.target && long?.setup_status !== "no_setup" && (
+            <ChartLegendItem color={HORIZON_STYLE.long.stroke} label="Long projection" />
           )}
         </div>
 
@@ -741,7 +797,10 @@ export function HorizonProjectionChart({
               </p>
             </div>
           )}
-          {horizonMeta.map(({ key, h }) => (
+          {horizonMeta.map(({ key, h }) => {
+            const noSetup = h!.setup_status === "no_setup" || h!.setup_viable === false;
+            const touch = h!.entry_touch_forecast?.touch_probability_pct;
+            return (
             <div
               key={key}
               className="rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-2"
@@ -749,12 +808,21 @@ export function HorizonProjectionChart({
             >
               <p className="font-semibold" style={{ color: HORIZON_STYLE[key].stroke }}>
                 {HORIZON_STYLE[key].label} · {h!.duration || `${parseHorizonDays(h!.duration, key)}d`}
+                {noSetup ? " · no setup" : ""}
               </p>
-              <p className="text-slate-400 mt-0.5">
-                Target {fmtPrice(h!.target)} · Stop {fmtPrice(h!.stop_loss)} · Entry {fmtPrice(h!.entry_zone?.low)}–{fmtPrice(h!.entry_zone?.high)}
-              </p>
+              {noSetup ? (
+                <p className="text-slate-500 mt-0.5">
+                  No setup at this horizon — edge or R:R from entry fails the quality gate.
+                </p>
+              ) : (
+                <p className="text-slate-400 mt-0.5">
+                  Target {fmtPrice(h!.target)} · Stop {fmtPrice(h!.stop_loss)} · Entry {fmtPrice(h!.entry_zone?.low)}–{fmtPrice(h!.entry_zone?.high)}
+                  {touch != null ? ` · Touch ~${Number(touch).toFixed(0)}%` : ""}
+                </p>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

@@ -246,6 +246,17 @@ export interface InvestorDecisionSummary {
     medium: HorizonSignalPayload;
     long: HorizonSignalPayload;
   };
+  /** Spot extended above FV — all plans are conditional pullbacks. */
+  plan_mode?: "pullback_conditional" | string | null;
+  chase_banner?: string | null;
+  chase_detail?: string | null;
+  fv_staleness?: {
+    flagged?: boolean;
+    sigma_vs_atr?: number;
+    spot?: number;
+    fair_value?: number;
+    note?: string;
+  } | null;
 }
 
 export interface HorizonSignalPayload {
@@ -324,6 +335,14 @@ export interface HorizonSignalPayload {
   stop_loss: number;
   stop_loss_pct: number;
   risk_reward: number;
+  /** R:R from entry midpoint (pullback-plan quality) — preferred over spot-based risk_reward when extended. */
+  risk_reward_from_entry?: number | null;
+  /** False when plan fails edge / R:R / touch gates — UI shows "No setup at this horizon". */
+  setup_viable?: boolean | null;
+  setup_status?: "ok" | "no_setup" | string | null;
+  plan_mode?: "pullback_conditional" | string | null;
+  target_basis?: string | null;
+  forward_fair_value?: number | null;
   rationale: string;
   trigger_buy: string;
   warnings: string[];
@@ -496,10 +515,42 @@ function HorizonCard({
   const triggerLine = hasTrigger ? String(horizon.trigger_buy).trim() : "Wait for setup confirmation.";
   const hasStop = horizon.stop_loss != null && horizon.stop_loss > 0;
   const structuralStop = horizon.stop_loss_kind === "structural_invalidation";
+  const noSetup = horizon.setup_status === "no_setup" || horizon.setup_viable === false;
+  const touchPct = horizon.entry_touch_forecast?.touch_probability_pct;
 
   return React.createElement(
     "div",
-    { className: "bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm" },
+    {
+      className: clsx(
+        "bg-slate-800 border rounded-lg p-3 text-sm",
+        noSetup ? "border-slate-700/80 opacity-80" : "border-slate-700",
+      ),
+    },
+    noSetup &&
+      React.createElement(
+        "div",
+        { className: "mb-2 rounded border border-amber-500/30 bg-amber-950/20 px-2 py-1.5" },
+        React.createElement(
+          "p",
+          { className: "text-[11px] font-semibold uppercase tracking-wide text-amber-200" },
+          "No setup at this horizon",
+        ),
+        React.createElement(
+          "p",
+          { className: "text-[11px] text-amber-100/70 mt-0.5 leading-snug" },
+          "Edge or R:R from the entry band fails the quality gate — levels kept for context only.",
+        ),
+      ),
+    !noSetup &&
+      touchPct != null &&
+      React.createElement(
+        "p",
+        { className: "mb-2 text-[10px] text-slate-500" },
+        `Historical band touch ~${Number(touchPct).toFixed(0)}%` +
+          (horizon.entry_touch_forecast?.median_sessions_to_touch != null
+            ? ` · median ${horizon.entry_touch_forecast.median_sessions_to_touch} sessions`
+            : ""),
+      ),
     (behavioralBadge || showMediumBadge) &&
       React.createElement(
         "div",
@@ -1106,6 +1157,10 @@ export function InvestorDecisionSummarySection({
     one_answer,
     trader_roadmap,
     investor_roadmap,
+    plan_mode,
+    chase_banner,
+    chase_detail,
+    fv_staleness,
   } = summary;
   const assessmentPct = currentPrice > 0 && fair_value > 0 ? ((fair_value - currentPrice) / fair_value) * 100 : 0; // MOS vs FV (not upside-to-FV)
   const short = horizons.short;
@@ -1299,6 +1354,40 @@ export function InvestorDecisionSummarySection({
         { className: "px-4 pt-2 pb-0 border-b border-slate-700/80" },
         React.createElement(PositionIntentChip, { ticker })
       ),
+    (chase_banner || plan_mode === "pullback_conditional") &&
+      !compactOverview &&
+      React.createElement(
+        "div",
+        { className: "mx-4 mt-3 rounded-lg border border-rose-500/40 bg-rose-950/25 px-3 py-2" },
+        React.createElement(
+          "p",
+          { className: "text-[11px] font-semibold uppercase tracking-wide text-rose-200" },
+          chase_banner || "DO NOT CHASE",
+        ),
+        React.createElement(
+          "p",
+          { className: "text-[11px] text-rose-100/75 mt-0.5 leading-snug" },
+          chase_detail ||
+            "Spot is extended vs model FV — treat horizon plans as conditional pullbacks.",
+        ),
+      ),
+    fv_staleness?.flagged &&
+      !compactOverview &&
+      React.createElement(
+        "div",
+        { className: "mx-4 mt-2 rounded-lg border border-amber-500/35 bg-amber-950/20 px-3 py-2" },
+        React.createElement(
+          "p",
+          { className: "text-[11px] font-semibold uppercase tracking-wide text-amber-200" },
+          "FV may be stale",
+        ),
+        React.createElement(
+          "p",
+          { className: "text-[11px] text-amber-100/75 mt-0.5 leading-snug" },
+          fv_staleness.note ||
+            "Price has moved far from model FV vs ATR — recheck consensus before treating today's FV as a 12-month target.",
+        ),
+      ),
     !isToday &&
       one_answer &&
       React.createElement(
@@ -1355,6 +1444,9 @@ export function InvestorDecisionSummarySection({
           fairValue: fair_value,
           ma20,
           ma50,
+          planMode: plan_mode,
+          chaseBanner: chase_banner,
+          chaseDetail: chase_detail,
         })
       ),
     (isFull) &&

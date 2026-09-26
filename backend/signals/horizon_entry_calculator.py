@@ -87,6 +87,16 @@ MT_EARNINGS_WINDOW     = 60     # days — earnings within this = catalyst flag
 MT_STOP_BELOW_MA50_PCT = 6.0    # stop = MA50 * (1 - pct) — MA50 break invalidates
 MT_MIN_RR              = 2.0    # minimum R/R enforced for medium-term
 
+# Plan-quality gates (applied after all three horizons are built)
+PLAN_MIN_RR_FROM_ENTRY = 1.5    # R:R from entry midpoint — plans below this are "No setup"
+PLAN_MIN_EDGE_PCT      = 2.0    # target must clear entry_high by at least this %
+EXTENDED_ABOVE_FV_PCT  = 8.0    # spot > FV by this → DO NOT CHASE / pullback-conditional mode
+FV_STALE_ATR_SIGMA     = 2.0    # |spot − FV| / ATR above this → flag FV as possibly stale
+LT_FORWARD_YEARS       = 1.0    # grow today's FV by expected EPS growth over this horizon
+LT_DEFAULT_GROWTH_PCT  = 8.0    # used when earnings growth is unavailable
+TOUCH_SUPPRESS_PCT     = 15.0   # suppress pullback plans with very low historical touch odds
+TOUCH_SUPPRESS_DROP_PCT = 10.0  # only suppress when band is this far below spot
+
 # Long-term
 LT_REQUIRED_MOS_PCT    = 25.0   # minimum margin of safety for full buy
 LT_PARTIAL_MOS_PCT     = 15.0   # partial position threshold
@@ -861,6 +871,206 @@ def _enrich_horizon_entry_zone_extras(
         payload["long"] = long_h
 
 
+def _rr_from_entry_mid(entry_low: float, entry_high: float, stop: float, target: float) -> float:
+    """R:R from the entry midpoint (pullback-plan quality), not from extended spot."""
+    mid = (float(entry_low) + float(entry_high)) / 2.0
+    risk = mid - float(stop)
+    reward = float(target) - mid
+    if risk > 0 and reward > 0:
+        return _r(reward / risk, 2)
+    return 0.0
+
+
+def _forward_fair_value(fv: float, earnings_growth_pct: float | None, years: float = LT_FORWARD_YEARS) -> float:
+    """Grow today's FV by expected EPS growth so long targets are not stuck at spot-date intrinsic."""
+    if fv <= 0:
+        return fv
+    g = earnings_growth_pct if earnings_growth_pct is not None else LT_DEFAULT_GROWTH_PCT
+    try:
+        g = float(g)
+    except (TypeError, ValueError):
+        g = LT_DEFAULT_GROWTH_PCT
+    # Cap absurd growth so a single year doesn't invent 2× targets
+    g = max(-20.0, min(40.0, g))
+    y = max(0.25, float(years))
+    return _r(fv * ((1.0 + g / 100.0) ** y))
+
+
+def _mark_horizon_no_setup(h: dict[str, Any], reason: str) -> None:
+    """Force WAIT and surface an explicit no-setup state (levels kept for context)."""
+    warns = list(h.get("warnings") or [])
+    if reason not in warns:
+        warns.append(reason)
+    h["warnings"] = warns
+    h["setup_viable"] = False
+    h["setup_status"] = "no_setup"
+    h["verdict"] = "WAIT"
+    if h.get("conviction") in ("High", "Medium"):
+        h["conviction"] = "Low"
+
+
+def _apply_horizon_plan_invariants(
+    payload: dict[str, Any],
+    *,
+    current_price: float,
+    fair_value: float | None,
+    atr: float | None = None,
+    earnings_growth_pct: float | None = None,
+) -> None:
+    """
+    Hard plan-quality gates before UI render:
+      - Long target uses forward FV (grown by expected EPS), not today's FV alone
+      - Targets non-decreasing short → medium → long
+      - Per-horizon: min edge above entry_high + R:R ≥ 1.5 from entry mid
+      - Low historical touch odds + deep pullback → no setup
+      - Extended above FV → DO NOT CHASE / pullback-conditional mode
+      - Large |spot−FV|/ATR → FV staleness flag
+    """
+    short = payload.get("short") if isinstance(payload.get("short"), dict) else None
+    medium = payload.get("medium") if isinstance(payload.get("medium"), dict) else None
+    long_h = payload.get("long") if isinstance(payload.get("long"), dict) else None
+    if not short or not medium or not long_h:
+        return
+
+    fv = float(fair_value) if fair_value and float(fair_value) > 0 else None
+    px = float(current_price) if current_price and current_price > 0 else 0.0
+
+    # ── 1) Long target = forward FV (horizon-specific anchor) ─────────────
+    if fv is not None:
+        fwd = _forward_fair_value(fv, earnings_growth_pct)
+        prev_t = float(long_h.get("target") or 0)
+        if fwd > prev_t + 1e-6:
+            long_h["target"] = fwd
+            long_h["target_basis"] = "forward_fv"
+            long_h["fair_value"] = fv
+            long_h["forward_fair_value"] = fwd
+            warns = list(long_h.get("warnings") or [])
+            note = (
+                f"Long target uses forward FV ${fwd:.2f} "
+                f"(today's FV ${fv:.2f} grown over ~{LT_FORWARD_YEARS:.0f}y) — "
+                "not today's intrinsic as a 12-month ceiling."
+            )
+            if note not in warns:
+                warns.append(note)
+            long_h["warnings"] = warns
+            refresh_horizon_rr_from_levels(long_h, px or None)
+
+    # ── 2) Monotonic targets across horizons ──────────────────────────────
+    st_t = float(short.get("target") or 0)
+    mt_t = float(medium.get("target") or 0)
+    lt_t = float(long_h.get("target") or 0)
+    if st_t > 0 and mt_t > 0 and mt_t + 1e-6 < st_t:
+        medium["target"] = _r(st_t)
+        warns = list(medium.get("warnings") or [])
+        note = (
+            f"Medium target lifted to ${st_t:.2f} so the 3m plan does not undercut the 1m target "
+            "(cross-horizon monotonicity)."
+        )
+        if note not in warns:
+            warns.append(note)
+        medium["warnings"] = warns
+        refresh_horizon_rr_from_levels(medium, px or None)
+        mt_t = st_t
+    if mt_t > 0 and lt_t > 0 and lt_t + 1e-6 < mt_t:
+        long_h["target"] = _r(mt_t)
+        warns = list(long_h.get("warnings") or [])
+        note = (
+            f"Long target lifted to ${mt_t:.2f} so the 6–18m thesis does not shrink vs the 3m plan."
+        )
+        if note not in warns:
+            warns.append(note)
+        long_h["warnings"] = warns
+        refresh_horizon_rr_from_levels(long_h, px or None)
+
+    # ── 3) Per-horizon edge + R:R from entry mid ──────────────────────────
+    for key in ("short", "medium", "long"):
+        h = payload.get(key)
+        if not isinstance(h, dict):
+            continue
+        ez = h.get("entry_zone") or {}
+        try:
+            el = float(ez.get("low") or 0)
+            eh = float(ez.get("high") or 0)
+            stop = float(h.get("stop_loss") or 0)
+            target = float(h.get("target") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not (el > 0 and eh >= el and stop > 0 and target > 0):
+            continue
+        edge_ok = target > eh * (1.0 + PLAN_MIN_EDGE_PCT / 100.0)
+        rr_entry = _rr_from_entry_mid(el, eh, stop, target)
+        h["risk_reward_from_entry"] = rr_entry
+        h.setdefault("setup_viable", True)
+        h.setdefault("setup_status", "ok")
+        if not edge_ok:
+            _mark_horizon_no_setup(
+                h,
+                f"No setup at this horizon — target ${target:.2f} lacks ≥{PLAN_MIN_EDGE_PCT:.0f}% "
+                f"edge above entry high ${eh:.2f}.",
+            )
+        elif rr_entry < PLAN_MIN_RR_FROM_ENTRY:
+            _mark_horizon_no_setup(
+                h,
+                f"No setup at this horizon — R:R from entry mid is {rr_entry:.2f}x "
+                f"(need ≥{PLAN_MIN_RR_FROM_ENTRY:.1f}x).",
+            )
+
+        # Soft suppress: deep pullback + low historical touch odds
+        fc = h.get("entry_touch_forecast") if isinstance(h.get("entry_touch_forecast"), dict) else {}
+        touch = fc.get("touch_probability_pct") if fc else None
+        if (
+            px > 0
+            and eh > 0
+            and px > eh * (1.0 + TOUCH_SUPPRESS_DROP_PCT / 100.0)
+            and touch is not None
+            and float(touch) < TOUCH_SUPPRESS_PCT
+            and h.get("setup_viable", True)
+        ):
+            _mark_horizon_no_setup(
+                h,
+                f"No setup at this horizon — entry needs ~{((px - eh) / px * 100):.0f}% pullback "
+                f"with only ~{float(touch):.0f}% historical touch odds in-window.",
+            )
+
+    # ── 4) Extended above FV → DO NOT CHASE / pullback-conditional ───────
+    if fv is not None and px > 0 and px > fv * (1.0 + EXTENDED_ABOVE_FV_PCT / 100.0):
+        gap = _r((px - fv) / fv * 100, 1)
+        payload["plan_mode"] = "pullback_conditional"
+        payload["chase_banner"] = "DO NOT CHASE"
+        payload["chase_detail"] = (
+            f"Spot ${px:.2f} is ~{gap:.0f}% above model FV ${fv:.2f} — "
+            "every horizon is a conditional pullback plan, not a chase-from-here blueprint."
+        )
+        for key in ("short", "medium", "long"):
+            h = payload.get(key)
+            if isinstance(h, dict):
+                h["plan_mode"] = "pullback_conditional"
+
+    # ── 5) FV staleness when price has run far from the estimate ─────────
+    if fv is not None and atr and float(atr) > 0 and px > 0:
+        sigma = abs(px - fv) / float(atr)
+        if sigma >= FV_STALE_ATR_SIGMA:
+            payload["fv_staleness"] = {
+                "flagged": True,
+                "sigma_vs_atr": _r(sigma, 2),
+                "spot": _r(px),
+                "fair_value": _r(fv),
+                "note": (
+                    f"Price is {sigma:.1f}σ(ATR) from model FV ${fv:.2f} — "
+                    "recompute or flag when consensus revises; FV may lag a fast tape."
+                ),
+            }
+            warns = list(long_h.get("warnings") or [])
+            note = payload["fv_staleness"]["note"]
+            if note not in warns:
+                warns.append(note)
+            long_h["warnings"] = warns
+
+    payload["short"] = short
+    payload["medium"] = medium
+    payload["long"] = long_h
+
+
 def _flag_cross_horizon_invariants(payload: dict[str, Any]) -> None:
     """Packet-time check: owner floor must not sit above swing/scout add levels."""
     medium = payload.get("medium") or {}
@@ -1503,7 +1713,7 @@ def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
 #
 # Stop:   ~5% below 52w low (structural invalidation) for single names; broad index ETFs use
 #         max(MA200, 52w low) × 0.97 — same as price_targets / confidence watch levels (not tail-only).
-# Target: Fair value (primary) → Tier 1 entry used for R/R calc
+# Target: today's FV as base; build_all_horizons then lifts to forward FV (EPS growth) + monotonic vs MT
 # ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
@@ -1725,6 +1935,11 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     display_tier = active_tier or next((t for t in all_tiers if t.id == target_tid), tier1)
     entry_zone = entry_zone_from_tier(display_tier, inside=active_tier is not None)
     entry_zone = _harmonize_long_entry_zone_with_short(inp, tier1, entry_zone, warnings)
+    # Keep the displayed T1 tier band in lockstep with entry_zone — without this, a
+    # ticker whose swing floor sits below MA200-5% shows two different "T1 floor"
+    # numbers: entry_zone.low (harmonized) vs tiers[T1].low (raw MA200 anchor).
+    if display_tier is tier1 and entry_zone.low < tier1.low - 1e-6:
+        tier1.low = entry_zone.low
     if spot_position.get("state") == "between_tiers":
         detail = spot_position.get("detail")
         if detail:
@@ -2066,6 +2281,7 @@ def build_all_horizons_payload(
     fv_model_suppressed: bool = False,
     fv_street_anchor_usd: Optional[float] = None,
     fv_suppressed_reason: str = "",
+    earnings_growth_pct: Optional[float] = None,
 ) -> dict:
     """
     Builds all three horizon signals and returns a dict ready to attach
@@ -2163,6 +2379,16 @@ def build_all_horizons_payload(
         )
     except Exception:
         pass
+    # Plan-quality gates last — need touch forecasts + painted levels in place.
+    _apply_horizon_plan_invariants(
+        payload,
+        current_price=current_price,
+        fair_value=fair_value,
+        atr=atr if atr and atr > 0 else None,
+        earnings_growth_pct=earnings_growth_pct,
+    )
+    for key in ("short", "medium", "long"):
+        refresh_horizon_rr_from_levels(payload.get(key) or {}, current_price)
     return payload
 
 

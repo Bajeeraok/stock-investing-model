@@ -1201,6 +1201,7 @@ def _build_investor_summary(
     # estimator cannot run (e.g. missing PE/margin data).
     fair_value: float | None = None
     fv_result = None
+    earnings_growth: float | None = None
     sector_specific = response.get("sector_specific") or {}
     ttm_pe_used: float | None = None
     forward_pe_used: float | None = None
@@ -1590,6 +1591,7 @@ def _build_investor_summary(
             fv_suppressed_reason=(
                 getattr(fv_result, "fv_suppressed_reason", "") or "" if _fv_suppressed else ""
             ),
+            earnings_growth_pct=earnings_growth if earnings_growth is not None else None,
         )
     except Exception:
         return None
@@ -1673,6 +1675,10 @@ def _build_investor_summary(
         "regime_transition_pct": regime_transition_pct,
         "regime_transition_days_estimate": regime_transition_days_estimate,
         "model_confidence_pct": model_confidence_pct_summary,
+        "plan_mode": payload.get("plan_mode"),
+        "chase_banner": payload.get("chase_banner"),
+        "chase_detail": payload.get("chase_detail"),
+        "fv_staleness": payload.get("fv_staleness"),
     }
 
     def _fv_pct_vs_ref(model: float, ref: float | None) -> float | None:
