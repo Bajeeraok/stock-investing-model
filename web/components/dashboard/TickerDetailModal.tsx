@@ -30,6 +30,7 @@ import { DecisionModeSelector } from "./DecisionModeSelector";
 import { buildExecutionPlanViewModel } from "./executionPlanModel";
 import {
   buildGatesFromInvestorSummary,
+  mapApiGateToRow,
   resolvePrimaryGatesCount,
 } from "./retailActionUX";
 import { TickerDecisionHero } from "./tickerDetail/TickerDecisionHero";
@@ -653,9 +654,15 @@ export function TickerDetailModal({
     const inv = detail?.investor_summary;
     const cp = effectivePrice;
     if (!inv || cp == null || !(cp > 0)) return [];
+    // The ML gate inside retail_action.gates always scores the short (1-month) horizon —
+    // fine for Scout, misleading for Swing/Owner (e.g. GOOGL: 32% short vs 68% long ML prob,
+    // same "ML PROBABILITY: Marginal pass" label either way). gates_by_mode carries a variant
+    // per persona with only that gate swapped to the matching horizon; prefer it when present.
+    const byMode = inv.retail_action?.gates_by_mode?.[decisionMode];
+    if (byMode?.length) return byMode.map(mapApiGateToRow);
     return buildGatesFromInvestorSummary(inv, cp);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail, effectivePrice]);
+  }, [detail, effectivePrice, decisionMode]);
 
   const { passed: gatesPassedCount, total: gatesTotal } = useMemo(
     () => resolvePrimaryGatesCount(tradingGates),

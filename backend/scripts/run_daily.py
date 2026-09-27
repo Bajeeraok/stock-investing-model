@@ -472,8 +472,6 @@ def run_signals(
         consensus_median = None
         cons_low = None
         cons_high = None
-        fair_pe_low = 18
-        fair_pe_high = 25
         if use_fmp:
             try:
                 from signals.fmp_client import fetch_analyst_estimates, fetch_price_target_consensus, get_api_key
@@ -617,12 +615,40 @@ def run_signals(
             "consensus_median": consensus_median,
             "cons_low": cons_low,
             "cons_high": cons_high,
-            "fair_pe_low": fair_pe_low,
-            "fair_pe_high": fair_pe_high,
             "band_event_multiplier": band_event_mult,
             "band_event_note": band_event_note,
             "ohlcv_last_date": ohlcv_last_date,
         }
+
+        # Model fair value — same pipeline api/ticker_detail.py uses (signals/fair_value_pipeline.py),
+        # so the Signals table and the ticker-detail modal never independently compute two different
+        # numbers for the same ticker/day (previously: two separate models could disagree by 20%+).
+        # target_bands.add_target_bands() below builds lt_band/lt_fair_value_mid/lt_scenarios
+        # directly from row["fair_value"] set here.
+        row["fair_value"] = None
+        row["fair_value_suppressed"] = False
+        row["fair_value_bear_case"] = None
+        row["fair_value_method"] = None
+        if use_fmp:
+            try:
+                from signals.fair_value_pipeline import compute_fair_value
+
+                _fvp = compute_fair_value(
+                    config,
+                    ticker,
+                    float(sig["close"]),
+                    consensus_median=consensus_median,
+                    cons_low=cons_low,
+                    cons_high=cons_high,
+                )
+                row["fair_value"] = _fvp.fair_value
+                if _fvp.fv_result is not None:
+                    row["fair_value_suppressed"] = bool(_fvp.fv_result.fv_suppressed)
+                    row["fair_value_bear_case"] = _fvp.fv_result.bear_case
+                    row["fair_value_method"] = _fvp.fv_result.method_used
+            except Exception:
+                logger.warning("fair_value_pipeline failed for %s", ticker, exc_info=True)
+
         add_target_bands(row)
         try:
             from signals.velocity_engine import attach_velocity_to_row

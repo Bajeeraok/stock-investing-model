@@ -14,6 +14,17 @@ from .providers import MAJOR_INDEX_ETFS
 _MAX_CENTER_DRIFT_INDEX_ETF = 0.09
 _MAX_CENTER_DRIFT_DEFAULT = 0.18
 
+# LT band upside leg: the fair-value pipeline (signals/fair_value_pipeline.py) returns a single
+# point estimate (plus an optional bear_case), not a bull case — this multiplier is a documented,
+# tunable default for the missing upside leg, not derived from the estimator itself. Paired with
+# the 0.75x synthetic bear leg below (the same ratio fair_value_pipeline.py itself already uses
+# for its own bear_case whenever it sets one) for a 35% total spread — matching, not exceeding,
+# _cap_band_width_for_display's 35%-of-spot LT cap, so a ticker trading near fair value gets an
+# uncapped, genuinely fv-derived band instead of always hitting the display cap.
+LT_BULL_MULTIPLIER = 1.10
+# Fallback downside leg when the pipeline didn't supply fair_value_bear_case.
+_LT_SYNTHETIC_BEAR_MULT = 0.75
+
 
 def _checkpoints(low: float, high: float, n: int = 5) -> list[float]:
     """Generate n evenly spaced price levels between low and high."""
@@ -123,9 +134,12 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     Add st_band, mt_band, lt_band to a ticker row.
     Expects: price, ma20, atr14, regime, vol_6m, short_suggestion,
              swing_high_20d, swing_low_20d (optional),
-             eps_fwd, fair_pe_low, fair_pe_high (optional),
-             cons_low, cons_high (optional),
-             consensus_median, eps_dispersion (optional, FMP — widen LT when dispersed),
+             fair_value, fair_value_bear_case, fair_value_suppressed (optional — from
+             signals/fair_value_pipeline.py; LT band is built from these, not an
+             independent PE/consensus blend),
+             cons_low, cons_high, consensus_median, eps_dispersion (optional, FMP — feed
+             lt_dispersion_multiplier's street-target-spread widening only, not the point
+             estimate itself),
              band_event_multiplier (optional, 1.0 — widen ST/MT near CPI/FOMC week).
              daily_move_pct (optional) — prior close to last close % move; shortens band-cache TTL when large.
     """
@@ -300,46 +314,36 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     row["mt_band"] = {"low": mt_low, "high": mt_high}
 
     # ---------- Long-term band (1–3+ yrs) ----------
-    eps_fwd = row.get("eps_fwd")
-    pe_low = row.get("fair_pe_low")
-    pe_high = row.get("fair_pe_high")
-    cons_low = row.get("cons_low")
-    cons_high = row.get("cons_high")
+    # Anchored on the single shared fair-value pipeline (signals/fair_value_pipeline.py, also
+    # used by api/ticker_detail.py) instead of an independent PE-band blend — previously two
+    # unrelated fair-value numbers could disagree by 20%+ for the same ticker/day depending on
+    # which surface (Signals table vs ticker-detail modal) you looked at.
+    fv = row.get("fair_value")
+    bear_case = row.get("fair_value_bear_case")
 
-    fair_low = fair_high = None
-    if eps_fwd is not None and pe_low is not None and pe_high is not None:
+    lt_low = lt_high = None
+    if fv is not None:
         try:
-            eps_fwd = float(eps_fwd)
-            pe_low = float(pe_low)
-            pe_high = float(pe_high)
-            if eps_fwd > 0:
-                fair_low = eps_fwd * pe_low
-                fair_high = eps_fwd * pe_high
+            fv = float(fv)
         except (TypeError, ValueError):
-            pass
-
-    if fair_low and fair_high and cons_low is not None and cons_high is not None:
+            fv = None
+    if fv is not None and fv > 0:
         try:
-            cons_low = float(cons_low)
-            cons_high = float(cons_high)
-            lt_low = min(fair_low * 0.9, cons_low)
-            lt_high = max(fair_high * 1.1, cons_high)
-            if cons_high > 0 and cons_low > 0 and cons_high / cons_low > 2:
-                row["lt_band_low_confidence"] = True
+            lt_low = float(bear_case) if bear_case is not None and float(bear_case) > 0 else fv * _LT_SYNTHETIC_BEAR_MULT
         except (TypeError, ValueError):
-            lt_low, lt_high = fair_low, fair_high
-    elif fair_low and fair_high:
-        lt_low, lt_high = fair_low, fair_high
-    elif cons_low is not None and cons_high is not None:
-        try:
-            lt_low = float(cons_low)
-            lt_high = float(cons_high)
-        except (TypeError, ValueError):
-            lt_low = lt_high = None
-    else:
-        lt_low = lt_high = None
+            lt_low = fv * _LT_SYNTHETIC_BEAR_MULT
+        lt_high = fv * LT_BULL_MULTIPLIER
+        # fv is a point estimate, not necessarily inside [lt_low, lt_high] once bear_case/the
+        # bull multiplier are applied — the band must always contain it.
+        lt_low = min(lt_low, fv)
+        lt_high = max(lt_high, fv)
 
     if lt_low is not None and lt_high is not None and lt_low < lt_high:
+        # "Don't fully trust this number" analog for the new source: the pipeline suppressed
+        # a real model estimate (banks/REITs/biotech/etc.) and anchored to street consensus
+        # instead — replaces the old analyst-consensus-dispersion signal this flag used to mean.
+        if row.get("fair_value_suppressed"):
+            row["lt_band_low_confidence"] = True
         # Long-horizon stress bear: ensure bear reflects historical tail risk (10+yr monthly)
         stress_bear_pct = row.get("stress_bear_pct")
         if stress_bear_pct is not None and P > 0 and stress_bear_pct > 0:
@@ -350,9 +354,8 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
             lt_low, lt_high = symmetric_widen(float(lt_low), float(lt_high), lt_m)
             if lt_note:
                 row["lt_band_dispersion_note"] = lt_note
-        # Uncapped midpoint for valuation-gate math (assessment_pct) — the display cap below
-        # exists only to keep the UI band readable and must not silently bias BUY/TRIM gates.
-        row["lt_fair_value_mid"] = round((float(lt_low) + float(lt_high)) / 2, 2)
+        # fv IS the point estimate the valuation gate wants — no more averaging a blended range.
+        row["lt_fair_value_mid"] = round(fv, 2)
         lt_low, lt_high, lt_capped = _cap_band_width_for_display(
             float(lt_low), float(lt_high), spot=P, band_key="lt"
         )

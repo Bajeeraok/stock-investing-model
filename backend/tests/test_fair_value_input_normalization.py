@@ -2,13 +2,14 @@
 Regression tests for the NVDA fair-value bug: growth-field normalization silently broke
 for hypergrowth names (decimal fraction >= 1.0), and the forward-PE sanity check discarded
 genuinely-low-but-real forward P/E values. See docs/signals/RETAIL_DATA_SURFACING.md and
-api/ticker_detail.py::_normalize_growth_pct / _resolve_forward_pe.
+signals/fair_value_pipeline.py::_normalize_growth_pct / _resolve_forward_pe (moved here
+from api/ticker_detail.py so scripts/run_daily.py can reuse the same fair-value pipeline).
 """
 from __future__ import annotations
 
 import pytest
 
-from api.ticker_detail import _normalize_growth_pct, _resolve_forward_pe
+from signals.fair_value_pipeline import _normalize_growth_pct, _resolve_forward_pe
 
 
 def test_normalize_growth_pct_small_decimal():

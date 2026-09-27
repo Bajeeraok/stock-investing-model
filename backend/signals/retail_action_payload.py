@@ -147,13 +147,14 @@ def _assessment_from_lt_band(
     """
     % gap between current price and long-term fair value (positive = cheap).
 
-    Prefers ``fair_value_mid`` (target_bands' uncapped fair-value/consensus midpoint,
-    ``row["lt_fair_value_mid"]``) over the ``lt_band`` midpoint — ``lt_band`` is capped
-    to +/-35% of spot purely so the UI stays readable (see
-    ``target_bands._cap_band_width_for_display``), and that capped high/low pair
-    understates upside for any name where the true fair-value range is wider, which
-    silently biases this gate more negative as spot runs up. Falls back to the
-    (capped) lt_band midpoint for legacy rows saved before ``lt_fair_value_mid`` existed.
+    Prefers ``fair_value_mid`` (``row["lt_fair_value_mid"]`` — the multi-method fair-value
+    pipeline's point estimate, ``signals/fair_value_pipeline.py``, set directly from
+    ``row["fair_value"]`` in ``target_bands.add_target_bands``) over the ``lt_band`` midpoint —
+    ``lt_band`` is capped to +/-35% of spot purely so the UI stays readable (see
+    ``target_bands._cap_band_width_for_display``), and that capped high/low pair understates
+    upside for any name trading far below fair value, which silently biases this gate more
+    negative as spot runs up. Falls back to the (capped) lt_band midpoint for legacy rows saved
+    before ``lt_fair_value_mid`` existed, or when the fair-value pipeline couldn't run.
     """
     if current_price is None or current_price <= 0:
         return 0.0
@@ -1270,6 +1271,41 @@ def enrich_investor_summary_retail_action(
     medium_spot = (horizons.get("medium") or {}).get("entry_zone", {}).get("spot_position") or {}
     zone_ctx = build_zone_context(investor_out, current_price)
     ra = investor_out["retail_action"]
+
+    # Mode-aware gate variants: the flat "ml" gate above always reads short.ml_prob (1-month),
+    # so a Swing/Owner user saw a short-horizon ML read labeled just "ML PROBABILITY" with no
+    # indication it wasn't scored against their own horizon — the same "one field, three
+    # personas" gap action_title_by_mode (below) already fixes for the verdict banner. Valuation/
+    # regime/momentum are ticker-level reads, not horizon-specific, so only "ml" varies here.
+    long_ml_prob = long_h.get("ml_prob")
+    medium_ml_prob = (horizons.get("medium") or {}).get("ml_prob")
+
+    def _gates_with_ml(ml_prob: float | None) -> list[dict[str, Any]]:
+        base_gates = ra.get("gates") or []
+        if ml_prob is None:
+            return base_gates
+        detail, visual, ok = _ml_gate_detail(ml_prob)
+        out_gates = []
+        for g in base_gates:
+            if g.get("id") == "ml":
+                g = {
+                    **g,
+                    "detail": detail,
+                    "pass": ok,
+                    "gate_cleared": ok,
+                    "visual_status": visual,
+                    "icon": "🤖" if visual != "marginal" else "⚠️",
+                    "blocker_weight": 0 if ok else 20,
+                    "marginal_pass": visual == "marginal",
+                }
+            out_gates.append(g)
+        return out_gates
+
+    ra["gates_by_mode"] = {
+        "scout": ra.get("gates") or [],
+        "swing": _gates_with_ml(medium_ml_prob),
+        "owner": _gates_with_ml(long_ml_prob),
+    }
     if zone_ctx:
         ra["zone_context"] = zone_ctx
         title, light = derive_zone_aware_action_title(

@@ -87,6 +87,10 @@ export type RetailActionPayload = {
     regime_weather_status?: string;
     marginal_pass?: boolean;
   }>;
+  /** Per-persona gate lists (scout=short ML, swing=medium ML, owner=long ML) — the "ml" gate
+   * in the flat `gates` array above always scores the short horizon, which reads as a false
+   * negative for Swing/Owner. Prefer this over `gates` when the viewer's mode is known. */
+  gates_by_mode?: Record<"scout" | "swing" | "owner", NonNullable<RetailActionPayload["gates"]>>;
   primary_gate_ids?: string[];
   unlock_summary?: string | null;
   unlock_sequence?: string | null;

@@ -564,6 +564,40 @@ def cached_key_metrics(ticker: str, fetch_fn) -> dict | None:
     return None
 
 
+def cached_fundamentals_info(ticker: str, fetch_fn) -> dict | None:
+    """Cache signals.fetcher.build_fundamentals_info()'s (info, fmp_km) tuple. TTL 12h.
+
+    build_fundamentals_info() makes 3 uncached FMP calls internally (profile, key-metrics-ttm,
+    analyst-estimates) every time it's invoked — including a duplicate of the analyst-estimates
+    fetch scripts/run_daily.py already makes via cached_financial_estimates(). Wrapping the whole
+    call here (rather than caching each inner fetch separately) keeps signals/fetcher.py's other
+    caller (_institutional_conviction_context, which passes different args) unaffected.
+    """
+    key = cache_key("fundamentals_info", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    info, fmp_km = fetch_fn()
+    out = {"info": info, "fmp_km": fmp_km}
+    if info:
+        set_cached(key, out, TTL_FUNDAMENTALS)
+    return out
+
+
+def cached_eps_history_counts(ticker: str, fetch_fn) -> dict | None:
+    """Cache signals.fv_eps_history.get_eps_history_counts(). TTL 24h — quarterly EPS
+    history changes at most once a quarter, so a same-day re-run should never re-hit FMP.
+    """
+    key = cache_key("eps_history_counts", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict):
+        set_cached(key, out, 24 * 3600)
+    return out
+
+
 def cached_earnings_quality(
     ticker: str,
     fetch_fn,
