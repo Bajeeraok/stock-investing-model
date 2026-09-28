@@ -614,6 +614,21 @@ def cached_eps_history_counts(ticker: str, fetch_fn) -> dict | None:
     return out
 
 
+def cached_revenue_concentration(ticker: str, kind: str, fetch_fn) -> dict | None:
+    """Cache signals.fmp_client.fetch_revenue_concentration()'s reduced dict. TTL 30d —
+    segment mix is reported annually with a lag; nothing here changes intraday or even
+    monthly.
+    """
+    key = cache_key("revenue_concentration", kind, ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict):
+        set_cached(key, out, 30 * 24 * 3600)
+    return out
+
+
 def cached_shares_float(ticker: str, fetch_fn) -> dict | None:
     """Cache signals.fmp_client.fetch_shares_float()'s parsed dict. TTL 7d — float shares
     only change on a buyback/offering, far slower than any other fundamentals TTL here.

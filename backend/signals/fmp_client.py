@@ -693,6 +693,55 @@ def fetch_historical_earning_dates(
     return uniq, err
 
 
+def fetch_revenue_concentration(
+    config: dict, ticker: str, *, kind: str
+) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    Top-segment revenue concentration from FMP's /stable/revenue-product-segmentation
+    (kind="product") or /stable/revenue-geographic-segmentation (kind="geographic").
+
+    Each API row's `data` field is an arbitrary {segment_name: revenue_usd} dict — no fixed
+    schema (AAPL currently reports iPhone/Mac/iPad/Service/Wearables for product, five
+    geographic regions for geographic) — so this reduces the most recent fiscal year's row
+    to a single top-segment concentration fact rather than exposing the raw breakdown, which
+    would need per-company-shape UI work to render sensibly.
+
+    Returns {"top_segment": str, "top_pct": float, "fiscal_year": int, "segment_count": int}
+    or None if the ticker doesn't report segment data (most non-conglomerate/regional-only
+    companies won't).
+    """
+    if kind not in ("product", "geographic"):
+        raise ValueError(f"kind must be 'product' or 'geographic', got {kind!r}")
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    path = "revenue-product-segmentation" if kind == "product" else "revenue-geographic-segmentation"
+    data, err = _request(f"{BASE}/{path}?symbol={sym}&period=annual", api_key)
+    if err:
+        return None, err
+    if not isinstance(data, list) or not data:
+        return None, "No segment data reported"
+    latest = data[0]
+    if not isinstance(latest, dict) or not isinstance(latest.get("data"), dict) or not latest["data"]:
+        return None, "No segment data reported"
+    seg_map = {k: v for k, v in latest["data"].items() if isinstance(v, (int, float))}
+    if not seg_map:
+        return None, "No segment data reported"
+    total = sum(seg_map.values())
+    if total <= 0:
+        return None, "No segment data reported"
+    top_name, top_val = max(seg_map.items(), key=lambda kv: kv[1])
+    return {
+        "top_segment": top_name,
+        "top_pct": round(top_val / total * 100.0, 1),
+        "fiscal_year": latest.get("fiscalYear"),
+        "segment_count": len(seg_map),
+    }, None
+
+
 def fetch_shares_float(config: dict, ticker: str) -> tuple[dict[str, Any] | None, str | None]:
     """
     Real free-float data from FMP's /stable/shares-float: free_float_pct, float_shares,

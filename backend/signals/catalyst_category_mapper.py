@@ -702,6 +702,25 @@ def drivers_from_context(
             )
         )
 
+    rev_conc = context.get("revenue_concentration") or {}
+    if isinstance(rev_conc, dict):
+        for kind, row in rev_conc.items():
+            if not isinstance(row, dict) or row.get("top_pct") is None:
+                continue
+            label = "revenue" if kind == "product" else "geographic revenue"
+            out.append(
+                map_catalyst_like(
+                    name=f"Revenue concentration ({kind})",
+                    mechanism=(
+                        f"{row['top_segment']} is {row['top_pct']:.0f}% of {label} "
+                        f"(FY{row.get('fiscal_year')}) — a single-segment shock has outsized impact."
+                    ),
+                    source="revenue_concentration",
+                    boost=6.0,
+                    mode=mode,
+                )
+            )
+
     calendar = context.get("economic_calendar") or context.get("events") or []
     if isinstance(calendar, list):
         for ev in calendar[:6]:

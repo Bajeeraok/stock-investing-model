@@ -183,6 +183,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     earnings_history: dict = {}
     analyst_actions: list = []
     liquidity: dict = {}
+    revenue_concentration: dict = {}
 
     def _sector():
         return get_sector_and_industry(ticker, config) or {}
@@ -227,7 +228,25 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         except Exception:
             return {}
 
-    with ThreadPoolExecutor(max_workers=9) as ex:
+    def _revenue_concentration():
+        if not config:
+            return {}
+        try:
+            from signals.cache import cached_revenue_concentration
+            from signals.fmp_client import fetch_revenue_concentration
+
+            out: dict = {}
+            for kind in ("product", "geographic"):
+                row = cached_revenue_concentration(
+                    ticker, kind, lambda k=kind: fetch_revenue_concentration(config, ticker, kind=k)[0]
+                )
+                if row:
+                    out[kind] = row
+            return out
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
         f_sector = ex.submit(_sector)
         f_peers = ex.submit(_peers)
         f_earn = ex.submit(_earn)
@@ -237,7 +256,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         f_earn_hist = ex.submit(_earn_hist)
         f_analyst_actions = ex.submit(_analyst_actions)
         f_liquidity = ex.submit(_liquidity)
-        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy, f_extra, f_earn_hist, f_analyst_actions, f_liquidity]):
+        f_revenue_concentration = ex.submit(_revenue_concentration)
+        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy, f_extra, f_earn_hist, f_analyst_actions, f_liquidity, f_revenue_concentration]):
             try:
                 r = f.result()
                 if f is f_sector:
@@ -258,6 +278,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                     analyst_actions = r or []
                 elif f is f_liquidity:
                     liquidity = r or {}
+                elif f is f_revenue_concentration:
+                    revenue_concentration = r or {}
             except Exception:
                 pass
 
@@ -646,6 +668,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "earnings_history": earnings_history,
         "analyst_actions": analyst_actions,
         "liquidity": liquidity,
+        "revenue_concentration": revenue_concentration,
         "sector_specific": _get_sector_specific_metrics(ticker, sector_info.get("sector")),
         "rate_sensitivity": _get_rate_sensitivity(ticker, close_ticker),
         "seasonal_note": _seasonal_note(ticker),

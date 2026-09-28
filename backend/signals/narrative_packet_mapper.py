@@ -473,6 +473,15 @@ def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
     if isinstance(liquidity, dict) and liquidity.get("flag") == "THIN_FLOAT":
         ctx["liquidity"] = liquidity
 
+    rev_conc = ticker_detail.get("revenue_concentration")
+    if isinstance(rev_conc, dict):
+        notable = {
+            kind: row for kind, row in rev_conc.items()
+            if isinstance(row, dict) and (row.get("top_pct") or 0) >= 40.0
+        }
+        if notable:
+            ctx["revenue_concentration"] = notable
+
     return ctx
 
 
