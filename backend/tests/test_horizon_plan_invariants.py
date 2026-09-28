@@ -185,6 +185,65 @@ class TestPlausibilityCap:
         assert not any("capped" in w.lower() for w in payload["medium"]["warnings"])
 
 
+class TestStreetDivergenceDisclosure:
+    """A high-conviction model call that genuinely diverges from street consensus must stay
+    visible, not get silently clamped to consensus — that would defeat the point of running
+    a model at all. The gap gets surfaced as a note instead."""
+
+    def _payload(self, long_target=545.94, medium_target=300.0):
+        # fair_value=None in the payload's "long" entry AND passed to the invariants call
+        # (below) disables the unrelated forward-FV lift (step 1) and extended-above-FV
+        # check (step 4), so these tests exercise the street-divergence disclosure (step 2c)
+        # in isolation against an explicitly-chosen target.
+        return {
+            # Short target kept well below both medium/long test values so the pre-existing
+            # cross-horizon monotonicity step (2) never cascades and overwrites them.
+            "short": {"entry_zone": {"low": 200.0, "high": 210.0}, "stop_loss": 190.0, "target": 220.0,
+                      "verdict": "WATCH", "warnings": []},
+            "medium": {"entry_zone": {"low": 333.82, "high": 347.58}, "stop_loss": 323.49,
+                       "target": medium_target, "verdict": "WATCH", "warnings": []},
+            "long": {"entry_zone": {"low": 320.93, "high": 347.58}, "stop_loss": 307.17,
+                     "target": long_target, "verdict": "WAIT", "warnings": []},
+        }
+
+    def test_discloses_gap_without_changing_the_target(self):
+        payload = self._payload(long_target=545.94)
+        _apply_horizon_plan_invariants(
+            payload, current_price=340.63, fair_value=None, atr=8.47,
+            analyst_target_median=431.57,
+        )
+        assert payload["long"]["target"] == 545.94  # unchanged — no clamp
+        assert any("street consensus" in w.lower() for w in payload["long"]["warnings"])
+        assert any("+26" in w or "+27" in w for w in payload["long"]["warnings"])
+
+    def test_no_note_when_within_threshold_of_street(self):
+        payload = self._payload(long_target=460.0)  # ~6.6% vs 431.57 median — under threshold
+        _apply_horizon_plan_invariants(
+            payload, current_price=340.63, fair_value=None, atr=8.47,
+            analyst_target_median=431.57,
+        )
+        assert not any("street consensus" in w.lower() for w in payload["long"]["warnings"])
+
+    def test_no_note_when_median_unavailable(self):
+        payload = self._payload(long_target=545.94)
+        _apply_horizon_plan_invariants(
+            payload, current_price=340.63, fair_value=None, atr=8.47,
+            analyst_target_median=None,
+        )
+        assert not any("street consensus" in w.lower() for w in payload["long"]["warnings"])
+
+    def test_negative_divergence_also_disclosed(self):
+        """A target well BELOW street consensus is just as much a divergent call and should
+        be disclosed too, not only upside divergence."""
+        payload = self._payload(long_target=300.0, medium_target=290.0)  # ~-30% vs 431.57
+        _apply_horizon_plan_invariants(
+            payload, current_price=340.63, fair_value=None, atr=8.47,
+            analyst_target_median=431.57,
+        )
+        assert any("street consensus" in w.lower() for w in payload["long"]["warnings"])
+        assert any("-30" in w or "-31" in w or "-29" in w for w in payload["long"]["warnings"])
+
+
 def test_build_all_horizons_payload_accepts_earnings_growth():
     """Smoke: new kwarg does not break payload build."""
     out = build_all_horizons_payload(

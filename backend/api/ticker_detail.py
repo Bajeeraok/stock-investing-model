@@ -1241,6 +1241,7 @@ def _build_investor_summary(
             ),
             earnings_growth_pct=earnings_growth if earnings_growth is not None else None,
             analyst_target_high=_safe_float(response.get("cons_high")),
+            analyst_target_median=analyst_target,
         )
     except Exception:
         return None

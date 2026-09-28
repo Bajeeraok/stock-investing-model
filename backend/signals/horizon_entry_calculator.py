@@ -931,6 +931,9 @@ _PLAUSIBILITY_ANALYST_HIGH_BUFFER = 1.15  # allow the model to see 15% past the 
 _MT_TRADING_DAYS = 63    # ~3 months
 _LT_TRADING_DAYS = 252   # ~12 months
 
+# Threshold for the (non-blocking) street-divergence disclosure note — not a cap.
+STREET_DIVERGENCE_NOTE_PCT = 15.0
+
 
 def _plausibility_cap(
     current_price: float,
@@ -959,12 +962,15 @@ def _apply_horizon_plan_invariants(
     atr: float | None = None,
     earnings_growth_pct: float | None = None,
     analyst_target_high: float | None = None,
+    analyst_target_median: float | None = None,
 ) -> None:
     """
     Hard plan-quality gates before UI render:
       - Long target uses forward FV (grown by expected EPS), not today's FV alone
       - Targets non-decreasing short → medium → long
       - Medium/long targets capped by volatility-implied plausibility and analyst high
+      - Medium/long targets that still diverge far from street consensus get a disclosure
+        note (not a clamp — see STREET_DIVERGENCE_NOTE_PCT)
       - Per-horizon: min edge above entry_high + R:R ≥ 1.5 from entry mid
       - Low historical touch odds + deep pullback → no setup
       - Extended above FV → DO NOT CHASE / pullback-conditional mode
@@ -1059,6 +1065,28 @@ def _apply_horizon_plan_invariants(
                     warns.append(note)
                 long_h["warnings"] = warns
                 refresh_horizon_rr_from_levels(long_h, px or None)
+
+    # ── 2c) Street-divergence disclosure (no clamp) ────────────────────────
+    # Deliberately not a cap: a model that can never diverge from analyst consensus can
+    # never show a genuine high-conviction call ahead of the street — that's sometimes the
+    # whole point of running a model. Surface the gap instead, the same way fair_value's
+    # own divergence-from-street note already works, so the user can judge the conviction
+    # themselves rather than have it silently clamped away.
+    if analyst_target_median and analyst_target_median > 0:
+        for h in (medium, long_h):
+            t = float(h.get("target") or 0)
+            if t <= 0:
+                continue
+            div_pct = _r((t - analyst_target_median) / analyst_target_median * 100, 1)
+            if abs(div_pct) >= STREET_DIVERGENCE_NOTE_PCT:
+                warns = list(h.get("warnings") or [])
+                note = (
+                    f"Target is {div_pct:+.0f}% vs street consensus (${analyst_target_median:.2f}) — "
+                    "model conviction beyond current analyst estimates, not blended or capped to them."
+                )
+                if note not in warns:
+                    warns.append(note)
+                h["warnings"] = warns
 
     # ── 3) Per-horizon edge + R:R from entry mid ──────────────────────────
     for key in ("short", "medium", "long"):
@@ -2370,6 +2398,7 @@ def build_all_horizons_payload(
     fv_suppressed_reason: str = "",
     earnings_growth_pct: Optional[float] = None,
     analyst_target_high: Optional[float] = None,
+    analyst_target_median: Optional[float] = None,
 ) -> dict:
     """
     Builds all three horizon signals and returns a dict ready to attach
@@ -2475,6 +2504,7 @@ def build_all_horizons_payload(
         atr=atr if atr and atr > 0 else None,
         earnings_growth_pct=earnings_growth_pct,
         analyst_target_high=analyst_target_high,
+        analyst_target_median=analyst_target_median,
     )
     for key in ("short", "medium", "long"):
         refresh_horizon_rr_from_levels(payload.get(key) or {}, current_price)
