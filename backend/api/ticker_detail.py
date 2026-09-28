@@ -181,6 +181,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     close_spy = None
     extra_info: dict = {}
     earnings_history: dict = {}
+    analyst_actions: list = []
+    liquidity: dict = {}
 
     def _sector():
         return get_sector_and_industry(ticker, config) or {}
@@ -211,9 +213,21 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         return _get_extra_info(ticker, config)
 
     def _earn_hist():
-        return _get_earnings_history(ticker)
+        return _get_earnings_history(ticker, config)
 
-    with ThreadPoolExecutor(max_workers=7) as ex:
+    def _analyst_actions():
+        return _get_analyst_actions(ticker, config)
+
+    def _liquidity():
+        if not config:
+            return {}
+        try:
+            from signals.institutional_signals import get_liquidity_signal
+            return get_liquidity_signal(config, ticker)
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=9) as ex:
         f_sector = ex.submit(_sector)
         f_peers = ex.submit(_peers)
         f_earn = ex.submit(_earn)
@@ -221,7 +235,9 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         f_spy = ex.submit(_spy)
         f_extra = ex.submit(_extra)
         f_earn_hist = ex.submit(_earn_hist)
-        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy, f_extra, f_earn_hist]):
+        f_analyst_actions = ex.submit(_analyst_actions)
+        f_liquidity = ex.submit(_liquidity)
+        for f in as_completed([f_sector, f_peers, f_earn, f_ticker, f_spy, f_extra, f_earn_hist, f_analyst_actions, f_liquidity]):
             try:
                 r = f.result()
                 if f is f_sector:
@@ -238,6 +254,10 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                     extra_info = r or {}
                 elif f is f_earn_hist:
                     earnings_history = r or {}
+                elif f is f_analyst_actions:
+                    analyst_actions = r or []
+                elif f is f_liquidity:
+                    liquidity = r or {}
             except Exception:
                 pass
 
@@ -624,6 +644,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         "benchmark_industry": ret_sector or {},
         "peer_returns": peer_returns or [],
         "earnings_history": earnings_history,
+        "analyst_actions": analyst_actions,
+        "liquidity": liquidity,
         "sector_specific": _get_sector_specific_metrics(ticker, sector_info.get("sector")),
         "rate_sensitivity": _get_rate_sensitivity(ticker, close_ticker),
         "seasonal_note": _seasonal_note(ticker),
@@ -3914,12 +3936,60 @@ def _seasonal_note(ticker: str) -> str | None:
 
 
 # Fix 5: Earnings history (last 4Q actual vs estimate, beat/miss)
-def _get_earnings_history(ticker: str) -> dict:
+def _get_earnings_history(ticker: str, config: dict | None = None) -> dict:
     """
-    Last 4 quarters EPS: actual, estimate, beat/miss.
-    Uses earnings_dates (current yfinance API) — quarterly_earnings and
-    Ticker.earnings were deprecated and now return 401 from Yahoo Finance.
+    Last 4 quarters EPS (+ revenue) actual vs. estimate, beat/miss, and the next unreported
+    quarter's consensus. FMP's /stable/earnings (signals.fmp_client.fetch_earnings_surprises)
+    is tried first — it carries revenue surprise too, which yfinance's earnings_dates never
+    exposed. Falls back to the yfinance path below only if FMP has no key or returns nothing,
+    since quarterly_earnings/Ticker.earnings were deprecated and now return 401 from Yahoo.
     """
+    if config:
+        try:
+            from signals.cache import cached_earnings_surprises
+            from signals.fmp_client import fetch_earnings_surprises
+
+            rows = cached_earnings_surprises(
+                ticker, lambda: fetch_earnings_surprises(config, ticker, limit=4)[0]
+            )
+            if rows:
+                reported = [r for r in rows if r.get("eps_actual") is not None]
+                forward = next((r for r in rows if r.get("eps_actual") is None), None)
+                if reported:
+                    history = []
+                    for r in reported[:4]:
+                        beat_pct = r.get("eps_surprise_pct")
+                        status = "Beat" if (beat_pct or 0) > 0 else ("Missed" if beat_pct is not None else "N/A")
+                        try:
+                            from datetime import datetime as _dt
+                            quarter_label = _dt.strptime(r["date"], "%Y-%m-%d").strftime("%b %Y")
+                        except Exception:
+                            quarter_label = r.get("date") or ""
+                        history.append({
+                            "quarter": quarter_label,
+                            "actual": round(r["eps_actual"], 2) if r.get("eps_actual") is not None else None,
+                            "estimate": round(r["eps_estimated"], 2) if r.get("eps_estimated") is not None else None,
+                            "beat_pct": beat_pct,
+                            "status": status,
+                            "revenue_beat_pct": r.get("revenue_surprise_pct"),
+                        })
+                    beats = [h for h in history if h["status"] == "Beat"]
+                    beat_rate = round(len(beats) / len(history) * 100) if history else 0
+                    out = {
+                        "history": history,
+                        "beat_rate": beat_rate,
+                        "summary": f"Beat EPS estimates {len(beats)}/{len(history)} of last quarters ({beat_rate}%)",
+                    }
+                    if forward and forward.get("eps_estimated") is not None:
+                        out["next_consensus"] = {
+                            "date": forward.get("date"),
+                            "eps_estimated": forward.get("eps_estimated"),
+                            "revenue_estimated": forward.get("revenue_estimated"),
+                        }
+                    return out
+        except Exception:
+            pass
+
     if ticker in _ETFS_SKIP_YAHOO_INFO:
         return {}
     try:
@@ -3986,6 +4056,26 @@ def _get_earnings_history(ticker: str) -> dict:
         }
     except Exception:
         return {}
+
+
+def _get_analyst_actions(ticker: str, config: dict | None = None) -> list[dict]:
+    """Recent named-firm price-target/grade actions (FMP /stable/price-target-news +
+    /stable/grades-news) — dated and checkable, unlike the blended consensus number
+    elsewhere in this payload. Feeds the ticker-detail UI strip and (via
+    narrative_packet_mapper._driver_context_from_detail) the "why" narrative's catalyst
+    facts."""
+    if not config:
+        return []
+    try:
+        from signals.cache import cached_analyst_actions
+        from signals.fmp_client import fetch_analyst_actions
+
+        rows = cached_analyst_actions(
+            ticker, lambda: fetch_analyst_actions(config, ticker, limit=5)[0]
+        )
+        return rows or []
+    except Exception:
+        return []
 
 
 def _safe_float(v) -> float | None:

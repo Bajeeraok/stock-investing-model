@@ -614,6 +614,82 @@ def cached_eps_history_counts(ticker: str, fetch_fn) -> dict | None:
     return out
 
 
+def cached_shares_float(ticker: str, fetch_fn) -> dict | None:
+    """Cache signals.fmp_client.fetch_shares_float()'s parsed dict. TTL 7d — float shares
+    only change on a buyback/offering, far slower than any other fundamentals TTL here.
+    """
+    key = cache_key("shares_float", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, dict):
+        set_cached(key, out, 7 * 24 * 3600)
+    return out
+
+
+def cached_ma_targets(fetch_fn) -> dict:
+    """Cache a ticker->deal lookup built from signals.fmp_client.fetch_ma_latest()'s market-
+    wide feed. TTL 12h — one shared cache entry for the whole run (not per-ticker: the source
+    feed isn't ticker-scoped, so every ticker in a daily batch would otherwise refetch the
+    same ~200-row feed). `fetch_fn` must return the raw fetch_ma_latest() rows list; this
+    wrapper does the targetedSymbol -> {acquirer, transaction_date} reduction and caches that,
+    not the raw rows, so callers get an O(1) lookup straight out of cache.
+    """
+    key = cache_key("ma_targets", "global")
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, dict):
+        return hit
+    rows = fetch_fn()
+    out: dict = {}
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            target = str(row.get("targetedSymbol") or "").upper().strip()
+            if not target:
+                continue
+            existing = out.get(target)
+            if existing is None or (row.get("transactionDate") or "") > existing.get("transaction_date", ""):
+                out[target] = {
+                    "acquirer": row.get("symbol"),
+                    "acquirer_name": row.get("companyName"),
+                    "transaction_date": row.get("transactionDate"),
+                }
+    set_cached(key, out, 12 * 3600)
+    return out
+
+
+def cached_analyst_actions(ticker: str, fetch_fn) -> list | None:
+    """Cache signals.fmp_client.fetch_analyst_actions()'s merged PT/grade rows. TTL 4h —
+    shorter than the 24h fundamentals TTLs since a fresh analyst note is the whole point
+    of this feed (unlike earnings, which only changes once a quarter).
+    """
+    key = cache_key("analyst_actions", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, list):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, list):
+        set_cached(key, out, 4 * 3600)
+    return out
+
+
+def cached_earnings_surprises(ticker: str, fetch_fn) -> list | None:
+    """Cache signals.fmp_client.fetch_earnings_surprises()'s parsed rows. TTL 24h — a new
+    reported quarter only lands a few times a year, and the forward row's estimates don't
+    move intraday enough to justify a shorter TTL.
+    """
+    key = cache_key("earnings_surprises", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, list):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, list):
+        set_cached(key, out, 24 * 3600)
+    return out
+
+
 def cached_earnings_quality(
     ticker: str,
     fetch_fn,

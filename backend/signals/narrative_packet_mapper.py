@@ -456,6 +456,23 @@ def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
     if isinstance(cal, list) and cal:
         ctx["economic_calendar"] = cal[:6]
 
+    earn_hist = ticker_detail.get("earnings_history")
+    if isinstance(earn_hist, dict) and earn_hist.get("history"):
+        ctx["earnings"] = {
+            "beat_rate": earn_hist.get("beat_rate"),
+            "summary": earn_hist.get("summary"),
+            "last_quarter": earn_hist["history"][0],
+            "next_consensus": earn_hist.get("next_consensus"),
+        }
+
+    actions = ticker_detail.get("analyst_actions")
+    if isinstance(actions, list) and actions:
+        ctx["analyst_actions"] = actions[:3]
+
+    liquidity = ticker_detail.get("liquidity")
+    if isinstance(liquidity, dict) and liquidity.get("flag") == "THIN_FLOAT":
+        ctx["liquidity"] = liquidity
+
     return ctx
 
 

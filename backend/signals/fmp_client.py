@@ -322,11 +322,15 @@ def fetch_insider_stats(config: dict, ticker: str) -> tuple[dict | None, str | N
 
 
 def fetch_insider_trading_list(
-    config: dict, ticker: str, limit: int = 20
+    config: dict, ticker: str, limit: int = 20, *, transaction_type: str | None = None
 ) -> tuple[list[dict] | None, str | None]:
     """
-    Recent insider transactions (stable insider-trading feed).
-    Returns (rows, error). Used for role/size-weighted net signal.
+    Recent insider transactions. Returns (rows, error). Used for role/size-weighted net signal.
+
+    Uses /insider-trading/search — the bare /insider-trading?symbol= path this used to call
+    now 404s (confirmed live 2026-09-28; FMP moved symbol-scoped queries under /search).
+    Pass transaction_type (e.g. "P-Purchase", "S-Sale") to filter to one SEC Form 4
+    transaction code instead of the mixed feed (awards/exercises/tax-withholding included).
     """
     api_key = get_api_key(config)
     if not api_key:
@@ -334,7 +338,9 @@ def fetch_insider_trading_list(
     sym = (ticker or "").upper().split("-")[0]
     if not sym:
         return None, "No ticker"
-    url = f"{BASE}/insider-trading?symbol={sym}&limit={min(max(1, limit), 100)}"
+    url = f"{BASE}/insider-trading/search?symbol={sym}&page=0&limit={min(max(1, limit), 100)}"
+    if transaction_type:
+        url += f"&transactionType={transaction_type}"
     data, err = _request(url, api_key)
     if err:
         return None, err
@@ -685,6 +691,199 @@ def fetch_historical_earning_dates(
             err = err2
     uniq = sorted(set(out_dates))
     return uniq, err
+
+
+def fetch_shares_float(config: dict, ticker: str) -> tuple[dict[str, Any] | None, str | None]:
+    """
+    Real free-float data from FMP's /stable/shares-float: free_float_pct, float_shares,
+    outstanding_shares. Closes the open backlog item ("Liquidity flags for small/illiquid
+    names") — a thin float is a real execution-risk fact (wider spreads, easier to move on
+    volume) independent of anything the fair-value/technical signals already capture.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return None, "No FMP API key"
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
+    if not sym:
+        return None, "No ticker"
+    data, err = _request(f"{BASE}/shares-float?symbol={sym}", api_key)
+    if err:
+        return None, err
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        row = data[0]
+    elif isinstance(data, dict):
+        row = data
+    else:
+        return None, "No data"
+    try:
+        free_float_pct = float(row["freeFloat"]) if row.get("freeFloat") is not None else None
+    except (TypeError, ValueError):
+        free_float_pct = None
+    try:
+        float_shares = float(row["floatShares"]) if row.get("floatShares") is not None else None
+    except (TypeError, ValueError):
+        float_shares = None
+    try:
+        outstanding = float(row["outstandingShares"]) if row.get("outstandingShares") is not None else None
+    except (TypeError, ValueError):
+        outstanding = None
+    return {
+        "free_float_pct": free_float_pct,
+        "float_shares": float_shares,
+        "outstanding_shares": outstanding,
+        "as_of": row.get("date"),
+    }, None
+
+
+def fetch_ma_latest(config: dict, *, limit: int = 200) -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Market-wide recent M&A filings (SEC S-4-sourced) from FMP's /stable/mergers-acquisitions-
+    latest. NOT ticker-scoped — the API's own `symbol` query param is a no-op (confirmed live:
+    passing it returns the identical unfiltered feed), so this always fetches the whole recent
+    feed; callers build a target-ticker lookup from it (see signals.cache.cached_ma_targets)
+    rather than calling this once per ticker.
+
+    limit=200 in one page spans roughly the trailing 10-11 months live (confirmed 2026-09-28:
+    newest 2026-09-23, oldest 2025-11-05) — wide enough to cover a typical S-4-to-close deal
+    timeline. Returns rows as-is (symbol=acquirer, targetedSymbol=target, transactionDate).
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    data, err = _request(f"{BASE}/mergers-acquisitions-latest?page=0&limit={limit}", api_key)
+    if err:
+        return [], err
+    if not isinstance(data, list):
+        return [], "No data"
+    return [r for r in data if isinstance(r, dict)], None
+
+
+def fetch_analyst_actions(
+    config: dict, ticker: str, *, limit: int = 5
+) -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Recent per-firm analyst actions — dated, named-firm price-target changes and rating
+    grades — from FMP's /stable/price-target-news and /stable/grades-news. Distinct from
+    fetch_price_target_consensus()/fetch_grades_consensus() (if present elsewhere), which
+    only give an aggregate number/count; this keeps the individual dated action so the
+    narrative can cite something checkable ("PT raised to $380 at Evercore ISI, Sep 18")
+    instead of only a blended consensus figure.
+
+    Returns rows merged from both endpoints, newest first, each tagged with "kind":
+    "price_target" (fields: firm, new_target, price_when_posted, published_at, headline) or
+    "grade" (fields: firm, new_grade, previous_grade, action, published_at, headline).
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
+    if not sym:
+        return [], "No ticker"
+
+    out: list[dict[str, Any]] = []
+    pt_data, pt_err = _request(f"{BASE}/price-target-news?symbol={sym}&limit={limit}", api_key)
+    if isinstance(pt_data, list):
+        for row in pt_data:
+            if not isinstance(row, dict):
+                continue
+            out.append({
+                "kind": "price_target",
+                "firm": row.get("analystCompany"),
+                "new_target": row.get("priceTarget"),
+                "price_when_posted": row.get("priceWhenPosted"),
+                "published_at": row.get("publishedDate"),
+                "headline": row.get("newsTitle"),
+            })
+
+    gr_data, gr_err = _request(f"{BASE}/grades-news?symbol={sym}&limit={limit}", api_key)
+    if isinstance(gr_data, list):
+        for row in gr_data:
+            if not isinstance(row, dict):
+                continue
+            out.append({
+                "kind": "grade",
+                "firm": row.get("gradingCompany"),
+                "new_grade": row.get("newGrade"),
+                "previous_grade": row.get("previousGrade"),
+                "action": row.get("action"),
+                "published_at": row.get("publishedDate"),
+                "headline": row.get("newsTitle"),
+            })
+
+    if not out:
+        return [], pt_err or gr_err
+    out.sort(key=lambda r: r.get("published_at") or "", reverse=True)
+    return out[: limit * 2], None
+
+
+def fetch_earnings_surprises(
+    config: dict, ticker: str, *, limit: int = 8
+) -> tuple[list[dict[str, Any]], str | None]:
+    """
+    Reported earnings-surprise history from FMP's /stable/earnings — actual vs. estimated
+    EPS and revenue per quarter, newest first. Distinct from fetch_historical_earning_dates(),
+    which hits the older v3 calendar/surprise endpoints but keeps only the date string and
+    discards these fields.
+
+    Returns rows with only reported quarters (epsActual is not None), each carrying:
+      date, epsActual, epsEstimated, eps_surprise_pct, revenueActual, revenueEstimated,
+      revenue_surprise_pct. Also returns the single most recent *forward* row (epsActual is
+      None) as the last list element when present, with surprise pct fields left None.
+
+    Empty list is valid (no reports yet / unsupported symbol). None values propagate as None,
+    not 0 — a missing revenue estimate must not look like a 0% surprise.
+    """
+    api_key = get_api_key(config)
+    if not api_key:
+        return [], "No FMP API key"
+    sym = (ticker or "").upper().replace(".", "-").split("-")[0]
+    if not sym:
+        return [], "No ticker"
+    url = f"{BASE}/earnings?symbol={sym}"
+    data, err = _request(url, api_key)
+    if err:
+        return [], err
+    if not isinstance(data, list):
+        return [], "No data"
+
+    def _pct(actual, estimated):
+        try:
+            a, e = float(actual), float(estimated)
+        except (TypeError, ValueError):
+            return None
+        if e == 0:
+            return None
+        return round((a - e) / abs(e) * 100.0, 1)
+
+    reported: list[dict[str, Any]] = []
+    forward: dict[str, Any] | None = None
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        eps_actual = row.get("epsActual")
+        eps_est = row.get("epsEstimated")
+        rev_actual = row.get("revenueActual")
+        rev_est = row.get("revenueEstimated")
+        parsed = {
+            "date": str(row.get("date") or "")[:10],
+            "eps_actual": eps_actual,
+            "eps_estimated": eps_est,
+            "eps_surprise_pct": _pct(eps_actual, eps_est),
+            "revenue_actual": rev_actual,
+            "revenue_estimated": rev_est,
+            "revenue_surprise_pct": _pct(rev_actual, rev_est),
+        }
+        if eps_actual is None:
+            if forward is None or (row.get("date") or "") > forward.get("date", ""):
+                forward = parsed
+            continue
+        reported.append(parsed)
+
+    reported.sort(key=lambda r: r["date"], reverse=True)
+    out = reported[:limit]
+    if forward is not None:
+        out.append(forward)
+    return out, None
 
 
 def run_fmp_plan_check(config: dict) -> dict:

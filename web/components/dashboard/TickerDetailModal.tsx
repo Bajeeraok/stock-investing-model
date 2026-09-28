@@ -51,6 +51,14 @@ import { apiUrl, fetchJsonWithRetry, formatFetchError, isMobileLikeBrowser } fro
 import { pctPriceVsFairValue } from "@/lib/valuationPct";
 import { computeActionableScore } from "@/lib/actionableScore";
 
+function fmtUsdCompact(v: number | null | undefined): string {
+  if (v == null || !isFinite(v)) return "–";
+  const abs = Math.abs(v);
+  if (abs >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  return `$${v.toFixed(0)}`;
+}
+
 // Lightweight try/catch wrappers so a bad API response never crashes the modal
 function ConfidenceBreakdownSafe({ data }: { data: ConfidenceData }) {
   try { return <ConfidenceBreakdown data={data} />; }
@@ -352,10 +360,27 @@ export interface TickerDetail {
     period_years: number;
   };
   earnings_history?: {
-    history: { quarter: string; actual: number | null; estimate: number | null; beat_pct: number | null; status: string }[];
+    history: { quarter: string; actual: number | null; estimate: number | null; beat_pct: number | null; status: string; revenue_beat_pct?: number | null }[];
     beat_rate: number;
     summary: string;
+    next_consensus?: { date: string; eps_estimated: number | null; revenue_estimated: number | null };
   };
+  liquidity?: {
+    flag: "NORMAL" | "THIN_FLOAT" | "UNKNOWN";
+    label?: string;
+    free_float_pct?: number | null;
+    float_shares?: number | null;
+  };
+  analyst_actions?: {
+    kind: "price_target" | "grade";
+    firm: string | null;
+    new_target?: number | null;
+    price_when_posted?: number | null;
+    new_grade?: string | null;
+    previous_grade?: string | null;
+    published_at: string | null;
+    headline: string | null;
+  }[];
   sector_specific?: Record<string, number | string>;
   rate_sensitivity?: {
     correlation_with_tlt: number;
@@ -1596,6 +1621,14 @@ export function TickerDetailModal({
                           ({detail.earnings.days_until > 0 ? `in ${detail.earnings.days_until} days` : "recent"})
                         </span>
                       )}
+                      {detail.earnings_history?.next_consensus && (
+                        <span className="text-amber-300/70 ml-2 text-xs">
+                          — Street expects EPS {detail.earnings_history.next_consensus.eps_estimated != null ? `$${detail.earnings_history.next_consensus.eps_estimated.toFixed(2)}` : "–"}
+                          {detail.earnings_history.next_consensus.revenue_estimated != null && (
+                            <>, revenue {fmtUsdCompact(detail.earnings_history.next_consensus.revenue_estimated)}</>
+                          )}
+                        </span>
+                      )}
                     </div>
                   )}
                   {detail.earnings_history && (detail.earnings_history.history?.length ?? 0) > 0 && (
@@ -1609,7 +1642,8 @@ export function TickerDetailModal({
                           <th className="pr-3 py-1">Quarter</th>
                           <th className="pr-3 py-1">Reported</th>
                           <th className="pr-3 py-1">Expected</th>
-                          <th className="py-1">Surprise</th>
+                          <th className="pr-3 py-1">EPS surprise</th>
+                          <th className="py-1">Revenue surprise</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1618,12 +1652,19 @@ export function TickerDetailModal({
                             <td className="pr-3 py-1">{q.quarter}</td>
                             <td className="pr-3 py-1">{q.actual != null ? q.actual : "–"}</td>
                             <td className="pr-3 py-1">{q.estimate != null ? q.estimate : "–"}</td>
-                            <td className="py-1">
+                            <td className="pr-3 py-1">
                               {q.beat_pct != null ? (
                                 <span className={q.status === "Beat" ? "text-emerald-400" : "text-red-400"}>
                                   {q.beat_pct > 0 ? "+" : ""}{q.beat_pct}% {q.status}
                                 </span>
                               ) : "N/A"}
+                            </td>
+                            <td className="py-1">
+                              {q.revenue_beat_pct != null ? (
+                                <span className={q.revenue_beat_pct > 0 ? "text-emerald-400" : "text-red-400"}>
+                                  {q.revenue_beat_pct > 0 ? "+" : ""}{q.revenue_beat_pct}%
+                                </span>
+                              ) : "–"}
                             </td>
                           </tr>
                         ))}
@@ -1632,6 +1673,45 @@ export function TickerDetailModal({
                   </div>
                     </>
                   )}
+                </section>
+              )}
+
+              {detail.liquidity?.flag === "THIN_FLOAT" && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 text-sm text-amber-200 flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-amber-400 shrink-0" />
+                  <span>{detail.liquidity.label || "Thin float — wider spreads, price moves more per dollar traded. Size positions accordingly."}</span>
+                </div>
+              )}
+
+              {(detail.analyst_actions?.length ?? 0) > 0 && (
+                <section className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200 mb-3">
+                    <Activity className="h-4 w-4 text-emerald-500" />
+                    Recent analyst activity
+                  </h3>
+                  <div className="space-y-2">
+                    {(detail.analyst_actions ?? []).slice(0, 5).map((a, i) => (
+                      <div key={i} className="flex items-start justify-between gap-3 text-sm border-t border-slate-700/50 pt-2 first:border-t-0 first:pt-0">
+                        <div className="text-slate-300">
+                          <span className="text-slate-200 font-medium">{a.firm || "Analyst"}</span>{" "}
+                          {a.kind === "price_target" ? (
+                            <>set a <span className="text-emerald-400">${a.new_target?.toFixed(0)}</span> price target</>
+                          ) : (
+                            <>
+                              {a.new_grade === a.previous_grade ? "maintained" : "moved to"}{" "}
+                              <span className="text-emerald-400">{a.new_grade}</span>
+                              {a.new_grade !== a.previous_grade && a.previous_grade && (
+                                <span className="text-slate-500"> (from {a.previous_grade})</span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        <span className="text-slate-500 text-xs whitespace-nowrap">
+                          {a.published_at ? new Date(a.published_at).toLocaleDateString() : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </section>
               )}
 

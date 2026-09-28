@@ -34,35 +34,58 @@ def _role_weight(reporting_name: str) -> float:
     return 0.2
 
 
+_OPEN_MARKET_BUY_CODES = {"p-purchase"}
+_OPEN_MARKET_SELL_CODES = {"s-sale"}
+# Excluded on purpose, not just unmatched: A-Award (RSU/option grants), M-Exempt (derivative
+# exercise), F-InKind/F-Tax (tax withholding), G-Gift, C-Conversion. These are compensation or
+# administrative mechanics an insider doesn't choose in the way a discretionary market buy/sell
+# is chosen — counting them as "conviction" is exactly the noise problem that made this signal
+# unreliable (confirmed live: a typical AAPL 20-row window was 8 S-Sale / 6 M-Exempt / 3 F-InKind
+# / 1 A-Award — most rows were never real signal to begin with).
+
+
 def _tx_is_buy(action: str) -> bool:
-    a = (action or "").lower()
-    return "purchase" in a or "buy" in a or "acquisition" in a
+    return (action or "").strip().lower() in _OPEN_MARKET_BUY_CODES
 
 
 def _tx_is_sell(action: str) -> bool:
-    a = (action or "").lower()
-    return "sale" in a or "sell" in a or "disposition" in a
+    return (action or "").strip().lower() in _OPEN_MARKET_SELL_CODES
 
 
 def get_weighted_insider_signal(config: dict, ticker: str, limit: int = 20) -> dict[str, Any]:
+    """Role/size-weighted net signal from open-market Form 4 transactions only (P-Purchase /
+    S-Sale) — grants, option exercises, tax withholding, and gifts are fetched but excluded
+    from scoring since they don't reflect a discretionary buy/sell decision.
+    """
     rows, err = fetch_insider_trading_list(config, ticker, limit=limit)
     if err or not rows:
         return {"signal": 0.0, "buy_score": 0.0, "sell_score": 0.0, "n": 0, "error": err}
 
     buy_score = 0.0
     sell_score = 0.0
+    open_market_n = 0
     for tx in rows[:limit]:
         role = tx.get("reportingName") or tx.get("reportingCik") or ""
         action = tx.get("transactionType") or tx.get("type") or ""
+        is_buy = _tx_is_buy(action)
+        is_sell = _tx_is_sell(action)
+        if not is_buy and not is_sell:
+            continue
+        open_market_n += 1
         try:
-            value = abs(float(tx.get("value") or tx.get("securitiesTransacted") or 0))
+            shares = float(tx.get("securitiesTransacted") or 0)
+            price = float(tx.get("price") or 0)
+            # Dollar value when both fields are present (FMP's search feed carries shares
+            # transacted + fill price, not a pre-computed dollar amount); "value" is kept as
+            # a fallback for any other insider-trading shape that already supplies it.
+            value = abs(shares * price) if shares and price else abs(float(tx.get("value") or 0))
         except (TypeError, ValueError):
             value = 0.0
         w = _role_weight(str(role))
         size_w = min(value / 1_000_000.0, 5.0) if value else 0.1
-        if _tx_is_buy(action):
+        if is_buy:
             buy_score += w * size_w
-        elif _tx_is_sell(action):
+        else:
             sell_score += w * size_w
 
     net = buy_score - sell_score
@@ -71,7 +94,8 @@ def get_weighted_insider_signal(config: dict, ticker: str, limit: int = 20) -> d
         "signal": round(signal, 2),
         "buy_score": round(buy_score, 2),
         "sell_score": round(sell_score, 2),
-        "n": len(rows[:limit]),
+        "n": open_market_n,
+        "n_fetched": len(rows[:limit]),
     }
 
 
@@ -118,6 +142,45 @@ def get_short_interest_signal(config: dict, ticker: str) -> dict[str, Any]:
         label = "LOW_SHORT — clean"
 
     return {"short_float_pct": round(pct, 2), "signal": label, "source": "fmp"}
+
+
+_THIN_FLOAT_SHARES = 20_000_000
+_LOW_FREE_FLOAT_PCT = 20.0
+
+
+def get_liquidity_signal(config: dict, ticker: str) -> dict[str, Any]:
+    """Real free-float liquidity flag (FMP /stable/shares-float) — a thin float means wider
+    spreads and price that moves more on the same dollar volume, independent of anything the
+    fair-value/technical signals already capture. Closes the open "liquidity flags for
+    small/illiquid names" backlog item.
+    """
+    from signals.cache import cached_shares_float
+    from signals.fmp_client import fetch_shares_float
+
+    row = cached_shares_float(ticker, lambda: fetch_shares_float(config, ticker)[0])
+    if not row:
+        return {"flag": "UNKNOWN", "free_float_pct": None, "float_shares": None}
+
+    free_float_pct = row.get("free_float_pct")
+    float_shares = row.get("float_shares")
+    thin_shares = float_shares is not None and float_shares < _THIN_FLOAT_SHARES
+    low_pct = free_float_pct is not None and free_float_pct < _LOW_FREE_FLOAT_PCT
+    if thin_shares or low_pct:
+        flag = "THIN_FLOAT"
+        label = (
+            f"Thin float — {float_shares:,.0f} shares tradeable" if thin_shares
+            else f"Low free float — {free_float_pct:.0f}% of shares outstanding"
+        )
+    else:
+        flag = "NORMAL"
+        label = "Float size within normal range"
+    return {
+        "flag": flag,
+        "label": label,
+        "free_float_pct": round(free_float_pct, 1) if free_float_pct is not None else None,
+        "float_shares": int(float_shares) if float_shares is not None else None,
+        "as_of": row.get("as_of"),
+    }
 
 
 def get_institutional_ownership(ticker: str) -> dict[str, Any]:
@@ -249,6 +312,7 @@ def build_institutional_bundle(config: dict, ticker: str, **conviction_kwargs: A
         "ticker": t,
         "insider_weighted": get_weighted_insider_signal(config, t),
         "short_interest": get_short_interest_signal(config, t),
+        "liquidity": get_liquidity_signal(config, t),
         **partial,
         "conviction_filter": conviction,
     }

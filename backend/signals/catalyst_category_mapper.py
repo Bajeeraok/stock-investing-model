@@ -609,6 +609,99 @@ def drivers_from_context(
                         )
                     )
 
+    earnings = context.get("earnings") or {}
+    if isinstance(earnings, dict):
+        last_q = earnings.get("last_quarter") or {}
+        beat_pct = last_q.get("beat_pct") if isinstance(last_q, dict) else None
+        beat_rate = earnings.get("beat_rate")
+        if beat_pct is not None and abs(beat_pct) >= 5.0:
+            direction = "bullish" if beat_pct > 0 else "bearish"
+            verb = "beat" if beat_pct > 0 else "missed"
+            out.append(
+                map_catalyst_like(
+                    name=f"Earnings {verb} estimates",
+                    mechanism=(
+                        f"Last quarter EPS {verb} consensus by {abs(beat_pct):.1f}%"
+                        + (f" — {int(beat_rate)}% beat rate over recent quarters." if beat_rate is not None else ".")
+                    ),
+                    direction=direction,
+                    source="earnings",
+                    boost=15.0,
+                    mode=mode,
+                    published_at=last_q.get("quarter") if isinstance(last_q, dict) else None,
+                )
+            )
+        next_c = earnings.get("next_consensus") if isinstance(earnings.get("next_consensus"), dict) else None
+        if next_c and next_c.get("eps_estimated") is not None:
+            out.append(
+                map_catalyst_like(
+                    name="Upcoming earnings report",
+                    mechanism=(
+                        f"Next report {next_c.get('date') or 'TBD'} — Street expects EPS "
+                        f"${float(next_c['eps_estimated']):.2f}."
+                    ),
+                    event_type="EARNINGS_CALENDAR",
+                    source="earnings",
+                    boost=10.0,
+                    mode=mode,
+                    published_at=next_c.get("date"),
+                )
+            )
+
+    analyst_actions = context.get("analyst_actions") or []
+    if isinstance(analyst_actions, list):
+        for act in analyst_actions[:2]:
+            if not isinstance(act, dict):
+                continue
+            firm = act.get("firm") or "An analyst"
+            if act.get("kind") == "price_target" and act.get("new_target") is not None:
+                prior = act.get("price_when_posted")
+                try:
+                    direction = "bullish" if (prior is None or float(act["new_target"]) >= float(prior)) else "bearish"
+                except (TypeError, ValueError):
+                    direction = None
+                out.append(
+                    map_catalyst_like(
+                        name="Analyst price-target action",
+                        mechanism=f"{firm} set a ${float(act['new_target']):.0f} price target.",
+                        direction=direction,
+                        source="analyst_action",
+                        boost=8.0,
+                        mode=mode,
+                        published_at=act.get("published_at"),
+                    )
+                )
+            elif act.get("kind") == "grade" and act.get("new_grade"):
+                changed = act.get("new_grade") != act.get("previous_grade")
+                out.append(
+                    map_catalyst_like(
+                        name="Analyst rating action" if changed else "Analyst rating reiterated",
+                        mechanism=(
+                            f"{firm} {'moved to' if changed else 'maintained'} {act['new_grade']}"
+                            + (f" (from {act['previous_grade']})" if changed and act.get("previous_grade") else "")
+                            + "."
+                        ),
+                        source="analyst_action",
+                        boost=8.0 if changed else 4.0,
+                        mode=mode,
+                        published_at=act.get("published_at"),
+                    )
+                )
+
+    liquidity = context.get("liquidity") or {}
+    if isinstance(liquidity, dict) and liquidity.get("flag") == "THIN_FLOAT":
+        out.append(
+            map_catalyst_like(
+                name="Thin float — execution risk",
+                mechanism=(liquidity.get("label") or "Thin float — wider spreads, price moves more per dollar traded.")
+                + " Size positions accordingly.",
+                direction="bearish",
+                source="liquidity",
+                boost=10.0,
+                mode=mode,
+            )
+        )
+
     calendar = context.get("economic_calendar") or context.get("events") or []
     if isinstance(calendar, list):
         for ev in calendar[:6]:

@@ -304,6 +304,16 @@ def compute_fair_value(
         except Exception:
             pass
 
+        _ma_deal: dict | None = None
+        try:
+            from signals.cache import cached_ma_targets
+            from signals.fmp_client import fetch_ma_latest
+
+            _ma_targets = cached_ma_targets(lambda: fetch_ma_latest(config)[0])
+            _ma_deal = _ma_targets.get(ticker.upper().replace(".", "-").split("-")[0])
+        except Exception:
+            pass
+
         try:
             from signals.fv_router import route_fair_value as _route_fv
 
@@ -315,7 +325,13 @@ def compute_fair_value(
                 quarters_of_clean_history=_eps_clean,
                 total_quarters_history=_eps_total,
                 sector=_sector_str,
+                is_acquisition_target=_ma_deal is not None,
             )
+            if _ma_deal is not None and _fv_route is not None:
+                _fv_route.notes = list(_fv_route.notes or []) + [
+                    f"Named acquisition target of {_ma_deal.get('acquirer_name') or _ma_deal.get('acquirer')} "
+                    f"(S-4 filed {_ma_deal.get('transaction_date')})."
+                ]
         except Exception:
             pass
 
