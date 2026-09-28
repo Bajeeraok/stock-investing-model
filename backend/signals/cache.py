@@ -1097,20 +1097,38 @@ EOD_DATES_SET = "eod:dates"
 
 
 def set_eod_snapshot_redis(date_str: str, payload: dict) -> bool:
-    """Store EOD snapshot in Redis (no TTL). Returns True on success."""
+    """Store EOD snapshot in Redis (no TTL). Returns True on success.
+
+    The blob write and the date-index update are independent try/excepts, not one — EOD
+    snapshots are multi-MB JSON, and a client-side "Timeout reading from socket" on the big
+    `r.set()` previously skipped the `r.sadd()` entirely, even though the write sometimes
+    landed server-side anyway (the timeout is on waiting for the ack, not necessarily on the
+    write itself). That left `EOD_DATES_SET` — and everything that reads it
+    (list_eod_dates_redis, build_eod_snapshot_index) — stuck on the last date that happened
+    to ack in time, which is the documented "stuck on 2026-08-02" symptom. Attempting the
+    index update regardless of the blob result keeps the index in sync with reality far more
+    often; a date wrongly marked available on a genuine (not just slow-ack) blob failure
+    degrades gracefully since build_eod_snapshot_index() also cross-checks against disk.
+    """
     r = _redis_client()
     if r is None:
         return False
+    ok = False
     try:
         key = EOD_KEY_PREFIX + date_str
         r.set(key, _serialize(payload))
-        r.sadd(EOD_DATES_SET, date_str)
-        return True
+        ok = True
     except Exception as e:
         if _is_redis_connection_error(e):
             _reset_redis_pool()
         logger.warning("Redis EOD set failed for %s: %s", date_str, e)
-        return False
+    try:
+        r.sadd(EOD_DATES_SET, date_str)
+    except Exception as e:
+        if _is_redis_connection_error(e):
+            _reset_redis_pool()
+        logger.warning("Redis EOD date-index update failed for %s: %s", date_str, e)
+    return ok
 
 
 def get_eod_snapshot_redis(date_str: str) -> dict | None:
@@ -1160,6 +1178,8 @@ def build_eod_snapshot_index() -> list[dict]:
 
     try:
         from config_loader import get_data_root
+        from signals.time_et import ET
+        from datetime import datetime
 
         eod_dir = get_data_root() / "eod"
         if eod_dir.exists():
@@ -1168,21 +1188,31 @@ def build_eod_snapshot_index() -> list[dict]:
                 if len(stem) != 10 or stem[4] != "-" or stem[7] != "-":
                     continue
                 try:
-                    size = p.stat().st_size
+                    stat = p.stat()
+                    size = stat.st_size
+                    # File mtime as a "when was this actually written" proxy — the only
+                    # durable (survives process restarts, unlike in-process job state)
+                    # source for this. Previously always None here, which meant callers
+                    # fell through to a possibly much older value baked into a stale
+                    # cached dashboard blob (see build_eod_snapshot_index's own note above).
+                    run_date = datetime.fromtimestamp(stat.st_mtime, tz=ET).isoformat(timespec="seconds")
                 except Exception:
                     size = 0
+                    run_date = None
                 prev = by_date.get(stem)
                 if prev is None:
                     by_date[stem] = {
                         "date": stem,
                         "size_bytes": size,
-                        "run_date": None,
+                        "run_date": run_date,
                         "tickers_count": 0,
                         "universe": None,
                         "source": "disk",
                     }
                 else:
                     prev["size_bytes"] = size or prev.get("size_bytes") or 0
+                    if not prev.get("run_date"):
+                        prev["run_date"] = run_date
                     if prev.get("source") == "redis":
                         prev["source"] = "redis+disk"
     except Exception as e:

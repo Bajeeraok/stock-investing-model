@@ -2099,6 +2099,17 @@ class PaperTradeLogger:
         tactical = [r for r in completed if str(r.get("track") or "") == "velocity"]
         swing_track = [r for r in completed if str(r.get("track") or "") == "swing"]
 
+        # Headline win rate must reflect genuinely gate-cleared conviction, not a blend
+        # diluted by starter_only (partial-size) rows — paper_trading.log_starter_only
+        # deliberately admits those into the same "accumulate" track for data-completeness
+        # (see by_gate_mode below), but forward-tracking's own gate-count-vs-win-rate curve
+        # shows lower-gate cohorts underperform materially, so blending them into "the"
+        # number understated what a fully gate-cleared entry actually does (reported case:
+        # 212 of ~237 accumulate rows were starter_only, headline read 34.9% instead of the
+        # full_go cohort's real rate). accumulate_go is a stricter subset of accumulate, not
+        # a different admission path — nothing about what gets logged changes here.
+        accumulate_go = [r for r in accumulate if str(r.get("gate_mode") or "") == "full_go"]
+
         out["blended_summary"] = {
             "completed_n": stats["completed_n"],
             "win_rate_pct": stats["win_rate_pct"],
@@ -2106,11 +2117,23 @@ class PaperTradeLogger:
             "label": "All tracks blended",
         }
 
-        # Headline stats = accumulate (4-gate model) when enough data; never blend velocity into model headline.
+        # Headline stats = full_go accumulate (genuinely 4-gate-cleared) when enough data;
+        # never blend velocity, swing, or starter_only partial-conviction rows into it.
         headline_floor = max(3, min(5, int(min_actionable)))
-        if len(accumulate) >= headline_floor:
+        if len(accumulate_go) >= headline_floor:
+            headline_stats = self._stats_for_completed(accumulate_go, benchmark)
+            out["headline_track"] = "accumulate_go"
+        elif len(accumulate) >= headline_floor:
+            # Not enough full_go history yet — fall back to the broader accumulate cohort
+            # (still excludes velocity/swing) rather than block the headline entirely.
             headline_stats = self._stats_for_completed(accumulate, benchmark)
             out["headline_track"] = "accumulate"
+            fallback_note = (
+                f"Full-gate (full_go) cohort n={len(accumulate_go)} is too thin yet — "
+                f"headline blends in starter_only rows (n={len(accumulate)} total). "
+                "See by_gate_mode for the full_go-only read."
+            )
+            out["message"] = fallback_note if not out.get("message") else f"{out['message']} {fallback_note}"
         elif len(accumulate) > 0:
             headline_stats = self._stats_for_completed(accumulate, benchmark)
             out["headline_track"] = "accumulate_thin"
@@ -2202,8 +2225,9 @@ class PaperTradeLogger:
         out["current_model_version"] = MODEL_VERSION
 
         out["marketing_note"] = (
-            "Headline marketing stats should use accumulate GO cohort only; "
-            "velocity and swing tracks are labeled separately."
+            "Headline marketing stats use the full_go (fully gate-cleared) accumulate "
+            "cohort only; starter_only partial-conviction rows, velocity, and swing tracks "
+            "are labeled separately, not blended into the headline number."
         )
 
         return out

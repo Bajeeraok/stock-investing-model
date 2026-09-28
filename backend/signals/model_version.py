@@ -28,8 +28,27 @@ History:
   forward-tracking effect stays attributable even though 2026.09.2 had only ~3-4 EOD
   snapshots of runway first — if either change needs unwinding later, this boundary
   keeps the rollback unambiguous.
+- 2026.09.4 — fair-value/target pipeline unification: TTM EPS now excludes anomalously
+  large one-time non-operating items (signals/eps_normalization.py) before it drives
+  ttm_pe, so a mark-to-market gain no longer makes a stock look artificially cheap;
+  medium/long targets now capped by volatility-implied plausibility and analyst-consensus
+  proximity (signals/horizon_entry_calculator.py's _plausibility_cap), and the forward-FV
+  growth lift's own growth-rate input is capped at 15% instead of 40% (a peg_blend/
+  forward_pe fair value already prices growth in once; growing it by the same rate again
+  for the 1-year lift was double-counting). Bear case is now derived from a stressed EPS
+  x stressed multiple when clean PE/EPS inputs exist, replacing an unexplained flat
+  FV x 0.60 on the main path (fair_value_estimator.py::_bear_case). Owner-mode valuation
+  label now flags when it disagrees with the horizon's own overall verdict instead of
+  reading as an unqualified go-ahead. Paper-trading's headline win-rate stat now counts
+  gate_mode=="full_go" rows only (signals/paper_trade_logger.py) — it previously blended
+  in starter_only (partial-conviction) rows under the same "accumulate" label, diluting
+  the number well below what forward-tracking's own gate-count-vs-win-rate curve implies
+  a fully gate-cleared cohort should show. None of this changes gate pass/fail semantics
+  themselves, but it changes fair_value, targets, and bear_case materially enough for
+  high-growth names that forward-tracking history before this boundary isn't
+  apples-to-apples with history after it.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.09.3"
+MODEL_VERSION = "2026.09.4"

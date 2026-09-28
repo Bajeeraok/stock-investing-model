@@ -283,6 +283,14 @@ def enrich_shell_snapshot_meta(shell: dict) -> dict:
         if latest:
             shell["eod_snapshot_latest_date"] = latest
             df["eod_snapshot_latest_date"] = latest
+        # eod_snapshot_saved_at needs the exact same live overlay as eod_snapshot_latest_date
+        # above — it was missing here, which is the actual reason it stayed stuck on an old
+        # date (e.g. 2026-08-02, baked into a stale full-compute blob) while
+        # eod_snapshot_latest_date, right next to it, already read correctly.
+        saved_at = snaps[0].get("run_date") if snaps else None
+        if saved_at:
+            shell["eod_snapshot_saved_at"] = saved_at
+            df["eod_snapshot_saved_at"] = saved_at
     except Exception:
         pass
 

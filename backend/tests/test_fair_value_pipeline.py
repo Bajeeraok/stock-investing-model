@@ -1,7 +1,7 @@
 """
 Regression lock for signals/fair_value_pipeline.py — the single source of truth for
 model fair value, extracted from api/ticker_detail.py so scripts/run_daily.py can reuse
-it too. These tests mock the I/O boundary (build_fundamentals_info / get_eps_history_counts
+it too. These tests mock the I/O boundary (build_fundamentals_info / fetch_quarterly_income
 / route_fair_value) and assert the pipeline's own routing/guardrail/cap behavior, which
 previously lived inline in ticker_detail.py and had zero direct test coverage.
 """
@@ -14,6 +14,17 @@ from signals.fair_value_pipeline import compute_fair_value
 
 
 _CONFIG: dict = {}
+
+
+def _quarterly_rows(total: int, clean: int) -> list[dict]:
+    """Fake FMP quarterly income-statement rows: `clean` rows pass _is_clean_eps_quarter
+    (revenue > 0 + parseable EPS), the rest are stub/incomplete rows — matches what
+    counts_from_rows() (fv_eps_history.py) expects, now that fair_value_pipeline.py derives
+    eps_quarters_total/clean from one shared fetch_quarterly_income() call instead of a
+    separate get_eps_history_counts() call against the same endpoint."""
+    rows = [{"date": f"2020-{i:02d}-01", "revenue": 1_000_000_000, "epsdiluted": 1.0} for i in range(clean)]
+    rows += [{"date": f"2019-{i:02d}-01"} for i in range(total - clean)]
+    return rows
 
 
 def _fundamentals(**overrides):
@@ -38,7 +49,7 @@ def _fundamentals(**overrides):
 def test_happy_path_growth_name_produces_fair_value():
     """A plain growth-tier name with no suppression should route through the main estimator."""
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
          patch("signals.fv_router.route_fair_value", return_value=FvRoute()):
         result = compute_fair_value(_CONFIG, "ACME", 100.0, consensus_median=200.0)
 
@@ -58,7 +69,7 @@ def test_suppressed_route_anchors_to_street_and_flags_reason():
     surface for the UI."""
     route = FvRoute(fv_suppressed=True, fv_suppressed_reason="Bank — P/TBV model needed, not PE.")
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
          patch("signals.fv_router.route_fair_value", return_value=route):
         result = compute_fair_value(_CONFIG, "SOMEBANK", 100.0, consensus_median=145.0)
 
@@ -75,7 +86,7 @@ def test_suppressed_route_with_no_analyst_target_yields_no_fair_value():
     fair_value stays None so callers apply their own last-resort fallback."""
     route = FvRoute(fv_suppressed=True, fv_suppressed_reason="Recent spinoff — insufficient history.")
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals(targetMeanPrice=None)), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 2, "clean_quarters": 0}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(2, 0)), \
          patch("signals.fv_router.route_fair_value", return_value=route):
         result = compute_fair_value(_CONFIG, "NEWCO", 50.0, consensus_median=None, cons_low=None, cons_high=None)
 
@@ -89,7 +100,7 @@ def test_spy_uses_earnings_yield_method_not_pe_estimator():
     the extraction intact. No consensus supplied, so the extreme-divergence guardrail (which
     is orthogonal to this test) has nothing to anchor to and can't mask the assertion."""
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals(forwardEps=6.5, targetMeanPrice=None)), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 999, "clean_quarters": 999}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(999, 999)), \
          patch("signals.fv_router.route_fair_value", return_value=FvRoute()):
         result = compute_fair_value(
             {"fair_value": {"risk_free_rate": 0.043, "equity_risk_premium": 0.045}},
@@ -110,7 +121,7 @@ def test_extreme_divergence_guardrail_floors_at_street_consensus():
                 profitMargins=0.01, debtToEquity=3.0, revenueGrowth=0.0, earningsGrowth=0.0,
                 forwardPE=None,
             )), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
          patch("signals.fv_router.route_fair_value", return_value=FvRoute()):
         # Consensus set absurdly high relative to what a weak-fundamentals PE model would
         # produce, to force the >75%-below-street guardrail to trip.
@@ -129,7 +140,7 @@ def test_broad_index_etf_fair_value_capped_at_120_pct_of_spot():
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals(
                 forwardEps=50.0, forwardPE=6.0,  # would otherwise imply a huge FV via SPY-style yield math
             )), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 999, "clean_quarters": 999}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(999, 999)), \
          patch("signals.fv_router.route_fair_value", return_value=FvRoute()):
         result = compute_fair_value(_CONFIG, "QQQ", 400.0, consensus_median=900.0)
 
@@ -161,7 +172,7 @@ def test_eps_normalization_lowers_ttm_pe_input_when_anomaly_detected():
         return estimate_fair_value(**kwargs)
 
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
          patch("signals.fv_eps_history.fetch_quarterly_income", return_value=anomalous_rows), \
          patch("signals.fv_router.route_fair_value", return_value=FvRoute()), \
          patch("signals.fair_value_pipeline.estimate_fair_value_full", side_effect=_capture_estimate):
@@ -185,7 +196,7 @@ def test_eps_normalization_is_noop_for_ordinary_quarters():
     } for q in (6, 3, 2, 1)]
 
     with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
-         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
          patch("signals.fv_eps_history.fetch_quarterly_income", return_value=normal_rows), \
          patch("signals.fv_router.route_fair_value", return_value=FvRoute()):
         result = compute_fair_value(_CONFIG, "ACME", 100.0, consensus_median=200.0)

@@ -59,14 +59,16 @@ def _is_clean_eps_quarter(row: dict[str, Any]) -> bool:
 def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> list[dict[str, Any]] | None:
     """FMP quarterly income-statement rows, newest first. None on failure.
 
-    Logged at WARNING (not DEBUG) on a 401/403 specifically — that status means the
-    configured FMP plan doesn't include this endpoint, not a transient network issue, and
-    silently swallowing it here previously made two downstream features look broken with no
-    trace of why: fv_router's spinoff/IPO quarter-count gates (always saw total/clean
-    quarters as None, so those gates could never fire) and eps_normalization.py's one-time
-    non-operating-item detection (always saw no data, so it could never adjust TTM EPS —
-    confirmed live on GOOGL: TTM EPS stayed at the raw, un-adjusted ~$19.91 with
-    eps_quarters_total/clean both None in the API response).
+    Logged at WARNING (not DEBUG) on 401/403/429 specifically, rather than silently
+    swallowed — confirmed live that this endpoint intermittently failed for GOOGL
+    (eps_quarters_total/clean both None, TTM EPS stayed at the raw un-adjusted ~$19.91),
+    breaking fv_router's spinoff/IPO quarter-count gates and eps_normalization.py's
+    one-time non-operating-item detection with zero trace of why. A direct manual call to
+    this endpoint succeeded, ruling out a plan-tier restriction — 429 (rate limited) is the
+    likelier cause under real request volume; this used to be independently fetched from two
+    call sites per ticker (fv_router's history check and eps_normalization's own fetch),
+    doubling load against whatever per-minute limit applies. See counts_from_rows() /
+    fair_value_pipeline.compute_fair_value(), which now share one fetch.
     """
     api_key = get_api_key(config)
     if not api_key:
@@ -75,10 +77,14 @@ def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> lis
     params = {"period": "quarter", "limit": limit, "apikey": api_key}
     try:
         r = get_requests_session().get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
+        if r.status_code == 429:
+            logger.warning("fetch_quarterly_income %s: HTTP 429 — rate limited by FMP.", ticker)
+            return None
         if r.status_code in (401, 403):
             logger.warning(
-                "fetch_quarterly_income %s: HTTP %d — likely a plan-tier limit on FMP's "
-                "income-statement endpoint, not a transient error.", ticker, r.status_code,
+                "fetch_quarterly_income %s: HTTP %d — could be an invalid/expired key, a "
+                "plan restriction, or a rate limit surfaced as 403; check the response body "
+                "in a direct call if this recurs.", ticker, r.status_code,
             )
             return None
         r.raise_for_status()
@@ -88,13 +94,27 @@ def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> lis
         return None
     if isinstance(data, dict) and (data.get("Error") or data.get("error") or data.get("Error Message")):
         logger.warning(
-            "fetch_quarterly_income %s: FMP returned an error payload (likely a plan-tier "
-            "limit): %s", ticker, data.get("Error") or data.get("error") or data.get("Error Message"),
+            "fetch_quarterly_income %s: FMP returned an error payload: %s",
+            ticker, data.get("Error") or data.get("error") or data.get("Error Message"),
         )
         return None
     if not isinstance(data, list):
         return None
     return [row for row in data if isinstance(row, dict)]
+
+
+def counts_from_rows(rows: list[dict[str, Any]] | None) -> tuple[int | None, int | None]:
+    """
+    (total_quarters, clean_quarters) from an already-fetched quarterly-income rows list —
+    pulled out of count_eps_quarter_history so a caller that already has rows (e.g.
+    fair_value_pipeline.py, which needs the same rows for EPS normalization) can derive
+    counts without a second fetch_quarterly_income() call against the same FMP endpoint.
+    """
+    if rows is None:
+        return None, None
+    total = len(rows)
+    clean = sum(1 for row in rows if _is_clean_eps_quarter(row))
+    return total, clean
 
 
 def count_eps_quarter_history(
@@ -112,11 +132,7 @@ def count_eps_quarter_history(
     Both None if fetch failed.
     """
     rows = fetch_quarterly_income(config, ticker, limit=limit)
-    if rows is None:
-        return None, None
-    total = len(rows)
-    clean = sum(1 for row in rows if _is_clean_eps_quarter(row))
-    return total, clean
+    return counts_from_rows(rows)
 
 
 def get_eps_history_counts(config: dict, ticker: str) -> dict[str, int | None]:

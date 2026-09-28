@@ -6,6 +6,7 @@ from signals.fv_eps_history import (
     MIN_TOTAL_QUARTERS_IPO,
     _is_clean_eps_quarter,
     count_eps_quarter_history,
+    counts_from_rows,
 )
 from signals.fv_house_tiers import tag_entry_tiers_street_anchor
 from signals.fv_router import route_fair_value
@@ -29,6 +30,26 @@ def test_count_eps_quarter_history(mock_fetch):
     total, clean = count_eps_quarter_history({}, "SNDK")
     assert total == 4
     assert clean == 3
+
+
+def test_counts_from_rows_matches_count_eps_quarter_history():
+    """counts_from_rows() lets a caller that already fetched rows (fair_value_pipeline.py,
+    sharing one fetch_quarterly_income() call with EPS normalization) derive the same
+    total/clean counts without a second fetch against the same FMP endpoint."""
+    rows = [
+        {"revenue": 100, "eps": 1.0},
+        {"revenue": 90, "eps": 0.9},
+        {"revenue": 70},  # missing eps
+    ]
+    assert counts_from_rows(rows) == (3, 2)
+
+
+def test_counts_from_rows_none_input():
+    assert counts_from_rows(None) == (None, None)
+
+
+def test_counts_from_rows_empty_list():
+    assert counts_from_rows([]) == (0, 0)
 
 
 def test_route_spinoff_suppressed_when_clean_lt_4():

@@ -198,15 +198,21 @@ def compute_fair_value(
         # investments) out of TTM EPS before it drives ttm_pe — see eps_normalization.py.
         # A no-op for the vast majority of tickers; only fires when a quarter's other-income
         # magnitude is anomalous relative to that quarter's operating income.
+        #
+        # Fetches 12 quarters (not just the 4 needed for TTM) so this single call also covers
+        # the eps-history-quarter-count need below (fv_router's spinoff/IPO gating) — the two
+        # used to be independent fetches against the same FMP endpoint, doubling call volume
+        # against FMP's per-minute rate limit for every ticker.
+        _q_rows = None
         try:
             from signals.fv_eps_history import fetch_quarterly_income
             from signals.cache import cached_quarterly_income
             from signals.eps_normalization import compute_core_ttm_eps
 
             _q_rows = cached_quarterly_income(
-                ticker, lambda: fetch_quarterly_income(config, ticker, limit=4)
+                ticker, lambda: fetch_quarterly_income(config, ticker, limit=12)
             )
-            _eps_norm = compute_core_ttm_eps(_q_rows)
+            _eps_norm = compute_core_ttm_eps(_q_rows[:4] if _q_rows else None)
             if _eps_norm.adjusted and _eps_norm.core_ttm_eps and _eps_norm.core_ttm_eps > 0 and current_price:
                 trailing_eps = _eps_norm.core_ttm_eps
                 ttm_pe = round(current_price / trailing_eps, 2)
@@ -290,12 +296,11 @@ def compute_fair_value(
         _sector_str: str | None = str(info["sector"]) if info.get("sector") else None
 
         try:
-            from signals.fv_eps_history import get_eps_history_counts
-            from signals.cache import cached_eps_history_counts
+            from signals.fv_eps_history import counts_from_rows
 
-            _eps_hist = cached_eps_history_counts(ticker, lambda: get_eps_history_counts(config, ticker))
-            _eps_total = (_eps_hist or {}).get("total_quarters")
-            _eps_clean = (_eps_hist or {}).get("clean_quarters")
+            # Reuse the rows already fetched above for EPS normalization — no second
+            # fetch_quarterly_income() call against the same FMP endpoint for this ticker.
+            _eps_total, _eps_clean = counts_from_rows(_q_rows)
         except Exception:
             pass
 
