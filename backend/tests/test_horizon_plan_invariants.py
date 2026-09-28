@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from signals.horizon_entry_calculator import (
+    LT_FORWARD_GROWTH_CAP_PCT,
     PLAN_MIN_RR_FROM_ENTRY,
     _apply_horizon_plan_invariants,
     _forward_fair_value,
@@ -14,6 +15,35 @@ from signals.horizon_entry_calculator import (
 
 def test_forward_fair_value_grows_with_eps():
     assert _forward_fair_value(500.0, 10.0, years=1.0) == 550.0
+
+
+class TestForwardFairValueGrowthCap:
+    """Regression: fair_value_estimator's peg_blend/forward_pe methods already price growth
+    INTO fv — growing that already-growth-priced number by the model's own growth rate again
+    for the 1-year forward-lift double-counts it. Confirmed live: GOOGL's fv ($474.73, from a
+    42%-growth peg_blend) got lifted by another 40% to a $664.62 forward FV. The lift's own
+    growth input is capped independently and much tighter than fair_value_estimator's cap."""
+
+    def test_high_growth_input_is_capped_at_the_lift_specific_ceiling(self):
+        # GOOGL-style: fv already priced with 42% growth; lift must use the capped 15%, not 42%.
+        fv = _forward_fair_value(474.73, 42.0, years=1.0)
+        assert fv == round(474.73 * (1 + LT_FORWARD_GROWTH_CAP_PCT / 100.0), 2)
+        assert fv < 474.73 * 1.40  # materially below the old 40%-cap behavior
+
+    def test_very_high_growth_input_also_capped(self):
+        # AMD-style: 65% growth input, same 15% ceiling applies.
+        fv = _forward_fair_value(516.88, 65.0, years=1.0)
+        assert fv == round(516.88 * (1 + LT_FORWARD_GROWTH_CAP_PCT / 100.0), 2)
+
+    def test_low_growth_names_unaffected(self):
+        # PG-style: 1.5% growth is well under the cap — no behavior change.
+        fv = _forward_fair_value(173.56, 1.5, years=1.0)
+        assert fv == round(173.56 * 1.015, 2)
+
+    def test_default_growth_fallback_unaffected(self):
+        # JPM-style: no growth data -> LT_DEFAULT_GROWTH_PCT (8%) fallback, under the cap.
+        fv = _forward_fair_value(373.64, None, years=1.0)
+        assert fv == round(373.64 * 1.08, 2)
 
 
 def test_rr_from_entry_mid_not_spot():

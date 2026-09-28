@@ -95,6 +95,16 @@ EXTENDED_ABOVE_FV_PCT  = 8.0    # spot > FV by this → DO NOT CHASE / pullback-
 FV_STALE_ATR_SIGMA     = 2.0    # |spot − FV| / ATR above this → flag FV as possibly stale
 LT_FORWARD_YEARS       = 1.0    # grow today's FV by expected EPS growth over this horizon
 LT_DEFAULT_GROWTH_PCT  = 8.0    # used when earnings growth is unavailable
+# Cap on the growth rate used for the forward-FV lift specifically (see _forward_fair_value) —
+# deliberately lower than fair_value_estimator's own growth cap (up to ~65% for high-growth
+# names via its PEG/forward-PE methods). Those methods already price growth INTO fv (that's
+# the "G" in PEG) — growing that already-growth-priced number by the model's own growth rate
+# again for the 1-year lift double-counts it. Confirmed across GOOGL (fv $474.73 -> forward FV
+# $664.62 at the old 40% cap, i.e. +40% on top of a valuation that already assumed 42% growth),
+# MSFT, and AMD (all high-growth names hitting or near the old 40% cap) — while value/slow-
+# growth names (PG, TTD; growth 1.5-3%) and the no-data default (8%) are well under 15% and are
+# unaffected by this change.
+LT_FORWARD_GROWTH_CAP_PCT = 15.0
 TOUCH_SUPPRESS_PCT     = 15.0   # suppress pullback plans with very low historical touch odds
 TOUCH_SUPPRESS_DROP_PCT = 10.0  # only suppress when band is this far below spot
 
@@ -891,8 +901,9 @@ def _forward_fair_value(fv: float, earnings_growth_pct: float | None, years: flo
         g = float(g)
     except (TypeError, ValueError):
         g = LT_DEFAULT_GROWTH_PCT
-    # Cap absurd growth so a single year doesn't invent 2× targets
-    g = max(-20.0, min(40.0, g))
+    # Cap the lift's own growth rate — separate from, and tighter than, fair_value_estimator's
+    # growth cap on fv itself (see LT_FORWARD_GROWTH_CAP_PCT).
+    g = max(-20.0, min(LT_FORWARD_GROWTH_CAP_PCT, g))
     y = max(0.25, float(years))
     return _r(fv * ((1.0 + g / 100.0) ** y))
 
@@ -2108,6 +2119,15 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             verdict, conviction = "BUY", "Medium"
         elif verdict == "BUY" and hc >= 75:
             conviction = "High"
+
+    # When valuation alone says BUY/PARTIAL but this horizon's own overall verdict lands
+    # lower (regime/ML/confidence didn't confirm), the House-panel label must say so
+    # explicitly — otherwise "entry justified" reads as an unqualified green light sitting
+    # right next to a WATCH/WAIT verdict, which looks like a flat contradiction rather than
+    # "valuation is fine, the rest of the picture isn't yet" (same "one field, many surfaces"
+    # class of gap action_title_by_mode already fixes for the verdict banner).
+    if assess_verdict in ("BUY", "PARTIAL") and verdict != "BUY":
+        assess_label += " (valuation only — overall verdict is {} until regime/ML/confidence confirm)".format(verdict)
 
     # ── Rationale & trigger ──────────────────────────────────────────────
     parts = []

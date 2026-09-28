@@ -57,7 +57,17 @@ def _is_clean_eps_quarter(row: dict[str, Any]) -> bool:
 
 
 def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> list[dict[str, Any]] | None:
-    """FMP quarterly income-statement rows, newest first. None on failure."""
+    """FMP quarterly income-statement rows, newest first. None on failure.
+
+    Logged at WARNING (not DEBUG) on a 401/403 specifically — that status means the
+    configured FMP plan doesn't include this endpoint, not a transient network issue, and
+    silently swallowing it here previously made two downstream features look broken with no
+    trace of why: fv_router's spinoff/IPO quarter-count gates (always saw total/clean
+    quarters as None, so those gates could never fire) and eps_normalization.py's one-time
+    non-operating-item detection (always saw no data, so it could never adjust TTM EPS —
+    confirmed live on GOOGL: TTM EPS stayed at the raw, un-adjusted ~$19.91 with
+    eps_quarters_total/clean both None in the API response).
+    """
     api_key = get_api_key(config)
     if not api_key:
         return None
@@ -65,10 +75,22 @@ def fetch_quarterly_income(config: dict, ticker: str, *, limit: int = 12) -> lis
     params = {"period": "quarter", "limit": limit, "apikey": api_key}
     try:
         r = get_requests_session().get(f"{BASE_V3}/income-statement/{sym}", params=params, timeout=15)
+        if r.status_code in (401, 403):
+            logger.warning(
+                "fetch_quarterly_income %s: HTTP %d — likely a plan-tier limit on FMP's "
+                "income-statement endpoint, not a transient error.", ticker, r.status_code,
+            )
+            return None
         r.raise_for_status()
         data = r.json()
     except Exception as e:
         logger.debug("fetch_quarterly_income failed %s: %s", ticker, e)
+        return None
+    if isinstance(data, dict) and (data.get("Error") or data.get("error") or data.get("Error Message")):
+        logger.warning(
+            "fetch_quarterly_income %s: FMP returned an error payload (likely a plan-tier "
+            "limit): %s", ticker, data.get("Error") or data.get("error") or data.get("Error Message"),
+        )
         return None
     if not isinstance(data, list):
         return None
