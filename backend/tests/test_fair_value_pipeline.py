@@ -137,6 +137,62 @@ def test_broad_index_etf_fair_value_capped_at_120_pct_of_spot():
     assert result.fair_value <= 400.0 * 1.20 + 0.01
 
 
+def test_eps_normalization_lowers_ttm_pe_input_when_anomaly_detected():
+    """A one-time gain quarter (GOOGL Q2-style) must lower the effective ttm_pe used by
+    the estimator, not the raw GAAP-inflated one — regression for the reported bug where
+    a mark-to-market equity gain made GOOGL's TTM P/E look artificially cheap."""
+    anomalous_rows = [
+        {  # anomalous quarter, newest first
+            "date": "2026-06-30", "netIncome": 98_933_000_000, "operatingIncome": 28_000_000_000,
+            "totalOtherIncomeExpensesNet": 99_000_000_000, "incomeBeforeTax": 127_000_000_000,
+            "incomeTaxExpense": 28_067_000_000, "weightedAverageShsOutDil": 12_300_000_000,
+        },
+        *[{
+            "date": f"2026-{q:02d}-01", "netIncome": 22_045_700_000, "operatingIncome": 28_000_000_000,
+            "totalOtherIncomeExpensesNet": 300_000_000, "incomeBeforeTax": 28_300_000_000,
+            "incomeTaxExpense": 6_254_300_000, "weightedAverageShsOutDil": 12_300_000_000,
+        } for q in (3, 2, 1)],
+    ]
+    captured_ttm_pe = {}
+
+    def _capture_estimate(**kwargs):
+        captured_ttm_pe["value"] = kwargs["ttm_pe"]
+        from signals.fair_value_estimator import estimate_fair_value
+        return estimate_fair_value(**kwargs)
+
+    with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
+         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=anomalous_rows), \
+         patch("signals.fv_router.route_fair_value", return_value=FvRoute()), \
+         patch("signals.fair_value_pipeline.estimate_fair_value_full", side_effect=_capture_estimate):
+        result = compute_fair_value(_CONFIG, "GOOGL", 343.92, consensus_median=425.0)
+
+    # GAAP TTM EPS here is ~13.42 (inflated by the one-time gain); core (adjusted) EPS is
+    # well below that. A lower EPS means a HIGHER P/E (less cheap, correctly) — the estimator
+    # must have been called with that higher, corrected ttm_pe, not the GAAP-implied one.
+    gaap_implied_pe = round(343.92 / 13.42, 2)
+    assert captured_ttm_pe["value"] > gaap_implied_pe
+    assert result.fv_result is not None
+    assert any("non-operating" in n.lower() or "one-time" in n.lower() for n in (result.fv_result.notes or []))
+
+
+def test_eps_normalization_is_noop_for_ordinary_quarters():
+    """No anomalous quarter -> ttm_pe from FMP key-metrics is used unchanged."""
+    normal_rows = [{
+        "date": f"2026-{q:02d}-01", "netIncome": 22_045_700_000, "operatingIncome": 28_000_000_000,
+        "totalOtherIncomeExpensesNet": 300_000_000, "incomeBeforeTax": 28_300_000_000,
+        "incomeTaxExpense": 6_254_300_000, "weightedAverageShsOutDil": 12_300_000_000,
+    } for q in (6, 3, 2, 1)]
+
+    with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
+         patch("signals.fv_eps_history.get_eps_history_counts", return_value={"total_quarters": 40, "clean_quarters": 40}), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=normal_rows), \
+         patch("signals.fv_router.route_fair_value", return_value=FvRoute()):
+        result = compute_fair_value(_CONFIG, "ACME", 100.0, consensus_median=200.0)
+
+    assert result.ttm_pe_used == 30.0  # unchanged from _fundamentals()'s peRatioTTM
+
+
 def test_pipeline_never_raises_on_internal_failure():
     """A hard failure inside the fundamentals fetch must degrade to fair_value=None with an
     error message, not propagate and kill the caller's batch loop."""

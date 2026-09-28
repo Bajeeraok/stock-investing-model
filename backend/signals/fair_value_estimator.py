@@ -493,6 +493,43 @@ class FairValueResult:
     divergence_pct: Optional[float] = None     # NTM/TTM EPS divergence %
 
 
+# Bear case, when EPS/PE inputs allow a real derivation rather than a flat haircut on FV:
+# assume TTM earnings could fall this much in a downturn, and the multiple could compress
+# to this fraction of today's (lower of TTM/sector) PE — a genuine "earnings down + multiple
+# down" stress case, not an arbitrary percentage of the fair-value output itself.
+_BEAR_EPS_HAIRCUT_PCT = 0.20
+_BEAR_PE_COMPRESSION_PCT = 0.70
+# Fallback when EPS/PE inputs aren't clean enough for the above (e.g. negative/undefined
+# TTM PE) — matches the flat multiplier already used by fair_value_pipeline.py's other
+# bear-case paths (suppressed names, negative-EPS street anchor, divergence guardrail).
+_BEAR_CASE_FALLBACK_MULT = 0.75
+
+
+def _bear_case(
+    fv: float,
+    ttm_pe: Optional[float],
+    sector_pe: Optional[float],
+    current_eps: Optional[float],
+) -> tuple[Optional[float], str]:
+    """Returns (bear_case, methodology_label)."""
+    if fv <= 0:
+        return None, "n/a"
+    if current_eps and current_eps > 0 and ttm_pe and ttm_pe > 0:
+        bear_eps = current_eps * (1 - _BEAR_EPS_HAIRCUT_PCT)
+        base_pe = min(ttm_pe, sector_pe) if sector_pe and sector_pe > 0 else ttm_pe
+        bear_pe = base_pe * _BEAR_PE_COMPRESSION_PCT
+        bear = bear_eps * bear_pe
+        # Sanity: a bear case must be a real discount to fv and strictly positive — if the
+        # inputs somehow produce something outside that range, fall through to the flat cut
+        # rather than surface a nonsensical number.
+        if 0 < bear < fv:
+            return round(bear, 2), (
+                f"bear EPS ${bear_eps:.2f} ({int(_BEAR_EPS_HAIRCUT_PCT*100)}% below TTM) × "
+                f"bear multiple {bear_pe:.1f}x ({int(_BEAR_PE_COMPRESSION_PCT*100)}% of today's PE)"
+            )
+    return round(fv * _BEAR_CASE_FALLBACK_MULT, 2), f"FV×{_BEAR_CASE_FALLBACK_MULT:.2f} (EPS/PE inputs unavailable)"
+
+
 def estimate_fair_value(
     current_price: float,
     ttm_pe: float,
@@ -662,11 +699,12 @@ def estimate_fair_value(
 
     discount_pct = round((fv - current_price) / current_price * 100, 1)
 
-    # Bear case: conservative downside (FV * 0.60) so users see gap vs fair value
-    bear_case = round(fv * 0.60, 2) if fv > 0 else None
+    # Bear case: earnings-down + multiple-compression stress case when EPS/PE inputs allow
+    # it, else a flat conservative haircut on FV — see _bear_case().
+    bear_case, bear_methodology = _bear_case(fv, ttm_pe, sector_pe, current_eps)
     methodology_summary = (
         f"{classification.stock_type.value}: {method}. "
-        f"Bear case ${bear_case:.2f} (FV×0.6) vs fair ${fv:.2f} — gap reflects method assumptions."
+        f"Bear case ${bear_case:.2f} ({bear_methodology}) vs fair ${fv:.2f}."
     ) if bear_case is not None else None
 
     # §8 routing transparency fields from fv_router

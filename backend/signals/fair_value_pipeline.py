@@ -166,6 +166,7 @@ def compute_fair_value(
     sector_forward_pe = 25.0
     _fv_route: FvRoute | None = None
     _error: str | None = None
+    _eps_norm = None
 
     try:
         from signals.fetcher import build_fundamentals_info
@@ -192,6 +193,25 @@ def compute_fair_value(
             ttm_pe = _safe_float(info.get("trailingPE"))
         if forward_pe is None:
             forward_pe = _safe_float(info.get("forwardPE"))
+
+        # Strip large one-time/non-operating swings (e.g. a mark-to-market gain on equity
+        # investments) out of TTM EPS before it drives ttm_pe — see eps_normalization.py.
+        # A no-op for the vast majority of tickers; only fires when a quarter's other-income
+        # magnitude is anomalous relative to that quarter's operating income.
+        try:
+            from signals.fv_eps_history import fetch_quarterly_income
+            from signals.cache import cached_quarterly_income
+            from signals.eps_normalization import compute_core_ttm_eps
+
+            _q_rows = cached_quarterly_income(
+                ticker, lambda: fetch_quarterly_income(config, ticker, limit=4)
+            )
+            _eps_norm = compute_core_ttm_eps(_q_rows)
+            if _eps_norm.adjusted and _eps_norm.core_ttm_eps and _eps_norm.core_ttm_eps > 0 and current_price:
+                trailing_eps = _eps_norm.core_ttm_eps
+                ttm_pe = round(current_price / trailing_eps, 2)
+        except Exception:
+            pass
 
         if (
             ticker.upper() in _HIGH_PE_GROWTH
@@ -387,6 +407,7 @@ def compute_fair_value(
                 forward_pe=forward_pe,
                 sector_forward_pe=sector_forward_pe,
                 fcf_per_share=fcf_per_share,
+                current_eps=trailing_eps,
                 analyst_target=analyst_target,
                 guardrails=dict(_fv_gr) if isinstance(_fv_gr, dict) else None,
                 force_forward_pe=_force_fwd,
@@ -394,6 +415,11 @@ def compute_fair_value(
             )
             if fv_result and fv_result.fair_value and fv_result.fair_value > 0:
                 fair_value = fv_result.fair_value
+
+        if _eps_norm and _eps_norm.adjusted and fv_result is not None:
+            existing_notes = list(getattr(fv_result, "notes", []) or [])
+            existing_notes.extend(_eps_norm.notes)
+            fv_result.notes = existing_notes
     except Exception as exc:
         _error = str(exc)
 

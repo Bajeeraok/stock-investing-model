@@ -1566,6 +1566,19 @@ def build_gate_linked_catalyst_cards(
     return cards[:limit]
 
 
+def _truncate_detail(text: str, max_len: int = 220) -> str:
+    """Truncate on a word boundary with an ellipsis — a hard character-count cut (the
+    previous behavior) sliced mid-word/mid-sentence for any detail text over the limit,
+    e.g. a regime gate's explanation getting cut to "...is what the " with the rest of
+    the sentence ("...model would need to call this confirmed.") silently dropped, both
+    in the raw API response and in what gets fed to the why-explainer LLM prompt.
+    """
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len].rsplit(" ", 1)[0]
+    return (cut or text[:max_len]).rstrip(" .,;:—-") + "…"
+
+
 def build_model_checks(
     p: SignalPacket,
     cats: list[Catalyst] | None = None,
@@ -1582,10 +1595,9 @@ def build_model_checks(
             "id": g.name,
             "label": _gate_pill_label(g.name),
             "passed": bool(g.passed),
-            "detail": (
-                (g.detail.get("text") if isinstance(g.detail, dict) else None)
-                or ""
-            )[:160],
+            "detail": _truncate_detail(
+                (g.detail.get("text") if isinstance(g.detail, dict) else None) or ""
+            ),
         }
         for g in (p.gates or [])
     ]
@@ -1657,7 +1669,7 @@ Convert the MODEL_CHECKS payload (gate pass/fail results, execution price levels
 gate-linked catalysts) into a short explanation a non-finance reader can follow.
 
 CORE RULES:
-1. LENGTH: 2 to 4 short sentences, 60 to 160 words total.
+1. LENGTH: 3 to 5 short sentences, 70 to 200 words total.
 2. NO FIN-TECH JARGON. Translate metrics into everyday language, same as these examples:
    - HMM bear / low fused score -> Momentum is weak / Overall signal is cautious
    - Put-heavy / high P/C -> Big traders are betting against this stock
@@ -1669,8 +1681,11 @@ CORE RULES:
    - RSI -> say "the stock's recent momentum" instead
    - regime / HMM bull % -> "the market's own trend-reading model"
 3. COVER, IN ORDER:
-   a. Which of the 4 gates (from MODEL_CHECKS.gates) are blocking vs. clear, and why, in plain
-      terms — not gate names, describe what each one is actually checking.
+   a. EVERY gate in MODEL_CHECKS.gates, in the order given — not just the blockers. One short
+      clause per gate stating pass/fail AND the specific number behind it from that gate's
+      `detail` field (e.g. the actual RSI/pattern reading, the ML probability vs its threshold,
+      the valuation discount %, the confidence %) — not a vague restatement like "momentum looks
+      fine." A gate that passes still gets a clause; do not silently drop it for space.
    b. What the execution price levels (MODEL_CHECKS.execution_targets) mean practically — why
       this buy zone, why this target, why this exit level, not just restating the numbers.
    c. If MODEL_CHECKS.gate_linked_catalysts is non-empty, explain in one clause why that
@@ -1816,6 +1831,7 @@ class NarrativeEngine:
         if cached is not None:
             return cached, "cached"
         user = build_user_prompt(p, contract, cats, retail_scan=retail_scan)
+        last_extra: list[str] = []
         for attempt in range(self.max_retries + 1):
             text = self.llm(SYSTEM_PROMPT, user).strip()
             bad_n = guard_numbers(text, p)
@@ -1834,8 +1850,13 @@ class NarrativeEngine:
                 extra.append(f"structure errors {bad_s} — exactly 3 bullets, 35-50 words, status emoji on bullet 1")
             if bad_z:
                 extra.append(f"{bad_z} — spot is already inside the buy zone, do not say it needs to move into it")
+            last_extra = extra
             user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
                      "Rewrite using only packet numbers and no forbidden words.")
+        logger.warning(
+            "[narrative] %s (%s) generate() exhausted %d attempts, falling back: %s",
+            p.ticker, p.mode, self.max_retries + 1, "; ".join(last_extra) or "unknown",
+        )
         return "", "fallback"
 
     def generate_why_explainer(self, p: SignalPacket, contract: ActionContract,
@@ -1864,6 +1885,7 @@ class NarrativeEngine:
         if cached is not None:
             return cached, "cached"
         user = build_why_explainer_prompt(p, contract, model_checks, cats, retail_scan=retail_scan)
+        last_extra: list[str] = []
         for attempt in range(self.max_retries + 1):
             text = self.llm(WHY_EXPLAINER_SYSTEM_PROMPT, user).strip()
             bad_n = guard_numbers(text, p)
@@ -1879,11 +1901,16 @@ class NarrativeEngine:
             if bad_w:
                 extra.append(f"forbidden jargon {bad_w} — rewrite in plain English")
             if bad_s:
-                extra.append(f"structure errors {bad_s} — 2-4 plain sentences, 60-160 words, no bullets")
+                extra.append(f"structure errors {bad_s} — 3-5 plain sentences, 70-200 words, no bullets")
             if bad_z:
                 extra.append(f"{bad_z} — spot is already inside the buy zone, do not say it needs to move into it")
+            last_extra = extra
             user += (f"\n\nREJECTED attempt {attempt + 1}: {'; '.join(extra)}. "
                      "Rewrite using only packet numbers and no forbidden words.")
+        logger.warning(
+            "[narrative] %s (%s) generate_why_explainer() exhausted %d attempts, falling back: %s",
+            p.ticker, p.mode, self.max_retries + 1, "; ".join(last_extra) or "unknown",
+        )
         return "", "fallback"
 
 

@@ -17,6 +17,7 @@ Run standalone test:
     python horizon_entry_calculator.py
 """
 
+import math
 import sys
 from pathlib import Path
 
@@ -909,6 +910,36 @@ def _mark_horizon_no_setup(h: dict[str, Any], reason: str) -> None:
         h["conviction"] = "Low"
 
 
+# Plausibility cap constants for medium/long targets (see _plausibility_cap): a target must
+# be reachable within a bounded, roughly-2-sigma move from spot AND not run far past what
+# analysts already publish as their high estimate — guards against a target compounding past
+# any sane bound when fair_value itself is elevated (e.g. an EPS data artifact) and the
+# forward-FV lift / cross-horizon monotonicity steps push it even higher.
+_PLAUSIBILITY_SIGMA_MULT = 2.0
+_PLAUSIBILITY_ANALYST_HIGH_BUFFER = 1.15  # allow the model to see 15% past the published Street high
+_MT_TRADING_DAYS = 63    # ~3 months
+_LT_TRADING_DAYS = 252   # ~12 months
+
+
+def _plausibility_cap(
+    current_price: float,
+    atr: float | None,
+    analyst_high: float | None,
+    trading_days: int,
+) -> float | None:
+    """Lower of a volatility-implied ceiling (~sigma_mult * daily-vol-proxy over the horizon)
+    and a buffered analyst-consensus-high ceiling — whichever constrains the target more.
+    None (no cap) only when neither input is available."""
+    caps: list[float] = []
+    if atr and atr > 0 and current_price > 0:
+        daily_vol_pct = atr / current_price
+        move_pct = daily_vol_pct * _PLAUSIBILITY_SIGMA_MULT * math.sqrt(trading_days)
+        caps.append(current_price * (1 + move_pct))
+    if analyst_high and analyst_high > 0:
+        caps.append(analyst_high * _PLAUSIBILITY_ANALYST_HIGH_BUFFER)
+    return min(caps) if caps else None
+
+
 def _apply_horizon_plan_invariants(
     payload: dict[str, Any],
     *,
@@ -916,11 +947,13 @@ def _apply_horizon_plan_invariants(
     fair_value: float | None,
     atr: float | None = None,
     earnings_growth_pct: float | None = None,
+    analyst_target_high: float | None = None,
 ) -> None:
     """
     Hard plan-quality gates before UI render:
       - Long target uses forward FV (grown by expected EPS), not today's FV alone
       - Targets non-decreasing short → medium → long
+      - Medium/long targets capped by volatility-implied plausibility and analyst high
       - Per-horizon: min edge above entry_high + R:R ≥ 1.5 from entry mid
       - Low historical touch odds + deep pullback → no setup
       - Extended above FV → DO NOT CHASE / pullback-conditional mode
@@ -981,6 +1014,40 @@ def _apply_horizon_plan_invariants(
             warns.append(note)
         long_h["warnings"] = warns
         refresh_horizon_rr_from_levels(long_h, px or None)
+
+    # ── 2b) Plausibility cap — target must be reachable within a bounded move from spot
+    # AND not run far past the published analyst high. Applied after the forward-FV lift
+    # and monotonicity steps above, since either can push a target past a sane bound when
+    # fair_value itself is elevated (a bad EPS input, a stale estimate, etc.).
+    if px > 0:
+        mt_cap = _plausibility_cap(px, atr, analyst_target_high, _MT_TRADING_DAYS)
+        if mt_cap is not None:
+            mt_t = float(medium.get("target") or 0)
+            if mt_t > mt_cap + 1e-6:
+                medium["target"] = _r(mt_cap)
+                warns = list(medium.get("warnings") or [])
+                note = (
+                    f"Medium target capped to ${mt_cap:.2f} — the uncapped target implied a move "
+                    "beyond plausible 3-month volatility and/or well past the analyst consensus high."
+                )
+                if note not in warns:
+                    warns.append(note)
+                medium["warnings"] = warns
+                refresh_horizon_rr_from_levels(medium, px or None)
+        lt_cap = _plausibility_cap(px, atr, analyst_target_high, _LT_TRADING_DAYS)
+        if lt_cap is not None:
+            lt_t = float(long_h.get("target") or 0)
+            if lt_t > lt_cap + 1e-6:
+                long_h["target"] = _r(lt_cap)
+                warns = list(long_h.get("warnings") or [])
+                note = (
+                    f"Long target capped to ${lt_cap:.2f} — the uncapped target implied a move "
+                    "beyond plausible 12-month volatility and/or well past the analyst consensus high."
+                )
+                if note not in warns:
+                    warns.append(note)
+                long_h["warnings"] = warns
+                refresh_horizon_rr_from_levels(long_h, px or None)
 
     # ── 3) Per-horizon edge + R:R from entry mid ──────────────────────────
     for key in ("short", "medium", "long"):
@@ -2282,6 +2349,7 @@ def build_all_horizons_payload(
     fv_street_anchor_usd: Optional[float] = None,
     fv_suppressed_reason: str = "",
     earnings_growth_pct: Optional[float] = None,
+    analyst_target_high: Optional[float] = None,
 ) -> dict:
     """
     Builds all three horizon signals and returns a dict ready to attach
@@ -2386,6 +2454,7 @@ def build_all_horizons_payload(
         fair_value=fair_value,
         atr=atr if atr and atr > 0 else None,
         earnings_growth_pct=earnings_growth_pct,
+        analyst_target_high=analyst_target_high,
     )
     for key in ("short", "medium", "long"):
         refresh_horizon_rr_from_levels(payload.get(key) or {}, current_price)

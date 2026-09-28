@@ -584,6 +584,22 @@ def cached_fundamentals_info(ticker: str, fetch_fn) -> dict | None:
     return out
 
 
+def cached_quarterly_income(ticker: str, fetch_fn) -> list | None:
+    """Cache signals.fv_eps_history.fetch_quarterly_income()'s raw FMP rows. TTL 24h —
+    quarterly financials change at most once a quarter. Used by signals/eps_normalization.py;
+    a separate cache namespace from cached_eps_history_counts (which caches derived quarter
+    counts, not the raw rows the EPS-normalization adjustment needs).
+    """
+    key = cache_key("quarterly_income", ticker)
+    hit = get_cached(key)
+    if hit is not None and isinstance(hit, list):
+        return hit
+    out = fetch_fn()
+    if out is not None and isinstance(out, list):
+        set_cached(key, out, 24 * 3600)
+    return out
+
+
 def cached_eps_history_counts(ticker: str, fetch_fn) -> dict | None:
     """Cache signals.fv_eps_history.get_eps_history_counts(). TTL 24h — quarterly EPS
     history changes at most once a quarter, so a same-day re-run should never re-hit FMP.
