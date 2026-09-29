@@ -29,10 +29,17 @@ def _quality_label(passed: int, total: int) -> str:
 
 
 def _inside_band(price: float | None, lo: float | None, hi: float | None) -> bool:
+    """Rounds `price` to cents before comparing — lo/hi are themselves cent-rounded band
+    edges, and a band ceiling is often explicitly "clamped to spot" (defined to equal current
+    price). Comparing that rounded edge against a raw, full-precision price can put spot a
+    few thousandths of a cent above its own ceiling (confirmed live: 1712.8900146... vs a
+    1712.89 ceiling), flipping "inside band" to False for a price that's actually sitting
+    right at the top of it.
+    """
     if price is None or lo is None or hi is None:
         return False
     low, high = min(lo, hi), max(lo, hi)
-    return low <= price <= high
+    return low <= round(float(price), 2) <= high
 
 
 def build_swing_setup(

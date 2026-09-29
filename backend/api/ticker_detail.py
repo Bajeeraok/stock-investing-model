@@ -1793,11 +1793,30 @@ def _roadmap_core_zone_3_to_6(
     t2_lo: float | None,
     t2_hi: float | None,
     low_52w: float | None,
+    medium_lo: float | None = None,
+    medium_hi: float | None = None,
 ) -> tuple[float | None, float | None, str, str]:
     """
-    Core accumulation zone for 3–6 mo buy row — must match long-term tier ladder.
-    When spot is inside Tier 2 or Tier 1, use that band (not always MA200/T1).
+    Core accumulation zone for the roadmap's 1-3mo/3-6mo rows.
+
+    medium_lo/medium_hi (horizons.medium.entry_zone — the same field
+    signals/horizon_playbooks.py's "Position Build" tab reads directly) is the single source
+    of truth when available: this function and Position Build were computing the "medium-term
+    entry band" two different ways (this one syncing to the long-term T1/T2 tier ladder
+    instead) and showing genuinely different numbers for what both tabs presented as the same
+    ~1-3 month window (confirmed live on SNDK: $1,501.59-$1,577.43 here vs $1,435.47-$1,577.43
+    there). The long-tier/MA200 blend below is now only a fallback for when medium.entry_zone
+    itself is unavailable (e.g. suppressed fair value with no fallback band computed) — the
+    tier-ladder-sync behavior it was originally built for (test_horizon_tier_sync.py) is
+    preserved for that degraded case only.
     """
+    if medium_lo is not None and medium_hi is not None and medium_lo > 0 and medium_hi > 0:
+        return (
+            round(medium_lo, 2),
+            round(medium_hi, 2),
+            "Core position (medium-term band)",
+            "Same medium-term entry band as Position Build — single source of truth.",
+        )
     if (
         t2_lo is not None
         and t2_hi is not None
@@ -2353,8 +2372,11 @@ def _build_trade_roadmap(
     )
 
     # Core / MA200 tier (3–6m) — compute first so near-term rows can match the same entry ladder.
+    # medium_lo/hi passed so this prefers horizons.medium.entry_zone (Position Build's own
+    # source) over the long-tier/MA200 blend — see _roadmap_core_zone_3_to_6's docstring.
     c6_lo, c6_hi, c6_when, c6_cond = _roadmap_core_zone_3_to_6(
-        current_price, ma200, t1_lo, t1_hi, t2_lo, t2_hi, low_52w
+        current_price, ma200, t1_lo, t1_hi, t2_lo, t2_hi, low_52w,
+        medium_lo=m_lo, medium_hi=m_hi,
     )
     # Same story as long-horizon investor copy: pullbacks toward MA200 when spot is not meaningfully below MA200.
     lt_pullback_toward_ma200 = bool(
@@ -2369,8 +2391,18 @@ def _build_trade_roadmap(
         and display_verdict not in ("REDUCE", "AVOID")
     )
 
-    in_st_band = bool(s_lo and s_hi and float(s_lo) <= float(current_price) <= float(s_hi))
-    in_mt_band = bool(m_lo and m_hi and float(m_lo) <= float(current_price) <= float(m_hi))
+    # Rounded to cents before comparing — s_lo/s_hi are themselves cent-rounded band edges, and
+    # the short-term ceiling is often explicitly "clamped to spot" (see horizon_entry_calculator's
+    # plausibility cap), i.e. defined to equal current_price. Comparing that rounded edge against
+    # the raw, full-precision current_price can put spot a few thousandths of a cent *above* its
+    # own ceiling (confirmed live on SNDK: spot 1712.8900146... vs ceiling 1712.89), which flipped
+    # in_st_band to False and made the "Today" roadmap row jump to the medium-term band 12% below
+    # spot — while the SWING tab (reading the same short.entry_zone) correctly showed spot sitting
+    # right at the top of its band. Two tabs describing "right now" must not disagree over a
+    # rounding artifact smaller than a cent.
+    cp_r = round(float(current_price), 2)
+    in_st_band = bool(s_lo and s_hi and float(s_lo) <= cp_r <= float(s_hi))
+    in_mt_band = bool(m_lo and m_hi and float(m_lo) <= cp_r <= float(m_hi))
     # Spot in ST band: Today / Days / Week show tactical ST prices even when core ladder is lower.
     near_term_use_st_band = in_st_band and s_lo is not None and s_hi is not None
 

@@ -660,13 +660,60 @@ def _resolve_universe_cache_rows(config: dict, dashboard_results: list[dict]) ->
     return best_rows, best_source
 
 
-def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
+def _forward_tracking_staleness_days(bundle: dict | None) -> float | None:
+    """Days between a bundle's forward_tracking.meta.eod_date_last and the live EOD index's
+    newest known date. None when either side is unavailable (can't judge staleness).
+
+    Exists because compute_analysis_bundle's three cache-hit tiers below only ever checked
+    *presence*, not *freshness* — any one of them succeeding (which, once the dashboard's own
+    cache is warm, is always) permanently short-circuits before ever reaching the heavy
+    recompute section, including when that heavy section is what's calling this very function
+    (see the force-bypass this enables). Confirmed live: forward_tracking sat 8 weeks behind
+    the live EOD snapshot index (stuck 2026-08-02 vs. actual 2026-09-25) because of exactly
+    this — the "dashboard cache hit" tier kept re-validating and re-caching the same baked-in
+    stale value from api.dashboard_shell.build_analysis_bundle(), which does no recomputation
+    at all (it only lifts whatever forward_tracking key the cached dashboard blob already has —
+    itself a deferred-only field the regular 2h dashboard warm cycle never refreshes).
+    """
+    if not isinstance(bundle, dict):
+        return None
+    ft = bundle.get("forward_tracking")
+    last = (ft or {}).get("meta", {}).get("eod_date_last") if isinstance(ft, dict) else None
+    if not last:
+        return None
+    try:
+        from datetime import date
+
+        from signals.cache import build_eod_snapshot_index
+
+        snaps = build_eod_snapshot_index()
+        live_latest = snaps[0]["date"] if snaps else None
+        if not live_latest:
+            return None
+        d_last = date.fromisoformat(str(last)[:10])
+        d_live = date.fromisoformat(str(live_latest)[:10])
+        return (d_live - d_last).days
+    except Exception:
+        return None
+
+
+# Beyond this, a cached bundle is treated as stale enough to self-heal in the background —
+# generous over a normal weekend/holiday gap (2-3 days) so it only fires on real staleness.
+_FORWARD_TRACKING_STALE_DAYS = 5
+
+
+def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) -> dict | None:
     """
     Lazy Analysis tab: insider, forward tracking, paper trading summary, model validation, etc.
     Uses cached dashboard signals; merges results back into Redis when computed.
 
     When allow_heavy=False (HTTP fast path), only returns data already in Redis — never runs
     the multi-minute paper-trading backfill synchronously.
+
+    force=True skips all three cache-hit tiers below and goes straight to the heavy compute —
+    used by the background job specifically so a *deliberate* refresh request can't be silently
+    swallowed by its own cache the way _ensure_analysis_background_compute()'s trigger always
+    used to be (see _forward_tracking_staleness_days's docstring for the trap this closes).
     """
     try:
         from signals.cache import (
@@ -679,50 +726,80 @@ def compute_analysis_bundle(*, allow_heavy: bool = True) -> dict | None:
         )
         from api.dashboard_shell import build_analysis_bundle, empty_analysis_bundle
 
-        # Fast path — dedicated Redis keys (never deserialize the full dashboard blob).
-        assembled = assemble_analysis_slices()
-        if assembled:
-            assembled = _patch_stale_paper_trading(assembled)
-            logger.info("[analysis-bundle] slice cache hit (assembled)")
-            return assembled
-
-        dedicated = get_analysis_bundle()
-        if dedicated:
-            dedicated = _patch_stale_paper_trading(dedicated)
-            logger.info("[analysis-bundle] dedicated cache hit")
-            return dedicated
-
         cached = get_cached_dashboard() or get_last_dashboard_snapshot()
-        if not cached or not isinstance(cached.get("signals"), list):
-            return None
 
-        refresh_ts = cached.get("refresh_ts") if isinstance(cached, dict) else None
-        dedicated = get_analysis_bundle(refresh_ts=refresh_ts)
-        if dedicated:
-            dedicated = _patch_stale_paper_trading(dedicated)
-            logger.info("[analysis-bundle] dedicated cache hit (refresh_ts match)")
-            return dedicated
+        if not force:
+            # Fast path — dedicated Redis keys (never deserialize the full dashboard blob).
+            assembled = assemble_analysis_slices()
+            if assembled:
+                assembled = _patch_stale_paper_trading(assembled)
+                stale_days = _forward_tracking_staleness_days(assembled)
+                logger.info("[analysis-bundle] slice cache hit (assembled)%s",
+                            f" — STALE {stale_days}d, triggering background refresh" if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS else "")
+                if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
+                    _ensure_analysis_background_compute()
+                return assembled
 
-        if cached.get("analysis_deferred") is False:
-            partial = build_analysis_bundle(cached)
-            pt = partial.get("paper_trading") if isinstance(partial.get("paper_trading"), dict) else {}
-            recent = pt.get("recent") if isinstance(pt.get("recent"), list) else []
-            if (
-                pt.get("summary") is not None
-                and partial.get("forward_tracking") is not None
-                and len(recent) > 0
-            ):
-                logger.info("[analysis-bundle] dashboard cache hit")
-                try:
-                    set_analysis_bundle(partial, refresh_ts=refresh_ts)
-                except Exception:
-                    pass
-                return partial
+            dedicated = get_analysis_bundle()
+            if dedicated:
+                dedicated = _patch_stale_paper_trading(dedicated)
+                stale_days = _forward_tracking_staleness_days(dedicated)
+                logger.info("[analysis-bundle] dedicated cache hit%s",
+                            f" — STALE {stale_days}d, triggering background refresh" if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS else "")
+                if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
+                    _ensure_analysis_background_compute()
+                return dedicated
 
-        if not allow_heavy:
-            return None
+            if not cached or not isinstance(cached.get("signals"), list):
+                return None
+
+            refresh_ts = cached.get("refresh_ts") if isinstance(cached, dict) else None
+            dedicated = get_analysis_bundle(refresh_ts=refresh_ts)
+            if dedicated:
+                dedicated = _patch_stale_paper_trading(dedicated)
+                stale_days = _forward_tracking_staleness_days(dedicated)
+                logger.info("[analysis-bundle] dedicated cache hit (refresh_ts match)%s",
+                            f" — STALE {stale_days}d, triggering background refresh" if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS else "")
+                if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
+                    _ensure_analysis_background_compute()
+                return dedicated
+
+            if cached.get("analysis_deferred") is False:
+                partial = build_analysis_bundle(cached)
+                pt = partial.get("paper_trading") if isinstance(partial.get("paper_trading"), dict) else {}
+                recent = pt.get("recent") if isinstance(pt.get("recent"), list) else []
+                if (
+                    pt.get("summary") is not None
+                    and partial.get("forward_tracking") is not None
+                    and len(recent) > 0
+                ):
+                    stale_days = _forward_tracking_staleness_days(partial)
+                    is_stale = (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS
+                    logger.info("[analysis-bundle] dashboard cache hit%s",
+                                f" — STALE {stale_days}d, will NOT re-cache; triggering background refresh" if is_stale else "")
+                    if is_stale:
+                        # Don't re-cache a known-stale value here — that's exactly what kept
+                        # this trap alive (a fresh TTL on the same old data, forever). Still
+                        # return it so the UI has something, but let the heavy path (forced,
+                        # below/via the background trigger) be the one to actually cache next.
+                        _ensure_analysis_background_compute()
+                        return partial
+                    try:
+                        set_analysis_bundle(partial, refresh_ts=refresh_ts)
+                    except Exception:
+                        pass
+                    return partial
+
+            if not allow_heavy:
+                return None
     except Exception as e:
         logger.debug("analysis-bundle: cache read failed: %s", e)
+        return None
+
+    # force=True jumps straight here without ever validating `cached` above (that check lives
+    # inside the `if not force:` block, which force=True skips entirely) — needed unconditionally
+    # since the heavy compute below indexes cached["signals"] directly.
+    if not cached or not isinstance(cached.get("signals"), list):
         return None
 
     config = _load_config()
@@ -1020,11 +1097,19 @@ def _slim_analysis_for_http(bundle: dict) -> dict:
 
 
 def _ensure_analysis_background_compute() -> None:
-    """Start background analysis-bundle job if not already running."""
+    """Start background analysis-bundle job if not already running.
+
+    force=True is required here, not optional — without it, compute_analysis_bundle's own
+    cache-hit tiers run first even inside this "give me a fresh one" call, so as long as
+    something is cached at all (any of the 3 tiers succeeding) the actual heavy compute this
+    function exists to run never executes. That silent self-short-circuit is what let
+    forward_tracking sit 8 weeks stale — every trigger "succeeded" by immediately re-handing
+    back the same old cached value. See _forward_tracking_staleness_days's docstring.
+    """
     from api.analysis_bundle_job import is_analysis_running, trigger_background_analysis
 
     if not is_analysis_running():
-        trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True))
+        trigger_background_analysis(lambda: compute_analysis_bundle(allow_heavy=True, force=True))
 
 
 def _paper_trading_slice_stale(pt: Any) -> bool:
@@ -3130,6 +3215,22 @@ async def get_dashboard_opportunities_bundle():
     return jsonable_encoder(out)
 
 
+@router.get("/dashboard/analysis-bundle/job-status")
+async def get_analysis_bundle_job_status():
+    """
+    Diagnostic: is the background analysis-bundle recompute idle/running/done/error, and when
+    did it last finish? Added because there was previously no way to tell from outside the
+    process whether a stale Analysis tab (e.g. forward-tracking stuck weeks behind the live
+    EOD snapshot dates) meant "never triggered," "stuck running," or "failing every attempt" —
+    _ensure_analysis_background_compute() only fires when the cache-only read misses, so a
+    STALE-BUT-PRESENT cached bundle (the actual observed symptom) never re-triggers a compute
+    at all; this at least surfaces whether the last attempt (if any) succeeded or why not.
+    """
+    from api.analysis_bundle_job import get_analysis_job_status
+
+    return get_analysis_job_status()
+
+
 @router.get("/dashboard/analysis-bundle")
 async def get_dashboard_analysis_bundle():
     """Lazy load: Analysis tab sections (paper trading, forward tracking, insider, validation)."""
@@ -3968,24 +4069,34 @@ async def get_ticker_track_record(ticker: str):
     """
     Per-ticker signal-accuracy summary — has our own model been right on THIS ticker?
 
-    Reads the already-cached watchlist-wide forward-tracking slice
-    (analysis_bundle_job.py refreshes it ~every 6h via set_analysis_slices) and filters it
-    to one ticker in-memory. Deliberately does NOT call get_forward_tracking() fresh here —
-    that call's cost is dominated by EOD snapshot I/O, not ticker count, so a "single
-    ticker" call is not meaningfully cheaper than the full-watchlist one. Stays a cheap
-    Redis read; a cold cache just means "not available yet" until the next scheduled run,
-    not a live recompute.
+    Reads already-cached watchlist-wide forward-tracking data and filters it to one ticker
+    in-memory. Deliberately does NOT call get_forward_tracking() fresh here — that call's
+    cost is dominated by EOD snapshot I/O, not ticker count, so a "single ticker" call is
+    not meaningfully cheaper than the full-watchlist one. Stays a cheap Redis read; never
+    triggers a live recompute.
+
+    Was reading only the dedicated per-key slice (analysis:slice:forward_tracking), which
+    has its own 6h TTL independent of the other core slices (model_audit, paper_trading) —
+    confirmed live that this key can be empty/expired while GET /api/dashboard/analysis-bundle
+    still serves full forward_tracking data (500 records) via its dedicated-bundle or
+    dashboard-cache fallback tiers, because that endpoint tries three cache sources and this
+    one only tried the first. Reuses compute_analysis_bundle(allow_heavy=False) — the exact
+    same cache-only fallback chain — instead of duplicating it, so this endpoint can't go
+    stale independently of the tab it's summarizing data from.
     """
-    from signals.cache import get_analysis_slice
     from signals.forward_tracking_metrics import build_ticker_track_record
     from signals.model_version import MODEL_VERSION
 
     sym = ticker.upper().strip()
-    slice_data = get_analysis_slice("forward_tracking")
-    if not isinstance(slice_data, dict):
+    try:
+        bundle = compute_analysis_bundle(allow_heavy=False)
+    except Exception:
+        bundle = None
+    ft = bundle.get("forward_tracking") if isinstance(bundle, dict) else None
+    if not isinstance(ft, dict):
         return {"available": False, "ticker": sym, "reason": "forward-tracking data not cached yet"}
 
-    records = slice_data.get("records") or []
+    records = ft.get("records") or []
     return build_ticker_track_record(records, sym, current_model_version=MODEL_VERSION)
 
 
