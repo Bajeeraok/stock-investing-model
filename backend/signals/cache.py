@@ -1095,8 +1095,12 @@ def set_analysis_bundle(bundle: dict, refresh_ts: str | None = None) -> bool:
     ok = set_cached(ANALYSIS_BUNDLE_KEY, payload, ANALYSIS_BUNDLE_TTL)
     try:
         set_analysis_slices(bundle, refresh_ts=refresh_ts)
-    except Exception:
-        pass
+    except Exception as e:
+        # Previously silent — a slice write failing here (e.g. one section's data isn't
+        # JSON-safe) left assemble_analysis_slices() permanently returning None for ALL
+        # core slices (it requires forward_tracking + model_audit + paper_trading together)
+        # with zero trace of why, even though the dedicated bundle above wrote fine.
+        logger.warning("set_analysis_bundle: slice write failed, dedicated bundle still ok: %s", e)
     return ok
 
 

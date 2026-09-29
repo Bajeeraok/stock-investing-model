@@ -90,7 +90,12 @@ function isBuyableEntryMode(signal: SignalPresetRow): boolean {
 
 export function matchesSignalPreset(signal: SignalPresetRow, preset: SignalsPresetId): boolean {
   if (preset === "all") return true;
-  const score = signal.confluence_score ?? signal.composite_buy ?? 0;
+  // composite_buy first — the canonical 0-100 score these thresholds (55/40) are defined
+  // against (see CLAUDE.md's Suggestion Rules) and what the row's own action text quotes;
+  // confluence_score (a separate technical-setup-quality metric) is only a fallback when
+  // composite_buy is missing, not the preferred source — see buyReadinessSortValue for the
+  // full story on why preferring confluence_score here silently mis-ranked/mis-filtered rows.
+  const score = signal.composite_buy ?? signal.confluence_score ?? 0;
   const sig = (signal.signal ?? "").toUpperCase();
   if (preset === "opportunities") {
     return isBuyableEntryMode(signal);

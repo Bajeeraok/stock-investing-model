@@ -90,13 +90,17 @@ export function riskRewardRatio(r: Signal): number | null {
 /**
  * "Best conditions to buy" composite: entry_mode tier first (full_go clears all gates and is
  * actually fillable; starter_only is partial size; hard_lock is blocked regardless of how good
- * the technicals look), then Confluence as the tie-break within a tier. Confluence alone (the
- * old default sort) ranks a blocked hard_lock ticker above an actionable full_go one whenever
- * its trend/RSI/MACD alignment happens to be higher — that's a technical-agreement score, not
- * a readiness-to-buy score.
+ * the technicals look), then composite_buy as the tie-break within a tier. composite_buy —
+ * not confluence_score — because it's the canonical 0-100 Trend+RSI+MACD score the row's own
+ * action text ("Score NN. Consider small add...", see retail_briefing.py) is generated from;
+ * sorting by confluence_score (a separate technical-setup-quality metric — see the dedicated
+ * "Confluence" sort option) silently ranked rows in an order that contradicted the score
+ * printed in their own description (confirmed: a ticker showing "Score 77" sorted below one
+ * showing "Score 66" because both happened to tie on confluence_score, a number never shown
+ * in that text at all).
  */
 export function buyReadinessSortValue(r: Signal): number {
   const tier = entryModeSortKey(resolveEntryMode(r));
-  const score = r.confluence_score ?? r.composite_buy ?? 0;
+  const score = r.composite_buy ?? r.confluence_score ?? 0;
   return tier * 1000 - score;
 }
