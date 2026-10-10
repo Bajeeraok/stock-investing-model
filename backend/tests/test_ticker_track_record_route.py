@@ -56,6 +56,8 @@ def test_populates_from_bundle_even_when_dedicated_slice_is_stale(mock_bundle):
     assert out["available"] is True
     assert out["current"]["n_observations"] == 1
     assert out["legacy"]["n_observations"] == 1
+    assert "by_horizon" in out
+    assert out["by_horizon"][20]["current"]["n_observations"] == 1
 
 
 @patch("api.routers.dashboard.compute_analysis_bundle", side_effect=RuntimeError("redis down"))

@@ -470,3 +470,47 @@ def build_ticker_track_record(
         "current": _stats_or_none(current_rows),
         "legacy": _stats_or_none(legacy_rows),
     }
+
+
+_ALL_HORIZONS: tuple[int, ...] = (1, 5, 20, 60)
+
+
+def build_ticker_track_record_all_horizons(
+    records: list[dict[str, Any]],
+    ticker: str,
+    *,
+    current_model_version: str | None = None,
+    horizons: tuple[int, ...] = _ALL_HORIZONS,
+) -> dict[str, Any]:
+    """
+    Same per-ticker current-vs-legacy split as build_ticker_track_record(), but across every
+    horizon that has data, not just the 20d default.
+
+    Exists because a just-launched model_version has no chance of a resolved 20d outcome for
+    weeks (20 *trading* days must elapse after a signal before that pair can resolve at all) —
+    the single-horizon card was correctly showing "not enough data" for 2026.09.4 on every
+    ticker, but silently hid the 1d/5d reads that WOULD already be partially resolved by then,
+    which is exactly the early signal you'd want in order to sanity-check a new version instead
+    of waiting a month to find out something's off. Callers should treat sub-20d "current"
+    reads as an early/noisy look, not the headline number — n is small by construction this
+    early, and 1d/5d win rates don't necessarily track 20d win rates for the same ticker.
+    """
+    tk = str(ticker or "").upper().strip()
+    by_horizon: dict[int, dict[str, Any]] = {}
+    any_available = False
+    for h in horizons:
+        single = build_ticker_track_record(
+            records, tk, current_model_version=current_model_version, horizon_days=h
+        )
+        if single.get("available"):
+            any_available = True
+        by_horizon[h] = {
+            "current": single.get("current"),
+            "legacy": single.get("legacy"),
+        }
+    return {
+        "available": any_available,
+        "ticker": tk,
+        "current_model_version": current_model_version,
+        "by_horizon": by_horizon,
+    }

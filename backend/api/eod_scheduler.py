@@ -86,6 +86,14 @@ def _run_eod_job() -> None:
 
         config = load_config()
         result = run_eod_snapshot_only(config)
+        try:
+            from api.eod_job import record_signal_audit_result
+
+            record_signal_audit_result(
+                result.get("signal_audit"), date_str=str(result.get("snapshot_date") or "")
+            )
+        except Exception:
+            pass
         if result.get("error"):
             logger.error("[eod-scheduler] %s", result["error"])
             # Allow eod_job safety-net to retry soon (do not leave a sticky "success" day).
@@ -99,6 +107,13 @@ def _run_eod_job() -> None:
             logger.info("[eod-scheduler] skipped — %s", result.get("reason") or "unknown")
         else:
             eod_ok = True
+            sa = result.get("signal_audit") or {}
+            if isinstance(sa, dict) and (sa.get("error") or sa.get("skipped")):
+                logger.warning(
+                    "[eod-scheduler] EOD snapshot ok but signal_audit logging %s: %s",
+                    "errored" if sa.get("error") else "skipped",
+                    sa.get("error") or sa.get("reason") or "unknown",
+                )
             logger.info(
                 "[eod-scheduler] ok date=%s path=%s tickers=%s",
                 result.get("snapshot_date"),

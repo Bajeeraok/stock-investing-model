@@ -520,6 +520,24 @@ interface TrackRecordResponse {
   current_model_version?: string | null;
   current?: TrackRecordHorizonStats | null;
   legacy?: TrackRecordHorizonStats | null;
+  by_horizon?: Record<string, { current?: TrackRecordHorizonStats | null; legacy?: TrackRecordHorizonStats | null }> | null;
+}
+
+/** Shortest horizon with at least one resolved "current"-version observation — lets a
+ * just-launched model_version show an early (noisier) read instead of only "not enough
+ * data yet" for the weeks it takes a 20d pair to resolve. */
+function earliestAvailableHorizon(
+  byHorizon: TrackRecordResponse["by_horizon"],
+): { horizon: number; stats: TrackRecordHorizonStats } | null {
+  if (!byHorizon) return null;
+  const horizons = Object.keys(byHorizon).map(Number).filter((h) => !Number.isNaN(h)).sort((a, b) => a - b);
+  for (const h of horizons) {
+    const stats = byHorizon[String(h)]?.current;
+    if (stats && (stats.n_observations ?? 0) > 0) {
+      return { horizon: h, stats };
+    }
+  }
+  return null;
 }
 
 /**
@@ -563,7 +581,8 @@ function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
   const current = data?.current;
   const legacy = data?.legacy;
   const version = data?.current_model_version;
-  if (!current && !legacy) return null;
+  const earlyRead = !current || (current.n_observations ?? 0) === 0 ? earliestAvailableHorizon(data?.by_horizon) : null;
+  if (!current && !legacy && !earlyRead) return null;
 
   return (
     <ReferenceCard
@@ -588,6 +607,15 @@ function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
                 </>
               )}
               .
+            </p>
+          ) : earlyRead ? (
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Too early for a 20d read on {ticker} under <span className="font-mono text-slate-300">{version}</span> —
+              early {earlyRead.horizon}d look: right{" "}
+              <span className={(earlyRead.stats.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
+                {earlyRead.stats.win_rate_pct != null ? `${earlyRead.stats.win_rate_pct.toFixed(0)}%` : "—"}
+              </span>{" "}
+              <span className="text-slate-600">(n={earlyRead.stats.n_observations}, small sample — noisy)</span>.
             </p>
           ) : (
             <p className="text-xs text-slate-500 leading-relaxed">

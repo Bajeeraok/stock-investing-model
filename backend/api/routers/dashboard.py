@@ -4084,7 +4084,10 @@ async def get_ticker_track_record(ticker: str):
     same cache-only fallback chain — instead of duplicating it, so this endpoint can't go
     stale independently of the tab it's summarizing data from.
     """
-    from signals.forward_tracking_metrics import build_ticker_track_record
+    from signals.forward_tracking_metrics import (
+        build_ticker_track_record,
+        build_ticker_track_record_all_horizons,
+    )
     from signals.model_version import MODEL_VERSION
 
     sym = ticker.upper().strip()
@@ -4097,7 +4100,18 @@ async def get_ticker_track_record(ticker: str):
         return {"available": False, "ticker": sym, "reason": "forward-tracking data not cached yet"}
 
     records = ft.get("records") or []
-    return build_ticker_track_record(records, sym, current_model_version=MODEL_VERSION)
+    out = build_ticker_track_record(records, sym, current_model_version=MODEL_VERSION)
+    # Additive, backward-compatible: the 20d fields above stay the headline number once a
+    # version is mature, but a just-launched version has zero chance of a resolved 20d
+    # outcome for weeks (20 *trading* days must elapse first) — by_horizon lets the UI show
+    # an early 1d/5d read under the current version instead of only "not enough data yet".
+    try:
+        out["by_horizon"] = build_ticker_track_record_all_horizons(
+            records, sym, current_model_version=MODEL_VERSION
+        ).get("by_horizon")
+    except Exception:
+        out["by_horizon"] = None
+    return out
 
 
 @router.get("/ticker/{ticker}/correlation-to-holdings")

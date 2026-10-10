@@ -24,12 +24,39 @@ _state: dict[str, Any] = {
     "last_attempt_ts": 0.0,
     "last_attempt_date": None,
     "last_result": None,
+    "last_signal_audit": None,
 }
 
 
 def is_eod_job_running() -> bool:
     with _lock:
         return bool(_state.get("running"))
+
+
+def record_signal_audit_result(signal_audit: dict | None, *, date_str: str) -> None:
+    """
+    Both callers of run_eod_snapshot_only() (the 8pm cron in eod_scheduler.py and this
+    module's own safety-net thread) only ever checked the snapshot-save result's top-level
+    "error"/"skipped" — never result["signal_audit"], the sub-result from
+    persist_daily_signal_logs() nested inside the same call. That made a signal-audit
+    logging failure or skip (e.g. the <90%-cohort-capture-ratio gate in
+    log_signal_audit_from_results) completely invisible: the scheduler logs "[eod-scheduler]
+    ok" either way, since the snapshot itself did save fine. Confirmed live: signal-audit's
+    last captured day sat 2+ trading days behind the actual (correctly current) EOD snapshot
+    date, with nothing surfacing why. This at least makes the next such gap visible via
+    GET /api/eod/status instead of requiring a server-log dig to notice at all.
+    """
+    if not isinstance(signal_audit, dict):
+        return
+    with _lock:
+        _state["last_signal_audit"] = {
+            "date": date_str,
+            "ok": not (signal_audit.get("error") or signal_audit.get("skipped")),
+            "error": signal_audit.get("error"),
+            "skipped": signal_audit.get("skipped"),
+            "reason": signal_audit.get("reason"),
+            "appended": signal_audit.get("appended"),
+        }
 
 
 def eod_job_state() -> dict[str, Any]:
@@ -39,6 +66,7 @@ def eod_job_state() -> dict[str, Any]:
             "last_success_date": _state.get("last_success_date"),
             "last_attempt_date": _state.get("last_attempt_date"),
             "last_result": _state.get("last_result"),
+            "last_signal_audit": _state.get("last_signal_audit"),
             "retry_cooldown_sec": _RETRY_COOLDOWN_SEC,
         }
 
@@ -106,6 +134,7 @@ def _start_full_eod_thread(date_str: str, *, force_retry: bool = False) -> bool:
 
             logger.info("[eod-job] background full EOD START date=%s", date_str)
             result = run_eod_snapshot_only(load_config(), snapshot_date=date_str)
+            record_signal_audit_result(result.get("signal_audit"), date_str=date_str)
             if result.get("error"):
                 reason = f"error:{result['error']}"
                 logger.error("[eod-job] failed: %s", result["error"])
