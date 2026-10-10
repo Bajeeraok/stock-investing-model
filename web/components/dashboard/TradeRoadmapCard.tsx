@@ -427,7 +427,11 @@ export function TradeRoadmapCard({
   const [newsExpanded, setNewsExpanded] = useState(false);
   /** Full roadmap vs TL;DR-first (retail) — default simple for faster decisions */
   const [advancedRoadmap, setAdvancedRoadmap] = useState(false);
-  const [showRoadmapAnalysis, setShowRoadmapAnalysis] = useState(false);
+  /** Default open — this is the Action/Next-trigger/Why-this-call/scenario-mix block,
+   * exactly the "proof behind the call" a retail trader needs without hunting for it.
+   * Previously defaulted closed, so a second click was required below the one-line
+   * verdict badge to see any of it. Still collapsible for anyone who wants it out of the way. */
+  const [showRoadmapAnalysis, setShowRoadmapAnalysis] = useState(true);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
