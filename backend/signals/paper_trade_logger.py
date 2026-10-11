@@ -2269,6 +2269,18 @@ class PaperTradeLogger:
         out = list(reversed(rows))[:limit]
         return out
 
+    def get_trades_for_ticker(self, ticker: str, limit: int = 60) -> list[dict[str, Any]]:
+        """All logged paper trades for one ticker, newest first — the per-trade rows (signal
+        date, model's entry price, actual fill, target/stop, resolved outcome, return %) a
+        per-ticker "what we said vs what happened" table needs, as opposed to get_recent()'s
+        cross-ticker feed. Cheap: get_recent()'s same in-memory CSV read, just filtered.
+        """
+        tk = str(ticker or "").upper().strip()
+        if not tk:
+            return []
+        rows = self.get_recent(limit=10_000)
+        return [r for r in rows if str(r.get("ticker") or "").upper() == tk][:limit]
+
     def purge_velocity_track(self, *, dry_run: bool = False) -> dict[str, Any]:
         """
         Remove all velocity-track rows from paper_trades.csv.
@@ -2292,4 +2304,45 @@ class PaperTradeLogger:
                 else f"Dry-run: would remove {len(velocity)} velocity rows, keep {len(kept)}."
             ),
         }
+
+
+def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Reduce raw paper_trades.csv rows (PaperTradeLogger.get_trades_for_ticker's output) to the
+    per-trade table shape a "what we said vs what happened" ticker card needs: the model's
+    signal price, the actual simulated fill (can differ from the raw signal price — next-
+    session execution, not same-bar), what happened at the horizon, and resolved P&L.
+
+    A trade with no "outcome" yet is still-open — rolling_pnl/rolling_return_pct (marked to
+    the latest EOD close) are surfaced as unrealized_return_pct instead of a blank row, since
+    "pending" alone isn't useful without at least the current paper mark.
+    """
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        outcome = str(r.get("outcome") or "").strip() or None
+        win = None
+        if outcome == "HIT":
+            win = True
+        elif outcome in ("MISS", "STOP_HIT"):
+            win = False
+        out.append({
+            "date": r.get("date"),
+            "ticker": r.get("ticker"),
+            "signal": r.get("signal"),
+            "model_price": _safe_float(r.get("entry_price")),
+            "fill_price": _safe_float(r.get("effective_entry_price")) or _safe_float(r.get("entry_price")),
+            "target": _safe_float(r.get("target_1")),
+            "stop": _safe_float(r.get("hard_stop")),
+            "next_date": r.get("next_date") or None,
+            "outcome_price": _safe_float(r.get("actual_price")),
+            "outcome": outcome,
+            "win": win,
+            "status": "resolved" if outcome else "pending",
+            "return_pct": _safe_float(r.get("return_pct")) if outcome else None,
+            "unrealized_return_pct": _safe_float(r.get("rolling_return_pct")) if not outcome else None,
+            "model_version": r.get("model_version") or "legacy",
+            "gate_mode": r.get("gate_mode"),
+            "entry_mode": r.get("entry_mode"),
+        })
+    return out
 

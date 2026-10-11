@@ -4111,6 +4111,17 @@ async def get_ticker_track_record(ticker: str):
         ).get("by_horizon")
     except Exception:
         out["by_horizon"] = None
+
+    # Per-trade daily table (signal price, fill, target/stop, outcome, P&L) — the aggregate
+    # win-rate fields above answer "was the model right overall"; this answers "show me",
+    # row by row, what it would have actually traded on this ticker.
+    try:
+        from signals.paper_trade_logger import PaperTradeLogger, build_ticker_trade_table
+
+        pt = PaperTradeLogger(data_root=get_data_root())
+        out["daily_trades"] = build_ticker_trade_table(pt.get_trades_for_ticker(sym, limit=60))
+    except Exception:
+        out["daily_trades"] = []
     return out
 
 

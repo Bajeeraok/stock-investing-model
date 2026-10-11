@@ -521,6 +521,27 @@ interface TrackRecordResponse {
   current?: TrackRecordHorizonStats | null;
   legacy?: TrackRecordHorizonStats | null;
   by_horizon?: Record<string, { current?: TrackRecordHorizonStats | null; legacy?: TrackRecordHorizonStats | null }> | null;
+  daily_trades?: DailyTradeRow[] | null;
+}
+
+interface DailyTradeRow {
+  date: string | null;
+  signal: string | null;
+  model_price: number | null;
+  fill_price: number | null;
+  target: number | null;
+  stop: number | null;
+  outcome_price: number | null;
+  outcome: string | null;
+  win: boolean | null;
+  status: "resolved" | "pending";
+  return_pct: number | null;
+  unrealized_return_pct: number | null;
+  model_version?: string | null;
+}
+
+function fmtPrice(n: number | null | undefined): string {
+  return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
 }
 
 /** Shortest horizon with at least one resolved "current"-version observation — lets a
@@ -628,6 +649,63 @@ function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
               Pre-{version || "current"} history: {legacy.win_rate_pct != null ? `${legacy.win_rate_pct.toFixed(0)}%` : "—"}{" "}
               (n={legacy.n_observations}) — kept separate, not blended into the number above.
             </p>
+          )}
+          {(data?.daily_trades?.length ?? 0) > 0 && (
+            <div className="mt-2 overflow-x-auto">
+              <p className="text-[11px] text-slate-500 mb-1">Per-trade detail (most recent first)</p>
+              <table className="w-full text-[11px] border-collapse">
+                <thead>
+                  <tr className="text-left text-slate-500 border-b border-slate-700/70">
+                    <th className="pr-2 py-1 font-medium">Date</th>
+                    <th className="pr-2 py-1 font-medium">Signal</th>
+                    <th className="pr-2 py-1 font-medium">Model px</th>
+                    <th className="pr-2 py-1 font-medium">Fill px</th>
+                    <th className="pr-2 py-1 font-medium">Target / Stop</th>
+                    <th className="pr-2 py-1 font-medium">Outcome px</th>
+                    <th className="pr-2 py-1 font-medium">P&amp;L</th>
+                    <th className="py-1 font-medium">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.daily_trades ?? []).map((t, i) => (
+                    <tr key={`${t.date}-${i}`} className="border-t border-slate-800/70 text-slate-300">
+                      <td className="pr-2 py-1 text-slate-400 whitespace-nowrap">{t.date ?? "—"}</td>
+                      <td className="pr-2 py-1 whitespace-nowrap">{t.signal ?? "—"}</td>
+                      <td className="pr-2 py-1 font-mono tabular-nums">{fmtPrice(t.model_price)}</td>
+                      <td className="pr-2 py-1 font-mono tabular-nums">{fmtPrice(t.fill_price)}</td>
+                      <td className="pr-2 py-1 font-mono tabular-nums text-slate-500 whitespace-nowrap">
+                        {fmtPrice(t.target)} / {fmtPrice(t.stop)}
+                      </td>
+                      <td className="pr-2 py-1 font-mono tabular-nums">
+                        {t.status === "resolved" ? fmtPrice(t.outcome_price) : "—"}
+                      </td>
+                      <td className="pr-2 py-1 font-mono tabular-nums">
+                        {t.status === "resolved" ? (
+                          <span className={(t.return_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
+                            {fmtPct(t.return_pct)}
+                          </span>
+                        ) : t.unrealized_return_pct != null ? (
+                          <span className={t.unrealized_return_pct >= 0 ? "text-emerald-400/70" : "text-amber-300/70"}>
+                            {fmtPct(t.unrealized_return_pct)} <span className="text-slate-600">(open)</span>
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-1 whitespace-nowrap">
+                        {t.status === "pending" ? (
+                          <span className="text-slate-500">pending</span>
+                        ) : t.win ? (
+                          <span className="text-emerald-400">WIN</span>
+                        ) : (
+                          <span className="text-red-400">{t.outcome === "STOP_HIT" ? "STOP" : "LOSS"}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       }
