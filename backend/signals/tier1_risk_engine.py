@@ -381,6 +381,162 @@ class PositionSizingEngine:
         )
 
 
+def portfolio_context_from_cached_dashboard(ticker: str) -> tuple[Optional[float], float]:
+    """
+    (real total portfolio value, real current $ held in this ticker) from the already-
+    cached dashboard's "All" portfolio aggregate — the same report Portfolio Doctor's own
+    position-sizing fallback reads (api/routers/dashboard.py's report["total_value"] /
+    report["per_holding"]). No live fetch — reuses whatever the dashboard already computed.
+
+    Returns (None, 0.0) when no real portfolio value is available. Callers must not
+    substitute a placeholder for the first element — size_position_for_ticker() treats
+    None as "don't show a sizing recommendation" rather than inventing one against a fake
+    portfolio size (the bug this whole bridge exists to fix: example_portfolio = $50,000).
+    """
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+        sym = str(ticker or "").upper()
+        for payload in (get_cached_dashboard(), get_last_dashboard_snapshot()):
+            if not isinstance(payload, dict):
+                continue
+            portfolios = payload.get("portfolios")
+            if not isinstance(portfolios, dict) or not portfolios:
+                continue
+            report = portfolios.get("All") or next(iter(portfolios.values()), None)
+            if not isinstance(report, dict):
+                continue
+            try:
+                total_value = float(report.get("total_value") or 0)
+            except (TypeError, ValueError):
+                total_value = 0.0
+            if total_value <= 0:
+                continue
+            held_value = 0.0
+            for h in report.get("per_holding") or []:
+                if isinstance(h, dict) and str(h.get("ticker") or "").upper() == sym:
+                    try:
+                        held_value = float(h.get("value") or 0)
+                    except (TypeError, ValueError):
+                        held_value = 0.0
+                    break
+            return total_value, held_value
+    except Exception:
+        pass
+    return None, 0.0
+
+
+def regime_label_from_bull_pct(regime_bull_pct: float | None) -> str:
+    """Map a 0-100 HMM bull probability to the STRONG_BULL/BULL/NEUTRAL/BEAR/STRONG_BEAR
+    vocabulary PositionSizingEngine.size_position() expects — callers outside the Tier 1
+    subsystem (e.g. ticker_detail.py) carry regime as this 0-100 float, not that enum-like
+    string, and previously had no shared way to bridge the two."""
+    if regime_bull_pct is None:
+        return "NEUTRAL"
+    try:
+        b = float(regime_bull_pct)
+    except (TypeError, ValueError):
+        return "NEUTRAL"
+    if b >= 70:
+        return "STRONG_BULL"
+    if b >= 55:
+        return "BULL"
+    if b >= 45:
+        return "NEUTRAL"
+    if b >= 30:
+        return "BEAR"
+    return "STRONG_BEAR"
+
+
+def size_position_for_ticker(
+    *,
+    ticker: str,
+    price: float,
+    portfolio_value: float,
+    current_position_value: float = 0.0,
+    signal_score: float = 50.0,
+    confidence: float = 0.60,
+    atr_14: float | None = None,
+    vix: float | None = None,
+    regime_bull_pct: float | None = None,
+    confluence_score: float | None = None,
+    risk_tolerance: RiskTolerance = RiskTolerance.MODERATE,
+    tranche_pcts: tuple[float, float, float] = (0.40, 0.30, 0.30),
+) -> dict | None:
+    """
+    Ticker-detail-friendly wrapper around PositionSizingEngine.size_position() — resolves
+    the handful of fallbacks a caller outside the Tier 1 batch pipeline needs (missing ATR,
+    missing VIX, a 0-100 regime float instead of the engine's BULL/BEAR vocabulary) and
+    splits the single recommended add into the same ~40/30/30 tranche shape the Position
+    Build card already shows, but computed from the REAL portfolio value and this ticker's
+    REAL existing holding instead of an illustrative example_portfolio placeholder.
+
+    Returns None when portfolio_value isn't a real number — showing a dollar/share
+    recommendation against a made-up portfolio size is worse than not showing one.
+    """
+    if portfolio_value is None or portfolio_value <= 0 or price is None or price <= 0:
+        return None
+    atr = float(atr_14) if atr_14 and atr_14 > 0 else price * 0.02
+    v = float(vix) if vix and vix > 0 else 20.0
+    regime = regime_label_from_bull_pct(regime_bull_pct)
+    conf_pattern = None
+    if confluence_score is not None:
+        try:
+            conf_pattern = max(0.0, min(1.0, float(confluence_score) / 100.0))
+        except (TypeError, ValueError):
+            conf_pattern = None
+
+    engine = PositionSizingEngine(portfolio_value, risk_tolerance=risk_tolerance)
+    result = engine.size_position(
+        ticker=ticker,
+        signal_score=signal_score,
+        confidence=confidence,
+        current_position_value=max(0.0, current_position_value),
+        price=price,
+        atr_14=atr,
+        vix=v,
+        regime=regime,
+        win_rate=None,  # derived from score/confidence/regime — see _derive_win_rate
+        avg_win_pct=7.0,
+        avg_loss_pct=4.0,
+        confluence_score=conf_pattern,
+    )
+    pcts = tranche_pcts if abs(sum(tranche_pcts) - 1.0) < 1e-6 else (0.40, 0.30, 0.30)
+    tranches = []
+    allocated_shares = 0
+    for i, pct in enumerate(pcts):
+        is_last = i == len(pcts) - 1
+        shares = result.recommended_shares - allocated_shares if is_last else round(result.recommended_shares * pct)
+        shares = max(0, shares)
+        allocated_shares += shares
+        tranches.append({
+            "tranche": i + 1,
+            "pct_of_add": pct,
+            "shares": shares,
+            "dollars": round(shares * price, 2),
+        })
+
+    return {
+        "ticker": result.ticker,
+        "portfolio_value": round(portfolio_value, 2),
+        "current_position_value": round(max(0.0, current_position_value), 2),
+        "current_pct": result.current_pct,
+        "target_pct": result.target_pct,
+        "recommended_dollars": result.recommended_dollars,
+        "recommended_shares": result.recommended_shares,
+        "max_position_dollars": result.max_position_dollars,
+        "stop_loss_price": result.stop_loss_price,
+        "take_profit_price": result.take_profit_price,
+        "risk_per_trade_dollars": result.risk_per_trade_dollars,
+        "kelly_fraction": result.kelly_fraction,
+        "adjusted_fraction": result.adjusted_fraction,
+        "regime_used": regime,
+        "tranches": tranches,
+        "sizing_rationale": result.sizing_rationale,
+        "warning": result.warning,
+    }
+
+
 # ── Feature 2: Drawdown Simulation ───────────────────────────────────────
 
 @dataclass

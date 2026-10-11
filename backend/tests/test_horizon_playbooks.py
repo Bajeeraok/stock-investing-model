@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from signals.horizon_playbooks import build_horizon_playbooks, build_long_setup, build_medium_setup
 from signals.retail_action_payload import enrich_investor_summary_retail_action
 
@@ -90,3 +92,51 @@ def test_medium_setup_tranche_sizing():
 def test_long_setup_requires_tiers():
     inv = {"horizons": {"long": {"entry_tiers": {"tiers": []}}}}
     assert build_long_setup(ticker="X", investor_out=inv, current_price=100.0) is None
+
+
+def test_medium_setup_falls_back_to_illustrative_without_cached_portfolio():
+    """No cached dashboard (the test-env default) -> must clearly label this as
+    illustrative, not silently reuse the old shape without saying so."""
+    inv = _full_investor_out()
+    enrich_investor_summary_retail_action(inv, 100.0)
+    out = build_medium_setup(ticker="GOOGL", investor_out=inv, current_price=100.0, config={})
+    assert out is not None
+    assert out["sizing"]["sizing_source"] == "illustrative"
+    assert out["sizing"]["example_portfolio_usd"] == 50_000.0
+
+
+@patch("signals.tier1_risk_engine.portfolio_context_from_cached_dashboard")
+def test_medium_setup_uses_real_portfolio_value_when_cached(mock_ctx):
+    """The actual fix: once a real portfolio value is available, the sizing block must be
+    computed from it (and the ticker's real existing holding), not the $50k placeholder."""
+    mock_ctx.return_value = (80_000.0, 0.0)
+    inv = _full_investor_out()
+    enrich_investor_summary_retail_action(inv, 100.0)
+    out = build_medium_setup(
+        ticker="GOOGL", investor_out=inv, current_price=100.0,
+        response={"composite_buy": 72.0, "atr14": 2.5},
+        config={"risk_sizing": {"medium_position_pct": 10.0}},
+    )
+    assert out is not None
+    sizing = out["sizing"]
+    assert sizing["sizing_source"] == "real_portfolio"
+    assert sizing["portfolio_value_usd"] == 80_000.0
+    assert "example_portfolio_usd" not in sizing
+    assert sum(1 for line in sizing["scale_in"] if "shares" in line) == len(sizing["scale_in"])
+
+
+@patch("signals.tier1_risk_engine.portfolio_context_from_cached_dashboard")
+def test_medium_setup_real_sizing_is_incremental_when_already_held(mock_ctx):
+    """Already holding a big chunk of this ticker -> the real-portfolio sizing block must
+    reflect that (near-zero further add), not double-count a fresh full-size suggestion."""
+    mock_ctx.return_value = (80_000.0, 15_000.0)  # already ~18.75% of portfolio
+    inv = _full_investor_out()
+    enrich_investor_summary_retail_action(inv, 100.0)
+    out = build_medium_setup(
+        ticker="GOOGL", investor_out=inv, current_price=100.0,
+        response={"composite_buy": 72.0, "atr14": 2.5},
+        config={"risk_sizing": {"medium_position_pct": 10.0}},
+    )
+    assert out is not None
+    assert out["sizing"]["current_pct"] == 18.8
+    assert out["sizing"]["notional_usd"] < 5_000  # little to no further add recommended

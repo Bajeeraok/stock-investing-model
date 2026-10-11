@@ -107,25 +107,78 @@ def build_medium_setup(
 
     risk_cfg = (config.get("risk_sizing") or {}) if isinstance(config.get("risk_sizing"), dict) else {}
     position_pct = float(risk_cfg.get("medium_position_pct") or 8.0)
-    example_portfolio = 50_000.0
     sizing_block: dict[str, Any] | None = None
     if can_build:
-        notional = example_portfolio * (position_pct / 100.0)
-        entry_mid = (el + eh) / 2.0
-        shares = int(notional / entry_mid) if entry_mid > 0 else 0
-        sizing_block = {
-            "rule": f"Target ~{position_pct:.0f}% of portfolio for this name over 3–6 months (tranche in).",
-            "example_portfolio_usd": example_portfolio,
-            "max_loss_usd": round(notional * 0.15, 0),
-            "risk_per_share_usd": round(max(cp - stop, 0), 2),
-            "shares_example": shares,
-            "notional_usd": round(notional, 0),
-            "scale_in": [
-                f"Tranche 1 (~40%): ~{max(1, int(shares * 0.4))} shares inside ${min(el, eh):.2f}–${max(el, eh):.2f}.",
-                f"Tranche 2 (~30%): add on 3–5% pullback toward ${min(el, eh):.2f}.",
-                f"Tranche 3 (~30%): reserve — deploy only if gates stay constructive.",
-            ],
-        }
+        real_sizing = None
+        try:
+            from config_loader import get_risk_profile
+            from signals.tier1_risk_engine import (
+                RiskTolerance,
+                portfolio_context_from_cached_dashboard,
+                size_position_for_ticker,
+            )
+
+            portfolio_value, held_value = portfolio_context_from_cached_dashboard(ticker)
+            real_sizing = size_position_for_ticker(
+                ticker=ticker,
+                price=cp,
+                portfolio_value=portfolio_value,
+                current_position_value=held_value,
+                signal_score=_safe_float(response.get("composite_buy")) or _safe_float(investor_out.get("pattern_score")) or 50.0,
+                confidence=(_safe_float(investor_out.get("model_confidence_pct")) or 60.0) / 100.0,
+                atr_14=_safe_float(response.get("atr14")),
+                regime_bull_pct=_safe_float(investor_out.get("regime_bull_pct")),
+                confluence_score=_safe_float(investor_out.get("pattern_score")),
+                risk_tolerance=RiskTolerance(get_risk_profile(config)),
+            )
+        except Exception:
+            real_sizing = None
+
+        if real_sizing is not None:
+            tranches = real_sizing["tranches"]
+            sizing_block = {
+                "rule": f"Target ~{round(real_sizing['target_pct'] * 100):.0f}% of portfolio for this name (tranche in) — sized to your real portfolio.",
+                "portfolio_value_usd": real_sizing["portfolio_value"],
+                "current_position_usd": real_sizing["current_position_value"],
+                "current_pct": round(real_sizing["current_pct"] * 100, 1),
+                "max_loss_usd": real_sizing["risk_per_trade_dollars"],
+                "risk_per_share_usd": round(max(cp - stop, 0), 2),
+                "shares_example": real_sizing["recommended_shares"],
+                "notional_usd": real_sizing["recommended_dollars"],
+                "max_position_usd": real_sizing["max_position_dollars"],
+                "warning": real_sizing["warning"],
+                "scale_in": [
+                    f"Tranche {t['tranche']} (~{t['pct_of_add'] * 100:.0f}%): "
+                    f"{t['shares']} shares (${t['dollars']:,.0f}) inside ${min(el, eh):.2f}–${max(el, eh):.2f}."
+                    if t["tranche"] == 1
+                    else f"Tranche {t['tranche']} (~{t['pct_of_add'] * 100:.0f}%): "
+                         f"{t['shares']} shares (${t['dollars']:,.0f}) on a pullback toward ${min(el, eh):.2f}."
+                    for t in tranches
+                ],
+                "sizing_source": "real_portfolio",
+            }
+        else:
+            # No real portfolio value cached yet (e.g. cold dashboard cache) — fall back to
+            # the same illustrative-$ shape as before, but labeled as illustrative so it's
+            # never mistaken for a number sized to this user's actual account.
+            example_portfolio = 50_000.0
+            notional = example_portfolio * (position_pct / 100.0)
+            entry_mid = (el + eh) / 2.0
+            shares = int(notional / entry_mid) if entry_mid > 0 else 0
+            sizing_block = {
+                "rule": f"Target ~{position_pct:.0f}% of portfolio for this name over 3–6 months (tranche in).",
+                "example_portfolio_usd": example_portfolio,
+                "max_loss_usd": round(notional * 0.15, 0),
+                "risk_per_share_usd": round(max(cp - stop, 0), 2),
+                "shares_example": shares,
+                "notional_usd": round(notional, 0),
+                "scale_in": [
+                    f"Tranche 1 (~40%): ~{max(1, int(shares * 0.4))} shares inside ${min(el, eh):.2f}–${max(el, eh):.2f}.",
+                    f"Tranche 2 (~30%): add on 3–5% pullback toward ${min(el, eh):.2f}.",
+                    f"Tranche 3 (~30%): reserve — deploy only if gates stay constructive.",
+                ],
+                "sizing_source": "illustrative",
+            }
 
     add_triggers = [
         f"Scale inside ${min(el, eh):.2f}–${max(el, eh):.2f} over weeks — not one shot.",
