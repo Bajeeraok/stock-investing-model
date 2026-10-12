@@ -33,7 +33,7 @@ export interface RoadmapItem {
 interface Props {
   /** Tickers to load (e.g. watchlist or signals). */
   tickers: string[];
-  onTickerClick: (ticker: string, tab?: "today" | "levels" | "why") => void;
+  onTickerClick: (ticker: string, tab?: "verdict" | "levels" | "why") => void;
   /** Skip fetch while dashboard background compute is running. */
   warming?: boolean;
   portfolioTickers?: string[];

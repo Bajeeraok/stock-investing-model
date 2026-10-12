@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   DollarSign,
-  History,
   Newspaper,
   Percent,
   RefreshCw,
@@ -135,6 +134,17 @@ const NEAR_BOTTOM_MODE_LABEL: Record<string, string> = {
   neutral: "No clear setup",
 };
 
+export type CardId =
+  | "chartLevels"
+  | "valuation"
+  | "whyMoved"
+  | "nearBottom"
+  | "confidence"
+  | "options"
+  | "shortInterest"
+  | "fundamentals"
+  | "preTradeImpact";
+
 interface ReferenceDetailGridProps {
   detail: TickerDetail;
   priceTargets: PriceTargetsData | null;
@@ -149,25 +159,57 @@ interface ReferenceDetailGridProps {
   onOpenProof: () => void;
   onOpenContext: () => void;
   portfolioImpactContext?: PortfolioImpactContext | null;
+  /** Render only this subset (any order you like — rendered in the fixed ALL_CARD_IDS order). Omit for all 9. */
+  only?: CardId[];
+  /** Hide ChartLevelsCard's "View full chart & levels" footer — pass when this grid is itself rendered inside the Levels tab, so the card doesn't link to the tab it's already in. */
+  suppressOpenLevels?: boolean;
+  /** Hide FundamentalsCard's "Open context" footer — pass when this grid is itself rendered inside the Context tab. */
+  suppressOpenContext?: boolean;
 }
 
+const ALL_CARD_IDS: CardId[] = [
+  "chartLevels",
+  "valuation",
+  "whyMoved",
+  "nearBottom",
+  "confidence",
+  "options",
+  "shortInterest",
+  "fundamentals",
+  "preTradeImpact",
+];
+
+const CARD_COMPONENTS: Record<CardId, (props: ReferenceDetailGridProps) => ReactNode> = {
+  chartLevels: ChartLevelsCard,
+  valuation: ValuationCard,
+  whyMoved: WhyMovedCard,
+  nearBottom: NearBottomCard,
+  confidence: ConfidenceCard,
+  options: OptionsCard,
+  shortInterest: ShortInterestCard,
+  fundamentals: FundamentalsCard,
+  preTradeImpact: PreTradeImpactCard,
+};
+
 export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
+  const ids = (props.only ?? ALL_CARD_IDS).filter((id) => ALL_CARD_IDS.includes(id));
+  const cols = Math.min(3, ids.length);
   return (
     <div>
       <p className={clsx(TD.sectionLabel, "pt-2 border-t border-slate-800 mb-2.5")}>
         Reference detail — everything for a second look, one card per topic
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <ChartLevelsCard {...props} />
-        <ValuationCard {...props} />
-        <WhyMovedCard {...props} />
-        <NearBottomCard {...props} />
-        <ConfidenceCard {...props} />
-        <OptionsCard {...props} />
-        <ShortInterestCard {...props} />
-        <TrackRecordCard {...props} />
-        <FundamentalsCard {...props} />
-        <PreTradeImpactCard {...props} />
+      <div
+        className={clsx(
+          "grid grid-cols-1 gap-3",
+          cols >= 2 && "sm:grid-cols-2",
+          cols >= 3 && "lg:grid-cols-3",
+        )}
+      >
+        {ids.map((id) => {
+          const Card = CARD_COMPONENTS[id];
+          return <Card key={id} {...props} />;
+        })}
       </div>
     </div>
   );
@@ -187,6 +229,7 @@ function ChartLevelsCard({
   ltEntryTiersOpen,
   onToggleLtTiers,
   onOpenLevels,
+  suppressOpenLevels,
 }: ReferenceDetailGridProps) {
   const summary = detail.investor_summary;
   const primaryHorizon = primaryHorizonFromMode(decisionMode);
@@ -245,7 +288,7 @@ function ChartLevelsCard({
           )}
         </div>
       }
-      footer={{ label: "View full chart & levels", onClick: onOpenLevels }}
+      footer={suppressOpenLevels ? undefined : { label: "View full chart & levels", onClick: onOpenLevels }}
       toggleLabel="Execution plan & compare timeframes"
     >
       {summary && currentPrice != null && currentPrice > 0 && (
@@ -506,255 +549,6 @@ function ShortInterestCard({ confidence, onOpenProof }: ReferenceDetailGridProps
   );
 }
 
-const TRACK_RECORD_TIMEOUT_MS = 15000;
-
-interface TrackRecordHorizonStats {
-  n_observations?: number;
-  win_rate_pct?: number;
-  avg_return_pct?: number;
-}
-
-interface TrackRecordResponse {
-  available: boolean;
-  ticker?: string;
-  current_model_version?: string | null;
-  current?: TrackRecordHorizonStats | null;
-  legacy?: TrackRecordHorizonStats | null;
-  by_horizon?: Record<string, { current?: TrackRecordHorizonStats | null; legacy?: TrackRecordHorizonStats | null }> | null;
-  daily_trades?: DailyTradeRow[] | null;
-}
-
-interface DailyTradeRow {
-  date: string | null;
-  signal: string | null;
-  model_price: number | null;
-  fill_price: number | null;
-  target: number | null;
-  stop: number | null;
-  outcome_price: number | null;
-  outcome: string | null;
-  win: boolean | null;
-  status: "resolved" | "pending";
-  return_pct: number | null;
-  unrealized_return_pct: number | null;
-  model_version?: string | null;
-  volatile_note?: string | null;
-  track?: string | null;
-}
-
-function fmtPrice(n: number | null | undefined): string {
-  return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
-}
-
-/** Shortest horizon with at least one resolved "current"-version observation — lets a
- * just-launched model_version show an early (noisier) read instead of only "not enough
- * data yet" for the weeks it takes a 20d pair to resolve. */
-function earliestAvailableHorizon(
-  byHorizon: TrackRecordResponse["by_horizon"],
-): { horizon: number; stats: TrackRecordHorizonStats } | null {
-  if (!byHorizon) return null;
-  const horizons = Object.keys(byHorizon).map(Number).filter((h) => !Number.isNaN(h)).sort((a, b) => a - b);
-  for (const h of horizons) {
-    const stats = byHorizon[String(h)]?.current;
-    if (stats && (stats.n_observations ?? 0) > 0) {
-      return { horizon: h, stats };
-    }
-  }
-  return null;
-}
-
-/**
- * "Has our own model been right on THIS ticker?" — reads a cheap, already-cached
- * watchlist-wide forward-tracking slice filtered server-side to one ticker (see
- * signals/forward_tracking_metrics.py::build_ticker_track_record). Own fetch-on-mount, same
- * pattern as FundamentalsCard below — never blocks the rest of the page.
- */
-function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
-  const [data, setData] = useState<TrackRecordResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [showLegacyRows, setShowLegacyRows] = useState(false);
-  const ticker = detail.ticker;
-
-  useEffect(() => {
-    if (!ticker) return;
-    setData(null);
-    setLoading(true);
-    const ac = new AbortController();
-    const timer = window.setTimeout(() => ac.abort(), TRACK_RECORD_TIMEOUT_MS);
-    fetch(apiUrl(`/api/ticker/${ticker}/track-record`), { signal: ac.signal, cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (j) setData(j as TrackRecordResponse);
-      })
-      .catch(() => {
-        /* optional card — quietly stay empty */
-      })
-      .finally(() => {
-        window.clearTimeout(timer);
-        setLoading(false);
-      });
-    return () => {
-      ac.abort();
-      window.clearTimeout(timer);
-    };
-  }, [ticker]);
-
-  if (!loading && !data) return null;
-  if (data && !data.available) return null;
-
-  const current = data?.current;
-  const legacy = data?.legacy;
-  const version = data?.current_model_version;
-  const earlyRead = !current || (current.n_observations ?? 0) === 0 ? earliestAvailableHorizon(data?.by_horizon) : null;
-  if (!current && !legacy && !earlyRead) return null;
-
-  return (
-    <ReferenceCard
-      icon={History}
-      title="Signal track record"
-      description="What we said vs. what happened, for this ticker specifically — from the same forward-tracking data behind the Analysis tab."
-      body={
-        <div className="space-y-2">
-          {current && (current.n_observations ?? 0) > 0 ? (
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Since <span className="font-mono text-slate-200">{version}</span>: right{" "}
-              <span className={(current.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
-                {current.win_rate_pct != null ? `${current.win_rate_pct.toFixed(0)}%` : "—"}
-              </span>{" "}
-              of the time <span className="text-slate-600">(n={current.n_observations})</span>
-              {current.avg_return_pct != null && (
-                <>
-                  {" · avg return "}
-                  <span className={current.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
-                    {fmtPct(current.avg_return_pct)}
-                  </span>
-                </>
-              )}
-              .
-            </p>
-          ) : earlyRead ? (
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Too early for a 20d read on {ticker} under <span className="font-mono text-slate-300">{version}</span> —
-              early {earlyRead.horizon}d look: right{" "}
-              <span className={(earlyRead.stats.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
-                {earlyRead.stats.win_rate_pct != null ? `${earlyRead.stats.win_rate_pct.toFixed(0)}%` : "—"}
-              </span>{" "}
-              <span className="text-slate-600">(n={earlyRead.stats.n_observations}, small sample — noisy)</span>.
-            </p>
-          ) : (
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Not enough resolved signals on {ticker} yet under {version || "the current model"} —
-              this fills in as new EOD snapshots accumulate.
-            </p>
-          )}
-          {legacy && (legacy.n_observations ?? 0) > 0 && (
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              Pre-{version || "current"} history: {legacy.win_rate_pct != null ? `${legacy.win_rate_pct.toFixed(0)}%` : "—"}{" "}
-              (n={legacy.n_observations}) — kept separate, not blended into the number above.
-            </p>
-          )}
-          {(data?.daily_trades?.length ?? 0) > 0 && (() => {
-            const allTrades = data?.daily_trades ?? [];
-            const currentTrades = version ? allTrades.filter((t) => t.model_version === version) : allTrades;
-            const legacyTrades = version ? allTrades.filter((t) => t.model_version !== version) : [];
-            const shownTrades = showLegacyRows ? allTrades : currentTrades;
-            return (
-            <div className="mt-2 overflow-x-auto">
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <p className="text-[11px] text-slate-500">
-                  Per-trade detail (most recent first){version && !showLegacyRows ? ` — ${version} only` : ""}
-                </p>
-                {legacyTrades.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowLegacyRows((s) => !s)}
-                    className="text-[10.5px] text-slate-500 hover:text-slate-300 shrink-0"
-                  >
-                    {showLegacyRows ? "Hide" : `Show ${legacyTrades.length} legacy`} ›
-                  </button>
-                )}
-              </div>
-              {shownTrades.length === 0 ? (
-                <p className="text-[11px] text-slate-600">No trades logged under {version} for this ticker yet.</p>
-              ) : (
-              <>
-              <table className="w-full text-[11px] border-collapse">
-                <thead>
-                  <tr className="text-left text-slate-500 border-b border-slate-700/70">
-                    <th className="pr-2 py-1 font-medium">Date</th>
-                    <th className="pr-2 py-1 font-medium">Signal</th>
-                    <th className="pr-2 py-1 font-medium">Model px</th>
-                    <th className="pr-2 py-1 font-medium">Fill px</th>
-                    <th className="pr-2 py-1 font-medium">Target / Stop</th>
-                    <th className="pr-2 py-1 font-medium">Outcome px</th>
-                    <th className="pr-2 py-1 font-medium">P&amp;L</th>
-                    <th className="py-1 font-medium">Result</th>
-                    <th className="pl-2 py-1 font-medium">Ver.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shownTrades.map((t, i) => (
-                    <tr key={`${t.date}-${i}`} className="border-t border-slate-800/70 text-slate-300">
-                      <td className="pr-2 py-1 text-slate-400 whitespace-nowrap">{t.date ?? "—"}</td>
-                      <td className="pr-2 py-1 whitespace-nowrap">{t.signal ?? "—"}</td>
-                      <td className="pr-2 py-1 font-mono tabular-nums">{fmtPrice(t.model_price)}</td>
-                      <td className="pr-2 py-1 font-mono tabular-nums">{fmtPrice(t.fill_price)}</td>
-                      <td className="pr-2 py-1 font-mono tabular-nums text-slate-500 whitespace-nowrap">
-                        {fmtPrice(t.target)} / {fmtPrice(t.stop)}
-                      </td>
-                      <td className="pr-2 py-1 font-mono tabular-nums">
-                        {t.status === "resolved" ? fmtPrice(t.outcome_price) : "—"}
-                      </td>
-                      <td className="pr-2 py-1 font-mono tabular-nums">
-                        {t.status === "resolved" ? (
-                          <span className={(t.return_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
-                            {fmtPct(t.return_pct)}
-                          </span>
-                        ) : t.unrealized_return_pct != null ? (
-                          <span className={t.unrealized_return_pct >= 0 ? "text-emerald-400/70" : "text-amber-300/70"}>
-                            {fmtPct(t.unrealized_return_pct)} <span className="text-slate-600">(open)</span>
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td className="py-1 whitespace-nowrap" title={t.volatile_note ?? undefined}>
-                        {t.status === "pending" ? (
-                          <span className="text-slate-500">pending</span>
-                        ) : t.win ? (
-                          <span className="text-emerald-400">
-                            WIN{t.volatile_note && <span className="text-amber-400/80"> *</span>}
-                          </span>
-                        ) : (
-                          <span className="text-red-400">{t.outcome === "STOP_HIT" ? "STOP" : "LOSS"}</span>
-                        )}
-                      </td>
-                      <td className="pl-2 py-1 text-slate-600 whitespace-nowrap">
-                        {t.track === "velocity" ? (
-                          <span className="text-amber-400/80" title="Velocity track — tactical T+N rules, not the accumulate win criterion">vel</span>
-                        ) : (
-                          t.model_version ?? "—"
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="text-[10px] text-slate-600 mt-1">
-                * stop also touched intraday that day, but the close still cleared target — counted as a win, same rule the headline win rate uses.
-                {(data?.daily_trades ?? []).some((t) => t.track === "velocity") && " \"vel\" = velocity track (T+N rules), kept separate from accumulate's win criterion."}
-              </p>
-              </>
-              )}
-            </div>
-            );
-          })()}
-        </div>
-      }
-    />
-  );
-}
-
 const CORRELATION_TIMEOUT_MS = 15000;
 /** Illustrative hypothetical add size for the pre-trade impact estimate — 5% of current
  * portfolio value, rounded to the nearest $100. Not a sizing recommendation (Tier-1's
@@ -867,7 +661,7 @@ function PreTradeImpactCard({ detail, portfolioImpactContext }: ReferenceDetailG
 
 const INSIGHTS_TIMEOUT_MS = 90000;
 
-function FundamentalsCard({ detail, onOpenContext }: ReferenceDetailGridProps) {
+function FundamentalsCard({ detail, onOpenContext, suppressOpenContext }: ReferenceDetailGridProps) {
   const [institutional, setInstitutional] = useState<InstitutionalBundle | null>(null);
   const ticker = detail.ticker;
 
@@ -951,7 +745,7 @@ function FundamentalsCard({ detail, onOpenContext }: ReferenceDetailGridProps) {
           )}
         </div>
       }
-      footer={{ label: "Open context", onClick: onOpenContext }}
+      footer={suppressOpenContext ? undefined : { label: "Open context", onClick: onOpenContext }}
     />
   );
 }

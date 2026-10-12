@@ -173,9 +173,9 @@ function isValidTab(t: string): t is TabId {
 export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stale = false, lastRefreshedAt }: Props) {
   const router = useRouter();
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [modalInitialTab, setModalInitialTab] = useState<"today" | "levels" | "why">("today");
-  const openTickerDetail = useCallback((ticker: string, tab?: "today" | "levels" | "why") => {
-    setModalInitialTab(tab ?? "today");
+  const [modalInitialTab, setModalInitialTab] = useState<"verdict" | "levels" | "why" | "context" | "track">("verdict");
+  const openTickerDetail = useCallback((ticker: string, tab?: "verdict" | "levels" | "why" | "context" | "track") => {
+    setModalInitialTab(tab ?? "verdict");
     setSelectedTicker(ticker);
   }, []);
   const [refreshAgo, setRefreshAgo] = useState("");

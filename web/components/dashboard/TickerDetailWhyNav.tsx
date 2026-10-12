@@ -1,14 +1,15 @@
 "use client";
 
 import { clsx } from "clsx";
-import { BarChart3, FileText, Shield } from "lucide-react";
+import { BarChart3, Shield } from "lucide-react";
 
-export type WhySubTab = "valuation" | "proof" | "context";
+/** Context used to be a third option here — it's now its own top-level ticker-detail tab
+ * (see TickerDetailModal's modalTab), so this nav only ever switches between these two. */
+export type WhySubTab = "valuation" | "proof";
 
 const TABS: { id: WhySubTab; label: string; icon: typeof BarChart3 }[] = [
   { id: "valuation", label: "Valuation & scenarios", icon: BarChart3 },
   { id: "proof", label: "Model proof", icon: Shield },
-  { id: "context", label: "Context", icon: FileText },
 ];
 
 export function TickerDetailWhyNav({

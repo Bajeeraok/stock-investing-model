@@ -6,7 +6,7 @@ import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, 
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
-import { PriceTargetsPanel, TechnicalLevelsBar, type PriceTargetsData } from "./PriceTargetsPanel";
+import { PriceTargetsPanel, type PriceTargetsData } from "./PriceTargetsPanel";
 import type { InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import { HorizonProjectionChart } from "./HorizonProjectionChart";
 import { UnifiedValuationSummary } from "./UnifiedValuationSummary";
@@ -35,6 +35,7 @@ import {
 } from "./retailActionUX";
 import { TickerDecisionHero } from "./tickerDetail/TickerDecisionHero";
 import { ReferenceDetailGrid } from "./tickerDetail/ReferenceDetailGrid";
+import TrackRecordPanel from "./tickerDetail/TrackRecordPanel";
 import { NarrativeWaterfallCard } from "./tickerDetail/NarrativeWaterfallCard";
 import { CopyTradePlanButton } from "./CopyTradePlanButton";
 import { InstitutionalInsightsPanel } from "./InstitutionalInsightsPanel";
@@ -412,13 +413,13 @@ export interface PortfolioImpactContext {
 export function TickerDetailModal({
   ticker,
   onClose,
-  initialTab = "today",
+  initialTab = "verdict",
   portfolioImpactContext = null,
 }: {
   ticker: string;
   onClose: () => void;
   /** Which hub tab to show first (e.g. Levels when opening from roadmap expand). */
-  initialTab?: "today" | "levels" | "why";
+  initialTab?: "verdict" | "levels" | "why" | "context" | "track";
   /** Current portfolio's holdings context, for the pre-trade impact card. Null when no portfolio is configured/selected. */
   portfolioImpactContext?: PortfolioImpactContext | null;
 }) {
@@ -436,7 +437,7 @@ export function TickerDetailModal({
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
-  const [modalTab, setModalTab] = useState<"today" | "levels" | "why">(initialTab);
+  const [modalTab, setModalTab] = useState<"verdict" | "levels" | "why" | "context" | "track">(initialTab);
   const [whySubTab, setWhySubTab] = useState<WhySubTab>("valuation");
 
   const openWhyValuation = () => {
@@ -983,9 +984,11 @@ export function TickerDetailModal({
             <div className="flex">
             {(
               [
-                { id: "today" as const, label: "Today", icon: Target },
-                { id: "levels" as const, label: "Levels", icon: LayoutGrid },
+                { id: "verdict" as const, label: "Verdict", icon: Target },
                 { id: "why" as const, label: "Why", icon: Layers },
+                { id: "levels" as const, label: "Levels", icon: LayoutGrid },
+                { id: "context" as const, label: "Context", icon: FileText },
+                { id: "track" as const, label: "Track", icon: Activity },
               ] as const
             ).map(({ id, label, icon: Icon }) => (
               <button
@@ -993,19 +996,19 @@ export function TickerDetailModal({
                 type="button"
                 onClick={() => setModalTab(id)}
                 className={clsx(
-                  "flex-1 flex items-center justify-center gap-2 py-2.5 text-[11px] font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px",
+                  "flex-1 min-w-0 flex items-center justify-center gap-1.5 py-2.5 text-[10.5px] sm:text-[11px] font-mono uppercase tracking-wider transition-colors border-b-2 -mb-px",
                   modalTab === id
                     ? "text-teal-400 border-teal-400 bg-slate-800/50"
                     : "text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-800/30"
                 )}
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" />
-                {label}
+                <span className="truncate">{label}</span>
               </button>
             ))}
             </div>
             <p className="text-center text-[10px] text-slate-600 px-2 py-1 border-t border-slate-800 font-mono">
-              Today · decide · Levels · prices · Why · proof
+              Verdict · decide · Why · proof · Levels · prices · Context · data · Track · history
             </p>
           </div>
         )}
@@ -1033,8 +1036,8 @@ export function TickerDetailModal({
           )}
           {detail && !loading && (
             <>
-              {/* ── Overview tab: One Answer + horizons + CTA to Roadmaps ───── */}
-              {modalTab === "today" && (
+              {/* ── Verdict tab: One Answer + horizons + CTA to Roadmaps ───── */}
+              {modalTab === "verdict" && (
                 <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] lg:gap-4 lg:items-start">
                 <div className="min-w-0">
               {detail.fundamentals_snapshot && !detail.fundamentals_snapshot.point_in_time && (
@@ -1144,6 +1147,7 @@ export function TickerDetailModal({
               )}
 
               <ReferenceDetailGrid
+                only={["whyMoved", "valuation", "confidence"]}
                 detail={detail}
                 priceTargets={priceTargets}
                 confidence={confidence}
@@ -1155,7 +1159,7 @@ export function TickerDetailModal({
                 onOpenLevels={() => setModalTab("levels")}
                 onOpenValuation={openWhyValuation}
                 onOpenProof={() => { setModalTab("why"); setWhySubTab("proof"); }}
-                onOpenContext={() => { setModalTab("why"); setWhySubTab("context"); }}
+                onOpenContext={() => setModalTab("context")}
                 portfolioImpactContext={portfolioImpactContext}
               />
 
@@ -1305,6 +1309,27 @@ export function TickerDetailModal({
                   );
                 })()}
 
+                {/* ── Chart & levels / near-bottom read / pre-trade portfolio impact —
+                    moved here from the Verdict tab's reference grid; these are all about
+                    price levels and sizing, not the headline verdict ─── */}
+                <ReferenceDetailGrid
+                  only={["chartLevels", "nearBottom", "preTradeImpact"]}
+                  suppressOpenLevels
+                  detail={detail}
+                  priceTargets={priceTargets}
+                  confidence={confidence}
+                  decisionMode={decisionMode}
+                  currentPrice={effectivePrice}
+                  executionVm={executionVm}
+                  ltEntryTiersOpen={ltEntryTiersOpen}
+                  onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                  onOpenLevels={() => {}}
+                  onOpenValuation={openWhyValuation}
+                  onOpenProof={() => { setModalTab("why"); setWhySubTab("proof"); }}
+                  onOpenContext={() => setModalTab("context")}
+                  portfolioImpactContext={portfolioImpactContext}
+                />
+
                 {/* ── Roadmap summaries (fallback only — hidden when horizon playbooks
                     are present because playbooks show the same short/medium/long data
                     in a richer format from the same horizons.* source) ─── */}
@@ -1353,10 +1378,10 @@ export function TickerDetailModal({
                     <p className="text-sm">Levels not available for this ticker.</p>
                     <button
                       type="button"
-                      onClick={() => setModalTab("today")}
+                      onClick={() => setModalTab("verdict")}
                       className="mt-2 text-sm text-emerald-400 hover:text-emerald-300"
                     >
-                      Back to Today
+                      Back to Verdict
                     </button>
                   </div>
                 ) : null}
@@ -1364,7 +1389,7 @@ export function TickerDetailModal({
                 </DensityProvider>
               )}
 
-              {/* ── Why tab: valuation / proof / context sub-tabs ── */}
+              {/* ── Why tab: valuation / proof sub-tabs (Context promoted to its own top-level tab below) ── */}
               {modalTab === "why" && (
                 <>
               <TickerDetailWhyNav active={whySubTab} onChange={setWhySubTab} />
@@ -1577,12 +1602,32 @@ export function TickerDetailModal({
               )}
                 </div>
               )}
+                </>
+              )}
 
-              {whySubTab === "context" && (
+              {/* ── Context tab (promoted from a Why sub-tab — real content, same as before) ── */}
+              {modalTab === "context" && (
                 <div className="space-y-6">
+              <ReferenceDetailGrid
+                only={["options", "shortInterest", "fundamentals"]}
+                suppressOpenContext
+                detail={detail}
+                priceTargets={priceTargets}
+                confidence={confidence}
+                decisionMode={decisionMode}
+                currentPrice={effectivePrice}
+                executionVm={executionVm}
+                ltEntryTiersOpen={ltEntryTiersOpen}
+                onToggleLtTiers={() => setLtEntryTiersOpen((o) => !o)}
+                onOpenLevels={() => setModalTab("levels")}
+                onOpenValuation={openWhyValuation}
+                onOpenProof={() => { setModalTab("why"); setWhySubTab("proof"); }}
+                onOpenContext={() => {}}
+                portfolioImpactContext={portfolioImpactContext}
+              />
               <InstitutionalInsightsPanel
                 ticker={detail.ticker}
-                enabled={whySubTab === "context"}
+                enabled={modalTab === "context"}
                 silentOnError={false}
               />
               {/* ── Story & catalysts ─────── */}
@@ -2225,8 +2270,9 @@ export function TickerDetailModal({
                 </div>
               )}
 
-                </>
-              )}
+              {/* ── Track tab: per-trade signal/fill/outcome/P&L history, promoted out of the
+                  old reference grid (was the 8th of 10 cards, squeezed into a 1/3-width cell) ── */}
+              {modalTab === "track" && <TrackRecordPanel ticker={detail.ticker} />}
             </>
           )}
         </div>
