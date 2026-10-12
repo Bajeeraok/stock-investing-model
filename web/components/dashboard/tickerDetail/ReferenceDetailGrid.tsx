@@ -538,6 +538,8 @@ interface DailyTradeRow {
   return_pct: number | null;
   unrealized_return_pct: number | null;
   model_version?: string | null;
+  volatile_note?: string | null;
+  track?: string | null;
 }
 
 function fmtPrice(n: number | null | undefined): string {
@@ -570,6 +572,7 @@ function earliestAvailableHorizon(
 function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
   const [data, setData] = useState<TrackRecordResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showLegacyRows, setShowLegacyRows] = useState(false);
   const ticker = detail.ticker;
 
   useEffect(() => {
@@ -650,9 +653,31 @@ function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
               (n={legacy.n_observations}) — kept separate, not blended into the number above.
             </p>
           )}
-          {(data?.daily_trades?.length ?? 0) > 0 && (
+          {(data?.daily_trades?.length ?? 0) > 0 && (() => {
+            const allTrades = data?.daily_trades ?? [];
+            const currentTrades = version ? allTrades.filter((t) => t.model_version === version) : allTrades;
+            const legacyTrades = version ? allTrades.filter((t) => t.model_version !== version) : [];
+            const shownTrades = showLegacyRows ? allTrades : currentTrades;
+            return (
             <div className="mt-2 overflow-x-auto">
-              <p className="text-[11px] text-slate-500 mb-1">Per-trade detail (most recent first)</p>
+              <div className="flex items-baseline justify-between gap-2 mb-1">
+                <p className="text-[11px] text-slate-500">
+                  Per-trade detail (most recent first){version && !showLegacyRows ? ` — ${version} only` : ""}
+                </p>
+                {legacyTrades.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowLegacyRows((s) => !s)}
+                    className="text-[10.5px] text-slate-500 hover:text-slate-300 shrink-0"
+                  >
+                    {showLegacyRows ? "Hide" : `Show ${legacyTrades.length} legacy`} ›
+                  </button>
+                )}
+              </div>
+              {shownTrades.length === 0 ? (
+                <p className="text-[11px] text-slate-600">No trades logged under {version} for this ticker yet.</p>
+              ) : (
+              <>
               <table className="w-full text-[11px] border-collapse">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-700/70">
@@ -664,10 +689,11 @@ function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
                     <th className="pr-2 py-1 font-medium">Outcome px</th>
                     <th className="pr-2 py-1 font-medium">P&amp;L</th>
                     <th className="py-1 font-medium">Result</th>
+                    <th className="pl-2 py-1 font-medium">Ver.</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.daily_trades ?? []).map((t, i) => (
+                  {shownTrades.map((t, i) => (
                     <tr key={`${t.date}-${i}`} className="border-t border-slate-800/70 text-slate-300">
                       <td className="pr-2 py-1 text-slate-400 whitespace-nowrap">{t.date ?? "—"}</td>
                       <td className="pr-2 py-1 whitespace-nowrap">{t.signal ?? "—"}</td>
@@ -692,21 +718,37 @@ function TrackRecordCard({ detail }: ReferenceDetailGridProps) {
                           "—"
                         )}
                       </td>
-                      <td className="py-1 whitespace-nowrap">
+                      <td className="py-1 whitespace-nowrap" title={t.volatile_note ?? undefined}>
                         {t.status === "pending" ? (
                           <span className="text-slate-500">pending</span>
                         ) : t.win ? (
-                          <span className="text-emerald-400">WIN</span>
+                          <span className="text-emerald-400">
+                            WIN{t.volatile_note && <span className="text-amber-400/80"> *</span>}
+                          </span>
                         ) : (
                           <span className="text-red-400">{t.outcome === "STOP_HIT" ? "STOP" : "LOSS"}</span>
+                        )}
+                      </td>
+                      <td className="pl-2 py-1 text-slate-600 whitespace-nowrap">
+                        {t.track === "velocity" ? (
+                          <span className="text-amber-400/80" title="Velocity track — tactical T+N rules, not the accumulate win criterion">vel</span>
+                        ) : (
+                          t.model_version ?? "—"
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <p className="text-[10px] text-slate-600 mt-1">
+                * stop also touched intraday that day, but the close still cleared target — counted as a win, same rule the headline win rate uses.
+                {(data?.daily_trades ?? []).some((t) => t.track === "velocity") && " \"vel\" = velocity track (T+N rules), kept separate from accumulate's win criterion."}
+              </p>
+              </>
+              )}
             </div>
-          )}
+            );
+          })()}
         </div>
       }
     />

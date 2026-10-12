@@ -2273,13 +2273,28 @@ class PaperTradeLogger:
         """All logged paper trades for one ticker, newest first — the per-trade rows (signal
         date, model's entry price, actual fill, target/stop, resolved outcome, return %) a
         per-ticker "what we said vs what happened" table needs, as opposed to get_recent()'s
-        cross-ticker feed. Cheap: get_recent()'s same in-memory CSV read, just filtered.
+        cross-ticker feed.
+
+        Filters by ticker over the FULL file before applying `limit` — this used to call
+        get_recent(limit=10_000), which caps to the 10,000 most recent rows ACROSS ALL
+        TICKERS first and filters by ticker second. With ~100 tickers logged daily, the full
+        file passes 10,000 rows in well under a year, so a thinly-traded ticker's older rows
+        were silently dropped before this function ever saw them — confirmed live: NVDA's
+        per-ticker history stopped at May even though its EOD-paired forward-tracking data
+        (a separate table) goes back much further. Ticker-filter first, cap second.
         """
         tk = str(ticker or "").upper().strip()
         if not tk:
             return []
-        rows = self.get_recent(limit=10_000)
-        return [r for r in rows if str(r.get("ticker") or "").upper() == tk][:limit]
+        rows = self._read_all()
+        matched = [r for r in rows if str(r.get("ticker") or "").upper() == tk]
+        for row in matched:
+            self._ensure_trade_id(row)
+            self._coerce_numeric_fields(row)
+            mv = str(row.get("model_version") or "").strip()
+            row["model_version"] = mv or "legacy"
+        # _read_all() is file order (oldest first); newest first to match get_recent()'s convention.
+        return list(reversed(matched))[:limit]
 
     def purge_velocity_track(self, *, dry_run: bool = False) -> dict[str, Any]:
         """
@@ -2320,11 +2335,31 @@ def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     out: list[dict[str, Any]] = []
     for r in rows:
         outcome = str(r.get("outcome") or "").strip() or None
+
+        # win must match _stats_for_completed()'s own criterion (hit_target, falling back to
+        # outcome only when hit_target is blank) — NOT the outcome string directly. outcome
+        # gives hit_stop priority over hit_target (STOP_HIT is checked first in fill_outcomes),
+        # while the app's real headline win-rate looks at hit_target alone and never even
+        # reads hit_stop. The two can disagree on the identical row: hit_target=1 (the day's
+        # close cleared the target) AND hit_stop=1 (that same day's intraday low also dipped
+        # below the stop) is a real, not-rare combination on a volatile name — confirmed live
+        # on NVDA rows showing +20-25% returns labeled STOP_HIT. Using outcome for "win" here
+        # made this table disagree with the app's own aggregate stats on the same data.
         win = None
-        if outcome == "HIT":
-            win = True
-        elif outcome in ("MISS", "STOP_HIT"):
-            win = False
+        ht_raw = r.get("hit_target")
+        if ht_raw is not None and str(ht_raw).strip() != "":
+            try:
+                win = int(float(ht_raw)) == 1
+            except (TypeError, ValueError):
+                win = None
+        if win is None and outcome:
+            win = outcome == "HIT"
+
+        stop_touched = str(r.get("hit_stop") or "").strip() == "1"
+        volatile_note = (
+            "stop also touched intraday that day" if (win and stop_touched) else None
+        )
+
         out.append({
             "date": r.get("date"),
             "ticker": r.get("ticker"),
@@ -2337,10 +2372,12 @@ def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             "outcome_price": _safe_float(r.get("actual_price")),
             "outcome": outcome,
             "win": win,
+            "volatile_note": volatile_note,
             "status": "resolved" if outcome else "pending",
             "return_pct": _safe_float(r.get("return_pct")) if outcome else None,
             "unrealized_return_pct": _safe_float(r.get("rolling_return_pct")) if not outcome else None,
             "model_version": r.get("model_version") or "legacy",
+            "track": r.get("track") or "accumulate",
             "gate_mode": r.get("gate_mode"),
             "entry_mode": r.get("entry_mode"),
         })

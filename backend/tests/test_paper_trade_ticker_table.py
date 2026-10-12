@@ -60,6 +60,25 @@ def test_get_trades_for_ticker_respects_limit(tmp_path):
     assert len(out) == 2
 
 
+def test_get_trades_for_ticker_not_truncated_by_other_tickers_volume(tmp_path, monkeypatch):
+    """Regression for the confirmed live bug: get_trades_for_ticker used to call
+    get_recent(limit=10_000), which caps to the 10,000 most recent rows ACROSS ALL TICKERS
+    before filtering by ticker — with enough other-ticker volume, a thinly-traded ticker's
+    older rows never made it past that cap. This ticker's rows must come back regardless of
+    how get_recent() itself behaves — get_trades_for_ticker no longer routes through it at all."""
+    logger = PaperTradeLogger(data_root=tmp_path)
+    rows = [_rec("NVDA", 1, outcome="HIT", ret=2.0)]
+    logger._write_all(rows)
+
+    def _recent_returns_nothing(limit=50):
+        return []  # simulates "this ticker's rows fell outside get_recent()'s cap"
+
+    monkeypatch.setattr(logger, "get_recent", _recent_returns_nothing)
+    out = logger.get_trades_for_ticker("NVDA")
+    assert len(out) == 1
+    assert out[0]["date"] == "2027-01-01"
+
+
 def test_build_ticker_trade_table_resolved_row_shape():
     logger = PaperTradeLogger()
     row = _rec("AAPL", 1, outcome="HIT", ret=5.0, entry=100.0, effective=100.5, target=110.0, stop=95.0)
@@ -86,6 +105,38 @@ def test_build_ticker_trade_table_stop_hit_is_a_loss():
     out = build_ticker_trade_table([row])
     assert out[0]["win"] is False
     assert out[0]["outcome"] == "STOP_HIT"
+
+
+def test_build_ticker_trade_table_hit_target_wins_even_when_outcome_says_stop_hit():
+    """The exact confirmed-live bug: a volatile day can dip below the stop intraday (hit_stop=1,
+    so fill_outcomes' outcome string becomes STOP_HIT — it checks hit_stop before hit_target)
+    and still close well above the target (hit_target=1, return_pct strongly positive). The
+    app's own aggregate win-rate (_stats_for_completed) decides win/loss from hit_target alone
+    and never reads hit_stop or the outcome string — this table must agree with that, not
+    silently use a different, stricter definition that can show "LOSS" next to +25%."""
+    logger = PaperTradeLogger()
+    row = dict(_rec("NVDA", 1, outcome="STOP_HIT", ret=25.0))
+    row["hit_target"] = "1"  # closed above target that same day
+    row["hit_stop"] = "1"    # intraday low also dipped below stop that same day
+    logger._coerce_numeric_fields(row)
+    out = build_ticker_trade_table([row])
+    r = out[0]
+    assert r["win"] is True
+    assert r["return_pct"] == 25.0
+    assert r["outcome"] == "STOP_HIT"  # kept, not hidden — it's real context
+    assert r["volatile_note"] == "stop also touched intraday that day"
+
+
+def test_build_ticker_trade_table_falls_back_to_outcome_string_when_hit_target_blank():
+    """Older rows without a hit_target field at all (pre-dating that column, or a different
+    track's schema) must still resolve a win/loss from the outcome string — the fallback
+    _stats_for_completed() itself uses — rather than showing "pending" forever."""
+    logger = PaperTradeLogger()
+    row = dict(_rec("AAPL", 1, outcome="HIT", ret=3.0))
+    row["hit_target"] = ""
+    logger._coerce_numeric_fields(row)
+    out = build_ticker_trade_table([row])
+    assert out[0]["win"] is True
 
 
 def test_build_ticker_trade_table_pending_row_shows_unrealized_not_blank():
