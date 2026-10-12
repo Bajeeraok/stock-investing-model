@@ -137,7 +137,7 @@ export function SignalsHub({
       <div
         role="tablist"
         aria-label="Signals sections"
-        className="flex gap-0.5 p-1 rounded-xl bg-slate-900/80 border border-slate-700/60 overflow-x-auto"
+        className="flex flex-wrap gap-1.5 p-1.5 rounded-xl bg-slate-900/80 border border-slate-700/60"
       >
         {SUB_TABS.map(({ id, label, icon: Icon }) => {
           const isActive = subTab === id;
@@ -149,13 +149,14 @@ export function SignalsHub({
               aria-selected={isActive}
               onClick={() => handleSubTabChange(id)}
               className={clsx(
-                "flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors shrink-0",
+                "flex items-center justify-center gap-1.5 px-3 py-3 sm:py-2 rounded-lg text-sm font-medium transition-colors",
+                "basis-[calc(50%-0.1875rem)] sm:basis-auto sm:flex-initial min-h-[44px] sm:min-h-0 touch-manipulation",
                 isActive
                   ? "bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500/30"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60",
               )}
             >
-              <Icon className={clsx("h-4 w-4", isActive ? "text-emerald-400" : "text-slate-500")} />
+              <Icon className={clsx("h-4 w-4 shrink-0", isActive ? "text-emerald-400" : "text-slate-500")} />
               {label}
             </button>
           );
