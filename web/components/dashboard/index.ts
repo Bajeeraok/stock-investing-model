@@ -14,6 +14,8 @@ export { DataFreshnessBar, type DataFreshness } from "./DataFreshnessBar";
 export { KnownLimitsPanel } from "./KnownLimitsPanel";
 export { ModelDisclaimer } from "./ModelDisclaimer";
 export { SignalsTable } from "./SignalsTable";
+export { SignalsHub } from "./SignalsHub";
+export { SignalsHeatmap } from "./SignalsHeatmap";
 export { PortfolioHoldings } from "./PortfolioHoldings";
 export { TrimCandidates } from "./TrimCandidates";
 export { Opportunities } from "./Opportunities";

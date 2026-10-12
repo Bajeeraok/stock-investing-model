@@ -1,12 +1,11 @@
 "use client";
 
-import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, LayoutGrid, Banknote } from "lucide-react";
+import { LayoutDashboard, LineChart, Wallet, Sparkles, TrendingUp, BarChart3, Banknote } from "lucide-react";
 import { clsx } from "clsx";
 
 const TABS = [
   { id: "overview",    label: "Overview",    compactLabel: "Main",    shortcut: "1", icon: LayoutDashboard },
   { id: "signals",     label: "Signals",     compactLabel: "Signals", shortcut: "2", icon: LineChart       },
-  { id: "roadmaps",    label: "Roadmaps",    compactLabel: "Roads",   shortcut: "7", icon: LayoutGrid      },
   { id: "portfolio",   label: "Portfolio",   compactLabel: "Port",    shortcut: "3", icon: Wallet          },
   { id: "opportunities", label: "Opportunities", compactLabel: "Opps", shortcut: "4", icon: Sparkles    },
   { id: "income",        label: "Income",        compactLabel: "Income", shortcut: "8", icon: Banknote      },

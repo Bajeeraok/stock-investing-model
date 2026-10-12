@@ -34,8 +34,8 @@ function streetSourceLabel(src: string | null | undefined): string {
 function Row({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <span className="text-slate-500 shrink-0">{label}</span>
-      <span className={clsx("text-right text-slate-300", mono && "font-mono text-[11px]")}>{value}</span>
+      <span className="text-td-muted shrink-0">{label}</span>
+      <span className={clsx("text-right text-td-text", mono && "font-mono text-[11px]")}>{value}</span>
     </div>
   );
 }
@@ -97,32 +97,32 @@ export function FairValueDebugPanel({
   if (!hasContent) return null;
 
   return (
-    <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 overflow-hidden">
+    <div className="rounded-xl border border-td-line/60 bg-td-surface/50 overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-slate-800/40 transition-colors"
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-td-surface2/40 transition-colors"
       >
         {open ? (
-          <ChevronDown className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+          <ChevronDown className="h-3.5 w-3.5 text-td-muted shrink-0" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-slate-500 shrink-0" />
+          <ChevronRight className="h-3.5 w-3.5 text-td-muted shrink-0" />
         )}
-        <SlidersHorizontal className="h-3.5 w-3.5 text-slate-500 shrink-0" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+        <SlidersHorizontal className="h-3.5 w-3.5 text-td-muted shrink-0" />
+        <span className="text-xs font-semibold uppercase tracking-wide text-td-text">
           FV inputs (debug)
         </span>
         {meta.fv_suppressed && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500/40 text-amber-200/90 bg-amber-500/10">
+          <span className="text-[10px] px-1.5 py-0.5 rounded border border-td-warn/40 text-td-warn/90 bg-td-warn/10">
             Model suppressed
           </span>
         )}
       </button>
 
       {open && (
-        <div className="px-3.5 pb-3 pt-0.5 space-y-2 border-t border-slate-700/40">
+        <div className="px-3.5 pb-3 pt-0.5 space-y-2 border-t border-td-line/40">
           {meta.fv_suppressed && meta.fv_suppressed_reason && (
-            <p className="text-[11px] text-amber-200/80 leading-snug">{meta.fv_suppressed_reason}</p>
+            <p className="text-[11px] text-td-warn/80 leading-snug">{meta.fv_suppressed_reason}</p>
           )}
 
           <div className="text-xs space-y-0.5">
@@ -148,8 +148,8 @@ export function FairValueDebugPanel({
             )}
           </div>
 
-          <div className="border-t border-slate-700/40 pt-2 text-xs space-y-0.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">EPS / multiples</p>
+          <div className="border-t border-td-line/40 pt-2 text-xs space-y-0.5">
+            <p className="text-xs font-semibold uppercase tracking-wide text-td-text mb-1">EPS / multiples</p>
             <Row label="TTM EPS" value={meta.ttm_eps != null ? fmtNum(meta.ttm_eps, 4) : "—"} />
             <Row label="Forward EPS (NTM)" value={meta.forward_eps != null ? fmtNum(meta.forward_eps, 4) : "—"} />
             <Row label="TTM P/E" value={fmtNum(ttmPeUsed ?? null, 1)} />
@@ -164,8 +164,8 @@ export function FairValueDebugPanel({
           </div>
 
           {(meta.growth_used_pct != null || meta.method_used) && (
-            <div className="border-t border-slate-700/40 pt-2 text-xs space-y-0.5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-300 mb-1">Method</p>
+            <div className="border-t border-td-line/40 pt-2 text-xs space-y-0.5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-td-text mb-1">Method</p>
               {meta.fv_route_method_label && (
                 <Row label="Route" value={meta.fv_route_method_label} mono={false} />
               )}
@@ -193,7 +193,7 @@ export function FairValueDebugPanel({
           )}
 
           {external?.yahoo_12m_mean_usd != null && external?.fmp_consensus_median_usd != null && (
-            <div className="border-t border-slate-700/40 pt-2 text-xs text-slate-400 leading-relaxed">
+            <div className="border-t border-td-line/40 pt-2 text-xs text-td-muted leading-relaxed">
               Yahoo ${external.yahoo_12m_mean_usd.toFixed(2)} · FMP median $
               {external.fmp_consensus_median_usd.toFixed(2)}
               {external.fmp_median_is_range_midpoint ? " (range midpoint)" : ""}

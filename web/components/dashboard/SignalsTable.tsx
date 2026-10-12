@@ -30,23 +30,17 @@ import {
   resolveGatesCount,
   riskRewardRatio,
 } from "@/lib/signalsTableAudit";
-import { TickerFilterBar } from "./TickerFilterBar";
 import {
   filterTickersBySource,
-  loadTickerSourceFilter,
   positionStatusForTicker,
-  saveTickerSourceFilter,
   toTickerSet,
   type TickerSourceFilter,
 } from "@/lib/tickerSourceFilter";
 import { PossessionBadge } from "./PossessionBadge";
 import {
-  loadSignalsPreset,
   matchesSignalPreset,
-  saveSignalsPreset,
   type SignalsPresetId,
 } from "@/lib/signalPresets";
-import { defaultPresetForLens, type TradingLens } from "@/lib/tradingLens";
 import { SwipeableSignalCard, type SwipeRevealAction } from "./SwipeableSignalCard";
 import {
   GateProgressBar,
@@ -937,7 +931,8 @@ export function SignalsTable({
   listContext,
   portfolioTickers,
   watchlistTickers,
-  tradingLens,
+  source,
+  preset,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
@@ -949,7 +944,9 @@ export function SignalsTable({
   listContext?: SignalListContext;
   portfolioTickers?: string[];
   watchlistTickers?: string[];
-  tradingLens?: TradingLens;
+  /** Book/preset filters now owned by the Signals hub's shared filter bar — Scanner just reads them. */
+  source: TickerSourceFilter;
+  preset: SignalsPresetId;
 }) {
   const gateContext: SignalListContext = listContext ?? {};
   const h = horizons || DEFAULT_HORIZONS;
@@ -964,31 +961,7 @@ export function SignalsTable({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(() => new Set());
   const [activeSwipeKey, setActiveSwipeKey] = useState<string | null>(null);
-  const [preset, setPreset] = useState<SignalsPresetId>("all");
-  const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
   const [splitSelected, setSplitSelected] = useState<string | null>(null);
-
-  useEffect(() => {
-    setSourceFilter(loadTickerSourceFilter());
-  }, []);
-
-  useEffect(() => {
-    if (tradingLens) {
-      setPreset(defaultPresetForLens(tradingLens));
-    } else {
-      setPreset(loadSignalsPreset());
-    }
-  }, [tradingLens]);
-
-  const applyPreset = (id: SignalsPresetId) => {
-    setPreset(id);
-    saveSignalsPreset(id);
-  };
-
-  const applySourceFilter = (id: TickerSourceFilter) => {
-    setSourceFilter(id);
-    saveTickerSourceFilter(id);
-  };
 
   useEffect(() => {
     setViewMode(loadSignalsViewMode());
@@ -1076,7 +1049,7 @@ export function SignalsTable({
   const filtered = useMemo(() => {
     const bySource = filterTickersBySource(
       signals.map((s) => s.ticker).filter(Boolean) as string[],
-      sourceFilter,
+      source,
       portfolioSet,
       watchlistSet,
     );
@@ -1094,7 +1067,7 @@ export function SignalsTable({
       }
       return true;
     });
-  }, [signals, preset, sourceFilter, portfolioTickers, watchlistTickers, showAuditColumns, minAuditGates, minAuditConf, gateContext]);
+  }, [signals, preset, source, portfolioTickers, watchlistTickers, showAuditColumns, minAuditGates, minAuditConf, gateContext]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -1162,7 +1135,7 @@ export function SignalsTable({
     if (viewMode !== "quick" || !actionGroups) return;
     setExpandedTickers(new Set());
     setActiveSwipeKey(null);
-  }, [actionGroups, viewMode, preset, sourceFilter]);
+  }, [actionGroups, viewMode, preset, source]);
 
   const toggleGroup = useCallback((key: string) => {
     setCollapsedGroups((prev) => {
@@ -1207,18 +1180,6 @@ export function SignalsTable({
   return (
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700 space-y-2">
-        <TickerFilterBar
-          source={sourceFilter}
-          onSourceChange={applySourceFilter}
-          preset={preset}
-          onPresetChange={applyPreset}
-          tickers={signals.map((s) => s.ticker).filter(Boolean) as string[]}
-          portfolioTickers={portfolioTickers}
-          watchlistTickers={watchlistTickers}
-          shownCount={sorted.length}
-          totalCount={signals.length}
-          tradingLens={tradingLens}
-        />
         <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate flex-1">
           {isQuick

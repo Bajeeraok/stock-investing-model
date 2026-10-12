@@ -22,9 +22,9 @@ const HORIZON_STYLE: Record<
   HorizonKey,
   { label: string; stroke: string; fill: string; daysDefault: number }
 > = {
-  short: { label: "Short", stroke: "#22d3ee", fill: "#22d3ee", daysDefault: 22 },
-  medium: { label: "Medium", stroke: "#a78bfa", fill: "#a78bfa", daysDefault: 63 },
-  long: { label: "Long", stroke: "#34d399", fill: "#34d399", daysDefault: 180 },
+  short: { label: "Short", stroke: "#22D3EE", fill: "#22D3EE", daysDefault: 22 },
+  medium: { label: "Medium", stroke: "#A78BFA", fill: "#A78BFA", daysDefault: 63 },
+  long: { label: "Long", stroke: "#00C896", fill: "#00C896", daysDefault: 180 },
 };
 
 const HIST_DISPLAY_DAYS = 90;
@@ -32,8 +32,8 @@ const FORWARD_PAD_DAYS = 14;
 
 const FAIR_VALUE_STYLE = {
   label: "Model FV",
-  stroke: "#34d399",
-  fill: "#34d399",
+  stroke: "#00C896",
+  fill: "#00C896",
 };
 
 function ChartLegendItem({
@@ -46,7 +46,7 @@ function ChartLegendItem({
   dashed?: boolean;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[10px] text-slate-400">
+    <span className="inline-flex items-center gap-1.5 text-[10px] text-td-muted">
       <span
         className="inline-block h-0 w-5 border-t-2"
         style={{
@@ -283,13 +283,13 @@ function CustomTooltip({
   const day = typeof label === "number" ? label : row.day;
 
   return (
-    <div className="rounded-lg border border-slate-600 bg-slate-900/95 px-3 py-2 text-xs shadow-xl max-w-[220px]">
-      <p className="text-slate-400 mb-1">
+    <div className="rounded-lg border border-td-line bg-td-surface/95 px-3 py-2 text-xs shadow-xl max-w-[220px]">
+      <p className="text-td-muted mb-1">
         {day < 0 ? `${Math.abs(day)}d ago` : day === 0 ? "Today" : `+${day}d`}
         {row.dateLabel && day <= 0 ? ` · ${row.dateLabel}` : row.calendarLabel && day > 0 ? ` · ${row.calendarLabel}` : ""}
       </p>
       {row.price != null && (
-        <p className="text-slate-100 font-medium">Price {fmtPrice(row.price)}</p>
+        <p className="text-td-text font-medium">Price {fmtPrice(row.price)}</p>
       )}
       {fairValue != null && fairValue > 0 && (
         <p style={{ color: FAIR_VALUE_STYLE.stroke }} className="mt-0.5">
@@ -356,28 +356,28 @@ function PriceSparkline({
   }, [hist, currentPrice, fairValue, targetPrice]);
 
   const trendUp = periodPct != null && periodPct >= 0;
-  const stroke = trendUp ? "#34d399" : "#f87171";
+  const stroke = trendUp ? "#00C896" : "#FF6B6B";
 
   if (sparkData.length < 3) {
     return (
-      <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-td-line/60 bg-td-surface/40 px-3 py-2 text-xs text-td-muted">
         Price history too short for sparkline.
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2">
+    <div className="rounded-lg border border-td-line/60 bg-td-surface/40 px-3 py-2">
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] uppercase tracking-wider text-slate-500 shrink-0">90d path</span>
+          <span className="text-[10px] uppercase tracking-wider text-td-muted shrink-0">90d path</span>
           {periodPct != null && (
-            <span className={`text-xs font-mono tabular-nums ${trendUp ? "text-emerald-400" : "text-red-400"}`}>
+            <span className={`text-xs font-mono tabular-nums ${trendUp ? "text-td-accent" : "text-td-crit"}`}>
               {fmtPct(periodPct)}
             </span>
           )}
           {fairValue != null && fairValue > 0 && currentPrice > 0 && (
-            <span className="text-[10px] text-slate-600 truncate hidden sm:inline">
+            <span className="text-[10px] text-td-muted truncate hidden sm:inline">
               FV {fmtPrice(fairValue)}
             </span>
           )}
@@ -386,7 +386,7 @@ function PriceSparkline({
           <button
             type="button"
             onClick={onExpand}
-            className="text-[10px] text-cyan-400/90 hover:text-cyan-300 shrink-0"
+            className="text-[10px] text-td-info/90 hover:text-td-info shrink-0"
           >
             Target bands →
           </button>
@@ -406,10 +406,10 @@ function PriceSparkline({
               isAnimationActive={false}
             />
             {fairValue != null && fairValue > 0 && (
-              <ReferenceLine y={fairValue} stroke="#34d399" strokeDasharray="2 3" strokeOpacity={0.55} />
+              <ReferenceLine y={fairValue} stroke="#00C896" strokeDasharray="2 3" strokeOpacity={0.55} />
             )}
             {targetPrice != null && targetPrice > 0 && targetPrice !== fairValue && (
-              <ReferenceLine y={targetPrice} stroke="#22d3ee" strokeDasharray="2 3" strokeOpacity={0.45} />
+              <ReferenceLine y={targetPrice} stroke="#22D3EE" strokeDasharray="2 3" strokeOpacity={0.45} />
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -523,17 +523,17 @@ export function HorizonProjectionChart({
     hasFairValue && currentPrice > 0 ? ((fairValue - currentPrice) / currentPrice) * 100 : null;
 
   return (
-    <div className="rounded-xl border border-slate-700/90 bg-slate-900/40 overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-700/80 bg-slate-900/60">
+    <div className="rounded-xl border border-td-line/90 bg-td-surface/40 overflow-hidden">
+      <div className="px-4 py-3 border-b border-td-line/80 bg-td-surface/60">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
-            <h3 className="text-sm font-semibold text-slate-200 tracking-tight">
+            <h3 className="text-sm font-semibold text-td-text tracking-tight">
               Price path &amp; target bands
               {ticker ? (
-                <span className="text-slate-500 font-normal ml-1.5">· {ticker}</span>
+                <span className="text-td-muted font-normal ml-1.5">· {ticker}</span>
               ) : null}
             </h3>
-            <p className="text-sm text-slate-500 mt-1 leading-snug">
+            <p className="text-sm text-td-muted mt-1 leading-snug">
               Trailing price (left) → today → forward ST / MT / LT channels.
               Pullback plans project from the entry band (not a crash-from-spot path).
               {hasFairValue ? " Emerald dashed line = model fair value." : null}
@@ -545,7 +545,7 @@ export function HorizonProjectionChart({
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
-                className="text-xs px-2 py-1 rounded-full border border-slate-600 text-slate-400 hover:text-slate-200"
+                className="text-xs px-2 py-1 rounded-full border border-td-line text-td-muted hover:text-td-text"
               >
                 Collapse
               </button>
@@ -589,11 +589,11 @@ export function HorizonProjectionChart({
 
       <div className="p-3 sm:p-4">
         {(chaseBanner || planMode === "pullback_conditional") && (
-          <div className="mb-3 rounded-lg border border-rose-500/40 bg-rose-950/30 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-200">
+          <div className="mb-3 rounded-lg border border-td-crit/40 bg-td-crit-weak/30 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-td-crit">
               {chaseBanner || "DO NOT CHASE"}
             </p>
-            <p className="text-[11px] text-rose-100/80 mt-0.5 leading-snug">
+            <p className="text-[11px] text-td-crit/80 mt-0.5 leading-snug">
               {chaseDetail ||
                 "Spot is extended vs model FV — forward channels are conditional pullback plans from the entry band, not a path that invents a crash from today's print."}
             </p>
@@ -602,13 +602,13 @@ export function HorizonProjectionChart({
         <div className="h-72 sm:h-80">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={rows} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#262f42" vertical={false} />
               <XAxis
                 dataKey="day"
                 type="number"
                 domain={["dataMin", "dataMax"]}
                 ticks={tickDays}
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                tick={{ fill: "#8690a6", fontSize: 10 }}
                 tickFormatter={(d: number) => {
                   const row = rows.find((r) => r.day === d);
                   if (d === 0) return row?.calendarLabel ? `Today` : "Today";
@@ -621,7 +621,7 @@ export function HorizonProjectionChart({
               />
               <YAxis
                 domain={yDomain}
-                tick={{ fill: "#94a3b8", fontSize: 10 }}
+                tick={{ fill: "#8690a6", fontSize: 10 }}
                 tickFormatter={(v: number) => `$${v.toFixed(0)}`}
                 width={52}
               />
@@ -630,13 +630,13 @@ export function HorizonProjectionChart({
                   <CustomTooltip {...props} fairValue={showFairValue ? fairValue : null} />
                 )}
               />
-              <ReferenceLine x={0} stroke="#fbbf24" strokeWidth={2} label={{ value: "Now", fill: "#fbbf24", fontSize: 11, position: "insideTopRight" }} />
+              <ReferenceLine x={0} stroke="#F59E0B" strokeWidth={2} label={{ value: "Now", fill: "#F59E0B", fontSize: 11, position: "insideTopRight" }} />
 
               {(showMa20 || rows.some((r) => r.ma20 != null)) && (
                 <Line
                   type="monotone"
                   dataKey="ma20"
-                  stroke="#f59e0b"
+                  stroke="#F59E0B"
                   strokeWidth={1}
                   strokeDasharray="3 3"
                   dot={false}
@@ -648,7 +648,7 @@ export function HorizonProjectionChart({
                 <Line
                   type="monotone"
                   dataKey="ma50"
-                  stroke="#64748b"
+                  stroke="#8690a6"
                   strokeWidth={1}
                   strokeDasharray="5 2"
                   dot={false}
@@ -723,7 +723,7 @@ export function HorizonProjectionChart({
               <Line
                 type="monotone"
                 dataKey="price"
-                stroke="#f8fafc"
+                stroke="#e8ebf2"
                 strokeWidth={2.25}
                 dot={false}
                 connectNulls={false}
@@ -749,7 +749,7 @@ export function HorizonProjectionChart({
         </div>
 
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <ChartLegendItem color="#f8fafc" label="Historical price" />
+          <ChartLegendItem color="#e8ebf2" label="Historical price" />
           {hasFairValue && showFairValue && (
             <ChartLegendItem
               color={FAIR_VALUE_STYLE.stroke}
@@ -758,10 +758,10 @@ export function HorizonProjectionChart({
             />
           )}
           {(showMa20 || rows.some((r) => r.ma20 != null)) && (
-            <ChartLegendItem color="#f59e0b" label="MA20" dashed />
+            <ChartLegendItem color="#F59E0B" label="MA20" dashed />
           )}
           {(showMa50 || rows.some((r) => r.ma50 != null)) && (
-            <ChartLegendItem color="#64748b" label="MA50" dashed />
+            <ChartLegendItem color="#8690a6" label="MA50" dashed />
           )}
           {visible.short && short?.target && short?.setup_status !== "no_setup" && (
             <ChartLegendItem color={HORIZON_STYLE.short.stroke} label="Short projection" />
@@ -783,13 +783,13 @@ export function HorizonProjectionChart({
         >
           {hasFairValue && showFairValue && (
             <div
-              className="rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-2"
+              className="rounded-lg border border-td-line/60 bg-td-surface2/40 px-2.5 py-2"
               style={{ borderLeftColor: FAIR_VALUE_STYLE.stroke, borderLeftWidth: 3 }}
             >
               <p className="font-semibold" style={{ color: FAIR_VALUE_STYLE.stroke }}>
                 {FAIR_VALUE_STYLE.label} · fundamentals anchor
               </p>
-              <p className="text-slate-400 mt-0.5">
+              <p className="text-td-muted mt-0.5">
                 Fair value {fmtPrice(fairValue)}
                 {fairValueGapPct != null
                   ? ` · ${fairValueGapPct >= 0 ? "+" : ""}${fairValueGapPct.toFixed(1)}% vs now`
@@ -803,7 +803,7 @@ export function HorizonProjectionChart({
             return (
             <div
               key={key}
-              className="rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-2"
+              className="rounded-lg border border-td-line/60 bg-td-surface2/40 px-2.5 py-2"
               style={{ borderLeftColor: HORIZON_STYLE[key].stroke, borderLeftWidth: 3 }}
             >
               <p className="font-semibold" style={{ color: HORIZON_STYLE[key].stroke }}>
@@ -811,11 +811,11 @@ export function HorizonProjectionChart({
                 {noSetup ? " · no setup" : ""}
               </p>
               {noSetup ? (
-                <p className="text-slate-500 mt-0.5">
+                <p className="text-td-muted mt-0.5">
                   No setup at this horizon — edge or R:R from entry fails the quality gate.
                 </p>
               ) : (
-                <p className="text-slate-400 mt-0.5">
+                <p className="text-td-muted mt-0.5">
                   Target {fmtPrice(h!.target)} · Stop {fmtPrice(h!.stop_loss)} · Entry {fmtPrice(h!.entry_zone?.low)}–{fmtPrice(h!.entry_zone?.high)}
                   {touch != null ? ` · Touch ~${Number(touch).toFixed(0)}%` : ""}
                 </p>

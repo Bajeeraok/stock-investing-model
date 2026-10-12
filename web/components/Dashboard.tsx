@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Crosshair, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -28,7 +28,7 @@ import {
   DataFreshnessBar,
   KnownLimitsPanel,
   ModelDisclaimer,
-  SignalsTable,
+  SignalsHub,
   PortfolioHeatMap,
   PortfolioHoldings,
   TrimCandidates,
@@ -72,7 +72,6 @@ import {
   TaxAwareExitPanel,
   AlertsPanel,
   OverviewAtAGlance,
-  RoadmapsPanel,
   MarketStatePanel,
   RetailMarketDecisionsPanel,
   TrackRecordPanel,
@@ -80,7 +79,6 @@ import {
   BrowserPushPanel,
   TacticalBreakoutStrip,
   EventRiskStrip,
-  HunterPanel,
   InstitutionalInsightsPanel,
   TradingViewWidget,
   CopyTradePlanButton,
@@ -164,7 +162,7 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
-const TAB_IDS: TabId[] = ["overview", "signals", "roadmaps", "portfolio", "opportunities", "income", "markets", "analysis"];
+const TAB_IDS: TabId[] = ["overview", "signals", "portfolio", "opportunities", "income", "markets", "analysis"];
 
 function isValidTab(t: string): t is TabId {
   return TAB_IDS.includes(t as TabId);
@@ -790,7 +788,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       if (e.target && (e.target as HTMLElement).closest("input, textarea, select")) return;
       const keyToTab: Partial<Record<string, TabId>> = {
         "1": "overview", "2": "signals", "3": "portfolio", "4": "opportunities",
-        "5": "markets", "6": "analysis", "7": "roadmaps", "8": "income",
+        "5": "markets", "6": "analysis", "8": "income",
       };
       const id = e.key in keyToTab ? keyToTab[e.key] : null;
       if (id) {
@@ -1080,20 +1078,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   onTickerClick={openTickerDetail}
                 />
               )}
-              <ToggleSection
-                id="overview-hunter"
-                title="Hunter panel"
-                icon={<Crosshair />}
-                badge={data.hunter_panel?.candidate_count ?? 0}
-                defaultOpen={(data.hunter_panel?.candidate_count ?? 0) > 0}
-              >
-                <HunterPanel
-                  panel={data.hunter_panel}
-                  portfolioTickers={portfolioTickerList}
-                  watchlistTickers={watchlistTickerList}
-                  onTickerClick={openTickerDetail}
-                />
-              </ToggleSection>
               <ToggleSection
                 id="overview-alerts"
                 title="Alerts"
@@ -1460,7 +1444,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {tradingLens === "scout" && (data.event_risk_strip?.rows?.length ?? 0) > 0 && (
                 <EventRiskStrip payload={data.event_risk_strip} onTickerClick={openTickerDetail} />
               )}
-            <SignalsTable
+            <SignalsHub
               signals={effectiveSignals}
               horizons={data.config?.horizons}
               onTickerClick={openTickerDetail}
@@ -1471,6 +1455,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               portfolioTickers={portfolioTickerList}
               watchlistTickers={watchlistTickerList}
               tradingLens={tradingLens}
+              hunterPanel={data.hunter_panel}
+              roadmapTickers={roadmapTickers}
+              roadmapsWarming={Boolean(data.warming)}
+              signalsByTicker={signalsByTicker}
             />
             </>
           )}
@@ -1484,20 +1472,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             <SignalUniversePanel onTickerClick={openTickerDetail} />
           </ToggleSection>
           */}
-            </div>
-          )}
-
-          {/* Roadmaps tab */}
-          {activeTab === "roadmaps" && (
-            <div className="p-4 sm:p-6 space-y-4">
-              <RoadmapsPanel
-                warming={Boolean(data.warming)}
-                tickers={roadmapTickers}
-                onTickerClick={openTickerDetail}
-                portfolioTickers={portfolioTickerList}
-                watchlistTickers={watchlistTickerList}
-                signalsByTicker={signalsByTicker}
-              />
             </div>
           )}
 

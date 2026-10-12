@@ -5,18 +5,13 @@ import { ChevronRight, LayoutGrid } from "lucide-react";
 import { clsx } from "clsx";
 import type { TradeRoadmapData } from "./TradeRoadmapCard";
 import { TradeRoadmapCard } from "./TradeRoadmapCard";
-import { TickerFilterBar } from "./TickerFilterBar";
 import {
   filterTickersBySource,
-  loadTickerSourceFilter,
-  saveTickerSourceFilter,
   toTickerSet,
   type TickerSourceFilter,
 } from "@/lib/tickerSourceFilter";
 import {
   filterTickersByPreset,
-  loadSignalsPreset,
-  saveSignalsPreset,
   type SignalPresetRow,
   type SignalsPresetId,
 } from "@/lib/signalPresets";
@@ -33,13 +28,16 @@ export interface RoadmapItem {
 interface Props {
   /** Tickers to load (e.g. watchlist or signals). */
   tickers: string[];
-  onTickerClick: (ticker: string, tab?: "verdict" | "levels" | "why") => void;
+  onTickerClick: (ticker: string, tab?: "verdict" | "levels" | "why" | "context" | "track") => void;
   /** Skip fetch while dashboard background compute is running. */
   warming?: boolean;
   portfolioTickers?: string[];
   watchlistTickers?: string[];
   /** Signal rows keyed by ticker — used for View presets. */
   signalsByTicker?: Map<string, SignalPresetRow>;
+  /** Book/preset filters now owned by the Signals hub's shared filter bar. */
+  source: TickerSourceFilter;
+  preset: SignalsPresetId;
 }
 
 export function RoadmapsPanel({
@@ -49,19 +47,14 @@ export function RoadmapsPanel({
   portfolioTickers,
   watchlistTickers,
   signalsByTicker,
+  source,
+  preset,
 }: Props) {
   const [items, setItems] = useState<RoadmapItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const [preset, setPreset] = useState<SignalsPresetId>("all");
-  const [sourceFilter, setSourceFilter] = useState<TickerSourceFilter>("all");
-
-  useEffect(() => {
-    setPreset(loadSignalsPreset());
-    setSourceFilter(loadTickerSourceFilter());
-  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -71,23 +64,13 @@ export function RoadmapsPanel({
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  const applyPreset = (id: SignalsPresetId) => {
-    setPreset(id);
-    saveSignalsPreset(id);
-  };
-
-  const applySourceFilter = (id: TickerSourceFilter) => {
-    setSourceFilter(id);
-    saveTickerSourceFilter(id);
-  };
-
   const filteredTickers = useMemo(() => {
     const portfolioSet = toTickerSet(portfolioTickers);
     const watchlistSet = toTickerSet(watchlistTickers);
-    const bySource = filterTickersBySource(tickers, sourceFilter, portfolioSet, watchlistSet);
+    const bySource = filterTickersBySource(tickers, source, portfolioSet, watchlistSet);
     const map = signalsByTicker ?? new Map<string, SignalPresetRow>();
     return filterTickersByPreset(bySource, preset, map);
-  }, [tickers, sourceFilter, preset, portfolioTickers, watchlistTickers, signalsByTicker]);
+  }, [tickers, source, preset, portfolioTickers, watchlistTickers, signalsByTicker]);
 
   const toFetch = filteredTickers.slice(0, MAX_TICKERS).filter(Boolean);
   const fetchKey = toFetch.join(",");
@@ -131,20 +114,6 @@ export function RoadmapsPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-3 sm:px-4 py-2">
-        <TickerFilterBar
-          source={sourceFilter}
-          onSourceChange={applySourceFilter}
-          preset={preset}
-          onPresetChange={applyPreset}
-          tickers={tickers}
-          portfolioTickers={portfolioTickers}
-          watchlistTickers={watchlistTickers}
-          shownCount={filteredTickers.length}
-          totalCount={tickers.length}
-        />
-      </div>
-
       {filteredTickers.length === 0 ? (
         <div className="rounded-xl border border-slate-700 bg-slate-800/30 p-8 text-center text-slate-500">
           <LayoutGrid className="h-10 w-10 mx-auto mb-2 opacity-50" />

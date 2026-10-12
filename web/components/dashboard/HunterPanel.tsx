@@ -20,8 +20,6 @@ import {
 import {
   TICKER_SOURCE_FILTERS,
   filterTickersBySource,
-  loadTickerSourceFilter,
-  saveTickerSourceFilter,
   toTickerSet,
   type TickerSourceFilter,
 } from "@/lib/tickerSourceFilter";
@@ -65,20 +63,23 @@ export function HunterPanel({
   portfolioTickers,
   watchlistTickers,
   onTickerClick,
+  source,
+  onSourceChange,
 }: {
   panel: HunterPanelPayload | null | undefined;
   portfolioTickers?: string[];
   watchlistTickers?: string[];
   onTickerClick?: (ticker: string) => void;
+  /** Book filter now owned by the Signals hub's shared filter bar. */
+  source: TickerSourceFilter;
+  onSourceChange: (id: TickerSourceFilter) => void;
 }) {
   const [screen, setScreen] = useState<HunterScreenId>("all_hunt");
-  const [source, setSource] = useState<TickerSourceFilter>("all");
   const [page, setPage] = useState(0);
   const [customScreens, setCustomScreens] = useState<CustomHunterScreen[]>([]);
 
   useEffect(() => {
     setScreen(loadHunterScreen());
-    setSource(loadTickerSourceFilter());
     setCustomScreens(loadCustomHunterScreens());
   }, []);
 
@@ -108,11 +109,6 @@ export function HunterPanel({
   const handleScreen = (id: HunterScreenId) => {
     setScreen(id);
     saveHunterScreen(id);
-  };
-
-  const handleSource = (id: TickerSourceFilter) => {
-    setSource(id);
-    saveTickerSourceFilter(id);
   };
 
   return (
@@ -208,7 +204,7 @@ export function HunterPanel({
             key={f.id}
             type="button"
             title={f.hint}
-            onClick={() => handleSource(f.id)}
+            onClick={() => onSourceChange(f.id)}
             className={clsx(
               "text-[11px] px-2 py-1 rounded-full border shrink-0",
               source === f.id

@@ -20,10 +20,10 @@ function fmtPct(n: number | null | undefined): string {
 }
 
 function returnColor(r: number | null | undefined): string {
-  if (r == null) return "text-slate-400";
-  if (r >= 8) return "text-emerald-400";
-  if (r >= 0) return "text-amber-400";
-  return "text-red-400";
+  if (r == null) return "text-td-muted";
+  if (r >= 8) return "text-td-accent";
+  if (r >= 0) return "text-td-warn";
+  return "text-td-crit";
 }
 
 /** Merged Wall Street PT row + buy/hold/sell distribution + optional full valuation deck. */
@@ -71,14 +71,14 @@ export function UnifiedValuationSummary({
   return (
     <div className="space-y-3">
       {(hasPt || hasRatings) && (
-        <div className="bg-purple-500/5 border border-purple-500/20 rounded-xl px-3.5 py-3 space-y-3">
+        <div className="bg-td-owner/5 border border-td-owner/20 rounded-xl px-3.5 py-3 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <Target size={11} className="text-purple-400 shrink-0" />
-            <span className="text-[10px] font-semibold text-purple-300 uppercase tracking-widest">
+            <Target size={11} className="text-td-owner shrink-0" />
+            <span className="text-[10px] font-semibold text-td-owner uppercase tracking-widest">
               Valuation summary — Wall Street
               {analystCount ? ` · ${analystCount} analysts` : ""}
             </span>
-            <span className="text-[10px] text-slate-500 font-normal normal-case tracking-normal">
+            <span className="text-[10px] text-td-muted font-normal normal-case tracking-normal">
               (FMP · anchors Bull/Base scenarios)
             </span>
           </div>
@@ -87,28 +87,28 @@ export function UnifiedValuationSummary({
             <div className="flex items-center gap-5 flex-wrap">
               {high != null && (
                 <div className="text-center">
-                  <p className="text-[10px] text-slate-500">Analyst High</p>
+                  <p className="text-[10px] text-td-muted">Analyst High</p>
                   <p className={clsx("text-sm font-mono font-bold", returnColor(highRet ?? 0))}>{fmt(high)}</p>
                   <p className={clsx("text-[10px]", returnColor(highRet ?? 0))}>{fmtPct(highRet)}</p>
                 </div>
               )}
               {median != null && (
                 <div className="text-center">
-                  <p className="text-[10px] text-slate-500">Consensus</p>
+                  <p className="text-[10px] text-td-muted">Consensus</p>
                   <p className={clsx("text-sm font-mono font-bold", returnColor(medRet ?? 0))}>{fmt(median)}</p>
                   <p className={clsx("text-[10px]", returnColor(medRet ?? 0))}>{fmtPct(medRet)}</p>
                 </div>
               )}
               {low != null && (
                 <div className="text-center">
-                  <p className="text-[10px] text-slate-500">Analyst Low</p>
+                  <p className="text-[10px] text-td-muted">Analyst Low</p>
                   <p className={clsx("text-sm font-mono font-bold", returnColor(lowRet ?? 0))}>{fmt(low)}</p>
                   <p className={clsx("text-[10px]", returnColor(lowRet ?? 0))}>{fmtPct(lowRet)}</p>
                 </div>
               )}
               <div className="text-center">
-                <p className="text-[10px] text-slate-500">Current</p>
-                <p className="text-sm font-mono font-bold text-white">{fmt(currentPrice)}</p>
+                <p className="text-[10px] text-td-muted">Current</p>
+                <p className="text-sm font-mono font-bold text-td-text">{fmt(currentPrice)}</p>
               </div>
             </div>
           )}
@@ -116,7 +116,7 @@ export function UnifiedValuationSummary({
           {hasRatings && <AnalystRatingBar ratings={ratings!} />}
 
           {at?.note && !hasRatings && (
-            <p className="text-[10px] text-slate-600 leading-snug">{at.note}</p>
+            <p className="text-[10px] text-td-muted leading-snug">{at.note}</p>
           )}
         </div>
       )}
