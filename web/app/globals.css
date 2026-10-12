@@ -7,6 +7,51 @@
   --background: #020617;
   --card: #1e293b;
   --accent: #22c55e;
+
+  /* Ticker-detail skin fallback (same values as .td-skin) — only matters if a td-*
+     class is ever used outside the ticker-detail modal; nothing should rely on this. */
+  --td-ink: 243 245 249;
+  --td-bg: 10 13 20;
+  --td-surface: 17 22 34;
+  --td-surface2: 22 28 43;
+  --td-line: 38 47 66;
+  --td-text: 232 235 242;
+  --td-muted: 134 144 166;
+  --td-accent: 0 200 150;        /* fintech.green #00C896 */
+  --td-accent-ink: 189 245 216;
+  --td-accent-weak: 17 51 39;
+  --td-warn: 245 158 11;         /* fintech.amber #F59E0B */
+  --td-warn-weak: 53 38 6;
+  --td-crit: 255 107 107;        /* fintech.red #FF6B6B */
+  --td-crit-weak: 57 16 21;
+  --td-owner: 167 139 250;       /* fintech.violet #A78BFA */
+  --td-owner-weak: 33 28 61;
+  --td-info: 34 211 238;         /* fintech.cyan #22D3EE */
+}
+
+/* Ticker-detail skin — scoped palette for the ticker-detail modal only (see
+   TickerDetailModal.tsx's root wrapper, className="td-skin"). Neutrals match the Thrive
+   Alpha Redesign artifact's layered dark tokens; semantic accents map to this app's own
+   existing `fintech.*` Tailwind colors (tailwind.config.ts) instead of the artifact's —
+   that palette was already deliberately chosen to be easy on the eyes over long sessions. */
+.td-skin {
+  --td-ink: 243 245 249;
+  --td-bg: 10 13 20;
+  --td-surface: 17 22 34;
+  --td-surface2: 22 28 43;
+  --td-line: 38 47 66;
+  --td-text: 232 235 242;
+  --td-muted: 134 144 166;
+  --td-accent: 0 200 150;        /* fintech.green #00C896 */
+  --td-accent-ink: 189 245 216;
+  --td-accent-weak: 17 51 39;
+  --td-warn: 245 158 11;         /* fintech.amber #F59E0B */
+  --td-warn-weak: 53 38 6;
+  --td-crit: 255 107 107;        /* fintech.red #FF6B6B */
+  --td-crit-weak: 57 16 21;
+  --td-owner: 167 139 250;       /* fintech.violet #A78BFA */
+  --td-owner-weak: 33 28 61;
+  --td-info: 34 211 238;         /* fintech.cyan #22D3EE */
 }
 
 /* Slightly larger base for readability (Tailwind 1rem = 16px by default) */

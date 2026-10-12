@@ -20,8 +20,8 @@ export function TickerDetailWhyNav({
   onChange: (tab: WhySubTab) => void;
 }) {
   return (
-    <div className="sticky top-[52px] z-[14] -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-slate-900/95 border-b border-slate-700/80 backdrop-blur-sm">
-      <div className="flex gap-1 rounded-lg bg-slate-800/60 p-1 border border-slate-700/60">
+    <div className="sticky top-[52px] z-[14] -mx-4 sm:-mx-6 px-4 sm:px-6 py-2 bg-td-surface/95 border-b border-td-line backdrop-blur-sm">
+      <div className="flex gap-1 rounded-lg bg-td-surface2/60 p-1 border border-td-line">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -30,8 +30,8 @@ export function TickerDetailWhyNav({
             className={clsx(
               "flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium transition-colors min-w-0",
               active === id
-                ? "bg-emerald-600/90 text-white shadow-sm"
-                : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50",
+                ? "bg-td-accent text-slate-950 shadow-sm"
+                : "text-td-muted hover:text-td-text hover:bg-td-surface2",
             )}
           >
             <Icon className="h-3.5 w-3.5 shrink-0 hidden sm:block" />

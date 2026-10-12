@@ -67,9 +67,9 @@ export function ReferenceCard({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="rounded-xl border border-slate-700/70 bg-slate-900/50 p-4 flex flex-col gap-2.5">
-      <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-100">
-        <Icon className="h-3.5 w-3.5 text-emerald-400 shrink-0" aria-hidden />
+    <div className="rounded-2xl border border-td-line bg-td-surface p-4 flex flex-col gap-3 shadow-[0_1px_0_rgba(0,0,0,0.4),0_20px_40px_-24px_rgba(0,0,0,0.6)]">
+      <h4 className="flex items-center gap-1.5 text-[13px] font-semibold text-td-text">
+        <Icon className="h-3.5 w-3.5 text-td-accent shrink-0" aria-hidden />
         {title}
       </h4>
       {description && <p className={TD.footnote}>{description}</p>}
@@ -78,10 +78,10 @@ export function ReferenceCard({
           {stats.map((s, i) => (
             <div
               key={i}
-              className="flex items-center justify-between gap-3 py-1.5 border-t border-slate-800/80 first:border-t-0"
+              className="flex items-center justify-between gap-3 py-1.5 border-t border-td-line/70 first:border-t-0"
             >
-              <span className="text-slate-500 shrink-0">{s.label}</span>
-              <span className="font-mono font-semibold text-slate-200 text-right truncate">{s.value}</span>
+              <span className="text-td-muted shrink-0">{s.label}</span>
+              <span className="font-mono font-semibold text-td-text text-right truncate">{s.value}</span>
             </div>
           ))}
         </div>
@@ -91,17 +91,17 @@ export function ReferenceCard({
         <button
           type="button"
           onClick={footer.onClick}
-          className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 text-left mt-auto pt-0.5"
+          className="text-xs font-semibold text-td-accent hover:text-td-accent-ink text-left mt-auto pt-0.5"
         >
           {footer.label} →
         </button>
       )}
       {children && (
-        <div className="pt-1.5 border-t border-slate-800/80 -mx-4 px-4">
+        <div className="pt-1.5 border-t border-td-line/70 -mx-4 px-4">
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="w-full flex items-center justify-between gap-2 text-[11px] font-mono uppercase tracking-wide text-slate-500 hover:text-slate-300 py-1"
+            className="w-full flex items-center justify-between gap-2 text-[11px] font-mono uppercase tracking-wide text-td-muted hover:text-td-text py-1"
             aria-expanded={open}
           >
             {toggleLabel}
@@ -196,7 +196,7 @@ export function ReferenceDetailGrid(props: ReferenceDetailGridProps) {
   const cols = Math.min(3, ids.length);
   return (
     <div>
-      <p className={clsx(TD.sectionLabel, "pt-2 border-t border-slate-800 mb-2.5")}>
+      <p className={clsx(TD.sectionLabel, "pt-2 border-t border-td-line mb-2.5")}>
         Reference detail — everything for a second look, one card per topic
       </p>
       <div

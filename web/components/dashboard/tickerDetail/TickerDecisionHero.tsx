@@ -22,26 +22,26 @@ type RetailActionLight = "red" | "yellow" | "green" | "neutral";
 type RetailActionStatus = { light: RetailActionLight; title: string; subtitle: string };
 
 const LIGHT_BADGE: Record<RetailActionLight, string> = {
-  green: "border-emerald-500/50 bg-emerald-500/10 text-emerald-400",
-  yellow: "border-amber-500/50 bg-amber-500/10 text-amber-400",
-  red: "border-red-500/50 bg-red-500/10 text-red-400",
-  neutral: "border-slate-500/50 bg-slate-500/10 text-slate-300",
+  green: "border-td-accent/50 bg-td-accent-weak text-td-accent",
+  yellow: "border-td-warn/50 bg-td-warn-weak text-td-warn",
+  red: "border-td-crit/50 bg-td-crit-weak text-td-crit",
+  neutral: "border-td-line bg-td-surface2 text-td-muted",
 };
 const LIGHT_DOT: Record<RetailActionLight, string> = {
-  green: "bg-emerald-400",
-  yellow: "bg-amber-400",
-  red: "bg-red-400",
-  neutral: "bg-slate-400",
+  green: "bg-td-accent",
+  yellow: "bg-td-warn",
+  red: "bg-td-crit",
+  neutral: "bg-td-muted",
 };
 const STANCE_CHIP: Record<"helps" | "hurts" | "neutral", string> = {
-  helps: "text-emerald-400 border-emerald-500/35 bg-emerald-500/10",
-  hurts: "text-amber-300 border-amber-500/35 bg-amber-500/10",
-  neutral: "text-slate-400 border-slate-600/50 bg-slate-800/40",
+  helps: "text-td-accent border-td-accent/35 bg-td-accent-weak",
+  hurts: "text-td-warn border-td-warn/35 bg-td-warn-weak",
+  neutral: "text-td-muted border-td-line bg-td-surface2/60",
 };
 const MODE_ACCENT: Record<DecisionMode, string> = {
-  scout: "border-cyan-500/25",
-  swing: "border-violet-500/25",
-  owner: "border-emerald-500/25",
+  scout: "border-td-info/25",
+  swing: "border-td-owner/25",
+  owner: "border-td-accent/25",
 };
 
 function fmt(n: number | null | undefined, digits = 2): string {
@@ -76,13 +76,13 @@ function SrRow({
   const below = level.dist_pct < 0;
   const shown = srSideTag(tag, level);
   return (
-    <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/40 border border-slate-800">
-      <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">{shown}</span>
-      <span className="text-[13px] font-mono font-semibold text-slate-200 tabular-nums">
+    <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/50 border border-td-line">
+      <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{shown}</span>
+      <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
         {fmt(level.price)}
-        <span className="ml-1.5 text-[10px] font-sans font-medium text-slate-500 normal-case">{level.label}</span>
+        <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">{level.label}</span>
       </span>
-      <span className={clsx("text-[10px] font-mono tabular-nums", below ? "text-red-400/80" : "text-emerald-400/80")}>
+      <span className={clsx("text-[10px] font-mono tabular-nums", below ? "text-td-crit/80" : "text-td-accent/80")}>
         {level.dist_pct >= 0 ? "+" : "−"}
         {Math.abs(level.dist_pct).toFixed(1)}%
       </span>
@@ -110,17 +110,17 @@ function StopTargetRows({
 }) {
   return (
     <>
-      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Stop</span>
-        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(horizon.stop_loss)}</span>
-        <span className="text-[10px] font-mono text-red-400/80 tabular-nums">
+      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">Stop</span>
+        <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(horizon.stop_loss)}</span>
+        <span className="text-[10px] font-mono text-td-crit/80 tabular-nums">
           {pctFromSpot(horizon.stop_loss, currentPrice)}
         </span>
       </div>
-      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Target</span>
-        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(horizon.target)}</span>
-        <span className="text-[10px] font-mono text-emerald-400/80 tabular-nums">
+      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">Target</span>
+        <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(horizon.target)}</span>
+        <span className="text-[10px] font-mono text-td-accent/80 tabular-nums">
           {pctFromSpot(horizon.target, currentPrice)}
           {horizon.risk_reward ? ` · R:R ${horizon.risk_reward.toFixed(1)}` : ""}
         </span>
@@ -145,13 +145,13 @@ function LevelRows({
         {tiers.slice(0, 3).map((t) => (
           <div
             key={t.id}
-            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70"
+            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
           >
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">{t.id}</span>
-            <span className="text-[13px] font-mono font-semibold text-white tabular-nums">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{t.id}</span>
+            <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
               &le; {fmt(t.high)}
             </span>
-            <span className="text-[10px] font-mono text-slate-500 tabular-nums">
+            <span className="text-[10px] font-mono text-td-muted tabular-nums">
               {pctFromSpot(t.high, currentPrice)}
             </span>
           </div>
@@ -177,19 +177,19 @@ function LevelRows({
     const RUNG_TAG = ["1st add", "Scale", "Last add"];
     return (
       <div className="flex flex-col gap-1.5">
-        <p className="text-[10px] text-slate-500 leading-snug -mt-0.5 mb-0.5">
+        <p className="text-[10px] text-td-muted leading-snug -mt-0.5 mb-0.5">
           Wide zone — scale in across these levels, not one price
         </p>
         {picked.map((lvl, i) => (
           <div
             key={lvl.id}
-            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70"
+            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
           >
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500 truncate">
+            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted truncate">
               {RUNG_TAG[i] ?? lvl.label}
             </span>
-            <span className="text-[13px] font-mono font-semibold text-white tabular-nums">{fmt(lvl.price)}</span>
-            <span className="text-[10px] font-mono text-slate-500 tabular-nums">
+            <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(lvl.price)}</span>
+            <span className="text-[10px] font-mono text-td-muted tabular-nums">
               {pctFromSpot(lvl.price, currentPrice)}
             </span>
           </div>
@@ -201,12 +201,12 @@ function LevelRows({
   }
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/70 border border-slate-700/70">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">Entry</span>
-        <span className="text-[13px] font-mono font-semibold text-white tabular-nums">
+      <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">Entry</span>
+        <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
           {ez?.low != null && ez?.high != null ? `${fmt(ez.low)} – ${fmt(ez.high)}` : "—"}
         </span>
-        <span className="text-[10px] font-mono text-slate-500 tabular-nums">
+        <span className="text-[10px] font-mono text-td-muted tabular-nums">
           {pctFromSpot(ez?.low, currentPrice)}
         </span>
       </div>
@@ -250,13 +250,13 @@ export function TickerDecisionHero({
   const factors = (reason?.factors ?? []).slice(0, 4);
 
   return (
-    <div className={clsx("rounded-2xl border-2 bg-slate-900 overflow-hidden", MODE_ACCENT[mode])}>
+    <div className={clsx("rounded-2xl border-2 bg-td-surface overflow-hidden", MODE_ACCENT[mode])}>
       {/* Ticker · verdict · price */}
-      <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-800">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-td-line">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
-            <span className="font-mono text-lg font-bold text-white tracking-tight">{ticker}</span>
-            <span className="text-xs text-slate-500 truncate">
+            <span className="font-mono text-lg font-bold text-td-text tracking-tight">{ticker}</span>
+            <span className="text-xs text-td-muted truncate">
               {companyName ?? ""}
               {sector ? ` · ${sector}` : ""}
             </span>
@@ -272,12 +272,12 @@ export function TickerDecisionHero({
           {actionStatus.title}
         </span>
         <div className="text-right shrink-0">
-          <p className="text-lg font-mono font-bold text-white tabular-nums">{fmt(currentPrice)}</p>
+          <p className="text-lg font-mono font-bold text-td-text tabular-nums">{fmt(currentPrice)}</p>
           {dailyMovePct != null && (
             <p
               className={clsx(
                 "text-[11px] font-mono tabular-nums",
-                dailyMovePct >= 0 ? "text-emerald-400" : "text-red-400",
+                dailyMovePct >= 0 ? "text-td-accent" : "text-td-crit",
               )}
             >
               {dailyMovePct >= 0 ? "+" : "−"}
@@ -291,13 +291,13 @@ export function TickerDecisionHero({
       <div className="grid sm:grid-cols-[1.2fr_1fr] gap-4 px-4 sm:px-5 py-4">
         <div className="min-w-0">
           {reason?.headline && (
-            <p className="text-[15px] text-slate-100 leading-snug text-balance">{reason.headline}</p>
+            <p className="text-[15px] text-td-text leading-snug text-balance">{reason.headline}</p>
           )}
           {reason?.wait_plain && (
-            <p className="text-[12.5px] text-slate-400 mt-1.5 leading-relaxed">{reason.wait_plain}</p>
+            <p className="text-[12.5px] text-td-muted mt-1.5 leading-relaxed">{reason.wait_plain}</p>
           )}
           {!reason?.headline && actionStatus.subtitle && (
-            <p className="text-[13.5px] text-slate-300 leading-snug">{actionStatus.subtitle}</p>
+            <p className="text-[13.5px] text-td-text/90 leading-snug">{actionStatus.subtitle}</p>
           )}
           {factors.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3">
@@ -319,14 +319,14 @@ export function TickerDecisionHero({
             <button
               type="button"
               onClick={onOpenWhy}
-              className="inline-flex items-center gap-1 text-[11.5px] text-slate-500 hover:text-emerald-400 mt-3"
+              className="inline-flex items-center gap-1 text-[11.5px] text-td-muted hover:text-td-accent mt-3"
             >
               Full breakdown <ChevronRight className="h-3 w-3" />
             </button>
           )}
         </div>
         <div>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-slate-600 mb-1.5">
+          <p className="text-[10px] font-mono uppercase tracking-wider text-td-muted mb-1.5">
             {horizonLabel(horizonKey)} levels
           </p>
           <LevelRows mode={mode} horizon={horizon} currentPrice={currentPrice} />
@@ -335,28 +335,28 @@ export function TickerDecisionHero({
 
       {/* Gates */}
       {gates.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 sm:px-5 py-3 bg-slate-800/40 border-t border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 sm:px-5 py-3 bg-td-surface2/40 border-t border-td-line">
           {gates.map((g) => (
             <div
               key={g.id}
-              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800"
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface border border-td-line"
               title={g.detail}
             >
               <span
                 className={clsx(
                   "w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0",
-                  g.pass ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400",
+                  g.pass ? "bg-td-accent-weak text-td-accent" : "bg-td-crit-weak text-td-crit",
                 )}
               >
                 {g.pass ? "✓" : "✕"}
               </span>
               <div className="min-w-0">
-                <p className="text-[10.5px] font-semibold text-slate-300 truncate">{g.label}</p>
-                <p className="text-[9.5px] text-slate-500 truncate">{g.detail}</p>
+                <p className="text-[10.5px] font-semibold text-td-text truncate">{g.label}</p>
+                <p className="text-[9.5px] text-td-muted truncate">{g.detail}</p>
               </div>
             </div>
           ))}
-          <div className="col-span-2 sm:col-span-4 text-[10px] font-mono text-slate-600 tabular-nums pt-0.5">
+          <div className="col-span-2 sm:col-span-4 text-[10px] font-mono text-td-muted tabular-nums pt-0.5">
             {gatesPassed}/{gatesTotal} gates
           </div>
         </div>
