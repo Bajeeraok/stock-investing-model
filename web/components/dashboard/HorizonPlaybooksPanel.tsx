@@ -108,12 +108,12 @@ export function HorizonPlaybooksPanel({
   const sharedLines = useMemo(() => sharedPlaybookContext(playbooks), [playbooks]);
 
   return (
-    <div className="border-b border-slate-700/80">
-      <div className="px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 bg-slate-900/60 border-b border-slate-800/80">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Horizon playbooks</p>
+    <div className="border-b border-td-line/80">
+      <div className="px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 bg-td-surface/60 border-b border-td-line/80">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">Horizon playbooks</p>
         <div className="flex items-center gap-2 flex-wrap">
           <PositionIntentChip ticker={ticker} compact intent={intent} onChange={handleIntent} />
-          <span className="text-[10px] text-slate-600 hidden sm:inline">
+          <span className="text-[10px] text-td-muted hidden sm:inline">
             {intent === "trade" && "Scout mode — swing / tactical primary"}
             {intent === "invest" && "Planner mode — thesis / accumulate primary"}
             {!intent && "Set intent: Scout (trade) vs Planner (invest)"}
@@ -122,7 +122,7 @@ export function HorizonPlaybooksPanel({
       </div>
 
       {available.length > 1 && (
-        <div className="flex border-b border-slate-800/80 px-2 sm:px-4 gap-1 overflow-x-auto">
+        <div className="flex border-b border-td-line/80 px-2 sm:px-4 gap-1 overflow-x-auto">
           {available.map((h) => (
             <button
               key={h}
@@ -132,12 +132,12 @@ export function HorizonPlaybooksPanel({
                 "shrink-0 px-3 py-2 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors",
                 activeHorizon === h
                   ? h === "short"
-                    ? "border-emerald-500 text-emerald-300"
+                    ? "border-td-accent text-td-accent"
                     : h === "medium"
-                      ? "border-teal-500 text-teal-300"
-                      : "border-violet-500 text-violet-300"
-                  : "border-transparent text-slate-500 hover:text-slate-300",
-                h === intentHorizon && activeHorizon !== h && "ring-1 ring-inset ring-slate-700 rounded-t"
+                      ? "border-td-accent text-td-accent"
+                      : "border-td-owner text-td-owner"
+                  : "border-transparent text-td-muted hover:text-td-text",
+                h === intentHorizon && activeHorizon !== h && "ring-1 ring-inset ring-td-line rounded-t"
               )}
             >
               {TAB_META[h].label}
@@ -154,10 +154,10 @@ export function HorizonPlaybooksPanel({
           className={clsx(
             "mx-4 sm:mx-6 mt-2 text-[10px] font-medium uppercase tracking-wide",
             activeHorizon === "short"
-              ? "text-emerald-400/80"
+              ? "text-td-accent/80"
               : activeHorizon === "medium"
-                ? "text-teal-400/80"
-                : "text-violet-400/80"
+                ? "text-td-accent/80"
+                : "text-td-owner/80"
           )}
         >
           Viewing: {horizonLabel(activeHorizon)} · {TAB_META[activeHorizon].anchor}
@@ -165,7 +165,7 @@ export function HorizonPlaybooksPanel({
       )}
 
       {sharedLines.length > 0 && (
-        <ul className="mx-4 sm:mx-6 mt-3 mb-1 space-y-1 text-sm text-slate-400 border-l-2 border-slate-600 pl-3">
+        <ul className="mx-4 sm:mx-6 mt-3 mb-1 space-y-1 text-sm text-td-muted border-l-2 border-td-line pl-3">
           {sharedLines.map((line) => (
             <li key={line}>{line}</li>
           ))}

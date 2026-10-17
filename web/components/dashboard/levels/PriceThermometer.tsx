@@ -18,14 +18,14 @@ export interface ThermometerLevel {
 }
 
 const COLOR_MAP: Record<string, { band: string; dot: string; border: string; text: string; glow: string }> = {
-  current:   { band: "bg-white/15",        dot: "bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]",  border: "border-white/40",       text: "text-white",        glow: "shadow-[0_0_8px_rgba(255,255,255,0.3)]" },
-  emerald:   { band: "bg-emerald-500/20",   dot: "bg-emerald-400 shadow-[0_0_6px_rgba(0,200,150,0.6)]", border: "border-emerald-500/50",  text: "text-emerald-300",  glow: "shadow-[0_0_8px_rgba(0,200,150,0.2)]" },
-  violet:    { band: "bg-violet-500/20",    dot: "bg-violet-400 shadow-[0_0_5px_rgba(139,92,246,0.5)]",  border: "border-violet-500/50",   text: "text-violet-300",   glow: "" },
-  amber:     { band: "bg-amber-500/15",     dot: "bg-amber-400",       border: "border-amber-500/45",   text: "text-amber-300",    glow: "" },
-  cyan:      { band: "bg-cyan-500/15",      dot: "bg-cyan-400",        border: "border-cyan-500/40",    text: "text-cyan-300",     glow: "" },
-  red:       { band: "bg-red-500/15",       dot: "bg-red-400",         border: "border-red-500/40",     text: "text-red-300",      glow: "" },
-  slate:     { band: "bg-slate-700/30",     dot: "bg-slate-500",       border: "border-slate-700/60",   text: "text-slate-400",    glow: "" },
-  orange:    { band: "bg-orange-500/15",    dot: "bg-orange-400",      border: "border-orange-500/40",  text: "text-orange-300",   glow: "" },
+  current:   { band: "bg-white/15",        dot: "bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]",  border: "border-white/40",       text: "text-td-text",        glow: "shadow-[0_0_8px_rgba(255,255,255,0.3)]" },
+  emerald:   { band: "bg-td-accent/20",   dot: "bg-td-accent shadow-[0_0_6px_rgba(0,200,150,0.6)]", border: "border-td-accent/50",  text: "text-td-accent",  glow: "shadow-[0_0_8px_rgba(0,200,150,0.2)]" },
+  violet:    { band: "bg-td-owner/20",    dot: "bg-td-owner shadow-[0_0_5px_rgba(139,92,246,0.5)]",  border: "border-td-owner/50",   text: "text-td-owner",   glow: "" },
+  amber:     { band: "bg-td-warn/15",     dot: "bg-td-warn",       border: "border-td-warn/45",   text: "text-td-warn",    glow: "" },
+  cyan:      { band: "bg-td-info/15",      dot: "bg-td-info",        border: "border-td-info/40",    text: "text-td-info",     glow: "" },
+  red:       { band: "bg-td-crit/15",       dot: "bg-td-crit",         border: "border-td-crit/40",     text: "text-td-crit",      glow: "" },
+  slate:     { band: "bg-td-surface2/30",     dot: "bg-td-line",       border: "border-td-line/60",   text: "text-td-muted",    glow: "" },
+  orange:    { band: "bg-td-warn/15",    dot: "bg-td-warn",      border: "border-td-warn/40",  text: "text-td-warn",   glow: "" },
 };
 
 function clr(color: string, key: keyof (typeof COLOR_MAP)[string]): string {
@@ -71,10 +71,10 @@ export function PriceThermometer({
   return (
     <div className={clsx("flex gap-4 select-none", className)}>
       {/* ── Vertical bar ─────────────────────────────── */}
-      <div className="relative w-8 shrink-0 rounded-full bg-slate-800/80 border border-slate-700/50 overflow-visible" style={{ minHeight: 320 }}>
+      <div className="relative w-8 shrink-0 rounded-full bg-td-surface2/80 border border-td-line/50 overflow-visible" style={{ minHeight: 320 }}>
         {/* Grid lines */}
         {[25, 50, 75].map(p => (
-          <div key={p} className="absolute w-full border-b border-slate-700/30" style={{ bottom: `${p}%` }} />
+          <div key={p} className="absolute w-full border-b border-td-line/30" style={{ bottom: `${p}%` }} />
         ))}
 
         {/* Tier bands */}
@@ -91,7 +91,7 @@ export function PriceThermometer({
               className={clsx(
                 "absolute inset-x-0 transition-all duration-200",
                 clr(l.color, "band"),
-                isActive && "ring-1 ring-inset ring-emerald-500/40",
+                isActive && "ring-1 ring-inset ring-td-accent/40",
                 dim && "opacity-20",
               )}
               style={{ bottom: `${lo}%`, height: `${Math.max(hi - lo, 1)}%` }}
@@ -107,7 +107,7 @@ export function PriceThermometer({
             className="absolute inset-x-0 flex items-center"
             style={{ bottom: `${pct(structuralStop, min, span)}%` }}
           >
-            <div className="w-full border-b border-dashed border-red-500/40" />
+            <div className="w-full border-b border-dashed border-td-crit/40" />
           </div>
         )}
 
@@ -117,7 +117,7 @@ export function PriceThermometer({
           return (
             <div
               key={l.id}
-              className={clsx("absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-slate-950 transition-all duration-150",
+              className={clsx("absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full border-2 border-td-bg transition-all duration-150",
                 clr(l.color, "dot"),
                 dim && "opacity-25",
               )}
@@ -145,8 +145,8 @@ export function PriceThermometer({
           className="absolute left-0 flex items-center gap-2 -translate-y-1/2 transition-all duration-300"
           style={{ bottom: `${nowPct}%` }}
         >
-          <span className="text-[11px] font-mono font-bold text-white tabular-nums">${currentPrice.toFixed(2)}</span>
-          <span className="text-[9px] uppercase tracking-wider text-slate-400 font-semibold">Now</span>
+          <span className="text-[11px] font-mono font-bold text-td-text tabular-nums">${currentPrice.toFixed(2)}</span>
+          <span className="text-[9px] uppercase tracking-wider text-td-muted font-semibold">Now</span>
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-50" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white/80" />
@@ -178,17 +178,17 @@ export function PriceThermometer({
                   ${l.value.toFixed(2)}
                 </span>
               )}
-              <span className={clsx("text-[9px] text-slate-500 font-medium", isHovered && "text-slate-200")}>
+              <span className={clsx("text-[9px] text-td-muted font-medium", isHovered && "text-td-text")}>
                 {l.label}
               </span>
               {l.badge && (
                 <span className={clsx(
                   "text-[8px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded-full border",
                   l.active
-                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                    ? "border-td-accent/50 bg-td-accent/15 text-td-accent"
                     : l.target
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                      : "border-slate-600 text-slate-500",
+                      ? "border-td-warn/40 bg-td-warn/10 text-td-warn"
+                      : "border-td-line text-td-muted",
                 )}>
                   {l.badge}
                 </span>
@@ -202,8 +202,8 @@ export function PriceThermometer({
             className="absolute left-0 flex items-center gap-1.5 -translate-y-1/2 opacity-50"
             style={{ bottom: `${pct(structuralStop, min, span)}%` }}
           >
-            <span className="text-[9px] font-mono text-red-400/70 tabular-nums">${structuralStop.toFixed(2)}</span>
-            <span className="text-[8px] text-red-400/50">Structural stop</span>
+            <span className="text-[9px] font-mono text-td-crit/70 tabular-nums">${structuralStop.toFixed(2)}</span>
+            <span className="text-[8px] text-td-crit/50">Structural stop</span>
           </div>
         )}
       </div>

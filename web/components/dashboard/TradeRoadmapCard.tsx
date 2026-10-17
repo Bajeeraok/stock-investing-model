@@ -190,12 +190,12 @@ function formatZone(lo: number | null, hi: number | null): string {
 
 /** Styling for horizon-role labels (Medium / High / Stress — scenario tone, not size rank). */
 function horizonRoleColor(c: string): string {
-  if (!c || c === "None") return "text-slate-500";
-  if (c.includes("Highest")) return "text-emerald-400";
-  if (c.includes("High")) return "text-green-400";
-  if (c.includes("Medium")) return "text-amber-400";
-  if (c.includes("Low")) return "text-slate-400";
-  return "text-slate-300";
+  if (!c || c === "None") return "text-td-muted";
+  if (c.includes("Highest")) return "text-td-accent";
+  if (c.includes("High")) return "text-td-accent";
+  if (c.includes("Medium")) return "text-td-warn";
+  if (c.includes("Low")) return "text-td-muted";
+  return "text-td-text";
 }
 
 /** Hide meaningless "None" horizon role in the table */
@@ -218,27 +218,27 @@ function buyRowTimelineHighlight(row: BuyRoadmapStage, activeKey: string | undef
 /** Emoji + row tint for buy "when to act" (GLD-style cues). */
 function buyStageCue(when: string): { emoji: string; rowBg: string } {
   const w = (when || "").toLowerCase();
-  if (w.includes("do not buy") || w.includes("don't")) return { emoji: "🔴", rowBg: "bg-red-500/5" };
-  if (w.includes("watch only")) return { emoji: "👀", rowBg: "bg-slate-500/5" };
-  if (w.includes("start small")) return { emoji: "🟡", rowBg: "bg-amber-500/5" };
-  if (w.includes("add position")) return { emoji: "🟢", rowBg: "bg-emerald-500/5" };
-  if (w.includes("core position")) return { emoji: "🔵", rowBg: "bg-blue-500/5" };
-  if (w.includes("tail risk") || w.includes("black swan")) return { emoji: "⚡", rowBg: "bg-slate-600/15" };
-  if (w.includes("back up truck")) return { emoji: "💎", rowBg: "bg-emerald-500/10" };
-  if (w.includes("patience")) return { emoji: "⏸️", rowBg: "bg-slate-600/10" };
-  if (w.includes("watch")) return { emoji: "👀", rowBg: "bg-slate-500/5" };
+  if (w.includes("do not buy") || w.includes("don't")) return { emoji: "🔴", rowBg: "bg-td-crit/5" };
+  if (w.includes("watch only")) return { emoji: "👀", rowBg: "bg-td-line/5" };
+  if (w.includes("start small")) return { emoji: "🟡", rowBg: "bg-td-warn/5" };
+  if (w.includes("add position")) return { emoji: "🟢", rowBg: "bg-td-accent/5" };
+  if (w.includes("core position")) return { emoji: "🔵", rowBg: "bg-td-info/5" };
+  if (w.includes("tail risk") || w.includes("black swan")) return { emoji: "⚡", rowBg: "bg-td-line/15" };
+  if (w.includes("back up truck")) return { emoji: "💎", rowBg: "bg-td-accent/10" };
+  if (w.includes("patience")) return { emoji: "⏸️", rowBg: "bg-td-line/10" };
+  if (w.includes("watch")) return { emoji: "👀", rowBg: "bg-td-line/5" };
   return { emoji: "•", rowBg: "" };
 }
 
 /** Emoji + row tint for sell "when to sell". */
 function sellStageCue(when: string): { emoji: string; rowBg: string } {
   const w = (when || "").toLowerCase();
-  if (w.includes("hard stop")) return { emoji: "🛑", rowBg: "bg-red-500/10" };
-  if (w.includes("trim") && !w.includes("partial") && !w.includes("major")) return { emoji: "⚠️", rowBg: "bg-amber-500/5" };
-  if (w.includes("partial exit")) return { emoji: "🟡", rowBg: "bg-amber-500/5" };
-  if (w.includes("major trim")) return { emoji: "🟢", rowBg: "bg-emerald-500/5" };
-  if (w.includes("full target")) return { emoji: "💰", rowBg: "bg-emerald-500/10" };
-  if (w.includes("regime flip")) return { emoji: "🔴", rowBg: "bg-red-500/5" };
+  if (w.includes("hard stop")) return { emoji: "🛑", rowBg: "bg-td-crit/10" };
+  if (w.includes("trim") && !w.includes("partial") && !w.includes("major")) return { emoji: "⚠️", rowBg: "bg-td-warn/5" };
+  if (w.includes("partial exit")) return { emoji: "🟡", rowBg: "bg-td-warn/5" };
+  if (w.includes("major trim")) return { emoji: "🟢", rowBg: "bg-td-accent/5" };
+  if (w.includes("full target")) return { emoji: "💰", rowBg: "bg-td-accent/10" };
+  if (w.includes("regime flip")) return { emoji: "🔴", rowBg: "bg-td-crit/5" };
   return { emoji: "•", rowBg: "" };
 }
 
@@ -266,7 +266,7 @@ function ConditionText({ text, className }: { text: string; className?: string }
         <button
           type="button"
           onClick={() => setExpanded((o) => !o)}
-          className="mt-1 text-xs font-medium text-emerald-400 hover:text-emerald-300"
+          className="mt-1 text-xs font-medium text-td-accent hover:text-td-accent"
         >
           {expanded ? "Show less" : "Show full detail"}
         </button>
@@ -296,68 +296,68 @@ function BuyRoadmapMobileCard({
   return (
     <div
       className={clsx(
-        "rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-sm space-y-2 shadow-sm",
+        "rounded-xl border border-td-line/70 bg-td-surface/70 p-3 text-sm space-y-2 shadow-sm",
         cue.rowBg,
-        hl && "ring-1 ring-amber-500/35"
+        hl && "ring-1 ring-td-warn/35"
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-semibold text-slate-200">{row.label}</p>
+          <p className="font-semibold text-td-text">{row.label}</p>
           {youAreHereKey === row.timeline_key && withinZone && (
-            <span className="mt-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-amber-300 bg-amber-500/15 px-1 py-0.5 rounded">
+            <span className="mt-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-td-warn bg-td-warn/15 px-1 py-0.5 rounded">
               You are here
             </span>
           )}
         </div>
-        <span className="shrink-0 text-right font-mono text-slate-300 tabular-nums">{row.position_pct}%</span>
+        <span className="shrink-0 text-right font-mono text-td-text tabular-nums">{row.position_pct}%</span>
       </div>
-      <p className="text-slate-200 leading-snug">
+      <p className="text-td-text leading-snug">
         <span className="mr-1" aria-hidden>
           {cue.emoji}
         </span>
         {row.when_to_act}
       </p>
       <div>
-        <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Price zone</p>
+        <p className="text-xs uppercase tracking-wide text-td-muted font-semibold mb-0.5">Price zone</p>
         {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
-          <div className="space-y-1 font-mono text-sm text-slate-300">
+          <div className="space-y-1 font-mono text-sm text-td-text">
             {row.price_zone_lines.map((z, zi) => (
               <div key={zi}>
-                <span className="text-slate-500 font-sans">{z.label}: </span>
+                <span className="text-td-muted font-td-sans">{z.label}: </span>
                 {formatZone(z.lo, z.hi)}
               </div>
             ))}
           </div>
         ) : (
-          <p className="font-mono text-slate-300">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
+          <p className="font-mono text-td-text">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
         )}
         {sameBandAsPrior && (
-          <p className="text-xs text-slate-500 mt-1 leading-tight">
+          <p className="text-xs text-td-muted mt-1 leading-tight">
             Same band as prior row — horizon role / tranche step up over time.
           </p>
         )}
       </div>
       {(rr?.risk_reward != null || row.priority_note) && (
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-0.5">Risk / reward</p>
-          {row.priority_note && <p className="text-xs text-amber-200/90 mb-1">{row.priority_note}</p>}
+          <p className="text-xs uppercase tracking-wide text-td-muted font-semibold mb-0.5">Risk / reward</p>
+          {row.priority_note && <p className="text-xs text-td-warn/90 mb-1">{row.priority_note}</p>}
           {rr?.risk_reward != null && (
-            <p className="text-sm text-slate-400 leading-snug">
+            <p className="text-sm text-td-muted leading-snug">
               R:R ~{rr.risk_reward}× · upside ~{rr.upside_to_model_fv_pct ?? "—"}% / downside ~{rr.downside_to_ref_stop_pct ?? "—"}%
-              {rr.ref_stop_kind && <span className="text-slate-500"> ({String(rr.ref_stop_kind).replace(/_/g, " ")})</span>}
+              {rr.ref_stop_kind && <span className="text-td-muted"> ({String(rr.ref_stop_kind).replace(/_/g, " ")})</span>}
             </p>
           )}
         </div>
       )}
       {conv && (
         <p className="text-sm">
-          <span className="text-slate-500">Horizon role: </span>
+          <span className="text-td-muted">Horizon role: </span>
           <span className={horizonRoleColor(row.conviction)}>{conv}</span>
         </p>
       )}
-      <details className="group border-t border-slate-700/60 pt-2">
-        <summary className="cursor-pointer text-cyan-300/90 text-sm font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+      <details className="group border-t border-td-line/60 pt-2">
+        <summary className="cursor-pointer text-td-info/90 text-sm font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
           Condition & tranche detail (T1/T2/T3 text)
         </summary>
@@ -380,27 +380,27 @@ function SellRoadmapMobileCard({
   const cue = sellStageCue(row.when_to_sell);
   const hl = activeTimelineKey === row.timeline_key;
   return (
-    <div className={clsx("rounded-xl border border-slate-600/70 bg-slate-900/70 p-3 text-sm space-y-2", cue.rowBg, hl && "ring-1 ring-amber-500/35")}>
+    <div className={clsx("rounded-xl border border-td-line/70 bg-td-surface/70 p-3 text-sm space-y-2", cue.rowBg, hl && "ring-1 ring-td-warn/35")}>
       <div className="flex items-start justify-between gap-2">
-        <p className="font-semibold text-slate-200">{row.label}</p>
-        <span className="text-xs text-slate-500 font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
+        <p className="font-semibold text-td-text">{row.label}</p>
+        <span className="text-xs text-td-muted font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
       </div>
-      <p className="text-slate-200 leading-snug">
+      <p className="text-td-text leading-snug">
         <span className="mr-1" aria-hidden>
           {cue.emoji}
         </span>
         {row.when_to_sell}
       </p>
-      <p className="font-mono text-slate-300">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
-      <p className="text-amber-200/90 font-medium">{row.action}</p>
-      <details className="group border-t border-slate-700/60 pt-2">
-        <summary className="cursor-pointer text-cyan-300/90 text-sm font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
+      <p className="font-mono text-td-text">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
+      <p className="text-td-warn/90 font-medium">{row.action}</p>
+      <details className="group border-t border-td-line/60 pt-2">
+        <summary className="cursor-pointer text-td-info/90 text-sm font-medium list-none flex items-center gap-1 [&::-webkit-details-marker]:hidden">
           <ChevronRight className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
           Condition & reason
         </summary>
-        <div className="mt-2 space-y-2 text-sm text-slate-400 leading-relaxed pl-1">
+        <div className="mt-2 space-y-2 text-sm text-td-muted leading-relaxed pl-1">
           <p>{row.condition}</p>
-          {row.reason && <p className="text-slate-500">{row.reason}</p>}
+          {row.reason && <p className="text-td-muted">{row.reason}</p>}
         </div>
       </details>
     </div>
@@ -504,35 +504,35 @@ export function TradeRoadmapCard({
     currentSummary;
 
   return (
-    <div className="rounded-2xl border border-slate-700/80 bg-slate-800/55 overflow-hidden shadow-xl shadow-black/20">
+    <div className="rounded-2xl border border-td-line/80 bg-td-surface2/55 overflow-hidden shadow-xl shadow-black/20">
       {/* Header: verdict + current price / fair value / regime */}
-      <div className="p-4 border-b border-slate-700/80 bg-gradient-to-b from-slate-900/80 to-slate-900/40">
+      <div className="p-4 border-b border-td-line/80 bg-gradient-to-b from-td-surface/80 to-td-surface/40">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
             <span
               className={clsx(
                 "text-sm font-bold px-2 py-0.5 rounded border",
                 data.display_verdict === "AVOID" || data.display_verdict === "REDUCE"
-                  ? "bg-red-500/20 text-red-300 border-red-500/45"
+                  ? "bg-td-crit/20 text-td-crit border-td-crit/45"
                   : data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/45"
+                    ? "bg-td-accent/20 text-td-accent border-td-accent/45"
                     : data.display_verdict === "WATCH"
-                      ? "bg-teal-500/15 text-teal-200 border-teal-500/50"
+                      ? "bg-td-accent/15 text-td-accent-ink border-td-accent/50"
                       : data.display_verdict === "WAIT"
-                        ? "bg-red-500/15 text-red-200 border-red-500/50"
-                        : "bg-amber-500/20 text-amber-300 border-amber-500/45"
+                        ? "bg-td-crit/15 text-td-crit border-td-crit/50"
+                        : "bg-td-warn/20 text-td-warn border-td-warn/45"
               )}
             >
               {data.display_verdict}
             </span>
             <div className="min-w-0">
-              <span className="text-slate-400 text-sm">
+              <span className="text-td-muted text-sm">
                 Current: ${data.current_price.toFixed(2)}
                 {data.fair_value != null && (
                   <>
                     {" "}
                     <span
-                      className="cursor-help border-b border-dotted border-slate-500/60"
+                      className="cursor-help border-b border-dotted border-td-line/60"
                       title="Fair value is a model anchor (e.g. earnings × multiple). It answers ‘cheap vs expensive?’ — not ‘safe to buy today?’"
                     >
                       | Fair value: ${data.fair_value.toFixed(2)}
@@ -543,7 +543,7 @@ export function TradeRoadmapCard({
                   <>
                     {" "}
                     <span
-                      className="cursor-help border-b border-dotted border-slate-500/60"
+                      className="cursor-help border-b border-dotted border-td-line/60"
                       title="Regime is risk-on vs risk-off from the model. A cautious regime can override ‘cheap’ until levels or breadth improve."
                     >
                       | Regime: {data.regime_label}
@@ -554,7 +554,7 @@ export function TradeRoadmapCard({
             </div>
           </div>
           {(data.score_interpretation_style || "").toUpperCase() === "MEAN_REVERTING" && (
-            <p className="text-sm text-slate-500 mt-1.5 w-full">
+            <p className="text-sm text-td-muted mt-1.5 w-full">
               Score labels use mean-reversion bucket mapping (score.interpretation).
               {data.score_interpretation_meta?.reason === "force_mean_reverting" && (
                 <> The model uses conservative signal interpretation for this ticker (mean-reversion buckets).</>
@@ -564,7 +564,7 @@ export function TradeRoadmapCard({
           <button
             type="button"
             onClick={() => setExpanded((e) => !e)}
-            className="p-1 rounded hover:bg-slate-700 text-slate-400"
+            className="p-1 rounded hover:bg-td-surface2 text-td-muted"
           >
             {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
@@ -574,7 +574,7 @@ export function TradeRoadmapCard({
       {expanded && (
         <>
           {/* Tabs: Buy Roadmap | Sell Roadmap | Full Plan */}
-          <div className="flex border-b border-slate-700">
+          <div className="flex border-b border-td-line">
             {(["buy", "sell", "full"] as const).map((t) => (
               <button
                 key={t}
@@ -583,8 +583,8 @@ export function TradeRoadmapCard({
                 className={clsx(
                   "flex-1 px-4 py-2.5 text-sm font-medium transition-colors",
                   tab === t
-                    ? "bg-emerald-500/10 text-emerald-400 border-b-2 border-emerald-500"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
+                    ? "bg-td-accent/10 text-td-accent border-b-2 border-td-accent"
+                    : "text-td-muted hover:text-td-text hover:bg-td-surface2/30"
                 )}
               >
                 {t === "buy" && <><TrendingUp className="inline h-3.5 w-3.5 mr-1.5" /> Buy Roadmap</>}
@@ -596,177 +596,177 @@ export function TradeRoadmapCard({
 
           {/* TL;DR + market regime (probabilistic, not deterministic) */}
           {(data.tldr || data.market_regime_layer || data.scenario_outlook) && (
-            <div className="px-4 py-3 border-b border-slate-700/70 space-y-2 bg-slate-900/40">
-              <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2 flex items-center gap-3 flex-wrap">
+            <div className="px-4 py-3 border-b border-td-line/70 space-y-2 bg-td-surface/40">
+              <div className="rounded-lg border border-td-line/70 bg-td-surface/40 px-3 py-2 flex items-center gap-3 flex-wrap">
                 <span
                   className={clsx(
                     "text-xs font-bold px-2 py-0.5 rounded border",
                     data.display_verdict === "AVOID" || data.display_verdict === "REDUCE"
-                      ? "bg-red-500/20 text-red-300 border-red-500/45"
+                      ? "bg-td-crit/20 text-td-crit border-td-crit/45"
                       : data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
-                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/45"
+                        ? "bg-td-accent/20 text-td-accent border-td-accent/45"
                         : data.display_verdict === "WATCH"
-                          ? "bg-teal-500/15 text-teal-200 border-teal-500/50"
+                          ? "bg-td-accent/15 text-td-accent-ink border-td-accent/50"
                           : data.display_verdict === "WAIT"
-                            ? "bg-red-500/15 text-red-200 border-red-500/50"
-                            : "bg-amber-500/20 text-amber-300 border-amber-500/45"
+                            ? "bg-td-crit/15 text-td-crit border-td-crit/50"
+                            : "bg-td-warn/20 text-td-warn border-td-warn/45"
                   )}
                 >
                   {data.display_verdict}
                 </span>
                 <span
-                  className="text-xs text-slate-400 cursor-help"
+                  className="text-xs text-td-muted cursor-help"
                   title="FV = model fair value from fundamentals (e.g. EPS × P/E). This line is price vs that anchor — not the same as the 7-layer confidence gauge on Details."
                 >
                   ${data.current_price.toFixed(2)} · FV ${data.fair_value.toFixed(2)} · {data.regime_label}
                 </span>
-                <span className="text-sm text-slate-500 ml-auto">See Overview for full analysis</span>
+                <span className="text-sm text-td-muted ml-auto">See Overview for full analysis</span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowRoadmapAnalysis((s) => !s)}
-                className="text-sm text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                className="text-sm text-td-muted hover:text-td-text flex items-center gap-1"
               >
                 {showRoadmapAnalysis ? "Hide expanded analysis" : "Show expanded analysis"}
                 {showRoadmapAnalysis ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               </button>
               {showRoadmapAnalysis && data.tldr && (
-                <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2">
-                  <p className="text-xs text-emerald-200/80 uppercase tracking-wide font-medium">TL;DR</p>
-                  <p className="text-sm text-slate-400 mt-1">
+                <div className="rounded-lg border border-td-accent/25 bg-td-accent-weak/20 px-3 py-2">
+                  <p className="text-xs text-td-accent-ink/80 uppercase tracking-wide font-medium">TL;DR</p>
+                  <p className="text-sm text-td-muted mt-1">
                     Action
                   </p>
-                  <p className="text-sm text-emerald-200/95 font-semibold">
+                  <p className="text-sm text-td-accent-ink/95 font-semibold">
                     {decisionAction}
                   </p>
                   {nextTrigger && (
                     <>
-                      <p className="text-sm text-slate-400 mt-2">Next trigger</p>
-                      <p className="text-xs text-sky-200/90 border-l-2 border-sky-500/50 pl-2 mt-0.5">{nextTrigger}</p>
+                      <p className="text-sm text-td-muted mt-2">Next trigger</p>
+                      <p className="text-xs text-td-info/90 border-l-2 border-td-info/50 pl-2 mt-0.5">{nextTrigger}</p>
                     </>
                   )}
                   {(whyLines.length > 0) && (
                     <>
-                      <p className="text-sm text-slate-400 mt-2">Why this call</p>
-                      <ul className="mt-1 space-y-1 text-sm text-slate-300 list-disc list-inside">
+                      <p className="text-sm text-td-muted mt-2">Why this call</p>
+                      <ul className="mt-1 space-y-1 text-sm text-td-text list-disc list-inside">
                         {whyLines.map((n, i) => (
                           <li key={i}>{n}</li>
                         ))}
                       </ul>
                     </>
                   )}
-                  <div className="mt-2 rounded border border-slate-700/70 bg-slate-900/30 overflow-hidden">
+                  <div className="mt-2 rounded border border-td-line/70 bg-td-surface/30 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, market: !s.market }))}
-                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-td-text hover:bg-td-surface2/60 flex items-center justify-between"
                     >
                       <span>Market structure</span>
-                      {evidenceOpen.market ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                      {evidenceOpen.market ? <ChevronDown className="h-3.5 w-3.5 text-td-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-td-muted" />}
                     </button>
                     {evidenceOpen.market && (
-                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-td-text border-t border-td-line/60 pt-1.5">
                         {data.market_regime_layer?.label || data.tldr.bias}
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, chart: !s.chart }))}
-                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-td-text hover:bg-td-surface2/60 flex items-center justify-between border-t border-td-line/60"
                     >
                       <span>Chart and momentum</span>
-                      {evidenceOpen.chart ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                      {evidenceOpen.chart ? <ChevronDown className="h-3.5 w-3.5 text-td-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-td-muted" />}
                     </button>
                     {evidenceOpen.chart && (
-                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-td-text border-t border-td-line/60 pt-1.5">
                         {data.you_are_here?.note || "Use current roadmap row and key level for timing."}
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, flow: !s.flow }))}
-                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-td-text hover:bg-td-surface2/60 flex items-center justify-between border-t border-td-line/60"
                     >
                       <span>Smart money</span>
-                      {evidenceOpen.flow ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                      {evidenceOpen.flow ? <ChevronDown className="h-3.5 w-3.5 text-td-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-td-muted" />}
                     </button>
                     {evidenceOpen.flow && (
-                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-td-text border-t border-td-line/60 pt-1.5">
                         {data.tldr.model_confidence_band ? `Confidence band ${data.tldr.model_confidence_band}.` : "Model confidence context is mixed; stage entries."}
                       </p>
                     )}
                     <button
                       type="button"
                       onClick={() => setEvidenceOpen((s) => ({ ...s, business: !s.business }))}
-                      className="w-full px-2.5 py-1.5 text-left text-sm text-slate-200 hover:bg-slate-800/60 flex items-center justify-between border-t border-slate-700/60"
+                      className="w-full px-2.5 py-1.5 text-left text-sm text-td-text hover:bg-td-surface2/60 flex items-center justify-between border-t border-td-line/60"
                     >
                       <span>Business and news</span>
-                      {evidenceOpen.business ? <ChevronDown className="h-3.5 w-3.5 text-slate-500" /> : <ChevronRight className="h-3.5 w-3.5 text-slate-500" />}
+                      {evidenceOpen.business ? <ChevronDown className="h-3.5 w-3.5 text-td-muted" /> : <ChevronRight className="h-3.5 w-3.5 text-td-muted" />}
                     </button>
                     {evidenceOpen.business && (
-                      <p className="px-2.5 pb-2 text-sm text-slate-300 border-t border-slate-700/60 pt-1.5">
+                      <p className="px-2.5 pb-2 text-sm text-td-text border-t border-td-line/60 pt-1.5">
                         {data.probabilistic_framing || "Review scenario mix and roadmap tiers before sizing."}
                       </p>
                     )}
                   </div>
-                  <div className="mt-2 rounded border border-slate-700/70 bg-slate-900/30 px-2.5 py-2">
-                    <p className="text-sm text-slate-400">What would change this?</p>
-                    <p className="text-sm text-slate-300 font-mono mt-1">
+                  <div className="mt-2 rounded border border-td-line/70 bg-td-surface/30 px-2.5 py-2">
+                    <p className="text-sm text-td-muted">What would change this?</p>
+                    <p className="text-sm text-td-text font-mono mt-1">
                       Key level: ${data.tldr.key_level.toFixed(2)}
                     </p>
                     {data.tldr.model_confidence_band && (
-                      <p className="text-sm text-slate-300 font-mono">
+                      <p className="text-sm text-td-text font-mono">
                         Confidence: {data.tldr.model_confidence_band}
                       </p>
                     )}
                     {data.scenario_outlook && (
-                      <p className="text-sm text-slate-400 mt-1">
+                      <p className="text-sm text-td-muted mt-1">
                         Bull {data.scenario_outlook.bull_pct}% | Base {data.scenario_outlook.base_pct}% | Bear {data.scenario_outlook.bear_pct}%
                       </p>
                     )}
                   </div>
-                  <p className="text-sm text-slate-100 mt-1">
-                    <span className="text-slate-400">Bias:</span> {data.tldr.bias}
+                  <p className="text-sm text-td-text mt-1">
+                    <span className="text-td-muted">Bias:</span> {data.tldr.bias}
                   </p>
-                  <p className="text-sm text-slate-200 mt-0.5">
-                    <span className="text-slate-400">Strategy:</span> {data.tldr.strategy}
+                  <p className="text-sm text-td-text mt-0.5">
+                    <span className="text-td-muted">Strategy:</span> {data.tldr.strategy}
                   </p>
-                  <p className="text-sm text-slate-200 mt-0.5 font-mono">
-                    <span className="text-slate-400 font-sans">Key level:</span> ${data.tldr.key_level.toFixed(2)}
+                  <p className="text-sm text-td-text mt-0.5 font-mono">
+                    <span className="text-td-muted font-td-sans">Key level:</span> ${data.tldr.key_level.toFixed(2)}
                     {data.tldr.key_level_label && (
-                      <span className="text-slate-500 font-sans text-xs ml-1">— {data.tldr.key_level_label}</span>
+                      <span className="text-td-muted font-td-sans text-xs ml-1">— {data.tldr.key_level_label}</span>
                     )}
                   </p>
                   {data.tldr.dominant_near_term_action && (
-                    <p className="text-xs text-amber-200/90 mt-1">
+                    <p className="text-xs text-td-warn/90 mt-1">
                       Dominant near-term action: <strong>{data.tldr.dominant_near_term_action}</strong>
                       {data.you_are_here?.label && data.you_are_here.within_zone && (
-                        <span className="text-slate-400"> · YOU ARE HERE: {data.you_are_here.label}</span>
+                        <span className="text-td-muted"> · YOU ARE HERE: {data.you_are_here.label}</span>
                       )}
                     </p>
                   )}
                   {data.tldr.model_confidence_pct != null && (
-                    <p className="text-sm text-slate-500 mt-1">Model confidence (fused): {data.tldr.model_confidence_pct}%</p>
+                    <p className="text-sm text-td-muted mt-1">Model confidence (fused): {data.tldr.model_confidence_pct}%</p>
                   )}
                   {data.tldr.model_confidence_band && (
-                    <p className="text-sm text-slate-500">
+                    <p className="text-sm text-td-muted">
                       Confidence band: {data.tldr.model_confidence_band}
                     </p>
                   )}
                   {data.tldr.model_confidence_band_note && (
-                    <p className="text-xs text-slate-600 leading-snug mt-0.5">{data.tldr.model_confidence_band_note}</p>
+                    <p className="text-xs text-td-muted leading-snug mt-0.5">{data.tldr.model_confidence_band_note}</p>
                   )}
                   {data.tldr.dual_signal && (
-                    <p className="text-sm text-sky-200/90 mt-1">
+                    <p className="text-sm text-td-info/90 mt-1">
                       Structural: <strong>{data.tldr.dual_signal.structural || "N/A"}</strong> · Tactical:{" "}
                       <strong>{data.tldr.dual_signal.tactical || "N/A"}</strong>
                     </p>
                   )}
                   {data.tldr.dual_signal?.bridge_note && (
-                    <p className="text-sm text-sky-300/90 mt-0.5">{data.tldr.dual_signal.bridge_note}</p>
+                    <p className="text-sm text-td-info/90 mt-0.5">{data.tldr.dual_signal.bridge_note}</p>
                   )}
                   {(data.tldr.reconciliation_notes?.length ?? 0) > 0 && (
-                    <ul className="mt-2 space-y-1 text-sm text-slate-300 list-disc list-inside">
+                    <ul className="mt-2 space-y-1 text-sm text-td-text list-disc list-inside">
                       {(data.tldr.reconciliation_notes ?? []).map((n, i) => (
                         <li key={i}>{n}</li>
                       ))}
@@ -775,30 +775,30 @@ export function TradeRoadmapCard({
                 </div>
               )}
               {showRoadmapAnalysis && data.market_regime_layer && (
-                <p className="text-xs text-slate-300 leading-snug">
-                  <span className="text-cyan-400/90 font-medium">Market regime layer:</span> {data.market_regime_layer.label}
+                <p className="text-xs text-td-text leading-snug">
+                  <span className="text-td-info/90 font-medium">Market regime layer:</span> {data.market_regime_layer.label}
                 </p>
               )}
               {showRoadmapAnalysis && data.scenario_outlook && (
-                <p className="text-xs text-slate-400 leading-snug">
-                  <span className="text-slate-300">Scenario mix (illustrative):</span> Bull ~{data.scenario_outlook.bull_pct}% · Base ~{data.scenario_outlook.base_pct}% · Bear ~{data.scenario_outlook.bear_pct}%
+                <p className="text-xs text-td-muted leading-snug">
+                  <span className="text-td-text">Scenario mix (illustrative):</span> Bull ~{data.scenario_outlook.bull_pct}% · Base ~{data.scenario_outlook.base_pct}% · Bear ~{data.scenario_outlook.bear_pct}%
                 </p>
               )}
               {showRoadmapAnalysis && data.probabilistic_framing && (
-                <p className="text-xs text-slate-500 leading-snug">{data.probabilistic_framing}</p>
+                <p className="text-xs text-td-muted leading-snug">{data.probabilistic_framing}</p>
               )}
             </div>
           )}
 
           {/* Simple vs full roadmap */}
-          <div className="px-4 py-2 border-b border-slate-700/70 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-500 uppercase tracking-wide">Detail:</span>
+          <div className="px-4 py-2 border-b border-td-line/70 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-td-muted uppercase tracking-wide">Detail:</span>
             <button
               type="button"
               onClick={() => setAdvancedRoadmap(false)}
               className={clsx(
                 "text-xs px-2.5 py-1 rounded font-medium",
-                !advancedRoadmap ? "bg-slate-600 text-white" : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+                !advancedRoadmap ? "bg-td-line text-td-text" : "text-td-muted hover:text-td-text hover:bg-td-surface2/50"
               )}
             >
               Simple
@@ -808,7 +808,7 @@ export function TradeRoadmapCard({
               onClick={() => setAdvancedRoadmap(true)}
               className={clsx(
                 "text-xs px-2.5 py-1 rounded font-medium",
-                advancedRoadmap ? "bg-slate-600 text-white" : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+                advancedRoadmap ? "bg-td-line text-td-text" : "text-td-muted hover:text-td-text hover:bg-td-surface2/50"
               )}
             >
               Advanced (full tables)
@@ -816,8 +816,8 @@ export function TradeRoadmapCard({
           </div>
 
           {/* Trader type selector */}
-          <div className="px-4 py-2 border-b border-slate-700/70 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-slate-500 uppercase tracking-wide">View:</span>
+          <div className="px-4 py-2 border-b border-td-line/70 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-td-muted uppercase tracking-wide">View:</span>
             {(["day_trader", "swing_trader", "investor"] as const).map((tt) => (
               <button
                 key={tt}
@@ -826,8 +826,8 @@ export function TradeRoadmapCard({
                 className={clsx(
                   "text-xs px-2.5 py-1 rounded font-medium",
                   traderType === tt
-                    ? "bg-slate-600 text-white"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/50"
+                    ? "bg-td-line text-td-text"
+                    : "text-td-muted hover:text-td-text hover:bg-td-surface2/50"
                 )}
               >
                 {tt === "day_trader" && "Day / Short-term"}
@@ -839,7 +839,7 @@ export function TradeRoadmapCard({
 
           {/* Timeline slider (advanced) */}
           {advancedRoadmap && (
-            <div className="px-4 py-2 border-b border-slate-700/70">
+            <div className="px-4 py-2 border-b border-td-line/70">
               <div className="flex items-center gap-1 flex-wrap">
                 {TIMELINE_SLIDER_LABELS.map(({ key, label }, i) => (
                   <button
@@ -849,8 +849,8 @@ export function TradeRoadmapCard({
                     className={clsx(
                       "text-xs px-2 py-1 rounded",
                       activeTimelineKey === key
-                        ? "bg-amber-500/20 text-amber-300 font-medium"
-                        : "text-slate-500 hover:text-slate-300"
+                        ? "bg-td-warn/20 text-td-warn font-medium"
+                        : "text-td-muted hover:text-td-text"
                     )}
                   >
                     {label}
@@ -866,7 +866,7 @@ export function TradeRoadmapCard({
               <p className={TD.sectionLabel}>Summary for your horizon</p>
               <p className={clsx(TD.body, "mt-2")}>{currentSummary}</p>
               {((data.execution_plan_lines?.length ?? 0) > 0 || (data.tldr?.execution_plan_lines?.length ?? 0) > 0) && (
-                <ul className="mt-3 space-y-1.5 text-sm text-slate-300 leading-relaxed list-disc list-inside border-t border-slate-600/40 pt-3">
+                <ul className="mt-3 space-y-1.5 text-sm text-td-text leading-relaxed list-disc list-inside border-t border-td-line/40 pt-3">
                   {(data.execution_plan_lines && data.execution_plan_lines.length > 0
                     ? data.execution_plan_lines
                     : (data.tldr?.execution_plan_lines ?? [])
@@ -876,15 +876,15 @@ export function TradeRoadmapCard({
                 </ul>
               )}
               {advancedRoadmap && data.trader_summary.horizon_note && (
-                <p className={clsx(TD.bodyMuted, "mt-3 border-t border-slate-600/40 pt-3")}>
+                <p className={clsx(TD.bodyMuted, "mt-3 border-t border-td-line/40 pt-3")}>
                   {data.trader_summary.horizon_note}
                 </p>
               )}
               {advancedRoadmap && tickerNote(ticker) && (
-                <p className={clsx(TD.footnote, "mt-2 border-t border-slate-600/50 pt-2")}>{tickerNote(ticker)}</p>
+                <p className={clsx(TD.footnote, "mt-2 border-t border-td-line/50 pt-2")}>{tickerNote(ticker)}</p>
               )}
               {advancedRoadmap && (data.consistency_notes?.length ?? 0) > 0 && (
-                <ul className="text-sm text-slate-400 mt-3 space-y-1 border-t border-slate-600/40 pt-3 list-disc list-inside">
+                <ul className="text-sm text-td-muted mt-3 space-y-1 border-t border-td-line/40 pt-3 list-disc list-inside">
                   {(data.consistency_notes ?? []).map((n, i) => (
                     <li key={i} className="leading-relaxed">
                       {n}
@@ -895,22 +895,22 @@ export function TradeRoadmapCard({
             </div>
 
             {data.news_sentiment_layer && (
-              <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/25 overflow-hidden">
+              <div className="rounded-lg border border-td-info/20 bg-td-info/10/25 overflow-hidden">
                 <button
                   type="button"
                   onClick={() => setNewsExpanded((n) => !n)}
-                  className="w-full px-3 py-2.5 flex items-start gap-2 text-left hover:bg-cyan-950/40 transition-colors"
+                  className="w-full px-3 py-2.5 flex items-start gap-2 text-left hover:bg-td-info/10/40 transition-colors"
                   aria-expanded={newsExpanded}
                 >
-                  <Newspaper className="h-3.5 w-3.5 shrink-0 text-cyan-200/90 mt-0.5" aria-hidden />
+                  <Newspaper className="h-3.5 w-3.5 shrink-0 text-td-info/90 mt-0.5" aria-hidden />
                   <span className="flex-1 min-w-0">
-                    <span className="text-xs text-cyan-200/90 font-medium block">Headlines (news sentiment layer)</span>
-                    <span className="text-sm text-slate-500 block mt-0.5">
+                    <span className="text-xs text-td-info/90 font-medium block">Headlines (news sentiment layer)</span>
+                    <span className="text-sm text-td-muted block mt-0.5">
                       {data.news_sentiment_layer.display_label && (
-                        <span className="text-slate-400">{data.news_sentiment_layer.display_label}</span>
+                        <span className="text-td-muted">{data.news_sentiment_layer.display_label}</span>
                       )}
                       {!data.news_sentiment_layer.display_label && data.news_sentiment_layer.sentiment_label && (
-                        <span className="text-slate-400">{data.news_sentiment_layer.sentiment_label}</span>
+                        <span className="text-td-muted">{data.news_sentiment_layer.sentiment_label}</span>
                       )}
                       {data.news_sentiment_layer.score_0_1 != null && (
                         <span className={data.news_sentiment_layer.sentiment_label ? " · " : ""}>
@@ -924,48 +924,48 @@ export function TradeRoadmapCard({
                         </span>
                       )}
                       {data.news_sentiment_layer.layer_weight != null && (
-                        <span className="text-cyan-300/95 font-semibold">
+                        <span className="text-td-info/95 font-semibold">
                           {" "}
                           · {(Number(data.news_sentiment_layer.layer_weight) * 100).toFixed(0)}% fused-model weight
                         </span>
                       )}
-                      {!newsExpanded && <span className="text-slate-600"> · Tap to expand</span>}
+                      {!newsExpanded && <span className="text-td-muted"> · Tap to expand</span>}
                     </span>
                   </span>
                   {newsExpanded ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" aria-hidden />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-td-muted mt-0.5" aria-hidden />
                   ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" aria-hidden />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-td-muted mt-0.5" aria-hidden />
                   )}
                 </button>
                 {newsExpanded && (
-                  <div className="px-3 pb-2.5 pt-0 border-t border-cyan-500/15">
+                  <div className="px-3 pb-2.5 pt-0 border-t border-td-info/15">
                     {data.news_sentiment_layer.sentiment_caveat && (
-                      <p className="text-sm text-amber-200/85 mb-2 leading-snug">
+                      <p className="text-sm text-td-warn/85 mb-2 leading-snug">
                         {data.news_sentiment_layer.sentiment_caveat}
                       </p>
                     )}
                     {data.news_sentiment_layer.pipeline_note && (
-                      <p className="text-sm text-slate-500 mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
+                      <p className="text-sm text-td-muted mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
                     )}
                     {(data.news_sentiment_layer.fmp_key_configured != null ||
                       data.news_sentiment_layer.alpha_vantage_key_configured != null) && (
-                      <p className="text-sm text-slate-500 mb-2 font-mono">
+                      <p className="text-sm text-td-muted mb-2 font-mono">
                         Keys loaded on server: FMP{" "}
                         {data.news_sentiment_layer.fmp_key_configured ? "yes" : "no"} · Alpha Vantage{" "}
                         {data.news_sentiment_layer.alpha_vantage_key_configured ? "yes" : "no"}
                       </p>
                     )}
                     {data.news_sentiment_layer.fmp_request_error && (
-                      <p className="text-sm text-amber-200/85 mb-2 leading-snug font-mono">
+                      <p className="text-sm text-td-warn/85 mb-2 leading-snug font-mono">
                         FMP news: {data.news_sentiment_layer.fmp_request_error}
                       </p>
                     )}
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-slate-400 mb-2 font-mono">
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-td-muted mb-2 font-mono">
                       {data.news_sentiment_layer.score_0_1 != null && (
                         <span>
                           Layer score:{" "}
-                          <span className="text-slate-200">{(data.news_sentiment_layer.score_0_1 * 100).toFixed(0)}%</span>
+                          <span className="text-td-text">{(data.news_sentiment_layer.score_0_1 * 100).toFixed(0)}%</span>
                         </span>
                       )}
                       {data.news_sentiment_layer.sentiment_label && (
@@ -977,31 +977,31 @@ export function TradeRoadmapCard({
                         <span>Weight in confidence: {(Number(data.news_sentiment_layer.layer_weight) * 100).toFixed(0)}%</span>
                       )}
                       {data.news_sentiment_layer.layer_available === false && (
-                        <span className="text-amber-400/90">Layer omitted (redistributed)</span>
+                        <span className="text-td-warn/90">Layer omitted (redistributed)</span>
                       )}
                     </div>
                     {data.news_sentiment_layer.message && (
-                      <p className="text-sm text-amber-200/80 mb-2">{data.news_sentiment_layer.message}</p>
+                      <p className="text-sm text-td-warn/80 mb-2">{data.news_sentiment_layer.message}</p>
                     )}
                     {data.news_sentiment_layer.summary_label && (
-                      <p className="text-xs text-slate-400 mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
+                      <p className="text-xs text-td-muted mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
                     )}
                     {(data.news_sentiment_layer.catalyst_cards ?? []).length > 0 && (
-                      <ul className="space-y-1.5 text-xs text-slate-300 mb-2">
+                      <ul className="space-y-1.5 text-xs text-td-text mb-2">
                         {(data.news_sentiment_layer.catalyst_cards ?? []).map((c) => (
                           <li key={c.event_type || c.name} className="leading-snug">
-                            <span className="uppercase text-[10px] text-slate-500 mr-1">{c.direction}</span>
+                            <span className="uppercase text-[10px] text-td-muted mr-1">{c.direction}</span>
                             {c.name}: {c.mechanism}
                           </li>
                         ))}
                       </ul>
                     )}
                     {(data.news_sentiment_layer.headlines?.length ?? 0) > 0 && (
-                      <ul className="space-y-1.5 text-xs text-slate-300 border-t border-slate-600/40 pt-2">
+                      <ul className="space-y-1.5 text-xs text-td-text border-t border-td-line/40 pt-2">
                         {(data.news_sentiment_layer.headlines ?? []).map((h, i) => (
-                          <li key={i} className="leading-snug pl-2 border-l-2 border-slate-600/60">
+                          <li key={i} className="leading-snug pl-2 border-l-2 border-td-line/60">
                             {h.url ? (
-                              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-sky-300">
+                              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-td-info">
                                 {h.title}
                               </a>
                             ) : (
@@ -1017,18 +1017,18 @@ export function TradeRoadmapCard({
             )}
 
             {!advancedRoadmap && (
-              <div className="rounded-lg border border-slate-600/50 bg-slate-800/60 px-3 py-2 text-xs text-slate-400 leading-relaxed">
+              <div className="rounded-lg border border-td-line/50 bg-td-surface2/60 px-3 py-2 text-xs text-td-muted leading-relaxed">
                 <p>
-                  <strong className="text-slate-300">Simple mode</strong> shows the TL;DR, scenario mix, and market regime above.
-                  Switch to <strong className="text-slate-200">Advanced</strong> for full buy/sell tables, R:R context, tranche rationale, and structured exit categories.
+                  <strong className="text-td-text">Simple mode</strong> shows the TL;DR, scenario mix, and market regime above.
+                  Switch to <strong className="text-td-text">Advanced</strong> for full buy/sell tables, R:R context, tranche rationale, and structured exit categories.
                 </p>
                 {data.action_glossary && Object.keys(data.action_glossary).length > 0 && (
-                  <details className="mt-2 border-t border-slate-600/40 pt-2">
-                    <summary className="cursor-pointer text-slate-300 text-sm">Action phrases (glossary)</summary>
-                    <ul className="mt-1.5 space-y-1 text-xs list-disc list-inside text-slate-500">
+                  <details className="mt-2 border-t border-td-line/40 pt-2">
+                    <summary className="cursor-pointer text-td-text text-sm">Action phrases (glossary)</summary>
+                    <ul className="mt-1.5 space-y-1 text-xs list-disc list-inside text-td-muted">
                       {Object.entries(data.action_glossary).map(([k, v]) => (
                         <li key={k}>
-                          <span className="text-slate-400">{k}:</span> {v}
+                          <span className="text-td-muted">{k}:</span> {v}
                         </li>
                       ))}
                     </ul>
@@ -1040,10 +1040,10 @@ export function TradeRoadmapCard({
             {/* Buy Roadmap table */}
             {advancedRoadmap && (tab === "buy" || tab === "full") && (
               <div>
-                <h4 className="flex items-center gap-2 text-sm font-semibold text-emerald-400 mb-2">
+                <h4 className="flex items-center gap-2 text-sm font-semibold text-td-accent mb-2">
                   <TrendingUp className="h-4 w-4" /> Buy roadmap
                 </h4>
-                <p className="text-xs text-slate-500 mb-2 md:hidden">
+                <p className="text-xs text-td-muted mb-2 md:hidden">
                   Timeline cards below — full table on desktop.
                 </p>
                 <div className="md:hidden space-y-3">
@@ -1069,7 +1069,7 @@ export function TradeRoadmapCard({
                       <col className="w-[72px]" />
                     </colgroup>
                     <thead>
-                      <tr className="text-slate-500 border-b border-slate-600">
+                      <tr className="text-td-muted border-b border-td-line">
                         <th className="text-left py-2 pr-2">Timeline</th>
                         <th className="text-left py-2 pr-2">When to act</th>
                         <th className="text-left py-2 pr-2">Price zone</th>
@@ -1097,29 +1097,29 @@ export function TradeRoadmapCard({
                         <tr
                           key={row.timeline_key}
                           className={clsx(
-                            "border-b border-slate-700/50",
+                            "border-b border-td-line/50",
                             cue.rowBg,
-                            hl && "ring-1 ring-amber-500/30"
+                            hl && "ring-1 ring-td-warn/30"
                           )}
                         >
-                          <td className="py-2 pr-2 text-slate-300">
+                          <td className="py-2 pr-2 text-td-text">
                             {row.label}
                             {data.you_are_here?.timeline_key === row.timeline_key && data.you_are_here?.within_zone && (
-                              <span className="ml-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-amber-300 bg-amber-500/15 px-1 py-0.5 rounded">
+                              <span className="ml-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-td-warn bg-td-warn/15 px-1 py-0.5 rounded">
                                 You are here
                               </span>
                             )}
                           </td>
-                          <td className="py-2 pr-2 text-slate-200">
+                          <td className="py-2 pr-2 text-td-text">
                             <span className="mr-1" aria-hidden>{cue.emoji}</span>
                             {row.when_to_act}
                           </td>
-                          <td className="py-2 pr-2 font-mono text-slate-300 align-top">
+                          <td className="py-2 pr-2 font-mono text-td-text align-top">
                             {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
                               <div className="space-y-1 text-xs leading-snug">
                                 {row.price_zone_lines.map((z, zi) => (
                                   <div key={zi}>
-                                    <span className="text-slate-500 font-sans">{z.label}: </span>
+                                    <span className="text-td-muted font-td-sans">{z.label}: </span>
                                     {formatZone(z.lo, z.hi)}
                                   </div>
                                 ))}
@@ -1128,7 +1128,7 @@ export function TradeRoadmapCard({
                               <div>
                                 {formatZone(row.price_zone_low, row.price_zone_high)}
                                 {sameBandAsPrior && (
-                                  <span className="block text-[9px] text-slate-500 font-sans mt-0.5 leading-tight">
+                                  <span className="block text-[9px] text-td-muted font-td-sans mt-0.5 leading-tight">
                                     Same accumulation band — conviction / horizon role steps up over time.
                                   </span>
                                 )}
@@ -1137,7 +1137,7 @@ export function TradeRoadmapCard({
                           </td>
                           <td className="py-2 pr-2 align-top break-words min-w-[200px] max-w-[360px]">
                             {row.priority_note && (
-                              <span className="block text-amber-200/90 text-xs font-medium mb-1.5">{row.priority_note}</span>
+                              <span className="block text-td-warn/90 text-xs font-medium mb-1.5">{row.priority_note}</span>
                             )}
                             <ConditionText text={row.condition} />
                             {row.risk_reward_context?.risk_reward != null && (
@@ -1152,14 +1152,14 @@ export function TradeRoadmapCard({
                           <td className={clsx("py-2 pr-2 align-top", conv ? horizonRoleColor(row.conviction) : "")}>
                             {conv ? conv : null}
                           </td>
-                          <td className="py-2 text-right text-slate-300 align-top">{row.position_pct}%</td>
+                          <td className="py-2 text-right text-td-text align-top">{row.position_pct}%</td>
                         </tr>
                       ); })}
                     </tbody>
                   </table>
                 </div>
                 <p className={clsx(TD.footnote, "mt-3 max-w-3xl")}>
-                  <span className="text-slate-400 font-medium">How to read this: </span>
+                  <span className="text-td-muted font-medium">How to read this: </span>
                   Horizon role is the scenario for that row. Tranche % is your planned slice for that leg—not a sort order.
                 </p>
               </div>
@@ -1168,7 +1168,7 @@ export function TradeRoadmapCard({
             {/* Sell Roadmap table */}
             {advancedRoadmap && (tab === "sell" || tab === "full") && (
               <div>
-                <h4 className="flex items-center gap-2 text-sm font-semibold text-amber-400 mb-2">
+                <h4 className="flex items-center gap-2 text-sm font-semibold text-td-warn mb-2">
                   <TrendingDown className="h-4 w-4" /> Sell roadmap
                 </h4>
                 <div className="md:hidden space-y-3">
@@ -1179,7 +1179,7 @@ export function TradeRoadmapCard({
                 <div className="hidden md:block overflow-x-auto -mx-1 px-1 pb-1 overscroll-x-contain touch-pan-x">
                   <table className="min-w-[880px] w-full text-sm border-collapse">
                     <thead>
-                      <tr className="text-slate-500 border-b border-slate-600">
+                      <tr className="text-td-muted border-b border-td-line">
                         <th className="text-left py-2 pr-2">Timeline</th>
                         <th className="text-left py-2 pr-2">When to sell</th>
                         <th className="text-left py-2 pr-2">Price zone</th>
@@ -1196,34 +1196,34 @@ export function TradeRoadmapCard({
                         <tr
                           key={row.timeline_key}
                           className={clsx(
-                            "border-b border-slate-700/50",
+                            "border-b border-td-line/50",
                             cue.rowBg,
-                            activeTimelineKey === row.timeline_key && "ring-1 ring-amber-500/30"
+                            activeTimelineKey === row.timeline_key && "ring-1 ring-td-warn/30"
                           )}
                         >
-                          <td className="py-2 pr-2 text-slate-300">{row.label}</td>
-                          <td className="py-2 pr-2 text-slate-200">
+                          <td className="py-2 pr-2 text-td-text">{row.label}</td>
+                          <td className="py-2 pr-2 text-td-text">
                             <span className="mr-1" aria-hidden>{cue.emoji}</span>
                             {row.when_to_sell}
                           </td>
-                          <td className="py-2 pr-2 font-mono text-slate-300">
+                          <td className="py-2 pr-2 font-mono text-td-text">
                             {formatZone(row.price_zone_low, row.price_zone_high)}
                           </td>
-                          <td className="py-2 pr-2 text-slate-400 min-w-[200px] max-w-[320px] text-sm leading-snug break-words" title={row.condition}>
+                          <td className="py-2 pr-2 text-td-muted min-w-[200px] max-w-[320px] text-sm leading-snug break-words" title={row.condition}>
                             {row.condition}
                           </td>
-                          <td className="py-2 pr-2 text-slate-500 font-mono text-xs">
+                          <td className="py-2 pr-2 text-td-muted font-mono text-xs">
                             {row.exit_category?.replace(/_/g, " ") ?? "—"}
                           </td>
-                          <td className="py-2 pr-2 text-amber-200/90">{row.action}</td>
-                          <td className="py-2 text-slate-500">{row.reason}</td>
+                          <td className="py-2 pr-2 text-td-warn/90">{row.action}</td>
+                          <td className="py-2 text-td-muted">{row.reason}</td>
                         </tr>
                       ); })}
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-slate-500 mt-2 leading-snug max-w-3xl">
-                  <strong className="text-slate-400">Overlapping trim windows:</strong> Short-term and longer trims can share
+                <p className="text-xs text-td-muted mt-2 leading-snug max-w-3xl">
+                  <strong className="text-td-muted">Overlapping trim windows:</strong> Short-term and longer trims can share
                   price ranges when targets align. Earlier rows are the first tranche to consider; later rows size what is
                   left — not a separate trigger that only fires if you skipped an earlier leg.
                 </p>

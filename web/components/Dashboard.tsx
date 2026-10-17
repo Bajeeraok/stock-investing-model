@@ -1125,7 +1125,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {degradedMode && (
                 <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} compact />
               )}
-              <DecisionJournalPanel />
               {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
               {!data.retail_market_decisions?.market_context && (data.macro_regime || data.macro_analog) && (
                 <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -1184,43 +1183,48 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </select>
                 </div>
               )}
-              <PortfolioHeatMap
-                holdings={selectedReport?.per_holding ?? []}
-                regimeCounts={selectedReport?.regime_counts}
-                onTickerClick={openTickerDetail}
-              />
-              <ToggleSection id="overview-portfolio" title="Portfolio summary" icon={<PieChart />} defaultOpen>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <PortfolioSummary report={selectedReport} />
-                </div>
-                {data.portfolio_stress?.scenarios?.length ? (
-                  <PortfolioStressStrip stress={data.portfolio_stress} />
-                ) : null}
-                {data.performance_vs_benchmark?.periods?.length ? (
-                  <div className="mt-4">
+              <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm text-slate-300">
+                  Portfolio:{" "}
+                  <span className="font-semibold text-slate-100">
+                    {selectedReport?.total_value != null ? `$${Math.round(selectedReport.total_value).toLocaleString()}` : "—"}
+                  </span>
+                  {" · "}
+                  <span className="text-slate-400">{selectedReport?.per_holding?.length ?? 0} holdings</span>
+                  {" · "}
+                  <span className="text-slate-500">heat map, stress test, and regime mix live on the Portfolio tab</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("portfolio")}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 underline shrink-0"
+                >
+                  View full Portfolio →
+                </button>
+              </div>
+              {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
+                <ToggleSection id="overview-performance" title="Performance vs benchmark" icon={<PieChart />} defaultOpen={false}>
+                  {data.performance_vs_benchmark?.periods?.length ? (
                     <PerformanceVsBenchmark
                       periods={data.performance_vs_benchmark.periods}
                       message={data.performance_vs_benchmark.message}
                       as_of={data.performance_vs_benchmark.as_of}
                     />
-                  </div>
-                ) : data.performance_vs_benchmark?.message && (
-                  <div className="mt-4">
+                  ) : data.performance_vs_benchmark?.message && (
                     <PerformanceVsBenchmark
                       periods={[]}
                       message={data.performance_vs_benchmark.message}
                     />
-                  </div>
-                )}
-                <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
-              </ToggleSection>
-              <ToggleSection id="overview-score-regime" title="Score & regime charts" icon={<Activity />} defaultOpen={false}>
+                  )}
+                  <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                </ToggleSection>
+              )}
+              <ToggleSection id="overview-score-regime" title="Score chart" icon={<Activity />} defaultOpen={false}>
                 <AnchorChartPanel
                   title="Portfolio tape"
-                  hint="One shared chart surface — click a bar to open the ticker hub. Regime mix is holdings-weighted."
+                  hint="One shared chart surface — click a bar to open the ticker hub."
                 >
                   <ScoreChart signals={scoreChartSignals} onTickerClick={openTickerDetail} embedded />
-                  <RegimeChart report={selectedReport} embedded />
                 </AnchorChartPanel>
               </ToggleSection>
             </div>
@@ -1589,6 +1593,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   portfolioValue={selectedReport?.total_value ?? 0}
                 />
               </ToggleSection>
+              <DecisionJournalPanel />
             </div>
           )}
 

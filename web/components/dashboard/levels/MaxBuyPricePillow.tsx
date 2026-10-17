@@ -39,22 +39,22 @@ export function MaxBuyPricePillow({
   return (
     <div
       className={clsx(
-        "rounded-xl border border-cyan-500/35 bg-gradient-to-br from-cyan-950/35 via-slate-950/70 to-slate-950/90 overflow-hidden",
+        "rounded-xl border border-td-info/35 bg-gradient-to-br from-td-info/10/35 via-td-bg/70 to-td-bg/90 overflow-hidden",
         className,
       )}
       aria-label="Full-size ceiling and long-term accumulation tiers"
     >
       {mos != null && mos > 0 && (
-        <div className="px-3.5 py-3 border-b border-cyan-500/20 bg-cyan-950/25 flex flex-wrap items-end justify-between gap-3">
+        <div className="px-3.5 py-3 border-b border-td-info/20 bg-td-info/10/25 flex flex-wrap items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-200/95">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-td-info/95">
               Full-size ceiling · 25% MOS
             </p>
-            <p className="text-xs text-slate-400 mt-1 leading-snug">
+            <p className="text-xs text-td-muted mt-1 leading-snug">
               Upper bound for a full allocation vs model fair value — not a target entry price. Tier bands
               (MA200 / FV MOS / 52w stress) are separate scale-in guides.
               {activeTier ? (
-                <span className="text-slate-500">
+                <span className="text-td-muted">
                   {" "}
                   Active tier {activeTier}
                   {assessmentLabel ? ` — ${assessmentLabel}` : ""}.
@@ -62,14 +62,14 @@ export function MaxBuyPricePillow({
               ) : null}
             </p>
           </div>
-          <p className="text-2xl sm:text-3xl font-bold font-mono tabular-nums text-cyan-100 shrink-0">
+          <p className="text-2xl sm:text-3xl font-bold font-mono tabular-nums text-td-info shrink-0">
             ≤ ${mos.toFixed(2)}
           </p>
         </div>
       )}
 
       {withinMos && fullSizeOk && mos != null && (
-        <p className="px-3.5 py-2 text-xs text-emerald-200/95 border-b border-emerald-500/25 bg-emerald-950/25 leading-snug">
+        <p className="px-3.5 py-2 text-xs text-td-accent-ink/95 border-b border-td-accent/25 bg-td-accent-weak/25 leading-snug">
           Spot ${currentPrice.toFixed(2)} is at/below the full-size ceiling (${mos.toFixed(2)}) — valuation
           supports full allocation.
           {belowAllWithinMos
@@ -79,7 +79,7 @@ export function MaxBuyPricePillow({
       )}
 
       {aboveMos && mos != null && (
-        <p className="px-3.5 py-2 text-xs text-amber-200/95 border-b border-amber-500/20 bg-amber-950/20">
+        <p className="px-3.5 py-2 text-xs text-td-warn/95 border-b border-td-warn/20 bg-td-warn-weak/20">
           Spot ${currentPrice.toFixed(2)} is above the full-size ceiling (${mos.toFixed(2)}) — use tier bands
           below for partial sizing only.
         </p>

@@ -125,17 +125,17 @@ const ROLE_SECTIONS: {
   {
     role: "drove_signal",
     label: "Drove signal",
-    className: "border-emerald-500/35 bg-emerald-950/20 text-emerald-100",
+    className: "border-td-accent/35 bg-td-accent-weak/20 text-td-accent-ink",
   },
   {
     role: "unlock_context",
     label: "Unlock context",
-    className: "border-amber-500/35 bg-amber-950/20 text-amber-100",
+    className: "border-td-warn/35 bg-td-warn-weak/20 text-td-warn",
   },
   {
     role: "risk",
     label: "Risk",
-    className: "border-rose-500/35 bg-rose-950/20 text-rose-100",
+    className: "border-td-crit/35 bg-td-crit-weak/20 text-td-crit",
   },
 ];
 
@@ -180,7 +180,7 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
         title="What to do"
         description="Plan levels did not line up for this persona — notes are withheld until the packet is consistent."
         body={
-          <p className="text-xs text-slate-400 leading-relaxed">
+          <p className="text-xs text-td-muted leading-relaxed">
             Trading notes unavailable in this mode right now. Try Swing or Scout, or refresh after the next signal run.
           </p>
         }
@@ -219,43 +219,43 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
       description="Verdict first, then the levels that matter. Open Why for gate checks."
       body={
         loading ? (
-          <p className="text-xs text-slate-500 italic animate-pulse">Building the 10-second scan…</p>
+          <p className="text-xs text-td-muted italic animate-pulse">Building the 10-second scan…</p>
         ) : scan ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-start gap-2">
-              <p className="text-sm font-semibold text-slate-100 leading-snug flex-1 min-w-0">
+              <p className="text-sm font-semibold text-td-text leading-snug flex-1 min-w-0">
                 {scan.headline}
               </p>
               {driverChip ? (
                 <span
-                  className="shrink-0 rounded border border-emerald-800/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300/90"
+                  className="shrink-0 rounded border border-td-accent/40/60 bg-td-accent-weak/40 px-1.5 py-0.5 text-[10px] font-medium text-td-accent/90"
                   title={driverHeadline || undefined}
                 >
                   {driverChip}
                 </span>
               ) : null}
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">{scan.reason}</p>
+            <p className="text-xs text-td-muted leading-relaxed">{scan.reason}</p>
             <ul className="space-y-1">
               {scan.lines.map((line, i) => (
-                <li key={i} className="text-xs text-slate-200 leading-relaxed">
+                <li key={i} className="text-xs text-td-text leading-relaxed">
                   {line}
                 </li>
               ))}
             </ul>
             {scan.timing ? (
-              <p className="text-[11px] text-slate-500 italic">{scan.timing}</p>
+              <p className="text-[11px] text-td-muted italic">{scan.timing}</p>
             ) : null}
           </div>
         ) : showTradingNotes ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[10px] uppercase tracking-wide text-emerald-400/90 font-semibold">
+              <p className="text-[10px] uppercase tracking-wide text-td-accent/90 font-semibold">
                 Trading notes
               </p>
               {driverChip ? (
                 <span
-                  className="rounded border border-emerald-800/60 bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300/90"
+                  className="rounded border border-td-accent/40/60 bg-td-accent-weak/40 px-1.5 py-0.5 text-[10px] font-medium text-td-accent/90"
                   title={driverHeadline || undefined}
                 >
                   {driverChip}
@@ -263,13 +263,13 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
               ) : null}
             </div>
             {noteParagraphs.map((p, i) => (
-              <p key={i} className="text-xs text-slate-200 leading-relaxed">
+              <p key={i} className="text-xs text-td-text leading-relaxed">
                 {p}
               </p>
             ))}
           </div>
         ) : data?.action ? (
-          <p className="text-xs text-slate-300 leading-relaxed">{data.action.text}</p>
+          <p className="text-xs text-td-text leading-relaxed">{data.action.text}</p>
         ) : undefined
       }
       toggleLabel={hasWhy ? "Why? →" : undefined}
@@ -279,9 +279,9 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
           <ModelChecksPanel checks={checks} whyExplainer={data?.why_explainer} />
         ) : (
           <div className="space-y-1">
-            <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model checks</p>
+            <p className="text-[10px] uppercase tracking-wide text-td-muted font-semibold">Model checks</p>
             {whyLines.map((line, i) => (
-              <p key={i} className="text-xs text-slate-400 leading-relaxed whitespace-pre-wrap">
+              <p key={i} className="text-xs text-td-muted leading-relaxed whitespace-pre-wrap">
                 {line}
               </p>
             ))}
@@ -309,26 +309,26 @@ function ModelChecksPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Model checks</p>
+      <p className="text-[10px] uppercase tracking-wide text-td-muted font-semibold">Model checks</p>
 
       {/* Plain-English translation of the gates/targets/catalysts below — the numbers and
           pills stay put underneath as the verifiable detail; this is a reading aid on top
           of them, not a replacement. Silently absent when the LLM path is unavailable. */}
       {explainer ? (
-        <p className="text-xs text-slate-300 leading-relaxed rounded-lg border border-slate-700/60 bg-slate-800/40 px-2.5 py-2">
+        <p className="text-xs text-td-text leading-relaxed rounded-lg border border-td-line/60 bg-td-surface2/40 px-2.5 py-2">
           {explainer}
         </p>
       ) : null}
 
       {unlock ? (
-        <div className="rounded-lg border border-amber-500/35 bg-amber-950/25 px-2.5 py-2">
-          <p className="text-xs font-semibold text-amber-100 leading-snug">{unlock}</p>
+        <div className="rounded-lg border border-td-warn/35 bg-td-warn-weak/25 px-2.5 py-2">
+          <p className="text-xs font-semibold text-td-warn leading-snug">{unlock}</p>
         </div>
       ) : null}
 
       {gates.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">Logic checks</p>
+          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">Logic checks</p>
           <div className="flex flex-wrap gap-1.5">
             {gates.map((g) => (
               <span
@@ -336,8 +336,8 @@ function ModelChecksPanel({
                 title={g.detail || undefined}
                 className={
                   g.passed
-                    ? "inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-950/30 px-2 py-0.5 text-[10px] font-medium text-emerald-200"
-                    : "inline-flex items-center gap-1 rounded-full border border-rose-500/35 bg-rose-950/25 px-2 py-0.5 text-[10px] font-medium text-rose-200/90"
+                    ? "inline-flex items-center gap-1 rounded-full border border-td-accent/40 bg-td-accent-weak/30 px-2 py-0.5 text-[10px] font-medium text-td-accent-ink"
+                    : "inline-flex items-center gap-1 rounded-full border border-td-crit/35 bg-td-crit-weak/25 px-2 py-0.5 text-[10px] font-medium text-td-crit/90"
                 }
               >
                 <span aria-hidden>{g.passed ? "✓" : "✗"}</span>
@@ -350,15 +350,15 @@ function ModelChecksPanel({
 
       {targets.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">Execution targets</p>
+          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">Execution targets</p>
           <ul className="space-y-1">
             {targets.map((t) => (
               <li
                 key={`${t.kind}-${t.value}`}
                 className="flex items-baseline justify-between gap-2 text-xs leading-relaxed"
               >
-                <span className="text-slate-400 shrink-0">{t.label}</span>
-                <span className="text-slate-100 font-medium text-right tabular-nums">{t.value}</span>
+                <span className="text-td-muted shrink-0">{t.label}</span>
+                <span className="text-td-text font-medium text-right tabular-nums">{t.value}</span>
               </li>
             ))}
           </ul>
@@ -367,7 +367,7 @@ function ModelChecksPanel({
 
       {linked.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">
+          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">
             Gate-linked catalysts
           </p>
           {ROLE_SECTIONS.map(({ role, label, className }) => {
@@ -375,7 +375,7 @@ function ModelChecksPanel({
             if (!rows.length) return null;
             return (
               <div key={role} className="space-y-1.5">
-                <p className="text-[10px] font-medium text-slate-500">{label}</p>
+                <p className="text-[10px] font-medium text-td-muted">{label}</p>
                 <ul className="space-y-1.5">
                   {rows.map((c, i) => (
                     <li
@@ -410,14 +410,14 @@ function ModelChecksPanel({
         </div>
       ) : newsFallback.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500 font-medium">
+          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">
             Company / event catalysts
           </p>
           <ul className="space-y-1">
             {newsFallback.map((n, i) => (
-              <li key={`${n.name}-${i}`} className="text-xs text-slate-300 leading-relaxed">
-                <span className="text-slate-200">{n.summary || n.name}</span>
-                {n.horizon ? <span className="text-slate-500"> · {n.horizon}</span> : null}
+              <li key={`${n.name}-${i}`} className="text-xs text-td-text leading-relaxed">
+                <span className="text-td-text">{n.summary || n.name}</span>
+                {n.horizon ? <span className="text-td-muted"> · {n.horizon}</span> : null}
               </li>
             ))}
           </ul>

@@ -59,8 +59,8 @@ export function DensityToggle({ className }: { className?: string }) {
       className={clsx(
         "flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold uppercase tracking-wider transition-all",
         density === "comfort"
-          ? "border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300"
-          : "border-teal-500/40 bg-teal-500/10 text-teal-300 hover:border-teal-400/60",
+          ? "border-td-line text-td-muted hover:border-td-line hover:text-td-text"
+          : "border-td-accent/40 bg-td-accent/10 text-td-accent hover:border-td-accent/60",
         className,
       )}
     >

@@ -67,17 +67,17 @@ export function TacticalEntryPanel({
     <div
       className={clsx(
         "border-b",
-        watchOnly ? "border-violet-500/15 bg-violet-950/15" : "border-violet-500/25 bg-violet-950/30",
+        watchOnly ? "border-td-owner/15 bg-td-owner-weak/15" : "border-td-owner/25 bg-td-owner-weak/30",
         compact ? "px-3 py-2 sm:px-5" : "px-4 py-3 sm:px-6",
       )}
     >
       <div className="flex items-start gap-2">
-        <Zap className={clsx("h-4 w-4 mt-0.5 shrink-0", watchOnly ? "text-violet-400/70" : "text-violet-400")} />
+        <Zap className={clsx("h-4 w-4 mt-0.5 shrink-0", watchOnly ? "text-td-owner/70" : "text-td-owner")} />
         <div className="min-w-0 flex-1">
           <p
             className={clsx(
               "text-xs font-semibold uppercase tracking-wide",
-              triggered && chaseAction ? "text-amber-200" : "text-violet-200",
+              triggered && chaseAction ? "text-td-warn" : "text-td-owner",
             )}
           >
             {headline}
@@ -86,14 +86,14 @@ export function TacticalEntryPanel({
             <p
               className={clsx(
                 "text-[11px] mt-1 leading-snug",
-                triggered && chaseAction ? "text-amber-200/90" : "text-slate-400",
+                triggered && chaseAction ? "text-td-warn/90" : "text-td-muted",
               )}
             >
               {payload.stance_note}
             </p>
           )}
           {!compact && !payload.stance_note && (
-            <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+            <p className="text-[11px] text-td-muted mt-1 leading-snug">
               Velocity flagged (RVOL / Bollinger). Separate from 4-gate GO — follow One Answer for sizing today.
               {payload.go_no_go === "go"
                 ? " Full GO also clear."
@@ -103,11 +103,11 @@ export function TacticalEntryPanel({
             </p>
           )}
           {triggered && chaseAction && payload.one_answer_verdict && (
-            <p className="text-[10px] text-slate-500 mt-1">
+            <p className="text-[10px] text-td-muted mt-1">
               Horizon read: {payload.one_answer_verdict} · Execution today: hold/watch (see bottom line)
             </p>
           )}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-300 tabular-nums">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-td-text tabular-nums">
             {payload.rvol != null && <span>RVOL {payload.rvol}×</span>}
             {payload.bb_pct_b != null && <span>BB %B {payload.bb_pct_b.toFixed(2)}</span>}
             {payload.velocity_score != null && <span>Score {Math.round(payload.velocity_score)}</span>}
@@ -116,13 +116,13 @@ export function TacticalEntryPanel({
             {payload.target_2 != null && <span>T2 ${payload.target_2.toFixed(2)}</span>}
             {payload.stop != null && <span>Stop ${payload.stop.toFixed(2)}</span>}
             {payload.rr_ratio != null && <span>R:R {payload.rr_ratio}×</span>}
-            <span className="text-violet-300/90">T+{horizon}d</span>
+            <span className="text-td-owner/90">T+{horizon}d</span>
           </div>
           {(payload.reasons?.length ?? 0) > 0 && !compact && (
-            <p className="text-[11px] text-slate-500 mt-1">{payload.reasons!.slice(0, 2).join(" · ")}</p>
+            <p className="text-[11px] text-td-muted mt-1">{payload.reasons!.slice(0, 2).join(" · ")}</p>
           )}
           {payload.expiry_note && !compact && (
-            <p className="text-[11px] text-amber-300/80 mt-1">{payload.expiry_note}</p>
+            <p className="text-[11px] text-td-warn/80 mt-1">{payload.expiry_note}</p>
           )}
         </div>
       </div>

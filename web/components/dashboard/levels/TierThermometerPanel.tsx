@@ -74,9 +74,9 @@ export function TierThermometerPanel({
   const minBuy = assessment?.min_price_to_buy;
 
   return (
-    <div className={clsx("rounded-2xl border border-violet-500/20 bg-gradient-to-b from-violet-950/25 via-slate-950/60 to-slate-950/80 backdrop-blur-sm overflow-hidden", className)}>
-      <div className="px-4 py-2.5 border-b border-violet-500/15 bg-violet-950/30 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-200">
+    <div className={clsx("rounded-2xl border border-td-owner/20 bg-gradient-to-b from-td-owner-weak/25 via-td-bg/60 to-td-bg/80 backdrop-blur-sm overflow-hidden", className)}>
+      <div className="px-4 py-2.5 border-b border-td-owner/15 bg-td-owner-weak/30 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-td-owner">
           Price thermometer · Long-term tiers
         </p>
         <div className="flex items-center gap-2">
@@ -84,15 +84,15 @@ export function TierThermometerPanel({
             <span className={clsx(
               "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
               mos >= 25
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                ? "border-td-accent/40 bg-td-accent/10 text-td-accent"
                 : mos >= 15
-                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
-                  : "border-red-500/30 bg-red-500/10 text-red-300",
+                  ? "border-td-warn/40 bg-td-warn/10 text-td-warn"
+                  : "border-td-crit/30 bg-td-crit/10 text-td-crit",
             )}>
               {mos.toFixed(1)}% MOS
             </span>
           )}
-          <span className="text-[10px] font-semibold text-amber-200/90 uppercase">
+          <span className="text-[10px] font-semibold text-td-warn/90 uppercase">
             {assessment?.label ?? "Watching"}
           </span>
         </div>
@@ -102,12 +102,12 @@ export function TierThermometerPanel({
       <button
         type="button"
         onClick={() => setThermOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-2 text-left hover:bg-slate-800/30 transition-colors border-b border-violet-500/10"
+        className="w-full flex items-center justify-between gap-2 px-4 py-2 text-left hover:bg-td-surface2/30 transition-colors border-b border-td-owner/10"
       >
-        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-semibold">
+        <span className="text-[9px] uppercase tracking-wider text-td-muted font-semibold">
           Price thermometer
         </span>
-        <span className="flex items-center gap-1 text-[9px] text-slate-500">
+        <span className="flex items-center gap-1 text-[9px] text-td-muted">
           {thermOpen ? (
             <><ChevronDown className="h-3 w-3" />Hide</>
           ) : (
@@ -135,13 +135,13 @@ export function TierThermometerPanel({
                 return (
                   <div key={tier.id} className="flex flex-col gap-0.5">
                     <div className="flex items-center justify-end gap-1.5">
-                      <span className="text-[9px] text-slate-500 uppercase">{tier.id}</span>
-                      {inside && <span className="text-[8px] font-black text-emerald-300 bg-emerald-500/20 px-1 rounded">IN</span>}
-                      {!inside && above && <span className="text-[8px] text-slate-600">↑</span>}
+                      <span className="text-[9px] text-td-muted uppercase">{tier.id}</span>
+                      {inside && <span className="text-[8px] font-black text-td-accent bg-td-accent/20 px-1 rounded">IN</span>}
+                      {!inside && above && <span className="text-[8px] text-td-muted">↑</span>}
                     </div>
                     <span className={clsx(
                       "text-[10px] font-mono tabular-nums",
-                      inside ? "text-emerald-300" : "text-slate-400",
+                      inside ? "text-td-accent" : "text-td-muted",
                     )}>
                       ${tier.low.toFixed(0)}–${tier.high.toFixed(0)}
                     </span>
@@ -149,21 +149,21 @@ export function TierThermometerPanel({
                 );
               })}
               {minBuy != null && (
-                <div className="flex flex-col gap-0.5 border-t border-slate-700/50 pt-2 mt-1">
-                  <span className="text-[9px] text-cyan-400/70 uppercase">Full MOS</span>
-                  <span className="text-[10px] font-mono text-cyan-300/80 tabular-nums">≤${minBuy.toFixed(0)}</span>
+                <div className="flex flex-col gap-0.5 border-t border-td-line/50 pt-2 mt-1">
+                  <span className="text-[9px] text-td-info/70 uppercase">Full MOS</span>
+                  <span className="text-[10px] font-mono text-td-info/80 tabular-nums">≤${minBuy.toFixed(0)}</span>
                 </div>
               )}
             </div>
           </div>
-          <p className="text-[9px] text-slate-600 text-center font-mono">
+          <p className="text-[9px] text-td-muted text-center font-mono">
             Hover a zone to isolate · white line = current price
           </p>
         </div>
       )}
 
       {/* Tier ladder below */}
-      <div className="border-t border-violet-500/15">
+      <div className="border-t border-td-owner/15">
         <LongTermTierLadder
           entryTiers={entryTiers}
           currentPrice={currentPrice}

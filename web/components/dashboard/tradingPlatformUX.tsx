@@ -114,13 +114,13 @@ export function StickyTickerQuoteBar({
     confidencePct != null && Number(confidencePct) < Number(confidenceTarget);
 
   return (
-    <div className="sticky top-0 z-[20] border-b border-slate-700/80 bg-slate-950/95 backdrop-blur-md px-3 sm:px-5 py-2.5">
+    <div className="sticky top-0 z-[20] border-b border-td-line/80 bg-td-bg/95 backdrop-blur-md px-3 sm:px-5 py-2.5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0">
-          <p className="font-mono font-bold text-lg text-white">{ticker}</p>
+          <p className="font-mono font-bold text-lg text-td-text">{ticker}</p>
           <div className="flex items-baseline gap-2 flex-wrap">
             {price != null && (
-              <span className="text-xl font-bold tabular-nums text-emerald-300">${price.toFixed(2)}</span>
+              <span className="text-xl font-bold tabular-nums text-td-accent">${price.toFixed(2)}</span>
             )}
             <span className={clsx("text-sm font-semibold tabular-nums", move.className)}>{move.text}</span>
           </div>
@@ -128,7 +128,7 @@ export function StickyTickerQuoteBar({
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {scoreStale ? (
             <span
-              className="px-2 py-0.5 rounded border border-amber-500/45 bg-amber-950/40 text-amber-200"
+              className="px-2 py-0.5 rounded border border-td-warn/45 bg-td-warn-weak/40 text-td-warn"
               title={scoreNote || "Price data may be delayed — score suppressed"}
             >
               Score <span className="font-semibold">STALE</span>
@@ -138,10 +138,10 @@ export function StickyTickerQuoteBar({
               className={clsx(
                 "px-2 py-0.5 rounded border tabular-nums",
                 Number(score) >= 55
-                  ? "border-emerald-500/40 bg-emerald-950/30"
+                  ? "border-td-accent/40 bg-td-accent-weak/30"
                   : Number(score) >= 30
-                    ? "border-amber-500/40 bg-amber-950/30"
-                    : "border-slate-600 bg-slate-800/80",
+                    ? "border-td-warn/40 bg-td-warn-weak/30"
+                    : "border-td-line bg-td-surface2/80",
               )}
               title={scoreNote || "Confidence-adjusted — gates × fused confidence applied to setup quality"}
             >
@@ -149,13 +149,13 @@ export function StickyTickerQuoteBar({
               <span
                 className={clsx(
                   "font-semibold",
-                  Number(score) >= 55 ? "text-emerald-300" : Number(score) >= 30 ? "text-amber-300" : "text-slate-300",
+                  Number(score) >= 55 ? "text-td-accent" : Number(score) >= 30 ? "text-td-warn" : "text-td-text",
                 )}
               >
                 {Math.round(Number(score))}
               </span>
               {showSetup && (
-                <span className="text-slate-500 font-normal ml-1">
+                <span className="text-td-muted font-normal ml-1">
                   (setup {Math.round(Number(setupQuality))})
                 </span>
               )}
@@ -165,17 +165,17 @@ export function StickyTickerQuoteBar({
             <span
               className={clsx(
                 "px-2 py-0.5 rounded border font-bold uppercase text-[10px]",
-                regime === "UP" && "border-emerald-500/40 text-emerald-300 bg-emerald-950/30",
-                regime === "EXTENDED" && "border-amber-500/40 text-amber-300 bg-amber-950/30",
-                regime === "DOWN" && "border-red-500/40 text-red-300 bg-red-950/30",
-                regime === "NEUTRAL" && "border-slate-600 text-slate-400"
+                regime === "UP" && "border-td-accent/40 text-td-accent bg-td-accent-weak/30",
+                regime === "EXTENDED" && "border-td-warn/40 text-td-warn bg-td-warn-weak/30",
+                regime === "DOWN" && "border-td-crit/40 text-td-crit bg-td-crit-weak/30",
+                regime === "NEUTRAL" && "border-td-line text-td-muted"
               )}
             >
               {regime}
             </span>
           )}
           {actionTitle && (
-            <span className="text-slate-300 font-medium truncate max-w-[12rem]" title={actionTitle}>
+            <span className="text-td-text font-medium truncate max-w-[12rem]" title={actionTitle}>
               {actionTitle}
             </span>
           )}
@@ -189,7 +189,7 @@ export function StickyTickerQuoteBar({
               <p
                 className={clsx(
                   "text-[10px] leading-tight",
-                  confFail ? "text-amber-400/90" : "text-slate-500",
+                  confFail ? "text-td-warn/90" : "text-td-muted",
                 )}
                 title="Sizing / meta-confidence — not counted in the 4-of-4 buy-gate bar"
               >
@@ -200,7 +200,7 @@ export function StickyTickerQuoteBar({
           </div>
         )}
         {earningsLabel && (
-          <span className="text-[10px] text-amber-300/90 border border-amber-500/30 rounded px-1.5 py-0.5">
+          <span className="text-[10px] text-td-warn/90 border border-td-warn/30 rounded px-1.5 py-0.5">
             {earningsLabel}
           </span>
         )}
@@ -451,25 +451,25 @@ export function NewsSentimentRail({
   }
 
   return (
-    <div className="rounded-lg border border-sky-500/25 bg-sky-950/15 p-3 space-y-2">
+    <div className="rounded-lg border border-td-info/25 bg-td-info/10/15 p-3 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-sky-400/90 font-semibold">News</span>
-        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-sky-500/30 text-sky-200">
+        <span className="text-[10px] uppercase tracking-wider text-td-info/90 font-semibold">News</span>
+        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-td-info/30 text-td-info">
           {sentiment}
         </span>
         {headlineCount != null && headlineCount > 0 && (
-          <span className="text-[10px] text-slate-500">{headlineCount} headlines</span>
+          <span className="text-[10px] text-td-muted">{headlineCount} headlines</span>
         )}
       </div>
       {sentimentCaveat && (
-        <p className="text-[11px] text-amber-200/90 leading-snug">{sentimentCaveat}</p>
+        <p className="text-[11px] text-td-warn/90 leading-snug">{sentimentCaveat}</p>
       )}
       {catalystNote && (
-        <p className="text-[11px] text-amber-200/90 leading-snug">{catalystNote}</p>
+        <p className="text-[11px] text-td-warn/90 leading-snug">{catalystNote}</p>
       )}
       {cards.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-slate-500">
+          <p className="text-[10px] text-td-muted">
             Catalyst cards — advisory only; does not change bands or gates.
             {wrapStatus === "loading" ? " Summarizing…" : wrapping ? " Guarded wrap." : ""}
           </p>
@@ -481,39 +481,39 @@ export function NewsSentimentRail({
             const watch = merged.watch || c.watch;
             const tone =
               c.direction === "unlocks"
-                ? "border-emerald-500/30 text-emerald-300"
+                ? "border-td-accent/30 text-td-accent"
                 : c.direction === "breaks"
-                  ? "border-red-500/30 text-red-300"
-                  : "border-slate-500/30 text-slate-300";
+                  ? "border-td-crit/30 text-td-crit"
+                  : "border-td-line/30 text-td-text";
             return (
-              <div key={key} className="rounded-md border border-slate-700/70 bg-slate-950/40 p-2 space-y-1">
+              <div key={key} className="rounded-md border border-td-line/70 bg-td-bg/40 p-2 space-y-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className={clsx("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border", tone)}>
                     {c.direction}
                   </span>
-                  <span className="text-[10px] font-semibold text-slate-200">{c.name}</span>
-                  {c.age_label && <span className="text-[10px] text-slate-500">{c.age_label}</span>}
-                  {c.source && <span className="text-[10px] text-slate-600 truncate">{c.source}</span>}
+                  <span className="text-[10px] font-semibold text-td-text">{c.name}</span>
+                  {c.age_label && <span className="text-[10px] text-td-muted">{c.age_label}</span>}
+                  {c.source && <span className="text-[10px] text-td-muted truncate">{c.source}</span>}
                 </div>
                 {wrapText && (
-                  <p className="text-[11px] text-slate-200 leading-snug">{wrapText}</p>
+                  <p className="text-[11px] text-td-text leading-snug">{wrapText}</p>
                 )}
                 {c.url ? (
-                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-slate-400 leading-snug hover:text-sky-300 line-clamp-2">
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-td-muted leading-snug hover:text-td-info line-clamp-2">
                     {c.mechanism}
                   </a>
                 ) : (
-                  <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">{c.mechanism}</p>
+                  <p className="text-[11px] text-td-muted leading-snug line-clamp-2">{c.mechanism}</p>
                 )}
                 {watch && (
-                  <p className="text-[10px] text-slate-500">Watch: {watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
+                  <p className="text-[10px] text-td-muted">Watch: {watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
                 )}
                 {ticker && (
                   <button
                     type="button"
                     onClick={() => addNote(c)}
                     disabled={st === "saving" || st === "ok"}
-                    className="text-[10px] font-semibold text-sky-300 hover:text-sky-200 disabled:text-slate-500"
+                    className="text-[10px] font-semibold text-td-info hover:text-td-info disabled:text-td-muted"
                   >
                     {st === "ok" ? "Saved to notes" : st === "saving" ? "Saving…" : st === "err" ? "Retry add to note" : "Add to note"}
                   </button>
@@ -525,9 +525,9 @@ export function NewsSentimentRail({
       )}
       <ul className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
         {(headlines ?? []).slice(0, 8).map((h, i) => (
-          <li key={i} className="text-[11px] text-slate-400 leading-snug line-clamp-2">
+          <li key={i} className="text-[11px] text-td-muted leading-snug line-clamp-2">
             {h.url ? (
-              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-sky-300" title="Open full article">
+              <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-td-info" title="Open full article">
                 {h.title}
               </a>
             ) : (

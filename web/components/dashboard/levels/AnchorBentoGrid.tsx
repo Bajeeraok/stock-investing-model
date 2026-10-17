@@ -14,35 +14,35 @@ export interface AnchorCard {
 }
 
 const BORDER: Record<AnchorCard["color"], string> = {
-  emerald: "border-emerald-500/30 bg-emerald-950/20",
-  amber:   "border-amber-500/30 bg-amber-950/20",
-  orange:  "border-orange-500/30 bg-orange-950/20",
-  red:     "border-red-500/30 bg-red-950/20",
-  slate:   "border-slate-700/40 bg-slate-900/40",
-  cyan:    "border-cyan-500/30 bg-cyan-950/20",
-  violet:  "border-violet-500/30 bg-violet-950/20",
-  white:   "border-slate-500/50 bg-slate-800/60",
+  emerald: "border-td-accent/30 bg-td-accent-weak/20",
+  amber:   "border-td-warn/30 bg-td-warn-weak/20",
+  orange:  "border-td-warn/30 bg-td-warn-weak/20",
+  red:     "border-td-crit/30 bg-td-crit-weak/20",
+  slate:   "border-td-line/40 bg-td-surface/40",
+  cyan:    "border-td-info/30 bg-td-info/10/20",
+  violet:  "border-td-owner/30 bg-td-owner-weak/20",
+  white:   "border-td-line/50 bg-td-surface2/60",
 };
 
 const TEXT: Record<AnchorCard["color"], string> = {
-  emerald: "text-emerald-300",
-  amber:   "text-amber-300",
-  orange:  "text-orange-300",
-  red:     "text-red-300",
-  slate:   "text-slate-400",
-  cyan:    "text-cyan-300",
-  violet:  "text-violet-300",
-  white:   "text-white",
+  emerald: "text-td-accent",
+  amber:   "text-td-warn",
+  orange:  "text-td-warn",
+  red:     "text-td-crit",
+  slate:   "text-td-muted",
+  cyan:    "text-td-info",
+  violet:  "text-td-owner",
+  white:   "text-td-text",
 };
 
 const DOT: Record<AnchorCard["color"], string> = {
-  emerald: "bg-emerald-400",
-  amber:   "bg-amber-400",
-  orange:  "bg-orange-400",
-  red:     "bg-red-400",
-  slate:   "bg-slate-500",
-  cyan:    "bg-cyan-400",
-  violet:  "bg-violet-400",
+  emerald: "bg-td-accent",
+  amber:   "bg-td-warn",
+  orange:  "bg-td-warn",
+  red:     "bg-td-crit",
+  slate:   "bg-td-line",
+  cyan:    "bg-td-info",
+  violet:  "bg-td-owner",
   white:   "bg-white",
 };
 
@@ -74,10 +74,10 @@ export function AnchorBentoGrid({
         <div key={a.id} className="flex items-center gap-1.5 min-w-0">
           {/* Separator between items */}
           {i > 0 && (
-            <span className="text-slate-700 text-[10px] select-none mr-1">·</span>
+            <span className="text-td-muted text-[10px] select-none mr-1">·</span>
           )}
           <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", DOT[a.color])} />
-          <span className="text-[10px] text-slate-500 uppercase tracking-wide font-medium shrink-0">
+          <span className="text-[10px] text-td-muted uppercase tracking-wide font-medium shrink-0">
             {a.label}
           </span>
           <span className={clsx("text-[11px] font-mono font-semibold tabular-nums", TEXT[a.color])}>
@@ -86,13 +86,13 @@ export function AnchorBentoGrid({
           {a.distPct != null && a.role !== "current" && (
             <span className={clsx(
               "text-[9px] font-mono tabular-nums",
-              a.distPct > 0 ? "text-emerald-400/60" : "text-red-400/60",
+              a.distPct > 0 ? "text-td-accent/60" : "text-td-crit/60",
             )}>
               {fmtPct(a.distPct)}
             </span>
           )}
           {a.role === "current" && (
-            <span className="text-[9px] text-slate-600 italic">live</span>
+            <span className="text-[9px] text-td-muted italic">live</span>
           )}
         </div>
       ))}

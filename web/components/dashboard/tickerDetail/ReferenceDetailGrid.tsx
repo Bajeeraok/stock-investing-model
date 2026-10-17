@@ -122,10 +122,10 @@ const DRIVER_LABEL: Record<string, string> = {
 };
 
 const DRIVER_CLASS: Record<string, string> = {
-  stock_specific: "text-amber-300 border-amber-500/35 bg-amber-500/10",
-  broad_market: "text-cyan-300 border-cyan-500/35 bg-cyan-500/10",
-  earnings: "text-violet-300 border-violet-500/35 bg-violet-500/10",
-  unclear: "text-slate-400 border-slate-600/50 bg-slate-800/40",
+  stock_specific: "text-td-warn border-td-warn/35 bg-td-warn/10",
+  broad_market: "text-td-info border-td-info/35 bg-td-info/10",
+  earnings: "text-td-owner border-td-owner/35 bg-td-owner/10",
+  unclear: "text-td-muted border-td-line/50 bg-td-surface2/40",
 };
 
 const NEAR_BOTTOM_MODE_LABEL: Record<string, string> = {
@@ -247,16 +247,16 @@ function ChartLevelsCard({
 
   const levelLines: { label: string; value: number; color?: string }[] = [];
   if (horizon) {
-    if (horizon.target != null) levelLines.push({ label: "Target", value: horizon.target, color: "#34d399" });
-    if (horizon.stop_loss != null) levelLines.push({ label: "Stop", value: horizon.stop_loss, color: "#fb7185" });
-    if (horizon.entry_zone?.low != null) levelLines.push({ label: "Entry", value: horizon.entry_zone.low, color: "#38bdf8" });
+    if (horizon.target != null) levelLines.push({ label: "Target", value: horizon.target, color: "#00C896" });
+    if (horizon.stop_loss != null) levelLines.push({ label: "Stop", value: horizon.stop_loss, color: "#FF6B6B" });
+    if (horizon.entry_zone?.low != null) levelLines.push({ label: "Entry", value: horizon.entry_zone.low, color: "#22D3EE" });
     const ns = horizon.nearby_sr?.next_support;
     const nr = horizon.nearby_sr?.next_resistance;
-    if (ns?.price) levelLines.push({ label: ns.label || "Support", value: ns.price, color: "#f59e0b" });
-    if (nr?.price) levelLines.push({ label: nr.label || "Resist", value: nr.price, color: "#22d3ee" });
+    if (ns?.price) levelLines.push({ label: ns.label || "Support", value: ns.price, color: "#F59E0B" });
+    if (nr?.price) levelLines.push({ label: nr.label || "Resist", value: nr.price, color: "#22D3EE" });
   }
-  if (detail.ma50 != null) levelLines.push({ label: "MA50", value: detail.ma50, color: "#f59e0b" });
-  if (detail.ma200 != null) levelLines.push({ label: "MA200", value: detail.ma200, color: "#a78bfa" });
+  if (detail.ma50 != null) levelLines.push({ label: "MA50", value: detail.ma50, color: "#F59E0B" });
+  if (detail.ma200 != null) levelLines.push({ label: "MA200", value: detail.ma200, color: "#A78BFA" });
 
   return (
     <ReferenceCard
@@ -266,19 +266,19 @@ function ChartLevelsCard({
       body={
         <div className="space-y-2.5">
           {anchors.length > 0 && (
-            <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-2.5 py-2">
+            <div className="rounded-lg border border-td-line/70 bg-td-bg/40 px-2.5 py-2">
               <AnchorBentoGrid anchors={anchors} />
             </div>
           )}
           <IntradayChart ticker={detail.ticker} levelLines={levelLines} />
           {detail.session_vwap && (
-            <p className="text-[11px] text-slate-500 leading-relaxed">
+            <p className="text-[11px] text-td-muted leading-relaxed">
               Session VWAP{" "}
-              <span className="font-mono text-slate-300">{fmtUsd(detail.session_vwap.vwap)}</span>
+              <span className="font-mono text-td-text">{fmtUsd(detail.session_vwap.vwap)}</span>
               {" — price is "}
               <span
                 className={
-                  detail.session_vwap.close_vs_vwap_pct >= 0 ? "text-emerald-400" : "text-red-400"
+                  detail.session_vwap.close_vs_vwap_pct >= 0 ? "text-td-accent" : "text-td-crit"
                 }
               >
                 {fmtPct(detail.session_vwap.close_vs_vwap_pct)}
@@ -382,12 +382,12 @@ function WhyMovedCard({ detail, decisionMode, onOpenContext }: ReferenceDetailGr
             {DRIVER_LABEL[driver] ?? "Unclear"}
           </span>
           {mv?.headline ? (
-            <p className="text-xs text-slate-300 leading-relaxed">{mv.headline}</p>
+            <p className="text-xs text-td-text leading-relaxed">{mv.headline}</p>
           ) : (
-            <p className="text-xs text-slate-500 italic">No move classification available yet.</p>
+            <p className="text-xs text-td-muted italic">No move classification available yet.</p>
           )}
-          {mv?.detail && <p className="text-xs text-slate-500 leading-relaxed">{mv.detail}</p>}
-          {mv?.citation && <p className="text-[10px] text-slate-600 leading-relaxed">{mv.citation}</p>}
+          {mv?.detail && <p className="text-xs text-td-muted leading-relaxed">{mv.detail}</p>}
+          {mv?.citation && <p className="text-[10px] text-td-muted leading-relaxed">{mv.citation}</p>}
         </div>
       }
       footer={detail.thesis ? { label: "Story & catalysts", onClick: onOpenContext } : undefined}
@@ -412,7 +412,7 @@ function NearBottomCard({ detail, decisionMode, onOpenProof }: ReferenceDetailGr
       ]}
       body={
         signals.length > 0 ? (
-          <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+          <ul className="text-xs text-td-muted space-y-1 list-disc list-inside">
             {signals.slice(0, 4).map((s, i) => (
               <li key={i}>{s}</li>
             ))}
@@ -442,9 +442,9 @@ function ConfidenceCard({ detail, confidence, onOpenProof }: ReferenceDetailGrid
       ]}
       body={
         <div className="space-y-1.5">
-          {confidence?.action && <p className="text-xs text-slate-400">{confidence.action}</p>}
+          {confidence?.action && <p className="text-xs text-td-muted">{confidence.action}</p>}
           {unlockText?.trim() && (
-            <p className="text-xs text-emerald-300/90 leading-snug">
+            <p className="text-xs text-td-accent/90 leading-snug">
               <span aria-hidden>🔓</span> {unlockText.replace(/^Unlocks when:\s*/i, "Unlocks when: ")}
             </p>
           )}
@@ -456,12 +456,12 @@ function ConfidenceCard({ detail, confidence, onOpenProof }: ReferenceDetailGrid
 }
 
 const SQUEEZE_RISK_CLASS: Record<string, string> = {
-  none: "text-slate-400 bg-slate-500/10 border-slate-500/30",
-  low: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
-  moderate: "text-amber-300 bg-amber-500/10 border-amber-500/30",
-  elevated: "text-orange-300 bg-orange-500/10 border-orange-500/30",
-  high: "text-red-300 bg-red-500/10 border-red-500/30",
-  extreme: "text-rose-300 bg-rose-600/15 border-rose-500/40",
+  none: "text-td-muted bg-td-line/10 border-td-line/30",
+  low: "text-td-accent bg-td-accent/10 border-td-accent/30",
+  moderate: "text-td-warn bg-td-warn/10 border-td-warn/30",
+  elevated: "text-td-warn bg-td-warn/10 border-td-warn/30",
+  high: "text-td-crit bg-td-crit/10 border-td-crit/30",
+  extreme: "text-td-crit bg-td-crit/15 border-td-crit/40",
 };
 
 function SqueezeBadge({ risk }: { risk: string }) {
@@ -505,7 +505,7 @@ function OptionsCard({ confidence, onOpenProof }: ReferenceDetailGridProps) {
         { label: "Max pain", value: fmtUsd(opts.max_pain) },
       ]}
       body={
-        <p className="text-xs text-slate-400 leading-relaxed">
+        <p className="text-xs text-td-muted leading-relaxed">
           {opts.options_label || (leaning ? `Options are ${leaning}.` : "No options read available yet.")}
         </p>
       }
@@ -536,9 +536,9 @@ function ShortInterestCard({ confidence, onOpenProof }: ReferenceDetailGridProps
       body={
         <div className="space-y-1.5">
           <SqueezeBadge risk={si.squeeze_risk ?? "none"} />
-          {si.label && <p className="text-xs text-slate-400 leading-relaxed">{si.label}</p>}
+          {si.label && <p className="text-xs text-td-muted leading-relaxed">{si.label}</p>}
           {si.bear_signal && (
-            <p className="text-[11px] text-red-300/90 leading-relaxed">
+            <p className="text-[11px] text-td-crit/90 leading-relaxed">
               Heavy short interest with no bullish technical setup — a risk factor, not a squeeze signal.
             </p>
           )}
@@ -626,26 +626,26 @@ function PreTradeImpactCard({ detail, portfolioImpactContext }: ReferenceDetailG
       description={`Not held yet. Illustrative $${dollarAmount.toLocaleString()} add (~5% of your book) — what it would do to your allocation.`}
       body={
         <div className="space-y-2">
-          <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-2.5 py-2 space-y-1.5">
+          <div className="rounded-lg border border-td-line/70 bg-td-bg/40 px-2.5 py-2 space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500">New position size</span>
-              <span className="font-mono text-slate-200">{newPositionPct.toFixed(1)}% of book</span>
+              <span className="text-td-muted">New position size</span>
+              <span className="font-mono text-td-text">{newPositionPct.toFixed(1)}% of book</span>
             </div>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-500">{sector} weight</span>
-              <span className="font-mono text-slate-200">
-                {currentSectorPct.toFixed(1)}% → <span className="text-amber-300">{newSectorPct.toFixed(1)}%</span>
+              <span className="text-td-muted">{sector} weight</span>
+              <span className="font-mono text-td-text">
+                {currentSectorPct.toFixed(1)}% → <span className="text-td-warn">{newSectorPct.toFixed(1)}%</span>
               </span>
             </div>
           </div>
           {corrData?.available && (corrData.correlations?.length ?? 0) > 0 && (
-            <p className="text-[11px] text-slate-500 leading-relaxed">
+            <p className="text-[11px] text-td-muted leading-relaxed">
               1y correlation to top holdings:{" "}
               {corrData.correlations!.map((p, i) => (
                 <span key={p.ticker}>
                   {i > 0 && ", "}
-                  <span className="font-mono text-slate-400">{p.ticker}</span>{" "}
-                  <span className={Math.abs(p.correlation) >= 0.6 ? "text-amber-300" : "text-slate-500"}>
+                  <span className="font-mono text-td-muted">{p.ticker}</span>{" "}
+                  <span className={Math.abs(p.correlation) >= 0.6 ? "text-td-warn" : "text-td-muted"}>
                     {p.correlation.toFixed(2)}
                   </span>
                 </span>
@@ -713,13 +713,13 @@ function FundamentalsCard({ detail, onOpenContext, suppressOpenContext }: Refere
       ]}
       body={
         <div className="space-y-2">
-          <p className="text-xs text-slate-500 leading-relaxed">
+          <p className="text-xs text-td-muted leading-relaxed">
             {detail.sector ?? "—"}
             {peers ? ` · Peers: ${peers}` : ""}
           </p>
           {rankRows.length >= 2 && (
-            <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">
+            <div className="rounded-lg border border-td-line/70 bg-td-bg/40 px-2.5 py-2">
+              <p className="text-[10px] uppercase tracking-wide text-td-muted mb-1.5">
                 1-month relative strength — {detail.ticker} ranks #{selfRank} of {rankRows.length}
               </p>
               <ul className="space-y-0.5">
@@ -728,14 +728,14 @@ function FundamentalsCard({ detail, onOpenContext, suppressOpenContext }: Refere
                     key={r.ticker}
                     className={clsx(
                       "flex items-center justify-between gap-2 text-[11px]",
-                      r.isSelf ? "text-slate-100 font-semibold" : "text-slate-500",
+                      r.isSelf ? "text-td-text font-semibold" : "text-td-muted",
                     )}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-slate-600 w-3 shrink-0 text-right tabular-nums">{i + 1}</span>
+                      <span className="text-td-muted w-3 shrink-0 text-right tabular-nums">{i + 1}</span>
                       <span className="font-mono truncate">{r.ticker}</span>
                     </span>
-                    <span className={clsx("tabular-nums shrink-0", r.ret >= 0 ? "text-emerald-400" : "text-red-400")}>
+                    <span className={clsx("tabular-nums shrink-0", r.ret >= 0 ? "text-td-accent" : "text-td-crit")}>
                       {fmtPct(r.ret)}
                     </span>
                   </li>
