@@ -20,6 +20,10 @@ export type HunterCandidate = {
   signal?: string | null;
   plan_action?: string | null;
   regime?: string | null;
+  confluence_score?: number | null;
+  rsi?: number | null;
+  tactical_t1?: number | null;
+  tactical_stop?: number | null;
 };
 
 export type HunterScreenId =

@@ -1,4 +1,4 @@
-export { DashboardTabs, type TabId } from "./DashboardTabs";
+export { DashboardTabs, SubViewSwitch, migrateLegacyTab, TAB_IDS, type TabId } from "./DashboardTabs";
 export { StoryAlerts } from "./StoryAlerts";
 export { TodaysMovesPanel, buildTodayMoves, todayMoveTickers } from "./TodaysMovesPanel";
 export { PremarketMoverStrip } from "./PremarketMoverStrip";

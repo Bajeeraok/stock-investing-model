@@ -1,65 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { History } from "lucide-react";
-import { apiUrl } from "@/lib/apiBase";
+import { earliestAvailableHorizon, useTickerTrackRecord } from "@/lib/useTickerTrackRecord";
 import { fmtPct } from "./ReferenceDetailGrid";
-
-const TRACK_RECORD_TIMEOUT_MS = 15000;
-
-interface TrackRecordHorizonStats {
-  n_observations?: number;
-  win_rate_pct?: number;
-  avg_return_pct?: number;
-}
-
-interface TrackRecordResponse {
-  available: boolean;
-  ticker?: string;
-  current_model_version?: string | null;
-  current?: TrackRecordHorizonStats | null;
-  legacy?: TrackRecordHorizonStats | null;
-  by_horizon?: Record<string, { current?: TrackRecordHorizonStats | null; legacy?: TrackRecordHorizonStats | null }> | null;
-  daily_trades?: DailyTradeRow[] | null;
-}
-
-interface DailyTradeRow {
-  date: string | null;
-  signal: string | null;
-  model_price: number | null;
-  fill_price: number | null;
-  target: number | null;
-  stop: number | null;
-  outcome_price: number | null;
-  outcome: string | null;
-  win: boolean | null;
-  status: "resolved" | "pending";
-  return_pct: number | null;
-  unrealized_return_pct: number | null;
-  model_version?: string | null;
-  volatile_note?: string | null;
-  track?: string | null;
-}
 
 function fmtPrice(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
-}
-
-/** Shortest horizon with at least one resolved "current"-version observation — lets a
- * just-launched model_version show an early (noisier) read instead of only "not enough
- * data yet" for the weeks it takes a 20d pair to resolve. */
-function earliestAvailableHorizon(
-  byHorizon: TrackRecordResponse["by_horizon"],
-): { horizon: number; stats: TrackRecordHorizonStats } | null {
-  if (!byHorizon) return null;
-  const horizons = Object.keys(byHorizon).map(Number).filter((h) => !Number.isNaN(h)).sort((a, b) => a - b);
-  for (const h of horizons) {
-    const stats = byHorizon[String(h)]?.current;
-    if (stats && (stats.n_observations ?? 0) > 0) {
-      return { horizon: h, stats };
-    }
-  }
-  return null;
 }
 
 /**
@@ -71,33 +18,8 @@ function earliestAvailableHorizon(
  * display bug here was confirmed live and fixed this session.
  */
 export default function TrackRecordPanel({ ticker }: { ticker: string }) {
-  const [data, setData] = useState<TrackRecordResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { data, loading } = useTickerTrackRecord(ticker);
   const [showLegacyRows, setShowLegacyRows] = useState(false);
-
-  useEffect(() => {
-    if (!ticker) return;
-    setData(null);
-    setLoading(true);
-    const ac = new AbortController();
-    const timer = window.setTimeout(() => ac.abort(), TRACK_RECORD_TIMEOUT_MS);
-    fetch(apiUrl(`/api/ticker/${ticker}/track-record`), { signal: ac.signal, cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (j) setData(j as TrackRecordResponse);
-      })
-      .catch(() => {
-        /* quietly stay empty */
-      })
-      .finally(() => {
-        window.clearTimeout(timer);
-        setLoading(false);
-      });
-    return () => {
-      ac.abort();
-      window.clearTimeout(timer);
-    };
-  }, [ticker]);
 
   const current = data?.current;
   const legacy = data?.legacy;
@@ -212,7 +134,15 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                         {fmtPrice(t.target)} / {fmtPrice(t.stop)}
                       </td>
                       <td className="pr-3 py-1.5 font-mono tabular-nums">
-                        {t.status === "resolved" ? fmtPrice(t.outcome_price) : "—"}
+                        {t.status === "resolved" ? (
+                          fmtPrice(t.outcome_price)
+                        ) : t.outcome_price != null ? (
+                          <span title={t.mark_date ? `Latest marked close (${t.mark_date}) — final outcome prints at the horizon` : "Latest marked close — final outcome prints at the horizon"}>
+                            {fmtPrice(t.outcome_price)} <span className="text-slate-600">(mark)</span>
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="pr-3 py-1.5 font-mono tabular-nums">
                         {t.status === "resolved" ? (

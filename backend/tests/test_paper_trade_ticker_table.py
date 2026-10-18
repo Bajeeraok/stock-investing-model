@@ -155,6 +155,23 @@ def test_build_ticker_trade_table_pending_row_shows_unrealized_not_blank():
     assert r["unrealized_return_pct"] == 1.8
 
 
+def test_build_ticker_trade_table_pending_row_uses_mark_vs_fill_and_mark_price():
+    """Open rows show the latest marked close as outcome price, and P&L vs the fill
+    (mtm_return_pct) — not the day-over-day rolling move, which is identical on every row."""
+    logger = PaperTradeLogger()
+    row = dict(_rec("AAPL", 1, ret=1.8))
+    row["rolling_return_pct"] = "0.7"
+    row["mtm_return_pct"] = "7.9"
+    row["mtm_price"] = "1134.38"
+    row["mtm_date"] = "2026-10-16"
+    logger._coerce_numeric_fields(row)
+    r = build_ticker_trade_table([row])[0]
+    assert r["status"] == "pending"
+    assert r["unrealized_return_pct"] == 7.9
+    assert r["outcome_price"] == 1134.38
+    assert r["mark_date"] == "2026-10-16"
+
+
 def test_build_ticker_trade_table_fill_price_falls_back_to_model_price_when_no_effective_price():
     logger = PaperTradeLogger()
     row = dict(_rec("AAPL", 1, outcome="HIT", ret=1.0, entry=100.0, effective=None))

@@ -2328,9 +2328,9 @@ def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     signal price, the actual simulated fill (can differ from the raw signal price — next-
     session execution, not same-bar), what happened at the horizon, and resolved P&L.
 
-    A trade with no "outcome" yet is still-open — rolling_pnl/rolling_return_pct (marked to
-    the latest EOD close) are surfaced as unrealized_return_pct instead of a blank row, since
-    "pending" alone isn't useful without at least the current paper mark.
+    A trade with no "outcome" yet is still-open — its latest EOD mark (mtm_price) fills
+    outcome_price and mtm_return_pct (mark vs fill) is surfaced as unrealized_return_pct
+    instead of a blank row, since "pending" alone isn't useful without the current paper mark.
     """
     out: list[dict[str, Any]] = []
     for r in rows:
@@ -2369,13 +2369,22 @@ def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             "target": _safe_float(r.get("target_1")),
             "stop": _safe_float(r.get("hard_stop")),
             "next_date": r.get("next_date") or None,
-            "outcome_price": _safe_float(r.get("actual_price")),
+            # Resolved: the horizon-date close. Pending: the latest marked EOD close (mtm_price)
+            # so the column isn't blank while the trade is open; mark_date says which close.
+            "outcome_price": _safe_float(r.get("actual_price")) if outcome else _safe_float(r.get("mtm_price")),
+            "mark_date": (r.get("mtm_date") or None) if not outcome else None,
             "outcome": outcome,
             "win": win,
             "volatile_note": volatile_note,
             "status": "resolved" if outcome else "pending",
             "return_pct": _safe_float(r.get("return_pct")) if outcome else None,
-            "unrealized_return_pct": _safe_float(r.get("rolling_return_pct")) if not outcome else None,
+            # Open P&L vs the fill (mtm_return_pct). rolling_return_pct is only the latest
+            # day-over-day move — identical on every open row — so it's a last-resort fallback.
+            "unrealized_return_pct": (
+                (_safe_float(r.get("mtm_return_pct")) if _safe_float(r.get("mtm_return_pct")) is not None
+                 else _safe_float(r.get("rolling_return_pct")))
+                if not outcome else None
+            ),
             "model_version": r.get("model_version") or "legacy",
             "track": r.get("track") or "accumulate",
             "gate_mode": r.get("gate_mode"),

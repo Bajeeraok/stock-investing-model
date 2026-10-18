@@ -1070,6 +1070,8 @@ export interface DashboardData {
     score: object;
     regime: object;
     risk_sizing?: { risk_pct: number; stop_pct: number };
+    /** Single-position concentration limit (% of book) used by portfolio_report's concentration_alert. */
+    concentration_alert_pct?: number;
     model_rules?: { add_min_confidence?: number; trim_max_confidence?: number; add_min_regime?: string };
     horizons?: { short_term: string; medium_term: string; long_term: string };
   };

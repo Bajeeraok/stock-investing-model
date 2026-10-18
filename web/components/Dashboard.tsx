@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, Info, RefreshCw, Save, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -19,6 +19,8 @@ import {
   PreIpoSection,
   CrossAssetSection,
   DashboardTabs,
+  SubViewSwitch,
+  migrateLegacyTab,
   type TabId,
   TodaysMovesPanel,
   buildTodayMoves,
@@ -96,7 +98,26 @@ import {
   type TradingLens,
 } from "@/lib/tradingLens";
 import { saveSignalsPreset } from "@/lib/signalPresets";
-import { TradingLensSelector } from "./dashboard/TradingLensSelector";
+import { DecisionModeSelector } from "./dashboard/DecisionModeSelector";
+import { AlertsScreen, PriceAlertWatcher, priceAlertTickers } from "./dashboard/AlertsScreen";
+import { subscribePriceAlerts } from "@/lib/priceAlerts";
+import {
+  CatalystStrip,
+  MarketMapCard,
+  MarketWeatherTeaser,
+  MyBookCard,
+  PortfolioTeaser,
+  SinceYesterdayCard,
+  ThisWeekCard,
+  deriveMarketWeather,
+} from "./dashboard/today/TodayFeed";
+import {
+  NeedsAttentionList,
+  PortfolioRegimeStrip,
+  PortfolioValueCard,
+  RiskManagementCard,
+} from "./dashboard/PortfolioOverviewCards";
+import { RegimeValidationPanel } from "./dashboard/RegimeValidationPanel";
 import { LivePricesProvider } from "@/lib/LivePriceContext";
 
 const AUTO_REFRESH_MIN = 30;
@@ -162,11 +183,10 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
-const TAB_IDS: TabId[] = ["overview", "signals", "portfolio", "opportunities", "income", "markets", "analysis"];
-
-function isValidTab(t: string): t is TabId {
-  return TAB_IDS.includes(t as TabId);
-}
+type PlanSub = "income" | "opportunities";
+type MoreSub = "markets" | "admin";
+const PLAN_SUB_KEY = "thrive-plan-sub";
+const MORE_SUB_KEY = "thrive-more-sub";
 
 export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stale = false, lastRefreshedAt }: Props) {
   const router = useRouter();
@@ -194,7 +214,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   });
   const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
-  const [activeTab, setActiveTabState] = useState<TabId>("overview");
+  const [activeTab, setActiveTabState] = useState<TabId>("today");
+  const [planSub, setPlanSub] = useState<PlanSub>("income");
+  const [moreSub, setMoreSub] = useState<MoreSub>("markets");
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [riskReportKey, setRiskReportKey] = useState(0);
   const [overviewAlertCount, setOverviewAlertCount] = useState<number | null>(null);
   const [overviewAlertActionCount, setOverviewAlertActionCount] = useState(0);
   const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
@@ -278,12 +303,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     saveSignalsPreset(defaultPresetForLens(lens));
   }, []);
 
-  useEffect(() => {
-    if (!advancedMode && activeTab === "analysis") {
-      setActiveTabState("overview");
-    }
-  }, [advancedMode, activeTab]);
-
   const toggleAdvancedMode = () => {
     setAdvancedMode((v) => {
       const next = !v;
@@ -311,10 +330,23 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   }, [router]);
 
   useEffect(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem("thrive-tab") : null;
-    const savedTab = saved === "testsuite" ? "analysis" : saved;
-    const tab = (savedTab && isValidTab(savedTab)) ? savedTab : "overview";
-    setActiveTabState(tab);
+    let saved: string | null = null;
+    let urlTab: string | null = null;
+    try {
+      saved = localStorage.getItem("thrive-tab");
+      urlTab = new URLSearchParams(window.location.search).get("tab");
+      const ps = localStorage.getItem(PLAN_SUB_KEY);
+      if (ps === "income" || ps === "opportunities") setPlanSub(ps);
+      const ms = localStorage.getItem(MORE_SUB_KEY);
+      if (ms === "markets" || ms === "admin") setMoreSub(ms);
+    } catch {
+      /* ignore */
+    }
+    // Old 7-tab ids (Overview/Opportunities/Income/Markets/Analysis) map onto the 5-tab IA.
+    const migrated = migrateLegacyTab(urlTab) ?? migrateLegacyTab(saved) ?? { tab: "today" as TabId };
+    setActiveTabState(migrated.tab);
+    if (migrated.sub === "income" || migrated.sub === "opportunities") setPlanSub(migrated.sub);
+    if (migrated.sub === "markets" || migrated.sub === "admin") setMoreSub(migrated.sub);
     // Clear tab from URL on load if present (e.g. shared link with ?tab=)
     if (typeof window !== "undefined" && window.location.search) {
       const params = new URLSearchParams(window.location.search);
@@ -327,6 +359,30 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   }, [router]);
 
   const handleTabChange = setActiveTab;
+
+  const setPlanSubPersist = useCallback((v: PlanSub) => {
+    setPlanSub(v);
+    try {
+      localStorage.setItem(PLAN_SUB_KEY, v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const setMoreSubPersist = useCallback((v: MoreSub) => {
+    setMoreSub(v);
+    try {
+      localStorage.setItem(MORE_SUB_KEY, v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const openMore = useCallback(
+    (sub: MoreSub) => {
+      setMoreSubPersist(sub);
+      setActiveTab("more");
+    },
+    [setActiveTab, setMoreSubPersist],
+  );
 
   // Use refresh_ts (per-run ISO timestamp) as the primary cache-bust key; fall back to
   // as_of_date for older cache payloads that predate the refresh_ts field.
@@ -430,7 +486,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     if (data.opportunities_bundle_enabled === false) return;
     if (data.opportunities_deferred !== true) return;
     if (oppBundle !== null) return;
-    if (activeTab !== "opportunities" && activeTab !== "portfolio") return;
+    if (!(activeTab === "plan" && planSub === "opportunities") && activeTab !== "portfolio") return;
     let cancelled = false;
     setOppLoading(true);
     setOppFetchErr(null);
@@ -466,7 +522,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => {
       cancelled = true;
     };
-  }, [data.warming, data.opportunities_bundle_enabled, data.opportunities_deferred, data.as_of_date, activeTab, oppBundle]);
+  }, [data.warming, data.opportunities_bundle_enabled, data.opportunities_deferred, data.as_of_date, activeTab, planSub, oppBundle]);
 
   const analysisInShell = useMemo(() => {
     if (data.model_audit != null) return true;
@@ -479,7 +535,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     if (data.warming) return;
     if (analysisBundle !== null) return;
     if (analysisInShell) return;
-    if (activeTab !== "overview" && activeTab !== "analysis" && activeTab !== "markets") return;
+    if (activeTab !== "today" && activeTab !== "more" && !(activeTab === "plan" && planSub === "opportunities")) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let awaitingWarm = false;
@@ -523,12 +579,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [data.warming, data.analysis_deferred, refreshCacheKey, activeTab, analysisBundle, analysisRetryKey, analysisInShell]);
+  }, [data.warming, data.analysis_deferred, refreshCacheKey, activeTab, planSub, analysisBundle, analysisRetryKey, analysisInShell]);
 
   // Heavy Analysis panels — separate lightweight endpoints (avoid monolithic bundle 502).
   useEffect(() => {
     if (data.warming) return;
-    if (activeTab !== "analysis") return;
+    if (activeTab !== "more" || moreSub !== "admin") return;
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -589,7 +645,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [data.warming, refreshCacheKey, activeTab, analysisRetryKey]);
+  }, [data.warming, refreshCacheKey, activeTab, moreSub, analysisRetryKey]);
 
   const analysisNeedsFetch =
     analysisBundle === null && !analysisInShell && !analysisFetchErr;
@@ -758,6 +814,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return { totalValue, sectorAllocation: selectedReport?.sector_allocation ?? [], topHoldings, heldTickers };
   }, [selectedReport]);
 
+  // Price alerts set from ticker Verdict tabs must be polled even when off-screen.
+  const [alertTickers, setAlertTickers] = useState<string[]>([]);
+  useEffect(() => {
+    const sync = () => setAlertTickers(priceAlertTickers());
+    sync();
+    return subscribePriceAlerts(sync);
+  }, []);
+
   // All tickers visible in the current dashboard session — deduped for live-price polling
   const livePriceTickers = useMemo(() => {
     const seen: Record<string, true> = {};
@@ -766,8 +830,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     for (const s of effectiveSignals) s.ticker && add(String(s.ticker).toUpperCase());
     for (const t of portfolioTickerList) t && add(t.toUpperCase());
     for (const o of mergedOpportunities) o.ticker && add(String(o.ticker).toUpperCase());
+    for (const t of alertTickers) add(t);
     return out;
-  }, [effectiveSignals, portfolioTickerList, mergedOpportunities]);
+  }, [effectiveSignals, portfolioTickerList, mergedOpportunities, alertTickers]);
 
   const signalsByTicker = useMemo(() => {
     const m = new Map<string, (typeof effectiveSignals)[number]>();
@@ -780,15 +845,20 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const tabBadges: Partial<Record<TabId, number>> = {
     signals: signalCountForBadge,
     portfolio: selectedReport?.per_holding?.length ?? 0,
-    opportunities: oppCountForBadge,
+    plan: oppCountForBadge,
   };
+  const bellCount =
+    overviewAlertCount != null && overviewAlertCount > 0
+      ? overviewAlertActionCount > 0
+        ? overviewAlertActionCount
+        : overviewAlertCount
+      : 0;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target && (e.target as HTMLElement).closest("input, textarea, select")) return;
       const keyToTab: Partial<Record<string, TabId>> = {
-        "1": "overview", "2": "signals", "3": "portfolio", "4": "opportunities",
-        "5": "markets", "6": "analysis", "8": "income",
+        "1": "today", "2": "signals", "3": "plan", "4": "portfolio", "5": "more",
       };
       const id = e.key in keyToTab ? keyToTab[e.key] : null;
       if (id) {
@@ -823,359 +893,221 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return () => clearInterval(id);
   }, [snapshotIso]);
 
+  const concentrationLimitPct = data.config?.concentration_alert_pct ?? 20;
+
+  const marketWeather = useMemo(
+    () =>
+      deriveMarketWeather({
+        regimeBullPct: signalListContext.regimeBullPct,
+        macroRegime: data.macro_regime,
+        rotationRisk: data.market_regime?.rotation_risk,
+        primaryMessage: data.retail_market_decisions?.market_context?.primary_message,
+        temperatureLabel: data.retail_market_decisions?.market_temperature?.label,
+        vix: data.retail_market_decisions?.market_temperature?.vix,
+        forecastHeadline: data.market_forecast?.headline,
+      }),
+    [
+      signalListContext.regimeBullPct,
+      data.macro_regime,
+      data.market_regime?.rotation_risk,
+      data.retail_market_decisions,
+      data.market_forecast?.headline,
+    ],
+  );
+
+  const heldTickerSet = useMemo(
+    () => new Set(portfolioTickerList.map((t) => t.toUpperCase())),
+    [portfolioTickerList],
+  );
+
+  /** Score direction since the last saved run, parsed from what_changed's "T: a → b" summary. */
+  const scoreDeltaByTicker = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const w of data.what_changed ?? []) {
+      const mm = (w.summary ?? "").match(/:\s*(\d+)\s*→\s*(\d+)/);
+      if (mm) m.set(w.ticker.toUpperCase(), Number(mm[2]) - Number(mm[1]));
+    }
+    return m;
+  }, [data.what_changed]);
+
+  const heldEarnings = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const it of data.retail_market_decisions?.personal_earnings_calendar?.items ?? []) {
+      if (it.ticker && it.days_until != null) out.set(it.ticker.toUpperCase(), it.days_until);
+    }
+    for (const sig of effectiveSignals) {
+      const t = String(sig.ticker || "").toUpperCase();
+      if (heldTickerSet.has(t) && sig.earnings_days_until != null && !out.has(t)) out.set(t, sig.earnings_days_until);
+    }
+    return Array.from(out, ([ticker, days_until]) => ({ ticker, days_until }));
+  }, [data.retail_market_decisions?.personal_earnings_calendar, effectiveSignals, heldTickerSet]);
+
+  const nextHeldEarnings = useMemo(
+    () =>
+      heldEarnings
+        .filter((e) => e.days_until >= 0 && e.days_until <= 21)
+        .sort((a, b) => a.days_until - b.days_until)[0] ?? null,
+    [heldEarnings],
+  );
+
+  const openFullRiskReport = useCallback(() => {
+    setRiskReportKey((k) => k + 1);
+    window.setTimeout(() => {
+      document.getElementById("portfolio-risk-report")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }, []);
+
+  const exportSnapshot = () => {
+    if (!data) return;
+    const blob = new Blob([JSON.stringify({ as_of: data.as_of_date, portfolio: data.portfolio, portfolios: data.portfolios, signals_count: signalCountForBadge, opportunities_count: oppCountForBadge }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `thrive-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const saveAsEod = async () => {
+    if (!data || eodSaving) return;
+    setEodMessage(null);
+    setEodSaving(true);
+    try {
+      const asOfEtDate = data.as_of_date ? etDateParamFromIso(data.as_of_date) : "";
+      const dateParam = asOfEtDate ? `?snapshot_date=${asOfEtDate}` : "";
+      const res = await fetch(`/api/eod/save-from-last-run${dateParam}`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEodMessage({ type: "err", text: json.detail || json.error || "Save failed" });
+        return;
+      }
+      if (json.skipped) {
+        setEodMessage({ type: "ok", text: `EOD already saved for ${json.snapshot_date}` });
+      } else {
+        setEodMessage({ type: "ok", text: `Saved ${json.snapshot_date} (${json.tickers_count} tickers)` });
+      }
+      setTimeout(() => setEodMessage(null), 4000);
+    } catch (e) {
+      setEodMessage({ type: "err", text: e instanceof Error ? e.message : "Request failed" });
+    } finally {
+      setEodSaving(false);
+    }
+  };
+
   return (
     <LivePricesProvider tickers={livePriceTickers}>
-    <div className="min-h-screen">
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950">
-        <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-0 sm:h-16 flex flex-wrap items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2 min-w-0">
-            <TrendingUp className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 text-emerald-500" />
-            <h1 className="text-lg sm:text-xl font-bold text-slate-100 truncate">Thrive Alpha</h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
-            <button
-              type="button"
-              onClick={() => setActiveTab("markets")}
-              className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-slate-100 text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation"
-              title="Open Pre-Market Signal Engine (Markets tab)"
+    <PriceAlertWatcher />
+    <div className="min-h-screen bg-td-bg">
+      {/* Header — logo · ticker search · freshness · alerts bell */}
+      <header className="sticky top-0 z-50 border-b border-td-line bg-td-surface/95 backdrop-blur">
+        <div className="max-w-[min(1600px,96vw)] mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center gap-3">
+          <button type="button" onClick={() => setActiveTab("today")} className="flex items-center gap-2 min-w-0 shrink-0">
+            <TrendingUp className="h-6 w-6 sm:h-7 sm:w-7 shrink-0 text-emerald-500" />
+            <h1 className="text-base sm:text-lg font-bold text-slate-100 truncate">Thrive Alpha</h1>
+          </button>
+          <form
+            className="ml-auto sm:ml-4 flex-1 max-w-xs"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const t = searchQuery.trim().toUpperCase();
+              if (/^[A-Z0-9.\-^=]{1,12}$/.test(t)) {
+                openTickerDetail(t);
+                setSearchQuery("");
+              }
+            }}
+            role="search"
+          >
+            <label className="relative block">
+              <span className="sr-only">Open a ticker</span>
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-td-muted" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Ticker…"
+                autoCapitalize="characters"
+                spellCheck={false}
+                className="w-full rounded-lg border border-td-line bg-td-bg pl-8 pr-2 py-1.5 text-sm text-td-text placeholder:text-td-muted/70 focus:border-emerald-500 focus:outline-none"
+              />
+            </label>
+          </form>
+          {snapshotIso && (
+            <span
+              className="text-[11px] hidden lg:inline font-mono text-td-muted whitespace-nowrap"
+              title={
+                data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
+                  ? `Prices ${formatSnapshotEt(data.data_freshness?.quotes_updated_at ?? undefined) ?? "—"} · Signals ${formatSnapshotEt(data.data_freshness?.signals_updated_at ?? undefined) ?? "—"}${lastRefreshedAt ? ` · fetched ${formatLastRefresh(lastRefreshedAt)}` : ""}`
+                  : `Server snapshot saved ${formatSnapshotEt(snapshotIso)}`
+              }
             >
-              <Activity className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">Pre-market</span>
-            </button>
-            {lastRefreshedAt && (
-              <span
-                className="text-xs sm:text-sm text-slate-500 hidden md:inline"
-                title={`Browser fetched: ${formatLastRefresh(lastRefreshedAt)}`}
-              >
-                Fetched {refreshAgo || formatLastRefresh(lastRefreshedAt)}
+              {data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
+                ? `${isUsEquityRth() ? "" : "After close · "}Prices ${formatFreshnessLabel(data.data_freshness?.quotes_updated_at ?? undefined) || "—"} · Signals ${formatFreshnessLabel(data.data_freshness?.signals_updated_at ?? undefined) || "—"}`
+                : `${isUsEquityRth() ? "Snapshot" : "After close"} ${formatFreshnessLabel(snapshotIso) || snapshotAge || "—"}`}
+              {refreshAgo ? ` · fetched ${refreshAgo}` : ""}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setAlertsOpen(true)}
+            className="relative p-2 rounded-lg text-td-muted hover:text-td-text hover:bg-td-surface2 shrink-0"
+            aria-label={`Alerts${bellCount ? `, ${bellCount} need action` : ""}`}
+            title="Alerts"
+          >
+            <Bell className="h-5 w-5" />
+            {bellCount > 0 && (
+              <span className="absolute top-0.5 right-0.5 min-w-[1.05rem] h-4 px-1 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center leading-none">
+                {bellCount > 99 ? "99+" : bellCount}
               </span>
             )}
-            {snapshotIso && (
-              <span
-                className="text-xs hidden lg:inline font-mono text-slate-500"
-                title={
-                  data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
-                    ? `Prices ${formatSnapshotEt(data.data_freshness?.quotes_updated_at ?? undefined) ?? "—"} · Signals ${formatSnapshotEt(data.data_freshness?.signals_updated_at ?? undefined) ?? "—"}`
-                    : `Server snapshot saved ${formatSnapshotEt(snapshotIso)}`
-                }
-              >
-                {data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
-                  ? `${isUsEquityRth() ? "" : "After close · "}Prices ${formatFreshnessLabel(data.data_freshness?.quotes_updated_at ?? undefined) || "—"} · Signals ${formatFreshnessLabel(data.data_freshness?.signals_updated_at ?? undefined) || "—"}`
-                  : `${isUsEquityRth() ? "Snapshot" : "After close"} ${formatFreshnessLabel(snapshotIso) || snapshotAge || "—"}`}
-              </span>
-            )}
-            <TradingLensSelector
-              lens={tradingLens}
-              onChange={handleTradingLensChange}
-              compact
-              className="hidden lg:flex"
-            />
-            <button
-              type="button"
-              onClick={toggleAdvancedMode}
-              className={clsx(
-                "flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation",
-                advancedMode
-                  ? "border-violet-500/40 bg-violet-500/10 text-violet-200"
-                  : "border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-              )}
-              title="Show Analysis and Test Suite tabs"
-            >
-              <FlaskConical className="h-4 w-4 shrink-0" />
-              <span className="hidden sm:inline">{advancedMode ? "Advanced on" : "Advanced"}</span>
-            </button>
-            {advancedMode && (
-              <button
-                onClick={() => onRefresh(true)}
-                disabled={loading || isRefreshing}
-                className={clsx(
-                  "flex items-center gap-2 px-3 py-2.5 sm:px-4 rounded-lg font-medium transition min-h-[44px] sm:min-h-0",
-                  "border border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-                )}
-                title="Force full signal recompute (usually unnecessary — data updates automatically)"
-              >
-                <RefreshCw className={clsx("h-4 w-4 shrink-0", (loading || isRefreshing) && "animate-spin")} />
-                <span className="hidden sm:inline">{loading || isRefreshing ? "Refreshing…" : "Force refresh"}</span>
-                <span className="sm:hidden">{loading || isRefreshing ? "…" : "↻"}</span>
-              </button>
-            )}
-            <button
-              onClick={() => {
-                if (!data) return;
-                const blob = new Blob([JSON.stringify({ as_of: data.as_of_date, portfolio: data.portfolio, portfolios: data.portfolios, signals_count: signalCountForBadge, opportunities_count: oppCountForBadge }, null, 2)], { type: "application/json" });
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = `thrive-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-                URL.revokeObjectURL(a.href);
-              }}
-              className="px-3 py-2.5 sm:py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation"
-              title="Export snapshot"
-            >
-              <span className="hidden sm:inline">Export snapshot</span>
-              <span className="sm:hidden">Export</span>
-            </button>
-            <button
-              onClick={async () => {
-                if (!data || eodSaving) return;
-                setEodMessage(null);
-                setEodSaving(true);
-                try {
-                  const asOfEtDate = data.as_of_date ? etDateParamFromIso(data.as_of_date) : "";
-                  const dateParam = asOfEtDate ? `?snapshot_date=${asOfEtDate}` : "";
-                  const res = await fetch(`/api/eod/save-from-last-run${dateParam}`, { method: "POST" });
-                  const json = await res.json().catch(() => ({}));
-                  if (!res.ok) {
-                    setEodMessage({ type: "err", text: json.detail || json.error || "Save failed" });
-                    return;
-                  }
-                  if (json.skipped) {
-                    setEodMessage({ type: "ok", text: `EOD already saved for ${json.snapshot_date}` });
-                  } else {
-                    setEodMessage({ type: "ok", text: `Saved ${json.snapshot_date} (${json.tickers_count} tickers)` });
-                  }
-                  setTimeout(() => setEodMessage(null), 4000);
-                } catch (e) {
-                  setEodMessage({ type: "err", text: e instanceof Error ? e.message : "Request failed" });
-                } finally {
-                  setEodSaving(false);
-                }
-              }}
-              disabled={eodSaving || loading}
-              className={clsx(
-                "flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-lg border text-xs sm:text-sm min-h-[44px] sm:min-h-0 touch-manipulation",
-                "border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-              )}
-              title="Save current run to data/eod/ (fast, no refresh)"
-            >
-              <Save className={clsx("h-4 w-4 shrink-0", eodSaving && "animate-pulse")} />
-              <span className="hidden sm:inline">{eodSaving ? "Saving…" : "Save as EOD"}</span>
-              <span className="sm:hidden">{eodSaving ? "…" : "EOD"}</span>
-            </button>
-            {eodMessage && (
-              <span className={clsx("text-xs px-2 py-1 rounded", eodMessage.type === "ok" ? "text-emerald-300 bg-emerald-900/30" : "text-amber-200 bg-amber-900/30")}>
-                {eodMessage.text}
-              </span>
-            )}
-          </div>
+          </button>
         </div>
       </header>
 
-      <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4">
-        <AddTickerBar onAdded={() => onRefresh(true)} />
-      </div>
-
-      {/* Compact alert strip - always visible */}
-      <div className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-3 sm:pt-4 space-y-2">
-        {data.warming && (
-          <div className="rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 py-2 text-slate-300 text-sm flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
-            <span>First load in progress — usually 1–3 minutes. Data will appear automatically.</span>
+      <div className="max-w-[min(1600px,96vw)] mx-auto px-3 sm:px-6 md:flex md:gap-6">
+        {/* Desktop: persistent left rail — the 5 tabs + mode switcher, always visible */}
+        <aside className="hidden md:flex md:flex-col md:w-52 lg:w-56 shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] py-5 gap-5">
+          <div>
+            <p className="px-1 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-td-muted">Deciding as</p>
+            <DecisionModeSelector mode={tradingLens} onChange={handleTradingLensChange} variant="segmented" />
           </div>
-        )}
-        {isRefreshing && !data.warming && (
-          <div className="rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 py-2 text-slate-400 text-sm flex items-center gap-2">
-            <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
-            <span>Running full refresh…</span>
+          <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="rail" />
+          <div className="mt-auto px-1 text-[10.5px] text-td-muted leading-snug">
+            <ModelDisclaimer className="text-[10px] text-td-muted/80 leading-snug flex items-start gap-1.5" />
           </div>
-        )}
-        {data.data_freshness && !data.warming && (
-          <DataFreshnessBar data={data.data_freshness} compact />
-        )}
-        <TodaysMovesPanel
-          storyChanges={data.story_changes}
-          trimCandidates={selectedTrimCandidates.map((h) => ({
-            ticker: h.ticker,
-            label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
-            trim_source: h.trim_source,
-            trim_primary_driver: h.trim_primary_driver,
-            trim_triggers: h.trim_triggers,
-            trim_detail: h.trim_detail,
-          }))}
-          signals={lazySignals ?? data.signals ?? []}
-          afterHours={
-            data.after_hours_earnings?.skipped
-              ? undefined
-              : data.after_hours_earnings?.items?.map((i) => ({
-                  ticker: i.ticker,
-                  change_pct: i.change_pct,
-                  post_earnings: i.post_earnings,
-                }))
-          }
-          macroHeadline={
-            data.retail_market_decisions?.market_context?.primary_message
-            ?? data.macro_analog?.one_liner
-            ?? data.market_forecast?.headline
-            ?? null
-          }
-          tradingLens={tradingLens}
-          onTickerClick={openTickerDetail}
-          onViewAll={() => setActiveTab("signals")}
-        />
-        <div className="lg:hidden px-1">
-          <TradingLensSelector lens={tradingLens} onChange={handleTradingLensChange} />
-        </div>
-        <MarketReversalBanner overlay={data.market_reversal_overlay} />
-        {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
-      </div>
+        </aside>
 
-      {/* Tab bar — desktop / tablet */}
-      <div className="hidden md:block max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} advancedMode={advancedMode} />
-      </div>
+        <main className="flex-1 min-w-0 py-4 sm:py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8 overflow-x-hidden space-y-4">
+          {/* Mobile mode switch — the rail holds it on desktop */}
+          <div className="md:hidden">
+            <DecisionModeSelector mode={tradingLens} onChange={handleTradingLensChange} variant="segmented" />
+          </div>
 
-      <main className="max-w-[min(1600px,95vw)] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-6 overflow-x-hidden">
-        <div className="rounded-xl border border-slate-800/80 bg-slate-900">
-          {/* Overview tab */}
-          {activeTab === "overview" && (
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {(data.retail_briefing || data.retail_market_decisions) && (
-                <OverviewAtAGlance
-                  briefing={data.retail_briefing}
-                  market={data.retail_market_decisions}
-                  marketQuadrant={marketQuadrant}
-                  macroBackdrop={
-                    data.market_forecast
-                      ? { bullets: data.market_forecast.bullets, disclaimer: data.market_forecast.disclaimer }
-                      : null
-                  }
-                  preMarketFull={preMarketFull}
-                  preMarket={data.pre_market}
-                  todayMoveTickers={todayMovesCoveredTickers}
-                  tradingLens={tradingLens}
-                  forwardTracking={data.forward_tracking}
-                  modelHealth={data.model_health}
+          {data.warming && (
+            <div className="rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 py-2 text-slate-300 text-sm flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+              <span>First load in progress — usually 1–3 minutes. Data will appear automatically.</span>
+            </div>
+          )}
+          {isRefreshing && !data.warming && (
+            <div className="rounded-lg border border-slate-600/60 bg-slate-800/50 px-3 py-2 text-slate-400 text-sm flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 shrink-0 animate-spin" />
+              <span>Running full refresh…</span>
+            </div>
+          )}
 
-                  paperTrading={data.paper_trading}
-                  guestUniverseNote={data.universe_meta?.note ?? null}
-                  tacticalSlot={
-                    tradingLens === "scout" &&
-                    ((data.event_risk_strip?.rows?.length ?? 0) > 0 ||
-                      (data.tactical_breakouts?.length ?? 0) > 0) ? (
-                      <div className="space-y-3">
-                        {(data.event_risk_strip?.rows?.length ?? 0) > 0 && (
-                          <EventRiskStrip
-                            payload={data.event_risk_strip}
-                            onTickerClick={openTickerDetail}
-                          />
-                        )}
-                        {(data.tactical_breakouts?.length ?? 0) > 0 && (
-                          <TacticalBreakoutStrip
-                            rows={data.tactical_breakouts}
-                            onTickerClick={openTickerDetail}
-                          />
-                        )}
-                      </div>
-                    ) : null
-                  }
-                  onTickerClick={openTickerDetail}
-                />
-              )}
-              {tradingLens !== "scout" && (data.tactical_breakouts?.length ?? 0) > 0 && (
-                <TacticalBreakoutStrip
-                  rows={data.tactical_breakouts}
-                  onTickerClick={openTickerDetail}
-                />
-              )}
-              <ToggleSection
-                id="overview-alerts"
-                title="Alerts"
-                icon={<AlertTriangle />}
-                keepMounted
-                badge={
-                  overviewAlertCount != null && overviewAlertCount > 0
-                    ? overviewAlertActionCount > 0
-                      ? overviewAlertActionCount
-                      : overviewAlertCount
-                    : undefined
-                }
-                defaultOpen={overviewAlertActionCount > 0}
-              >
-                <AlertsPanel
-                  onTickerClick={openTickerDetail}
-                  dashboardRefreshedAt={
-                    lastRefreshedAt?.toISOString() ?? data.as_of_date ?? data.data_freshness?.snapshot_updated_at ?? null
-                  }
-                  onLoaded={(total, actionRequired) => {
-                    setOverviewAlertCount(total);
-                    setOverviewAlertActionCount(actionRequired);
-                  }}
-                />
-              </ToggleSection>
-              <ToggleSection
-                id="overview-market-tape"
-                title="Live market tape"
-                icon={<Globe className="h-5 w-5" />}
-                defaultOpen={false}
-              >
-                <MarketStatePanel compactHeader />
-              </ToggleSection>
-              <ModelHealthStrip
-                model_health={data.model_health}
-                summary_by_signal={forwardTracking?.summary_by_signal}
-                summary_by_horizon={forwardTracking?.summary_by_horizon}
-                message={forwardTracking?.message}
-              />
-              <LensTrackRecordStrip
-                activeLens={tradingLens}
-                summaryByLens={summaryByLens}
-                loading={analysisLoading && !forwardTracking}
-              />
-              {degradedMode && (
-                <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} compact />
-              )}
-              {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
-              {!data.retail_market_decisions?.market_context && (data.macro_regime || data.macro_analog) && (
-                <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-                  {data.macro_regime && (
-                    <span className={clsx("text-sm font-medium", data.macro_regime === "Risk-On" && "text-emerald-400", data.macro_regime === "Risk-Off" && "text-red-400", data.macro_regime === "Neutral" && "text-slate-400")}>
-                      Macro overlay (ST): {data.macro_regime}
-                    </span>
-                  )}
-                  {data.macro_analog?.one_liner && (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm text-slate-300" title={data.macro_analog.plain_language ?? `State: ${data.macro_analog.state}, n=${data.macro_analog.n_observations}`}>
-                        {data.macro_analog.one_liner}
-                      </span>
-                      {data.macro_analog.plain_language && (
-                        <p className="text-xs text-slate-500 max-w-2xl">
-                          {data.macro_analog.plain_language}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {!data.retail_market_decisions?.market_context && data.market_forecast && (
-                <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-4 py-3 space-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-emerald-400/90">Market analysis — near-term backdrop</h3>
-                  <p
-                    className={clsx(
-                      "text-sm font-medium",
-                      data.market_forecast.bias === "cautious" && "text-amber-200",
-                      data.market_forecast.bias === "constructive" && "text-emerald-200",
-                      data.market_forecast.bias === "neutral" && "text-slate-200",
-                    )}
-                  >
-                    {data.market_forecast.headline}
-                  </p>
-                  <ul className="list-disc list-inside text-xs text-slate-400 space-y-1 max-w-3xl">
-                    {data.market_forecast.bullets.map((b, i) => (
-                      <li key={i}>{b}</li>
-                    ))}
-                  </ul>
-                  <p className="text-[10px] text-slate-600 leading-snug">{data.market_forecast.disclaimer}</p>
-                </div>
-              )}
+          {/* ── Today ─────────────────────────────────────────────────── */}
+          {activeTab === "today" && (
+            <div className="space-y-4">
+              <MarketWeatherTeaser weather={marketWeather} onOpen={() => openMore("markets")} />
+              <MarketReversalBanner overlay={data.market_reversal_overlay} />
+              {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
+              {degradedMode && <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} compact />}
               {portfolioNames.length > 1 && (
                 <div className="flex items-center gap-2">
-                  <label htmlFor="portfolio-select" className="text-sm text-slate-400">Portfolio:</label>
+                  <label htmlFor="portfolio-select" className="text-sm text-td-muted">Portfolio:</label>
                   <select
                     id="portfolio-select"
                     value={selectedPortfolio}
                     onChange={(e) => setSelectedPortfolio(e.target.value)}
-                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none"
                   >
                     {portfolioNames.map((name) => (
                       <option key={name} value={name}>{name}</option>
@@ -1183,43 +1115,402 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </select>
                 </div>
               )}
-              <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-sm text-slate-300">
-                  Portfolio:{" "}
-                  <span className="font-semibold text-slate-100">
-                    {selectedReport?.total_value != null ? `$${Math.round(selectedReport.total_value).toLocaleString()}` : "—"}
-                  </span>
-                  {" · "}
-                  <span className="text-slate-400">{selectedReport?.per_holding?.length ?? 0} holdings</span>
-                  {" · "}
-                  <span className="text-slate-500">heat map, stress test, and regime mix live on the Portfolio tab</span>
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("portfolio")}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 underline shrink-0"
-                >
-                  View full Portfolio →
-                </button>
-              </div>
-              {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
-                <ToggleSection id="overview-performance" title="Performance vs benchmark" icon={<PieChart />} defaultOpen={false}>
-                  {data.performance_vs_benchmark?.periods?.length ? (
-                    <PerformanceVsBenchmark
-                      periods={data.performance_vs_benchmark.periods}
-                      message={data.performance_vs_benchmark.message}
-                      as_of={data.performance_vs_benchmark.as_of}
-                    />
-                  ) : data.performance_vs_benchmark?.message && (
-                    <PerformanceVsBenchmark
-                      periods={[]}
-                      message={data.performance_vs_benchmark.message}
+              <div className="grid gap-4 xl:grid-cols-2 items-start">
+                <div className="space-y-4 min-w-0">
+                  <SinceYesterdayCard
+                    items={data.what_changed ?? []}
+                    lens={tradingLens}
+                    heldTickers={heldTickerSet}
+                    onTickerClick={openTickerDetail}
+                  />
+                  <MyBookCard
+                    holdings={selectedReport?.per_holding ?? []}
+                    scoreDelta={scoreDeltaByTicker}
+                    onTickerClick={openTickerDetail}
+                    onOpenPortfolio={() => setActiveTab("portfolio")}
+                  />
+                  <TodaysMovesPanel
+                    storyChanges={data.story_changes}
+                    trimCandidates={selectedTrimCandidates.map((h) => ({
+                      ticker: h.ticker,
+                      label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
+                      trim_source: h.trim_source,
+                      trim_primary_driver: h.trim_primary_driver,
+                      trim_triggers: h.trim_triggers,
+                      trim_detail: h.trim_detail,
+                    }))}
+                    signals={lazySignals ?? data.signals ?? []}
+                    afterHours={
+                      data.after_hours_earnings?.skipped
+                        ? undefined
+                        : data.after_hours_earnings?.items?.map((i) => ({
+                            ticker: i.ticker,
+                            change_pct: i.change_pct,
+                            post_earnings: i.post_earnings,
+                          }))
+                    }
+                    macroHeadline={
+                      data.retail_market_decisions?.market_context?.primary_message
+                      ?? data.macro_analog?.one_liner
+                      ?? data.market_forecast?.headline
+                      ?? null
+                    }
+                    tradingLens={tradingLens}
+                    onTickerClick={openTickerDetail}
+                    onViewAll={() => setActiveTab("signals")}
+                  />
+                </div>
+                <div className="space-y-4 min-w-0">
+                  <MarketMapCard />
+                  <ThisWeekCard
+                    events={data.economic_calendar ?? []}
+                    heldEarnings={heldEarnings}
+                    onOpenCalendar={() => openMore("markets")}
+                  />
+                  {nextHeldEarnings && (
+                    <CatalystStrip
+                      ticker={nextHeldEarnings.ticker}
+                      daysUntil={nextHeldEarnings.days_until}
+                      onClick={() => openTickerDetail(nextHeldEarnings.ticker)}
                     />
                   )}
-                  <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                  <PortfolioTeaser
+                    totalValue={selectedReport?.total_value}
+                    holdingCount={selectedReport?.per_holding?.length ?? 0}
+                    largest={selectedReport?.largest_position ?? null}
+                    onOpen={() => setActiveTab("portfolio")}
+                  />
+                  {(data.tactical_breakouts?.length ?? 0) > 0 && (
+                    <TacticalBreakoutStrip rows={data.tactical_breakouts} onTickerClick={openTickerDetail} />
+                  )}
+                  {tradingLens === "scout" && (data.event_risk_strip?.rows?.length ?? 0) > 0 && (
+                    <EventRiskStrip payload={data.event_risk_strip} onTickerClick={openTickerDetail} />
+                  )}
+                </div>
+              </div>
+              {(data.retail_briefing || data.retail_market_decisions) && (
+                <ToggleSection id="today-briefing" title="Daily briefing — what should I do today?" icon={<Sparkles />} defaultOpen={false}>
+                  <OverviewAtAGlance
+                    briefing={data.retail_briefing}
+                    market={data.retail_market_decisions}
+                    marketQuadrant={marketQuadrant}
+                    macroBackdrop={
+                      data.market_forecast
+                        ? { bullets: data.market_forecast.bullets, disclaimer: data.market_forecast.disclaimer }
+                        : null
+                    }
+                    preMarketFull={preMarketFull}
+                    preMarket={data.pre_market}
+                    todayMoveTickers={todayMovesCoveredTickers}
+                    tradingLens={tradingLens}
+                    forwardTracking={data.forward_tracking}
+                    modelHealth={data.model_health}
+                    paperTrading={data.paper_trading}
+                    guestUniverseNote={data.universe_meta?.note ?? null}
+                    onTickerClick={openTickerDetail}
+                  />
                 </ToggleSection>
               )}
-              <ToggleSection id="overview-score-regime" title="Score chart" icon={<Activity />} defaultOpen={false}>
+            </div>
+          )}
+
+          {/* ── Signals ───────────────────────────────────────────────── */}
+          {activeTab === "signals" && (
+            <div className="space-y-4">
+              <AddTickerBar onAdded={() => onRefresh(true)} />
+              {data.macro_regime_bundle?.coaching_note && (
+                <div
+                  className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100"
+                  role="status"
+                >
+                  <strong className="text-amber-200">Macro vs price:</strong> {data.macro_regime_bundle.coaching_note}
+                </div>
+              )}
+              {(data.warming || (data.signals_deferred && signalsLoading && lazySignals === null)) && (
+                <div className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-400 text-sm">
+                  {data.warming
+                    ? "Waiting for first dashboard load…"
+                    : "Loading full signals table… (backend may still be recomputing — usually 1–5 min)"}
+                </div>
+              )}
+              {data.signals_deferred && signalsFetchErr && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+                  {signalsFetchErr}
+                </div>
+              )}
+              {(!data.signals_deferred || lazySignals !== null) && (
+                <>
+                  {tradingLens === "scout" && (data.event_risk_strip?.rows?.length ?? 0) > 0 && (
+                    <EventRiskStrip payload={data.event_risk_strip} onTickerClick={openTickerDetail} />
+                  )}
+                  <div className="rounded-xl border border-slate-800/80 bg-slate-900 p-3 sm:p-4">
+                    <SignalsHub
+                      signals={effectiveSignals}
+                      horizons={data.config?.horizons}
+                      onTickerClick={openTickerDetail}
+                      riskSizing={data.config?.risk_sizing}
+                      cotByTicker={data.cot_by_ticker}
+                      tickerActions={data.retail_briefing?.ticker_actions}
+                      listContext={signalListContext}
+                      portfolioTickers={portfolioTickerList}
+                      watchlistTickers={watchlistTickerList}
+                      tradingLens={tradingLens}
+                      hunterPanel={data.hunter_panel}
+                      roadmapTickers={roadmapTickers}
+                      roadmapsWarming={Boolean(data.warming)}
+                      signalsByTicker={signalsByTicker}
+                    />
+                  </div>
+                </>
+              )}
+              <ToggleSection id="signals-context" title="Context & rules" icon={<HelpCircle className="h-5 w-5" />} defaultOpen={false}>
+                <div className="space-y-3">
+                  {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && marketQuadrant !== "best_buy_zone" && (
+                    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
+                      <strong>Do nothing guidance:</strong> When macro is Risk-Off or rotation risk is High, consider reducing new buys, stepping down tech adds, and protecting gains. Do not chase; wait for clarity.
+                    </div>
+                  )}
+                  {marketQuadrant === "best_buy_zone" && (
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-4 py-3 text-emerald-200 text-sm">
+                      <strong>Fear in a bull market:</strong> Short-term Risk-Off/fear can coexist with a strong bull regime — unified context above says accumulate dips, not blanket REDUCE.
+                    </div>
+                  )}
+                  <div
+                    className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400"
+                    title={`Confidence = 7-layer score (regime, pattern, ML, options, insider, fundamental, NLP). ${LIVE_SCORE_LINE}`}
+                  >
+                    <strong className="text-slate-300">Model rules:</strong>{" "}
+                    Add when model confidence ≥ {data.config?.model_rules?.add_min_confidence ?? 70} and regime {data.config?.model_rules?.add_min_regime ?? "UP"}. Trim when confidence ≤ {data.config?.model_rules?.trim_max_confidence ?? 30} or regime DOWN. Portfolio heat map: tile color = composite chart score; ring = fused confidence (can disagree).{" "}
+                    <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Open a ticker for confidence layers vs chart score.</span>
+                  </div>
+                  {data.config?.risk_sizing && (
+                    <p className="text-xs text-slate-400 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2">
+                      <strong className="text-slate-300">Risk-based sizing:</strong> each row uses{" "}
+                      <strong>{data.config.risk_sizing.risk_pct}%</strong> of total portfolio as the dollar risk budget if your{" "}
+                      <strong>{data.config.risk_sizing.stop_pct}%</strong> stop is hit. The <strong>Risk (size)</strong> column shows implied shares and notional.
+                    </p>
+                  )}
+                  {data.known_limits && data.known_limits.length > 0 && <KnownLimitsPanel items={data.known_limits} />}
+                  <p className="text-sm text-slate-500 mb-0">
+                    <span className="text-slate-400">Buy:</span> add-on · <span className="text-slate-400">Sell:</span> trim when overbought/weak · <span className="text-slate-400">Support:</span> watch level ·
+                    <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> ~12–18 mo
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Macro, breadth, pre-market and next-day outlook now live under{" "}
+                    <button type="button" onClick={() => openMore("markets")} className="text-emerald-400 hover:text-emerald-300 underline">
+                      More → Markets
+                    </button>
+                    .
+                  </p>
+                </div>
+              </ToggleSection>
+              <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+            </div>
+          )}
+
+          {/* ── Plan: Income sleeve + Opportunities ───────────────────── */}
+          {activeTab === "plan" && (
+            <div className="space-y-4">
+              <SubViewSwitch
+                value={planSub}
+                onChange={setPlanSubPersist}
+                options={[
+                  { id: "income", label: "Income sleeve" },
+                  { id: "opportunities", label: "Opportunities", badge: oppCountForBadge },
+                ]}
+              />
+              {planSub === "income" && (
+                <div className="space-y-4">
+                  <IncomeBookPanel onTickerClick={openTickerDetail} />
+                  <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                </div>
+              )}
+              {planSub === "opportunities" && (
+                <div className="space-y-4">
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
+                    <div className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-slate-400 text-sm">
+                      Loading daily opportunities…
+                    </div>
+                  )}
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">{oppFetchErr}</div>
+                  )}
+                  {oppBundleEnabled ? (
+                    <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
+                      {mergedOpportunities.length ? (
+                        <Opportunities items={mergedOpportunities} onTickerClick={openTickerDetail} />
+                      ) : (
+                        <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
+                          <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
+                          <p className="text-slate-400 font-medium">
+                            {data.opportunities_deferred === true && oppLoading ? "Loading…" : "No opportunities today"}
+                          </p>
+                          <p className="text-slate-500 text-sm mt-1">Tickers with score ≥ 70 and UP regime will appear here.</p>
+                        </div>
+                      )}
+                    </ToggleSection>
+                  ) : null}
+                  {data.thesis_check.length > 0 && (
+                    <ToggleSection id="opps-thesis" title="Thesis check" icon={<FileText />} badge={data.thesis_check.length} defaultOpen>
+                      <ThesisCheck items={data.thesis_check} onTickerClick={openTickerDetail} />
+                    </ToggleSection>
+                  )}
+                  <ToggleSection
+                    id="opps-insider-flow"
+                    title="Insider & Institutional Flow"
+                    icon={<TrendingUp />}
+                    badge={insiderFlow?.insider_buys?.length ?? 0}
+                    defaultOpen
+                  >
+                    {data.analysis_deferred === true && analysisLoading && (
+                      <p className="text-slate-500 text-sm py-4">Loading insider flow…</p>
+                    )}
+                    {data.analysis_deferred === true && analysisFetchErr && (
+                      <p className="text-amber-200 text-sm py-2">{analysisFetchErr}</p>
+                    )}
+                    <InsiderFlowTracker data={insiderFlow} />
+                  </ToggleSection>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Portfolio ─────────────────────────────────────────────── */}
+          {activeTab === "portfolio" && (
+            <div className="space-y-4">
+              {portfolioNames.length > 1 && (
+                <div className="flex items-center gap-2">
+                  <label htmlFor="portfolio-select-2" className="text-sm text-td-muted">Portfolio:</label>
+                  <select
+                    id="portfolio-select-2"
+                    value={selectedPortfolio}
+                    onChange={(e) => setSelectedPortfolio(e.target.value)}
+                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none"
+                  >
+                    {portfolioNames.map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div className="grid gap-4 xl:grid-cols-2 items-start">
+                <div className="space-y-4 min-w-0">
+                  <PortfolioValueCard report={selectedReport} limitPct={concentrationLimitPct} />
+                  <NeedsAttentionList
+                    report={selectedReport}
+                    trimCandidates={selectedTrimCandidates}
+                    limitPct={concentrationLimitPct}
+                    onTickerClick={openTickerDetail}
+                  />
+                </div>
+                <div className="space-y-4 min-w-0">
+                  <RiskManagementCard
+                    totalValue={selectedReport?.total_value}
+                    metrics={data.portfolio_risk_metrics}
+                    stress={data.portfolio_stress}
+                    onOpenFull={openFullRiskReport}
+                  />
+                  <PortfolioRegimeStrip counts={selectedReport?.regime_counts} />
+                </div>
+              </div>
+              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={selectedReport?.per_holding?.length ?? 0} defaultOpen>
+                {(selectedReport?.per_holding?.length ?? 0) > 0 ? (
+                  <PortfolioHoldings
+                    holdings={selectedReport?.per_holding ?? []}
+                    onTickerClick={openTickerDetail}
+                    hideAccountColumn={selectedPortfolio !== "All"}
+                    addMinConfidence={data.config?.model_rules?.add_min_confidence ?? 70}
+                    trimMaxConfidence={data.config?.model_rules?.trim_max_confidence ?? 30}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
+                    <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
+                    <p className="text-slate-400 text-sm">No holdings</p>
+                    <p className="text-slate-500 text-xs mt-1">Add portfolios in config or upload via Signals → add ticker.</p>
+                  </div>
+                )}
+              </ToggleSection>
+              <div id="portfolio-risk-report" className="scroll-mt-20">
+                <ToggleSection key={`risk-${riskReportKey}`} id="portfolio-risk" title="Risk management — full report" icon={<Shield />} defaultOpen={riskReportKey > 0}>
+                  <div className="space-y-6">
+                    {data.portfolio_stress?.scenarios?.length ? <PortfolioStressStrip stress={data.portfolio_stress} /> : null}
+                    <div>
+                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">VaR / CVaR & correlation (holdings)</p>
+                      <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
+                    </div>
+                    <RiskDashboard
+                      riskProfile={data.risk_profile}
+                      positionSizing={data.position_sizing}
+                      drawdownSim={data.drawdown_sim}
+                      exitLevels={data.exit_levels}
+                      exitLevelsByHorizon={data.exit_levels_by_horizon}
+                      earningsImpacts={data.earnings_impacts}
+                      concentration={data.concentration}
+                      portfolioValue={selectedReport?.total_value ?? 0}
+                    />
+                  </div>
+                </ToggleSection>
+              </div>
+              <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
+                <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={openTickerDetail} />
+              </ToggleSection>
+              <DecisionJournalPanel defaultOpen />
+              <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor — this week's actions" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen={false}>
+                <div className="mb-4">
+                  <RiskProfileSelector value={data.risk_profile} onChanged={() => onRefresh(true)} />
+                </div>
+                <PortfolioDoctorPanel
+                  data={data.portfolio_doctor_v2}
+                  portfolioRiskMetrics={data.portfolio_risk_metrics}
+                  portfolioBeta={data.portfolio_doctor_v2?.portfolio_beta}
+                  taxAwareExits={data.tax_aware_exits}
+                  totalValue={selectedReport?.total_value}
+                  holdingCount={selectedReport?.per_holding?.length}
+                  sectorExposure={selectedReport?.sector_allocation}
+                  holdings={selectedReport?.per_holding}
+                  onTickerClick={openTickerDetail}
+                />
+                <div className="mt-6 space-y-6">
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
+                    <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
+                  )}
+                  {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
+                    <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
+                  )}
+                  <PortfolioDoctorRecommendations
+                    recommendation={mergedDoctorRec?.[selectedPortfolio]}
+                    selectedPortfolio={selectedPortfolio}
+                    onTickerClick={openTickerDetail}
+                  />
+                </div>
+              </ToggleSection>
+              <ToggleSection id="portfolio-heatmap" title="Heat map" icon={<Activity />} defaultOpen={false}>
+                <PortfolioHeatMap
+                  holdings={selectedReport?.per_holding ?? []}
+                  regimeCounts={selectedReport?.regime_counts}
+                  onTickerClick={openTickerDetail}
+                />
+              </ToggleSection>
+              <ToggleSection id="portfolio-summary" title="Summary & regime mix" icon={<PieChart />} defaultOpen={false}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <PortfolioSummary report={selectedReport} />
+                </div>
+                <div className="mt-4">
+                  <RegimeChart report={selectedReport} />
+                </div>
+              </ToggleSection>
+              <ToggleSection id="portfolio-trim" title="Consider Trim — detail" icon={<AlertTriangle />} badge={selectedTrimCandidates.length || undefined} defaultOpen={false}>
+                {selectedTrimCandidates.length > 0 ? (
+                  <TrimCandidates items={selectedTrimCandidates} onTickerClick={openTickerDetail} />
+                ) : (
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
+                    <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
+                    <p className="text-slate-400 text-sm">No trim candidates</p>
+                    <p className="text-slate-500 text-xs mt-1">Positions with action REDUCE/AVOID (or score {'<'} 40 fallback) will appear here.</p>
+                  </div>
+                )}
+              </ToggleSection>
+              <ToggleSection id="portfolio-score-chart" title="Score chart" icon={<BarChart3 />} defaultOpen={false}>
                 <AnchorChartPanel
                   title="Portfolio tape"
                   hint="One shared chart surface — click a bar to open the ticker hub."
@@ -1227,50 +1518,37 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <ScoreChart signals={scoreChartSignals} onTickerClick={openTickerDetail} embedded />
                 </AnchorChartPanel>
               </ToggleSection>
+              {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
+                <ToggleSection id="portfolio-performance" title="Performance vs benchmark" icon={<PieChart />} defaultOpen={false}>
+                  <PerformanceVsBenchmark
+                    periods={data.performance_vs_benchmark?.periods ?? []}
+                    message={data.performance_vs_benchmark?.message}
+                    as_of={data.performance_vs_benchmark?.as_of}
+                  />
+                  <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                </ToggleSection>
+              )}
             </div>
           )}
 
-          {/* Signals tab */}
-          {activeTab === "signals" && (
-            <div className="p-4 sm:p-6 space-y-4">
-          {data.data_freshness && <DataFreshnessBar data={data.data_freshness} />}
-          {data.macro_regime_bundle?.coaching_note && (
-            <div
-              className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-100"
-              role="status"
-            >
-              <strong className="text-amber-200">Macro vs price:</strong> {data.macro_regime_bundle.coaching_note}
-            </div>
-          )}
-          {data.known_limits && data.known_limits.length > 0 && <KnownLimitsPanel items={data.known_limits} />}
-          {data.config?.risk_sizing && (
-            <p className="text-xs text-slate-400 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2">
-              <strong className="text-slate-300">Risk-based sizing:</strong> each row uses{" "}
-              <strong>{data.config.risk_sizing.risk_pct}%</strong> of total portfolio as the dollar risk budget if your{" "}
-              <strong>{data.config.risk_sizing.stop_pct}%</strong> stop is hit. The <strong>Risk (size)</strong> column shows implied shares and notional.
-            </p>
-          )}
-          <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
-          <ToggleSection id="signals-context" title="Context & rules" icon={<HelpCircle className="h-5 w-5" />} defaultOpen={false}>
-            <div className="space-y-3">
-          {(data.macro_regime === "Risk-Off" || data.market_regime?.rotation_risk === "High") && marketQuadrant !== "best_buy_zone" && (
-            <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
-              <strong>Do nothing guidance:</strong> When macro is Risk-Off or rotation risk is High, consider reducing new buys, stepping down tech adds, and protecting gains. Do not chase; wait for clarity.
-            </div>
-          )}
-          {marketQuadrant === "best_buy_zone" && (
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-4 py-3 text-emerald-200 text-sm">
-              <strong>Fear in a bull market:</strong> Short-term Risk-Off/fear can coexist with a strong bull regime — unified context above says accumulate dips, not blanket REDUCE.
-            </div>
-          )}
-          <div
-            className="rounded-lg border border-slate-600 bg-slate-800/30 px-4 py-3 text-sm text-slate-400"
-            title={`Confidence = 7-layer score (regime, pattern, ML, options, insider, fundamental, NLP). ${LIVE_SCORE_LINE}`}
-          >
-            <strong className="text-slate-300">Model rules:</strong>{" "}
-            Add when model confidence ≥ {data.config?.model_rules?.add_min_confidence ?? 70} and regime {data.config?.model_rules?.add_min_regime ?? "UP"}. Trim when confidence ≤ {data.config?.model_rules?.trim_max_confidence ?? 30} or regime DOWN. Portfolio heat map: tile color = composite chart score; ring = fused confidence (can disagree).{" "}
-            <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Open a ticker for confidence layers vs chart score.</span>
-          </div>
+          {/* ── More: Markets + Admin ─────────────────────────────────── */}
+          {activeTab === "more" && (
+            <div className="space-y-4">
+              <SubViewSwitch
+                value={moreSub}
+                onChange={setMoreSubPersist}
+                options={[
+                  { id: "markets", label: "Markets" },
+                  { id: "admin", label: "Admin" },
+                ]}
+              />
+              {moreSub === "markets" && (
+                <div className="space-y-4 sm:space-y-6">
+                  {data.retail_market_decisions && (
+                    <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
+                  )}
+                  <ToggleSection id="markets-outlook" title="Breadth, rotation & next-day outlook" icon={<Globe className="h-5 w-5" />} defaultOpen>
+                    <div className="space-y-3">
           {(data.macro_regime || data.global_market_regime) && (
             <p
               className={clsx(
@@ -1343,18 +1621,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <span>{data.pre_market.message}</span>
             </div>
           )}
-          {preMarketFull && (
-            <div className="flex flex-wrap items-center gap-2 mb-3">
-              <PreMarketStrip data={preMarketFull} />
-              <button
-                type="button"
-                onClick={() => setActiveTab("markets")}
-                className="text-xs text-emerald-400 hover:text-emerald-300 underline"
-              >
-                Open full panel →
-              </button>
-            </div>
-          )}
           {((data.next_day_outlook?.length ?? 0) > 0 || (data.typical_move?.length ?? 0) > 0 || (data.indicator_validation?.length ?? 0) > 0) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
               {data.next_day_outlook && data.next_day_outlook.length > 0 && (
@@ -1398,6 +1664,123 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               )}
             </div>
           )}
+                    </div>
+                  </ToggleSection>
+                  <ToggleSection id="markets-tape" title="Live market tape" icon={<Globe className="h-5 w-5" />} defaultOpen={false}>
+                    <MarketStatePanel compactHeader />
+                  </ToggleSection>
+                  <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen={false}>
+                    <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
+                  </ToggleSection>
+                  <ToggleSection id="markets-newsletter" title="Morning newsletter" icon={<Mail className="h-5 w-5" />} defaultOpen={false}>
+                    <MorningNewsletter data={data.morning_newsletter ?? undefined} />
+                  </ToggleSection>
+                  <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
+                    <MarketScenarios scenarios={data.market_scenarios ?? []} />
+                  </ToggleSection>
+                  {data.pre_ipo?.enabled && (data.pre_ipo.items?.length ?? 0) > 0 ? (
+                    <ToggleSection
+                      id="markets-pre-ipo"
+                      title="Pre-IPO watch"
+                      icon={<Sparkles />}
+                      badge={data.pre_ipo.items!.length}
+                      defaultOpen
+                    >
+                      <PreIpoSection panel={data.pre_ipo} onTickerClick={openTickerDetail} />
+                    </ToggleSection>
+                  ) : null}
+                  <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6 min-w-0 items-start">
+                    {data.crypto?.length ? (
+                      <div className="min-w-0">
+                        <ToggleSection id="markets-crypto" title="Crypto" icon={<Globe />} badge={data.crypto.length} defaultOpen>
+                          <CryptoSection items={data.crypto} />
+                        </ToggleSection>
+                      </div>
+                    ) : null}
+                    {data.cross_asset?.length ? (
+                      <div className="min-w-0">
+                        <ToggleSection id="markets-cross-asset" title="Cross-asset" icon={<Globe />} badge={data.cross_asset.length} defaultOpen>
+                          <CrossAssetSection items={data.cross_asset} />
+                        </ToggleSection>
+                      </div>
+                    ) : null}
+                    <div className="min-w-0">
+                      <ToggleSection id="markets-calendar" title="Economic calendar" icon={<Calendar />} badge={data.economic_calendar?.length ?? 0} defaultOpen>
+                        <EconomicCalendarSection events={data.economic_calendar ?? []} />
+                      </ToggleSection>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {moreSub === "admin" && (
+                <div className="space-y-4 sm:space-y-6">
+                  <p className="text-xs text-td-muted">
+                    Model validation and data health — not decision inputs. Read-only on mobile.
+                  </p>
+                  <div className="hidden md:flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onRefresh(true)}
+                      disabled={loading || isRefreshing}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50 text-sm"
+                      title="Force full signal recompute (usually unnecessary — data updates automatically)"
+                    >
+                      <RefreshCw className={clsx("h-4 w-4 shrink-0", (loading || isRefreshing) && "animate-spin")} />
+                      {loading || isRefreshing ? "Refreshing…" : "Force refresh"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportSnapshot}
+                      className="px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 text-sm"
+                    >
+                      Export snapshot
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveAsEod}
+                      disabled={eodSaving || loading}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50 text-sm"
+                      title="Save current run to data/eod/ (fast, no refresh)"
+                    >
+                      <Save className={clsx("h-4 w-4 shrink-0", eodSaving && "animate-pulse")} />
+                      {eodSaving ? "Saving…" : "Save as EOD"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={toggleAdvancedMode}
+                      className={clsx(
+                        "flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm",
+                        advancedMode
+                          ? "border-violet-500/40 bg-violet-500/10 text-violet-200"
+                          : "border-slate-600 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                      )}
+                      title="Show the API runner and signal test suite"
+                    >
+                      <FlaskConical className="h-4 w-4 shrink-0" />
+                      {advancedMode ? "Dev tools on" : "Dev tools"}
+                    </button>
+                    {eodMessage && (
+                      <span className={clsx("text-xs px-2 py-1 rounded", eodMessage.type === "ok" ? "text-emerald-300 bg-emerald-900/30" : "text-amber-200 bg-amber-900/30")}>
+                        {eodMessage.text}
+                      </span>
+                    )}
+                  </div>
+                  {data.data_freshness && <DataFreshnessBar data={data.data_freshness} />}
+                  {degradedMode && <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} />}
+                  {fmpPlanStatus && <FMPPlanStatus status={fmpPlanStatus} />}
+                  <ModelHealthStrip
+                    model_health={data.model_health}
+                    summary_by_signal={forwardTracking?.summary_by_signal}
+                    summary_by_horizon={forwardTracking?.summary_by_horizon}
+                    message={forwardTracking?.message}
+                  />
+                  <LensTrackRecordStrip
+                    activeLens={tradingLens}
+                    summaryByLens={summaryByLens}
+                    loading={analysisLoading && !forwardTracking}
+                  />
+                  <RegimeValidationPanel data={regimeValidation} />
+                  {data.known_limits && data.known_limits.length > 0 && <KnownLimitsPanel items={data.known_limits} />}
           {data.indicator_validation && data.indicator_validation.length > 0 && (
             <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-3 mb-4">
               <p className="text-sm font-medium text-slate-400 mb-0.5">Indicator validation (SPY, QQQ, GLD, SLV)</p>
@@ -1425,302 +1808,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               </div>
             </div>
           )}
-          <p className="text-base text-slate-500 mb-0">
-            <span className="text-slate-400">Buy:</span> add-on · <span className="text-slate-400">Sell:</span> trim when overbought/weak · <span className="text-slate-400">Support:</span> watch level ·
-            <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> ~12–18 mo
-          </p>
-            </div>
-          </ToggleSection>
-          {(data.warming || (data.signals_deferred && signalsLoading && lazySignals === null)) && (
-            <div className="rounded-xl border border-slate-700 bg-slate-900/40 px-4 py-8 text-center text-slate-400 text-sm">
-              {data.warming
-                ? "Waiting for first dashboard load…"
-                : "Loading full signals table… (backend may still be recomputing — usually 1–5 min)"}
-            </div>
-          )}
-          {data.signals_deferred && signalsFetchErr && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">
-              {signalsFetchErr}
-            </div>
-          )}
-          {(!data.signals_deferred || lazySignals !== null) && (
-            <>
-              {tradingLens === "scout" && (data.event_risk_strip?.rows?.length ?? 0) > 0 && (
-                <EventRiskStrip payload={data.event_risk_strip} onTickerClick={openTickerDetail} />
-              )}
-            <SignalsHub
-              signals={effectiveSignals}
-              horizons={data.config?.horizons}
-              onTickerClick={openTickerDetail}
-              riskSizing={data.config?.risk_sizing}
-              cotByTicker={data.cot_by_ticker}
-              tickerActions={data.retail_briefing?.ticker_actions}
-              listContext={signalListContext}
-              portfolioTickers={portfolioTickerList}
-              watchlistTickers={watchlistTickerList}
-              tradingLens={tradingLens}
-              hunterPanel={data.hunter_panel}
-              roadmapTickers={roadmapTickers}
-              roadmapsWarming={Boolean(data.warming)}
-              signalsByTicker={signalsByTicker}
-            />
-            </>
-          )}
-          {/* EOD Universe panel — folded into SignalsTable audit columns (Jun 2026). Re-enable if cohort table needed again.
-          <ToggleSection
-            id="signals-eod-universe"
-            title="EOD Universe — all tickers"
-            icon={<Database className="h-5 w-5" />}
-            defaultOpen={false}
-          >
-            <SignalUniversePanel onTickerClick={openTickerDetail} />
-          </ToggleSection>
-          */}
-            </div>
-          )}
-
-          {/* Portfolio tab */}
-          {activeTab === "portfolio" && (
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {portfolioNames.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <label htmlFor="portfolio-select-2" className="text-sm text-slate-400">Portfolio:</label>
-                  <select
-                    id="portfolio-select-2"
-                    value={selectedPortfolio}
-                    onChange={(e) => setSelectedPortfolio(e.target.value)}
-                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  >
-                    {portfolioNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <PortfolioHeatMap
-                holdings={selectedReport?.per_holding ?? []}
-                regimeCounts={selectedReport?.regime_counts}
-                onTickerClick={openTickerDetail}
-              />
-              {/* Portfolio Doctor v2 — answers "what do I do this week?" first.
-                  Risk profile governs everything below it: health score context,
-                  trim/add sizing, and (cross-referenced) the Tier1 Kelly engine in
-                  Risk Management — one persisted setting, not three disconnected ones. */}
-              <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen>
-                <div className="mb-4">
-                  <RiskProfileSelector value={data.risk_profile} onChanged={() => onRefresh(true)} />
-                </div>
-                <PortfolioDoctorPanel
-                  data={data.portfolio_doctor_v2}
-                  portfolioRiskMetrics={data.portfolio_risk_metrics}
-                  portfolioBeta={data.portfolio_doctor_v2?.portfolio_beta}
-                  taxAwareExits={data.tax_aware_exits}
-                  totalValue={selectedReport?.total_value}
-                  holdingCount={selectedReport?.per_holding?.length}
-                  sectorExposure={selectedReport?.sector_allocation}
-                  holdings={selectedReport?.per_holding}
-                  onTickerClick={openTickerDetail}
-                />
-                <div className="mt-6 space-y-6">
-                  {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
-                    <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
-                  )}
-                  {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
-                    <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
-                  )}
-                  <div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Portfolio risk (holdings)</p>
-                    <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
-                  </div>
-                  <PortfolioDoctorRecommendations
-                    recommendation={mergedDoctorRec?.[selectedPortfolio]}
-                    selectedPortfolio={selectedPortfolio}
-                    onTickerClick={openTickerDetail}
-                  />
-                </div>
-              </ToggleSection>
-              <ToggleSection id="portfolio-summary" title="Portfolio Summary" icon={<PieChart />} defaultOpen>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <PortfolioSummary report={selectedReport} />
-                </div>
-                {data.portfolio_stress?.scenarios?.length ? (
-                  <PortfolioStressStrip stress={data.portfolio_stress} />
-                ) : null}
-              </ToggleSection>
-              <ToggleSection id="portfolio-regime" title="Regime Chart" icon={<Activity />} defaultOpen>
-                <RegimeChart report={selectedReport} />
-              </ToggleSection>
-              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={selectedReport?.per_holding?.length ?? 0} defaultOpen>
-                {(selectedReport?.per_holding?.length ?? 0) > 0 ? (
-                  <PortfolioHoldings
-                    holdings={selectedReport?.per_holding ?? []}
-                    onTickerClick={openTickerDetail}
-                    hideAccountColumn={selectedPortfolio !== "All"}
-                    addMinConfidence={data.config?.model_rules?.add_min_confidence ?? 70}
-                    trimMaxConfidence={data.config?.model_rules?.trim_max_confidence ?? 30}
-                  />
-                ) : (
-                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
-                    <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
-                    <p className="text-slate-400 text-sm">No holdings</p>
-                    <p className="text-slate-500 text-xs mt-1">Add portfolios in config or upload via the bar above.</p>
-                  </div>
-                )}
-              </ToggleSection>
-              <ToggleSection id="portfolio-trim" title="Consider Trim" icon={<AlertTriangle />} badge={selectedTrimCandidates.length || undefined} defaultOpen>
-                {selectedTrimCandidates.length > 0 ? (
-                  <TrimCandidates items={selectedTrimCandidates} onTickerClick={openTickerDetail} />
-                ) : (
-                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
-                    <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
-                    <p className="text-slate-400 text-sm">No trim candidates</p>
-                    <p className="text-slate-500 text-xs mt-1">Positions with action REDUCE/AVOID (or score {'<'} 40 fallback) will appear here.</p>
-                  </div>
-                )}
-              </ToggleSection>
-              <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
-                <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={openTickerDetail} />
-              </ToggleSection>
-              <ToggleSection id="portfolio-risk" title="Risk Management" icon={<Shield />} defaultOpen={false}>
-                <RiskDashboard
-                  riskProfile={data.risk_profile}
-                  positionSizing={data.position_sizing}
-                  drawdownSim={data.drawdown_sim}
-                  exitLevels={data.exit_levels}
-                  exitLevelsByHorizon={data.exit_levels_by_horizon}
-                  earningsImpacts={data.earnings_impacts}
-                  concentration={data.concentration}
-                  portfolioValue={selectedReport?.total_value ?? 0}
-                />
-              </ToggleSection>
-              <DecisionJournalPanel />
-            </div>
-          )}
-
-          {/* Opportunities tab */}
-          {activeTab === "opportunities" && (
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
-                <div className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-slate-400 text-sm">
-                  Loading daily opportunities…
-                </div>
-              )}
-              {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">{oppFetchErr}</div>
-              )}
-              {oppBundleEnabled ? (
-                <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
-                  {mergedOpportunities.length ? (
-                    <Opportunities items={mergedOpportunities} onTickerClick={openTickerDetail} />
-                  ) : (
-                    <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
-                      <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
-                      <p className="text-slate-400 font-medium">
-                        {data.opportunities_deferred === true && oppLoading ? "Loading…" : "No opportunities today"}
-                      </p>
-                      <p className="text-slate-500 text-sm mt-1">Tickers with score ≥ 70 and UP regime will appear here.</p>
-                    </div>
-                  )}
-                </ToggleSection>
-              ) : null}
-              {data.thesis_check.length > 0 && (
-                <ToggleSection id="opps-thesis" title="Thesis check" icon={<FileText />} badge={data.thesis_check.length} defaultOpen>
-                  <ThesisCheck items={data.thesis_check} onTickerClick={openTickerDetail} />
-                </ToggleSection>
-              )}
-              {data.what_changed.length > 0 && (
-                <ToggleSection id="opps-what-changed" title="What changed" icon={<RefreshCw />} badge={data.what_changed.length} defaultOpen>
-                  <WhatChanged items={data.what_changed} onTickerClick={openTickerDetail} />
-                </ToggleSection>
-              )}
-              <ToggleSection
-                id="opps-insider-flow"
-                title="Insider & Institutional Flow"
-                icon={<TrendingUp />}
-                badge={insiderFlow?.insider_buys?.length ?? 0}
-                defaultOpen
-              >
-                {data.analysis_deferred === true && analysisLoading && (
-                  <p className="text-slate-500 text-sm py-4">Loading insider flow…</p>
-                )}
-                {data.analysis_deferred === true && analysisFetchErr && (
-                  <p className="text-amber-200 text-sm py-2">{analysisFetchErr}</p>
-                )}
-                <InsiderFlowTracker data={insiderFlow} />
-              </ToggleSection>
-            </div>
-          )}
-
-          {/* Income Book tab — ad-hoc swing sleeve (separate from long-term portfolio) */}
-          {activeTab === "income" && (
-            <div className="p-4 sm:p-6 space-y-4">
-              <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
-              <IncomeBookPanel onTickerClick={openTickerDetail} />
-            </div>
-          )}
-
-          {/* Markets tab */}
-          {activeTab === "markets" && (
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-              {data.retail_market_decisions && (
-                <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
-              )}
-              <ToggleSection id="markets-newsletter" title="Morning newsletter" icon={<Mail className="h-5 w-5" />} defaultOpen>
-                <MorningNewsletter data={data.morning_newsletter ?? undefined} />
-              </ToggleSection>
-              <ModelHealthStrip
-                model_health={data.model_health}
-                summary_by_signal={forwardTracking?.summary_by_signal}
-                summary_by_horizon={forwardTracking?.summary_by_horizon}
-                message={forwardTracking?.message}
-              />
-              <ToggleSection id="markets-premarket" title="Pre-Market Signal Engine" icon={<Activity />} defaultOpen={false}>
-                <PreMarketPanel data={preMarketFull ?? undefined} apiEndpoint="/api/pre-market" />
-              </ToggleSection>
-              <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
-                <MarketScenarios scenarios={data.market_scenarios ?? []} />
-              </ToggleSection>
-              {data.pre_ipo?.enabled && (data.pre_ipo.items?.length ?? 0) > 0 ? (
-                <ToggleSection
-                  id="markets-pre-ipo"
-                  title="Pre-IPO watch"
-                  icon={<Sparkles />}
-                  badge={data.pre_ipo.items!.length}
-                  defaultOpen
-                >
-                  <PreIpoSection panel={data.pre_ipo} onTickerClick={openTickerDetail} />
-                </ToggleSection>
-              ) : null}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 min-w-0 items-start">
-                {data.crypto?.length ? (
-                  <div className="min-w-0">
-                    <ToggleSection id="markets-crypto" title="Crypto" icon={<Globe />} badge={data.crypto.length} defaultOpen>
-                      <CryptoSection items={data.crypto} />
-                    </ToggleSection>
-                  </div>
-                ) : null}
-                {data.cross_asset?.length ? (
-                  <div className="min-w-0">
-                    <ToggleSection id="markets-cross-asset" title="Cross-asset" icon={<Globe />} badge={data.cross_asset.length} defaultOpen>
-                      <CrossAssetSection items={data.cross_asset} />
-                    </ToggleSection>
-                  </div>
-                ) : null}
-                <div className="min-w-0">
-                  <ToggleSection id="markets-calendar" title="Economic calendar" icon={<Calendar />} badge={data.economic_calendar?.length ?? 0} defaultOpen>
-                    <EconomicCalendarSection events={data.economic_calendar ?? []} />
-                  </ToggleSection>
-                </div>
-              </div>
-              {(!data.crypto?.length && !data.cross_asset?.length) && (
-                <p className="text-slate-500 text-sm">No market data available for crypto or cross-asset panels.</p>
-              )}
-            </div>
-          )}
-
-          {/* Analysis tab */}
-          {activeTab === "analysis" && (
-            <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
               {analysisWarmingMessage && (
                 <div className="rounded-lg border border-slate-600 bg-slate-900/50 px-4 py-3 text-slate-400 text-sm animate-pulse">
                   {analysisWarmingMessage}
@@ -1748,9 +1835,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 </div>
               )}
               <TrackRecordFramework />
+              {advancedMode && (
               <ToggleSection id="analysis-api-endpoints" title="API endpoints (ad-hoc runner)" icon={<Terminal className="h-5 w-5" />} defaultOpen={false}>
                 <ApiEndpointsPanel />
               </ToggleSection>
+              )}
               <ToggleSection id="analysis-eod-system" title="EOD snapshots &amp; system" icon={<Database />} defaultOpen={false}>
                 <EodAndSystemPanel
                   eodSnapshots={data.eod_snapshots ?? []}
@@ -1903,13 +1992,17 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </>
                 )}
               </ToggleSection>
+              {advancedMode && (
               <ToggleSection id="analysis-test-suite" title="Signal test suite" icon={<FlaskConical />} defaultOpen={false}>
                 <SignalTestSuite />
               </ToggleSection>
+              )}
+                </div>
+              )}
             </div>
           )}
-        </div>
-      </main>
+        </main>
+      </div>
 
       {selectedTicker && (
         <TickerDetailModal
@@ -1920,8 +2013,21 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         />
       )}
 
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-800 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
-        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} advancedMode={advancedMode} variant="bottom" />
+      <AlertsScreen
+        open={alertsOpen}
+        onClose={() => setAlertsOpen(false)}
+        onTickerClick={openTickerDetail}
+        dashboardRefreshedAt={
+          lastRefreshedAt?.toISOString() ?? data.as_of_date ?? data.data_freshness?.snapshot_updated_at ?? null
+        }
+        onCounts={(total, actionRequired) => {
+          setOverviewAlertCount(total);
+          setOverviewAlertActionCount(actionRequired);
+        }}
+      />
+
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 shadow-[0_-8px_24px_rgba(0,0,0,0.35)]">
+        <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="bottom" />
       </div>
 
       <ChatCopilot data={dataForCopilot} />

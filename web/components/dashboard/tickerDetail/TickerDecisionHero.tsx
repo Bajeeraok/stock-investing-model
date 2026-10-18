@@ -229,6 +229,7 @@ export function TickerDecisionHero({
   gatesPassed,
   gatesTotal,
   onOpenWhy,
+  compact = false,
 }: {
   ticker: string;
   companyName?: string | null;
@@ -242,6 +243,8 @@ export function TickerDecisionHero({
   gatesPassed: number;
   gatesTotal: number;
   onOpenWhy?: () => void;
+  /** Reason + levels only — the Verdict tab's VerdictPanel already shows the badge and gates. */
+  compact?: boolean;
 }) {
   const reason: SignalReasonPayload | null | undefined =
     summary.signal_reason_by_persona?.[mode] ?? summary.signal_reason;
@@ -250,8 +253,9 @@ export function TickerDecisionHero({
   const factors = (reason?.factors ?? []).slice(0, 4);
 
   return (
-    <div className={clsx("rounded-2xl border-2 bg-td-surface overflow-hidden", MODE_ACCENT[mode])}>
+    <div className={clsx("rounded-2xl bg-td-surface overflow-hidden", compact ? "border border-td-line" : "border-2", !compact && MODE_ACCENT[mode])}>
       {/* Ticker · verdict · price */}
+      {!compact && (
       <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-td-line">
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
@@ -286,6 +290,7 @@ export function TickerDecisionHero({
           )}
         </div>
       </div>
+      )}
 
       {/* Reason + levels */}
       <div className="grid sm:grid-cols-[1.2fr_1fr] gap-4 px-4 sm:px-5 py-4">
@@ -334,7 +339,7 @@ export function TickerDecisionHero({
       </div>
 
       {/* Gates */}
-      {gates.length > 0 && (
+      {!compact && gates.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-4 sm:px-5 py-3 bg-td-surface2/40 border-t border-td-line">
           {gates.map((g) => (
             <div

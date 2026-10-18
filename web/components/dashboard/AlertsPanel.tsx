@@ -194,6 +194,32 @@ function TickerAlertAccordion({
   );
 }
 
+const SNOOZE_KEY = "thrive-alert-snooze";
+const SNOOZE_EVENT = "thrive-alert-snooze-changed";
+const SNOOZE_HOURS = 24;
+
+function readSnoozes(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(SNOOZE_KEY) || "{}") as Record<string, number>;
+    const now = Date.now();
+    return Object.fromEntries(Object.entries(raw).filter(([, until]) => until > now));
+  } catch {
+    return {};
+  }
+}
+
+/** Per-viewer snooze (24h) — dismiss is server-side and permanent; snooze just hides it here. */
+function snoozeAlert(id: string): void {
+  const next = { ...readSnoozes(), [id]: Date.now() + SNOOZE_HOURS * 3600_000 };
+  try {
+    localStorage.setItem(SNOOZE_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+  window.dispatchEvent(new Event(SNOOZE_EVENT));
+}
+
 function AlertCard({
   alert: a,
   onTickerClick,
@@ -309,14 +335,24 @@ function AlertCard({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => onDismiss(a.id)}
-          className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white shrink-0 touch-manipulation"
-          title="Dismiss"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => onDismiss(a.id)}
+            className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white touch-manipulation"
+            title="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => snoozeAlert(a.id)}
+            className="px-2 py-1 rounded-md text-[10.5px] font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800 touch-manipulation"
+            title={`Hide for ${SNOOZE_HOURS}h (this browser only)`}
+          >
+            Snooze
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -449,12 +485,21 @@ export function AlertsPanel({
     [base],
   );
 
+  const [snoozed, setSnoozed] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const sync = () => setSnoozed(readSnoozes());
+    sync();
+    window.addEventListener(SNOOZE_EVENT, sync);
+    return () => window.removeEventListener(SNOOZE_EVENT, sync);
+  }, []);
+
   const visibleAlerts = useMemo(
     () =>
       alerts.filter(
-        (a) => alertMatchesTrackPrefs(a, trackPrefs) && alertMatchesSideFilter(a, sideFilter),
+        (a) =>
+          !snoozed[a.id] && alertMatchesTrackPrefs(a, trackPrefs) && alertMatchesSideFilter(a, sideFilter),
       ),
-    [alerts, trackPrefs, sideFilter],
+    [alerts, trackPrefs, sideFilter, snoozed],
   );
 
   const applySideFilter = useCallback((filter: AlertSideFilter) => {

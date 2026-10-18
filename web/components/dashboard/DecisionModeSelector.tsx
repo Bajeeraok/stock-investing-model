@@ -18,11 +18,42 @@ export function DecisionModeSelector({
   mode,
   onChange,
   className,
+  variant = "default",
 }: {
   mode: DecisionMode;
   onChange: (mode: DecisionMode) => void;
   className?: string;
+  /** "segmented" — one-row Scout / Swing / Owner switch (redesign header pattern), hint as tooltip only. */
+  variant?: "default" | "segmented";
 }) {
+  if (variant === "segmented") {
+    return (
+      <div
+        className={clsx("flex gap-1 rounded-xl bg-td-surface2/80 border border-td-line p-1", className)}
+        role="group"
+        aria-label="Decision mode"
+      >
+        {MODES.map(({ id }) => {
+          const active = mode === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onChange(id)}
+              title={decisionModeHint(id)}
+              aria-pressed={active}
+              className={clsx(
+                "flex-1 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold transition-colors touch-manipulation",
+                active ? "bg-td-owner text-white shadow-sm" : "text-td-muted hover:text-td-text",
+              )}
+            >
+              {decisionModeLabel(id)}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div className={clsx("space-y-1.5", className)} role="group" aria-label="Decision mode">
       <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-0.5">
