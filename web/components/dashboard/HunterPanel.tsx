@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Crosshair } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 import { clsx } from "clsx";
-import { PossessionBadge, type PositionStatus } from "./PossessionBadge";
-import { paginateRows, TablePager } from "./TablePager";
+import { PossessionBadge } from "./PossessionBadge";
 import {
   BUILTIN_HUNTER_SCREENS,
   filterHunterCandidates,
@@ -24,7 +23,7 @@ import {
   type TickerSourceFilter,
 } from "@/lib/tickerSourceFilter";
 
-const PAGE_SIZE = 20;
+const GROUP_PREVIEW = 6;
 
 export type { HunterCandidate, HunterReason } from "@/lib/hunterScreens";
 
@@ -51,12 +50,89 @@ const REASON_LABEL: Record<HunterReason, string> = {
   warming: "Warming",
 };
 
-const REASON_STYLE: Record<HunterReason, string> = {
-  velocity: "bg-violet-500/15 text-violet-300 border-violet-500/30",
-  go_ready: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  almost_ready: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  warming: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-};
+/** Readiness tiers in reading order — same 4 primary gates as the ticker Verdict/Why tabs. */
+const TIERS: { id: HunterReason; chip: string; title: string; hint: string; chipOn: string; head: string }[] = [
+  { id: "velocity", chip: "Tactical", title: "Tactical", hint: "velocity breakout — not full GO", chipOn: "bg-td-owner-weak text-td-owner", head: "text-td-owner" },
+  { id: "go_ready", chip: "GO", title: "GO · all gates green", hint: "4/4 gates", chipOn: "bg-td-accent-weak text-td-accent", head: "text-td-accent" },
+  { id: "almost_ready", chip: "Almost", title: "Almost ready", hint: "3/4 gates", chipOn: "bg-td-info/15 text-td-info", head: "text-td-info" },
+  { id: "warming", chip: "Warming", title: "Warming", hint: "2/4 gates or fewer", chipOn: "bg-td-warn-weak text-td-warn", head: "text-td-warn" },
+];
+
+function actionTone(action: string): string {
+  const u = action.toUpperCase();
+  if (/REDUCE|TRIM|SELL|AVOID|EXIT/.test(u)) return "bg-td-crit-weak text-td-crit";
+  if (/BUY|ADD|GO/.test(u)) return "bg-td-accent-weak text-td-accent";
+  if (/WATCH|WAIT/.test(u)) return "bg-td-warn-weak text-td-warn";
+  return "bg-td-surface2 text-td-muted";
+}
+
+function GateBar({ passed, total }: { passed: number; total: number }) {
+  return (
+    <div className="flex gap-[3px]" aria-label={`${passed} of ${total} gates pass`}>
+      {Array.from({ length: total }).map((_, i) => (
+        <span key={i} className={clsx("h-1 flex-1 rounded-full", i < passed ? "bg-td-accent" : "bg-td-surface2")} />
+      ))}
+    </div>
+  );
+}
+
+function HunterCard({ r, onTickerClick }: { r: HunterCandidate; onTickerClick?: (ticker: string) => void }) {
+  const total = r.gates_total ?? 4;
+  const passed = Math.max(0, Math.min(total, r.gates_passed ?? 0));
+  const missing = total - passed;
+  const action = (r.plan_action || r.signal || "").replace(/_/g, " ").trim();
+  const facts = [
+    `${passed}/${total} gates`,
+    r.velocity_triggered || r.track === "velocity"
+      ? `Velocity${r.velocity_score != null ? ` ${Math.round(r.velocity_score)}` : ""}`
+      : r.track
+        ? r.track.charAt(0).toUpperCase() + r.track.slice(1)
+        : null,
+    r.rsi != null ? `RSI ${Math.round(r.rsi)}` : null,
+    r.regime ?? null,
+  ].filter(Boolean);
+  const next =
+    r.gate_cleared || missing === 0
+      ? "All gates green — open Levels for the staged add"
+      : `Next: ${missing} more gate${missing === 1 ? "" : "s"} for full GO`;
+  return (
+    <button
+      type="button"
+      onClick={() => onTickerClick?.(r.ticker)}
+      className={clsx(
+        "w-full text-left rounded-xl border bg-td-surface px-3.5 py-3 transition-colors hover:bg-td-surface2/50",
+        r.position_status === "owned" ? "border-td-owner/50" : "border-td-line",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-[14px] font-bold text-td-text">{r.ticker}</span>
+          <PossessionBadge status={r.position_status} />
+        </span>
+        <span className="flex items-center gap-2 shrink-0">
+          {r.composite_buy != null && (
+            <span className="font-mono text-[11px] text-td-muted tabular-nums">Score {r.composite_buy.toFixed(0)}</span>
+          )}
+          {action && (
+            <span className={clsx("font-mono text-[10.5px] font-bold px-2 py-0.5 rounded-full uppercase", actionTone(action))}>
+              {action.length > 14 ? `${action.slice(0, 13)}…` : action}
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="mt-2">
+        <GateBar passed={passed} total={total} />
+      </div>
+      <p className="mt-1.5 text-[11.5px] text-td-muted">{facts.join(" · ")}</p>
+      <p className="mt-1 text-[11.5px] text-td-info">
+        {next}
+        {r.hunter_reason === "velocity" && r.tactical_t1 != null ? ` · T1 $${r.tactical_t1.toFixed(2)}` : ""}
+        {r.hunter_reason === "velocity" && r.tactical_stop != null ? ` · stop $${r.tactical_stop.toFixed(2)}` : ""}
+        {" ›"}
+      </p>
+    </button>
+  );
+}
 
 export function HunterPanel({
   panel,
@@ -75,8 +151,10 @@ export function HunterPanel({
   onSourceChange: (id: TickerSourceFilter) => void;
 }) {
   const [screen, setScreen] = useState<HunterScreenId>("all_hunt");
-  const [page, setPage] = useState(0);
   const [customScreens, setCustomScreens] = useState<CustomHunterScreen[]>([]);
+  const [tierFilter, setTierFilter] = useState<HunterReason | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Partial<Record<HunterReason, boolean>>>({});
 
   useEffect(() => {
     setScreen(loadHunterScreen());
@@ -88,6 +166,7 @@ export function HunterPanel({
 
   const allCandidates = panel?.candidates ?? [];
 
+  /** Screen + book filters (the Filters sheet) — tier chips then slice this. */
   const filtered = useMemo(() => {
     let rows = filterHunterCandidates(allCandidates, screen);
     const tickers = rows.map((r) => r.ticker);
@@ -98,199 +177,187 @@ export function HunterPanel({
     return rows;
   }, [allCandidates, screen, source, portfolioSet, watchlistSet]);
 
-  useEffect(() => {
-    setPage(0);
-  }, [screen, source]);
+  const byTier = useMemo(() => {
+    const m: Record<HunterReason, HunterCandidate[]> = { velocity: [], go_ready: [], almost_ready: [], warming: [] };
+    for (const r of filtered) m[r.hunter_reason]?.push(r);
+    return m;
+  }, [filtered]);
 
-  const paged = useMemo(() => paginateRows(filtered, page, PAGE_SIZE), [filtered, page]);
-
-  const counts = panel?.counts;
+  const shownCount = tierFilter ? byTier[tierFilter].length : filtered.length;
 
   const handleScreen = (id: HunterScreenId) => {
     setScreen(id);
     saveHunterScreen(id);
   };
 
+  const activeFilterCount = (screen !== "all_hunt" ? 1 : 0) + (source !== "all" ? 1 : 0);
+  let asOf: string | null = null;
+  if (panel?.as_of) {
+    const d = new Date(panel.as_of);
+    asOf = Number.isNaN(d.getTime())
+      ? panel.as_of.slice(0, 16)
+      : `${d.toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" })} ET`;
+  }
+
   return (
-    <div className="rounded-xl border border-emerald-500/30 bg-gradient-to-b from-emerald-950/20 to-slate-900/40 p-4 space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-            <Crosshair className="h-4 w-4 text-emerald-400 shrink-0" />
-            Hunter panel
-            <span className="text-emerald-300/90 tabular-nums font-normal">
-              ({panel?.candidate_count ?? 0} setups)
-            </span>
-          </p>
-          <p className="text-[11px] text-slate-500 mt-1 max-w-2xl leading-relaxed">
+    <div className="space-y-3">
+      {/* Tier chips + Filters */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+        {TIERS.map((t) => {
+          const n = byTier[t.id].length;
+          const on = tierFilter === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTierFilter(on ? null : t.id)}
+              aria-pressed={on}
+              title={t.hint}
+              className={clsx(
+                "shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                on ? t.chipOn : "bg-td-surface2/70 text-td-muted hover:text-td-text",
+                n === 0 && !on && "opacity-50",
+              )}
+            >
+              {t.chip} {n}
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((o) => !o)}
+          aria-expanded={filtersOpen}
+          className={clsx(
+            "ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+            filtersOpen || activeFilterCount ? "bg-td-surface2 text-td-text" : "text-td-muted hover:text-td-text",
+          )}
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Filters{activeFilterCount ? ` · ${activeFilterCount}` : ""}
+        </button>
+      </div>
+
+      <p className="text-[11px] text-td-muted">
+        {shownCount} of {panel?.universe_size ?? allCandidates.length}
+        {" · "}
+        {source === "portfolio" ? "owning" : source === "watchlist_only" ? "watching" : "your book"}
+        {asOf ? ` · as of ${asOf}` : ""}
+      </p>
+
+      {filtersOpen && (
+        <div className="rounded-xl border border-td-line bg-td-surface p-3 space-y-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-td-muted uppercase tracking-wide shrink-0 w-12">Screen</span>
+            {BUILTIN_HUNTER_SCREENS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                title={s.hint}
+                onClick={() => handleScreen(s.id)}
+                className={clsx(
+                  "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                  screen === s.id
+                    ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
+                    : "border-slate-600 text-slate-400 hover:text-slate-200",
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+            {customScreens.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => handleScreen(`custom:${c.id}` as HunterScreenId)}
+                className={clsx(
+                  "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                  screen === `custom:${c.id}`
+                    ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
+                    : "border-slate-600 text-slate-400",
+                )}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-td-muted uppercase tracking-wide shrink-0 w-12">Book</span>
+            {TICKER_SOURCE_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                title={f.hint}
+                onClick={() => onSourceChange(f.id)}
+                className={clsx(
+                  "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                  source === f.id
+                    ? "border-sky-500/45 bg-sky-500/15 text-sky-200"
+                    : "border-slate-600 text-slate-400 hover:text-slate-200",
+                )}
+              >
+                {f.id === "portfolio" ? "Owning" : f.id === "watchlist_only" ? "Watching" : f.label}
+              </button>
+            ))}
+          </div>
+          <details className="text-[11px] text-slate-500">
+            <summary className="cursor-pointer hover:text-slate-400">Save custom screen (max 2)</summary>
+            <CustomScreenEditor
+              screens={customScreens}
+              onChange={(next) => {
+                setCustomScreens(next);
+                saveCustomHunterScreens(next);
+              }}
+            />
+          </details>
+          <p className="text-[10.5px] text-td-muted leading-snug">
             {panel?.methodology ??
               "Your book (watchlist + portfolio) — tactical velocity or readiness tiers. Updates on Dashboard Refresh."}
           </p>
         </div>
-        {panel?.as_of && (
-          <span className="text-[10px] text-slate-500 font-mono">as of {panel.as_of.slice(0, 16)}</span>
-        )}
-      </div>
-
-      {(counts?.velocity ?? 0) > 0 || (counts?.go_ready ?? 0) > 0 ? (
-        <div className="flex flex-wrap gap-2 text-[11px]">
-          {(counts?.velocity ?? 0) > 0 && (
-            <span className="rounded-full border border-violet-500/35 px-2 py-0.5 text-violet-300 tabular-nums">
-              Tactical {counts?.velocity}
-            </span>
-          )}
-          {(counts?.go_ready ?? 0) > 0 && (
-            <span className="rounded-full border border-emerald-500/35 px-2 py-0.5 text-emerald-300 tabular-nums">
-              GO {counts?.go_ready}
-            </span>
-          )}
-          {(counts?.almost_ready ?? 0) > 0 && (
-            <span className="rounded-full border border-sky-500/35 px-2 py-0.5 text-sky-300 tabular-nums">
-              Almost {counts?.almost_ready}
-            </span>
-          )}
-          {(counts?.warming ?? 0) > 0 && (
-            <span className="rounded-full border border-amber-500/35 px-2 py-0.5 text-amber-300 tabular-nums">
-              Warming {counts?.warming}
-            </span>
-          )}
-          {(counts?.not_in_portfolio ?? 0) > 0 && (
-            <span className="rounded-full border border-slate-600 px-2 py-0.5 text-slate-400 tabular-nums">
-              Not in book {counts?.not_in_portfolio}
-            </span>
-          )}
-        </div>
-      ) : null}
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">Screen</span>
-        {BUILTIN_HUNTER_SCREENS.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            title={s.hint}
-            onClick={() => handleScreen(s.id)}
-            className={clsx(
-              "text-[11px] px-2 py-1 rounded-full border shrink-0",
-              screen === s.id
-                ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
-                : "border-slate-600 text-slate-400 hover:text-slate-200",
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-        {customScreens.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => handleScreen(`custom:${c.id}` as HunterScreenId)}
-            className={clsx(
-              "text-[11px] px-2 py-1 rounded-full border shrink-0",
-              screen === `custom:${c.id}`
-                ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
-                : "border-slate-600 text-slate-400",
-            )}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">Book</span>
-        {TICKER_SOURCE_FILTERS.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            title={f.hint}
-            onClick={() => onSourceChange(f.id)}
-            className={clsx(
-              "text-[11px] px-2 py-1 rounded-full border shrink-0",
-              source === f.id
-                ? "border-sky-500/45 bg-sky-500/15 text-sky-200"
-                : "border-slate-600 text-slate-400 hover:text-slate-200",
-            )}
-          >
-            {f.id === "portfolio" ? "Owning" : f.id === "watchlist_only" ? "Watching" : f.label}
-          </button>
-        ))}
-        <span className="text-[10px] text-slate-600 tabular-nums ml-auto">
-          {filtered.length}/{allCandidates.length} shown · universe {panel?.universe_size ?? "—"}
-        </span>
-      </div>
+      )}
 
       {panel?.message && (
         <p className="text-xs text-amber-200/90 border border-amber-500/30 rounded-lg px-3 py-2">{panel.message}</p>
       )}
 
       {filtered.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-td-muted">
           No names match this screen right now. Cache refresh picks up new readiness / tactical flags.
         </p>
       ) : (
-        <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-          <table className="w-full text-xs text-left min-w-[640px]">
-            <thead>
-              <tr className="text-slate-500 border-b border-slate-600">
-                <th className="py-1.5 pr-2 font-medium">Ticker</th>
-                <th className="py-1.5 pr-2 font-medium">Book</th>
-                <th className="py-1.5 pr-2 font-medium">Setup</th>
-                <th className="py-1.5 pr-2 font-medium">Gates</th>
-                <th className="py-1.5 pr-2 font-medium">Track</th>
-                <th className="py-1.5 pr-2 font-medium">Score</th>
-                <th className="py-1.5 pr-2 font-medium">Signal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.map((r) => (
-                <tr key={r.ticker} className="border-b border-slate-700/50 text-slate-300">
-                  <td className="py-1 pr-2">
-                    <button
-                      type="button"
-                      onClick={() => onTickerClick?.(r.ticker)}
-                      className="font-mono font-medium text-emerald-200 hover:underline"
-                    >
-                      {r.ticker}
-                    </button>
-                  </td>
-                  <td className="py-1 pr-2">
-                    <PossessionBadge status={r.position_status} />
-                  </td>
-                  <td className="py-1 pr-2">
-                    <span
-                      className={clsx(
-                        "px-1.5 py-0.5 rounded text-[10px] border uppercase",
-                        REASON_STYLE[r.hunter_reason],
-                      )}
-                    >
-                      {REASON_LABEL[r.hunter_reason]}
-                    </span>
-                  </td>
-                  <td className="py-1 pr-2 tabular-nums">
-                    {r.gates_passed ?? "—"}/{r.gates_total ?? 4}
-                  </td>
-                  <td className="py-1 pr-2 uppercase text-[10px] text-slate-400">{r.track ?? "—"}</td>
-                  <td className="py-1 pr-2 tabular-nums">{r.composite_buy?.toFixed(0) ?? "—"}</td>
-                  <td className="py-1 pr-2">{r.signal ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-5">
+          {TIERS.filter((t) => (tierFilter ? t.id === tierFilter : true)).map((t) => {
+            const rows = byTier[t.id];
+            if (!rows.length) return null;
+            const open = expanded[t.id] || tierFilter === t.id;
+            const visible = open ? rows : rows.slice(0, GROUP_PREVIEW);
+            return (
+              <section key={t.id} aria-label={t.title}>
+                <div className="flex items-baseline justify-between gap-2 mb-2">
+                  <h4 className={clsx("text-[11.5px] font-bold uppercase tracking-wider", t.head)}>
+                    {t.title} · {rows.length}
+                  </h4>
+                  <span className="text-[11px] text-td-muted">{t.hint}</span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+                  {visible.map((r) => (
+                    <HunterCard key={r.ticker} r={r} onTickerClick={onTickerClick} />
+                  ))}
+                </div>
+                {rows.length > GROUP_PREVIEW && tierFilter !== t.id && (
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((e) => ({ ...e, [t.id]: !e[t.id] }))}
+                    className="mt-2 text-[11.5px] font-semibold text-td-accent"
+                  >
+                    {open ? "Show fewer" : `Show all ${rows.length} ›`}
+                  </button>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
-      <TablePager page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
-
-      <details className="text-[11px] text-slate-500">
-        <summary className="cursor-pointer hover:text-slate-400">Save custom screen (max 2)</summary>
-        <CustomScreenEditor
-          screens={customScreens}
-          onChange={(next) => {
-            setCustomScreens(next);
-            saveCustomHunterScreens(next);
-          }}
-        />
-      </details>
     </div>
   );
 }

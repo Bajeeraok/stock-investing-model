@@ -3099,6 +3099,7 @@ def _compute_full_dashboard_sync() -> dict:
             "score": config.get("score", {}),
             "regime": config.get("regime", {}),
             "risk_sizing": {"risk_pct": risk_pct, "stop_pct": stop_pct},
+            "concentration_alert_pct": config.get("concentration_alert_pct", 20),
             "model_rules": config.get("model_rules") or {"add_min_confidence": 70, "trim_max_confidence": 30, "add_min_regime": "UP"},
             "horizons": {
                 "short_term": "~1 month (2–4 weeks)",
@@ -3933,6 +3934,73 @@ async def get_live_prices(tickers: str = Query(..., description="Comma-separated
         "source": source,
         "count": len(prices),
     }
+
+
+_SECTOR_MAP_ETFS: list[tuple[str, str]] = [
+    ("XLK", "Tech"),
+    ("XLC", "Comm"),
+    ("XLY", "Discretionary"),
+    ("XLF", "Financials"),
+    ("XLV", "Health"),
+    ("XLE", "Energy"),
+    ("XLI", "Industrials"),
+    ("XLP", "Staples"),
+    ("XLU", "Utilities"),
+    ("XLB", "Materials"),
+    ("XLRE", "Real estate"),
+]
+_SECTOR_MAP_CACHE: dict[str, Any] = {"at": 0.0, "data": None}
+_SECTOR_MAP_TTL_S = 600
+
+
+@router.get("/sector-map")
+async def get_sector_map():
+    """
+    Today tab "Market map": SPY + SPDR sector ETFs, % change of the latest daily bar vs the
+    prior close (yfinance, ~15-min delayed during RTH). Cached in-process for 10 minutes.
+    Response: { spy: {ticker, change_pct}, sectors: [{ticker, name, change_pct}], as_of }
+    """
+    from starlette.concurrency import run_in_threadpool
+
+    now = time.time()
+    cached = _SECTOR_MAP_CACHE.get("data")
+    if cached and now - float(_SECTOR_MAP_CACHE.get("at") or 0) < _SECTOR_MAP_TTL_S:
+        return cached
+
+    def _fetch() -> dict:
+        import yfinance as yf
+
+        syms = ["SPY"] + [s for s, _ in _SECTOR_MAP_ETFS]
+        df = yf.download(syms, period="5d", interval="1d", progress=False, auto_adjust=False, threads=True)
+        closes = df["Close"] if "Close" in df else df
+        changes: dict[str, float | None] = {}
+        for s in syms:
+            try:
+                series = closes[s].dropna()
+                if len(series) >= 2 and float(series.iloc[-2]) > 0:
+                    changes[s] = round((float(series.iloc[-1]) / float(series.iloc[-2]) - 1.0) * 100.0, 2)
+                else:
+                    changes[s] = None
+            except Exception:
+                changes[s] = None
+        return {
+            "spy": {"ticker": "SPY", "change_pct": changes.get("SPY")},
+            "sectors": [{"ticker": s, "name": n, "change_pct": changes.get(s)} for s, n in _SECTOR_MAP_ETFS],
+            "as_of": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "source": "yfinance_daily",
+        }
+
+    try:
+        data = await run_in_threadpool(_fetch)
+    except Exception as e:
+        logger.warning("[sector-map] fetch failed: %s", e)
+        if cached:
+            return cached
+        return {"spy": None, "sectors": [], "as_of": None, "source": None, "error": "sector data unavailable"}
+
+    _SECTOR_MAP_CACHE["at"] = now
+    _SECTOR_MAP_CACHE["data"] = data
+    return data
 
 
 @router.get("/ticker/{ticker}/intraday")

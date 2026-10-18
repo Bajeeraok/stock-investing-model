@@ -29,10 +29,10 @@ import { defaultPresetForLens, type TradingLens } from "@/lib/tradingLens";
 type SignalsSubTab = "scanner" | "hunter" | "roadmaps" | "heatmap";
 
 const SUB_TABS: { id: SignalsSubTab; label: string; icon: typeof LineChart }[] = [
-  { id: "scanner", label: "Scanner", icon: LineChart },
   { id: "hunter", label: "Hunter", icon: Crosshair },
-  { id: "roadmaps", label: "Roadmaps", icon: LayoutGrid },
+  { id: "scanner", label: "Scanner", icon: LineChart },
   { id: "heatmap", label: "Heatmap", icon: Grid3x3 },
+  { id: "roadmaps", label: "Roadmaps", icon: LayoutGrid },
 ];
 
 const SUB_TAB_STORAGE_KEY = "thrive-signals-subtab";
@@ -44,7 +44,7 @@ function loadSubTab(): SignalsSubTab {
   } catch {
     /* ignore */
   }
-  return "scanner";
+  return "hunter";
 }
 
 export function SignalsHub({
@@ -78,7 +78,7 @@ export function SignalsHub({
   roadmapsWarming?: boolean;
   signalsByTicker?: Map<string, SignalPresetRow>;
 }) {
-  const [subTab, setSubTab] = useState<SignalsSubTab>("scanner");
+  const [subTab, setSubTab] = useState<SignalsSubTab>("hunter");
   const [source, setSource] = useState<TickerSourceFilter>("all");
   const [preset, setPreset] = useState<SignalsPresetId>("all");
 
