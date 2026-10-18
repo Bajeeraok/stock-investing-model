@@ -70,3 +70,13 @@ body {
     text-wrap: balance;
   }
 }
+
+/* Ticker detail page/drawer entrance — slides in from the right (iOS-style push). */
+@keyframes td-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.td-slide-in { animation: td-slide-in 0.2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .td-slide-in { animation: none; }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
 import type {
@@ -119,6 +119,7 @@ import {
 } from "./dashboard/PortfolioOverviewCards";
 import { RegimeValidationPanel } from "./dashboard/RegimeValidationPanel";
 import { LivePricesProvider } from "@/lib/LivePriceContext";
+import { useTickerDetailLayout } from "@/lib/useMediaQuery";
 
 const AUTO_REFRESH_MIN = 30;
 
@@ -183,6 +184,37 @@ interface Props {
   lastRefreshedAt?: Date | null;
 }
 
+type DetailTab = "verdict" | "levels" | "why" | "context" | "track";
+const DETAIL_TABS: DetailTab[] = ["verdict", "why", "levels", "context", "track"];
+
+/** Ticker detail lives in the URL (?t=HAL&view=levels) so back closes it and links share. */
+function readTickerFromUrl(): { ticker: string | null; view: DetailTab } {
+  if (typeof window === "undefined") return { ticker: null, view: "verdict" };
+  const q = new URLSearchParams(window.location.search);
+  const t = (q.get("t") || "").trim().toUpperCase();
+  const v = q.get("view") as DetailTab | null;
+  return {
+    ticker: /^[A-Z0-9.\-^=]{1,12}$/.test(t) ? t : null,
+    view: v && DETAIL_TABS.includes(v) ? v : "verdict",
+  };
+}
+
+function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "replace"): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  if (ticker) {
+    url.searchParams.set("t", ticker);
+    if (view && view !== "verdict") url.searchParams.set("view", view);
+    else url.searchParams.delete("view");
+  } else {
+    url.searchParams.delete("t");
+    url.searchParams.delete("view");
+  }
+  const state = { ...(window.history.state ?? {}), thriveTicker: ticker ?? null };
+  if (mode === "push") window.history.pushState(state, "", url);
+  else window.history.replaceState(state, "", url);
+}
+
 type PlanSub = "income" | "opportunities";
 type MoreSub = "markets" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
@@ -191,10 +223,60 @@ const MORE_SUB_KEY = "thrive-more-sub";
 export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stale = false, lastRefreshedAt }: Props) {
   const router = useRouter();
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [modalInitialTab, setModalInitialTab] = useState<"verdict" | "levels" | "why" | "context" | "track">("verdict");
-  const openTickerDetail = useCallback((ticker: string, tab?: "verdict" | "levels" | "why" | "context" | "track") => {
-    setModalInitialTab(tab ?? "verdict");
-    setSelectedTicker(ticker);
+  const [modalInitialTab, setModalInitialTab] = useState<DetailTab>("verdict");
+  /** Desktop pane → full-width drawer ("Expand"). Reset whenever the detail closes. */
+  const [detailExpanded, setDetailExpanded] = useState(false);
+  const detailLayout = useTickerDetailLayout();
+  const selectedTickerRef = useRef<string | null>(null);
+  selectedTickerRef.current = selectedTicker;
+  /** True when this session pushed the ?t= history entry — then close = history.back(). */
+  const pushedDetailRef = useRef(false);
+
+  const openTickerDetail = useCallback((ticker: string, tab?: DetailTab) => {
+    const t = ticker.toUpperCase();
+    const view = tab ?? "verdict";
+    const alreadyOpen = selectedTickerRef.current != null;
+    setModalInitialTab(view);
+    setSelectedTicker(t);
+    // First open pushes a history entry (back closes it); switching tickers while open
+    // replaces it, so stepping through a list doesn't stack 20 back-presses.
+    writeTickerUrl(t, view, alreadyOpen ? "replace" : "push");
+    if (!alreadyOpen) pushedDetailRef.current = true;
+  }, []);
+
+  const closeTickerDetail = useCallback(() => {
+    setDetailExpanded(false);
+    if (pushedDetailRef.current && window.history.state?.thriveTicker) {
+      pushedDetailRef.current = false;
+      window.history.back(); // popstate clears selectedTicker
+      return;
+    }
+    pushedDetailRef.current = false;
+    setSelectedTicker(null);
+    writeTickerUrl(null, "verdict", "replace");
+  }, []);
+
+  const handleDetailTabChange = useCallback((tab: DetailTab) => {
+    const t = selectedTickerRef.current;
+    if (t) writeTickerUrl(t, tab, "replace");
+  }, []);
+
+  // Deep link on load + browser back/forward.
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const { ticker, view } = readTickerFromUrl();
+      if (!ticker) {
+        pushedDetailRef.current = false;
+        setDetailExpanded(false);
+        setSelectedTicker(null);
+        return;
+      }
+      setModalInitialTab(view);
+      setSelectedTicker(ticker);
+    };
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
   }, []);
   const [refreshAgo, setRefreshAgo] = useState("");
   const [eodSaving, setEodSaving] = useState(false);
@@ -358,7 +440,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     }
   }, [router]);
 
-  const handleTabChange = setActiveTab;
+  const handleTabChange = useCallback(
+    (id: TabId) => {
+      // Mobile: the ticker page sits over the content — a bottom-nav tap means "go there".
+      if (detailLayout === "page" && selectedTickerRef.current) closeTickerDetail();
+      setActiveTab(id);
+    },
+    [detailLayout, closeTickerDetail, setActiveTab],
+  );
 
   const setPlanSubPersist = useCallback((v: PlanSub) => {
     setPlanSub(v);
@@ -993,6 +1082,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     }
   };
 
+  /** Desktop (≥1280px) list + detail split: the detail renders inline as the right pane. */
+  const showPane = detailLayout === "pane" && !!selectedTicker;
+
   return (
     <LivePricesProvider tickers={livePriceTickers}>
     <PriceAlertWatcher />
@@ -1061,17 +1153,32 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         </div>
       </header>
 
-      <div className="max-w-[min(1600px,96vw)] mx-auto px-3 sm:px-6 md:flex md:gap-6">
-        {/* Desktop: persistent left rail — the 5 tabs + mode switcher, always visible */}
-        <aside className="hidden md:flex md:flex-col md:w-52 lg:w-56 shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] py-5 gap-5">
-          <div>
-            <p className="px-1 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-td-muted">Deciding as</p>
-            <DecisionModeSelector mode={tradingLens} onChange={handleTradingLensChange} variant="segmented" />
-          </div>
-          <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="rail" />
-          <div className="mt-auto px-1 text-[10.5px] text-td-muted leading-snug">
-            <ModelDisclaimer className="text-[10px] text-td-muted/80 leading-snug flex items-start gap-1.5" />
-          </div>
+      <div
+        className={clsx(
+          "mx-auto px-3 sm:px-6 md:flex md:gap-6",
+          showPane ? "max-w-none sm:pr-0 md:gap-5" : "max-w-[min(1600px,96vw)]",
+        )}
+      >
+        {/* Desktop: persistent left rail — the 5 tabs + mode switcher, always visible.
+            Collapses to icons while the detail pane is open so the list keeps its width. */}
+        <aside
+          className={clsx(
+            "hidden md:flex md:flex-col shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)] py-5 gap-5",
+            showPane ? "md:w-12" : "md:w-52 lg:w-56",
+          )}
+        >
+          {!showPane && (
+            <div>
+              <p className="px-1 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-td-muted">Deciding as</p>
+              <DecisionModeSelector mode={tradingLens} onChange={handleTradingLensChange} variant="segmented" />
+            </div>
+          )}
+          <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="rail" compact={showPane} />
+          {!showPane && (
+            <div className="mt-auto px-1 text-[10.5px] text-td-muted leading-snug">
+              <ModelDisclaimer className="text-[10px] text-td-muted/80 leading-snug flex items-start gap-1.5" />
+            </div>
+          )}
         </aside>
 
         <main className="flex-1 min-w-0 py-4 sm:py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:pb-8 overflow-x-hidden space-y-4">
@@ -1259,6 +1366,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       roadmapTickers={roadmapTickers}
                       roadmapsWarming={Boolean(data.warming)}
                       signalsByTicker={signalsByTicker}
+                      splitPane={detailLayout === "pane"}
+                      activeTicker={selectedTicker}
                     />
                   </div>
                 </>
@@ -2002,21 +2111,56 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             </div>
           )}
         </main>
+
+        {showPane && selectedTicker && detailExpanded && (
+          <div
+            className="hidden xl:block fixed inset-0 z-[99] bg-black/60 backdrop-blur-[2px]"
+            onClick={() => setDetailExpanded(false)}
+            aria-hidden
+          />
+        )}
+        {showPane && selectedTicker && (
+          <aside
+            className={clsx(
+              "hidden xl:block border-l border-td-line",
+              detailExpanded
+                ? "td-slide-in fixed inset-y-0 right-0 z-[100] w-[min(96vw,1280px)] shadow-2xl shadow-black/50"
+                : "w-[46%] 2xl:w-[48%] max-w-[60rem] shrink-0 sticky top-16 self-start h-[calc(100vh-4rem)]",
+            )}
+            aria-label={`${selectedTicker} detail`}
+          >
+            <TickerDetailModal
+              ticker={selectedTicker}
+              initialTab={modalInitialTab}
+              onClose={closeTickerDetail}
+              portfolioImpactContext={portfolioImpactContext}
+              layout="pane"
+              expanded={detailExpanded}
+              onExpand={() => setDetailExpanded((v) => !v)}
+              onTabChange={handleDetailTabChange}
+            />
+          </aside>
+        )}
       </div>
 
-      {selectedTicker && (
+      {selectedTicker && !showPane && (
         <TickerDetailModal
           ticker={selectedTicker}
           initialTab={modalInitialTab}
-          onClose={() => setSelectedTicker(null)}
+          onClose={closeTickerDetail}
           portfolioImpactContext={portfolioImpactContext}
+          layout={detailLayout === "page" ? "page" : "drawer"}
+          onTabChange={handleDetailTabChange}
         />
       )}
 
       <AlertsScreen
         open={alertsOpen}
         onClose={() => setAlertsOpen(false)}
-        onTickerClick={openTickerDetail}
+        onTickerClick={(t) => {
+          setAlertsOpen(false);
+          openTickerDetail(t);
+        }}
         dashboardRefreshedAt={
           lastRefreshedAt?.toISOString() ?? data.as_of_date ?? data.data_freshness?.snapshot_updated_at ?? null
         }

@@ -48,9 +48,11 @@ interface Props {
   badges?: Partial<Record<TabId, number>>;
   /** rail = desktop persistent left column · bottom = mobile thumb bar */
   variant?: "rail" | "bottom";
+  /** Rail only: icon-only column (desktop split view gives the width to list + detail pane). */
+  compact?: boolean;
 }
 
-export function DashboardTabs({ active, onChange, badges, variant = "rail" }: Props) {
+export function DashboardTabs({ active, onChange, badges, variant = "rail", compact = false }: Props) {
   if (variant === "bottom") {
     return (
       <nav
@@ -104,8 +106,10 @@ export function DashboardTabs({ active, onChange, badges, variant = "rail" }: Pr
             aria-selected={isActive}
             title={`${label} (${shortcut})`}
             onClick={() => onChange(id)}
+            aria-label={label}
             className={clsx(
-              "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-colors border",
+              "flex items-center rounded-xl py-2.5 text-[14px] font-semibold transition-colors border",
+              compact ? "justify-center px-0" : "gap-3 px-3",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50",
               isActive
                 ? "bg-td-accent-weak/60 border-td-accent/30 text-td-text"
@@ -113,13 +117,13 @@ export function DashboardTabs({ active, onChange, badges, variant = "rail" }: Pr
             )}
           >
             <Icon className={clsx("h-[18px] w-[18px] shrink-0", isActive && "text-td-accent")} strokeWidth={2} />
-            <span className="flex-1 text-left">{label}</span>
-            {badge != null && badge > 0 && (
+            {!compact && <span className="flex-1 text-left">{label}</span>}
+            {!compact && badge != null && badge > 0 && (
               <span className="min-w-[1.4rem] h-5 px-1.5 rounded-md text-[11px] font-semibold flex items-center justify-center bg-td-surface2 text-td-muted">
                 {badge > 99 ? "99+" : badge}
               </span>
             )}
-            <span className="hidden xl:inline text-[10.5px] text-td-muted/70 font-mono" aria-hidden>
+            <span className={clsx("hidden text-[10.5px] text-td-muted/70 font-mono", !compact && "xl:inline")} aria-hidden>
               {shortcut}
             </span>
           </button>

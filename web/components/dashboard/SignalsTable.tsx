@@ -933,6 +933,8 @@ export function SignalsTable({
   watchlistTickers,
   source,
   preset,
+  splitPane = false,
+  activeTicker = null,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
@@ -947,6 +949,10 @@ export function SignalsTable({
   /** Book/preset filters now owned by the Signals hub's shared filter bar — Scanner just reads them. */
   source: TickerSourceFilter;
   preset: SignalsPresetId;
+  /** Desktop split view owns the preview: row click opens the app-level pane, no inner rail. */
+  splitPane?: boolean;
+  /** Ticker currently open in the split pane — highlighted like the inner rail's selection. */
+  activeTicker?: string | null;
 }) {
   const gateContext: SignalListContext = listContext ?? {};
   const h = horizons || DEFAULT_HORIZONS;
@@ -1169,9 +1175,14 @@ export function SignalsTable({
     });
   }, []);
 
-  const handleDesktopRowSelect = useCallback((ticker: string) => {
-    setSplitSelected(ticker);
-  }, []);
+  const handleDesktopRowSelect = useCallback(
+    (ticker: string) => {
+      if (splitPane) onTickerClick?.(ticker);
+      else setSplitSelected(ticker);
+    },
+    [splitPane, onTickerClick],
+  );
+  const selectedRow = splitPane ? activeTicker : splitSelected;
 
   const isQuick = viewMode === "quick";
   const auditColCount = showAuditColumns ? 3 : 0;
@@ -1380,10 +1391,12 @@ export function SignalsTable({
       </div>
 
       {/* Desktop: table + sticky detail rail (no height lock — groups show all rows) */}
-      <div className="hidden md:block lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start lg:gap-0">
+      <div className={clsx("hidden md:block", !splitPane && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start lg:gap-0")}>
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <p className="hidden lg:block px-3 py-1.5 text-xs text-slate-500 border-b border-slate-800/80">
-          Click a row to preview · Open full detail from the rail · Use chevrons on groups to expand/collapse
+          {splitPane
+            ? "Click a row to open it in the detail pane · Use chevrons on groups to expand/collapse"
+            : "Click a row to preview · Open full detail from the rail · Use chevrons on groups to expand/collapse"}
         </p>
         <table
           className={clsx(
@@ -1533,7 +1546,7 @@ export function SignalsTable({
                         tickerActions={tickerActions}
                         onTickerClick={onTickerClick}
                         onRowSelect={handleDesktopRowSelect}
-                        selected={splitSelected === r.ticker}
+                        selected={selectedRow === r.ticker}
                         expanded={expandedTickers.has(r.ticker)}
                         onToggleExpand={toggleTickerExpand}
                         showEarningsCol={showEarningsCol}
@@ -1580,7 +1593,7 @@ export function SignalsTable({
                             tickerActions={tickerActions}
                             onTickerClick={onTickerClick}
                             onRowSelect={handleDesktopRowSelect}
-                            selected={splitSelected === r.ticker}
+                            selected={selectedRow === r.ticker}
                             expanded={expandedTickers.has(r.ticker)}
                             onToggleExpand={toggleTickerExpand}
                             muted
@@ -1729,13 +1742,13 @@ export function SignalsTable({
           </tbody>
         </table>
       </div>
-      <SignalDetailRail
+      {!splitPane && <SignalDetailRail
         signal={splitSignal}
         gateContext={gateContext}
         tickerActions={tickerActions}
         onOpenDetail={onTickerClick}
         onSelectTicker={setSplitSelected}
-      />
+      />}
       </div>
     </div>
   );

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Activity, LayoutGrid, Target, Layers, Zap, Ban, Eye, CheckCircle, AlertCircle } from "lucide-react";
+import { X, TrendingUp, FileText, Calendar, BarChart3, HelpCircle, ChevronDown, ChevronLeft, ChevronRight, Maximize2, Minimize2, Activity, LayoutGrid, Target, Layers, Zap, Ban, Eye, CheckCircle, AlertCircle } from "lucide-react";
 import { clsx } from "clsx";
 import { ConfidenceBreakdown, type ConfidenceData } from "./ConfidenceBreakdown";
 import { PatternSignalCard, type UnifiedSignalData } from "./PatternSignalCard";
@@ -427,9 +427,25 @@ export function TickerDetailModal({
   onClose,
   initialTab = "verdict",
   portfolioImpactContext = null,
+  layout = "drawer",
+  onExpand,
+  expanded = false,
+  onTabChange,
 }: {
   ticker: string;
   onClose: () => void;
+  /**
+   * drawer — overlay panel over the list (tablet, or desktop "expanded")
+   * pane   — inline right pane of the desktop split view (no portal / backdrop)
+   * page   — full-screen mobile page; bottom nav stays visible below it
+   */
+  layout?: "drawer" | "pane" | "page";
+  /** Pane only: open the same ticker in the full-width drawer (sidebar tabs). */
+  onExpand?: () => void;
+  /** Pane shown as a full-width overlay (same mounted instance — no refetch on expand). */
+  expanded?: boolean;
+  /** Fires when the visible tab changes — Dashboard mirrors it into ?view= */
+  onTabChange?: (tab: ModalTab) => void;
   /** Which hub tab to show first (e.g. Levels when opening from roadmap expand). */
   initialTab?: "verdict" | "levels" | "why" | "context" | "track";
   /** Current portfolio's holdings context, for the pre-trade impact card. Null when no portfolio is configured/selected. */
@@ -478,15 +494,37 @@ export function TickerDetailModal({
   };
 
   useEffect(() => {
+    if (layout === "pane") {
+      if (!expanded) return;
+      const onKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") onExpand?.();
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }
     document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKey);
     };
-  }, []);
+  }, [layout, onClose, expanded, onExpand]);
+
+  useEffect(() => {
+    onTabChange?.(modalTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalTab]);
+
+  // Tab reset is separate from the fetch so a ?view= change doesn't refetch the ticker.
+  useEffect(() => {
+    setModalTab(initialTab);
+  }, [ticker, initialTab]);
 
   useEffect(() => {
     if (!ticker) return;
-    setModalTab(initialTab);
     setWhySubTab("valuation");
     setCatalystExpanded(false);
     setLoading(true);
@@ -529,7 +567,7 @@ export function TickerDetailModal({
       cancelled = true;
       ac.abort();
     };
-  }, [ticker, initialTab, reloadKey]);
+  }, [ticker, reloadKey]);
 
   /** Unified signal + price targets are heavy — load only when Why/Levels tabs are opened. */
   const unifiedFetchStarted = useRef(false);
@@ -822,22 +860,13 @@ export function TickerDetailModal({
     return null;
   }, [detail]);
 
-  /** Portal + high z-index: avoids clipping under sticky dashboard header (also z-50) and parent overflow on mobile. */
   if (typeof window === "undefined") return null;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overscroll-y-contain bg-black/80 backdrop-blur-sm px-3 pt-[max(12px,env(safe-area-inset-top))] pb-[max(12px,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
-      onClick={onClose}
-      role="presentation"
-    >
-      <div
-        className="td-skin font-td-sans bg-slate-900 border border-slate-700/90 rounded-2xl w-[min(96vw,1280px)] max-w-full max-h-[calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1.5rem)] sm:max-h-[92vh] my-2 sm:my-0 overflow-y-auto overscroll-contain shadow-2xl shadow-black/50"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="ticker-detail-title"
-      >
+  /** Sidebar tabs + two-column Verdict only when the detail has the full overlay width. */
+  const wide = layout === "drawer" || (layout === "pane" && expanded);
+
+  const body = (
+      <>
         {/* Header — ticker · price · market status, then the mode switch and (mobile) tab strip,
             all in one sticky block so they never scroll apart. */}
         <div className="sticky top-0 z-20 bg-td-surface/95 backdrop-blur border-b border-td-line">
@@ -845,7 +874,10 @@ export function TickerDetailModal({
             <button
               type="button"
               onClick={onClose}
-              className="mt-0.5 p-1.5 -ml-1.5 rounded-lg text-td-muted hover:text-td-text hover:bg-td-surface2 sm:hidden"
+              className={clsx(
+                "mt-0.5 p-1.5 -ml-1.5 rounded-lg text-td-muted hover:text-td-text hover:bg-td-surface2",
+                layout !== "page" && "hidden",
+              )}
               aria-label="Back"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -925,13 +957,26 @@ export function TickerDetailModal({
                 </div>
               )}
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-td-surface2 text-td-muted hover:text-td-text hidden sm:block"
-              aria-label="Close ticker detail"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            {layout === "pane" && onExpand && (
+              <button
+                type="button"
+                onClick={onExpand}
+                className="p-2 rounded-lg hover:bg-td-surface2 text-td-muted hover:text-td-text"
+                aria-label={expanded ? "Back to split view" : "Expand ticker detail"}
+                title={expanded ? "Back to split view" : "Expand — full width with section sidebar"}
+              >
+                {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+            )}
+            {layout !== "page" && (
+              <button
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-td-surface2 text-td-muted hover:text-td-text"
+                aria-label="Close ticker detail"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
           </div>
           {detail && !loading && detail.investor_summary && (
             <div className="px-4 sm:px-6 pb-2.5">
@@ -940,7 +985,7 @@ export function TickerDetailModal({
           )}
           {/* Mobile / tablet tab strip — desktop gets the left sidebar below */}
           {detail && !loading && (
-            <div className="lg:hidden flex overflow-x-auto border-t border-td-line px-2" role="tablist" aria-label="Ticker sections">
+            <div className={clsx("flex overflow-x-auto border-t border-td-line px-2", wide && "lg:hidden")} role="tablist" aria-label="Ticker sections">
               {MODAL_TABS.map(({ id, label }) => (
                 <button
                   key={id}
@@ -1007,9 +1052,9 @@ export function TickerDetailModal({
           </div>
         )}
 
-        <div className="lg:grid lg:grid-cols-[11.5rem_minmax(0,1fr)]">
+        <div className={clsx(wide && "lg:grid lg:grid-cols-[11.5rem_minmax(0,1fr)]")}>
         {/* Desktop: tabs become a left sidebar list — each section one click away, no swipe */}
-        {detail && !loading && (
+        {wide && detail && !loading && (
           <nav
             className="hidden lg:block border-r border-td-line bg-td-bg/40 px-3 py-5"
             role="tablist"
@@ -1066,7 +1111,7 @@ export function TickerDetailModal({
             <>
               {/* ── Verdict tab: plain sentence → unlocks → R:R / catalyst → hit rate → actions ── */}
               {modalTab === "verdict" && (
-                <div className="xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] xl:gap-5 xl:items-start space-y-4 xl:space-y-0">
+                <div className={clsx("space-y-4", wide && "xl:grid xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] xl:gap-5 xl:items-start xl:space-y-0")}>
                 <div className="min-w-0 space-y-4">
               {detail.investor_summary ? (
                 <VerdictPanel
@@ -1239,7 +1284,7 @@ export function TickerDetailModal({
                 )}
               </section>
                 </div>
-                <aside className="xl:sticky xl:top-44 space-y-3 self-start">
+                <aside className={clsx("space-y-3 self-start", wide && "xl:sticky xl:top-44")}>
                   <NarrativeWaterfallCard ticker={detail.ticker} mode={decisionMode} />
                 </aside>
                 </div>
@@ -2376,6 +2421,53 @@ export function TickerDetailModal({
           )}
         </div>
         </div>
+      </>
+  );
+
+  if (layout === "pane") {
+    return (
+      <div
+        className="td-skin font-td-sans h-full overflow-y-auto overscroll-contain bg-slate-900"
+        role="region"
+        aria-labelledby="ticker-detail-title"
+      >
+        {body}
+      </div>
+    );
+  }
+
+  if (layout === "page") {
+    /** Full-screen page above the app header; stops above the mobile bottom nav so
+     * Today / Signals / Plan stay one tap away. */
+    return createPortal(
+      <div
+        className="td-skin font-td-sans td-slide-in fixed inset-x-0 top-0 z-[60] overflow-y-auto overscroll-contain bg-slate-900"
+        style={{ bottom: "calc(55px + max(0.5rem, env(safe-area-inset-bottom)))" }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ticker-detail-title"
+      >
+        {body}
+      </div>,
+      document.body,
+    );
+  }
+
+  /** Portal + high z-index: avoids clipping under sticky dashboard header (also z-50). */
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex justify-end bg-black/60 backdrop-blur-[2px]"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="td-skin font-td-sans td-slide-in bg-slate-900 border-l border-slate-700/90 h-full w-[min(96vw,1280px)] overflow-y-auto overscroll-contain shadow-2xl shadow-black/50"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ticker-detail-title"
+      >
+        {body}
       </div>
     </div>,
     document.body

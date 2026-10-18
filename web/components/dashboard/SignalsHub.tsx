@@ -62,6 +62,8 @@ export function SignalsHub({
   roadmapTickers,
   roadmapsWarming,
   signalsByTicker,
+  splitPane = false,
+  activeTicker = null,
 }: {
   signals: Signal[];
   horizons?: { short_term: string; medium_term: string; long_term: string } | null;
@@ -77,6 +79,9 @@ export function SignalsHub({
   roadmapTickers: string[];
   roadmapsWarming?: boolean;
   signalsByTicker?: Map<string, SignalPresetRow>;
+  /** Desktop list + detail split view is active (see Dashboard / useTickerDetailLayout). */
+  splitPane?: boolean;
+  activeTicker?: string | null;
 }) {
   const [subTab, setSubTab] = useState<SignalsSubTab>("hunter");
   const [source, setSource] = useState<TickerSourceFilter>("all");
@@ -199,6 +204,8 @@ export function SignalsHub({
           watchlistTickers={watchlistTickers}
           source={source}
           preset={preset}
+          splitPane={splitPane}
+          activeTicker={activeTicker}
         />
       )}
 

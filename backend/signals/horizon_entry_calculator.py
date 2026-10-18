@@ -1339,6 +1339,18 @@ def refresh_horizon_rr_from_levels(horizon: dict, spot: float | None) -> None:
     horizon["risk_reward"] = _rr_from_displayed_levels(px, stop, target)
     horizon["target_pct"] = _r((target - px) / px * 100, 1)
     horizon["stop_loss_pct"] = _r((stop - px) / px * 100, 1)
+    # risk_reward_from_entry is set once in the per-horizon edge pass; a later stop/target
+    # mutation (e.g. scenario-target sync) must re-derive it too, or the Verdict R:R tile
+    # (from entry mid) and the painted levels row disagree — e.g. HAL 3.1 vs 11.7.
+    if "risk_reward_from_entry" in horizon:
+        ez = horizon.get("entry_zone") or {}
+        try:
+            el = float(ez.get("low") or 0)
+            eh = float(ez.get("high") or 0)
+        except (TypeError, ValueError):
+            el = eh = 0.0
+        if el > 0 and eh >= el and stop > 0 and target > 0:
+            horizon["risk_reward_from_entry"] = _rr_from_entry_mid(el, eh, stop, target)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -122,7 +122,10 @@ function StopTargetRows({
         <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(horizon.target)}</span>
         <span className="text-[10px] font-mono text-td-accent/80 tabular-nums">
           {pctFromSpot(horizon.target, currentPrice)}
-          {horizon.risk_reward ? ` · R:R ${horizon.risk_reward.toFixed(1)}` : ""}
+          {/* Same R:R (and basis) as the Verdict tile — entry-mid when the plan has one, else spot. */}
+          {(horizon.risk_reward_from_entry ?? horizon.risk_reward)
+            ? ` · R:R ${(horizon.risk_reward_from_entry ?? horizon.risk_reward)!.toFixed(1)}${horizon.risk_reward_from_entry != null ? " from entry" : ""}`
+            : ""}
         </span>
       </div>
     </>
