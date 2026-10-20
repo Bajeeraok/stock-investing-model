@@ -697,9 +697,12 @@ def _forward_tracking_staleness_days(bundle: dict | None) -> float | None:
         return None
 
 
-# Beyond this, a cached bundle is treated as stale enough to self-heal in the background —
-# generous over a normal weekend/holiday gap (2-3 days) so it only fires on real staleness.
-_FORWARD_TRACKING_STALE_DAYS = 5
+# Any newer EOD snapshot than the cached forward_tracking makes it stale. Snapshot dates are
+# trading days only, so weekends/holidays don't count — the old 5-day threshold let a
+# Thu-cached result (Oct 15) keep serving through the next Monday's snapshot (Oct 19) and
+# froze every ticker's daily (1d) read for 4 sessions. The background job is single-flight
+# (is_analysis_running), so this can't stack recomputes.
+_FORWARD_TRACKING_STALE_DAYS = 0
 
 
 def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) -> dict | None:
@@ -1063,6 +1066,15 @@ def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) ->
     return bundle if bundle else empty_analysis_bundle()
 
 
+def _strip_forward_tracking_heavy(ft: Any) -> Any:
+    """Drop the server-side per-ticker index (≈100+ tickers × 30 daily calls) from HTTP payloads —
+    GET /api/ticker/{t}/track-record serves one ticker's slice of it instead."""
+    if isinstance(ft, dict) and "by_ticker" in ft:
+        ft = dict(ft)
+        ft.pop("by_ticker", None)
+    return ft
+
+
 def _slim_analysis_for_http(bundle: dict) -> dict:
     """Cap large arrays before JSON encode — prevents gateway 502 on oversized responses."""
     from signals.cache import _sanitize_for_json
@@ -1070,7 +1082,7 @@ def _slim_analysis_for_http(bundle: dict) -> dict:
     out = dict(bundle)
     ft = out.get("forward_tracking")
     if isinstance(ft, dict):
-        ft = dict(ft)
+        ft = dict(_strip_forward_tracking_heavy(ft))
         records = ft.get("records")
         if isinstance(records, list) and len(records) > 500:
             ft["records"] = records[:500]
@@ -1290,6 +1302,8 @@ def _analysis_slice_response(slice_key: str):
     if data is not None:
         from signals.cache import _sanitize_for_json
 
+        if slice_key == "forward_tracking":
+            data = _strip_forward_tracking_heavy(data)
         return jsonable_encoder(_sanitize_for_json({slice_key: data, "analysis_deferred": False}))
 
     if _is_dashboard_warming():
@@ -3050,7 +3064,7 @@ def _compute_full_dashboard_sync() -> dict:
         "typical_move": typical_move,
         "indicator_validation": indicator_validation,
         "indicator_comparisons": indicator_comparisons,
-        "forward_tracking": forward_tracking,
+        "forward_tracking": _strip_forward_tracking_heavy(forward_tracking),
         "regime_validation": regime_validation,
         "confidence_calibration": confidence_calibration,
         "paper_vs_backtest_drift": paper_vs_backtest_drift,
@@ -4166,6 +4180,21 @@ async def get_ticker_track_record(ticker: str):
     ft = bundle.get("forward_tracking") if isinstance(bundle, dict) else None
     if not isinstance(ft, dict):
         return {"available": False, "ticker": sym, "reason": "forward-tracking data not cached yet"}
+
+    # Preferred: per-ticker index built from ALL records at compute time (full EOD universe,
+    # not truncated by the watchlist-wide records cap).
+    by_ticker = ft.get("by_ticker") if isinstance(ft.get("by_ticker"), dict) else None
+    if by_ticker is not None:
+        out = dict(by_ticker.get(sym) or {"available": False, "ticker": sym})
+        out["eod_date_last"] = (ft.get("meta") or {}).get("eod_date_last")
+        try:
+            from signals.paper_trade_logger import PaperTradeLogger, build_ticker_trade_table
+
+            pt = PaperTradeLogger(data_root=get_data_root())
+            out["daily_trades"] = build_ticker_trade_table(pt.get_trades_for_ticker(sym, limit=60))
+        except Exception:
+            out["daily_trades"] = []
+        return out
 
     records = ft.get("records") or []
     out = build_ticker_track_record(records, sym, current_model_version=MODEL_VERSION)

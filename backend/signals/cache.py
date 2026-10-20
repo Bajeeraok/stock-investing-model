@@ -317,15 +317,38 @@ def _sanitize_for_json(obj: Any) -> Any:
     return obj
 
 
+# Large values (dashboard blob, EOD snapshots, analysis slices — often multi-MB JSON) are
+# stored zlib-compressed. Every read/write crosses the network to the Redis service and is
+# billed as egress on Railway; JSON compresses ~5–10x. Clients use decode_responses=True, so
+# the compressed bytes are base64'd behind a "z1:" marker; values without it read as before.
+_COMPRESS_MIN_BYTES = 32 * 1024
+_COMPRESS_PREFIX = "z1:"
+
+
 def _serialize(val: Any) -> str:
     if isinstance(val, (dict, list)):
-        return json.dumps(_sanitize_for_json(val), default=str)
-    return str(val)
+        text = json.dumps(_sanitize_for_json(val), default=str)
+    else:
+        text = str(val)
+    if len(text) >= _COMPRESS_MIN_BYTES:
+        import base64
+        import zlib
+
+        return _COMPRESS_PREFIX + base64.b64encode(zlib.compress(text.encode("utf-8"), 6)).decode("ascii")
+    return text
 
 
 def _deserialize(raw: str, as_json: bool = True) -> Any:
     if raw is None:
         return None
+    if isinstance(raw, str) and raw.startswith(_COMPRESS_PREFIX):
+        import base64
+        import zlib
+
+        try:
+            raw = zlib.decompress(base64.b64decode(raw[len(_COMPRESS_PREFIX):])).decode("utf-8")
+        except Exception:
+            return None
     if as_json:
         try:
             return json.loads(raw)

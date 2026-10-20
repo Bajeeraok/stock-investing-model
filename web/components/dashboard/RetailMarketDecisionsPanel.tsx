@@ -141,8 +141,11 @@ function ActionChip({ action }: { action?: string }) {
 export function RetailMarketDecisionsPanel({
   data,
   macroBackdrop,
+  collapsible = false,
 }: {
   data: RetailMarketDecisions | null | undefined;
+  /** Markets tab: show only the unified read; checklist / five questions / matrix behind a toggle. */
+  collapsible?: boolean;
   /** Yields, calendar, seasonality — detail only; headline lives in unified hero above. */
   macroBackdrop?: {
     bullets?: string[];
@@ -151,6 +154,7 @@ export function RetailMarketDecisionsPanel({
 }) {
   const [contextExpanded, setContextExpanded] = useState(false);
   const [macroExpanded, setMacroExpanded] = useState(false);
+  const [fullOpen, setFullOpen] = useState(false);
 
   if (!data) return null;
 
@@ -180,7 +184,7 @@ export function RetailMarketDecisionsPanel({
       <div className="px-4 py-3 border-b border-slate-700/60 bg-slate-800/40">
         <h2 className="text-base font-semibold text-slate-100 flex items-center gap-2">
           <HelpCircle className="h-5 w-5 text-emerald-400" />
-          What should I do today?
+          {collapsible ? "Market read" : "What should I do today?"}
         </h2>
         <p className="text-xs text-slate-500 mt-1">One unified read — short-term fear vs long-term regime reconciled below.</p>
       </div>
@@ -221,6 +225,17 @@ export function RetailMarketDecisionsPanel({
           </div>
         )}
 
+        {collapsible && (
+          <button
+            type="button"
+            onClick={() => setFullOpen((o) => !o)}
+            aria-expanded={fullOpen}
+            className="text-xs font-semibold text-emerald-400 hover:text-emerald-300"
+          >
+            {fullOpen ? "Hide full playbook" : "Full playbook — checklist, five questions, strategy matrix ›"}
+          </button>
+        )}
+        {(!collapsible || fullOpen) && (<>
         {overnight?.summary && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-800/30 px-3 py-2">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">What changed overnight</p>
@@ -565,6 +580,7 @@ export function RetailMarketDecisionsPanel({
           </div>
         )}
 
+        </>)}
         {data.disclaimer && <p className="text-[10px] text-slate-600">{data.disclaimer}</p>}
       </div>
     </div>

@@ -38,8 +38,28 @@ export interface DailyTradeRow {
   track?: string | null;
 }
 
+/** One scored daily call: signal at the close vs the next session's close (horizon = 1 snapshot). */
+export interface DailyCallRow {
+  date: string | null;
+  next_date: string | null;
+  signal: string | null;
+  close: number | null;
+  next_close: number | null;
+  return_pct: number | null;
+  status: "complete" | "pending" | string | null;
+  gates_passed?: number | null;
+  gates_total?: number | null;
+  model_version?: string | null;
+  /** ADD right if up, TRIM right if down, HOLD unscored (null). */
+  right: boolean | null;
+}
+
 export interface TrackRecordResponse {
   available: boolean;
+  daily_calls?: DailyCallRow[] | null;
+  latest_call_date?: string | null;
+  /** Newest EOD snapshot the server's forward tracking was computed through. */
+  eod_date_last?: string | null;
   ticker?: string;
   current_model_version?: string | null;
   current?: TrackRecordHorizonStats | null;
@@ -118,7 +138,9 @@ export function earliestAvailableHorizon(
  * How long the latest signal has held: walks daily_trades newest-first while the signal
  * string stays the same. Returns the oldest date of that run (the "Wait since Oct 3" line).
  */
-export function currentSignalSince(trades: DailyTradeRow[] | null | undefined): { signal: string; since: string } | null {
+export function currentSignalSince(
+  trades: Array<{ date: string | null; signal: string | null }> | null | undefined,
+): { signal: string; since: string } | null {
   const rows = (trades ?? []).filter((t) => t.date && t.signal).slice();
   if (!rows.length) return null;
   rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));

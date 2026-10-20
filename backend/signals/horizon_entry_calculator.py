@@ -2026,6 +2026,19 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         _r(t2_center * (1 + LT_TIER2_BAND_PCT / 100)),
         "~3.5x", "High", "#00e5a0")
 
+    # Same rule as Tier 1 above: the owner/investor add band never sits above the swing
+    # zone top. Without this a FV-MOS band near spot (e.g. MSFT T2 ≤ $552 with spot $533,
+    # swing zone $501–$526) told owners to buy higher than swing traders.
+    if mh is not None and mh > 0 and tier2.high > mh + 1e-6:
+        uncapped_hi = tier2.high
+        new_hi = _r(mh)
+        new_lo = _r(min(tier2.low, new_hi * (1 - 2 * LT_TIER2_BAND_PCT / 100)))
+        tier2 = _refresh_tier_fv_metrics(replace(tier2, low=new_lo, high=new_hi), fv, p)
+        warnings.append(
+            "Tier 2 MOS ceiling capped to swing zone high (${:.2f}) — valuation alone would allow "
+            "adds up to ${:.2f}, but owner adds never sit above the swing top.".format(mh, uncapped_hi)
+        )
+
     tier3 = make_tier(
         "T3", "Tier 3 — Tail risk / 52w stress",
         "Stress scenario near 52w low — not a base-case entry; only if macro/liquidity breaks",

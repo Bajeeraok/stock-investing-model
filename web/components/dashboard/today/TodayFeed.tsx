@@ -37,14 +37,27 @@ export function deriveMarketWeather(input: {
   temperatureLabel?: string | null;
   vix?: number | null;
   forecastHeadline?: string | null;
+  /** retail_market_decisions.market_context.quadrant — the backend's reconciled read. */
+  quadrant?: string | null;
 }): MarketWeather {
   const bull = input.regimeBullPct;
   let tone: WeatherTone = "caution";
-  if (bull != null && bull >= 60 && input.macroRegime !== "Risk-Off" && input.rotationRisk !== "High") tone = "up";
-  else if ((bull != null && bull <= 40) || (input.macroRegime === "Risk-Off" && (bull == null || bull < 60))) tone = "down";
-  const label = tone === "up" ? "Up" : tone === "down" ? "Down" : "Caution";
+  let label = "Caution";
+  if (input.quadrant === "best_buy_zone" && (bull == null || bull >= 60)) {
+    // Short-term fear inside a strong bull regime — the backend already reconciled this as
+    // a dip-buy setup; calling it "Caution" next to "best buy opportunity" contradicted it.
+    tone = "up";
+    label = "Up — dips are buyable";
+  } else if (bull != null && bull >= 60 && input.macroRegime !== "Risk-Off" && input.rotationRisk !== "High") {
+    tone = "up";
+    label = "Up";
+  } else if ((bull != null && bull <= 40) || (input.macroRegime === "Risk-Off" && (bull == null || bull < 60))) {
+    tone = "down";
+    label = "Down";
+  }
+  const headline = input.primaryMessage ?? input.forecastHeadline ?? null;
   const bits = [
-    input.primaryMessage ?? input.forecastHeadline ?? null,
+    headline && headline === headline.toUpperCase() ? headline.charAt(0) + headline.slice(1).toLowerCase() : headline,
     input.temperatureLabel ? `temperature ${input.temperatureLabel.toLowerCase()}` : null,
     input.vix != null ? `VIX ${input.vix.toFixed(1)}` : null,
     input.rotationRisk && input.rotationRisk !== "Low" ? `rotation risk ${input.rotationRisk.toLowerCase()}` : null,
@@ -208,6 +221,8 @@ export function SinceYesterdayCard({
 
 // ── My book ─────────────────────────────────────────────────────────────────
 
+const BOOK_CHIP_MAX = 8;
+
 export function MyBookCard({
   holdings,
   scoreDelta,
@@ -220,10 +235,22 @@ export function MyBookCard({
   onOpenPortfolio?: () => void;
 }) {
   if (!holdings.length) return null;
-  const sorted = [...holdings].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  // Same ticker across accounts (e.g. NVDA in two brokerages) → one chip, values summed.
+  const merged = new Map<string, PortfolioHolding>();
+  for (const h of holdings) {
+    const k = h.ticker.toUpperCase();
+    const prev = merged.get(k);
+    merged.set(k, prev ? { ...prev, value: (prev.value ?? 0) + (h.value ?? 0) } : h);
+  }
+  const needsAction = (h: PortfolioHolding) => /TRIM|REDUCE|SELL|AVOID|ADD|BUY/i.test(h.action || h.suggestion || "");
+  const all = Array.from(merged.values()).sort(
+    (a, b) => Number(needsAction(b)) - Number(needsAction(a)) || (b.value ?? 0) - (a.value ?? 0),
+  );
+  const sorted = all.slice(0, BOOK_CHIP_MAX);
+  const hidden = all.length - sorted.length;
   return (
     <Card
-      title={`My book · ${holdings.length}`}
+      title={`My book · ${merged.size}`}
       right={
         onOpenPortfolio && (
           <button type="button" onClick={onOpenPortfolio} className="text-[11.5px] font-semibold text-td-accent">
@@ -232,7 +259,7 @@ export function MyBookCard({
         )
       }
     >
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex flex-wrap gap-2">
         {sorted.map((h) => {
           const d = scoreDelta.get(h.ticker.toUpperCase());
           const act = (h.action || h.suggestion || "Hold").replace(/^CONSIDER\s+/i, "");
@@ -256,6 +283,15 @@ export function MyBookCard({
             </button>
           );
         })}
+        {hidden > 0 && onOpenPortfolio && (
+          <button
+            type="button"
+            onClick={onOpenPortfolio}
+            className="shrink-0 w-[4.75rem] rounded-xl border border-dashed border-td-line py-2 text-center text-[11px] font-semibold text-td-muted hover:text-td-text"
+          >
+            +{hidden} more
+          </button>
+        )}
       </div>
     </Card>
   );
@@ -371,6 +407,7 @@ export function ThisWeekCard({
           {earn.map((x) => (
             <span key={x.ticker} className="rounded-full bg-td-warn-weak px-2.5 py-1 text-[11.5px] font-semibold text-td-warn">
               {x.ticker} earnings · {x.days_until === 0 ? "today" : `${x.days_until}d`} · held
+              {x.days_until <= 2 ? " · size down" : ""}
             </span>
           ))}
         </div>
@@ -383,21 +420,52 @@ export function ThisWeekCard({
 
 // ── Weather teaser + catalyst strip ─────────────────────────────────────────
 
-export function MarketWeatherTeaser({ weather, onOpen }: { weather: MarketWeather; onOpen?: () => void }) {
+export function MarketWeatherTeaser({
+  weather,
+  onOpen,
+  cautions = [],
+}: {
+  weather: MarketWeather;
+  onOpen?: () => void;
+  /** Config/macro guidelines (spec positioning, real yields, macro week) — folded in, not stacked banners. */
+  cautions?: string[];
+}) {
   const st = WEATHER_STYLE[weather.tone];
+  const [open, setOpen] = useState(false);
   return (
-    <button type="button" onClick={onOpen} className={clsx("w-full text-left rounded-2xl border px-4 py-3 transition-colors hover:brightness-110", st.box)}>
-      <span className={clsx("flex items-center justify-between gap-2 text-[13px] font-bold", st.text)}>
-        <span className="flex items-center gap-2">
-          <span className={clsx("h-2 w-2 rounded-full", st.dot)} />
-          Market weather: {weather.label}
+    <section className={clsx("rounded-2xl border px-4 py-3", st.box)}>
+      <button type="button" onClick={onOpen} className="w-full text-left">
+        <span className={clsx("flex items-center justify-between gap-2 text-[13px] font-bold", st.text)}>
+          <span className="flex items-center gap-2">
+            <span className={clsx("h-2 w-2 rounded-full", st.dot)} />
+            Market weather: {weather.label}
+          </span>
+          <span className="flex items-center gap-0.5 text-[11px] font-semibold opacity-90">
+            Markets <ChevronRight className="h-3.5 w-3.5" />
+          </span>
         </span>
-        <span className="flex items-center gap-0.5 text-[11px] font-semibold opacity-90">
-          Markets <ChevronRight className="h-3.5 w-3.5" />
-        </span>
-      </span>
-      {weather.detail && <span className="mt-1 block text-[12px] text-td-text/80 leading-snug">{weather.detail}</span>}
-    </button>
+        {weather.detail && <span className="mt-1 block text-[12px] text-td-text/80 leading-snug">{weather.detail}</span>}
+      </button>
+      {cautions.length > 0 && (
+        <div className="mt-1.5">
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            className="text-[11.5px] font-semibold text-td-warn hover:brightness-110"
+          >
+            {open ? "Hide cautions" : `${cautions.length} caution${cautions.length === 1 ? "" : "s"} this week ›`}
+          </button>
+          {open && (
+            <ul className="mt-1.5 space-y-1 text-[12px] text-td-text/85 leading-snug list-disc pl-4">
+              {cautions.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

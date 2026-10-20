@@ -238,6 +238,20 @@ def get_forward_tracking(
     if len(dates) >= 2 and 1 not in horizon_list:
         horizon_list = [1] + horizon_list
 
+    # Score every ticker the EOD job actually snapshots (~116), not only the dashboard /
+    # audit list passed in (~45) — otherwise names like REGN never get a track record even
+    # though their daily rows are sitting in every snapshot.
+    # Only for the full panel computes (they pass config); narrow SPY/QQQ hit-rate probes don't.
+    if config is not None and bool(ft_cfg.get("include_eod_universe", True)):
+        latest_snap = _load_snapshot_mem(eod_dir, dates[-1]) or {}
+        seen_syms = {str(t).upper() for t in syms}
+        extra = [
+            str(r["ticker"]).upper()
+            for r in latest_snap.get("run_results", [])
+            if isinstance(r, dict) and r.get("ticker") and str(r["ticker"]).upper() not in seen_syms
+        ]
+        syms = list(syms) + sorted(set(extra))
+
     records: list[dict[str, Any]] = []
     signal_source_counts: dict[str, int] = {"ml_signal": 0, "score_fallback": 0}
     use_intraday = bool(ft_cfg.get("use_intraday_touch", True))
@@ -554,6 +568,7 @@ def get_forward_tracking(
             )
 
     total_records = len(records)
+    by_ticker = _build_by_ticker_index(records)
     capped = _cap_records_recent(records, record_cap)
     as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
     newest_completed_as_of = dates[-2] if len(dates) >= 2 else None
@@ -585,6 +600,10 @@ def get_forward_tracking(
         "summary_by_gates": summary_by_gates,
         "summary_by_trim_gates": summary_by_trim_gates,
         "signal_source_counts": signal_source_counts,
+        # Per-ticker stats + recent daily calls from ALL records (records above are capped to
+        # the newest N watchlist-wide, which silently truncated single-ticker history).
+        # Server-side only — stripped from HTTP responses (see _strip_forward_tracking_heavy).
+        "by_ticker": by_ticker,
         "meta": meta,
         "data_source_note": (
             "Returns and ST stop/target touches from EOD OHLCV between snapshot dates "
@@ -609,6 +628,68 @@ def get_forward_tracking(
         logger.debug("summary_by_lens: %s", lens_err)
         result["summary_by_lens"] = {}
     return result
+
+
+_DAILY_CALLS_PER_TICKER = 30
+
+
+def _call_right(signal: str, ret: float | None) -> bool | None:
+    """Direction check for a daily call: ADD right if up, TRIM right if down, HOLD unscored."""
+    if ret is None:
+        return None
+    s = (signal or "").upper()
+    if "ADD" in s:
+        return ret > 0
+    if "TRIM" in s:
+        return ret < 0
+    return None
+
+
+def _build_by_ticker_index(records: list[dict[str, Any]]) -> dict[str, Any]:
+    from signals.forward_tracking_metrics import (
+        build_ticker_track_record,
+        build_ticker_track_record_all_horizons,
+    )
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for r in records:
+        tk = str(r.get("ticker") or "").upper()
+        if tk:
+            grouped.setdefault(tk, []).append(r)
+    out: dict[str, Any] = {}
+    for tk, rows in grouped.items():
+        try:
+            track = build_ticker_track_record(rows, tk, current_model_version=MODEL_VERSION)
+            track["by_horizon"] = build_ticker_track_record_all_horizons(
+                rows, tk, current_model_version=MODEL_VERSION
+            ).get("by_horizon")
+        except Exception as e:
+            logger.debug("by_ticker %s: %s", tk, e)
+            continue
+        daily = sorted(
+            (r for r in rows if r.get("horizon_days") == 1),
+            key=lambda r: str(r.get("as_of_date") or ""),
+            reverse=True,
+        )[:_DAILY_CALLS_PER_TICKER]
+        track["daily_calls"] = [
+            {
+                "date": r.get("as_of_date"),
+                "next_date": r.get("next_date"),
+                "signal": r.get("our_signal"),
+                "close": r.get("close_at_signal"),
+                "next_close": r.get("close_at_forward"),
+                "return_pct": r.get("actual_return_pct"),
+                "status": r.get("forward_status"),
+                "gates_passed": r.get("gates_passed"),
+                "gates_total": r.get("gates_total"),
+                "model_version": r.get("model_version") or "legacy",
+                "right": _call_right(str(r.get("our_signal") or ""), r.get("actual_return_pct")),
+            }
+            for r in daily
+        ]
+        track["latest_call_date"] = track["daily_calls"][0]["date"] if track["daily_calls"] else None
+        out[tk] = track
+    return out
 
 
 def collect_forward_records(

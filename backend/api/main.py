@@ -112,6 +112,12 @@ app = FastAPI(
 
 _cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001")
 app.add_middleware(RequestLogMiddleware)
+# Compress JSON responses — dashboard / analysis / ticker-detail payloads run to several MB and
+# every byte to the web service (or browser) is billed egress on Railway. The Next proxy reads
+# res.text(), which transparently decompresses, so no client change is needed.
+from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
+
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],

@@ -480,7 +480,7 @@ export function HorizonPlaybookCard({
                 <span className="text-td-text">
                   Risk to stop ~{data.risk_reward.risk_pct}%
                   {data.risk_reward.ratio_target_1 != null
-                    ? ` · R:R ≈ ${data.risk_reward.ratio_target_1}:1`
+                    ? ` · R:R ≈ 1:${data.risk_reward.ratio_target_1}`
                     : null}
                   {" · "}
                 </span>

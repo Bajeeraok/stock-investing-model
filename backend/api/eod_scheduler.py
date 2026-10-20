@@ -138,6 +138,15 @@ def _run_eod_job() -> None:
             logger.debug("[eod-scheduler] memory hygiene skipped", exc_info=True)
 
     if eod_ok:
+        # New snapshot → recompute forward tracking now (daily 1d calls, per-ticker index)
+        # instead of waiting for someone to open Analysis/Track and hit the staleness check.
+        try:
+            from api.routers.dashboard import _ensure_analysis_background_compute
+
+            _ensure_analysis_background_compute()
+            logger.info("[eod-scheduler] forward-tracking refresh queued after new snapshot")
+        except Exception:
+            logger.exception("[eod-scheduler] forward-tracking refresh failed to queue")
         try:
             from alerts.market_hours import is_signal_warm_window
             from api.dashboard_warm import trigger_post_eod_dashboard_sync

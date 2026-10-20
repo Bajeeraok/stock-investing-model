@@ -33,6 +33,9 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
     return <p className="text-sm text-slate-500">No forward-tracking history available for {ticker} yet.</p>;
   }
 
+  const dailyCalls = data?.daily_calls ?? [];
+  const scored = dailyCalls.filter((c) => c.right != null);
+  const rightN = scored.filter((c) => c.right).length;
   const allTrades = data?.daily_trades ?? [];
   const currentTrades = version ? allTrades.filter((t) => t.model_version === version) : allTrades;
   const legacyTrades = version ? allTrades.filter((t) => t.model_version !== version) : [];
@@ -80,6 +83,76 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           Not enough resolved signals on {ticker} yet under {version || "the current model"} —
           this fills in as new EOD snapshots accumulate.
         </p>
+      )}
+
+      {dailyCalls.length > 0 && (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-300">
+              Daily calls — scored every session
+              {scored.length > 0 && (
+                <span className="ml-2 font-normal text-slate-500">
+                  {rightN}/{scored.length} right on ADD/TRIM calls
+                </span>
+              )}
+            </p>
+            {data?.eod_date_last && (
+              <span className="text-[11px] text-slate-600">through {data.eod_date_last}</span>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[520px]">
+              <thead>
+                <tr className="text-left text-slate-500 border-b border-slate-700">
+                  <th className="py-1 pr-2 font-medium">Date</th>
+                  <th className="py-1 pr-2 font-medium">Call</th>
+                  <th className="py-1 pr-2 font-medium">Gates</th>
+                  <th className="py-1 pr-2 font-medium">Close</th>
+                  <th className="py-1 pr-2 font-medium">Next close</th>
+                  <th className="py-1 pr-2 font-medium">Next day</th>
+                  <th className="py-1 font-medium">Right?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyCalls.slice(0, 15).map((c) => (
+                  <tr key={`${c.date}-${c.next_date}`} className="border-b border-slate-800 text-slate-300">
+                    <td className="py-1 pr-2 font-mono">{c.date}</td>
+                    <td className="py-1 pr-2">{c.signal ?? "—"}</td>
+                    <td className="py-1 pr-2 font-mono text-slate-500">
+                      {c.gates_passed != null ? `${c.gates_passed}/${c.gates_total ?? 4}` : "—"}
+                    </td>
+                    <td className="py-1 pr-2 font-mono">{fmtPrice(c.close)}</td>
+                    <td className="py-1 pr-2 font-mono">{c.status === "pending" ? "pending" : fmtPrice(c.next_close)}</td>
+                    <td
+                      className={
+                        c.return_pct == null
+                          ? "py-1 pr-2 font-mono text-slate-500"
+                          : c.return_pct >= 0
+                            ? "py-1 pr-2 font-mono text-emerald-400"
+                            : "py-1 pr-2 font-mono text-red-400"
+                      }
+                    >
+                      {c.return_pct == null ? "—" : fmtPct(c.return_pct)}
+                    </td>
+                    <td className="py-1">
+                      {c.right == null ? (
+                        <span className="text-slate-600" title="HOLD calls aren't scored for direction">—</span>
+                      ) : c.right ? (
+                        <span className="text-emerald-400">✓</span>
+                      ) : (
+                        <span className="text-red-400">✗</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-slate-600 leading-snug">
+            Every EOD snapshot, the model&apos;s call vs the next session&apos;s close — no waiting for a 5d/20d
+            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored.
+          </p>
+        </div>
       )}
 
       {legacy && (legacy.n_observations ?? 0) > 0 && (

@@ -246,7 +246,10 @@ export function VerdictPanel({
   const price = currentPrice != null && currentPrice > 0 ? currentPrice : null;
 
   const { data: track, loading: trackLoading } = useTickerTrackRecord(ticker);
-  const since = currentSignalSince(track?.daily_trades);
+  // Daily calls exist for every session; paper-trade rows only on days a paper entry qualified.
+  const since = currentSignalSince(
+    track?.daily_calls?.length ? track.daily_calls : track?.daily_trades,
+  );
 
   // ── why-in-one-line ─────────────────────────────────────────────
   const blocked = Math.max(0, gatesTotal - gatesPassed);
@@ -377,7 +380,7 @@ export function VerdictPanel({
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-xl border border-td-line bg-td-surface px-3.5 py-3">
           <p className="text-[11px] text-td-muted">Risk : Reward</p>
-          <p className="mt-1 font-mono text-lg font-bold text-td-text tabular-nums">{rr != null && rr > 0 ? `${rr.toFixed(1)} : 1` : "—"}</p>
+          <p className="mt-1 font-mono text-lg font-bold text-td-text tabular-nums">{rr != null && rr > 0 ? `1 : ${rr.toFixed(1)}` : "—"}</p>
           <p className="text-[10.5px] text-td-muted">
             {rrSub}
             {horizon?.target ? ` · ${usd(horizon.target, 0)}` : ""}

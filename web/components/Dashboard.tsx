@@ -22,9 +22,6 @@ import {
   SubViewSwitch,
   migrateLegacyTab,
   type TabId,
-  TodaysMovesPanel,
-  buildTodayMoves,
-  todayMoveTickers,
   PortfolioSummary,
   PortfolioStressStrip,
   DataFreshnessBar,
@@ -46,7 +43,6 @@ import {
   BacktestStatus,
   TrackRecordFramework,
   EconomicCalendarSection,
-  GuidelinesBanner,
   FMPPlanStatus,
   ChatCopilot,
   AccuracyPriceTargetsWithBoundary,
@@ -73,13 +69,11 @@ import {
   InsiderFlowTracker,
   TaxAwareExitPanel,
   AlertsPanel,
-  OverviewAtAGlance,
   MarketStatePanel,
   RetailMarketDecisionsPanel,
   TrackRecordPanel,
   PortfolioDoctorPanel,
   BrowserPushPanel,
-  TacticalBreakoutStrip,
   EventRiskStrip,
   InstitutionalInsightsPanel,
   TradingViewWidget,
@@ -102,7 +96,6 @@ import { DecisionModeSelector } from "./dashboard/DecisionModeSelector";
 import { AlertsScreen, PriceAlertWatcher, priceAlertTickers } from "./dashboard/AlertsScreen";
 import { subscribePriceAlerts } from "@/lib/priceAlerts";
 import {
-  CatalystStrip,
   MarketMapCard,
   MarketWeatherTeaser,
   MyBookCard,
@@ -307,50 +300,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
   const [lazySignals, setLazySignals] = useState<Signal[] | null>(null);
   const [tradingLens, setTradingLensState] = useState<TradingLens>("scout");
-
-  const todayMovesCoveredTickers = useMemo(() => {
-    const signals = lazySignals ?? data.signals ?? [];
-    const earningsSignals = signals.filter(
-      (s) => s.earnings_caution || (s.earnings_days_until != null && s.earnings_days_until <= 7)
-    );
-    const moves = buildTodayMoves({
-      storyChanges: data.story_changes,
-      trimCandidates: selectedTrimCandidates.map((h) => ({
-        ticker: h.ticker,
-        label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
-        trim_source: h.trim_source,
-        trim_primary_driver: h.trim_primary_driver,
-        trim_triggers: h.trim_triggers,
-        trim_detail: h.trim_detail,
-      })),
-      earningsSignals,
-      afterHours: data.after_hours_earnings?.skipped
-        ? undefined
-        : data.after_hours_earnings?.items?.map((i) => ({
-            ticker: i.ticker,
-            change_pct: i.change_pct,
-            post_earnings: i.post_earnings,
-          })),
-      macroHeadline:
-        data.retail_market_decisions?.market_context?.primary_message
-        ?? data.macro_analog?.one_liner
-        ?? data.market_forecast?.headline
-        ?? null,
-      max: 3,
-      lens: tradingLens,
-    });
-    return todayMoveTickers(moves);
-  }, [
-    data.story_changes,
-    data.signals,
-    data.after_hours_earnings,
-    data.retail_market_decisions,
-    data.macro_analog,
-    data.market_forecast,
-    lazySignals,
-    selectedTrimCandidates,
-    tradingLens,
-  ]);
 
   const [signalsFetchErr, setSignalsFetchErr] = useState<string | null>(null);
   const [signalsLoading, setSignalsLoading] = useState(false);
@@ -994,6 +943,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         temperatureLabel: data.retail_market_decisions?.market_temperature?.label,
         vix: data.retail_market_decisions?.market_temperature?.vix,
         forecastHeadline: data.market_forecast?.headline,
+        quadrant: marketQuadrant,
       }),
     [
       signalListContext.regimeBullPct,
@@ -1001,6 +951,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       data.market_regime?.rotation_risk,
       data.retail_market_decisions,
       data.market_forecast?.headline,
+      marketQuadrant,
     ],
   );
 
@@ -1203,25 +1154,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           {/* ── Today ─────────────────────────────────────────────────── */}
           {activeTab === "today" && (
             <div className="space-y-4">
-              <MarketWeatherTeaser weather={marketWeather} onOpen={() => openMore("markets")} />
+              <MarketWeatherTeaser
+                weather={marketWeather}
+                onOpen={() => openMore("markets")}
+                cautions={(data.guidelines ?? []).map((g) => g.text)}
+              />
               <MarketReversalBanner overlay={data.market_reversal_overlay} />
-              {data.guidelines && data.guidelines.length > 0 && <GuidelinesBanner guidelines={data.guidelines} />}
               {degradedMode && <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} compact />}
-              {portfolioNames.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <label htmlFor="portfolio-select" className="text-sm text-td-muted">Portfolio:</label>
-                  <select
-                    id="portfolio-select"
-                    value={selectedPortfolio}
-                    onChange={(e) => setSelectedPortfolio(e.target.value)}
-                    className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none"
-                  >
-                    {portfolioNames.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
               <div className="grid gap-4 xl:grid-cols-2 items-start">
                 <div className="space-y-4 min-w-0">
                   <SinceYesterdayCard
@@ -1236,36 +1175,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     onTickerClick={openTickerDetail}
                     onOpenPortfolio={() => setActiveTab("portfolio")}
                   />
-                  <TodaysMovesPanel
-                    storyChanges={data.story_changes}
-                    trimCandidates={selectedTrimCandidates.map((h) => ({
-                      ticker: h.ticker,
-                      label: h.action || h.suggestion || (h.score != null && h.score < 40 ? `Score ${Math.round(h.score)} — below trim threshold` : "Review sizing"),
-                      trim_source: h.trim_source,
-                      trim_primary_driver: h.trim_primary_driver,
-                      trim_triggers: h.trim_triggers,
-                      trim_detail: h.trim_detail,
-                    }))}
-                    signals={lazySignals ?? data.signals ?? []}
-                    afterHours={
-                      data.after_hours_earnings?.skipped
-                        ? undefined
-                        : data.after_hours_earnings?.items?.map((i) => ({
-                            ticker: i.ticker,
-                            change_pct: i.change_pct,
-                            post_earnings: i.post_earnings,
-                          }))
-                    }
-                    macroHeadline={
-                      data.retail_market_decisions?.market_context?.primary_message
-                      ?? data.macro_analog?.one_liner
-                      ?? data.market_forecast?.headline
-                      ?? null
-                    }
-                    tradingLens={tradingLens}
-                    onTickerClick={openTickerDetail}
-                    onViewAll={() => setActiveTab("signals")}
-                  />
                 </div>
                 <div className="space-y-4 min-w-0">
                   <MarketMapCard />
@@ -1274,50 +1183,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     heldEarnings={heldEarnings}
                     onOpenCalendar={() => openMore("markets")}
                   />
-                  {nextHeldEarnings && (
-                    <CatalystStrip
-                      ticker={nextHeldEarnings.ticker}
-                      daysUntil={nextHeldEarnings.days_until}
-                      onClick={() => openTickerDetail(nextHeldEarnings.ticker)}
-                    />
-                  )}
                   <PortfolioTeaser
                     totalValue={selectedReport?.total_value}
-                    holdingCount={selectedReport?.per_holding?.length ?? 0}
+                    holdingCount={heldTickerSet.size}
                     largest={selectedReport?.largest_position ?? null}
                     onOpen={() => setActiveTab("portfolio")}
                   />
-                  {(data.tactical_breakouts?.length ?? 0) > 0 && (
-                    <TacticalBreakoutStrip rows={data.tactical_breakouts} onTickerClick={openTickerDetail} />
-                  )}
-                  {tradingLens === "scout" && (data.event_risk_strip?.rows?.length ?? 0) > 0 && (
-                    <EventRiskStrip payload={data.event_risk_strip} onTickerClick={openTickerDetail} />
-                  )}
                 </div>
               </div>
-              {(data.retail_briefing || data.retail_market_decisions) && (
-                <ToggleSection id="today-briefing" title="Daily briefing — what should I do today?" icon={<Sparkles />} defaultOpen={false}>
-                  <OverviewAtAGlance
-                    briefing={data.retail_briefing}
-                    market={data.retail_market_decisions}
-                    marketQuadrant={marketQuadrant}
-                    macroBackdrop={
-                      data.market_forecast
-                        ? { bullets: data.market_forecast.bullets, disclaimer: data.market_forecast.disclaimer }
-                        : null
-                    }
-                    preMarketFull={preMarketFull}
-                    preMarket={data.pre_market}
-                    todayMoveTickers={todayMovesCoveredTickers}
-                    tradingLens={tradingLens}
-                    forwardTracking={data.forward_tracking}
-                    modelHealth={data.model_health}
-                    paperTrading={data.paper_trading}
-                    guestUniverseNote={data.universe_meta?.note ?? null}
-                    onTickerClick={openTickerDetail}
-                  />
-                </ToggleSection>
-              )}
             </div>
           )}
 
@@ -1654,7 +1527,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {moreSub === "markets" && (
                 <div className="space-y-4 sm:space-y-6">
                   {data.retail_market_decisions && (
-                    <RetailMarketDecisionsPanel data={data.retail_market_decisions} />
+                    <RetailMarketDecisionsPanel data={data.retail_market_decisions} collapsible />
                   )}
                   <ToggleSection id="markets-outlook" title="Breadth, rotation & next-day outlook" icon={<Globe className="h-5 w-5" />} defaultOpen>
                     <div className="space-y-3">
@@ -1784,7 +1657,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <ToggleSection id="markets-newsletter" title="Morning newsletter" icon={<Mail className="h-5 w-5" />} defaultOpen={false}>
                     <MorningNewsletter data={data.morning_newsletter ?? undefined} />
                   </ToggleSection>
-                  <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen>
+                  <ToggleSection id="markets-scenarios" title="Market scenarios (what-if)" icon={<Target />} badge={data.market_scenarios?.length ?? 0} defaultOpen={false}>
                     <MarketScenarios scenarios={data.market_scenarios ?? []} />
                   </ToggleSection>
                   {data.pre_ipo?.enabled && (data.pre_ipo.items?.length ?? 0) > 0 ? (
@@ -1793,7 +1666,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       title="Pre-IPO watch"
                       icon={<Sparkles />}
                       badge={data.pre_ipo.items!.length}
-                      defaultOpen
+                      defaultOpen={false}
                     >
                       <PreIpoSection panel={data.pre_ipo} onTickerClick={openTickerDetail} />
                     </ToggleSection>
@@ -1801,7 +1674,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6 min-w-0 items-start">
                     {data.crypto?.length ? (
                       <div className="min-w-0">
-                        <ToggleSection id="markets-crypto" title="Crypto" icon={<Globe />} badge={data.crypto.length} defaultOpen>
+                        <ToggleSection id="markets-crypto" title="Crypto" icon={<Globe />} badge={data.crypto.length} defaultOpen={false}>
                           <CryptoSection items={data.crypto} />
                         </ToggleSection>
                       </div>

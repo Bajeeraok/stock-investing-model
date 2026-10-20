@@ -119,7 +119,7 @@ def test_bridge_band_inside_gap():
     assert bridge.get("max_allocation_pct") == 10
 
 
-def test_googl_long_and_st_bridge_bands_at_358():
+def test_googl_owner_tiers_capped_to_swing_top_at_358():
     out = build_all_horizons_payload(
         current_price=358.99,
         rsi=58.0,
@@ -143,12 +143,17 @@ def test_googl_long_and_st_bridge_bands_at_358():
         ticker="GOOGL",
         tier2_mos_pct=15.0,
     )
-    lt_spot = out["long"]["entry_tiers"]["spot_position"]
-    assert lt_spot.get("state") == "between_tiers"
-    assert lt_spot.get("bridge_band")
-    bb = lt_spot["bridge_band"]
-    assert bb["gap_low"] < bb["low"] < bb["high"] < bb["gap_high"]
-    assert bb["gap_low"] < 358.99 < bb["gap_high"]
+    # Owner adds never sit above the swing top: the FV-MOS Tier 2 band (would reach ~$403)
+    # is capped to the medium zone high, so spot $358.99 is above every owner tier and the
+    # long plan waits for the same pullback the swing plan does (no "buy higher" bridge).
+    et = out["long"]["entry_tiers"]
+    tiers = {t["id"]: t for t in et["tiers"]}
+    med_hi = out["medium"]["entry_zone"]["high"]
+    assert tiers["T2"]["high"] <= med_hi + 1e-6
+    assert tiers["T1"]["high"] <= med_hi + 1e-6
+    assert tiers["T2"]["high"] > tiers["T1"]["high"] > tiers["T3"]["high"]
+    assert et["spot_position"].get("state") == "above_all"
+    assert out["long"]["entry_zone"]["high"] <= med_hi + 1e-6
 
 
 def test_short_swing_between_bands_and_catch_levels():
