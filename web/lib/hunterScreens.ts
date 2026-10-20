@@ -24,7 +24,15 @@ export type HunterCandidate = {
   rsi?: number | null;
   tactical_t1?: number | null;
   tactical_stop?: number | null;
+  falling_knife?: boolean;
+  /** Reconciled call from gates + score/trend + 7-layer model (backend hunter_call). */
+  call?: HunterCall;
+  call_reason?: string;
+  /** Section the card lists under — "avoid" pulls model/trend-against names out of their gate tier. */
+  display_tier?: HunterReason | "avoid";
 };
+
+export type HunterCall = "buy" | "tactical" | "wait" | "avoid";
 
 export type HunterScreenId =
   | "all_hunt"

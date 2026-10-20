@@ -5,6 +5,7 @@ import { SlidersHorizontal } from "lucide-react";
 import { clsx } from "clsx";
 import { PossessionBadge } from "./PossessionBadge";
 import {
+  type HunterCall,
   BUILTIN_HUNTER_SCREENS,
   filterHunterCandidates,
   loadCustomHunterScreens,
@@ -50,20 +51,40 @@ const REASON_LABEL: Record<HunterReason, string> = {
   warming: "Warming",
 };
 
-/** Readiness tiers in reading order — same 4 primary gates as the ticker Verdict/Why tabs. */
-const TIERS: { id: HunterReason; chip: string; title: string; hint: string; chipOn: string; head: string }[] = [
+type DisplayTier = HunterReason | "avoid";
+
+/** Readiness tiers in reading order — same 4 primary gates as the ticker Verdict/Why tabs.
+ * "avoid" is last: names whose model action or trend is against them, whatever the gate count. */
+const TIERS: { id: DisplayTier; chip: string; title: string; hint: string; chipOn: string; head: string }[] = [
   { id: "velocity", chip: "Tactical", title: "Tactical", hint: "velocity breakout — not full GO", chipOn: "bg-td-owner-weak text-td-owner", head: "text-td-owner" },
   { id: "go_ready", chip: "GO", title: "GO · all gates green", hint: "4/4 gates", chipOn: "bg-td-accent-weak text-td-accent", head: "text-td-accent" },
   { id: "almost_ready", chip: "Almost", title: "Almost ready", hint: "3/4 gates", chipOn: "bg-td-info/15 text-td-info", head: "text-td-info" },
-  { id: "warming", chip: "Warming", title: "Warming", hint: "2/4 gates or fewer", chipOn: "bg-td-warn-weak text-td-warn", head: "text-td-warn" },
+  { id: "warming", chip: "Warming", title: "Warming", hint: "3/4 gates, short-term not confirming", chipOn: "bg-td-warn-weak text-td-warn", head: "text-td-warn" },
+  { id: "avoid", chip: "Avoid", title: "Avoid for now", hint: "model or trend against — gate count doesn't matter", chipOn: "bg-td-crit-weak text-td-crit", head: "text-td-crit" },
 ];
 
-function actionTone(action: string): string {
-  const u = action.toUpperCase();
-  if (/REDUCE|TRIM|SELL|AVOID|EXIT/.test(u)) return "bg-td-crit-weak text-td-crit";
-  if (/BUY|ADD|GO/.test(u)) return "bg-td-accent-weak text-td-accent";
-  if (/WATCH|WAIT/.test(u)) return "bg-td-warn-weak text-td-warn";
-  return "bg-td-surface2 text-td-muted";
+const CALL_BADGE: Record<HunterCall, { label: string; cls: string }> = {
+  buy: { label: "BUY", cls: "bg-td-accent-weak text-td-accent" },
+  tactical: { label: "TACTICAL", cls: "bg-td-owner-weak text-td-owner" },
+  wait: { label: "WAIT", cls: "bg-td-warn-weak text-td-warn" },
+  avoid: { label: "AVOID", cls: "bg-td-crit-weak text-td-crit" },
+};
+
+/** Older cached payloads predate the backend call — derive the same thing conservatively. */
+function resolveCall(r: HunterCandidate): { call: HunterCall; reason: string; tier: DisplayTier } {
+  if (r.call) return { call: r.call, reason: r.call_reason ?? "", tier: r.display_tier ?? r.hunter_reason };
+  const pa = (r.plan_action || "").toUpperCase();
+  const total = r.gates_total ?? 4;
+  const missing = total - (r.gates_passed ?? 0);
+  const score = r.composite_buy;
+  const down = (r.regime || "").toUpperCase() === "DOWN";
+  if (down && ((score != null && score < 35) || (r.rsi != null && r.rsi < 30 && (score == null || score < 50)))) {
+    return { call: "avoid", reason: "Falling-knife risk — weak score in a downtrend. Wait for the trend to turn.", tier: "avoid" };
+  }
+  if (/REDUCE|AVOID|SELL|TRIM/.test(pa)) return { call: "avoid", reason: `Model says ${pa} — don't add.`, tier: "avoid" };
+  if (r.hunter_reason === "velocity") return { call: "tactical", reason: "Short-term breakout — starter size with a tight stop.", tier: "velocity" };
+  if ((r.gate_cleared || missing <= 0) && /BUY|ADD/.test(pa)) return { call: "buy", reason: "All gates green and the model agrees.", tier: r.hunter_reason };
+  return { call: "wait", reason: `${Math.max(0, missing)} more gate(s) or a model BUY needed first.`, tier: r.hunter_reason };
 }
 
 function GateBar({ passed, total }: { passed: number; total: number }) {
@@ -79,22 +100,18 @@ function GateBar({ passed, total }: { passed: number; total: number }) {
 function HunterCard({ r, onTickerClick }: { r: HunterCandidate; onTickerClick?: (ticker: string) => void }) {
   const total = r.gates_total ?? 4;
   const passed = Math.max(0, Math.min(total, r.gates_passed ?? 0));
-  const missing = total - passed;
-  const action = (r.plan_action || r.signal || "").replace(/_/g, " ").trim();
+  const { call, reason } = resolveCall(r);
+  const badge = CALL_BADGE[call];
+  const model = (r.plan_action || "").replace(/_/g, " ").trim();
   const facts = [
     `${passed}/${total} gates`,
+    model ? `model ${model}` : null,
     r.velocity_triggered || r.track === "velocity"
       ? `Velocity${r.velocity_score != null ? ` ${Math.round(r.velocity_score)}` : ""}`
-      : r.track
-        ? r.track.charAt(0).toUpperCase() + r.track.slice(1)
-        : null,
+      : null,
     r.rsi != null ? `RSI ${Math.round(r.rsi)}` : null,
-    r.regime ?? null,
+    r.regime ? `${r.regime.charAt(0)}${r.regime.slice(1).toLowerCase()} trend` : null,
   ].filter(Boolean);
-  const next =
-    r.gate_cleared || missing === 0
-      ? "All gates green — open Levels for the staged add"
-      : `Next: ${missing} more gate${missing === 1 ? "" : "s"} for full GO`;
   return (
     <button
       type="button"
@@ -113,19 +130,20 @@ function HunterCard({ r, onTickerClick }: { r: HunterCandidate; onTickerClick?: 
           {r.composite_buy != null && (
             <span className="font-mono text-[11px] text-td-muted tabular-nums">Score {r.composite_buy.toFixed(0)}</span>
           )}
-          {action && (
-            <span className={clsx("font-mono text-[10.5px] font-bold px-2 py-0.5 rounded-full uppercase", actionTone(action))}>
-              {action.length > 14 ? `${action.slice(0, 13)}…` : action}
-            </span>
-          )}
+          <span className={clsx("font-mono text-[10.5px] font-bold px-2 py-0.5 rounded-full", badge.cls)}>{badge.label}</span>
         </span>
       </div>
       <div className="mt-2">
         <GateBar passed={passed} total={total} />
       </div>
       <p className="mt-1.5 text-[11.5px] text-td-muted">{facts.join(" · ")}</p>
-      <p className="mt-1 text-[11.5px] text-td-info">
-        {next}
+      <p
+        className={clsx(
+          "mt-1 text-[11.5px]",
+          call === "buy" ? "text-td-accent" : call === "avoid" ? "text-td-crit" : call === "tactical" ? "text-td-owner" : "text-td-info",
+        )}
+      >
+        {reason}
         {r.hunter_reason === "velocity" && r.tactical_t1 != null ? ` · T1 $${r.tactical_t1.toFixed(2)}` : ""}
         {r.hunter_reason === "velocity" && r.tactical_stop != null ? ` · stop $${r.tactical_stop.toFixed(2)}` : ""}
         {" ›"}
@@ -152,9 +170,9 @@ export function HunterPanel({
 }) {
   const [screen, setScreen] = useState<HunterScreenId>("all_hunt");
   const [customScreens, setCustomScreens] = useState<CustomHunterScreen[]>([]);
-  const [tierFilter, setTierFilter] = useState<HunterReason | null>(null);
+  const [tierFilter, setTierFilter] = useState<DisplayTier | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Partial<Record<HunterReason, boolean>>>({});
+  const [expanded, setExpanded] = useState<Partial<Record<DisplayTier, boolean>>>({});
 
   useEffect(() => {
     setScreen(loadHunterScreen());
@@ -178,8 +196,8 @@ export function HunterPanel({
   }, [allCandidates, screen, source, portfolioSet, watchlistSet]);
 
   const byTier = useMemo(() => {
-    const m: Record<HunterReason, HunterCandidate[]> = { velocity: [], go_ready: [], almost_ready: [], warming: [] };
-    for (const r of filtered) m[r.hunter_reason]?.push(r);
+    const m: Record<DisplayTier, HunterCandidate[]> = { velocity: [], go_ready: [], almost_ready: [], warming: [], avoid: [] };
+    for (const r of filtered) m[resolveCall(r).tier]?.push(r);
     return m;
   }, [filtered]);
 

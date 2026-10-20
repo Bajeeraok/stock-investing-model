@@ -3,8 +3,8 @@ Readiness score for alerts/UI — does NOT change primary GO/NO-GO gates.
 
 Tiers:
   go_ready      — 4/4 gates (same as gate_cleared)
-  almost_ready  — 3/4 gates + short-term verdict supports add
-  warming       — 3/4 gates but ST not BUY yet
+  almost_ready  — 3/4 gates + short-term verdict supports add (and not a falling knife)
+  warming       — 3/4 gates but ST not BUY yet, or the ST "add" is an oversold bounce in a downtrend
   watch         — fewer gates or no ST support
 """
 
@@ -35,6 +35,29 @@ def st_verdict_supports_add(row: dict[str, Any]) -> bool:
     return pa in ST_BUY_VERDICTS
 
 
+# Falling-knife guard: an oversold bounce flips short_suggestion to ADD, which alone used to
+# promote a weak downtrend (e.g. IREN score 10, RSI 22, regime DOWN) to "almost_ready".
+KNIFE_MAX_SCORE = 35.0
+KNIFE_MAX_RSI = 30.0
+
+
+def _f(v: Any) -> float | None:
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def is_falling_knife(row: dict[str, Any]) -> bool:
+    """Weak composite in a downtrend — gates can pass on valuation while price keeps falling."""
+    score = _f(row.get("composite_buy"))
+    rsi = _f(row.get("rsi"))
+    regime = str(row.get("regime") or "").upper()
+    if score is not None and score < KNIFE_MAX_SCORE and regime == "DOWN":
+        return True
+    return regime == "DOWN" and rsi is not None and rsi < KNIFE_MAX_RSI and (score is None or score < 50)
+
+
 def compute_readiness(row: dict[str, Any]) -> dict[str, Any]:
     """
     Return readiness tier + score (0–100) from frozen gate fields on a signal row.
@@ -56,11 +79,12 @@ def compute_readiness(row: dict[str, Any]) -> dict[str, Any]:
         cleared = go == "go"
 
     st_buy = st_verdict_supports_add(row)
+    knife = is_falling_knife(row)
 
     if cleared:
         tier: ReadinessTier = "go_ready"
         score = 100
-    elif gates_passed >= gates_total - 1 and st_buy:
+    elif gates_passed >= gates_total - 1 and st_buy and not knife:
         tier = "almost_ready"
         score = min(95, 70 + gates_passed * 6)
     elif gates_passed >= gates_total - 1:
@@ -79,4 +103,5 @@ def compute_readiness(row: dict[str, Any]) -> dict[str, Any]:
         "st_verdict_buy": st_buy,
         "almost_ready": tier == "almost_ready",
         "go_ready": tier == "go_ready",
+        "falling_knife": knife,
     }

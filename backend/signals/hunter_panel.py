@@ -50,6 +50,58 @@ def is_hunter_candidate(row: dict[str, Any]) -> bool:
     return _hunter_reason(row) is not None
 
 
+HunterCall = Literal["buy", "tactical", "wait", "avoid"]
+_CALL_SORT = {"buy": 0, "tactical": 1, "wait": 2, "avoid": 3}
+_MODEL_BUY = ("STRONG BUY", "BUY", "ADD")
+_MODEL_AGAINST = ("REDUCE", "AVOID", "SELL", "TRIM")
+
+
+def _num(v: Any) -> float | None:
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def hunter_call(item: dict[str, Any]) -> tuple[HunterCall, str]:
+    """
+    One reconciled call per card from the three axes the card shows — gates, composite
+    score/trend, and the 7-layer model action (plan_action) — so the user isn't left to
+    merge "4/4 gates" + "HOLD" + "score 10" themselves. A BUY needs all three to agree.
+    """
+    from signals.readiness_score import is_falling_knife
+
+    reason = item.get("hunter_reason")
+    total = int(item.get("gates_total") or 4)
+    passed = int(item.get("gates_passed") or 0)
+    missing = max(0, total - passed)
+    score = _num(item.get("composite_buy"))
+    rsi = _num(item.get("rsi"))
+    regime = str(item.get("regime") or "").upper()
+    pa = str(item.get("plan_action") or "").upper().strip()
+    model_buy = any(k in pa for k in _MODEL_BUY)
+    model_against = any(k in pa for k in _MODEL_AGAINST)
+    knife = is_falling_knife(item)
+    weak = (score is not None and score < 50) or regime == "DOWN"
+    model_word = pa.title() if pa else "no read"
+
+    if knife:
+        bits = [f"score {score:.0f}" if score is not None else None, f"RSI {rsi:.0f}" if rsi is not None else None, "downtrend"]
+        return "avoid", "Falling-knife risk — " + ", ".join(b for b in bits if b) + ". Wait for the trend to turn."
+    if model_against:
+        return "avoid", f"Model says {model_word} — don't add, even with {passed}/{total} gates."
+    if reason == "velocity":
+        return "tactical", "Short-term breakout — starter size with a tight stop, not a full position."
+    cleared = bool(item.get("gate_cleared")) or missing == 0
+    if cleared and model_buy and not weak:
+        return "buy", f"All {total} gates green and the model says {model_word} — staged add is on."
+    if cleared and weak:
+        return "wait", f"Gates green but the trend is weak (score {score:.0f}{', DOWN' if regime == 'DOWN' else ''}) — wait for it to firm up." if score is not None else "Gates green but the trend is weak — wait."
+    if cleared:
+        return "wait", f"Gates green, model still at {model_word} — wait for it to confirm before adding."
+    return "wait", f"{missing} more gate{'s' if missing != 1 else ''} to clear before this is a buy."
+
+
 def _row_to_hunter_item(
     row: dict[str, Any],
     *,
@@ -82,6 +134,7 @@ def _row_to_hunter_item(
         "rsi": row.get("rsi"),
         "tactical_t1": row.get("tactical_t1"),
         "tactical_stop": row.get("tactical_stop"),
+        "falling_knife": bool(row.get("falling_knife")),
     }
 
 
@@ -100,11 +153,20 @@ def build_hunter_panel(
     for row in results or []:
         if not is_hunter_candidate(row):
             continue
-        items.append(_row_to_hunter_item(row, portfolio=portfolio, watchlist=watchlist))
+        item = _row_to_hunter_item(row, portfolio=portfolio, watchlist=watchlist)
+        item["call"], item["call_reason"] = hunter_call(item)
+        # Section the card is listed under: an "avoid" call never sits inside Almost ready /
+        # GO (MSFT 3/4 gates + model AVOID read as "nearly a buy") — it gets its own section.
+        item["display_tier"] = "avoid" if item["call"] == "avoid" else item["hunter_reason"]
+        items.append(item)
 
+    # Within a tier: reconciled call first (buy > tactical > wait > avoid), then composite
+    # score — gate count alone let a score-10 downtrend float to the top of its bucket.
     items.sort(
         key=lambda x: (
             _REASON_SORT.get(x.get("hunter_reason") or "warming", 9),
+            _CALL_SORT.get(x.get("call") or "wait", 9),
+            -(float(x.get("composite_buy") or 0)),
             -(float(x.get("readiness_score") or 0)),
             -(float(x.get("velocity_score") or 0)),
             str(x.get("ticker") or ""),
@@ -127,6 +189,8 @@ def build_hunter_panel(
             "almost_ready": almost_n,
             "warming": warm_n,
             "not_in_portfolio": len(not_owned),
+            "buy_now": sum(1 for x in items if x.get("call") == "buy"),
+            "avoid": sum(1 for x in items if x.get("call") == "avoid"),
         },
         "candidates": items,
         "methodology": (

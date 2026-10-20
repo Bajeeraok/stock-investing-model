@@ -38,3 +38,20 @@ def test_warming_three_gates_no_st_buy():
     )
     assert r["readiness_tier"] == "warming"
     assert r["almost_ready"] is False
+
+
+def test_falling_knife_not_almost_ready():
+    """IREN-style: 3/4 gates + oversold-bounce ADD, but score 10 / RSI 22 / DOWN → warming, flagged."""
+    r = compute_readiness(
+        {
+            "gates_passed": 3,
+            "gates_total": 4,
+            "gate_cleared": False,
+            "short_suggestion": "HOLD/ADD",
+            "composite_buy": 10,
+            "rsi": 22,
+            "regime": "DOWN",
+        }
+    )
+    assert r["readiness_tier"] == "warming"
+    assert r["falling_knife"] is True
