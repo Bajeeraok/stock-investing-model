@@ -272,6 +272,34 @@ def bars_between_dates(
     return bars
 
 
+def bars_from_index(
+    dates: list[str],
+    start_idx: int,
+    horizon: int,
+    ticker: str,
+    rows_by_date: dict[str, dict[str, dict[str, Any]]],
+) -> list[dict[str, float | None]]:
+    """Same output as bars_between_dates, from a per-run {date: {ticker: row}} index — O(horizon)
+    dict lookups instead of re-loading and linearly scanning a full snapshot per step."""
+    bars: list[dict[str, float | None]] = []
+    want = ticker.upper()
+    for k in range(1, horizon + 1):
+        j = start_idx + k
+        if j >= len(dates):
+            break
+        r = (rows_by_date.get(dates[j]) or {}).get(want)
+        if r is None:
+            continue
+        bars.append(
+            {
+                "close": _positive_price(r.get("close")),
+                "high": _positive_price(r.get("high")),
+                "low": _positive_price(r.get("low")),
+            }
+        )
+    return bars
+
+
 def path_metrics(
     entry: float,
     bars: list[dict[str, float | None]],

@@ -1368,7 +1368,28 @@ class PaperTradeLogger:
                     pass
         return sorted(set(dates))
 
+    # Per-instance bounded snapshot cache. Callers loop per open trade (MTM, fills, outcomes)
+    # and previously re-fetched the same multi-hundred-KB snapshot from Redis for EVERY row —
+    # slow, and billed egress on a public Redis URL. An instance lives for one refresh, so
+    # this never serves a stale day; the LRU bound keeps 90-day backfills from holding ~all.
+    _SNAPSHOT_CACHE_MAX = 32
+
     def _load_snapshot(self, date_str: str) -> dict | None:
+        from collections import OrderedDict
+
+        cache = self.__dict__.get("_snap_cache")
+        if cache is None:
+            cache = self.__dict__["_snap_cache"] = OrderedDict()
+        if date_str in cache:
+            cache.move_to_end(date_str)
+            return cache[date_str]
+        data = self._load_snapshot_uncached(date_str)
+        cache[date_str] = data
+        while len(cache) > self._SNAPSHOT_CACHE_MAX:
+            cache.popitem(last=False)
+        return data
+
+    def _load_snapshot_uncached(self, date_str: str) -> dict | None:
         try:
             from signals.cache import get_eod_snapshot_redis
             data = get_eod_snapshot_redis(date_str)
@@ -1386,16 +1407,19 @@ class PaperTradeLogger:
             return None
 
     def _ticker_close_on_snapshot(self, date_str: str, ticker: str) -> float | None:
-        snap = self._load_snapshot(date_str)
-        if not snap:
-            return None
-        want = ticker.upper()
-        for r in snap.get("run_results") or []:
-            if not isinstance(r, dict):
-                continue
-            if str(r.get("ticker") or "").upper() == want:
-                return _safe_float(r.get("close"))
-        return None
+        # {date: {ticker: close}} — tiny; avoids a linear scan of every row per lookup.
+        idx_all = self.__dict__.setdefault("_close_idx", {})
+        idx = idx_all.get(date_str)
+        if idx is None:
+            snap = self._load_snapshot(date_str)
+            if not snap:
+                return None
+            idx = {}
+            for r in snap.get("run_results") or []:
+                if isinstance(r, dict) and r.get("ticker"):
+                    idx.setdefault(str(r["ticker"]).upper(), _safe_float(r.get("close")))
+            idx_all[date_str] = idx
+        return idx.get(ticker.upper())
 
     def _benchmark_return_pct_between(
         self,

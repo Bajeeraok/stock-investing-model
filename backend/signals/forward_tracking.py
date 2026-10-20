@@ -242,8 +242,26 @@ def get_forward_tracking(
     # audit list passed in (~45) — otherwise names like REGN never get a track record even
     # though their daily rows are sitting in every snapshot.
     # Only for the full panel computes (they pass config); narrow SPY/QQQ hit-rate probes don't.
+    # ── Per-run snapshot index ─────────────────────────────────────────────
+    # Load each snapshot this run can touch exactly ONCE, keyed {date: {ticker: row}}.
+    # Previously every (horizon × pair × ticker) re-loaded up to 60 path snapshots through a
+    # 24-entry LRU and linearly scanned ~116 rows per step (~600k loads for 116 tickers ×
+    # 60 pairs × 1/5/20/60d) — the full refresh ran past 10 minutes on Railway and never landed.
+    max_h = max([h for h in horizon_list if h < len(dates)] or [1])
+    first_needed = max(0, len(dates) - max_pairs_per_horizon - max_h - 1)
+    rows_by_date: dict[str, dict[str, dict[str, Any]]] = {}
+    for d in dates[first_needed:]:
+        snap_d = _load_snapshot(eod_dir, d)
+        if not snap_d:
+            continue
+        rows_by_date[d] = {
+            str(r["ticker"]).upper(): r
+            for r in snap_d.get("run_results", [])
+            if isinstance(r, dict) and r.get("ticker")
+        }
+
     if config is not None and bool(ft_cfg.get("include_eod_universe", True)):
-        latest_snap = _load_snapshot_mem(eod_dir, dates[-1]) or {}
+        latest_snap = {"run_results": list((rows_by_date.get(dates[-1]) or {}).values())}
         seen_syms = {str(t).upper() for t in syms}
         extra = [
             str(r["ticker"]).upper()
@@ -256,6 +274,8 @@ def get_forward_tracking(
     signal_source_counts: dict[str, int] = {"ml_signal": 0, "score_fallback": 0}
     use_intraday = bool(ft_cfg.get("use_intraday_touch", True))
     date_to_idx = {d: i for i, d in enumerate(dates)}
+    # (as_of, ticker) → (enriched row, passes gate): enrichment is horizon-independent.
+    prepared_rows: dict[tuple[str, str], tuple[dict[str, Any], bool]] = {}
 
     try:
         from signals.tracking_gate import enrich_tracking_row, passes_tracking_gate
@@ -264,7 +284,7 @@ def get_forward_tracking(
             aggregate_by_signal,
             aggregate_by_trim_gates,
             aggregate_horizon_stats,
-            bars_between_dates,
+            bars_from_index,
             compute_validated_forward_return,
             entry_band_position,
             path_metrics,
@@ -287,23 +307,13 @@ def get_forward_tracking(
             continue
         pairs = list(zip(dates[:-horizon], dates[horizon:]))[-max_pairs_per_horizon:]
         for as_of_date, next_date in reversed(pairs):
-            snap = _load_snapshot_mem(eod_dir, as_of_date)
-            snap_next = _load_snapshot_mem(eod_dir, next_date)
-            if not snap or not snap_next:
+            run_by_ticker = rows_by_date.get(as_of_date)
+            run_next_by_ticker = rows_by_date.get(next_date)
+            if not run_by_ticker or not run_next_by_ticker:
                 continue
             start_idx = date_to_idx.get(as_of_date)
             if start_idx is None:
                 continue
-            run_by_ticker = {
-                str(r["ticker"]).upper(): r
-                for r in snap.get("run_results", [])
-                if isinstance(r, dict) and r.get("ticker")
-            }
-            run_next_by_ticker = {
-                str(r["ticker"]).upper(): r
-                for r in snap_next.get("run_results", [])
-                if isinstance(r, dict) and r.get("ticker")
-            }
 
             for ticker in syms:
                 tk = str(ticker).upper()
@@ -322,17 +332,24 @@ def get_forward_tracking(
                     continue
                 if prior <= 0:
                     continue
-                row_work = dict(row)
-                if enrich_gates:
-                    if not row_work.get("gates_frozen"):
-                        enrich_tracking_row(row_work)
-                try:
-                    from signals.retail_action_payload import align_ml_signal_with_retail_gates
+                cache_key = (as_of_date, tk)
+                cached_row = prepared_rows.get(cache_key)
+                if cached_row is None:
+                    row_work = dict(row)
+                    if enrich_gates:
+                        if not row_work.get("gates_frozen"):
+                            enrich_tracking_row(row_work)
+                    try:
+                        from signals.retail_action_payload import align_ml_signal_with_retail_gates
 
-                    align_ml_signal_with_retail_gates(row_work)
-                except Exception:
-                    pass
-                if not passes_tracking_gate(row_work, config, "forward_tracking"):
+                        align_ml_signal_with_retail_gates(row_work)
+                    except Exception:
+                        pass
+                    passed = passes_tracking_gate(row_work, config, "forward_tracking")
+                    prepared_rows[cache_key] = (row_work, passed)
+                else:
+                    row_work, passed = cached_row
+                if not passed:
                     continue
                 ret_pct, data_quality = compute_validated_forward_return(
                     row_work,
@@ -392,9 +409,7 @@ def get_forward_tracking(
                 if ret_pct is None:
                     continue
 
-                path_bars = bars_between_dates(
-                    dates, start_idx, horizon, tk, _load_snapshot_mem, eod_dir
-                )
+                path_bars = bars_from_index(dates, start_idx, horizon, tk, rows_by_date)
                 path = path_metrics(
                     float(row_work.get("close") or prior),
                     path_bars,
