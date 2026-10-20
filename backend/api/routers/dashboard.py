@@ -1128,6 +1128,19 @@ def _paper_trading_slice_stale(pt: Any) -> bool:
     """True when cached payload has aggregate stats but no trade rows (common cache bug)."""
     if not isinstance(pt, dict):
         return True
+    # Age check: cached slice marked to an older EOD than the newest snapshot (e.g. MTM
+    # "as of 2026-10-15" still served on Oct 19 while Oct 16/19 trades sat in the CSV).
+    mtm_as_of = str(((pt.get("mtm") or {}).get("as_of")) or "")[:10]
+    if mtm_as_of:
+        try:
+            from signals.cache import build_eod_snapshot_index
+
+            snaps = build_eod_snapshot_index()
+            live_latest = str(snaps[0]["date"])[:10] if snaps else ""
+            if live_latest and live_latest > mtm_as_of:
+                return True
+        except Exception:
+            pass
     recent = pt.get("recent")
     if isinstance(recent, list) and len(recent) > 0:
         return False
@@ -1283,6 +1296,14 @@ def _analysis_slice_response(slice_key: str):
             data = bundle.get(slice_key)
 
     computed = False
+    if slice_key == "forward_tracking" and isinstance(data, dict):
+        # This per-slice endpoint (Analysis panel) never checked age — it kept serving an
+        # Oct 15 result on Oct 20. Serve what's cached now, refresh in the background
+        # (single-flight; full 116-ticker compute is too slow to block this request).
+        stale_days = _forward_tracking_staleness_days({"forward_tracking": data})
+        if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
+            logger.info("[analysis-slice] forward_tracking STALE %sd — background refresh", stale_days)
+            _ensure_analysis_background_compute()
     if slice_key == "paper_trading" and _paper_trading_slice_stale(data):
         data = _compute_analysis_slice(slice_key)
         computed = data is not None
