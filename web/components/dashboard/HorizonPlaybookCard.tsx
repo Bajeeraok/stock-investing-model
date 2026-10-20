@@ -233,7 +233,7 @@ export function HorizonPlaybookCard({
           <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
             <p className="flex items-center gap-2 text-sm font-bold text-td-owner">
               <Zap className="h-4 w-4 text-td-owner" aria-hidden />
-              {isSwingSignal ? "Swing opportunity" : "Swing watch"} — {data.ticker}
+              {isSwingSignal ? "Short-term opportunity" : "Short-term watch"} — {data.ticker}
             </p>
             {swingScore?.score != null && (
               <span

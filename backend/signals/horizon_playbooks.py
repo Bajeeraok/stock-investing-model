@@ -470,7 +470,9 @@ def build_horizon_playbooks(
             "invest": "long",
             "unset": "short",
         },
-        "swing": _tag_playbook(swing, horizon="short", kind="swing", title="Swing setup"),
-        "medium": _tag_playbook(medium, horizon="medium", kind="position_build", title="Position build"),
-        "long": _tag_playbook(long_pb, horizon="long", kind="thesis_tiers", title="Thesis & tiers"),
+        # Titles follow the mode switch (Scout = short, Swing = medium, Owner = long). The
+        # short-term play used to be titled "Swing setup" while the Swing *mode* is medium-term.
+        "swing": _tag_playbook(swing, horizon="short", kind="swing", title="Scout setup"),
+        "medium": _tag_playbook(medium, horizon="medium", kind="position_build", title="Swing build"),
+        "long": _tag_playbook(long_pb, horizon="long", kind="thesis_tiers", title="Owner thesis & tiers"),
     }

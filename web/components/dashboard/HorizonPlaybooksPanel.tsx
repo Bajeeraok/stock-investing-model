@@ -7,7 +7,6 @@ import {
   type HorizonPlaybookPayload,
   type HorizonPlaybooksBundle,
 } from "./HorizonPlaybookCard";
-import { PositionIntentChip } from "./PositionIntentChip";
 import {
   getPositionIntent,
   primaryHorizonFromIntent,
@@ -18,10 +17,11 @@ import type { HorizonSignalPayload } from "./InvestorDecisionSummary";
 
 type HorizonKey = "short" | "medium" | "long";
 
+/** Same names as the Scout / Swing / Owner mode switch — one vocabulary per horizon. */
 const TAB_META: Record<HorizonKey, { label: string; anchor: string }> = {
-  short: { label: "Swing", anchor: "ATR/VWAP band, weeks" },
-  medium: { label: "Position build", anchor: "MA50 + earnings band, ~1–3 mo" },
-  long: { label: "Thesis & tiers", anchor: "MA200/fair-value tiers, 6–18 mo" },
+  short: { label: "Scout", anchor: "short-term · ATR/VWAP band, days–weeks" },
+  medium: { label: "Swing", anchor: "medium-term · MA50 + earnings band, ~1–3 mo" },
+  long: { label: "Owner", anchor: "long-term · MA200/fair-value tiers, 6–18 mo" },
 };
 
 function pickPlaybook(bundle: HorizonPlaybooksBundle, horizon: HorizonKey): HorizonPlaybookPayload | null {
@@ -83,17 +83,17 @@ export function HorizonPlaybooksPanel({
     }
   }, [ticker, intentProp]);
 
-  const handleIntent = (next: PositionIntent | null) => {
-    if (intentProp === undefined) {
-      setIntentLocal(next);
-    }
-    onIntentChange?.(next);
-  };
-
+  // The mode switch is the single source of truth. Intent (trade/invest) only applies when
+  // no mode is passed — it used to override the mode, so Swing (medium) opened the
+  // short-term "Swing" tab and showed a second, different entry band.
   const intentHorizon = useMemo(
-    () => (intent ? primaryHorizonFromIntent(intent) : primaryHorizonFromMode(decisionMode ?? "scout")),
+    () => (decisionMode ? primaryHorizonFromMode(decisionMode) : intent ? primaryHorizonFromIntent(intent) : "short"),
     [intent, decisionMode],
   );
+  const [compareOpen, setCompareOpen] = useState(false);
+  useEffect(() => {
+    setCompareOpen(false);
+  }, [intentHorizon, ticker]);
 
   useEffect(() => {
     setActiveHorizon(intentHorizon);
@@ -110,18 +110,26 @@ export function HorizonPlaybooksPanel({
   return (
     <div className="border-b border-td-line/80">
       <div className="px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 bg-td-surface/60 border-b border-td-line/80">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">Horizon playbooks</p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <PositionIntentChip ticker={ticker} compact intent={intent} onChange={handleIntent} />
-          <span className="text-[10px] text-td-muted hidden sm:inline">
-            {intent === "trade" && "Scout mode — swing / tactical primary"}
-            {intent === "invest" && "Planner mode — thesis / accumulate primary"}
-            {!intent && "Set intent: Scout (trade) vs Planner (invest)"}
-          </span>
-        </div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">
+          {TAB_META[intentHorizon].label} playbook
+          <span className="ml-2 normal-case tracking-normal font-normal">— follows the mode switch above</span>
+        </p>
+        {available.length > 1 && (
+          <button
+            type="button"
+            onClick={() => {
+              setCompareOpen((o) => !o);
+              if (compareOpen) setActiveHorizon(intentHorizon);
+            }}
+            aria-expanded={compareOpen}
+            className="text-[11px] font-semibold text-td-muted hover:text-td-text"
+          >
+            {compareOpen ? "Hide other horizons" : "Compare other horizons ›"}
+          </button>
+        )}
       </div>
 
-      {available.length > 1 && (
+      {available.length > 1 && compareOpen && (
         <div className="flex border-b border-td-line/80 px-2 sm:px-4 gap-1 overflow-x-auto">
           {available.map((h) => (
             <button
@@ -149,6 +157,12 @@ export function HorizonPlaybooksPanel({
         </div>
       )}
 
+      {primary && activeHorizon !== intentHorizon && (
+        <p className="mx-4 sm:mx-6 mt-2 rounded-md border border-td-warn/30 bg-td-warn-weak/50 px-2.5 py-1.5 text-[11px] text-td-warn">
+          Comparing the {TAB_META[activeHorizon].label} ({horizonLabel(activeHorizon).toLowerCase()}) plan — not your
+          selected {TAB_META[intentHorizon].label} mode. Its entry band is for that horizon only.
+        </p>
+      )}
       {primary && (
         <p
           className={clsx(
@@ -160,7 +174,7 @@ export function HorizonPlaybooksPanel({
                 : "text-td-owner/80"
           )}
         >
-          Viewing: {horizonLabel(activeHorizon)} · {TAB_META[activeHorizon].anchor}
+          Viewing: {TAB_META[activeHorizon].label} · {TAB_META[activeHorizon].anchor}
         </p>
       )}
 
