@@ -60,7 +60,7 @@ def test_staleness_degrades_to_none_on_index_failure(_mock_index):
 @patch("signals.cache.assemble_analysis_slices")
 def test_fresh_assembled_cache_hit_does_not_trigger_background_compute(mock_assembled, _mock_stale):
     mock_assembled.return_value = _bundle("2026-09-25")
-    with patch("api.routers.dashboard._ensure_analysis_background_compute") as mock_trigger:
+    with patch("api.routers.dashboard._ensure_forward_tracking_refresh") as mock_trigger:
         out = compute_analysis_bundle(allow_heavy=False)
     assert out == _bundle("2026-09-25")
     mock_trigger.assert_not_called()
@@ -72,7 +72,8 @@ def test_stale_assembled_cache_hit_still_returns_data_but_triggers_background_co
     """The whole point: never leave the UI with nothing, but don't let a stale hit go unnoticed
     forever either — this is what breaks the trap without a user-visible regression."""
     mock_assembled.return_value = _bundle("2026-08-02")
-    with patch("api.routers.dashboard._ensure_analysis_background_compute") as mock_trigger:
+    # Stale forward tracking now refreshes just that slice (the full bundle can exceed 10 min).
+    with patch("api.routers.dashboard._ensure_forward_tracking_refresh") as mock_trigger:
         out = compute_analysis_bundle(allow_heavy=False)
     assert out == _bundle("2026-08-02")
     mock_trigger.assert_called_once()

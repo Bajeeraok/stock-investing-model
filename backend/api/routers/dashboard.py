@@ -740,7 +740,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) ->
                 logger.info("[analysis-bundle] slice cache hit (assembled)%s",
                             f" — STALE {stale_days}d, triggering background refresh" if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS else "")
                 if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
-                    _ensure_analysis_background_compute()
+                    _ensure_forward_tracking_refresh()
                 return assembled
 
             dedicated = get_analysis_bundle()
@@ -750,7 +750,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) ->
                 logger.info("[analysis-bundle] dedicated cache hit%s",
                             f" — STALE {stale_days}d, triggering background refresh" if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS else "")
                 if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
-                    _ensure_analysis_background_compute()
+                    _ensure_forward_tracking_refresh()
                 return dedicated
 
             if not cached or not isinstance(cached.get("signals"), list):
@@ -764,7 +764,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) ->
                 logger.info("[analysis-bundle] dedicated cache hit (refresh_ts match)%s",
                             f" — STALE {stale_days}d, triggering background refresh" if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS else "")
                 if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
-                    _ensure_analysis_background_compute()
+                    _ensure_forward_tracking_refresh()
                 return dedicated
 
             if cached.get("analysis_deferred") is False:
@@ -785,7 +785,7 @@ def compute_analysis_bundle(*, allow_heavy: bool = True, force: bool = False) ->
                         # this trap alive (a fresh TTL on the same old data, forever). Still
                         # return it so the UI has something, but let the heavy path (forced,
                         # below/via the background trigger) be the one to actually cache next.
-                        _ensure_analysis_background_compute()
+                        _ensure_forward_tracking_refresh()
                         return partial
                     try:
                         set_analysis_bundle(partial, refresh_ts=refresh_ts)
@@ -1108,6 +1108,33 @@ def _slim_analysis_for_http(bundle: dict) -> dict:
     return _sanitize_for_json(out)
 
 
+def _ensure_forward_tracking_refresh() -> None:
+    """Refresh only the forward_tracking slice in the background (single-flight).
+
+    Used wherever forward tracking is found stale (newer EOD snapshot exists) and after the
+    8pm EOD job — the full analysis bundle is too slow (>10 min on Railway) to be the way a
+    daily-stale panel catches up.
+    """
+    from api.analysis_bundle_job import trigger_forward_tracking_refresh
+
+    def _store(data: Any) -> None:
+        from signals.cache import get_cached_dashboard, set_analysis_slice
+
+        dash = get_cached_dashboard()
+        refresh_ts = dash.get("refresh_ts") if isinstance(dash, dict) else None
+        set_analysis_slice("forward_tracking", data, refresh_ts=refresh_ts)
+
+    trigger_forward_tracking_refresh(lambda: _compute_analysis_slice("forward_tracking"), _store)
+
+
+@router.get("/dashboard/analysis/forward-tracking/job-status")
+async def get_forward_tracking_job_status_api():
+    """Is the forward-tracking-only background refresh running / did it last succeed?"""
+    from api.analysis_bundle_job import get_forward_tracking_job_status
+
+    return get_forward_tracking_job_status()
+
+
 def _ensure_analysis_background_compute() -> None:
     """Start background analysis-bundle job if not already running.
 
@@ -1303,7 +1330,7 @@ def _analysis_slice_response(slice_key: str):
         stale_days = _forward_tracking_staleness_days({"forward_tracking": data})
         if (stale_days or 0) > _FORWARD_TRACKING_STALE_DAYS:
             logger.info("[analysis-slice] forward_tracking STALE %sd — background refresh", stale_days)
-            _ensure_analysis_background_compute()
+            _ensure_forward_tracking_refresh()
     if slice_key == "paper_trading" and _paper_trading_slice_stale(data):
         data = _compute_analysis_slice(slice_key)
         computed = data is not None

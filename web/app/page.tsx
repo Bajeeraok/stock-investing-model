@@ -34,6 +34,8 @@ const DASHBOARD_MIN_INTERVAL_MS = 30_000;
 const AUTO_RETRY_DELAY_MS = 8000;
 /** Poll while backend recomputes after stale snapshot. */
 const STALE_POLL_MS = 5000;
+/** Minimum gap between silent background shell fetches (poll / WS nudge / visibility). */
+const SILENT_MIN_INTERVAL_MS = 15_000;
 
 // Module-level guards so they survive Strict Mode unmount/remount and prevent duplicate requests
 let dashboardFetchInProgress = false;
@@ -73,6 +75,11 @@ export default function Home() {
   const [wsLive, setWsLive] = useState(false);
 
   const lastFetchRef = useRef<number>(0);
+  // Read latest data through a ref: having `data` in refresh's deps rebuilt refresh on every
+  // fetch, which re-ran every effect keyed on it — the HTTP-poll effect calls poll() on each
+  // run, so the shell was refetched ~1×/second for as long as a tab stayed open.
+  const dataRef = useRef<DashboardData | null>(null);
+  dataRef.current = data;
   const stalePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -99,6 +106,14 @@ export default function Home() {
   const refresh = useCallback(async (isAutoRetry = false, forceRefresh = false, silentBackground = false) => {
     const now = Date.now();
     if (!forceRefresh && !silentBackground && now - lastFetchRef.current < DASHBOARD_FETCH_DEBOUNCE_MS) return;
+    if (
+      silentBackground &&
+      !forceRefresh &&
+      lastDashboardFetchStart !== 0 &&
+      now - lastDashboardFetchStart < SILENT_MIN_INTERVAL_MS
+    ) {
+      return;
+    }
     lastFetchRef.current = now;
 
     if (dashboardFetchInProgress) {
@@ -117,7 +132,7 @@ export default function Home() {
     dashboardFetchInProgress = true;
     lastDashboardFetchStart = now;
     const hasCached = !!loadCachedDashboard();
-    if (!hasCached && !data) setLoading(true);
+    if (!hasCached && !dataRef.current) setLoading(true);
     else if (forceRefresh) setIsRefreshing(true);
     if (!isAutoRetry) setError(null);
     let succeeded = false;
@@ -159,7 +174,7 @@ export default function Home() {
           ? "Connection failed or timed out. Retrying automatically…"
           : raw;
       console.error("[Dashboard] Fetch error:", raw, e);
-      if (!loadCachedDashboard() && !data) setError(msg);
+      if (!loadCachedDashboard() && !dataRef.current) setError(msg);
       lastDashboardFetchStart = 0;
     } finally {
       setLoading(false);
@@ -174,7 +189,7 @@ export default function Home() {
         }
       }
     }
-  }, [applyDashboardJson, data]);
+  }, [applyDashboardJson]);
 
   // Auto-retry once after 502/503/timeout (robustness for shared links / cold start)
   const retryCountRef = useRef(0);

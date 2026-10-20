@@ -141,9 +141,9 @@ def _run_eod_job() -> None:
         # New snapshot → recompute forward tracking now (daily 1d calls, per-ticker index)
         # instead of waiting for someone to open Analysis/Track and hit the staleness check.
         try:
-            from api.routers.dashboard import _ensure_analysis_background_compute
+            from api.routers.dashboard import _ensure_forward_tracking_refresh
 
-            _ensure_analysis_background_compute()
+            _ensure_forward_tracking_refresh()
             logger.info("[eod-scheduler] forward-tracking refresh queued after new snapshot")
         except Exception:
             logger.exception("[eod-scheduler] forward-tracking refresh failed to queue")

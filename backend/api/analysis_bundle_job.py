@@ -14,6 +14,7 @@ logger = logging.getLogger("api.analysis_bundle_job")
 _STALE_RUNNING_SEC = 600  # reset stuck "running" after 10 min
 
 _lock = threading.Lock()
+_worker_thread: threading.Thread | None = None
 _state: dict[str, Any] = {
     "status": "idle",  # idle | running | done | error
     "started_at": None,
@@ -25,6 +26,10 @@ _state: dict[str, Any] = {
 def _reset_if_stale_running() -> None:
     with _lock:
         if _state.get("status") != "running":
+            return
+        # A slow-but-alive compute is not stuck: resetting it let a second full compute start
+        # on top of the first (observed live — two heavy runs overlapping, doubling RAM).
+        if _worker_thread is not None and _worker_thread.is_alive():
             return
         started = _state.get("started_at")
         if started is not None and (time.time() - float(started)) > _STALE_RUNNING_SEC:
@@ -96,5 +101,56 @@ def trigger_background_analysis(compute_fn: Callable[[], dict | None]) -> bool:
             logger.exception("[analysis-bundle-job] failed: %s", exc)
             finish_analysis(success=False, error=str(exc))
 
-    threading.Thread(target=_worker, daemon=True, name="analysis-bundle-bg").start()
+    global _worker_thread
+    t = threading.Thread(target=_worker, daemon=True, name="analysis-bundle-bg")
+    with _lock:
+        _worker_thread = t
+    t.start()
+    return True
+
+
+# ── Forward-tracking-only refresh (single-flight, independent of the full bundle) ──
+_ft_lock = threading.Lock()
+_ft_thread: threading.Thread | None = None
+_ft_state: dict[str, Any] = {"status": "idle", "started_at": None, "finished_at": None, "error": None}
+
+
+def get_forward_tracking_job_status() -> dict[str, Any]:
+    with _ft_lock:
+        out = dict(_ft_state)
+        out["alive"] = bool(_ft_thread is not None and _ft_thread.is_alive())
+        return out
+
+
+def trigger_forward_tracking_refresh(compute_fn: Callable[[], Any], store_fn: Callable[[Any], Any]) -> bool:
+    """Recompute only the forward_tracking slice in a daemon thread. False if one is running.
+
+    The full analysis bundle (paper backfill, insider, validations…) can exceed 10 minutes on
+    Railway; forward tracking alone is the part that goes stale daily, so it refreshes on its own.
+    """
+    global _ft_thread
+    with _ft_lock:
+        if _ft_thread is not None and _ft_thread.is_alive():
+            return False
+        _ft_state.update(status="running", started_at=time.time(), finished_at=None, error=None)
+
+    def _worker() -> None:
+        try:
+            logger.info("[forward-tracking-job] START")
+            data = compute_fn()
+            if data:
+                store_fn(data)
+            with _ft_lock:
+                _ft_state.update(status="done" if data else "error", finished_at=time.time(),
+                                 error=None if data else "empty result")
+            logger.info("[forward-tracking-job] DONE (ok=%s)", bool(data))
+        except Exception as exc:
+            logger.exception("[forward-tracking-job] failed: %s", exc)
+            with _ft_lock:
+                _ft_state.update(status="error", finished_at=time.time(), error=str(exc))
+
+    t = threading.Thread(target=_worker, daemon=True, name="forward-tracking-bg")
+    with _ft_lock:
+        _ft_thread = t
+    t.start()
     return True

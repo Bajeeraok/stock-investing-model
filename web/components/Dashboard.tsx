@@ -2035,7 +2035,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           openTickerDetail(t);
         }}
         dashboardRefreshedAt={
-          lastRefreshedAt?.toISOString() ?? data.as_of_date ?? data.data_freshness?.snapshot_updated_at ?? null
+          // Content-based: changes only when the backend's data changes, not on every fetch.
+          (data as unknown as { refresh_ts?: string }).refresh_ts ?? data.as_of_date ?? data.data_freshness?.snapshot_updated_at ?? null
         }
         onCounts={(total, actionRequired) => {
           setOverviewAlertCount(total);
