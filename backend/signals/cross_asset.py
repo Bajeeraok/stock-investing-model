@@ -95,6 +95,53 @@ def run_cross_asset_daily(tickers: list[str]) -> list[dict]:
     return results
 
 
+# US releases that move the whole tape. Matched on the event name only (never country).
+_MARKET_MOVER_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("fomc", "FOMC"),
+    ("fed interest rate", "Fed rate decision"),
+    ("interest rate decision", "Fed rate decision"),
+    ("cpi", "CPI"),
+    ("core pce", "PCE"),
+    ("pce price", "PCE"),
+    ("ppi", "PPI"),
+    ("nonfarm", "Jobs report"),
+    ("non farm", "Jobs report"),
+    ("unemployment rate", "Jobs report"),
+    ("gdp", "GDP"),
+    ("retail sales", "Retail sales"),
+)
+
+
+def _upcoming_market_movers(economic_calendar: list[dict] | None, days: int = 7) -> list[str]:
+    """Distinct US market-moving releases dated today..today+days, as "CPI (Wed)"."""
+    from datetime import date, datetime, timedelta
+
+    today = date.today()
+    horizon = today + timedelta(days=days)
+    out: list[str] = []
+    seen: set[str] = set()
+    for e in economic_calendar or []:
+        if not isinstance(e, dict):
+            continue
+        if str(e.get("country") or "").upper() not in ("US", "USA", "UNITED STATES"):
+            continue
+        if str(e.get("impact") or "").lower() == "low":
+            continue
+        try:
+            d = datetime.fromisoformat(str(e.get("date") or "")[:10]).date()
+        except ValueError:
+            continue
+        if not (today <= d <= horizon):
+            continue
+        name = str(e.get("event") or e.get("name") or e.get("title") or "").lower()
+        label = next((lbl for pat, lbl in _MARKET_MOVER_PATTERNS if pat in name), None)
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        out.append(f"{label} ({d.strftime('%a')})")
+    return out
+
+
 def compute_cross_asset_guidelines(
     cross_asset: list[dict],
     economic_calendar: list[dict],
@@ -124,14 +171,19 @@ def compute_cross_asset_guidelines(
             continue
         label = item.get("label", "Commodity")
         extreme = item.get("extreme")
+        asof = f", CFTC report {item['report_date']}" if item.get("report_date") else ""
         if extreme == "long":
+            pct = item.get("spec_long_pct")
+            share = f"{pct:.0f}% of open interest" if isinstance(pct, (int, float)) else "an extreme share of open interest"
             guidelines.append({
-                "text": f"Spec positioning ({label}): Speculators are very long futures; historically that's often been a setup for a pullback – reversal risk. Consider not adding size.",
+                "text": f"{label} is crowded long — speculators hold {share}{asof}. Crowded longs often pull back; consider not adding size.",
                 "type": "caution",
             })
         else:
+            pct = item.get("spec_short_pct")
+            share = f"{pct:.0f}% of open interest" if isinstance(pct, (int, float)) else "an extreme share of open interest"
             guidelines.append({
-                "text": f"Spec positioning ({label}): Speculators are very short futures; historically that's often been a setup for a squeeze – reversal risk. Watch for sharp moves up.",
+                "text": f"{label} is crowded short — speculators hold {share} short{asof}. Squeeze risk; watch for sharp moves up.",
                 "type": "caution",
             })
 
@@ -139,7 +191,7 @@ def compute_cross_asset_guidelines(
     if real_yield is not None:
         if real_yield > 2.0:
             guidelines.append({
-                "text": f"Real yields elevated ({real_yield:.1f}%): Real cost of capital is high – headwind for gold and growth stocks. Gold and long-duration growth often underperform when real yields rise.",
+                "text": f"Real 10Y yield {real_yield:.1f}% (above 2%) — a headwind for gold and long-duration growth stocks.",
                 "type": "caution",
             })
         elif real_yield > 1.5:
@@ -188,24 +240,19 @@ def compute_cross_asset_guidelines(
                 "type": "info",
             })
 
-    # Heavy macro week (CPI, FOMC in next 7 days)
-    heavy_keywords = ("cpi", "ppi", "nfp", "fomc", "fed", "ecb", "jobs", "inflation")
-    heavy_events = []
-    for e in (economic_calendar or [])[:50]:
-        if not isinstance(e, dict):
-            continue
-        name = (e.get("name") or e.get("event") or e.get("title") or "").lower()
-        country = (e.get("country") or "").lower()
-        if any(kw in name or kw in country for kw in heavy_keywords):
-            heavy_events.append(e.get("name") or e.get("event") or str(e)[:50])
+    # Heavy macro week — only real, dated, upcoming US market movers. Previously this matched
+    # keywords against undated rows (and country codes), so stale or foreign events (e.g. an
+    # August China CPI) kept "Heavy macro week (CPI, FOMC, etc.)" on screen every week.
+    heavy_events = _upcoming_market_movers(economic_calendar)
     if len(heavy_events) >= 2:
+        listed = ", ".join(heavy_events[:4])
         guidelines.append({
-            "text": "Heavy macro week (CPI, FOMC, etc.) – consider reducing size, tightening stops",
+            "text": f"Heavy macro week: {listed} — consider smaller size and tighter stops into the releases.",
             "type": "caution",
         })
     elif len(heavy_events) == 1:
         guidelines.append({
-            "text": f"Macro event this week: {heavy_events[0][:60]} – expect volatility",
+            "text": f"Macro event this week: {heavy_events[0]} — expect volatility around the release.",
             "type": "info",
         })
 

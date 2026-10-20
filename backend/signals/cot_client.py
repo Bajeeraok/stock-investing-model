@@ -117,6 +117,7 @@ def get_cot_extremes_for_guidelines() -> list[dict[str, Any]]:
             "extreme": summary["extreme"],
             "spec_long_pct": summary.get("spec_long_pct"),
             "spec_short_pct": summary.get("spec_short_pct"),
+            "report_date": summary.get("report_date"),
         })
     return result
 

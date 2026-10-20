@@ -112,9 +112,27 @@ def fetch_economic_calendar(config: dict, days: int = 7) -> tuple[list[dict], st
     data, err = _request(url, api_key)
     if err:
         return [], err
-    if isinstance(data, list):
-        return data[:50], None
-    return [], "Unexpected response"
+    if not isinstance(data, list):
+        return [], "Unexpected response"
+    # Enforce the window ourselves: the live payload carried Aug 7–9 events on Oct 19, and
+    # downstream (heavy-macro-week guideline, Today "This week", event scenarios) treated
+    # them as upcoming. Keep yesterday..to_d, soonest first.
+    lo = (today - timedelta(days=1)).isoformat()
+    hi = to_d.isoformat()
+    in_window = [
+        e for e in data
+        if isinstance(e, dict) and lo <= str(e.get("date") or "")[:10] <= hi
+    ]
+    dropped = len(data) - len(in_window)
+    if dropped:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[fmp] economic-calendar returned %d/%d events outside %s..%s — dropped",
+            dropped, len(data), lo, hi,
+        )
+    in_window.sort(key=lambda e: str(e.get("date") or ""))
+    return in_window[:50], None
 
 
 def fetch_treasury_rates(config: dict) -> tuple[list[dict] | None, str | None]:
