@@ -126,6 +126,34 @@ def rr_status(risk_reward: float | None) -> RrStatus | None:
     return "balanced"
 
 
+# ── Macro regime (FRED factors → BULL/NEUTRAL/BEAR) ────────────────────────────
+# Market-level, not per-ticker — compute once per process-day and reuse for all
+# 116 tickers in the EOD run (build_macro_regime_bundle hits the FRED API).
+_MACRO_SNAP: dict[str, Any] = {"date": None, "label": None, "score": None}
+
+
+def _macro_regime_snapshot() -> tuple[str | None, float | None]:
+    """Cached (per-UTC-day) FRED macro regime label + score, or (None, None)."""
+    from datetime import datetime, timezone
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if _MACRO_SNAP["date"] == today:
+        return _MACRO_SNAP["label"], _MACRO_SNAP["score"]
+    label, score = None, None
+    try:
+        from signals.macro_regime import build_macro_regime_bundle
+        from config_loader import load_config
+
+        bundle = build_macro_regime_bundle(load_config())
+        label = bundle.get("macro_regime")
+        sc = bundle.get("macro_score")
+        score = float(sc) if sc is not None else None
+    except Exception:
+        pass
+    _MACRO_SNAP.update({"date": today, "label": label, "score": score})
+    return label, score
+
+
 def _global_regime_bull_pct(global_market_regime: str | None) -> float | None:
     g = (global_market_regime or "").upper()
     if g in ("BULL", "STRONG_BULL"):
@@ -558,6 +586,9 @@ def build_trading_gates(
     ma50: float | None = None,
     high_52w: float | None = None,
     low_52w: float | None = None,
+    macro_regime_label: str | None = None,
+    macro_score: float | None = None,
+    commodity_vol: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Primary + optional confidence gates with pass flags and visual_status tokens."""
     rb = regime_bull_pct if regime_bull_pct is not None else 50.0
@@ -614,11 +645,30 @@ def build_trading_gates(
                 ma50=ma50,
                 high_52w=high_52w,
                 low_52w=low_52w,
+            )
+            + (
+                f" · macro: {macro_regime_label}"
+                + (f" ({macro_score:.0f}/100)" if macro_score is not None else "")
+                if macro_regime_label
+                else ""
+            )
+            + (
+                f" · {commodity_vol['symbol'].lstrip('^')}: {commodity_vol['regime']}"
+                + (
+                    f" ({commodity_vol['percentile']:.0f}th pct)"
+                    if commodity_vol.get("percentile") is not None
+                    else ""
+                )
+                if commodity_vol and commodity_vol.get("regime")
+                else ""
             ),
             "pass": regime_ok,
             "gate_cleared": regime_ok,
             "visual_status": "bull" if regime_ok else ("extended" if momentum_extended else "stormy"),
             "regime_weather_status": weather,
+            "macro_regime": macro_regime_label,
+            "macro_score": macro_score,
+            "commodity_vol": commodity_vol,
             "icon": "☀️" if regime_ok else ("🔥" if momentum_extended else ("⚡" if weather == "stormy" else "🌧️")),
             "blocker_weight": 0 if regime_ok else 45,
         },
@@ -752,6 +802,8 @@ def derive_entry_mode(
     long_spot: dict[str, Any] | None = None,
     institutional_conviction: dict[str, Any] | None = None,
     market_regime_bull_pct: float | None = None,
+    macro_regime_label: str | None = None,
+    commodity_vol_regime: str | None = None,
 ) -> dict[str, Any]:
     """
     Conditional sizing from gate matrix (valuation × tech × zone).
@@ -783,7 +835,13 @@ def derive_entry_mode(
         if isinstance(g, dict) and g.get("id") in PRIMARY_GATE_IDS and not g.get("pass")
     ]
     only_regime_blocked = primary_fails == ["regime"]
-    market_ok = market_regime_bull_pct is not None and float(market_regime_bull_pct) >= REGIME_GATE
+    macro_bull = (macro_regime_label or "").upper() == "BULL"
+    # Commodity ETFs: calm vol in their own market substitutes for bull equity
+    # tape — the equity HMM is the wrong lens for GLD/USO et al.
+    commodity_calm = (commodity_vol_regime or "") == "calm"
+    market_ok = (
+        market_regime_bull_pct is not None and float(market_regime_bull_pct) >= REGIME_GATE
+    ) or macro_bull or commodity_calm
 
     full_go_via: str | None = None
     if assessment_pct < 0 or verdict in ("AVOID", "REDUCE", "SELL"):
@@ -809,10 +867,25 @@ def derive_entry_mode(
         label = "FULL GO"
         if full_go_via == "market_regime_override":
             headline = "Full go — stock regime catching up to bull market tape"
-            detail = (
-                f"Only stock HMM gate blocked (market {float(market_regime_bull_pct):.0f}% bull). "
-                "Confirm tranche plan on Roadmaps before adding risk."
-            )
+            if commodity_calm and not (
+                market_regime_bull_pct is not None and float(market_regime_bull_pct) >= REGIME_GATE
+            ) and not macro_bull:
+                detail = (
+                    "Only stock HMM gate blocked (commodity vol calm — its own market "
+                    "supports entries here). Confirm tranche plan on Roadmaps before adding risk."
+                )
+            elif macro_bull and not (
+                market_regime_bull_pct is not None and float(market_regime_bull_pct) >= REGIME_GATE
+            ):
+                detail = (
+                    "Only stock HMM gate blocked (macro regime: BULL — FRED factors constructive). "
+                    "Confirm tranche plan on Roadmaps before adding risk."
+                )
+            else:
+                detail = (
+                    f"Only stock HMM gate blocked (market {float(market_regime_bull_pct):.0f}% bull). "
+                    "Confirm tranche plan on Roadmaps before adding risk."
+                )
         else:
             headline = "All gates clear — roadmap sizing unlocked"
             detail = "Confirm tranche plan on Roadmaps before adding risk."
@@ -1117,6 +1190,9 @@ def build_retail_action_payload(
     ma50: float | None = None,
     high_52w: float | None = None,
     low_52w: float | None = None,
+    macro_regime_label: str | None = None,
+    macro_score: float | None = None,
+    commodity_vol: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     assessment_pct = _assessment_pct(current_price, fair_value)
     gates = build_trading_gates(
@@ -1137,6 +1213,9 @@ def build_retail_action_payload(
         tranche_idx=tranche_idx,
         close=current_price,
         ma50=ma50,
+        macro_regime_label=macro_regime_label,
+        macro_score=macro_score,
+        commodity_vol=commodity_vol,
         high_52w=high_52w,
         low_52w=low_52w,
     )
@@ -1288,6 +1367,21 @@ def enrich_investor_summary_retail_action(
         long_spot.get("active_tier_id") or long_spot.get("tier_id") or long_spot.get("next_add_tier_id")
     )
 
+    # FRED macro regime (BULL/NEUTRAL/BEAR) — once per process-day, shared by all
+    # tickers. Annotates the regime gate detail and can satisfy the
+    # market_regime_override catch-up path when the broad tape is constructive.
+    macro_label, macro_score = _macro_regime_snapshot()
+
+    # Commodity-ETF vol regime (^GVZ/^OVX percentile, per-day cached) — these
+    # names follow their own asset's vol, not the equity HMM.
+    commodity_vol = None
+    try:
+        from signals.commodity_vol import commodity_vol_snapshot
+
+        commodity_vol = commodity_vol_snapshot(ticker)
+    except Exception:
+        pass
+
     investor_out["retail_action"] = build_retail_action_payload(
         current_price=current_price,
         fair_value=investor_out.get("fair_value"),
@@ -1314,6 +1408,9 @@ def enrich_investor_summary_retail_action(
         ma50=ma50,
         high_52w=high_52w,
         low_52w=low_52w,
+        macro_regime_label=macro_label,
+        macro_score=macro_score,
+        commodity_vol=commodity_vol,
     )
 
     short_spot = (short.get("entry_zone") or {}).get("spot_position") or {}
@@ -1408,6 +1505,8 @@ def enrich_investor_summary_retail_action(
         market_regime_bull_pct=market_regime_bull_pct
         if market_regime_bull_pct is not None
         else investor_out.get("market_regime_bull_pct"),
+        macro_regime_label=macro_label,
+        commodity_vol_regime=(commodity_vol or {}).get("regime"),
     )
     ra.update(entry)
     if entry["entry_mode"] == "full_go":
