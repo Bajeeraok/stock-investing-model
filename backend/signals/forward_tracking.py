@@ -786,28 +786,34 @@ def collect_forward_records(
 
     from signals.forward_tracking_metrics import compute_validated_forward_return
 
+    # Same per-run snapshot index as get_forward_tracking — previously every
+    # (horizon × pair) re-loaded and re-scanned two full snapshots.
+    horizon_list = [h for h in horizon_list if h < len(dates)]
+    if not horizon_list:
+        return []
+    max_h = max(horizon_list)
+    first_needed = max(0, len(dates) - max_pairs_per_horizon - max_h - 1)
+    rows_by_date: dict[str, dict[str, dict[str, Any]]] = {}
+    for d in dates[first_needed:]:
+        snap_d = _load_snapshot(eod_dir, d)
+        if not snap_d:
+            continue
+        rows_by_date[d] = {
+            str(r["ticker"]).upper(): r
+            for r in snap_d.get("run_results", [])
+            if isinstance(r, dict) and r.get("ticker")
+        }
+
     records: list[dict[str, Any]] = []
     syms = [str(t).upper() for t in tickers]
 
     for horizon in horizon_list:
-        if horizon >= len(dates):
-            continue
         pairs = list(zip(dates[:-horizon], dates[horizon:]))[-max_pairs_per_horizon:]
         for as_of_date, next_date in pairs:
-            snap = _load_snapshot(eod_dir, as_of_date)
-            snap_next = _load_snapshot(eod_dir, next_date)
-            if not snap or not snap_next:
+            run_by_ticker = rows_by_date.get(as_of_date)
+            run_next_by_ticker = rows_by_date.get(next_date)
+            if not run_by_ticker or not run_next_by_ticker:
                 continue
-            run_by_ticker = {
-                str(r["ticker"]).upper(): r
-                for r in snap.get("run_results", [])
-                if isinstance(r, dict) and r.get("ticker")
-            }
-            run_next_by_ticker = {
-                str(r["ticker"]).upper(): r
-                for r in snap_next.get("run_results", [])
-                if isinstance(r, dict) and r.get("ticker")
-            }
 
             for tk in syms:
                 row = run_by_ticker.get(tk)

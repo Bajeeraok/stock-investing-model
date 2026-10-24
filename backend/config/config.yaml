@@ -278,19 +278,73 @@ score:
     acf_mean_reversion_max: -0.028  # at or below → classify MEAN_REVERTING (live)
     acf_trend_min: 0.04           # above → TRENDING; between → TRENDING (neutral) for live
     min_bars: 130
-    force_trending: []            # e.g. [SPY] to never invert thresholds for an index
+    # Data-driven lists (fitted on 148 prod EOD snapshots, 2026-10-23):
+    # per-ticker 21-day forward spread = mean(low-score 0-50 fwd) − mean(high-score 50+ fwd).
+    # Positive spread = momentum score inverts at 1m → force_mean_reverting.
+    # Negative spread = trend-following works → force_trending.
+    force_trending:
+      - BAC    # spread -9.45% (n=79) — high-score names keep running
+      - CRM    # spread -4.24% (n=89)
+      - IWM    # spread -3.50% (n=89)
+      - GS     # spread -2.39% (n=82)
+      - XOM    # spread -2.21% (n=79)
+      - COP    # spread -1.92% (n=79)
+      - QCOM   # spread -1.70% (n=89)
     force_mean_reverting:
       - MSFT   # backtest: rolling ACF often trending — bucket table inverts like MSFT playbook
       # 5yr backtest: -32.3% model edge
       # Fixed: +32.3% after force_MR
-      # Date added: 2026-03-31
+      # Date added: 2026-03-31 · data spread +7.12% (n=129)
       - GOOGL  # mega-cap growth: raw-score buckets invert vs 3m fwd returns; forced MR aligns labels (dip vs momentum)
-      # 5y: -11.1% naive 70-100 vs 0-30 "edge" before MR · 10y can still show momentum rows beating dip rows at 3m in bull-heavy windows — read MR bucket spread + by-year, not a single headline %
-      # 2024/2025: 0-30 > 70-100 at 3m in places — expected when MR-mapped (momentum slice vs dip slice)
-      # Date added: 2026-03-31
+      # Date added: 2026-03-31 · data spread +6.30% (n=129)
+      # --- Added from prod EOD inversion scan 2026-10-23 (spread > +4%, n>=75) ---
+      - NVDA   # +10.76 (n=129)
+      - AMZN   # +10.52 (n=129)
+      - META   # +9.39 (n=129)
+      - BABA   # +8.21 (n=129)
+      - AAPL   # +7.88 (n=129)
+      - QQQ    # +7.09 (n=129)
+      - BLK    # +7.01 (n=129)
+      - SPY    # +6.48 (n=129)
+      - AVGO   # +5.57 (n=129)
+      - PANW   # +3.13 (n=129)
+      - TSLA   # +2.57 (n=129)
+      - SLV    # +2.47 (n=129)
+      - GLD    # +3.91 (n=129)
+      - CRWD   # +20.89 (n=129)
+      - MU     # +16.18 (n=71)
+      - AMD    # +15.85 (n=89)
+      - MRVL   # +15.08 (n=89)
+      - JNJ    # +14.15 (n=79)
+      - ADBE   # +13.31 (n=79)
+      - CRSP   # +12.82 (n=89)
+      - AFRM   # +12.76 (n=79)
+      - ARM    # +12.74 (n=81)
+      - INTC   # +12.54 (n=83)
+      - PLTR   # +9.68 (n=89)
+      - NFLX   # +7.46 (n=89)
+      - V      # +6.61 (n=79)
+      - HUM    # +6.20 (n=89)
+      - SHOP   # +6.16 (n=89)
+      - ABBV   # +6.12 (n=79)
+      - MA     # +6.08 (n=79)
+      - WMT    # +4.00 (n=79)
+      - NOW    # +4.20 (n=80)
+      - XLK    # +4.55 (n=79)
+      - COST   # +3.60 (n=89)
+      - ASAN   # +3.53 (n=89)
+      - SOFI   # +3.44 (n=79)
+      - CVX    # +2.57 (n=79)
+      - HAL    # +2.40 (n=89)
+      - MCD    # +1.93 (n=79)
+      - JPM    # +1.86 (n=79)
+      - SE     # +1.84 (n=89)
+      - PFE    # +1.58 (n=79)
+      - COIN   # +1.14 (n=79)
 # Regime bands: UP >= up_min, DOWN <= down_max, else NEUTRAL
+# Updated: up_min reduced from 60 to 55 to align with retail_action_payload.py REGIME_GATE (P1 fix for signal accuracy)
 regime:
-  up_min: 60
+  up_min: 55
   down_max: 40
 
 # Multi-factor macro (FRED: 2s10s, HY OAS, UNRATE; VIX from cross-asset or Yahoo) + optional SPY HMM fusion

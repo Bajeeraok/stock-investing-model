@@ -4789,16 +4789,20 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
             try:
                 sl, sh = float(sl), float(sh)
                 ml, mh = float(lt.get("low", 0)), float(lt.get("high", 0))
+                # Fixed: Added validation to prevent ZeroDivisionError
                 if sl > 0 and sh > 0 and ml > 0 and mh > 0:
+                    delta_low_pct = round(100 * (ml - sl) / sl, 1) if sl > 0 else None
+                    delta_high_pct = round(100 * (mh - sh) / sh, 1) if sh > 0 else None
+                    divergence_pct = max(abs(delta_low_pct or 0), abs(delta_high_pct or 0)) if (delta_low_pct is not None or delta_high_pct is not None) else None
                     out["street_vs_model"] = {
                         "street_low": round(sl, 2),
                         "street_high": round(sh, 2),
                         "model_lt_low": round(ml, 2),
                         "model_lt_high": round(mh, 2),
-                        "delta_low_pct": round(100 * (ml - sl) / sl, 1),
-                        "delta_high_pct": round(100 * (mh - sh) / sh, 1),
+                        "delta_low_pct": delta_low_pct,
+                        "delta_high_pct": delta_high_pct,
                         "model_more_bullish": mh > sh,
-                        "divergence_pct": max(abs(100 * (ml - sl) / sl), abs(100 * (mh - sh) / sh)) if sl and sh else None,
+                        "divergence_pct": divergence_pct,
                     }
             except (TypeError, ValueError, ZeroDivisionError):
                 pass

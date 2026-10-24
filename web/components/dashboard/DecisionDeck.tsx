@@ -317,6 +317,8 @@ export function DecisionDeck({
             headline={ra.entry_mode_headline}
             detail={ra.entry_mode_detail}
             maxSizingPct={ra.max_sizing_pct}
+            fullGoVia={ra.full_go_via}
+            dipZone={ra.dip_zone}
           />
         )}
 

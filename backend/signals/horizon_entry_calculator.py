@@ -46,7 +46,7 @@ _STRUCTURAL_TAIL_ETFS = _BROAD_INDEX_ETF_TICKERS | _COMMODITY_METAL_ETFS
 # Short-term
 ST_RSI_OVERSOLD        = 35.0   # RSI below = oversold, ideal entry
 ST_RSI_OVERBOUGHT      = 65.0   # RSI above = overbought, avoid entry
-ST_MIN_ML_PROB         = 25.0   # minimum ML prob for short-term signal
+ST_MIN_ML_PROB         = 30.0   # minimum ML prob for short-term signal (raised from 25 to reduce noise)
 ST_ATR_STOP_MULT       = 1.5    # stop = entry_low - (ATR * mult)
 ST_ATR_TARGET_MULT     = 3.0    # target = entry_high + (ATR * mult)
 ST_MIN_RR              = 1.5    # minimum acceptable risk/reward
@@ -87,6 +87,8 @@ MT_MIN_ML_PROB         = 35.0   # minimum ML prob for medium-term signal
 MT_EARNINGS_WINDOW     = 60     # days — earnings within this = catalyst flag
 MT_STOP_BELOW_MA50_PCT = 6.0    # stop = MA50 * (1 - pct) — MA50 break invalidates
 MT_MIN_RR              = 2.0    # minimum R/R enforced for medium-term
+# P1 Fix: Relaxed regime threshold for swing from 45 to 40 to reduce false negatives
+MT_REGIME_BULL_MIN     = 40.0   # minimum regime bull % for swing signal
 
 # Plan-quality gates (applied after all three horizons are built)
 PLAN_MIN_RR_FROM_ENTRY = 1.5    # R:R from entry midpoint — plans below this are "No setup"
@@ -1285,14 +1287,18 @@ def _compress_entry_zone_for_display(
     """
     Keep entry zones actionable for UI/alerts.
     Very wide zones read as low precision and become "always in zone".
+    P1 Fix: Adjusted compression thresholds for better accuracy:
+    - Short: tighter (0.12) for precise tactical entries
+    - Medium: looser (0.35) to accommodate swing ranges
+    - Long: looser (0.50) for owner accumulation zones
     """
     if not (low > 0 and high > low and current_price > 0):
         return low, high, False
     width_pct = (high - low) / current_price
     max_pct_by_band = {
-        "short": 0.14,
-        "medium": 0.30,
-        "long": 0.45,
+        "short": 0.12,  # tightened from 0.14 for better tactical precision
+        "medium": 0.35,  # loosened from 0.30 for swing flexibility
+        "long": 0.50,   # loosened from 0.45 for owner accumulation
     }
     max_pct = max_pct_by_band.get(str(band_key).lower(), 0.30)
     if width_pct <= max_pct:
@@ -1699,10 +1705,10 @@ def _medium_term_signal_from_zone(
             "medium-term trend is bearish, reduce position size".format(p, inp.ma200))
 
     # ── Verdict ──────────────────────────────────────────────────────────
-    # Fixed: Added OR condition (regime_bull_pct >= 40 or ml_prob >= 45) to reduce false negatives
+    # Fixed: Added OR condition (regime_bull_pct >= MT_REGIME_BULL_MIN or ml_prob >= 45) to reduce false negatives
     # Previously required both to pass, which blocked valid setups when one signal was strong
     if (inp.ml_prob >= MT_MIN_ML_PROB and quality in ("Ideal", "Acceptable")
-            and (inp.regime_bull_pct >= 40 or inp.ml_prob >= 45) and rr >= MT_MIN_RR):
+            and (inp.regime_bull_pct >= MT_REGIME_BULL_MIN or inp.ml_prob >= 45) and rr >= MT_MIN_RR):
         if inp.ml_prob >= 50:
             verdict, conviction = "BUY", "High"
         else:

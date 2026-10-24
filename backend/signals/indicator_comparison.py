@@ -79,7 +79,11 @@ def run_indicator_comparison(
                     val = None
                 if val is not None:
                     try:
-                        margin_pct = round(abs(float(our_close) - float(val)) / float(our_close) * 100, 4)
+                        # Fixed: Added validation to prevent ZeroDivisionError
+                        if float(our_close) > 0:
+                            margin_pct = round(abs(float(our_close) - float(val)) / float(our_close) * 100, 4)
+                        else:
+                            margin_pct = None
                     except (TypeError, ValueError, ZeroDivisionError):
                         margin_pct = None
                     close_comp.append({"source": name, "value": round(float(val), 4), "margin_pct": margin_pct})
@@ -109,6 +113,7 @@ def run_indicator_comparison(
                     av_sma = None
                 if av_sma is not None and float(our_val) > 0:
                     try:
+                        # Fixed: Added validation to prevent ZeroDivisionError
                         margin_pct = round(abs(float(our_val) - float(av_sma)) / float(our_val) * 100, 4)
                     except (TypeError, ValueError, ZeroDivisionError):
                         margin_pct = None

@@ -36,27 +36,53 @@ def _list_eod_dates() -> list[str]:
     return sorted(dates)
 
 
-def _forward_return(ticker: str, from_date: str, days: int) -> float | None:
-    """Fetch price at from_date and from_date+days, return % change."""
-    import pandas as pd
-    from signals.fetcher import fetch_ohlcv_safe
-    close = fetch_ohlcv_safe(ticker, "2y")
-    if close is None or len(close) < 100:
+def _build_close_index(eod_dir: Path) -> dict[str, dict[str, float]]:
+    """ticker -> {date -> close} across all local EOD snapshots."""
+    out: dict[str, dict[str, float]] = {}
+    for p in sorted(eod_dir.glob("*.json")):
+        try:
+            snap = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        for row in snap.get("run_results") or []:
+            if not isinstance(row, dict):
+                continue
+            t, c = row.get("ticker"), row.get("close")
+            if not t or c is None:
+                continue
+            try:
+                cf = float(c)
+            except (TypeError, ValueError):
+                continue
+            if cf > 0:
+                out.setdefault(t, {})[p.stem] = cf
+    return out
+
+
+def _forward_return_from_snapshots(
+    closes: dict[str, float],
+    sorted_dates: list[str],
+    from_date: str,
+    steps: int,
+) -> float | None:
+    """% change between close at from_date and close ~steps snapshot-dates later.
+
+    Uses local EOD closes — no network. `steps` counts snapshot entries for the
+    ticker (approx trading days when snapshots are daily).
+    """
+    if from_date not in closes:
         return None
-    close = close.sort_index()
-    try:
-        from_ts = pd.Timestamp(from_date)
-        to_ts = from_ts + pd.Timedelta(days=days + 30)
-        subset = close[(close.index >= from_ts) & (close.index <= to_ts)]
-        if len(subset) < 5:
-            return None
-        p0 = float(subset.iloc[0])
-        p1 = float(subset.iloc[-1])
-        if p0 <= 0:
-            return None
-        return 100 * (p1 - p0) / p0
-    except Exception:
+    p0 = closes[from_date]
+    if p0 <= 0:
         return None
+    later = [d for d in sorted_dates if d > from_date and d in closes]
+    if len(later) < max(3, steps - 3):
+        return None
+    use_date = later[min(steps - 1, len(later) - 1)]
+    p1 = closes.get(use_date)
+    if not p1 or p1 <= 0:
+        return None
+    return 100.0 * (p1 - p0) / p0
 
 
 def main() -> None:
@@ -74,25 +100,42 @@ def main() -> None:
     sell_max = score_cfg.get("sell_max", 30)
     global_buy_min = score_cfg.get("buy_min", 70)
 
-    # Forward horizons: 1m=21, 3m=63, 6m=126 trading days
+    # Pre-index all closes from local snapshots — no per-pair network fetches
+    close_idx = _build_close_index(ROOT / "data" / "eod")
+    all_dates = sorted(close_idx and dates or dates)
+
+    # Forward horizons: 1m=21, 3m=63, 6m=126 snapshot steps (~trading days)
     horizons = [(21, "1m"), (63, "3m"), (126, "6m")]
     buy_by_horizon: dict[int, list[float]] = {d: [] for d, _ in horizons}
     sell_by_horizon: dict[int, list[float]] = {d: [] for d, _ in horizons}
     hold_by_horizon: dict[int, list[float]] = {d: [] for d, _ in horizons}
     pred_vs_actual: list[dict] = []
 
-    for date_str in dates[-30:]:  # Last 30 snapshots
+    for date_str in dates[:-21] if len(dates) > 21 else dates:  # skip tail w/o outcome window
         snapshot = load_eod_snapshot(date_str)
         if not snapshot:
             continue
-        for ticker, row in snapshot.items():
+        run_rows = snapshot.get("run_results") if isinstance(snapshot.get("run_results"), list) else snapshot
+        if isinstance(run_rows, list):
+            rows_iter = ((r.get("ticker"), r) for r in run_rows if isinstance(r, dict))
+        else:
+            rows_iter = snapshot.items()
+        for ticker, row in rows_iter:
+            if not isinstance(row, dict):
+                continue
             score = row.get("composite_buy")
             if score is None:
                 continue
-            pred = "BUY" if score >= buy_min else ("SELL" if score <= sell_max else "HOLD")
+            # Use stored per-ticker threshold when present; else config overrides/global
+            bm = row.get("buy_min")
+            if bm is None:
+                bm = effective_buy_min(ticker, score_cfg)
+            pred = "BUY" if score >= bm else ("SELL" if score <= sell_max else "HOLD")
             entry = {"date": date_str, "ticker": ticker, "score": score, "pred": pred}
             for days, label in horizons:
-                fwd = _forward_return(ticker, date_str, days)
+                fwd = _forward_return_from_snapshots(
+                    close_idx.get(ticker, {}), all_dates, date_str, days
+                )
                 if fwd is None:
                     continue
                 entry[f"fwd_{label}"] = fwd

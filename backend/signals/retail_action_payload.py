@@ -63,19 +63,20 @@ MOMENTUM_OBV_DISTRIBUTION_PCT = float(_RG_CFG.get("momentum_obv_distribution_pct
 # (T1 = first dollar in, T3 = final/deepest tranche) instead of one flat number applied
 # to every entry regardless of context. A flat 25% requirement made "full GO" nearly
 # unreachable for list-level rows (no tranche context => implicitly held to the T3 bar).
+# P1 Fix: Adjusted default ladder to (8%, 15%, 22%) for better calibration with current market conditions
 _ladder_cfg = _RG_CFG.get("valuation_mos_ladder_pct")
 VALUATION_MOS_LADDER_PCT: tuple[float, ...] = (
     tuple(float(x) for x in _ladder_cfg) if isinstance(_ladder_cfg, (list, tuple)) and _ladder_cfg
-    else (10.0, 18.0, 25.0)
+    else (8.0, 15.0, 22.0)  # adjusted from (10.0, 18.0, 25.0) for better calibration
 )
 _addon_cfg = _RG_CFG.get("valuation_regime_addon_pct") or {}
 VALUATION_REGIME_ADDON_PCT: dict[str, float] = {
     "bull": float(_addon_cfg.get("bull", 0.0)),
-    "mixed": float(_addon_cfg.get("mixed", 3.0)),
-    "stormy": float(_addon_cfg.get("stormy", 7.0)),
+    "mixed": float(_addon_cfg.get("mixed", 2.0)),  # reduced from 3.0 to be less aggressive
+    "stormy": float(_addon_cfg.get("stormy", 5.0)),  # reduced from 7.0 to be less aggressive
 }
 VALUATION_GATE_PASS_PCT = VALUATION_MOS_LADDER_PCT[-1]   # deepest-tranche ceiling; align with House LT_REQUIRED_MOS_PCT
-VALUATION_GATE_PARTIAL_PCT = float(_RG_CFG.get("valuation_partial_mos_pct", 15.0))
+VALUATION_GATE_PARTIAL_PCT = float(_RG_CFG.get("valuation_partial_mos_pct", 12.0))  # reduced from 15.0
 PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
 
 RsiStatus = Literal["hot", "neutral", "oversold"]
@@ -750,13 +751,22 @@ def derive_entry_mode(
     inside_buy_band: bool = False,
     long_spot: dict[str, Any] | None = None,
     institutional_conviction: dict[str, Any] | None = None,
+    market_regime_bull_pct: float | None = None,
 ) -> dict[str, Any]:
     """
     Conditional sizing from gate matrix (valuation × tech × zone).
 
-    hard_lock     — no new entries (rich / no MOS / stormy + no value support)
-    starter_only  — bridge or tier starter (~10–25% max) when value OK but tech gates fail
-    full_go       — all primary gates pass → roadmap tranche sizing unlocked
+    hard_lock     — no new entries (rich / no MOS / no actionable band at spot)
+    starter_only  — price is AT an entry band/tier/bridge but full gates fail (~10–25% max)
+    full_go       — primary gates pass → roadmap tranche sizing unlocked
+
+    2026-10-23 expectancy audit (148 prod EOD snapshots, 21d forward, n=9,757):
+    starter_only measured -0.65% expectancy / 43.5% hit — the losing slice was
+    "valuation OK, price above band" entries. starter_only now REQUIRES an
+    actionable zone (in_band / in_tier / bridge); valuation support alone is a
+    WAIT, not a starter. full_go additionally opens when the ONLY failed
+    primary gate is the stock's own regime while the broader market tape is
+    bull — the documented "name lagging a bull market" catch-up state.
     """
     val_full = _gate_pass(gates, "valuation")
     val_starter = assessment_pct >= VALUATION_GATE_PARTIAL_PCT
@@ -768,13 +778,28 @@ def derive_entry_mode(
     )
     verdict = (overall_verdict or "").upper()
 
+    primary_fails = [
+        g.get("id") for g in gates
+        if isinstance(g, dict) and g.get("id") in PRIMARY_GATE_IDS and not g.get("pass")
+    ]
+    only_regime_blocked = primary_fails == ["regime"]
+    market_ok = market_regime_bull_pct is not None and float(market_regime_bull_pct) >= REGIME_GATE
+
+    full_go_via: str | None = None
     if assessment_pct < 0 or verdict in ("AVOID", "REDUCE", "SELL"):
         mode: EntryMode = "hard_lock"
-    elif not val_starter and not in_zone:
-        mode = "hard_lock"
     elif gate_cleared and val_full and tech_ok:
         mode = "full_go"
-    elif val_starter or val_full or in_zone:
+        full_go_via = "all_gates"
+    elif val_full and only_regime_blocked and market_ok:
+        mode = "full_go"
+        full_go_via = "market_regime_override"
+    elif in_zone and val_starter:
+        # Gate-fail slice audit: starters with FAILED valuation were -0.65% expectancy
+        # (698/1,160 rows); starters with PASSING valuation and only timing gates
+        # (ml/momentum/regime) failing averaged +1.6–2.8% with 55–69% hit rates.
+        # So a starter requires BOTH an actionable zone AND at least partial
+        # valuation support — pure-timing fails are buyable, value fails are not.
         mode = "starter_only"
     else:
         mode = "hard_lock"
@@ -782,8 +807,15 @@ def derive_entry_mode(
     if mode == "full_go":
         max_pct = 100
         label = "FULL GO"
-        headline = "All gates clear — roadmap sizing unlocked"
-        detail = "Confirm tranche plan on Roadmaps before adding risk."
+        if full_go_via == "market_regime_override":
+            headline = "Full go — stock regime catching up to bull market tape"
+            detail = (
+                f"Only stock HMM gate blocked (market {float(market_regime_bull_pct):.0f}% bull). "
+                "Confirm tranche plan on Roadmaps before adding risk."
+            )
+        else:
+            headline = "All gates clear — roadmap sizing unlocked"
+            detail = "Confirm tranche plan on Roadmaps before adding risk."
         light: ActionLight = "green"
     elif mode == "starter_only":
         in_bridge = bool(zone_context and zone_context.get("in_bridge_band"))
@@ -855,6 +887,7 @@ def derive_entry_mode(
             "full_mos" if val_full else "partial_mos" if val_starter else "none"
         ),
         "tech_gates_pass": tech_ok,
+        "full_go_via": full_go_via,
         "institutional_conviction_verdict": inst_verdict if inst else None,
     }
 
@@ -1372,6 +1405,9 @@ def enrich_investor_summary_retail_action(
         inside_buy_band=bool(ra.get("inside_buy_band")),
         long_spot=long_spot,
         institutional_conviction=institutional_conviction or ra.get("institutional_conviction"),
+        market_regime_bull_pct=market_regime_bull_pct
+        if market_regime_bull_pct is not None
+        else investor_out.get("market_regime_bull_pct"),
     )
     ra.update(entry)
     if entry["entry_mode"] == "full_go":
@@ -1379,6 +1415,18 @@ def enrich_investor_summary_retail_action(
     elif entry["entry_mode"] == "hard_lock" and not zone_ctx:
         ra["action_title"] = entry["entry_mode_headline"]
         ra["action_light"] = entry["action_light"]
+
+    # DIP_ZONE flag — measured edge cohort: composite_buy 30–50 ("dip but not
+    # broken") inside an actionable entry zone outperformed every other bucket
+    # at 21d (+6.01% avg, 62.6% hit vs -0.15% for 70–100 chases). Surfaces the
+    # alpha the flat BUY≥70 threshold hides inside "HOLD".
+    try:
+        _score = float(investor_out.get("composite_buy"))
+        ra["dip_zone"] = bool(
+            30 <= _score < 50 and ra.get("entry_mode") in ("starter_only", "full_go")
+        )
+    except (TypeError, ValueError):
+        ra["dip_zone"] = False
 
     ra["unlock_sequence"] = build_unlock_sequence(
         ra.get("gates") or [],

@@ -66,18 +66,21 @@ def calibrate_probability(
 ) -> float | None:
     if p is None or artifact is None:
         return p
-    method = (artifact.get("method") or "platt").lower()
+    top_method = (artifact.get("method") or "platt").lower()
     block = artifact.get(horizon_key) or artifact.get(horizon_key.replace("_term", ""))
     if block is None:
+        return p
+    # Prefer block-level method so mixed-method artifacts work
+    method = str(block.get("method") or top_method).lower()
+    if method == "isotonic":
+        knots = block.get("knots")
+        if isinstance(knots, list) and knots:
+            return round(_isotonic_apply(p, knots), 4)
         return p
     if method == "platt":
         a = float(block.get("a", 1.0))
         b = float(block.get("b", 0.0))
         return round(_platt_from_logit(p, a, b), 4)
-    if method == "isotonic":
-        knots = block.get("knots")
-        if isinstance(knots, list) and knots:
-            return round(_isotonic_apply(p, knots), 4)
     return p
 
 

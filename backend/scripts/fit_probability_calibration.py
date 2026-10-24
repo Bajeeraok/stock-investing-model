@@ -43,10 +43,47 @@ def _fit_platt(probs: list[float], ys: list[int]) -> tuple[float, float]:
     return a, b
 
 
+def _fit_isotonic(probs: list[float], ys: list[int], n_knots: int = 20) -> list[dict]:
+    """Fit isotonic regression, return downsampled knots [{x,y}].
+
+    With large n (>= ~2000), isotonic captures the true reliability curve
+    better than 2-param Platt — non-parametric, only requires monotonicity.
+    Knots are quantile-binned so the artifact stays small.
+    """
+    import numpy as np
+    from sklearn.isotonic import IsotonicRegression
+
+    x = np.asarray(probs, dtype=float)
+    y = np.asarray(ys, dtype=float)
+    ir = IsotonicRegression(out_of_bounds="clip")
+    ir.fit(x, y)
+
+    # Quantile grid of x -> calibrated y
+    qs = np.linspace(0.0, 1.0, n_knots + 1)
+    xs = np.quantile(x, qs)
+    xs[0], xs[-1] = 0.0, 1.0
+    ys_hat = ir.predict(xs)
+    knots = [
+        {"x": round(float(a), 4), "y": round(float(b), 4)}
+        for a, b in zip(xs, ys_hat)
+    ]
+    # Dedup consecutive identical knots
+    deduped = []
+    for k in knots:
+        if deduped and abs(k["x"] - deduped[-1]["x"]) < 1e-6 and abs(k["y"] - deduped[-1]["y"]) < 1e-6:
+            continue
+        deduped.append(k)
+    return deduped
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Fit Platt calibration for ML horizons")
+    ap = argparse.ArgumentParser(description="Fit calibration for ML horizons")
     ap.add_argument("--csv", type=str, required=True)
     ap.add_argument("--out", type=str, default="data/calibration/ml_horizons.json")
+    ap.add_argument("--method", type=str, default="auto",
+                    choices=["auto", "platt", "isotonic"],
+                    help="auto = isotonic when n>=1000 per horizon else platt")
+    ap.add_argument("--knots", type=int, default=20, help="isotonic knot count")
     args = ap.parse_args()
 
     path = Path(args.csv)
@@ -63,7 +100,7 @@ def main() -> None:
             y = int(float(row["y"]))
             by_h[h].append((p, y))
 
-    out: dict = {"method": "platt"}
+    out: dict = {"method": args.method}
     for h in ("short", "medium", "long"):
         pairs = by_h.get(h) or []
         if len(pairs) < 20:
@@ -71,8 +108,19 @@ def main() -> None:
             continue
         probs = [x[0] for x in pairs]
         ys = [x[1] for x in pairs]
-        a, b = _fit_platt(probs, ys)
-        out[h] = {"a": round(a, 6), "b": round(b, 6), "n": len(pairs)}
+        method = args.method
+        if method == "auto":
+            method = "isotonic" if len(pairs) >= 1000 else "platt"
+        if method == "isotonic":
+            out[h] = {
+                "method": "isotonic",
+                "knots": _fit_isotonic(probs, ys, args.knots),
+                "n": len(pairs),
+            }
+        else:
+            a, b = _fit_platt(probs, ys)
+            out[h] = {"a": round(a, 6), "b": round(b, 6), "n": len(pairs)}
+        out["method"] = method
 
     out_path = Path(args.out)
     if not out_path.is_absolute():

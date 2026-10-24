@@ -598,6 +598,10 @@ def compute_signal_warm_sync(
         if r.get("error") or r.get("close") is None or total_value <= 0:
             r["risk_sizing"] = None
             continue
+        # Fixed: Added stop_pct validation to prevent ZeroDivisionError
+        if stop_pct <= 0:
+            r["risk_sizing"] = None
+            continue
         try:
             risk_budget_dollars = total_value * (risk_pct / 100.0)
             size_dollars = total_value * (risk_pct / 100) / (stop_pct / 100)

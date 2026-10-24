@@ -126,7 +126,7 @@ function StopTargetRows({
           {pctFromSpot(horizon.target, currentPrice)}
           {/* Same R:R (and basis) as the Verdict tile — entry-mid when the plan has one, else spot. */}
           {(horizon.risk_reward_from_entry ?? horizon.risk_reward)
-            ? ` · R:R 1:${(horizon.risk_reward_from_entry ?? horizon.risk_reward)!.toFixed(1)}${horizon.risk_reward_from_entry != null ? " from entry" : ""}`
+            ? ` · R:R 1:${(horizon.risk_reward_from_entry ?? horizon.risk_reward)!.toFixed(1)}${horizon.risk_reward_from_entry != null ? " band mid" : " spot"}`
             : ""}
         </span>
       </div>

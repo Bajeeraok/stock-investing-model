@@ -108,6 +108,10 @@ export type RetailActionPayload = {
   entry_mode_headline?: string;
   entry_mode_detail?: string;
   max_sizing_pct?: number;
+  /** "market_regime_override" = full_go via bull-market catch-up path */
+  full_go_via?: string | null;
+  /** score 30–50 dip zone inside entry band — measured edge cohort */
+  dip_zone?: boolean;
   valuation_tier?: "full_mos" | "partial_mos" | "none";
   tech_gates_pass?: boolean;
   zone_context?: {
@@ -466,12 +470,18 @@ export function EntryModeBanner({
   headline,
   detail,
   maxSizingPct,
+  fullGoVia,
+  dipZone,
   className,
 }: {
   mode?: RetailActionPayload["entry_mode"];
   headline?: string | null;
   detail?: string | null;
   maxSizingPct?: number | null;
+  /** "market_regime_override" = full_go granted via bull-market catch-up path */
+  fullGoVia?: string | null;
+  /** dip-but-not-broken cohort: composite 30–50 inside entry zone (measured +6%/62.6% hit) */
+  dipZone?: boolean;
   className?: string;
 }) {
   if (!mode || !headline) return null;
@@ -487,12 +497,32 @@ export function EntryModeBanner({
     <div className={clsx("rounded-lg border px-3 py-2.5 space-y-1", styles, className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-90">Entry mode</p>
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-white/15">
-          {badge}
-          {maxSizingPct != null && maxSizingPct > 0 && maxSizingPct < 100 ? ` · ≤${maxSizingPct}%` : null}
+        <span className="flex items-center gap-1.5 flex-wrap">
+          {dipZone ? (
+            <span
+              className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-emerald-400/60 bg-emerald-400/15 text-emerald-300"
+              title="Score 30–50 dip zone inside entry band — the model's measured edge cohort"
+            >
+              DIP ZONE
+            </span>
+          ) : null}
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-white/15">
+            {badge}
+            {maxSizingPct != null && maxSizingPct > 0 && maxSizingPct < 100 ? ` · ≤${maxSizingPct}%` : null}
+          </span>
         </span>
       </div>
-      <p className="text-sm font-semibold leading-snug">{headline}</p>
+      <p className="text-sm font-semibold leading-snug">
+        {headline}
+        {fullGoVia === "market_regime_override" ? (
+          <span
+            className="ml-1.5 align-middle text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-amber-400/50 bg-amber-400/10 text-amber-300"
+            title="Qualified via bull-market catch-up: only the stock regime gate failed while the broader tape is bull"
+          >
+            catch-up
+          </span>
+        ) : null}
+      </p>
       {detail ? <p className="text-xs opacity-90 leading-snug">{detail}</p> : null}
     </div>
   );
