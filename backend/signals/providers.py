@@ -261,25 +261,34 @@ def _get_earnings_yfinance(ticker: str) -> dict | None:
         return None
     try:
         t = yf.Ticker(ticker)
+        today = datetime.now().date()
         cal = t.calendar
         if cal is None or (isinstance(cal, dict) and not cal):
-            # Try earnings_dates
+            # Try earnings_dates (index is newest-first and usually tz-aware)
             ed = t.earnings_dates
             if ed is not None and not ed.empty:
-                future = ed[ed.index >= pd.Timestamp.now().tz_localize(None)]
-                if not future.empty:
-                    next_d = future.index[0]
-                    if isinstance(next_d, pd.Timestamp):
-                        days = (next_d - pd.Timestamp.now()).days
-                        return {"date": next_d.strftime("%Y-%m-%d"), "days_until": days}
+                idx = pd.DatetimeIndex(ed.index)
+                if idx.tz is not None:
+                    idx = idx.tz_convert(None)
+                future = sorted(d.date() for d in idx if d.date() >= today)
+                if future:
+                    next_d = future[0]  # soonest, not the furthest-out row
+                    return {"date": next_d.isoformat(), "days_until": (next_d - today).days}
             return None
         if isinstance(cal, dict) and "Earnings Date" in cal:
             raw = cal["Earnings Date"]
             if isinstance(raw, list) and raw:
-                d = raw[0]
-                if hasattr(d, "strftime"):
-                    days = (d - datetime.now().date()).days if hasattr(d, "day") else None
-                    return {"date": d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d), "days_until": days}
+                dates = sorted(
+                    (x.date() if isinstance(x, datetime) else x)
+                    for x in raw
+                    if hasattr(x, "year")
+                )
+                # yfinance keeps the just-reported date until the next one is announced —
+                # that produced "-7 days" (JNJ) / "-48 days" (AI). Past dates mean unknown.
+                upcoming = [d for d in dates if d >= today]
+                if upcoming:
+                    d = upcoming[0]
+                    return {"date": d.isoformat(), "days_until": (d - today).days}
     except Exception:
         pass
     return None
@@ -431,15 +440,19 @@ def _get_earnings_fmp(ticker: str, api_key: str) -> dict | None:
     if not isinstance(data, list) or not data:
         return None
     today = datetime.now().date()
+    # FMP lists newest-first, so the first future row is the FURTHEST-out date — take the soonest.
+    upcoming = []
     for item in data:
         d_str = item.get("date")
         if not d_str:
             continue
         try:
             d = datetime.strptime(d_str[:10], "%Y-%m-%d").date()
-            if d >= today:
-                days = (d - today).days
-                return {"date": d_str[:10], "days_until": days}
         except Exception:
             continue
-    return None
+        if d >= today:
+            upcoming.append(d)
+    if not upcoming:
+        return None
+    d = min(upcoming)
+    return {"date": d.isoformat(), "days_until": (d - today).days}

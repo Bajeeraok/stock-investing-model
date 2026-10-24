@@ -338,8 +338,19 @@ def _momentum_gate_detail(
 
 
 def _ml_gate_detail(short_ml_prob: float | None) -> tuple[str, str, bool]:
-    """Return (detail, visual_status, pass)."""
-    ml = float(short_ml_prob or 0)
+    """Return (detail, visual_status, pass).
+
+    None = no trained model for this ticker/horizon → "unscored": neutral, not a block.
+    It used to become 0% here ("Weak short ML (0%)") and fail the gate for ~10 names
+    (V, MA, HD, WMT…) purely because no model existed.
+    """
+    if short_ml_prob is None:
+        return (
+            "ML not scored — no trained model for this ticker yet (neutral; not counted as a block)",
+            "unscored",
+            True,
+        )
+    ml = float(short_ml_prob)
     ml_ok = ml >= ST_ML_GATE
     if not ml_ok:
         return (
@@ -874,7 +885,9 @@ def derive_action_title(overall_verdict: str | None, gate_cleared: bool) -> tupl
     if gate_cleared and v in ("BUY", "STRONG BUY"):
         return "TACTICAL ENTRY", "green"
     if v in ("STRONG BUY", "BUY"):
-        return "TACTICAL ENTRY", "green"
+        # Model BUY without cleared gates (no_go / hard_lock) is not an entry — this used to
+        # return the same green "TACTICAL ENTRY" (NVDA, SOFI, GTLB while no_go / hard-locked).
+        return "SETUP FORMING · WAIT FOR GATES", "yellow"
     if v in ("AVOID", "REDUCE", "SELL", "WAIT"):
         return "DO NOT CHASE", "red"
     return "WATCH OR HOLD", "yellow"
@@ -1244,7 +1257,7 @@ def enrich_investor_summary_retail_action(
         fair_value=investor_out.get("fair_value"),
         regime_bull_pct=investor_out.get("regime_bull_pct"),
         pattern_score=investor_out.get("pattern_score"),
-        short_ml_prob=short.get("ml_prob"),
+        short_ml_prob=short.get("ml_prob") if short.get("ml_scored", True) else None,
         rsi=investor_out.get("rsi"),
         confidence_mid=confidence_mid,
         overall_verdict=investor_out.get("overall_verdict"),
@@ -1277,8 +1290,9 @@ def enrich_investor_summary_retail_action(
     # indication it wasn't scored against their own horizon — the same "one field, three
     # personas" gap action_title_by_mode (below) already fixes for the verdict banner. Valuation/
     # regime/momentum are ticker-level reads, not horizon-specific, so only "ml" varies here.
-    long_ml_prob = long_h.get("ml_prob")
-    medium_ml_prob = (horizons.get("medium") or {}).get("ml_prob")
+    long_ml_prob = long_h.get("ml_prob") if long_h.get("ml_scored", True) else None
+    _med = horizons.get("medium") or {}
+    medium_ml_prob = _med.get("ml_prob") if _med.get("ml_scored", True) else None
 
     def _gates_with_ml(ml_prob: float | None) -> list[dict[str, Any]]:
         base_gates = ra.get("gates") or []
@@ -1394,7 +1408,7 @@ def enrich_investor_summary_retail_action(
             market_regime_bull_pct=market_regime_bull_pct or investor_out.get("market_regime_bull_pct"),
             pattern_score=investor_out.get("pattern_score"),
             rsi=investor_out.get("rsi"),
-            short_ml_prob=short.get("ml_prob"),
+            short_ml_prob=short.get("ml_prob") if short.get("ml_scored", True) else None,
             overall_verdict=investor_out.get("overall_verdict"),
             entry_mode=ra.get("entry_mode"),
             gate_cleared=bool(ra.get("gate_cleared")),

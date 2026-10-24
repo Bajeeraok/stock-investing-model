@@ -44,6 +44,14 @@ def _rsi(close: pd.Series, window: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
+def _date_indexed(series: pd.Series) -> pd.Series:
+    """Same values, index normalized to tz-naive midnight dates (last value wins per day)."""
+    idx = pd.to_datetime(series.index, errors="coerce", utc=True).tz_convert(None).normalize()
+    out = pd.Series(series.values, index=idx)
+    out = out[~out.index.isna()]
+    return out[~out.index.duplicated(keep="last")].sort_index()
+
+
 def feature_row_from_series(
     spy: pd.Series,
     vix: pd.Series,
@@ -53,6 +61,11 @@ def feature_row_from_series(
     """
     if spy is None or vix is None or len(spy) < 220 or len(vix) < 30:
         return None
+    # Align on calendar dates. SPY (FMP, naive dates) and ^VIX (yfinance, tz-aware
+    # timestamps) never share an exact index value, so the raw intersection was empty and
+    # every ticker reported insufficient_spy_vix_history despite years of data on both.
+    spy = _date_indexed(spy)
+    vix = _date_indexed(vix)
     common = spy.index.intersection(vix.index)
     if len(common) < 220:
         return None
@@ -208,9 +221,21 @@ def build_market_reversal_overlay(
     if close_spy is not None and vix_series is not None:
         feat = feature_row_from_series(close_spy, vix_series)
     if feat is None:
+        common_n = None
+        try:
+            if close_spy is not None and vix_series is not None:
+                common_n = len(_date_indexed(close_spy).index.intersection(_date_indexed(vix_series).index))
+        except Exception:
+            common_n = None
         return {
             "enabled": True,
             "error": "insufficient_spy_vix_history",
+            "history": {
+                "spy_bars": None if close_spy is None else len(close_spy),
+                "vix_bars": None if vix_series is None else len(vix_series),
+                "common_dates": common_n,
+                "need": {"spy": 220, "vix": 30, "common": 220},
+            },
             "stress_score": None,
             "bounce_setup_score": None,
             "composite_buy_delta": 0,

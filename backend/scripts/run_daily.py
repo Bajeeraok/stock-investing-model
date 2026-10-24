@@ -646,6 +646,11 @@ def run_signals(
                     row["fair_value_suppressed"] = bool(_fvp.fv_result.fv_suppressed)
                     row["fair_value_bear_case"] = _fvp.fv_result.bear_case
                     row["fair_value_method"] = _fvp.fv_result.method_used
+                    # Provenance: lets the UI say "vs street consensus" or "≥52% (capped)"
+                    # instead of presenting every MOS as an independent valuation.
+                    row["fair_value_source"] = getattr(_fvp.fv_result, "fv_source", "model")
+                    row["fair_value_model_raw"] = getattr(_fvp.fv_result, "fv_model_raw", None)
+                    row["fair_value_spot_capped"] = bool(getattr(_fvp.fv_result, "fv_spot_capped", False))
             except Exception:
                 logger.warning("fair_value_pipeline failed for %s", ticker, exc_info=True)
 
@@ -760,7 +765,16 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             "short_suggestion": r.get("short_suggestion"),
             "medium_suggestion": r.get("medium_suggestion"),
             "long_suggestion": r.get("long_suggestion"),
+            # Calibration inputs: lets forward tracking test whether high ML probabilities
+            # cluster on falling knives (suspected inversion) — not stored before.
+            "ml_short_prob": r.get("ml_short_prob"),
         }
+        try:
+            from signals.readiness_score import is_falling_knife
+
+            row["falling_knife"] = bool(is_falling_knife(r))
+        except Exception:
+            pass
         if include_price_targets:
             if r.get("st_band") is not None:
                 row["st_band"] = r["st_band"]

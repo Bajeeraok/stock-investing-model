@@ -491,6 +491,10 @@ class FairValueResult:
     gap_badge_type: str = "METHOD"              # "METHOD" | "OPINION"
     geopolitical_cap: bool = False              # True for China ADRs — cap buy-signal bullishness
     divergence_pct: Optional[float] = None     # NTM/TTM EPS divergence %
+    # Provenance — so the UI can tell an independent model value from analyst upside.
+    fv_model_raw: Optional[float] = None        # model output before street blend / caps
+    fv_spot_capped: bool = False                # +N% max-upside cap hit → MOS shown is a floor
+    fv_source: str = "model"                    # model | model+street_blend | street_capped | street
 
 
 # Bear case, when EPS/PE inputs allow a real derivation rather than a flat haircut on FV:
@@ -677,13 +681,22 @@ def estimate_fair_value(
             method = "forward_pe_blend (40% fwd PE + 40% PEG + 20% FCF)" if fcf_per_share else \
                      "forward_pe_blend (50% fwd PE + 50% PEG)"
 
+    fv_model_raw = round(float(fv), 2)
     fv, street_notes = _reconcile_model_vs_street(
         fv, analyst_target, classification.stock_type, guardrails
     )
     notes.extend(street_notes)
+    fv_after_street = fv
 
     fv, guard_notes = _apply_fair_value_guardrails(fv, current_price, analyst_target, guardrails)
     notes.extend(guard_notes)
+    fv_spot_capped = any("vs current price" in n for n in guard_notes)
+    if any("analyst 12m mean" in n for n in guard_notes):
+        fv_source = "street_capped"
+    elif street_notes or abs(fv_after_street - fv_model_raw) > 0.01:
+        fv_source = "model+street_blend"
+    else:
+        fv_source = "model"
 
     # After caps: optional flag if still far from consensus (stale target or edge case)
     if analyst_target:
@@ -735,6 +748,9 @@ def estimate_fair_value(
         gap_badge_type=_gap_badge,
         geopolitical_cap=_geo_cap,
         divergence_pct=round(float(_div_pct), 1) if _div_pct is not None else None,
+        fv_model_raw=fv_model_raw,
+        fv_spot_capped=fv_spot_capped,
+        fv_source=fv_source,
     )
 
 

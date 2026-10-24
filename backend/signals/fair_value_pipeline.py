@@ -365,6 +365,7 @@ def compute_fair_value(
                 fv_street_anchored=_street_anchored,
                 fv_street_anchor_usd=_suppressed_fv if _street_anchored else None,
                 fv_street_anchor_source=_street_anchor_source if _street_anchored else None,
+                fv_source="street" if _street_anchored else "model",
                 gap_badge_type=_fv_route.gap_badge_type,
                 geopolitical_cap=_fv_route.geopolitical_cap,
                 divergence_pct=_fv_route.divergence_pct,

@@ -95,10 +95,15 @@ def _cap_band_width_for_display(
     *,
     spot: float,
     band_key: str,
+    anchor: float | None = None,
 ) -> tuple[float, float, bool]:
     """
     Cap very wide MT/LT display bands so they remain decision-useful.
     Wide ranges can look like weak model confidence and become non-actionable.
+
+    anchor: point the capped window must stay centered on (LT: fair value). Without it the
+    window kept the LOW end — a deep stress-tail low then produced bands like AVGO
+    $123–$240 that excluded both spot ($334) and fair value ($508).
     """
     if not (spot > 0 and high > low > 0):
         return low, high, False
@@ -111,7 +116,13 @@ def _cap_band_width_for_display(
     cap = max_pct_by_band.get(str(band_key).lower(), 0.30)
     if width_pct <= cap:
         return low, high, False
-    new_high = low + spot * cap
+    width = spot * cap
+    if anchor is not None and low <= anchor <= high:
+        new_low = max(low, anchor - width / 2)
+        new_high = min(high, new_low + width)
+        new_low = max(low, new_high - width)
+        return round(new_low, 2), round(new_high, 2), True
+    new_high = low + width
     min_pad = max(0.01, spot * 0.002)
     new_high = max(min(new_high, high), low + min_pad)
     return round(low, 2), round(new_high, 2), True
@@ -356,16 +367,21 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
                 row["lt_band_dispersion_note"] = lt_note
         # fv IS the point estimate the valuation gate wants — no more averaging a blended range.
         row["lt_fair_value_mid"] = round(fv, 2)
+        tail_low = float(lt_low)
         lt_low, lt_high, lt_capped = _cap_band_width_for_display(
-            float(lt_low), float(lt_high), spot=P, band_key="lt"
+            float(lt_low), float(lt_high), spot=P, band_key="lt", anchor=fv
         )
         if lt_capped:
             row["lt_band_width_capped"] = True
+            # Keep the stress tail visible separately — the displayed band centers on FV.
+            row["lt_tail_low"] = round(tail_low, 2)
         row["lt_band"] = {"low": round(lt_low, 2), "high": round(lt_high, 2)}
         row["lt_checkpoints"] = _checkpoints(lt_low, lt_high, 5)
-        # LT bear/base/bull: bear = low, base = midpoint, bull = high
+        # LT bear/base/bull: bear = the real downside tail (not the re-centered display edge),
+        # base = midpoint, bull = high
         mid = (lt_low + lt_high) / 2
-        bear, base_val, bull = round(lt_low, 2), round(mid, 2), round(lt_high, 2)
+        bear = round(min(lt_low, tail_low), 2)
+        base_val, bull = round(mid, 2), round(lt_high, 2)
         row["lt_scenarios"] = {"bear": bear, "base": base_val, "bull": bull}
         # Low confidence when bull is far above base (>50% of base)
         if base_val > 0 and abs(bull - base_val) > 0.5 * base_val:

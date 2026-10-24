@@ -65,7 +65,7 @@ categories:
     - PATH
     - AI
     - BBAI
-    - SMAR
+    # - SMAR  # removed: taken private (Jan 2025) — no longer trades
     - GTLB
     - COIN
 
@@ -95,7 +95,7 @@ categories:
     - LIT
     - REMX
     - URNM
-    - "^VIX"
+    # - "^VIX"  # removed: index, not tradable — still fetched as data via cross_asset_tickers
     - URA
 
   problem_names:
@@ -104,8 +104,8 @@ categories:
     - LCID
     - RIVN
     - PLUG
-    - NKLA
-    - SAVA
+    # - NKLA  # removed: bankrupt / delisted — fetch fails
+    # - SAVA  # removed: fetch fails — removed until data source recovers
     - DJT
     - GRAB
     - ARM

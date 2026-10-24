@@ -204,8 +204,45 @@ def fetch_grades_consensus(config: dict, ticker: str) -> tuple[dict | None, str 
     return None, "No grades data"
 
 
+def is_known_etf(ticker: str) -> bool:
+    """Funds have no analyst price targets — FMP still returns numbers for some (XLF 39 vs
+    price 55.7, USO 252 vs 160), which then leaked into fair value / MOS."""
+    try:
+        from signals.pre_flight.asset_registry_infer import (
+            COMMODITY_ETF_TICKERS,
+            EQUITY_ETF_TICKERS,
+            VOLATILITY_ETF_TICKERS,
+        )
+
+        known = COMMODITY_ETF_TICKERS | EQUITY_ETF_TICKERS | VOLATILITY_ETF_TICKERS
+    except Exception:
+        known = frozenset()
+    return (ticker or "").upper() in known
+
+
+def normalize_price_target_consensus(raw: dict) -> dict:
+    """Add standard low/high/median keys. The /stable endpoint returns targetLow/targetHigh/
+    targetMedian/targetConsensus; callers read low/high/median, so cons_low/cons_high were
+    null on every ticker."""
+    out = dict(raw)
+
+    def _first(*keys):
+        for k in keys:
+            v = raw.get(k)
+            if v is not None:
+                return v
+        return None
+
+    out["low"] = _first("low", "targetLow", "adjLow")
+    out["high"] = _first("high", "targetHigh", "adjHigh")
+    out["median"] = _first("median", "targetMedian", "medianPriceTarget", "targetConsensus", "consensus")
+    return out
+
+
 def fetch_price_target_consensus(config: dict, ticker: str) -> tuple[dict | None, str | None]:
     """Analyst consensus: high, low, median. For LT band blend."""
+    if is_known_etf(ticker):
+        return None, "ETF — no analyst price targets"
     api_key = get_api_key(config)
     if not api_key:
         return None, "No FMP API key"
@@ -214,9 +251,9 @@ def fetch_price_target_consensus(config: dict, ticker: str) -> tuple[dict | None
     if err:
         return None, err
     if isinstance(data, list) and data:
-        return data[0], None
+        return (normalize_price_target_consensus(data[0]) if isinstance(data[0], dict) else None), None
     if isinstance(data, dict):
-        return data, None
+        return normalize_price_target_consensus(data), None
     return None, "No data"
 
 
@@ -256,14 +293,23 @@ def fetch_analyst_estimates(config: dict, ticker: str) -> tuple[dict | None, str
     api_key = get_api_key(config)
     if not api_key:
         return None, "No FMP API key"
-    url = f"{BASE}/analyst-estimates?symbol={ticker}&period=annual&page=0&limit=2"
+    if is_known_etf(ticker):
+        return None, "ETF — no analyst EPS estimates"
+    url = f"{BASE}/analyst-estimates?symbol={ticker}&period=annual&page=0&limit=10"
     data, err = _request(url, api_key)
     if err:
         return None, err
 
     item = None
     if isinstance(data, list) and data:
-        item = data[0] if isinstance(data[0], dict) else None
+        rows = [r for r in data if isinstance(r, dict)]
+        # Rows come newest-first (furthest fiscal year first). Forward EPS = the NEXT fiscal
+        # year still ahead of today, not a year several out.
+        from datetime import date as _date
+
+        today_s = _date.today().isoformat()
+        future = sorted((r for r in rows if str(r.get("date") or "") >= today_s), key=lambda r: str(r.get("date")))
+        item = future[0] if future else (rows[0] if rows else None)
     elif isinstance(data, dict):
         item = data
     if not item:
@@ -289,12 +335,14 @@ def fetch_analyst_estimates(config: dict, ticker: str) -> tuple[dict | None, str
                     pass
         return None
 
-    eps_avg  = _f(["estimatedEpsAvg", "epsEstimate", "estimatedEps", "eps"])
-    eps_high = _f(["estimatedEpsHigh"])
-    eps_low  = _f(["estimatedEpsLow"])
-    rev_avg  = _f(["estimatedRevenueAvg", "estimatedRevenue", "revenueEstimate"])
-    n_eps    = _i(["numberAnalystEstimatedEps", "numberOfAnalysts", "numAnalysts"])
-    n_rev    = _i(["numberAnalystsEstimatedRevenue"])
+    # /stable names first (epsAvg…), legacy v3 names after — the v3-only list left eps_fwd,
+    # eps_high/low and dispersion null on every ticker after the move to /stable.
+    eps_avg  = _f(["epsAvg", "estimatedEpsAvg", "epsEstimate", "estimatedEps", "eps"])
+    eps_high = _f(["epsHigh", "estimatedEpsHigh"])
+    eps_low  = _f(["epsLow", "estimatedEpsLow"])
+    rev_avg  = _f(["revenueAvg", "estimatedRevenueAvg", "estimatedRevenue", "revenueEstimate"])
+    n_eps    = _i(["numAnalystsEps", "numberAnalystEstimatedEps", "numberOfAnalysts", "numAnalysts"])
+    n_rev    = _i(["numAnalystsRevenue", "numberAnalystsEstimatedRevenue"])
     analyst_count = n_eps or n_rev
 
     if eps_avg is None:

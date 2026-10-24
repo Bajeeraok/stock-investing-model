@@ -241,6 +241,15 @@ def build_swing_exit_plan(
     if risk <= 0:
         risk = entry_anchor * 0.03
         stop = entry_anchor - risk
+    # A 7–14 day swing can't carry a stop tens of percent away. OVERSOLD_BOUNCE anchored on a
+    # long-lookback recent_low (e.g. AMD $535 spot vs ~$190 low → stop $187, T1 $1,056 since
+    # targets are R-multiples). Cap risk at min(3×ATR, 8% of entry); targets follow.
+    max_risk = min(3.0 * atr, entry_anchor * 0.08)
+    stop_capped = False
+    if max_risk > 0 and risk > max_risk:
+        risk = max_risk
+        stop = entry_anchor - risk
+        stop_capped = True
 
     t1 = entry_anchor + 1.5 * risk
     t2 = entry_anchor + 2.5 * risk
@@ -277,6 +286,7 @@ def build_swing_exit_plan(
         "time_stop_days": horizon_days,
         "horizon_label": horizon_label,
         "risk_reward_t1": round(rr, 2) if rr is not None else None,
+        "stop_capped": stop_capped,
         "exit_rules": [
             f"Target 1 ${t1:.2f} (+1.5R) → trim ~33%",
             f"Target 2 ${t2:.2f} (+2.5R) → trim ~33%",

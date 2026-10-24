@@ -73,6 +73,7 @@ type UnlockRow = { key: string; ok: boolean; label: string; value: string; title
 
 function gateUnlockLabel(g: TradingGateRow): string {
   if (g.pass) {
+    if (g.id === "ml" && g.visualStatus === "unscored") return "ML not scored — no model for this ticker (neutral)";
     if (g.id === "ml") return "ML confidence above floor";
     if (g.id === "regime") return "Market & regime weather";
     return g.label.replace(/\s*\(.*\)$/, "");

@@ -1096,6 +1096,7 @@ def _build_investor_summary(
 
     # ML probs and regime from confidence engine (full `conf` kept for roadmap news transparency)
     st_ml_prob = mt_ml_prob = lt_ml_prob = 25.0
+    ml_scored = {"short": False, "medium": False, "long": False}
     regime_bull_pct = 50.0
     pattern_score = 50.0
     regime_hmm_label: str | None = None
@@ -1118,6 +1119,9 @@ def _build_investor_summary(
     try:
         if conf_snapshot:
             mh = conf_snapshot.get("ml_horizons") or {}
+            # Placeholder 25% keeps the band calculator numeric, but the gate must know the
+            # probability was never computed (it read as a real "Marginal pass (25%)").
+            ml_scored = {h: (mh.get(h) or {}).get("prob") is not None for h in ("short", "medium", "long")}
             st_ml_prob = float(mh.get("short", {}).get("prob") or 0.25) * 100.0
             mt_ml_prob = float(mh.get("medium", {}).get("prob") or 0.25) * 100.0
             lt_ml_prob = float(mh.get("long", {}).get("prob") or 0.25) * 100.0
@@ -1290,6 +1294,10 @@ def _build_investor_summary(
         )
     except Exception:
         return None
+
+    for _h in ("short", "medium", "long"):
+        if isinstance(payload.get(_h), dict):
+            payload[_h]["ml_scored"] = bool(ml_scored.get(_h))
 
     verdicts = [payload["short"].get("verdict"), payload["medium"].get("verdict"), payload["long"].get("verdict")]
     overall = "STRONG BUY" if "STRONG BUY" in verdicts else "BUY" if "BUY" in verdicts else "WATCH" if "WATCH" in verdicts else "WAIT"
@@ -4737,6 +4745,9 @@ def _get_fmp_data(ticker: str, config: dict, current_price: float | None, signal
                 if _fvp_row.fv_result is not None:
                     row["fair_value_suppressed"] = bool(_fvp_row.fv_result.fv_suppressed)
                     row["fair_value_bear_case"] = _fvp_row.fv_result.bear_case
+                    row["fair_value_source"] = getattr(_fvp_row.fv_result, "fv_source", "model")
+                    row["fair_value_model_raw"] = getattr(_fvp_row.fv_result, "fv_model_raw", None)
+                    row["fair_value_spot_capped"] = bool(getattr(_fvp_row.fv_result, "fv_spot_capped", False))
             except Exception:
                 pass
             # Proper daily ATR(14) (True Range) for target bands

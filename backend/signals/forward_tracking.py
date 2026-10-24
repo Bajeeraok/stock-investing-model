@@ -448,6 +448,8 @@ def get_forward_tracking(
                     "trim_score_triggered": trim_gate.get("trim_score_triggered"),
                     "trim_recommendation": trim_gate.get("trim_recommendation"),
                     "trim_gates_frozen": bool(row_work.get("trim_gates_frozen")),
+                    "ml_short_prob": row_work.get("ml_short_prob"),
+                    "falling_knife": row_work.get("falling_knife"),
                     "st_stop_at_signal": stop,
                     "st_target_at_signal": target,
                     "hit_st_stop": path.get("hit_st_stop"),
@@ -556,6 +558,7 @@ def get_forward_tracking(
             )
 
     summary_by_gates = aggregate_by_gates([r for r in records if r.get("horizon_days") == 20])
+    summary_by_ml_bucket = _aggregate_by_ml_bucket(records, aggregate_horizon_stats)
     summary_by_trim_gates = aggregate_by_trim_gates(
         [r for r in records if r.get("horizon_days") == 20 and r.get("trim_score_triggered")]
     )
@@ -613,6 +616,7 @@ def get_forward_tracking(
         ),
         "summary_by_entry_band_position": summary_by_entry_band_position,
         "summary_by_gates": summary_by_gates,
+        "summary_by_ml_bucket": summary_by_ml_bucket,
         "summary_by_trim_gates": summary_by_trim_gates,
         "signal_source_counts": signal_source_counts,
         # Per-ticker stats + recent daily calls from ALL records (records above are capped to
@@ -646,6 +650,31 @@ def get_forward_tracking(
 
 
 _DAILY_CALLS_PER_TICKER = 30
+
+_ML_BUCKETS = ((0, 40, "<40%"), (40, 55, "40–55%"), (55, 70, "55–70%"), (70, 101, "≥70%"))
+
+
+def _aggregate_by_ml_bucket(records: list[dict[str, Any]], aggregate) -> dict[str, Any]:
+    """Win rate / avg return by short-ML probability bucket, split falling-knife vs normal,
+    for 5d and 20d — the calibration check for "highest ML probs sit on falling knives".
+    ml_short_prob is stored as 0–1 or 0–100 depending on source; normalized here."""
+    out: dict[str, Any] = {}
+    for h in (5, 20):
+        hrows = [r for r in records if r.get("horizon_days") == h and r.get("ml_short_prob") is not None]
+        block: dict[str, Any] = {}
+        for lo, hi, label in _ML_BUCKETS:
+            for knife_key, knife_val in (("falling_knife", True), ("normal", False)):
+                rows = []
+                for r in hrows:
+                    p = float(r["ml_short_prob"])
+                    p = p * 100.0 if p <= 1.0 else p
+                    if lo <= p < hi and bool(r.get("falling_knife")) is knife_val:
+                        rows.append(r)
+                if rows:
+                    block.setdefault(label, {})[knife_key] = aggregate(rows)
+        if block:
+            out[str(h)] = block
+    return out
 
 
 def _call_right(signal: str, ret: float | None) -> bool | None:
