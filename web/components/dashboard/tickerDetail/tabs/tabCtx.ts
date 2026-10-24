@@ -7,6 +7,7 @@ import type { DecisionMode } from "@/lib/decisionMode";
 import type { PositionIntent } from "@/lib/positionIntent";
 import type { WhySubTab } from "../../TickerDetailWhyNav";
 import type { HorizonPlaybooksBundle } from "../../HorizonPlaybookCard";
+import type { CatalystNoteCard } from "../../tradingPlatformUX";
 import type { TickerDetail, RetailActionStatus, ModalTab, PortfolioImpactContext } from "../../TickerDetailModal";
 import type { buildExecutionPlanViewModel } from "../../executionPlanModel";
 
@@ -50,10 +51,10 @@ export interface TabCtx {
     label: string | null;
     score: number | null;
     headlineCount: number | null;
-    headlines: { title: string; url: string }[];
+    headlines: { title: string; url?: string | null }[];
     catalystNote: string | null;
     sentimentCaveat: string | null;
-    catalystCards: unknown[];
+    catalystCards: CatalystNoteCard[];
   };
   overviewVerdict: string | null;
   patternVerdict: string | null;

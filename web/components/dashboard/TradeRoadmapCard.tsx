@@ -411,11 +411,19 @@ export function TradeRoadmapCard({
   data,
   ticker,
   decisionMode,
+  tablesOnly = false,
 }: {
   data: TradeRoadmapData;
   ticker?: string;
   /** Defaults the "View" selector to match the persona already chosen in the modal. */
   decisionMode?: DecisionMode;
+  /**
+   * Slim mode used on the Levels tab when a horizon playbook is rendered above —
+   * the playbook already carries the narrative (verdict, action, next trigger,
+   * why-this-call), so this renders only what the playbook lacks: the staged
+   * buy/sell tranche tables plus the news layer.
+   */
+  tablesOnly?: boolean;
 }) {
   const [tab, setTab] = useState<"buy" | "sell" | "full">("buy");
   const [traderType, setTraderType] = useState<"day_trader" | "swing_trader" | "investor">(
@@ -427,6 +435,8 @@ export function TradeRoadmapCard({
   const [newsExpanded, setNewsExpanded] = useState(false);
   /** Full roadmap vs TL;DR-first (retail) — default simple for faster decisions */
   const [advancedRoadmap, setAdvancedRoadmap] = useState(false);
+  /** tablesOnly is always the table view — the narrative it replaces lives in the playbook. */
+  const showTables = advancedRoadmap || tablesOnly;
   /** Default open — this is the Action/Next-trigger/Why-this-call/scenario-mix block,
    * exactly the "proof behind the call" a retail trader needs without hunting for it.
    * Previously defaulted closed, so a second click was required below the one-line
@@ -505,7 +515,18 @@ export function TradeRoadmapCard({
 
   return (
     <div className="rounded-2xl border border-td-line/80 bg-td-surface2/55 overflow-hidden shadow-xl shadow-black/20">
+      {tablesOnly && (
+        <div className="px-4 py-2.5 border-b border-td-line/80 bg-td-surface/40">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">
+            Stage plan — tranche tables
+            <span className="ml-2 normal-case tracking-normal font-normal">
+              — verdict &amp; triggers are in the playbook above
+            </span>
+          </p>
+        </div>
+      )}
       {/* Header: verdict + current price / fair value / regime */}
+      {!tablesOnly && (
       <div className="p-4 border-b border-td-line/80 bg-gradient-to-b from-td-surface/80 to-td-surface/40">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2 flex-wrap">
@@ -570,8 +591,9 @@ export function TradeRoadmapCard({
           </button>
         </div>
       </div>
+      )}
 
-      {expanded && (
+      {(expanded || tablesOnly) && (
         <>
           {/* Tabs: Buy Roadmap | Sell Roadmap | Full Plan */}
           <div className="flex border-b border-td-line">
@@ -594,8 +616,9 @@ export function TradeRoadmapCard({
             ))}
           </div>
 
-          {/* TL;DR + market regime (probabilistic, not deterministic) */}
-          {(data.tldr || data.market_regime_layer || data.scenario_outlook) && (
+          {/* TL;DR + market regime (probabilistic, not deterministic) —
+              tablesOnly: the playbook above already carries action/trigger/why */}
+          {!tablesOnly && (data.tldr || data.market_regime_layer || data.scenario_outlook) && (
             <div className="px-4 py-3 border-b border-td-line/70 space-y-2 bg-td-surface/40">
               <div className="rounded-lg border border-td-line/70 bg-td-surface/40 px-3 py-2 flex items-center gap-3 flex-wrap">
                 <span
@@ -790,7 +813,8 @@ export function TradeRoadmapCard({
             </div>
           )}
 
-          {/* Simple vs full roadmap */}
+          {/* Simple vs full roadmap — tablesOnly always shows tables */}
+          {!tablesOnly && (
           <div className="px-4 py-2 border-b border-td-line/70 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-td-muted uppercase tracking-wide">Detail:</span>
             <button
@@ -814,6 +838,7 @@ export function TradeRoadmapCard({
               Advanced (full tables)
             </button>
           </div>
+          )}
 
           {/* Trader type selector */}
           <div className="px-4 py-2 border-b border-td-line/70 flex items-center gap-2 flex-wrap">
@@ -838,7 +863,7 @@ export function TradeRoadmapCard({
           </div>
 
           {/* Timeline slider (advanced) */}
-          {advancedRoadmap && (
+          {showTables && (
             <div className="px-4 py-2 border-b border-td-line/70">
               <div className="flex items-center gap-1 flex-wrap">
                 {TIMELINE_SLIDER_LABELS.map(({ key, label }, i) => (
@@ -861,7 +886,8 @@ export function TradeRoadmapCard({
           )}
 
           <div className="p-4 space-y-4">
-            {/* Trader summary */}
+            {/* Trader summary — tablesOnly: playbook headline/setup_narrative covers it */}
+            {!tablesOnly && (
             <div className={TD.summaryCard}>
               <p className={TD.sectionLabel}>Summary for your horizon</p>
               <p className={clsx(TD.body, "mt-2")}>{currentSummary}</p>
@@ -893,6 +919,7 @@ export function TradeRoadmapCard({
                 </ul>
               )}
             </div>
+            )}
 
             {data.news_sentiment_layer && (
               <div className="rounded-lg border border-td-info/20 bg-td-info/10/25 overflow-hidden">
@@ -1016,7 +1043,7 @@ export function TradeRoadmapCard({
               </div>
             )}
 
-            {!advancedRoadmap && (
+            {!showTables && (
               <div className="rounded-lg border border-td-line/50 bg-td-surface2/60 px-3 py-2 text-xs text-td-muted leading-relaxed">
                 <p>
                   <strong className="text-td-text">Simple mode</strong> shows the TL;DR, scenario mix, and market regime above.
@@ -1038,7 +1065,7 @@ export function TradeRoadmapCard({
             )}
 
             {/* Buy Roadmap table */}
-            {advancedRoadmap && (tab === "buy" || tab === "full") && (
+            {showTables && (tab === "buy" || tab === "full") && (
               <div>
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-td-accent mb-2">
                   <TrendingUp className="h-4 w-4" /> Buy roadmap
@@ -1166,7 +1193,7 @@ export function TradeRoadmapCard({
             )}
 
             {/* Sell Roadmap table */}
-            {advancedRoadmap && (tab === "sell" || tab === "full") && (
+            {showTables && (tab === "sell" || tab === "full") && (
               <div>
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-td-warn mb-2">
                   <TrendingDown className="h-4 w-4" /> Sell roadmap

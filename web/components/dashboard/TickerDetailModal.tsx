@@ -830,6 +830,53 @@ export function TickerDetailModal({
   /** Sidebar tabs + two-column Verdict only when the detail has the full overlay width. */
   const wide = layout === "drawer" || (layout === "pane" && expanded);
 
+  // Shared prop bag for the extracted tab bodies (P4). detail is non-null
+  // whenever any tab renders — every tab block sits inside {detail && !loading}.
+  const tabCtx: TabCtx = {
+    ticker,
+    detail: detail!,
+    wide,
+    decisionMode,
+    positionIntent,
+    effectivePrice,
+    quoteDailyMovePct,
+    headerActionStatus,
+    tradingGates,
+    gatesPassedCount,
+    gatesTotal,
+    confidence,
+    unified,
+    priceTargets,
+    executionVm,
+    ltEntryTiersOpen,
+    setLtEntryTiersOpen,
+    quickRefOpen,
+    setQuickRefOpen,
+    debugPanelOpen,
+    setDebugPanelOpen,
+    moreContextOpen,
+    setMoreContextOpen,
+    metricsGuideOpen,
+    setMetricsGuideOpen,
+    portfolioImpactContext,
+    playbookStage3,
+    regimeShift,
+    horizonPlaybooksBundle,
+    modalNewsRail,
+    overviewVerdict,
+    patternVerdict,
+    hasVerdictConflict,
+    periods,
+    whySubTab,
+    setWhySubTab,
+    setModalTab,
+    openWhyValuation,
+    setLivePrice,
+    setLiveChangePct,
+    setPositionIntentLocal,
+    setDecisionModeLocal,
+  };
+
   const body = (
       <>
         {/* Header — ticker · price · market status, then the mode switch and (mobile) tab strip,
@@ -1116,53 +1163,6 @@ export function TickerDetailModal({
       document.body,
     );
   }
-
-  // Shared prop bag for the extracted tab bodies (P4). detail is non-null
-  // whenever any tab renders — every tab block sits inside {detail && !loading}.
-  const tabCtx: TabCtx = {
-    ticker,
-    detail: detail!,
-    wide,
-    decisionMode,
-    positionIntent,
-    effectivePrice,
-    quoteDailyMovePct,
-    headerActionStatus,
-    tradingGates,
-    gatesPassedCount,
-    gatesTotal,
-    confidence,
-    unified,
-    priceTargets,
-    executionVm,
-    ltEntryTiersOpen,
-    setLtEntryTiersOpen,
-    quickRefOpen,
-    setQuickRefOpen,
-    debugPanelOpen,
-    setDebugPanelOpen,
-    moreContextOpen,
-    setMoreContextOpen,
-    metricsGuideOpen,
-    setMetricsGuideOpen,
-    portfolioImpactContext,
-    playbookStage3,
-    regimeShift,
-    horizonPlaybooksBundle,
-    modalNewsRail,
-    overviewVerdict,
-    patternVerdict,
-    hasVerdictConflict,
-    periods,
-    whySubTab,
-    setWhySubTab,
-    setModalTab,
-    openWhyValuation,
-    setLivePrice,
-    setLiveChangePct,
-    setPositionIntentLocal,
-    setDecisionModeLocal,
-  };
 
   /** Portal + high z-index: avoids clipping under sticky dashboard header (also z-50). */
   return createPortal(

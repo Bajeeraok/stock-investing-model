@@ -16,8 +16,8 @@ import { ReferenceDetailGrid } from "../ReferenceDetailGrid";
 import { RoadmapSummaries } from "../../RoadmapSummaries";
 import { HorizonPlaybooksPanel } from "../../HorizonPlaybooksPanel";
 import { TradeRoadmapCard } from "../../TradeRoadmapCard";
-import { setPositionIntent, modeFromIntent } from "@/lib/decisionMode";
-import { setDecisionMode } from "@/lib/decisionMode";
+import { setPositionIntent } from "@/lib/positionIntent";
+import { modeFromIntent, setDecisionMode } from "@/lib/decisionMode";
 import type { TabCtx } from "./tabCtx";
 
 export function LevelsTab({ ctx }: { ctx: TabCtx }) {
@@ -255,12 +255,17 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
       />
     )}
 
-    {/* ── Trade roadmap card ─── */}
+    {/* ── Trade roadmap card — tablesOnly when playbooks are present (the
+        playbook above already carries verdict/action/trigger/why narrative;
+        this card then renders only its unique content: staged tranche
+        tables + news layer). Full card renders when no playbook exists or
+        on the Roadmaps dashboard view. ─── */}
     {detail.investor_summary?.trade_roadmap ? (
       <TradeRoadmapCard
         data={detail.investor_summary.trade_roadmap}
         ticker={detail.ticker}
         decisionMode={decisionMode}
+        tablesOnly={Boolean(horizonPlaybooksBundle)}
       />
     ) : !horizonPlaybooksBundle && !detail.investor_summary?.horizons?.long?.entry_tiers ? (
       <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center text-slate-400">
