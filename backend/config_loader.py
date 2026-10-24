@@ -251,6 +251,11 @@ def has_config_portfolio(config: dict) -> bool:
     return len(portfolio_tickers_from_config(config)) > 0
 
 
+def _is_tradable_symbol(sym: str) -> bool:
+    """Index symbols (^VIX, ^GSPC…) are data series, not tradable names — no trade signals."""
+    return bool(sym) and not str(sym).startswith("^")
+
+
 def get_dashboard_signal_universe(config: dict) -> list[str]:
     """Public demo + watchlist + portfolio — dashboard refresh (no audit cohort)."""
     demo = get_public_demo_universe(config)
@@ -258,7 +263,7 @@ def get_dashboard_signal_universe(config: dict) -> list[str]:
     seen: set[str] = set()
     merged: list[str] = []
     for t in demo + watchlist + portfolio_tickers_from_config(config):
-        if t and t not in seen:
+        if t and t not in seen and _is_tradable_symbol(t):
             merged.append(t)
             seen.add(t)
     return merged or demo
@@ -342,7 +347,7 @@ def get_audit_cohort_tickers(config: dict) -> list[str]:
                 continue
             for t in tickers:
                 sym = str(t).upper().strip()
-                if sym and sym not in seen:
+                if sym and sym not in seen and _is_tradable_symbol(sym):
                     out.append(sym)
                     seen.add(sym)
     return out
