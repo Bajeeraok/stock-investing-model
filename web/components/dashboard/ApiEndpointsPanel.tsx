@@ -26,6 +26,8 @@ type RunResult = {
   status: number;
   ms: number;
   preview: string;
+  /** Full untruncated response body — powers the Download button. */
+  fullText: string;
   ok: boolean;
 };
 
@@ -152,7 +154,7 @@ export function ApiEndpointsPanel() {
       }
       setResults((prev) => ({
         ...prev,
-        [id]: { status: r.status, ms: Math.round(performance.now() - t0), preview, ok: r.ok },
+        [id]: { status: r.status, ms: Math.round(performance.now() - t0), preview, fullText: text, ok: r.ok },
       }));
       setExpandedId(id);
     } catch (err) {
@@ -162,6 +164,7 @@ export function ApiEndpointsPanel() {
           status: 0,
           ms: Math.round(performance.now() - t0),
           preview: err instanceof Error ? err.message : "Request failed",
+          fullText: "",
           ok: false,
         },
       }));
@@ -169,6 +172,19 @@ export function ApiEndpointsPanel() {
     } finally {
       setRunningId(null);
     }
+  };
+
+  const downloadResult = (e: CatalogEntry, id: string) => {
+    const r = results[id];
+    if (!r?.fullText) return;
+    const blob = new Blob([r.fullText], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    a.download = `${e.method}_${e.path.replace(/[^a-z0-9]+/gi, "_")}_${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const copyUrl = async (e: CatalogEntry, id: string) => {
@@ -315,9 +331,18 @@ export function ApiEndpointsPanel() {
 
               {expandedId === id && result && (
                 <div className="border-t border-slate-800 bg-slate-950/80 px-2.5 py-2">
-                  <div className="flex gap-3 text-[10px] mb-1">
+                  <div className="flex items-center gap-3 text-[10px] mb-1">
                     <span className={result.ok ? "text-emerald-400" : "text-red-400"}>HTTP {result.status || "ERR"}</span>
                     <span className="text-slate-500">{result.ms} ms</span>
+                    {result.fullText && (
+                      <button
+                        type="button"
+                        onClick={() => downloadResult(e, id)}
+                        className="ml-auto text-sky-400 hover:text-sky-300 font-medium"
+                      >
+                        Download JSON
+                      </button>
+                    )}
                   </div>
                   <pre className="text-[10px] text-slate-400 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{result.preview}</pre>
                 </div>
