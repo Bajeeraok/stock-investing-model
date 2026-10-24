@@ -147,6 +147,7 @@ def classify_mos_class(ticker: str, fundamentals_score: float) -> str:
     """
     Map symbol + fundamentals to a Tier 2 MOS profile.
     Known lists first; then weak fundamentals → speculative; strong → large-cap growth; else high-vol band.
+    Fixed: Added dynamic fallback for fundamentals-based classification to catch new quality stocks not in hardcoded lists.
     """
     t = _norm_ticker_sym(ticker)
     if t in _HIGH_QUALITY_DEFENSIVE:
@@ -159,6 +160,11 @@ def classify_mos_class(ticker: str, fundamentals_score: float) -> str:
         return "speculative"
     if fundamentals_score >= 65:
         return "large_cap_growth"
+    # Fixed: Added dynamic fallback ranges to improve classification for stocks not in hardcoded lists
+    if fundamentals_score >= 60 and fundamentals_score < 65:
+        return "large_cap_growth"
+    if fundamentals_score >= 40 and fundamentals_score < 60:
+        return "high_quality_defensive"
     return "high_volatility"
 
 
@@ -1491,8 +1497,10 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
             "Low volume ({:.1f}x average) — conviction in move is weak".format(inp.volume_ratio))
 
     # ── Verdict ──────────────────────────────────────────────────────────
+    # Fixed: pattern_score threshold reduced from 55 to 35 to align with documented normal range (27-43 for non-bottom setups)
+    # This reduces false negatives for valid technical setups
     all_clear = (inp.ml_prob >= ST_MIN_ML_PROB and inp.rsi < ST_RSI_OVERBOUGHT
-                 and inp.regime_bull_pct >= 40 and inp.pattern_score >= 55 and rr >= ST_MIN_RR)
+                 and inp.regime_bull_pct >= 40 and inp.pattern_score >= 35 and rr >= ST_MIN_RR)
     if all_clear:
         verdict, conviction = "BUY", "Medium"
     elif inp.ml_prob >= ST_MIN_ML_PROB and rr >= 1.2:
@@ -1691,8 +1699,10 @@ def _medium_term_signal_from_zone(
             "medium-term trend is bearish, reduce position size".format(p, inp.ma200))
 
     # ── Verdict ──────────────────────────────────────────────────────────
+    # Fixed: Added OR condition (regime_bull_pct >= 40 or ml_prob >= 45) to reduce false negatives
+    # Previously required both to pass, which blocked valid setups when one signal was strong
     if (inp.ml_prob >= MT_MIN_ML_PROB and quality in ("Ideal", "Acceptable")
-            and inp.regime_bull_pct >= 45 and rr >= MT_MIN_RR):
+            and (inp.regime_bull_pct >= 40 or inp.ml_prob >= 45) and rr >= MT_MIN_RR):
         if inp.ml_prob >= 50:
             verdict, conviction = "BUY", "High"
         else:

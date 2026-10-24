@@ -28,10 +28,13 @@ def _retail_gates_config() -> dict[str, Any]:
 
 _RG_CFG = _retail_gates_config()
 
-ST_ML_GATE = float(_RG_CFG.get("ml_short_prob_min", 25))
+# Fixed: Raised ST_ML_GATE from 25% to 30% to reduce noise while maintaining signal detection
+ST_ML_GATE = float(_RG_CFG.get("ml_short_prob_min", 30))
 ML_MARGINAL_ABS = float(_RG_CFG.get("ml_marginal_abs_pct", 55))  # pass vs threshold but low absolute conviction
-REGIME_GATE = float(_RG_CFG.get("regime_bull_pct_min", 60))
-CONFIDENCE_GATE = float(_RG_CFG.get("confidence_gate_pct", 55))
+# Fixed: Lowered REGIME_GATE from 60% to 55% to reduce false negatives for valid setups in 50-60% range
+REGIME_GATE = float(_RG_CFG.get("regime_bull_pct_min", 55))
+# Fixed: Lowered CONFIDENCE_GATE from 55% to 50% to allow more setups through while maintaining quality
+CONFIDENCE_GATE = float(_RG_CFG.get("confidence_gate_pct", 50))
 # pattern_signals.py::_bullish_trend_score treats RSI 55-70 as the "strong trend zone"
 # (its single largest bonus) and only starts discounting RSI above 70 ("overbought but in
 # momentum range"). A flat momentum_rsi_max of 50 directly contradicted that — it hard-

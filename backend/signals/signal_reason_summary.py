@@ -20,6 +20,7 @@ Stance = Literal["helps", "hurts", "neutral"]
 Persona = Literal["scout", "swing", "owner"]
 
 _PERSONA_PREFIX: dict[str, str] = {
+    "scout": "Scout view (tactical): ",
     "swing": "Swing view (weeks): ",
     "owner": "Owner view (long-term): ",
 }
@@ -373,6 +374,8 @@ def _build_wait_plain(
         parts.append("Momentum usually cools within 1–2 weeks on a small dip or sideways chop.")
     elif persona == "owner" and mom_gate and not mom_gate.get("pass"):
         parts.append("Near-term momentum is hot, but that's noise for a multi-year hold — valuation is what matters here.")
+    elif persona == "scout" and mom_gate and mom_gate.get("pass"):
+        parts.append("Momentum supports the tactical setup — watch for entry trigger on any pullback.")
 
     if st_band and current_price:
         lo, hi = st_band.get("low"), st_band.get("high")
