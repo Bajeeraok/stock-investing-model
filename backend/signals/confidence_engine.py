@@ -643,6 +643,26 @@ class ConfidenceEngine:
             if analyst_est:
                 details["analyst_est"] = analyst_est
 
+        # Analyst revision breadth (revisions_30d + est_drift_pct from the
+        # quarterly consensus rows) — scored component of the fundamental layer,
+        # replacing the old ±5% boolean flag inside earnings_quality.
+        rev_breadth: dict | None = None
+        if config:
+            try:
+                from signals.earnings_quality import analyst_revision_breadth
+
+                rev_breadth = analyst_revision_breadth(config, ticker)
+            except Exception as e:
+                logger.debug("analyst revision breadth: %s", e)
+            if rev_breadth:
+                details["analyst_revisions"] = rev_breadth
+
+        def _rev_nudge() -> float:
+            """±0.05 nudge: breadth 0.5 neutral, rising revisions → positive."""
+            if not rev_breadth or rev_breadth.get("breadth_score") is None:
+                return 0.0
+            return (float(rev_breadth["breadth_score"]) - 0.5) * 0.10
+
         if val_score is not None and qlt_score is not None:
             fund = round((0.6 * val_score + 0.4 * qlt_score) / 100.0, 3)
             # Analyst certainty nudge: tight consensus boosts confidence slightly;
@@ -651,6 +671,7 @@ class ConfidenceEngine:
                 cert = analyst_est["certainty"]           # 0-1
                 nudge = (cert - 0.50) * 0.06             # ±0.03 max
                 fund = round(float(np.clip(fund + nudge, 0.0, 1.0)), 3)
+            fund = round(float(np.clip(fund + _rev_nudge(), 0.0, 1.0)), 3)
             n = analyst_est.get("analyst_count") if analyst_est else None
             disp = analyst_est.get("eps_dispersion") if analyst_est else None
             lbl = f"Valuation {val_score:.0f}/100, Quality {qlt_score:.0f}/100"
@@ -658,6 +679,8 @@ class ConfidenceEngine:
                 lbl += f" · {n} analyst consensus"
             if disp is not None:
                 lbl += f" (EPS dispersion {disp*100:.0f}% — {'tight' if disp < 0.15 else 'wide'})"
+            if rev_breadth:
+                lbl += f" · revisions {rev_breadth['direction']}"
             scores["fundamental_score"] = fund
             labels["fundamental_score"] = lbl
 
@@ -667,6 +690,7 @@ class ConfidenceEngine:
                 cert = analyst_est["certainty"]
                 nudge = (cert - 0.50) * 0.04
                 fund = round(float(np.clip(fund + nudge, 0.0, 1.0)), 3)
+            fund = round(float(np.clip(fund + _rev_nudge(), 0.0, 1.0)), 3)
             scores["fundamental_score"] = fund
             labels["fundamental_score"] = f"Valuation {val_score:.0f}/100 (quality n/a)"
 
@@ -674,8 +698,12 @@ class ConfidenceEngine:
             # Prefer FMP analyst EPS → forward P/E over yfinance info when available
             fmp_fund = _score_fmp_analyst_fundamentals(analyst_est, close_s)
             if fmp_fund is not None:
-                scores["fundamental_score"] = fmp_fund["score"]
-                labels["fundamental_score"] = fmp_fund["label"]
+                scores["fundamental_score"] = round(
+                    float(np.clip(fmp_fund["score"] + _rev_nudge(), 0.0, 1.0)), 3
+                )
+                labels["fundamental_score"] = fmp_fund["label"] + (
+                    f" · revisions {rev_breadth['direction']}" if rev_breadth else ""
+                )
             else:
                 yf_fund = _score_yfinance_fundamentals(ticker)
                 if yf_fund is not None:

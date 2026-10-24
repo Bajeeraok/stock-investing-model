@@ -1,298 +1,129 @@
-# Product & model backlog
+# TODO — Model & UX Improvement Backlog
 
-Single living backlog for retail-investor robustness. Implement in small batches; check off when shipped.
+Generated 2026-10-23. Items ranked by measured impact from the 148-snapshot
+prod EOD analysis (9,757 ticker-date pairs). See MODEL_ACCURACY_ANALYSIS.md,
+PROJECT_BUGS_OPTIMIZATIONS_REPORT.md, DATA_DRIVEN_IMPROVEMENT_GUIDE.md.
 
-## Done (reference)
-
-- [x] **Uncertainty + as-of** — Dashboard `data_freshness`, per-signal `uncertainty` (ST band width %, ATR-based range hint)
-- [x] **Portfolio stress / max-pain** — `portfolio_stress` scenarios (parallel −10% / −20% / −30% shock) + UI strip
-- [x] **Risk-based sizing in UI** — Explicit risk budget ($), position notional, stop %; Signals table column + banner
-- [x] **MT/LT uncertainty** — `uncertainty.mt_*` / `lt_*` band width + narrative in `enrich_signal_uncertainty`; Signals table shows lines
-- [x] **Known limits panel** — API `known_limits` (defaults in `dashboard.py`, override via `config.yaml`)
-- [x] **Reusable disclaimer** — `ModelDisclaimer` on Overview + Signals
-- [x] **Macro vs HMM coaching** — `macro_regime_bundle.coaching_note` when price-HMM and macro disagree
-- [x] **Portfolio risk in Doctor** — `portfolio_risk_metrics` (VaR/CVaR, top pair correlations, correlation-adjusted weights) in Portfolio Doctor (`PortfolioRiskMetricsPanel`, 2026-03-30)
-- [x] **Earnings caution + quality in UI** — `run_daily` caution window + extra score cut; dashboard `enrich_results_earnings_quality`; Signals table Earnings column (2026-03-30)
-
-## Performance (dashboard load)
-
-- [x] **Shell-first load** — `GET /api/dashboard/shell` serves Redis snapshot instantly; no full compute on navigation
-- [x] **Stale-while-revalidate** — 7d `dashboard:last` snapshot + background refresh job + `GET /api/dashboard/status` polling
-- [x] **localStorage SWR** — `web/lib/dashboardCache.ts` instant paint on repeat visits
-- [x] **Lazy tabs** — signals-panel, opportunities-bundle (best 2026 + opps), analysis-bundle (paper/insider/forward)
-- [x] **Deferred main pipeline** — watchlist confidence batch, doctor add recs, analysis parallel tasks off dashboard start
-- [x] **Cache TTL 45 min** — default `DASHBOARD_CACHE_TTL_SECONDS=2700`; warm cron documented in `env.example`
-- [x] **Market scheduler** — `MARKET_SCHEDULER_ON=1`: pre-market 4:00–9:15 ET + dashboard warm 8:30 & every 25m 9:30–15:45 (`api/market_scheduler.py`)
-- [x] **After-hours earnings** — 4:30 PM & 6 PM ET on earnings days only; `after_hours_earnings` on Overview (`signals/after_hours_earnings.py`)
-
-## Trust & clarity
-
-- [ ] Per-field **as-of** when APIs expose it (FMP filing date, last earnings)
-
-## Regime & horizon
-
-- [ ] **Stress labels** on setups (“works better when VIX &lt; X”) — optional refinement beyond coaching banner
-- [ ] **Position intent** tags: trade vs invest per ticker or signal
-
-## Risk & portfolio (Bloomberg-style enhancements)
-
-- [ ] **Factor/sector caps** beyond raw concentration (e.g. max tech %)
-- [ ] **Liquidity score** — ADV-based days-to-exit at 20% of daily volume, 1–5 scale, flag >5 days; fill existing SignalsTable placeholder column; add summary to PortfolioSummary
-- [x] **Portfolio beta** — extract `_compute_beta()` to shared util, compute per-holding + sector + portfolio-weighted beta; display in PortfolioRiskMetricsPanel ("Your portfolio moves 1.4x the market") — 2026-05-19
-- [ ] **Enhanced VaR** — add 99% confidence level, dollar amounts, and component VaR decomposition (per-holding contribution to total VaR); extend existing `compute_var_cvar()` + PortfolioRiskMetricsPanel
-- [ ] **MCTR (Marginal Contribution to Risk)** — per-holding risk contribution from covariance decomposition; "NVDA contributes 34% of portfolio risk despite being 17% of value"; new MCTRPanel with sorted risk bars in Tier1RiskFeatures
-- [ ] **Named historical stress scenarios** — beta-adjusted per-holding impacts for 2008 crash, COVID Mar 2020, 2022 rate hike, dot-com bust; sector ETF proxy when ticker didn't exist; per-holding survivors; new NamedScenarioPanel
-
-## Behavioral
-
-- [x] **Cooldown** after trim/stop (block re-add N days unless thesis update) — 2026-05-19
-- [x] **One-line journal** prompt on “Add” from dashboard — 2026-05-19
-
-## Evaluation
-
-- [x] Scheduled **ablation** report (macro gate vs baseline) — `backend/scripts/run_ablation_report.py` writes `data/reports/ablation_<UTC>.json` and `ablation_latest.json` (2026-04-09)
-- [x] **Paper vs forward baseline** drift — `signals/paper_vs_backtest_drift.py` + dashboard `paper_vs_backtest_drift` + Analysis tab UI (2026-04-09)
-
-## Engineering
-
-- [ ] Feature flags for FRED/FMP/Yahoo partial failure (degraded mode)
-- [x] Structured logging when confidence **omits layers** — `confidence_layer_omitted` in `confidence_engine` (2026-04-09)
-
-## Stage 1 — Signal accuracy
-
-- [ ] **Catalyst detection layer** — classify FMP news headlines by event type (M&A, FDA, earnings surprise, major partnership); flag "catalyst active" when high-impact event in last 48h; add badge to signal card; override message when catalyst + bull regime: "Momentum regime detected — valuation model secondary until catalyst digested". Existing: FMP news feed + keyword lexicon + Layer 7 in confidence engine; gap: no event-type classification or catalyst flag
-- [ ] **Post-earnings signal transition** — fire within 24h of report; detect beat/miss from FMP calendar + next-day price action; generate transition signal ("NVDA beat by X% — signal updating"). Existing: pre-earnings caution, HMM gets earnings_context within 5 days, earnings_target_block; gap: no prescriptive post-earnings verdict update
-- [ ] **Signal confidence calibration audit** — run backtest_simple.py calibration_score() and build formal reliability diagram (predicted confidence bucket vs actual win rate); surface in Analysis tab. Existing: Platt scaling, calibration_score() monotonicity check, forward_tracking hit rates; gap: no user-facing calibration curve
-- [ ] **Momentum regime override** — when bull regime + new 52w high + catalyst present, add momentum continuation target alongside fair value target; elevate existing _momentum_valuation_tension_payload from display-only note to actual signal modifier with separate momentum price target. Existing: tension payload fires as note when 88% bull + 18% above FV; gap: doesn't modify signal or add target
-- [x] **Fair value model segmentation** — already segmented: DEEP_VALUE (PE-relative), VALUE (PE-relative), GROWTH (PEG blend), HIGH_GROWTH (forward PE + FCF), Index ETF (risk-premium model), commodities (macro-only). Quality premium + analyst consensus guardrails in place
-- [ ] **Pattern score rebalancing** — pattern_score is a near-bottom reversal composite (52w low, RSI oversold, volume climax, MACD reversing, Bollinger); 27-43 range is correct for non-bottom stocks. Review: is 55-60 gate too high? Should score include non-reversal bullish patterns (breakout, cup-and-handle)? Add configurable gate threshold
-
-## Stage 2 — Signal completeness
-
-- [x] **Signal change log** — `behavior/what_changed.py` tracks suggestion changes, MA crosses, RSI extremes, score moves >=10pts, regime flips, MACD flips per ticker between daily runs; surfaces in dashboard "What Changed" section
-- [x] **Watchlist alerts (email + Telegram)** — full `alerts/` subsystem with OptionsAlertsEngine, AlertEventStore (JSONL), email (SMTP) + Telegram Bot digests for story changes, trim candidates, earnings-week names, IV extremes
-- [x] **Browser push notifications** — Service worker `web/public/sw.js`; FastAPI `api/routers/push.py` (subscribe/unsubscribe/store, optional POST /test + `broadcast_web_push()` for future hooks); Analysis tab **Browser push** panel; env `VAPID_*`, optional `WEB_PUSH_ADMIN_SECRET`. Wire alerts worker → `broadcast_web_push` as a follow-up.
-- [x] **Track record dashboard** — Analysis tab **Track record**: key metrics, forward signal table, paper breakdown, calibration diagram; **paper cumulative equity curve** from `paper_trading.equity_curve` (completed trades, compounded index). Further polish (stop-hit rate slice) optional.
-
-## NLP / news sentiment
-
-- [ ] **FinBERT (ProsusAI/finbert)** for layer-7 news sentiment — optional upgrade over keyword lexicon + Alpha Vantage; run batched or async (heavy on CPU if not cached); map FinBERT probs to same −1..1 → 0..1 path as today; add `transformers` / `torch` only if this ships
-
-## Compliance / copy
-
-- [x] **False precision** copy pass — `data_freshness.precision_note`, `ModelDisclaimer` bands line, dashboard price/EOD as-of fields (2026-04-09)
+**2026-10-24 update — see "Session 2 results" at bottom for what shipped.**
 
 ---
 
-## Retail UX — platform comparison & phased roadmap
+## P0 — Deploy & validate current changes (do first)
 
-North star: *Open any ticker and within 5 seconds know Go or wait, where price needs to be, and what could go wrong — without reading a table.*
+- [x] Stage + commit + push all unstaged work: code files landed in prior commits
+  (retail_action_payload, commodity_vol, config, ml_horizons.json, forward_tracking,
+  calibration, backtest, web components). EOD snapshot JSONs + val_probs.csv left
+  untracked per user — prod regenerates them, not required in git.
+- [ ] Deploy to Railway → `POST /api/eod/run?force=true` → verify payloads carry
+  `dip_zone`, `full_go_via`, `macro_regime`, `commodity_vol`, entry_mode shift
+  (needs user's Railway access — cannot be done from this environment)
+- [x] `cd web && npm install && npx tsc --noEmit` — **PASS**; fixed 4 pre-existing
+  tab-split errors (LevelsTab bad import, tabCtx use-before-declare,
+  modalNewsRail headlines/catalystCards types)
 
-### Platform feature map
+## P1 — Data-driven validation (next ~21 trading days)
 
-| Platform | Retail strength | Thrive Alpha equivalent | Gap |
-|----------|-----------------|-------------------------|-----|
-| **TipRanks** | Smart Score 1–10, forward price chart (high/low/avg bands) | Gates + `HorizonProjectionChart` + composite score | Single headline score ring; street vs model bar on One Answer |
-| **Robinhood** | One action, minimal chrome, green/red clarity | `retail_action` / Now · Action | Three vocabularies (Plan 7L, Tech+ML, Now) on same row |
-| **TradingView** | Screener → chart → alert; preset screens | Signals tab + modal | Wide table; no saved retail views |
-| **Finviz** | Sector heat map, color = performance | Regime pie + macro strip | Holdings heat tile grid |
-| **Unusual Whales** | Alerts-first home, ticker-filtered feed | Story alerts strip | No “today’s 3 moves” digest |
-| **Webull** | Deep analytics | Deep dive tab | Anti-pattern on main surface — keep buried |
+- [ ] Re-slice `starter_only` expectancy with new `in_zone AND val_starter` rule
+- [ ] Measure `full_go_via: "market_regime_override"` cohort vs strict `all_gates`
+- [ ] `dip_zone` cohort outcomes vs the +6.01%/62.6% bucket — flag confirmed to
+  capture the same rows (n=6 in current snapshots — needs accumulation)
+- [ ] Commodity ETF rows — count `commodity_vol` calm-override firings
+- [ ] IV rank knife demotions — count starter→hard_lock flips at iv_rank>75
+- [x] Re-run `scripts/backtest_signals.py` — **BUY 1m −0.10%/48.9% (n=3,876)**
+  vs baseline −0.15%/48.6% — marginal improvement, still negative (gate-layer
+  fixes don't change raw composite_buy≥70 BUY). 3m improved to +3.77%.
+- [x] Refit `fit_probability_calibration.py` — short isotonic refit on 8,499
+  pairs (raw 0–49% → ~51.9%, flat as expected); medium/long still identity
+  (insufficient rows — need accumulation)
 
-### P0 — clarity & consolidation (in progress)
+## P2 — Model gaps (implementation backlog)
 
-- [x] **Horizon projection chart** — ST/MT/LT bands on ticker One Answer (`HorizonProjectionChart`, `price_history` in API) — 2026-05-19
-- [x] **Unify action language** — `Now · Action` / `retail_status` canonical; Plan + Tech+ML → “Model detail” toggle on Signals — 2026-05-19
-- [x] **One Answer reorder** — Verdict + headline above chart; detail block below horizon cards — 2026-05-19
-- [x] **Slim Signals table** — LIS hidden; retail columns default (Ticker · Close · Now · Gates · Earnings); model detail toggle — 2026-05-19
-- [x] **Today's 3 moves** — Overview digest (`TodaysMovesPanel`: story + trim + earnings) — 2026-05-19
-- [x] **Chart polish** — Calendar x-axis labels; MA20/50 on history; stronger Now marker — 2026-05-19
-- [x] **Fix mojibake copy** — Partial pass on `InvestorDecisionSummary.tsx` (remaining edge cases in long tail strings)
+- [x] **Analyst revision breadth** — `analyst_revision_breadth()` in
+  earnings_quality.py computes revisions_30d + est_drift_pct + breadth_score;
+  wired as ±0.05 nudge into confidence_engine fundamental_score (all 3 paths),
+  replaces the ±5% boolean flag; `details.analyst_revisions` exposes it
+- [x] **ML retraining on own outcomes** — `scripts/retrain_ml_on_outcomes.py`:
+  8,498 rows, 33 features (dip-zone, gate states, band distance, score buckets,
+  interactions, entry_mode/regime one-hots). Test AUC **0.530 vs 0.481 raw-prob
+  baseline**; excess-label mode (`--label excess`) AUC 0.522 vs 0.487. Artifacts:
+  `data/models/lgbm_own_outcomes_short.pkl` + `own_outcomes_report.json`
+- [ ] **Macro gate rescue** — still gated on override-cohort validation
+- [ ] **COT positioning** — still deferred until GVZ/OVX proves out
+- [x] **Grains vol (WEAT, CORN)** — realized-vol percentile fallback in
+  commodity_vol.py (`RV:WEAT` symbol); live-verified: WEAT → 27th pct "calm"
+- [x] **Sector relative strength** — `sector_relative_strength()` per-ticker
+  sector-ETF RS vs SPY (per-day cached) attached as `sector_rs` on EOD rows;
+  available to outcomes retrain + downstream. No score nudge yet (untested)
+- [ ] **Intraday trigger layer** — "alert me when price enters the band";
+  backend/alerts engine exists but band-entry triggers not implemented
 
-### P1 — differentiation (next)
+## P3 — UX polish remaining
 
-- [x] **Portfolio heat map** — Holdings as colored tiles (score/regime), click → modal — 2026-05-19
-- [x] **Preset signal views** — Pullback buys / Trim candidates / Earnings week on Signals tab — 2026-05-19
-- [x] **Street vs model bar** — FMP/Yahoo consensus vs model FV on One Answer — 2026-05-19
-- [x] **Position intent tags** — Trade vs invest chip (localStorage); gate hint copy — 2026-05-19
-- [x] **Advanced mode toggle** — Hide Analysis + Test Suite until enabled (header toggle) — 2026-05-19
-- [x] **Liquidity column** — ADV days-to-exit on signal rows (`enrich_results_liquidity`) — 2026-05-19
+- [ ] Hide tiles entirely when `risk_reward == null` (don't render "—")
+- [ ] `tabular-nums` on remaining % cells in modal
+- [ ] Gate detail strings now include `· macro: …` / `· GVZ: …` — verify
+  WhyGateCards renders multi-line details cleanly
+- [x] EntryBandsChart decluttered: domain clamped to ±50% of spot, far levels
+  (deep tiers, 2x targets) pin as edge tags (▲/▼), right-edge labels
+  collision-resolved, duplicate bands deduped. Still TODO: MA50/MA200 markers
+- [ ] `DIP_ZONE` row badge on dashboard signal tables (DecisionDeck already
+  consumes `ra.dip_zone` — table badge still open)
 
-### P2 — stickiness & trust
+## P4 — Code health
 
-- [x] **Cooldown + journal** on trim/add (see Behavioral section) — 2026-05-19
-- [x] **Calibration curve** on Analysis tab — 2026-05-19
-- [x] **Catalyst badge** on signals list — 2026-05-19
-- [x] **Push digest** wired to gates / regime flips — 2026-05-19
+- [ ] `data_source_stubs.py` — mark CBOE GVZ done (real impl in commodity_vol.py);
+  prune dead stubs or wire TradingEconomics/FRED leftovers
+- [ ] Broad `except Exception` audit — highest-impact cases first
+- [ ] Centralize threshold resolution (config.yaml vs retail_action_payload.py
+  constants — partially done via _RG_CFG; drift remains)
+- [ ] Regression tests: thin snapshots, stale fields, missing iv_rank/options,
+  commodity ticker paths, override cohorts, calibration artifact loading
+- [x] EOD `gate_detail_json` — **GAP FOUND**: snapshot rows serialize only
+  {detail,id,label,pass} per gate — macro_regime/commodity_vol/macro_score are
+  stripped before write, so forward-tracking can't parse them. Find where gates
+  get slimmed (signal_audit_store / eod row build) and persist the fields.
 
-### Do not copy
+## Session 2 results (2026-10-24)
 
-- Robinhood confetti / gamification (conflicts with decision-support guardrails)
-- Webull indicator wall on main screen
-- Unusual Whales options flow as default (equity-first product)
-- Auto-trade or one-tap buy
+**Levels tab consolidation** — TradeRoadmapCard gained `tablesOnly` mode; when a
+horizon playbook exists it renders only the unique content (staged tranche
+tables + news), dropping verdict header/TL;DR/next-trigger/why-this-call that
+the playbook already carries. Full card unchanged on Roadmaps view.
 
----
+**SPY-beating gap analysis (user question)** — measured excess return vs SPY
+over same 21d windows across all snapshots (`scripts/excess_vs_spy.py`):
 
-## Market catalyst board & model track record (2026-05)
+| Cohort | n | Excess | Beat SPY |
+|---|---|---|---|
+| all | 9,828 | +0.08% | 47.2% |
+| BUY label | 3,823 | **−0.93%** | 45.3% |
+| score_0_30 | 4,482 | +1.32% | 49.8% |
+| score_30_50 | 201 | **+2.61%** | 52.7% |
+| score_50_70 | 1,337 | −1.57% | 43.5% |
+| score_70_100 | 3,808 | −0.94% | 45.2% |
+| mode_full_go | 29 | **+3.63%** | 72.4% |
+| mode_starter_only | 1,311 | −1.33% | 42.0% |
 
-North star: *Before the open — what could move the whole market, and does pre-market agree with our regime?*
+**Finding: the headline BUY label underperforms SPY.** Real alpha is confined to
+the 30–50 dip bucket and the gated full_go cohort. Gaps to close:
 
-Implement in order: **P0 → P1 → P2 → P3**. Do not start P2 until P0/P1 ship.
+1. Evaluate on excess returns (`--label excess` now in retrain script); the
+   `y = fwd > 0` objective mislabels index-lagging winners as successes.
+2. Score ranks the wrong cohort — ≥70 chases lose, 30–50 wins; revisit what
+   composite_buy is supposed to select.
+3. No explicit "prefer index" output state when no cohort has edge.
+4. Snapshots store no benchmark-relative outcome fields — add `spy_fwd`/`excess`
+   to forward-tracking rows.
+5. Sizing scales with gate counts, not measured cohort expectancy.
 
-### Ops / Railway (recommendations — apply on production)
+## Measured baselines (to beat)
 
-| Item | Recommendation | Status |
-|------|----------------|--------|
-| **`DATA_ROOT`** | Remove `DATA_ROOT=/data` unless a **Railway Volume is mounted at `/data`**. No volume → omit env (defaults to `/app/data`). | User action on Railway |
-| **`REDIS_URL`** | Keep connected — EOD snapshots persist across deploys even without a volume. | ✓ on thrive-alpha |
-| **`EOD_SCHEDULER_CRON`** | Use in-process APScheduler on API: `0 20 * * 1-5`, `EOD_SCHEDULER_TZ=America/New_York`. **Not** `config.yaml` `eod_schedule_time` alone (that only applies to standalone `scheduler_eod.py`). | Verify in Railway vars |
-| **`scheduler_eod.py`** | Separate always-on process; only if not using `EOD_SCHEDULER_CRON`. | Optional |
-| **Paper trades file** | `paper_trades.csv` under `DATA_ROOT` — lost on redeploy without volume; forward tracking still OK via Redis EOD. | Known limit |
-| **EOD panel path** | Analysis → EOD snapshots shows resolved `{DATA_ROOT}/eod/` | [x] 2026-05-21 |
-| **`MARKET_SCHEDULER_ON=1`** | Pre-market 4:00–9:15 ET + dashboard warm; does **not** replace 8pm EOD cron. | Optional |
-
-### Model track record visibility (parallel backlog)
-
-- [ ] **Always show Analysis sections** — Paper trading + forward tracking with empty-state (not hidden until bundle loads).
-- [ ] **Preload analysis bundle on Overview** — Model health strip shows ADD 20d hit rate without visiting Markets first.
-- [ ] **Advanced mode** — Analysis tab hidden until toggle; document in onboarding copy.
-
-### P0 — Pre-market catalyst board ✅
-
-Glue calendar + pre-market engine + regime tension + FOMC historical stats.
-
-- [x] **`build_market_catalysts()`** — `signals/market_catalysts.py` — 2026-05-21
-- [x] **`GET /api/pre-market`** — `market_catalysts` on every response via `_premarket_with_catalysts()` — 2026-05-21
-- [x] **`MarketCatalystBoardPanel`** — Under pre-market gauge in `PreMarketPanel` (Markets tab) — 2026-05-21
-- [x] **Tests** — `backend/tests/test_market_catalysts.py` — 2026-05-21
-- [x] **Morning newsletter** — “Market catalysts” section when pre-market file includes board — 2026-05-21
-
-**P0 payload:** `scheduled_today`, `live_tape`, `tensions`, `flip_narratives`, `summary_line`, FOMC `scenario` stats where available.
-
-### P1 — Event-day flip stats ✅
-
-Historical behavior in similar setups — **not** release forecasts.
-
-- [x] **`data/market_flip_stats.json`** — `scripts/build_market_flip_stats.py`; seed in `backend/data/` — 2026-05-22
-- [x] **Gap fade rate** — ES=F open (fallback SPY open) vs SPY close sign in `market_flip_stats.py` — 2026-05-22
-- [x] **CPI / NFP date tables** — `event_scenarios.py` + generated NFP/CPI calendars — 2026-05-22
-- [x] **Pre-market vs close contradiction** — `pre_market_history/` archive + EOD join in build script — 2026-05-22
-- [x] **UI** — Catalyst board `gap_fade_line` + scenario stats — 2026-05-22
-
-### P2 — Trading-hours extensions ✅
-
-- [x] **Release markers** — pending/released badges on catalyst board (8:30 / 14:00 ET) — 2026-05-22
-- [x] **Since open / since CPI** — `intraday` block via yfinance 5m SPY — 2026-05-22
-- [x] **Intraday refresh** — ET-aware polling + `?refresh=true` on `/api/pre-market`; `market_state.intraday_poll_ms` — 2026-05-22
-- [x] **Push digest hook** — `build_catalyst_digest_line` + `maybe_broadcast_catalyst_push` — 2026-05-22
-
-### P3 — Unified market state ✅
-
-- [x] **`MarketStatePanel` on Overview** — pre-market + catalysts + outlook + typical move — 2026-05-22
-- [x] **`GET /api/market-state`** — `signals/market_state.py` — 2026-05-22
-
-### Signals / roadmaps ↔ portfolio sync
-
-- [x] **`get_signal_universe()`** — `config_loader`: watchlist + portfolio-only holdings — 2026-05-22
-- [x] **`run_signals`** uses signal universe (dashboard + daily EOD) — 2026-05-22
-- [x] **API `signal_universe`** — Top-level dashboard field for Roadmaps tab — 2026-05-22
-- [x] **Roadmaps tab** — Portfolio holdings first, then watchlist; cap 24 cards with truncation note — 2026-05-22
-
-### Retail decision framework (institutional → retail)
-
-**Shipped P0 reconciliation (2026-05-24):**
-- [x] **`market_context_reconciler.py`** — Temperature × regime quadrants (e.g. fear in bull = BUY dips)
-- [x] **Unified hero** — `RetailMarketDecisionsPanel` shows one message; matrix driven by reconciler not raw temperature
-- [x] **Risk-Off + STRONG_BULL** — Macro overlay (ST) vs SPY regime (LT) labeled; no contradictory REDUCE on cold+bull
-- [x] **Actionable 5 questions** — SPY triggers, trim %, concentration from portfolio
-- [x] **Overnight delta + checklist + hold vs trade** — inline in decisions panel
-- [x] **Market state** — next-day “no edge” summary, range-used %, pre-market mover WHY
-- [x] **Alerts** — hidden when empty; open when active
-
-**P1 — Context pillars (reuse existing data):**
-- [x] **Breadth panel** — RSP/SPY proxy + `breadth_panel` in retail decisions — 2026-05-23
-- [x] **Earnings season pulse** — FMP calendar density + beat-rate sample — 2026-05-23
-- [x] **Crowd positioning** — CNN Fear & Greed (+ optional AAII config overrides) — 2026-05-23
-- [x] **Ticker detail `market_context`** — per-name ST/MT/LT overlay, earnings rule, triggers — 2026-05-23
-
-**P2 — Depth:**
-- [x] **Sector rotation tilt** — Leading/lagging sector ETFs vs SPY — 2026-05-23
-- [x] **Personal earnings calendar** — Holdings-only trim rules in decisions payload — 2026-05-23
-- [x] **Trigger levels** — SPY/QQQ MA20/50 + ATR bands — 2026-05-23
-
----
-
-## Signal audit — 100-ticker pilot (Phase 0–4)
-
-**Primary spec:** [`docs/audit/SIGNAL_AUDIT_FORWARD_TRACKING.md`](docs/audit/SIGNAL_AUDIT_FORWARD_TRACKING.md) (schema, verdict rules, API, phased checklist).
-
-### Done
-
-- [x] Phase 0/1 — `signal_audit_store.py`, cohort yaml, EOD hook, Model Audit panel (2026-05)
-- [x] Phase 2 core — `signal_audit_verdict.py`, `signal_audit_outcomes.py`, `resolve_signal_outcomes.py`, `POST /api/audit/resolve`, win rate in Model Audit UI (2026-05-27)
-- [x] Phase 3 — `build_audit_report.py`, CSV export API, Track Record cohort chip (2026-05-27)
-
-### Pending (from spec)
-
-- [ ] Phase 2 — `signal_path_daily` table + drawdown charts
-- [ ] Phase 4 — backtest rows with `source=backtest` in `signal_events`
-
----
-
-## Multi-persona roadmap (all retail traders & investors)
-
-North star: *Any retail user—Scout, Swing, or Owner—gets a horizon-appropriate digest in under 10 seconds.*
-
-### Phase A — Persona lens (shipping)
-
-- [x] **A1. Global trading lens** — Header `TradingLensSelector` (Scout / Swing / Owner); `web/lib/tradingLens.ts` + localStorage — 2026-05-30
-- [x] **A2. Mode-aware Overview** — `OverviewAtAGlance`: lens hint, matrix order + primary horizon ring, section reorder, Scout tactical slot — 2026-05-30
-- [x] **A3. Mode-aware Today's 3 moves** — `buildTodayMoves` kind priority by lens in `todayMoves.ts` — 2026-05-30
-- [x] **A4. Signals lens presets** — Renamed presets (Tactical setups / Core trim / Earnings week); default preset follows lens — 2026-05-30
-- [ ] **A5. Bulk mode on holdings** — Set Scout/Swing/Owner for all portfolio tickers from Portfolio tab
-
-### Phase B — Discovery & screening
-
-- [x] **B0. Hunter data on dashboard warm** — `hunter_panel` from signal universe (readiness + velocity); no 100-ticker intraday recompute — 2026-05-30
-- [x] **B1. Scanner home (lite)** — `scanner_home_lite` on Overview from scanner `alerts.jsonl` — 2026-05-30
-- [x] **B2. Hunter panel** — Overview: all candidates (not cap-3); gates + track + book filters — 2026-05-30
-- [x] **B3. Saved screens** — Built-in hunter screens + 2 custom (localStorage) — 2026-05-30
-- [x] **B4. Watching vs owning** — `PossessionBadge`; Source labels Owning / Watching on Signals, Roadmaps, Hunter — 2026-05-30
-
-### Phase C — Session & tactical depth
-
-- [x] **C1. Session strip on Overview** — `SessionStrip` + `PhaseCSessionBlock`: pre-market + RTH since-open always visible for Scout/Swing — 2026-06-04
-- [x] **C2. Trigger dashboard** — `TriggerLevelChips`: SPY/QQQ distance-to-level % chips from `trigger_levels.chip_levels` — 2026-06-04
-- [x] **C3. Scout playbook** — `ScoutPlaybook`: collapsed open rules from `morning_checklist` — 2026-06-04
-- [x] **C4. Catalyst → signal** — `signal_event_modifiers.py`: post-earnings + catalyst patch `retail_status` / row fields — 2026-06-04
-- [x] **C5. Stress labels on setups** — VIX-aware `stress_label` on ST BUY rows in Signals mobile cards — 2026-06-04
-- [x] **Event risk strip (Scout)** — `event_risk_strip` ranked ER+ATR+velocity; Overview + Signals tab — 2026-06-04
-
-### Phase D — Trust, workflow, stickiness
-
-- [ ] **D1. Track record on Overview** — One-line ADD 20d hit rate / direction accuracy (preload analysis bundle)
-- [ ] **D2. Calibration by lens** — Forward tracking split Scout vs Owner horizons
-- [ ] **D3. Searchable decision log** — Extend journal beyond one-line prompt
-- [ ] **D4. Copy trade plan** — Export ticker, action, stop, size for manual broker entry
-- [ ] **D5. Degraded data mode** — Feature flags when FMP/FRED partial fail
-
-### Phase E — Charting (optional)
-
-- [ ] **E1. TradingView embed** — Widget on ticker One Answer (fastest path)
-- [ ] **E2. Sparkline-only** — Cheaper; extend `HorizonProjectionChart`
-- [ ] **E3. Native chart** — Only if product pivots chart-first (not recommended near-term)
-
-### Auth, portfolio, and default universe
-
-- [x] **Public demo universe** — `public_demo_universe` in `config.yaml`; merged in `get_dashboard_signal_universe()` — 2026-05-30
-- [x] **`universe_meta` on dashboard API** — `guest_mode`, `note`, demo list for UI — 2026-05-30
-- [ ] **User sign-up / login** — OAuth or email; session on API
-- [ ] **Portfolio per user** — Replace config-file holdings with DB/blob keyed by `user_id`; migrate `user_overrides.json` pattern
-- [ ] **Guest vs authenticated shell** — Anonymous: demo universe + empty portfolio doctor; authed: user holdings only
-- [ ] **Portfolio import** — CSV / broker export upload tied to login (extend `add_uploaded_portfolio`)
-- [ ] **Config watchlist as admin default** — Keep `watchlist` for operator; users get personal watchlist store
-
----
-
-_Add new items at the bottom; move to **Done** with date when shipped._
+| Metric | Baseline (pre-fix) | Target |
+|--------|--------------------|--------|
+| 20d win rate | 52.7% | ≥56% |
+| BUY≥70 1m return | -0.15% / 48.6% hit | >0% / ≥53% |
+| 30-50 bucket | +6.01% / 62.6% | preserve — this is the edge |
+| starter_only expectancy | -0.65% | ≥0% |
+| full_go slice | 79%/1.49 W/L (n=24) | keep ≥65% at n>100 |
+| GO vs NO_GO spread | +2.0% (20d) | ≥+2% |
+| **BUY-label excess vs SPY** | **−0.93%/21d** | **>0% — the real bar** |

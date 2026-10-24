@@ -45,6 +45,81 @@ def _op_margin(row: dict) -> float | None:
         return None
 
 
+def _est_eps(row: dict) -> float | None:
+    for k in ("estimatedEpsAvg", "epsEstimate", "estimatedEps"):
+        v = row.get(k)
+        if v is not None:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def analyst_revision_breadth(config: dict, ticker: str) -> dict[str, Any] | None:
+    """Revision-breadth metrics from the quarterly consensus rows
+    (fmp_client.fetch_analyst_estimates_quarterly — rows newest-first, ~91d apart).
+
+    Returns:
+      revisions_30d   — net up/down count across the most recent QoQ estimate
+                        transitions (#up − #down; roughly the last ~90d window
+                        spanned by the rows available)
+      est_drift_pct   — % drift of the latest consensus vs the ~90d-ago row
+      breadth_score   — 0-1 composite for scoring layers (0.5 = neutral)
+      direction       — "rising" | "falling" | "flat" | "mixed"
+      n_rows          — rows used
+    or None when the endpoint has no data / no key.
+    """
+    est_rows, err = fetch_analyst_estimates_quarterly(config, ticker, limit=8)
+    if err:
+        logger.debug("analyst quarterly estimates (%s): %s", ticker, err)
+    if not est_rows or len(est_rows) < 2:
+        return None
+
+    eps = [_est_eps(r) for r in est_rows]
+    eps = [e for e in eps if e is not None]
+    if len(eps) < 2:
+        return None
+
+    # QoQ deltas across consecutive rows (newest → oldest): count ups vs downs.
+    deltas = [eps[i] - eps[i + 1] for i in range(len(eps) - 1)]
+    tol = 1e-6
+    ups = sum(1 for d in deltas if d > tol)
+    downs = sum(1 for d in deltas if d < -tol)
+    revisions_30d = ups - downs
+
+    # est_drift_pct: latest row vs the row ~90d back (index 1 when available;
+    # deepest available otherwise — rows are ~91d apart).
+    older_idx = 1 if len(eps) > 1 else len(eps) - 1
+    older = eps[older_idx]
+    est_drift_pct = (eps[0] - older) / abs(older) if older else None
+
+    # Composite breadth: net revision direction dominates; drift adds conviction.
+    # Range target ~0-1 around 0.5 neutral.
+    breadth = 0.5 + 0.15 * max(-2, min(2, revisions_30d))
+    if est_drift_pct is not None:
+        # ±5% drift ≈ ±0.20 — a drifted-out estimate is a strong tell.
+        breadth += max(-0.20, min(0.20, est_drift_pct * 4.0))
+    breadth = max(0.0, min(1.0, breadth))
+
+    if revisions_30d > 0 and (est_drift_pct or 0) > 0.01:
+        direction = "rising"
+    elif revisions_30d < 0 or (est_drift_pct or 0) < -0.01:
+        direction = "falling"
+    elif ups and downs:
+        direction = "mixed"
+    else:
+        direction = "flat"
+
+    return {
+        "revisions_30d": revisions_30d,
+        "est_drift_pct": round(est_drift_pct, 4) if est_drift_pct is not None else None,
+        "breadth_score": round(breadth, 3),
+        "direction": direction,
+        "n_rows": len(eps),
+    }
+
+
 def analyze_earnings_quality(config: dict, ticker: str) -> dict[str, Any]:
     income, cashflow, err = _income_and_cf(config, ticker)
     flags: list[str] = []
@@ -94,34 +169,23 @@ def analyze_earnings_quality(config: dict, ticker: str) -> dict[str, Any]:
                 )
                 score -= 8.0
 
-    est_rows, est_err = fetch_analyst_estimates_quarterly(config, ticker, limit=4)
-    if est_err:
-        logger.debug("analyst quarterly estimates: %s", est_err)
-    if est_rows and len(est_rows) >= 2:
-        def _eps(r: dict) -> float | None:
-            for k in ("estimatedEpsAvg", "epsEstimate", "estimatedEps"):
-                v = r.get(k)
-                if v is not None:
-                    try:
-                        return float(v)
-                    except (TypeError, ValueError):
-                        pass
-            return None
-
-        curr_est = _eps(est_rows[0])
-        prev_est = _eps(est_rows[1])
-        if curr_est is not None and prev_est and prev_est != 0:
-            revision = (curr_est - prev_est) / abs(prev_est)
-            if revision < -0.05:
-                flags.append(f"EPS consensus revised down {revision:.1%} vs prior quarter row")
+    rev = analyst_revision_breadth(config, ticker)
+    if rev:
+        drift = rev.get("est_drift_pct")
+        if drift is not None:
+            if drift < -0.05:
+                flags.append(f"EPS consensus drifting down {drift:.1%} vs ~90d-ago row")
                 score -= 15.0
-            elif revision > 0.05:
+            elif drift > 0.05:
                 score += 10.0
 
     score = max(0.0, min(100.0, score))
     grade = "A" if score >= 85 else "B" if score >= 70 else "C" if score >= 55 else "D"
-    return {
+    out: dict[str, Any] = {
         "quality_score": round(score, 1),
         "flags": flags,
         "grade": grade,
     }
+    if rev:
+        out["revision_breadth"] = rev
+    return out

@@ -58,6 +58,17 @@ def _eod_snapshot_row_count(snap: dict | None) -> int:
     return len(rows) if isinstance(rows, list) else 0
 
 
+def _sector_rs_for_row(ticker: str) -> dict | None:
+    """Ticker's sector ETF RS vs SPY for the snapshot row — None on any miss."""
+    try:
+        from signals.sector_rotation_tilt import sector_relative_strength
+        from signals.ticker_metadata import resolve_equity_sector
+
+        return sector_relative_strength(resolve_equity_sector(ticker).get("sector_etf"))
+    except Exception:
+        return None
+
+
 def full_eod_snapshot_exists(date_str: str, config: dict | None = None) -> bool:
     """True when disk or Redis has a full (~100 ticker) EOD snapshot for date_str."""
     if config is None:
@@ -569,6 +580,9 @@ def run_signals(
             "rsi_signal":       sig.get("rsi_signal"),
             "macd_signal":      sig.get("macd_signal"),
             "market_overlay": mro_ctx,
+            # Sector relative strength vs SPY — ticker-level composite feature
+            # (static sector map + per-ETF per-day cached RS; was market-level only).
+            "sector_rs": _sector_rs_for_row(ticker),
             # ML short-term probability — LightGBM inference from cached model (0-1)
             # None when no model trained yet; never triggers training during dashboard load
             "ml_short_prob": ml_short_prob,

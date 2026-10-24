@@ -5,6 +5,10 @@
  * Paints ST/MT/LT entry zones as shaded horizontal bands plus spot, stop,
  * and target lines — TradingView position-tool style. Price axis is shared
  * so zones read against each other; no OHLCV needed.
+ *
+ * Domain is clamped to levels within ±50% of spot: far-away anchors (deep LT
+ * tiers, 2x targets) used to stretch the axis until the actionable bands were
+ * unreadable — they now pin to the nearest chart edge as tags instead.
  */
 import React from "react";
 import clsx from "clsx";
@@ -24,20 +28,72 @@ const KIND_STYLE: Record<Band["kind"], { fill: string; stroke: string; text: str
   fv: { fill: "rgba(168,85,247,0.10)", stroke: "#A855F7", text: "text-purple-300" },
 };
 
-export function EntryBandsChart({ currentPrice, bands, className }: Props) {
-  const vals: number[] = [];
-  for (const b of bands) {
-    if (b.low != null && b.low > 0) vals.push(b.low);
-    if (b.high != null && b.high > 0) vals.push(b.high);
-  }
-  if (currentPrice != null && currentPrice > 0) vals.push(currentPrice);
-  if (vals.length === 0) return null;
+const EDGE_SPAN = 0.5;   // a level within ±50% of spot stays on-axis; beyond → edge tag
+const LABEL_GAP = 7;     // min vertical gap between right-edge labels (% of chart height)
 
-  let lo = Math.min(...vals), hi = Math.max(...vals);
+function bandPriceText(b: Band): string {
+  return b.low != null && b.high != null && b.high !== b.low
+    ? `$${b.low.toFixed(0)}–$${b.high.toFixed(0)}`
+    : `$${(b.low ?? b.high)!.toFixed(0)}`;
+}
+
+export function EntryBandsChart({ currentPrice, bands, className }: Props) {
+  const spot = currentPrice != null && currentPrice > 0 ? currentPrice : null;
+
+  // Dedupe identical zones (e.g. "T1 MA200" entry_zone == tier t1 band).
+  const seen = new Set<string>();
+  const deduped = bands.filter((b) => {
+    const key = `${b.kind}:${b.low?.toFixed(2)}:${b.high?.toFixed(2)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // Domain: spot + every band edge within ±EDGE_SPAN of spot.
+  const coreVals: number[] = [];
+  if (spot != null) coreVals.push(spot);
+  for (const b of deduped) {
+    for (const v of [b.low, b.high]) {
+      if (v == null || v <= 0) continue;
+      if (spot == null || (v >= spot * (1 - EDGE_SPAN) && v <= spot * (1 + EDGE_SPAN))) coreVals.push(v);
+    }
+  }
+  if (coreVals.length === 0) return null;
+
+  let lo = Math.min(...coreVals), hi = Math.max(...coreVals);
   const pad = (hi - lo) * 0.12 || hi * 0.05;
   lo -= pad; hi += pad;
   const range = hi - lo;
   const y = (p: number) => 100 - ((p - lo) / range) * 100; // svg % (0 = top)
+
+  // Partition: in-window bands paint to scale; outside bands pin to an edge tag.
+  const inWin: Band[] = [];
+  const pinnedAbove: Band[] = [];
+  const pinnedBelow: Band[] = [];
+  for (const b of deduped) {
+    const edges = [b.low, b.high].filter((v): v is number => v != null && v > 0);
+    if (!edges.length) continue;
+    const mid = (Math.min(...edges) + Math.max(...edges)) / 2;
+    if (spot != null && mid > hi) pinnedAbove.push(b);
+    else if (spot != null && mid < lo) pinnedBelow.push(b);
+    else inWin.push(b);
+  }
+  pinnedAbove.sort((a, b) => (a.low ?? a.high ?? 0) - (b.low ?? b.high ?? 0));
+  pinnedBelow.sort((a, b) => (b.low ?? b.high ?? 0) - (a.low ?? a.high ?? 0));
+
+  // Right-edge labels: desired y = top of band (or line), then enforce min gap.
+  const labels = inWin.map((b) => ({
+    b,
+    top: b.high != null ? y(b.high) : y(b.low ?? 0),
+  }));
+  labels.sort((a, b) => a.top - b.top);
+  let cursor = 1;
+  for (const l of labels) {
+    l.top = Math.max(l.top, cursor);
+    cursor = l.top + LABEL_GAP;
+  }
+  const overflow = (labels.length ? labels[labels.length - 1].top : 0) - 96;
+  if (overflow > 0) for (const l of labels) l.top -= overflow;
 
   return (
     <div className={clsx("rounded-xl border border-td-line bg-td-surface/60 p-3", className)}>
@@ -46,7 +102,7 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
       </p>
       <div className="relative w-full" style={{ aspectRatio: "3 / 2" }}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
-          {bands.map((b, i) => {
+          {inWin.map((b, i) => {
             const s = KIND_STYLE[b.kind];
             if (b.low != null && b.high != null && b.high > b.low) {
               return (
@@ -59,27 +115,43 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
             return <line key={i} x1={8} x2={88} y1={y(p)} y2={y(p)} stroke={s.stroke}
               strokeWidth={0.4} strokeDasharray={b.kind === "stop" ? "1.5 1" : "2.5 1.5"} />;
           })}
-          {currentPrice != null && currentPrice > 0 && (
-            <line x1={4} x2={96} y1={y(currentPrice)} y2={y(currentPrice)}
+          {spot != null && (
+            <line x1={4} x2={96} y1={y(spot)} y2={y(spot)}
               stroke="#F59E0B" strokeWidth={0.7} />
           )}
         </svg>
-        {/* Labels — HTML overlay for crisp text */}
-        {bands.map((b, i) => {
+
+        {/* Pinned out-of-window levels — edge tags, not scale stretchers */}
+        {pinnedAbove.map((b, i) => (
+          <span key={`a${i}`}
+            className={clsx("absolute right-1 text-[9px] font-mono leading-none opacity-80", KIND_STYLE[b.kind].text)}
+            style={{ top: `${1 + i * 5}%` }}>
+            ▲ {b.label} {bandPriceText(b)}
+          </span>
+        ))}
+        {pinnedBelow.map((b, i) => (
+          <span key={`b${i}`}
+            className={clsx("absolute right-1 text-[9px] font-mono leading-none opacity-80", KIND_STYLE[b.kind].text)}
+            style={{ bottom: `${1 + i * 5}%` }}>
+            ▼ {b.label} {bandPriceText(b)}
+          </span>
+        ))}
+
+        {/* Labels — HTML overlay, gap-resolved */}
+        {labels.map(({ b, top }, i) => {
           const s = KIND_STYLE[b.kind];
-          const pTop = b.high != null ? y(b.high) : y(b.low ?? 0);
           return (
             <span key={i}
               className={clsx("absolute right-1 text-[10px] font-mono leading-none", s.text)}
-              style={{ top: `${pTop}%`, transform: "translateY(-110%)" }}>
-              {b.label} {b.low != null && b.high != null ? `$${b.low.toFixed(0)}–$${b.high.toFixed(0)}` : `$${(b.low ?? b.high)!.toFixed(0)}`}
+              style={{ top: `${top}%`, transform: "translateY(-50%)" }}>
+              {b.label} {bandPriceText(b)}
             </span>
           );
         })}
-        {currentPrice != null && currentPrice > 0 && (
+        {spot != null && (
           <span className="absolute left-1 text-[10px] font-mono font-bold leading-none text-amber-300"
-            style={{ top: `${y(currentPrice)}%`, transform: "translateY(-110%)" }}>
-            SPOT ${currentPrice.toFixed(2)}
+            style={{ top: `${y(spot)}%`, transform: "translateY(-110%)" }}>
+            SPOT ${spot.toFixed(2)}
           </span>
         )}
       </div>

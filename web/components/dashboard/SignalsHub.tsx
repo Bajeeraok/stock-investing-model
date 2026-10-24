@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { LineChart, Crosshair, LayoutGrid, Grid3x3 } from "lucide-react";
 import type { Signal } from "@/app/page";
 import { SignalsTable } from "./SignalsTable";
+import { SmartDcaPanel } from "./SmartDcaPanel";
 import { HunterPanel, type HunterPanelPayload } from "./HunterPanel";
 import { RoadmapsPanel } from "./RoadmapsPanel";
 import { SignalsHeatmap } from "./SignalsHeatmap";
@@ -167,6 +168,10 @@ export function SignalsHub({
           );
         })}
       </div>
+
+      {/* Dedicated SPY/QQQ smart-DCA section — index tranche timing from the
+          same gate/zone state the table rows carry. */}
+      <SmartDcaPanel signals={signals} />
 
       {subTab !== "hunter" && (
         <div className="rounded-xl border border-slate-700 bg-slate-800/40 px-3 sm:px-4 py-2">

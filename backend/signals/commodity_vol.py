@@ -28,10 +28,17 @@ _VOL_INDEX_BY_TICKER: dict[str, str] = {
     "USO": "^OVX", "UNG": "^OVX", "XLE": "^OVX",
 }
 
+# Tickers with NO published CBOE vol index (grains et al.) — fall back to the
+# ETF's own realized vol, percentiled inside its own 1y range. Same regime
+# semantics (calm/neutral/stress), symbol reported as "RV:{ticker}" so the
+# gate detail reads "RV:WEAT calm (NNth pct)" instead of implying a CBOE index.
+_REALIZED_VOL_TICKERS: set[str] = {"WEAT", "CORN"}
+
 _CACHE: dict[str, dict[str, Any]] = {}
 _CACHE_DATE: str | None = None
 
 _PERIOD = "1y"
+_REALIZED_VOL_WINDOW = 20  # trading days for the realized-vol estimate
 
 
 def _vol_percentile(closes: list[float]) -> float | None:
@@ -44,6 +51,24 @@ def _vol_percentile(closes: list[float]) -> float | None:
     if hi <= lo:
         return None
     return round(100.0 * (cur - lo) / (hi - lo), 1)
+
+
+def _realized_vol_series(closes: list[float], window: int = _REALIZED_VOL_WINDOW) -> list[float]:
+    """Annualized realized vol (%) from a rolling stdev of daily log returns."""
+    import math
+
+    rets = [
+        math.log(closes[i] / closes[i - 1])
+        for i in range(1, len(closes))
+        if closes[i - 1] > 0 and closes[i] > 0
+    ]
+    out: list[float] = []
+    for i in range(window, len(rets) + 1):
+        w = rets[i - window : i]
+        mu = sum(w) / len(w)
+        var = sum((r - mu) ** 2 for r in w) / (len(w) - 1)
+        out.append(math.sqrt(var) * math.sqrt(252) * 100.0)
+    return out
 
 
 def _vol_regime(pct: float | None) -> str | None:
@@ -65,36 +90,50 @@ def commodity_vol_snapshot(ticker: str | None) -> dict[str, Any] | None:
     global _CACHE_DATE
     if not ticker:
         return None
-    sym = _VOL_INDEX_BY_TICKER.get(str(ticker).upper())
-    if not sym:
+    ticker_up = str(ticker).upper()
+    sym = _VOL_INDEX_BY_TICKER.get(ticker_up)
+    realized_fallback = sym is None and ticker_up in _REALIZED_VOL_TICKERS
+    if sym is None and not realized_fallback:
         return None
+    fetch_sym = ticker_up if realized_fallback else sym
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if _CACHE_DATE != today:
         _CACHE.clear()
         _CACHE_DATE = today
-    if sym in _CACHE:
-        cached = _CACHE[sym]
+    cache_key = f"RV:{ticker_up}" if realized_fallback else sym
+    if cache_key in _CACHE:
+        cached = _CACHE[cache_key]
     else:
         cached = {"level": None, "percentile": None}
         try:
             from signals.fetcher import fetch_ohlcv_safe
 
-            close = fetch_ohlcv_safe(sym, _PERIOD)
+            close = fetch_ohlcv_safe(fetch_sym, _PERIOD)
             if close is not None and len(close) > 0:
                 closes = [float(x) for x in list(close.values)]
-                cached = {
-                    "level": round(closes[-1], 2),
-                    "percentile": _vol_percentile(closes),
-                }
+                if realized_fallback:
+                    # No CBOE index exists for grains — percentile the ETF's own
+                    # 20d realized vol inside its trailing 1y path.
+                    rv = _realized_vol_series(closes)
+                    if rv:
+                        cached = {
+                            "level": round(rv[-1], 2),
+                            "percentile": _vol_percentile(rv),
+                        }
+                else:
+                    cached = {
+                        "level": round(closes[-1], 2),
+                        "percentile": _vol_percentile(closes),
+                    }
         except Exception as e:
-            logger.debug("commodity_vol %s: %s", sym, e)
-        _CACHE[sym] = cached
+            logger.debug("commodity_vol %s: %s", fetch_sym, e)
+        _CACHE[cache_key] = cached
 
     if cached["level"] is None:
         return None
     return {
-        "symbol": sym,
+        "symbol": cache_key,
         "level": cached["level"],
         "percentile": cached["percentile"],
         "regime": _vol_regime(cached["percentile"]),
