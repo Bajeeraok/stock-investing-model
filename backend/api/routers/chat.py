@@ -33,7 +33,12 @@ SYSTEM_PROMPT = """You are a copilot for a stock investing model. You answer que
 RULES:
 - Base answers strictly on the context data below. Do not invent numbers or tickers.
 - If the user asks about a ticker not in the data, say it's not in the current watchlist/portfolio.
-- Explain model outputs (scores, regime, signals) in plain English. Do not give financial advice.
+- Explain model outputs in plain English using the decision fields provided:
+  gates (what blocks the entry), entry_mode (full_go/starter_only/hard_lock),
+  entry bands (price zones to buy into), dip_zone (score-30-50 dip cohort),
+  unlock_sequence (what has to happen before buying), R:R, and vs-FV%.
+- For "should I buy / is this a good entry" questions, lead with entry_mode +
+  the specific gate blocking + the band range — never generic advice.
 - Keep answers concise (2-4 sentences unless summarizing many items).
 - Never recommend buying or selling; only explain what the model shows.
 - When comparing, cite specific values from the data.
@@ -55,7 +60,24 @@ def _build_context(dashboard_snapshot: dict | None) -> str:
                 sig = s.get("signal", "")
                 sugg = s.get("short_suggestion", "")
                 rsi = s.get("rsi")
-                rows.append(f"  {t}: score={score} regime={regime} signal={sig} RSI={rsi} suggestion={sugg}")
+                # Decision fields — this is what the LLM needs to actually
+                # explain the signal, not just parrot the score back.
+                em = s.get("entry_mode") or ""
+                gp = s.get("gates_passed")
+                gt = s.get("gates_total")
+                st_band = s.get("st_band") or {}
+                band_txt = ""
+                if st_band.get("low") is not None and st_band.get("high") is not None:
+                    band_txt = f" st_band=${st_band['low']:.0f}–${st_band['high']:.0f}"
+                unlock = s.get("unlock_sequence") or s.get("unlock_summary") or ""
+                dip = " dip_zone" if s.get("dip_zone") else ""
+                gate_txt = f" gates={gp}/{gt}" if gp is not None and gt is not None else ""
+                em_txt = f" entry_mode={em}" if em else ""
+                un_txt = f" unlock={unlock[:80]}" if unlock else ""
+                rows.append(
+                    f"  {t}: score={score} regime={regime} signal={sig} RSI={rsi} suggestion={sugg}"
+                    f"{em_txt}{gate_txt}{band_txt}{dip}{un_txt}"
+                )
             parts.append("Signals:\n" + "\n".join(rows))
         if dashboard_snapshot.get("portfolio", {}).get("per_holding"):
             rows = []

@@ -154,6 +154,33 @@ def _macro_regime_snapshot() -> tuple[str | None, float | None]:
     return label, score
 
 
+def _iv_rank_from_investor(investor_out: dict[str, Any]) -> float | None:
+    """Pull IV rank from wherever upstream layers stashed it on investor_out."""
+    for key in ("iv_rank", "options_iv_rank"):
+        v = investor_out.get(key)
+        if isinstance(v, (int, float)):
+            return float(v)
+    for key in ("options_signals", "options", "options_sentiment"):
+        blk = investor_out.get(key)
+        if isinstance(blk, dict):
+            v = blk.get("iv_rank")
+            if isinstance(v, (int, float)):
+                return float(v)
+    # Fused confidence embeds the raw options_signals result under
+    # confidence.breakdown.options_sentiment — the iv_rank lives there.
+    conf = investor_out.get("confidence")
+    if isinstance(conf, dict):
+        bd = conf.get("breakdown")
+        if isinstance(bd, dict):
+            for k in ("options_sentiment", "options"):
+                blk = bd.get(k)
+                if isinstance(blk, dict):
+                    v = blk.get("iv_rank")
+                    if isinstance(v, (int, float)):
+                        return float(v)
+    return None
+
+
 def _global_regime_bull_pct(global_market_regime: str | None) -> float | None:
     g = (global_market_regime or "").upper()
     if g in ("BULL", "STRONG_BULL"):
@@ -804,6 +831,7 @@ def derive_entry_mode(
     market_regime_bull_pct: float | None = None,
     macro_regime_label: str | None = None,
     commodity_vol_regime: str | None = None,
+    iv_rank: float | None = None,
 ) -> dict[str, Any]:
     """
     Conditional sizing from gate matrix (valuation × tech × zone).
@@ -844,6 +872,7 @@ def derive_entry_mode(
     ) or macro_bull or commodity_calm
 
     full_go_via: str | None = None
+    detail_note: str | None = None
     if assessment_pct < 0 or verdict in ("AVOID", "REDUCE", "SELL"):
         mode: EntryMode = "hard_lock"
     elif gate_cleared and val_full and tech_ok:
@@ -859,6 +888,12 @@ def derive_entry_mode(
         # So a starter requires BOTH an actionable zone AND at least partial
         # valuation support — pure-timing fails are buyable, value fails are not.
         mode = "starter_only"
+        # Knife filter: elevated IV rank at the entry band means the dip is
+        # priced for a big move — the "falling knife" slice inside the losing
+        # starter cohort. Demote to hard_lock; IV rank < 75 keeps the starter.
+        if iv_rank is not None and iv_rank > 75:
+            mode = "hard_lock"
+            detail_note = f"IV rank {iv_rank:.0f} — dip priced for large move, knife risk"
     else:
         mode = "hard_lock"
 
@@ -920,6 +955,8 @@ def derive_entry_mode(
         headline = "No new entries"
         if assessment_pct < 0:
             detail = "Rich vs model fair value — hold or trim only; no adds at this price."
+        elif detail_note:
+            detail = detail_note
         else:
             detail = (
                 "Insufficient margin of safety and no actionable band at spot — "
@@ -1507,6 +1544,7 @@ def enrich_investor_summary_retail_action(
         else investor_out.get("market_regime_bull_pct"),
         macro_regime_label=macro_label,
         commodity_vol_regime=(commodity_vol or {}).get("regime"),
+        iv_rank=_iv_rank_from_investor(investor_out),
     )
     ra.update(entry)
     if entry["entry_mode"] == "full_go":

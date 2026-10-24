@@ -448,6 +448,22 @@ def _driver_context_from_detail(ticker_detail: dict, conf: dict) -> dict:
     if macro:
         ctx["macro"] = macro
 
+    # New retail_action fields — let the narrative surface the measured
+    # dip-zone edge and which full_go path fired (all_gates vs catch-up).
+    retail_action = (ticker_detail.get("investor_summary") or {}).get("retail_action") or {}
+    if retail_action.get("dip_zone"):
+        ctx["dip_zone"] = True
+    if retail_action.get("full_go_via"):
+        ctx["full_go_via"] = retail_action["full_go_via"]
+    regime_gate = next(
+        (g for g in (retail_action.get("gates") or []) if g.get("id") == "regime"), {}
+    )
+    if regime_gate.get("macro_regime"):
+        ctx.setdefault("macro", {})["retail_gate_label"] = regime_gate["macro_regime"]
+        ctx.setdefault("macro", {})["retail_gate_score"] = regime_gate.get("macro_score")
+    if regime_gate.get("commodity_vol"):
+        ctx["commodity_vol"] = regime_gate["commodity_vol"]
+
     cal = (
         ticker_detail.get("economic_calendar")
         or ticker_detail.get("macro_events")
