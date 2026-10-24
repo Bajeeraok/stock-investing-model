@@ -33,14 +33,27 @@ def primary_gates_detail(row: dict[str, Any]) -> list[dict[str, Any]]:
     for g in gates:
         if not isinstance(g, dict) or g.get("id") not in PRIMARY_GATE_IDS:
             continue
-        out.append(
-            {
-                "id": g.get("id"),
-                "label": g.get("label"),
-                "pass": bool(g.get("pass")),
-                "detail": (g.get("detail") or "")[:200],
-            }
-        )
+        slim: dict[str, Any] = {
+            "id": g.get("id"),
+            "label": g.get("label"),
+            "pass": bool(g.get("pass")),
+            "detail": (g.get("detail") or "")[:200],
+        }
+        # Preserve diagnostic context fields when present — forward tracking
+        # parses these (macro_regime, macro_score, commodity_vol on the regime
+        # gate; visual_status/marginal_pass on any gate). They used to be
+        # dropped here, so audit rows couldn't parse the override cohorts.
+        for k in (
+            "macro_regime",
+            "macro_score",
+            "commodity_vol",
+            "visual_status",
+            "marginal_pass",
+            "regime_weather_status",
+        ):
+            if g.get(k) is not None:
+                slim[k] = g.get(k)
+        out.append(slim)
     return out
 
 
