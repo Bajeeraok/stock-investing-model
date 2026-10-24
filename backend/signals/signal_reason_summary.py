@@ -278,7 +278,13 @@ def _build_headline(
     if gate_cleared or entry_mode == "full_go":
         helps = [f for f in factors if f.get("stance") == "helps"]
         top = helps[0]["label"] if helps else "Model checks"
-        text = f"Model aligns — {top.lower()} leads, and all four entry gates are green for a staged add."
+        any_fail = any(g.get("id") in PRIMARY_GATE_IDS and not g.get("pass") for g in gates)
+        if any_fail:
+            # full_go via market/macro/commodity catch-up — a gate visibly failed,
+            # don't claim "all gates green".
+            text = f"Model aligns — {top.lower()} leads; full go via the bull-tape catch-up path."
+        else:
+            text = f"Model aligns — {top.lower()} leads, and all four entry gates are green for a staged add."
         return _PERSONA_PREFIX.get(persona, "") + text
 
     failed = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS and not g.get("pass")]

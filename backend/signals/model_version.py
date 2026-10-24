@@ -47,8 +47,21 @@ History:
   themselves, but it changes fair_value, targets, and bear_case materially enough for
   high-growth names that forward-tracking history before this boundary isn't
   apples-to-apples with history after it.
+- 2026.10.1 — entry-mode v2: starter_only now requires an actionable zone AND
+  at least partial valuation support (was either) after the gate-fail slice audit
+  measured -0.65% expectancy on valuation-fail starters (758/1,160 rows); full_go
+  additionally opens via market_regime_override when only the stock's own regime
+  gate fails while the broad tape is bull, FRED macro is BULL, or the commodity's
+  own vol regime is calm — tagged full_go_via for cohort tracking; dip_zone flag
+  for the measured score-30-50 edge; IV-rank>75 demotes in-zone starters (knife
+  filter). Gate thresholds: REGIME_GATE 60->55, CONFIDENCE_GATE 55->50,
+  ST_ML_GATE 25->30; MOS ladder 10/18/25 -> 8/15/22; zone compression
+  14/30/45% -> 12/35/50%; score.interpretation force_mean_reverting 2->45 and
+  force_trending 0->7 tickers fitted from 21d forward spreads on 148 prod EOD
+  snapshots. Forward records before this boundary mix pre/post entry-mode
+  semantics — compare cohorts by version, not pooled.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.09.4"
+MODEL_VERSION = "2026.10.1"
