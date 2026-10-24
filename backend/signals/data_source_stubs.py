@@ -31,10 +31,18 @@ def get_fred_series(config: dict, series_id: str) -> tuple[list | None, str | No
 
 
 def get_cboe_gvz(config: dict) -> tuple[float | None, str | None]:
-    """CBOE Gold Volatility Index (GVZ). Placeholder – options market expects big move."""
-    # CBOE data may be available via yfinance (^GVZ) or paid API
-    # TODO: fetch ^GVZ, compare to historical avg for "elevated" flag
-    return None, "Not implemented yet"
+    """CBOE Gold Volatility Index (GVZ) — implemented in signals/commodity_vol.py
+    (per-day cached ^GVZ/^OVX level + 52w percentile + regime; grains fall back to
+    own realized vol). This stub delegates to it for backward compat."""
+    try:
+        from signals.commodity_vol import commodity_vol_snapshot
+
+        snap = commodity_vol_snapshot("GLD")  # GLD maps to ^GVZ
+        if snap and snap.get("level") is not None:
+            return float(snap["level"]), None
+        return None, "GVZ fetch returned no data"
+    except Exception as e:
+        return None, f"commodity_vol unavailable: {e}"
 
 
 def get_cftc_cot(config: dict, symbol: str = "gold") -> tuple[dict | None, str | None]:
