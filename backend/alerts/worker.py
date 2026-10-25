@@ -23,6 +23,16 @@ def _options_iv_worker_enabled() -> bool:
         return False
 
 
+def _band_trigger_worker_enabled() -> bool:
+    """Intraday BAND_ENTRY triggers — price crossing into st_band. config: alerts.enable_band_triggers"""
+    try:
+        from config_loader import load_config
+
+        return bool((load_config().get("alerts") or {}).get("enable_band_triggers", False))
+    except Exception:
+        return False
+
+
 def _load_symbols() -> list[str]:
     """
     Default symbol universe: config watchlist + portfolio tickers (deduped).
@@ -96,6 +106,19 @@ def run_worker(data_root: Path) -> None:
 
     while True:
         try:
+            # Intraday band triggers run regardless of the IV worker — they're
+            # the actionable "price entered the zone" feed the scanner shows.
+            if _band_trigger_worker_enabled():
+                try:
+                    from alerts.band_triggers import BandTriggerEngine
+
+                    evts = BandTriggerEngine(data_root).check(symbols)
+                    if evts:
+                        store.append_events(evts)
+                        logger.info("[alerts] band triggers fired=%d", len(evts))
+                except Exception as be:
+                    logger.warning("[alerts] band trigger check failed: %s", be)
+
             if not _options_iv_worker_enabled():
                 logger.info("[alerts] options IV worker disabled (alerts.enable_options_iv_worker=false); sleeping 1h")
                 time.sleep(3600)
