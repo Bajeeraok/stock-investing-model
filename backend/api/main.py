@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -103,7 +104,17 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             raise
 
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    startup()
+    try:
+        yield
+    finally:
+        shutdown()
+
+
 app = FastAPI(
+    lifespan=_lifespan,
     title="Stock Investing Model API",
     description="Decision-support dashboard for retail investors",
     version="1.0.0",
@@ -231,7 +242,6 @@ def _startup_background_refresh(delay_s: float = 10.0, max_age_min: float = 20.0
         logger.warning("[startup] background refresh failed to start: %s", e)
 
 
-@app.on_event("startup")
 def startup():
     logger.info("FastAPI server startup complete. Listening for requests on /api/*")
     try:
@@ -292,7 +302,6 @@ def startup():
         logger.warning("Market scheduler failed to start: %s", e)
 
 
-@app.on_event("shutdown")
 def shutdown():
     try:
         eod_scheduler.shutdown()

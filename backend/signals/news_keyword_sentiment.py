@@ -373,9 +373,17 @@ def score_headline_text(title: str, text: str = "", *, ticker: str | None = None
     bull = len(words & lb)
     bear = len(words & dk)
     bear += _phrase_bear_hits(combined) * 2
+    try:
+        from signals.alpha.finbert import finbert_score
+
+        fb = finbert_score(combined)
+    except Exception:
+        fb = None
     if bull + bear == 0:
-        return 0.0, False
+        return (float(np.clip(fb, -1.0, 1.0)), True) if fb is not None else (0.0, False)
     raw = (bull - bear) / float(bull + bear)
+    if fb is not None:
+        raw = 0.5 * raw + 0.5 * fb
     return float(np.clip(raw, -1.0, 1.0)), True
 
 
