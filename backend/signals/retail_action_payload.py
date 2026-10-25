@@ -1565,6 +1565,25 @@ def enrich_investor_summary_retail_action(
     except (TypeError, ValueError):
         ra["dip_zone"] = False
 
+    # Prefer-index check — if this cohort's measured excess vs SPY after costs is not
+    # positive, owning the index beats taking the setup.
+    ra["prefer_index"] = False
+    try:
+        from signals.alpha.excess import prefer_index_for_payload
+
+        idx_check = prefer_index_for_payload(
+            entry_mode=ra.get("entry_mode"),
+            score=investor_out.get("composite_buy"),
+        )
+        if idx_check:
+            ra["index_check"] = idx_check
+            if idx_check.get("prefer_index"):
+                ra["prefer_index"] = True
+                ra["action_title"] = f"Prefer {idx_check.get('benchmark') or 'SPY'} — no measured edge"
+                ra["action_light"] = "yellow"
+    except Exception:
+        pass
+
     ra["unlock_sequence"] = build_unlock_sequence(
         ra.get("gates") or [],
         stock_bull_pct=investor_out.get("regime_bull_pct"),

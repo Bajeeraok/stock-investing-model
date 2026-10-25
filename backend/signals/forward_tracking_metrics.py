@@ -402,6 +402,11 @@ def aggregate_horizon_stats(
         "st_target_hit_rate_pct": round(100.0 * len(st_hits) / n, 1) if n else None,
         "st_stop_hit_rate_pct": round(100.0 * len(stop_hits) / n, 1) if n else None,
     }
+    excess = [float(r["excess_return_pct"]) for r in rows if r.get("excess_return_pct") is not None]
+    if excess:
+        out["avg_excess_return_pct"] = round(sum(excess) / len(excess), 2)
+        out["beat_benchmark_pct"] = round(100.0 * sum(1 for x in excess if x > 0) / len(excess), 1)
+        out["n_excess"] = len(excess)
     if trim_rows:
         nets = [float(r["trim_net_score_pct"]) for r in trim_rows]
         out["trim_avg_net_score_pct"] = round(sum(nets) / len(nets), 2)

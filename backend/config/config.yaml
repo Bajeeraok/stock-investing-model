@@ -734,6 +734,13 @@ retail_gates:
   momentum_pattern_marginal_max: 43
 
 # Forward tracking panel (Analysis tab)
+alpha:
+  # Benchmark-relative decision layer (signals/alpha). Build the artifact with
+  # `python scripts/build_cohort_expectancy.py`; with no artifact nothing changes.
+  prefer_index:
+    enabled: true
+    artifact_path: data/alpha/cohort_expectancy.json
+    min_n: 30                # cohort needs this many tracked outcomes before it can override
 forward_tracking:
   max_pairs_per_horizon: 60              # snapshot-step pairs per horizon (raise if cohort is large)
   max_records_response: 2000             # most recent rows returned to UI

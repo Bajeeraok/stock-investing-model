@@ -112,6 +112,18 @@ export type RetailActionPayload = {
   full_go_via?: string | null;
   /** score 30–50 dip zone inside entry band — measured edge cohort */
   dip_zone?: boolean;
+  /** cohort's measured excess vs SPY after costs is not positive → own the index instead */
+  prefer_index?: boolean;
+  index_check?: {
+    prefer_index?: boolean | null;
+    edge_confirmed?: boolean;
+    benchmark?: string;
+    cohort?: string | null;
+    n?: number;
+    net_excess_pct?: number;
+    beat_benchmark_pct?: number;
+    reason?: string;
+  };
   valuation_tier?: "full_mos" | "partial_mos" | "none";
   tech_gates_pass?: boolean;
   zone_context?: {
@@ -472,6 +484,9 @@ export function EntryModeBanner({
   maxSizingPct,
   fullGoVia,
   dipZone,
+  preferIndex,
+  indexReason,
+  benchmark,
   className,
 }: {
   mode?: RetailActionPayload["entry_mode"];
@@ -482,6 +497,10 @@ export function EntryModeBanner({
   fullGoVia?: string | null;
   /** dip-but-not-broken cohort: composite 30–50 inside entry zone (measured +6%/62.6% hit) */
   dipZone?: boolean;
+  /** measured cohort trails the index after costs */
+  preferIndex?: boolean;
+  indexReason?: string | null;
+  benchmark?: string | null;
   className?: string;
 }) {
   if (!mode || !headline) return null;
@@ -498,6 +517,14 @@ export function EntryModeBanner({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-90">Entry mode</p>
         <span className="flex items-center gap-1.5 flex-wrap">
+          {preferIndex ? (
+            <span
+              className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-sky-400/60 bg-sky-400/15 text-sky-300"
+              title={indexReason || "Similar setups have not beaten the index after costs"}
+            >
+              PREFER {benchmark || "SPY"}
+            </span>
+          ) : null}
           {dipZone ? (
             <span
               className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-emerald-400/60 bg-emerald-400/15 text-emerald-300"
@@ -524,6 +551,9 @@ export function EntryModeBanner({
         ) : null}
       </p>
       {detail ? <p className="text-xs opacity-90 leading-snug">{detail}</p> : null}
+      {preferIndex && indexReason ? (
+        <p className="text-xs leading-snug text-sky-200">{indexReason}</p>
+      ) : null}
     </div>
   );
 }

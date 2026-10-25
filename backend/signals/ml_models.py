@@ -258,6 +258,19 @@ def predict_all_horizons(
     return result
 
 
+VAL_SHARE_OF_TRAIN = 0.20
+
+
+def purged_split_bounds(n: int, purge: int) -> tuple[int, int, int, int]:
+    """(train_end, val_start, val_end, test_start) for train|purge|val|purge|test."""
+    trainval_end = int(n * TRAIN_SPLIT_RATIO)
+    te_start = min(n, trainval_end + purge)
+    va_end = trainval_end
+    tr_end = max(0, int(trainval_end * (1 - VAL_SHARE_OF_TRAIN)))
+    va_start = min(va_end, tr_end + purge)
+    return tr_end, va_start, va_end, te_start
+
+
 def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") -> dict:
     """
     Train LightGBM on historical df with regime-aware weighting.
@@ -293,11 +306,18 @@ def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") ->
     y      = labelled["target"]
     regime = labelled[regime_col] if regime_col in labelled.columns else None
 
-    split    = int(len(X) * TRAIN_SPLIT_RATIO)
-    X_train, X_test   = X.iloc[:split],      X.iloc[split:]
-    y_train, y_test   = y.iloc[:split],      y.iloc[split:]
-    reg_train         = regime.iloc[:split]  if regime is not None else None
-    reg_test          = regime.iloc[split:]  if regime is not None else None
+    # Chronological train | purge | validation | purge | test. The purge gap equals the
+    # label horizon so no training label window overlaps validation/test bars. Early
+    # stopping uses validation only; reported metrics use the untouched test slice.
+    purge = int(HORIZONS.get(horizon_key, HORIZONS["short"])["days"])
+    tr_end, va_start, va_end, te_start = purged_split_bounds(len(X), purge)
+    X_train, y_train = X.iloc[:tr_end], y.iloc[:tr_end]
+    X_val,   y_val   = X.iloc[va_start:va_end], y.iloc[va_start:va_end]
+    X_test,  y_test  = X.iloc[te_start:], y.iloc[te_start:]
+    reg_train = regime.iloc[:tr_end]   if regime is not None else None
+    reg_test  = regime.iloc[te_start:] if regime is not None else None
+    if len(y_val) < 20 or len(y_test) < 20:
+        return {"error": f"Insufficient data after purged split (val={len(y_val)}, test={len(y_test)})"}
 
     if len(y_train) < 100 or y_train.nunique() < 2:
         return {"error": "Training set too small or only one class"}
@@ -343,8 +363,11 @@ def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") ->
     model.fit(
         X_train, y_train,
         sample_weight=sample_weights,
-        eval_set=[(X_test, y_test)],
-        callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(-1)],
+        eval_set=[(X_val, y_val)] if y_val.nunique() >= 2 else None,
+        callbacks=(
+            [lgb.early_stopping(50, verbose=False), lgb.log_evaluation(-1)]
+            if y_val.nunique() >= 2 else [lgb.log_evaluation(-1)]
+        ),
     )
 
     path = _model_path(ticker, horizon_key)
@@ -354,7 +377,9 @@ def train_and_save(ticker: str, df: pd.DataFrame, horizon_key: str = "short") ->
     # ── Global metrics ────────────────────────────────────────────────────
     metrics: dict = {
         "n_train":          len(y_train),
+        "n_val":            len(y_val),
         "n_test":           len(y_test),
+        "purge_bars":       purge,
         "regime_coverage":  coverage,
         "regime_warnings":  warnings_list,
     }

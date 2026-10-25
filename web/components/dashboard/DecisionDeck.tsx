@@ -319,6 +319,9 @@ export function DecisionDeck({
             maxSizingPct={ra.max_sizing_pct}
             fullGoVia={ra.full_go_via}
             dipZone={ra.dip_zone}
+            preferIndex={ra.prefer_index}
+            indexReason={ra.index_check?.reason}
+            benchmark={ra.index_check?.benchmark}
           />
         )}
 

@@ -302,6 +302,9 @@ def get_forward_tracking(
             "message": f"Forward tracking metrics unavailable: {imp_err}",
         }
 
+    from signals.alpha.excess import excess_return_pct
+
+    bench_tk = str(ft_cfg.get("benchmark_ticker") or "SPY").upper()
     for horizon in horizon_list:
         if horizon >= len(dates):
             continue
@@ -314,6 +317,15 @@ def get_forward_tracking(
             start_idx = date_to_idx.get(as_of_date)
             if start_idx is None:
                 continue
+            bench_ret_pct: float | None = None
+            b_row, b_next = run_by_ticker.get(bench_tk), run_next_by_ticker.get(bench_tk)
+            if b_row and b_next:
+                try:
+                    bench_ret_pct, _bq = compute_validated_forward_return(
+                        b_row, b_next, horizon=horizon, ticker=bench_tk
+                    )
+                except Exception:
+                    bench_ret_pct = None
 
             for ticker in syms:
                 tk = str(ticker).upper()
@@ -427,6 +439,10 @@ def get_forward_tracking(
                     "our_signal": our_signal,
                     "signal_source": signal_source,
                     "actual_return_pct": ret_pct,
+                    "benchmark_ticker": bench_tk,
+                    "benchmark_return_pct": bench_ret_pct,
+                    "excess_return_pct": excess_return_pct(ret_pct, bench_ret_pct),
+                    "composite_buy": row_work.get("composite_buy"),
                     "forward_status": "complete",
                     "data_quality": data_quality,
                     "close_at_signal": round(close_at_signal_val, 4),
