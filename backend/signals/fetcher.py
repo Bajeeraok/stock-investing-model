@@ -768,7 +768,10 @@ def _fetch_index_etf_history_frame(sym: str, period: str) -> pd.DataFrame | None
         )
         if hist is None or hist.empty or "Close" not in hist.columns:
             return None
-        return hist.dropna(subset=["Close"])
+        hist = hist.dropna(subset=["Close"])
+        if getattr(hist.index, "tz", None) is not None:
+            hist.index = hist.index.tz_localize(None).normalize()
+        return hist
     except Exception as e:
         logger.debug("[yfinance] index ETF history frame failed %s: %s", sym, e)
         return None
