@@ -93,6 +93,26 @@ const SIGNAL_STYLES: Record<string, { bg: string; text: string; border: string; 
   },
 };
 
+/** DIP_ZONE row badge — same rule as backend retail_action dip_zone:
+ *  score 30–50 ("dip, not broken") AND an actionable entry mode. The
+ *  measured edge cohort (+6.01%/62.6% audit) — surfaces it in the table,
+ *  not just the modal banner. */
+function DipZoneBadge({ r }: { r: Signal }) {
+  const s = r.composite_buy;
+  const em = (r.entry_mode || "").toLowerCase();
+  if (!(s != null && s >= 30 && s < 50 && (em === "starter_only" || em === "full_go"))) {
+    return null;
+  }
+  return (
+    <span
+      className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold whitespace-nowrap bg-cyan-500/15 text-cyan-300 border-cyan-500/40"
+      title="Dip-zone: 'dip, not broken' score band with an actionable entry — the measured edge cohort"
+    >
+      DIP ZONE
+    </span>
+  );
+}
+
 function SignalBadge({ signal }: { signal: string | null | undefined }) {
   const s = (signal ?? "HOLD").toUpperCase();
   const style = SIGNAL_STYLES[s] ?? SIGNAL_STYLES["HOLD"];
@@ -847,6 +867,7 @@ function SignalsMobileFullCard({
             {r.regime ?? "-"}
           </span>
           <SignalBadge signal={r.signal} />
+          <DipZoneBadge r={r} />
           {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
         </div>
       )}
