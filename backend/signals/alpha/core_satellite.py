@@ -52,6 +52,10 @@ def regime_series(close: pd.Series, ma_days: int = 200, band_pct: float = 1.0) -
     return pd.Series(state, index=close.index)
 
 
+def _bonds(c: dict) -> bool:
+    return str(c.get("risk_off_asset") or "cash").lower() not in ("cash", "tbills", "t-bills", "")
+
+
 def allocation(spy_close: pd.Series, *, satellite_validated: bool = False, cfg: dict | None = None) -> dict[str, Any]:
     """Today's recommended split (percent of portfolio) plus the evidence behind it."""
     c = _cfg(cfg)
@@ -77,12 +81,15 @@ def allocation(spy_close: pd.Series, *, satellite_validated: bool = False, cfg: 
         "spy_vs_sma_pct": round(100 * (last / sma - 1), 2),
         "core_spy_pct": round(equity - sat, 1),
         "satellite_pct": round(sat, 1),
-        "cash_pct": round(100 - equity, 1),
+        "risk_off_asset": str(c.get("risk_off_asset") or "cash"),
+        "bonds_pct": round(100 - equity, 1) if _bonds(c) else 0.0,
+        "cash_pct": 0.0 if _bonds(c) else round(100 - equity, 1),
         "satellite_validated": bool(satellite_validated),
         "satellite_note": sat_note,
         "rule": (
             f"SPY vs {int(c['ma_days'])}d SMA with ±{c['band_pct']}% band: risk-on {c['risk_on_equity_pct']}% "
-            f"equity, risk-off {c['risk_off_equity_pct']}% equity (rest in T-bills)."
+            f"equity, risk-off {c['risk_off_equity_pct']}% equity "
+            f"(rest in {c.get('risk_off_asset') if _bonds(c) else 'T-bills'})."
         ),
     }
 
@@ -92,6 +99,7 @@ def backtest(
     cash_yield_pct: pd.Series | float = 0.0,
     *,
     cfg: dict | None = None,
+    alt_returns: pd.Series | None = None,
 ) -> dict[str, Any]:
     """Daily backtest of the regime rule vs buy-and-hold SPY (signal on close, trade next day)."""
     c = _cfg(cfg)
@@ -107,7 +115,8 @@ def backtest(
     else:
         cy = pd.Series(float(cash_yield_pct) / 100 / 252, index=ret.index)
     turn = w.diff().abs().fillna(0.0)
-    strat = w * ret + (1 - w) * cy - turn * float(c["cost_bps"]) / 1e4
+    alt = cy if alt_returns is None else alt_returns.reindex(ret.index).fillna(0.0)
+    strat = w * ret + (1 - w) * alt - turn * float(c["cost_bps"]) / 1e4
     return {
         "start": str(ret.index[0].date()),
         "end": str(ret.index[-1].date()),

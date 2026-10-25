@@ -1035,4 +1035,5 @@ core_satellite:
   risk_on_equity_pct: 100
   risk_off_equity_pct: 30
   satellite_pct: 20
+  risk_off_asset: IEF   # 2002–26: 30% SPY + 70% IEF Sharpe 0.84 / DD −24.8% vs T-bills 0.80 / −26.5% (SPY 0.66 / −55%)
   cost_bps: 5

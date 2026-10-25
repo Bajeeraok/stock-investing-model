@@ -45,3 +45,4 @@ Thumbs.db
 *.log
 logs/
 backend/data/edgar_cache/
+backend/data/earnings_cache/

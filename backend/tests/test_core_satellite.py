@@ -52,3 +52,19 @@ def test_satellite_validated_reads_fundamental_artifact(tmp_path):
     assert satellite_validated(tmp_path) is False
     (tmp_path / "fundamental_validation.json").write_text(json.dumps({"validated": True}))
     assert satellite_validated(tmp_path) is True
+
+
+def test_risk_off_remainder_goes_to_bonds_when_configured():
+    import numpy as np
+    import pandas as pd
+
+    from signals.alpha.core_satellite import allocation, backtest
+
+    idx = pd.bdate_range("2015-01-01", periods=400)
+    close = pd.Series(np.r_[np.linspace(100, 150, 300), np.linspace(150, 90, 100)], index=idx)
+    a = allocation(close, cfg={"risk_off_asset": "IEF"})
+    assert a["regime"] == "risk_off" and a["bonds_pct"] == 70 and a["cash_pct"] == 0
+    bond = pd.Series(0.0004, index=idx)
+    with_bonds = backtest(close, 0.0, alt_returns=bond)
+    cash = backtest(close, 0.0)
+    assert with_bonds["regime"]["cagr_pct"] > cash["regime"]["cagr_pct"]
