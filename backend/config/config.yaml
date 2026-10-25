@@ -710,6 +710,7 @@ signal_audit:
 # band when tech gates fail.
 retail_gates:
   regime_bull_pct_min: 60
+  starter_only_enabled: false   # measured below SPY in prod snapshots; true restores starter sleeves
   valuation_mos_ladder_pct: [10, 18, 25]   # required MOS % by tranche depth: [T1, T2, T3]
   valuation_regime_addon_pct:              # one-way ratchet: added to the ladder rung, never subtracted
     bull: 0                                # regime_bull_pct >= regime_bull_pct_min
@@ -1023,3 +1024,15 @@ tax_aware_exit:
   lt_fed_pct: 15
   lt_state_pct: 7
   approaching_days: 90   # flag when this many days or fewer until LTCG
+
+# SPY core / satellite allocation (signals/alpha/core_satellite.py, GET /api/alpha/allocation).
+# Backtest 1993-2026 (scripts/regime_allocation_backtest.py): Sharpe 0.81 vs 0.64 B&H,
+# max DD -26.5% vs -55.2%, CAGR 10.0% vs 10.8%. Satellite opens only when a selection
+# signal is validated out-of-sample; otherwise it folds into SPY.
+core_satellite:
+  ma_days: 200
+  band_pct: 1.0
+  risk_on_equity_pct: 100
+  risk_off_equity_pct: 30
+  satellite_pct: 20
+  cost_bps: 5

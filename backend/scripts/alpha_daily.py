@@ -31,6 +31,19 @@ from scripts.train_alpha_model import download
 OUT = ROOT / "data" / "alpha"
 
 
+def _core_satellite(has_picks: bool) -> dict:
+    """SPY core / regime exposure; pick weights are scaled into the satellite sleeve only."""
+    from config_loader import load_config
+    from signals.alpha.core_satellite import allocation, satellite_validated
+    from signals.fetcher import _fetch_index_etf_history_frame
+
+    hist = _fetch_index_etf_history_frame("SPY", "2y")
+    if hist is None or hist.empty:
+        return {"status": "unavailable", "satellite_pct": 0.0}
+    cfg = (load_config() or {}).get("core_satellite") or {}
+    return allocation(hist["Close"], satellite_validated=has_picks and satellite_validated(OUT), cfg=cfg)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=None)
@@ -59,6 +72,11 @@ def main() -> None:
     rets = pd.DataFrame({t: d["close"].pct_change() for t, d in data.items() if t in scores.index})
     picks = rank_and_pick(scores, rets, prob_col=prob_col, sector_of=sectors) if prob_col in scores else {
         "picks": [], "note": f"{args.horizon} model not promoted — prefer SPY"}
+    picks["allocation"] = _core_satellite(bool(picks.get("picks")))
+    sat = float(picks["allocation"].get("satellite_pct") or 0.0) / 100
+    for pk in picks.get("picks", []):
+        if isinstance(pk, dict) and "weight" in pk:
+            pk["portfolio_weight"] = round(float(pk["weight"]) * sat, 4)
     picks["as_of"] = scores["as_of"].iloc[0] if len(scores) else None
     picks["generated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     (OUT / "latest_picks.json").write_text(json.dumps(picks, indent=2, default=str))

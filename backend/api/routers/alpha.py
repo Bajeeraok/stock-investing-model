@@ -36,3 +36,19 @@ def alpha_cohorts():
 @router.get("/alpha/drift")
 def alpha_drift():
     return _read_json("drift_report.json") or {"status": "unknown", "note": "run scripts/alpha_daily.py"}
+
+
+@router.get("/allocation")
+def alpha_allocation() -> dict:
+    """SPY core / satellite split from the trend-regime rule (see signals/alpha/core_satellite.py)."""
+    from signals.alpha.core_satellite import allocation, satellite_validated
+    from config_loader import load_config
+    from signals.fetcher import _fetch_index_etf_history_frame
+
+    hist = _fetch_index_etf_history_frame("SPY", "2y")
+    if hist is None or hist.empty:
+        return {"status": "unavailable"}
+    cfg = (load_config() or {}).get("core_satellite") or {}
+    out = allocation(hist["Close"], satellite_validated=satellite_validated(ALPHA_DIR), cfg=cfg)
+    out["backtest"] = _read_json("regime_allocation_backtest.json")
+    return out

@@ -87,6 +87,9 @@ ActionLight = Literal["green", "yellow", "red"]
 EntryMode = Literal["hard_lock", "starter_only", "full_go"]
 
 BRIDGE_MAX_SIZING_PCT = 10
+# starter_only trailed SPY in prod EOD snapshots (149 days, overlap-corrected): -1.1% at 5d
+# (t -2.3), -1.7% at 10d (t -2.3). Off by default: those setups become WAIT (hard_lock).
+STARTER_ONLY_ENABLED = bool(_RG_CFG.get("starter_only_enabled", False))
 STARTER_MAX_SIZING_PCT = 25
 
 
@@ -888,10 +891,16 @@ def derive_entry_mode(
         # So a starter requires BOTH an actionable zone AND at least partial
         # valuation support — pure-timing fails are buyable, value fails are not.
         mode = "starter_only"
+        if not STARTER_ONLY_ENABLED:
+            mode = "hard_lock"
+            detail_note = (
+                "Partial setup only — starter entries measured below SPY (prod snapshots, "
+                "5–21d). Wait for full gates; hold SPY meanwhile."
+            )
         # Knife filter: elevated IV rank at the entry band means the dip is
         # priced for a big move — the "falling knife" slice inside the losing
         # starter cohort. Demote to hard_lock; IV rank < 75 keeps the starter.
-        if iv_rank is not None and iv_rank > 75:
+        if mode == "starter_only" and iv_rank is not None and iv_rank > 75:
             mode = "hard_lock"
             detail_note = f"IV rank {iv_rank:.0f} — dip priced for large move, knife risk"
     else:

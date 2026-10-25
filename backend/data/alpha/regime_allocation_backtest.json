@@ -1,0 +1,642 @@
+{
+  "defaults": {
+    "ma_days": 200,
+    "band_pct": 1.0,
+    "risk_on_equity_pct": 100,
+    "risk_off_equity_pct": 30,
+    "satellite_pct": 20,
+    "cost_bps": 5
+  },
+  "grid": [
+    {
+      "risk_off_equity_pct": 0,
+      "band_pct": 0.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 8.81,
+          "vol_pct": 12.12,
+          "sharpe": 0.76,
+          "max_dd_pct": -24.14,
+          "calmar": 0.36
+        }
+      },
+      "avg_equity_pct": 77.4,
+      "switches_per_year": 6.5,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 7.77,
+          "vol_pct": 12.76,
+          "sharpe": 0.65,
+          "max_dd_pct": -24.14,
+          "calmar": 0.32
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 7.21,
+          "vol_pct": 11.23,
+          "sharpe": 0.68,
+          "max_dd_pct": -20.92,
+          "calmar": 0.34
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 11.81,
+          "vol_pct": 12.05,
+          "sharpe": 0.99,
+          "max_dd_pct": -19.02,
+          "calmar": 0.62
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 0,
+      "band_pct": 1.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 9.35,
+          "vol_pct": 12.13,
+          "sharpe": 0.8,
+          "max_dd_pct": -21.26,
+          "calmar": 0.44
+        }
+      },
+      "avg_equity_pct": 77.0,
+      "switches_per_year": 2.92,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 9.8,
+          "vol_pct": 12.77,
+          "sharpe": 0.8,
+          "max_dd_pct": -15.37,
+          "calmar": 0.64
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 6.88,
+          "vol_pct": 11.1,
+          "sharpe": 0.65,
+          "max_dd_pct": -17.8,
+          "calmar": 0.39
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 11.03,
+          "vol_pct": 12.15,
+          "sharpe": 0.92,
+          "max_dd_pct": -21.26,
+          "calmar": 0.52
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 0,
+      "band_pct": 2.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 9.97,
+          "vol_pct": 12.29,
+          "sharpe": 0.84,
+          "max_dd_pct": -23.19,
+          "calmar": 0.43
+        }
+      },
+      "avg_equity_pct": 77.0,
+      "switches_per_year": 1.46,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 10.14,
+          "vol_pct": 12.88,
+          "sharpe": 0.81,
+          "max_dd_pct": -16.83,
+          "calmar": 0.6
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 9.24,
+          "vol_pct": 11.11,
+          "sharpe": 0.85,
+          "max_dd_pct": -13.08,
+          "calmar": 0.71
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 10.43,
+          "vol_pct": 12.5,
+          "sharpe": 0.86,
+          "max_dd_pct": -23.19,
+          "calmar": 0.45
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 30,
+      "band_pct": 0.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 9.64,
+          "vol_pct": 12.85,
+          "sharpe": 0.78,
+          "max_dd_pct": -28.95,
+          "calmar": 0.33
+        }
+      },
+      "avg_equity_pct": 84.2,
+      "switches_per_year": 6.5,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 8.7,
+          "vol_pct": 13.23,
+          "sharpe": 0.7,
+          "max_dd_pct": -28.07,
+          "calmar": 0.31
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 7.53,
+          "vol_pct": 12.47,
+          "sharpe": 0.64,
+          "max_dd_pct": -19.76,
+          "calmar": 0.38
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 13.0,
+          "vol_pct": 12.71,
+          "sharpe": 1.03,
+          "max_dd_pct": -22.38,
+          "calmar": 0.58
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 30,
+      "band_pct": 1.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 10.02,
+          "vol_pct": 12.85,
+          "sharpe": 0.81,
+          "max_dd_pct": -26.54,
+          "calmar": 0.38
+        }
+      },
+      "avg_equity_pct": 83.9,
+      "switches_per_year": 2.92,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 10.13,
+          "vol_pct": 13.24,
+          "sharpe": 0.8,
+          "max_dd_pct": -22.5,
+          "calmar": 0.45
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 7.3,
+          "vol_pct": 12.37,
+          "sharpe": 0.63,
+          "max_dd_pct": -17.58,
+          "calmar": 0.42
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 12.44,
+          "vol_pct": 12.79,
+          "sharpe": 0.98,
+          "max_dd_pct": -21.01,
+          "calmar": 0.59
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 30,
+      "band_pct": 2.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 10.46,
+          "vol_pct": 12.99,
+          "sharpe": 0.83,
+          "max_dd_pct": -27.22,
+          "calmar": 0.38
+        }
+      },
+      "avg_equity_pct": 83.9,
+      "switches_per_year": 1.46,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 10.36,
+          "vol_pct": 13.34,
+          "sharpe": 0.81,
+          "max_dd_pct": -21.17,
+          "calmar": 0.49
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 8.96,
+          "vol_pct": 12.38,
+          "sharpe": 0.76,
+          "max_dd_pct": -17.58,
+          "calmar": 0.51
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 12.01,
+          "vol_pct": 13.1,
+          "sharpe": 0.93,
+          "max_dd_pct": -25.65,
+          "calmar": 0.47
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 50,
+      "band_pct": 0.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 10.09,
+          "vol_pct": 14.05,
+          "sharpe": 0.75,
+          "max_dd_pct": -36.84,
+          "calmar": 0.27
+        }
+      },
+      "avg_equity_pct": 88.7,
+      "switches_per_year": 6.5,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 9.25,
+          "vol_pct": 14.03,
+          "sharpe": 0.7,
+          "max_dd_pct": -33.87,
+          "calmar": 0.27
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 7.58,
+          "vol_pct": 14.43,
+          "sharpe": 0.58,
+          "max_dd_pct": -29.91,
+          "calmar": 0.25
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 13.7,
+          "vol_pct": 13.81,
+          "sharpe": 1.0,
+          "max_dd_pct": -25.61,
+          "calmar": 0.54
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 50,
+      "band_pct": 1.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 10.36,
+          "vol_pct": 14.05,
+          "sharpe": 0.77,
+          "max_dd_pct": -35.4,
+          "calmar": 0.29
+        }
+      },
+      "avg_equity_pct": 88.5,
+      "switches_per_year": 2.92,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 10.27,
+          "vol_pct": 14.04,
+          "sharpe": 0.77,
+          "max_dd_pct": -30.25,
+          "calmar": 0.34
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 7.41,
+          "vol_pct": 14.35,
+          "sharpe": 0.57,
+          "max_dd_pct": -28.52,
+          "calmar": 0.26
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 13.3,
+          "vol_pct": 13.87,
+          "sharpe": 0.97,
+          "max_dd_pct": -24.67,
+          "calmar": 0.54
+        }
+      }
+    },
+    {
+      "risk_off_equity_pct": 50,
+      "band_pct": 2.0,
+      "full": {
+        "buy_hold": {
+          "cagr_pct": 10.82,
+          "vol_pct": 18.68,
+          "sharpe": 0.64,
+          "max_dd_pct": -55.19,
+          "calmar": 0.2
+        },
+        "regime": {
+          "cagr_pct": 10.67,
+          "vol_pct": 14.16,
+          "sharpe": 0.79,
+          "max_dd_pct": -35.74,
+          "calmar": 0.3
+        }
+      },
+      "avg_equity_pct": 88.5,
+      "switches_per_year": 1.46,
+      "1994-2007": {
+        "buy_hold": {
+          "cagr_pct": 10.36,
+          "vol_pct": 17.3,
+          "sharpe": 0.66,
+          "max_dd_pct": -47.52,
+          "calmar": 0.22
+        },
+        "regime": {
+          "cagr_pct": 10.44,
+          "vol_pct": 14.12,
+          "sharpe": 0.77,
+          "max_dd_pct": -29.32,
+          "calmar": 0.36
+        }
+      },
+      "2008-2016": {
+        "buy_hold": {
+          "cagr_pct": 7.07,
+          "vol_pct": 21.32,
+          "sharpe": 0.43,
+          "max_dd_pct": -51.87,
+          "calmar": 0.14
+        },
+        "regime": {
+          "cagr_pct": 8.59,
+          "vol_pct": 14.36,
+          "sharpe": 0.65,
+          "max_dd_pct": -28.52,
+          "calmar": 0.3
+        }
+      },
+      "2017-2026": {
+        "buy_hold": {
+          "cagr_pct": 15.09,
+          "vol_pct": 18.08,
+          "sharpe": 0.87,
+          "max_dd_pct": -33.72,
+          "calmar": 0.45
+        },
+        "regime": {
+          "cagr_pct": 12.98,
+          "vol_pct": 14.1,
+          "sharpe": 0.94,
+          "max_dd_pct": -27.88,
+          "calmar": 0.47
+        }
+      }
+    }
+  ]
+}

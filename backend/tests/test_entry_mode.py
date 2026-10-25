@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+import signals.retail_action_payload as rap
 from signals.retail_action_payload import (
     REGIME_GATE,
     VALUATION_GATE_PASS_PCT,
@@ -37,7 +40,27 @@ def test_full_go_when_all_gates_pass():
     assert entry["max_sizing_pct"] == 100
 
 
-def test_starter_only_undervalued_stormy_tape():
+@pytest.fixture
+def starter_on(monkeypatch):
+    monkeypatch.setattr(rap, "STARTER_ONLY_ENABLED", True)
+
+
+def test_starter_only_disabled_by_default_demotes_to_hard_lock():
+    """starter_only measured below SPY in prod snapshots — default is WAIT, not a starter."""
+    assert rap.STARTER_ONLY_ENABLED is False
+    gates = _gates(assessment_pct=27.0, regime_bull_pct=5.0, rsi=58.0)
+    entry = derive_entry_mode(
+        gates=gates,
+        assessment_pct=27.0,
+        gate_cleared=False,
+        long_spot={"state": "in_tier", "active_tier_id": "T1"},
+    )
+    assert entry["entry_mode"] == "hard_lock"
+    assert entry["max_sizing_pct"] == 0
+    assert "SPY" in entry["entry_mode_detail"]
+
+
+def test_starter_only_undervalued_stormy_tape(starter_on):
     """Cheap vs FV but HMM 5% — patience phase, starter only."""
     gates = _gates(assessment_pct=27.0, regime_bull_pct=5.0, rsi=58.0)
     entry = derive_entry_mode(
@@ -73,7 +96,7 @@ def test_hard_lock_no_mos_no_zone():
     assert entry["entry_mode"] == "hard_lock"
 
 
-def test_bridge_starter_cap_10_pct():
+def test_bridge_starter_cap_10_pct(starter_on):
     gates = _gates(assessment_pct=20.0, regime_bull_pct=10.0)
     entry = derive_entry_mode(
         gates=gates,
@@ -96,7 +119,7 @@ def test_unlock_sequence_orders_blockers():
     assert f"≥{VALUATION_GATE_PASS_PCT:.0f}%" not in seq or "Valuation" in seq
 
 
-def test_enrich_attaches_entry_mode_and_institutional_conviction():
+def test_enrich_attaches_entry_mode_and_institutional_conviction(starter_on):
     inv = {
         "fair_value": 461.0,
         "regime_bull_pct": 5.0,

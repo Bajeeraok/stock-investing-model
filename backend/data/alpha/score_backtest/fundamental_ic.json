@@ -1,0 +1,625 @@
+{
+  "n_samples": 205262,
+  "n_tickers_with_facts": 572,
+  "coverage_pct": {
+    "sue": 97.9,
+    "rev_growth": 88.5,
+    "gross_prof": 47.6,
+    "roa": 95.0,
+    "low_accruals": 91.3,
+    "fund_score": 97.1
+  },
+  "missing_tickers": [],
+  "horizons": {
+    "21": {
+      "ic": {
+        "score": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0078,
+          "ic_t": 0.9,
+          "ic_pos_pct": 49.9
+        },
+        "sue": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0053,
+          "ic_t": 0.57,
+          "ic_pos_pct": 55.9
+        },
+        "rev_growth": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0026,
+          "ic_t": 0.2,
+          "ic_pos_pct": 53.9
+        },
+        "gross_prof": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0129,
+          "ic_t": 1.0,
+          "ic_pos_pct": 53.9
+        },
+        "roa": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0069,
+          "ic_t": 0.44,
+          "ic_pos_pct": 51.9
+        },
+        "low_accruals": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0082,
+          "ic_t": 1.07,
+          "ic_pos_pct": 53.9
+        },
+        "fund_score": {
+          "n_dates": 447,
+          "n_eff": 111.8,
+          "ic_mean": 0.0112,
+          "ic_t": 0.73,
+          "ic_pos_pct": 56.4
+        }
+      },
+      "fund_score_buckets": {
+        "all": {
+          "all": {
+            "n": 197388,
+            "mean_excess_pct": -0.2201,
+            "net_excess_pct": -0.2231,
+            "beat_benchmark_pct": 47.53,
+            "std_pct": 8.3143,
+            "t_stat": -0.799,
+            "ci95_low_pct": -0.7707,
+            "ci95_high_pct": 0.3245,
+            "n_dates": 1871,
+            "n_eff": 467.8,
+            "t_stat_naive": -11.922
+          },
+          "0-30": {
+            "n": 21067,
+            "mean_excess_pct": 0.0185,
+            "net_excess_pct": 0.0155,
+            "beat_benchmark_pct": 47.6,
+            "std_pct": 8.6916,
+            "t_stat": 0.033,
+            "ci95_low_pct": -0.9163,
+            "ci95_high_pct": 0.9474,
+            "n_dates": 508,
+            "n_eff": 127.0,
+            "t_stat_naive": 0.259
+          },
+          "30-50": {
+            "n": 80385,
+            "mean_excess_pct": -0.3639,
+            "net_excess_pct": -0.3669,
+            "beat_benchmark_pct": 46.81,
+            "std_pct": 7.9971,
+            "t_stat": -0.78,
+            "ci95_low_pct": -1.2888,
+            "ci95_high_pct": 0.5549,
+            "n_dates": 990,
+            "n_eff": 247.5,
+            "t_stat_naive": -13.009
+          },
+          "50-70": {
+            "n": 70191,
+            "mean_excess_pct": -0.204,
+            "net_excess_pct": -0.207,
+            "beat_benchmark_pct": 47.73,
+            "std_pct": 8.4,
+            "t_stat": -0.379,
+            "ci95_low_pct": -1.2787,
+            "ci95_high_pct": 0.8647,
+            "n_dates": 1295,
+            "n_eff": 323.8,
+            "t_stat_naive": -6.529
+          },
+          "70-100": {
+            "n": 25745,
+            "mean_excess_pct": -0.0102,
+            "net_excess_pct": -0.0132,
+            "beat_benchmark_pct": 49.17,
+            "std_pct": 8.717,
+            "t_stat": -0.035,
+            "ci95_low_pct": -0.7468,
+            "ci95_high_pct": 0.7203,
+            "n_dates": 1848,
+            "n_eff": 462.0,
+            "t_stat_naive": -0.243
+          }
+        }
+      },
+      "fund_score_ic_by_year": {
+        "2017": {
+          "n_dates": 8,
+          "n_eff": 2.0,
+          "ic_mean": 0.1191,
+          "ic_t": 2.04,
+          "ic_pos_pct": 100.0
+        },
+        "2018": {
+          "n_dates": 50,
+          "n_eff": 12.5,
+          "ic_mean": 0.0379,
+          "ic_t": 1.17,
+          "ic_pos_pct": 60.0
+        },
+        "2019": {
+          "n_dates": 51,
+          "n_eff": 12.8,
+          "ic_mean": 0.0259,
+          "ic_t": 0.72,
+          "ic_pos_pct": 66.7
+        },
+        "2020": {
+          "n_dates": 50,
+          "n_eff": 12.5,
+          "ic_mean": 0.0234,
+          "ic_t": 0.36,
+          "ic_pos_pct": 64.0
+        },
+        "2021": {
+          "n_dates": 51,
+          "n_eff": 12.8,
+          "ic_mean": -0.0085,
+          "ic_t": -0.11,
+          "ic_pos_pct": 54.9
+        },
+        "2022": {
+          "n_dates": 50,
+          "n_eff": 12.5,
+          "ic_mean": -0.032,
+          "ic_t": -1.09,
+          "ic_pos_pct": 38.0
+        },
+        "2023": {
+          "n_dates": 50,
+          "n_eff": 12.5,
+          "ic_mean": 0.0444,
+          "ic_t": 1.31,
+          "ic_pos_pct": 68.0
+        },
+        "2024": {
+          "n_dates": 50,
+          "n_eff": 12.5,
+          "ic_mean": 0.0091,
+          "ic_t": 0.21,
+          "ic_pos_pct": 54.0
+        },
+        "2025": {
+          "n_dates": 50,
+          "n_eff": 12.5,
+          "ic_mean": -0.022,
+          "ic_t": -0.85,
+          "ic_pos_pct": 42.0
+        },
+        "2026": {
+          "n_dates": 37,
+          "n_eff": 9.2,
+          "ic_mean": 0.0033,
+          "ic_t": 0.09,
+          "ic_pos_pct": 51.4
+        }
+      }
+    },
+    "63": {
+      "ic": {
+        "score": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": 0.0079,
+          "ic_t": 0.52,
+          "ic_pos_pct": 50.1
+        },
+        "sue": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": 0.0011,
+          "ic_t": 0.06,
+          "ic_pos_pct": 59.0
+        },
+        "rev_growth": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": -0.0041,
+          "ic_t": -0.17,
+          "ic_pos_pct": 55.6
+        },
+        "gross_prof": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": 0.019,
+          "ic_t": 0.82,
+          "ic_pos_pct": 54.7
+        },
+        "roa": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": 0.0052,
+          "ic_t": 0.18,
+          "ic_pos_pct": 50.3
+        },
+        "low_accruals": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": 0.0084,
+          "ic_t": 0.63,
+          "ic_pos_pct": 52.4
+        },
+        "fund_score": {
+          "n_dates": 439,
+          "n_eff": 33.8,
+          "ic_mean": 0.0082,
+          "ic_t": 0.29,
+          "ic_pos_pct": 53.3
+        }
+      },
+      "fund_score_buckets": {
+        "all": {
+          "all": {
+            "n": 193462,
+            "mean_excess_pct": -0.6596,
+            "net_excess_pct": -0.6626,
+            "beat_benchmark_pct": 46.21,
+            "std_pct": 14.6104,
+            "t_stat": -0.757,
+            "ci95_low_pct": -2.3772,
+            "ci95_high_pct": 1.0521,
+            "n_dates": 1829,
+            "n_eff": 140.7,
+            "t_stat_naive": -19.946
+          },
+          "0-30": {
+            "n": 20712,
+            "mean_excess_pct": -0.3119,
+            "net_excess_pct": -0.3149,
+            "beat_benchmark_pct": 47.72,
+            "std_pct": 14.6278,
+            "t_stat": -0.128,
+            "ci95_low_pct": -5.1473,
+            "ci95_high_pct": 4.5175,
+            "n_dates": 500,
+            "n_eff": 38.5,
+            "t_stat_naive": -3.098
+          },
+          "30-50": {
+            "n": 78623,
+            "mean_excess_pct": -0.9297,
+            "net_excess_pct": -0.9327,
+            "beat_benchmark_pct": 45.41,
+            "std_pct": 14.133,
+            "t_stat": -0.455,
+            "ci95_low_pct": -4.9513,
+            "ci95_high_pct": 3.0859,
+            "n_dates": 948,
+            "n_eff": 72.9,
+            "t_stat_naive": -18.505
+          },
+          "50-70": {
+            "n": 68891,
+            "mean_excess_pct": -0.6758,
+            "net_excess_pct": -0.6788,
+            "beat_benchmark_pct": 46.12,
+            "std_pct": 14.655,
+            "t_stat": -0.525,
+            "ci95_low_pct": -3.2114,
+            "ci95_high_pct": 1.8538,
+            "n_dates": 1253,
+            "n_eff": 96.4,
+            "t_stat_naive": -12.157
+          },
+          "70-100": {
+            "n": 25236,
+            "mean_excess_pct": -0.0589,
+            "net_excess_pct": -0.0619,
+            "beat_benchmark_pct": 47.7,
+            "std_pct": 15.861,
+            "t_stat": -0.053,
+            "ci95_low_pct": -2.3604,
+            "ci95_high_pct": 2.2366,
+            "n_dates": 1806,
+            "n_eff": 138.9,
+            "t_stat_naive": -0.62
+          }
+        }
+      },
+      "fund_score_ic_by_year": {
+        "2017": {
+          "n_dates": 8,
+          "n_eff": 0.6,
+          "ic_mean": 0.1989,
+          "ic_t": null,
+          "ic_pos_pct": 100.0
+        },
+        "2018": {
+          "n_dates": 50,
+          "n_eff": 3.8,
+          "ic_mean": 0.059,
+          "ic_t": 0.9,
+          "ic_pos_pct": 70.0
+        },
+        "2019": {
+          "n_dates": 51,
+          "n_eff": 3.9,
+          "ic_mean": 0.0328,
+          "ic_t": 0.54,
+          "ic_pos_pct": 52.9
+        },
+        "2020": {
+          "n_dates": 50,
+          "n_eff": 3.8,
+          "ic_mean": -0.04,
+          "ic_t": -0.26,
+          "ic_pos_pct": 52.0
+        },
+        "2021": {
+          "n_dates": 51,
+          "n_eff": 3.9,
+          "ic_mean": -0.0092,
+          "ic_t": -0.07,
+          "ic_pos_pct": 51.0
+        },
+        "2022": {
+          "n_dates": 50,
+          "n_eff": 3.8,
+          "ic_mean": -0.0256,
+          "ic_t": -0.54,
+          "ic_pos_pct": 34.0
+        },
+        "2023": {
+          "n_dates": 50,
+          "n_eff": 3.8,
+          "ic_mean": 0.0855,
+          "ic_t": 2.15,
+          "ic_pos_pct": 92.0
+        },
+        "2024": {
+          "n_dates": 50,
+          "n_eff": 3.8,
+          "ic_mean": -0.0314,
+          "ic_t": -0.65,
+          "ic_pos_pct": 44.0
+        },
+        "2025": {
+          "n_dates": 50,
+          "n_eff": 3.8,
+          "ic_mean": -0.0289,
+          "ic_t": -0.74,
+          "ic_pos_pct": 34.0
+        },
+        "2026": {
+          "n_dates": 29,
+          "n_eff": 2.2,
+          "ic_mean": -0.0047,
+          "ic_t": -0.1,
+          "ic_pos_pct": 34.5
+        }
+      }
+    },
+    "126": {
+      "ic": {
+        "score": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": 0.0044,
+          "ic_t": 0.23,
+          "ic_pos_pct": 49.1
+        },
+        "sue": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": -0.0024,
+          "ic_t": -0.09,
+          "ic_pos_pct": 58.5
+        },
+        "rev_growth": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": 0.0013,
+          "ic_t": 0.04,
+          "ic_pos_pct": 53.5
+        },
+        "gross_prof": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": 0.0182,
+          "ic_t": 0.52,
+          "ic_pos_pct": 54.2
+        },
+        "roa": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": 0.0079,
+          "ic_t": 0.18,
+          "ic_pos_pct": 52.3
+        },
+        "low_accruals": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": 0.0093,
+          "ic_t": 0.43,
+          "ic_pos_pct": 52.6
+        },
+        "fund_score": {
+          "n_dates": 426,
+          "n_eff": 17.0,
+          "ic_mean": 0.0076,
+          "ic_t": 0.18,
+          "ic_pos_pct": 50.5
+        }
+      },
+      "fund_score_buckets": {
+        "all": {
+          "all": {
+            "n": 187118,
+            "mean_excess_pct": -1.4808,
+            "net_excess_pct": -1.4838,
+            "beat_benchmark_pct": 43.96,
+            "std_pct": 21.5748,
+            "t_stat": -0.784,
+            "ci95_low_pct": -5.1925,
+            "ci95_high_pct": 2.2249,
+            "n_dates": 1766,
+            "n_eff": 70.6,
+            "t_stat_naive": -29.751
+          },
+          "0-30": {
+            "n": 20048,
+            "mean_excess_pct": -0.8781,
+            "net_excess_pct": -0.8811,
+            "beat_benchmark_pct": 46.24,
+            "std_pct": 21.6284,
+            "t_stat": -0.144,
+            "ci95_low_pct": -12.8694,
+            "ci95_high_pct": 11.1072,
+            "n_dates": 487,
+            "n_eff": 19.5,
+            "t_stat_naive": -5.768
+          },
+          "30-50": {
+            "n": 75917,
+            "mean_excess_pct": -1.8607,
+            "net_excess_pct": -1.8637,
+            "beat_benchmark_pct": 43.23,
+            "std_pct": 20.6322,
+            "t_stat": -0.595,
+            "ci95_low_pct": -8.0022,
+            "ci95_high_pct": 4.2748,
+            "n_dates": 885,
+            "n_eff": 35.4,
+            "t_stat_naive": -24.888
+          },
+          "50-70": {
+            "n": 66791,
+            "mean_excess_pct": -1.549,
+            "net_excess_pct": -1.552,
+            "beat_benchmark_pct": 43.24,
+            "std_pct": 21.8857,
+            "t_stat": -0.588,
+            "ci95_low_pct": -6.7281,
+            "ci95_high_pct": 3.624,
+            "n_dates": 1190,
+            "n_eff": 47.6,
+            "t_stat_naive": -18.327
+          },
+          "70-100": {
+            "n": 24362,
+            "mean_excess_pct": -0.6062,
+            "net_excess_pct": -0.6092,
+            "beat_benchmark_pct": 46.36,
+            "std_pct": 23.4313,
+            "t_stat": -0.246,
+            "ci95_low_pct": -5.459,
+            "ci95_high_pct": 4.2406,
+            "n_dates": 1743,
+            "n_eff": 69.7,
+            "t_stat_naive": -4.058
+          }
+        }
+      },
+      "fund_score_ic_by_year": {
+        "2017": {
+          "n_dates": 8,
+          "n_eff": 0.3,
+          "ic_mean": 0.2181,
+          "ic_t": null,
+          "ic_pos_pct": 100.0
+        },
+        "2018": {
+          "n_dates": 50,
+          "n_eff": 2.0,
+          "ic_mean": 0.0702,
+          "ic_t": 1.09,
+          "ic_pos_pct": 68.0
+        },
+        "2019": {
+          "n_dates": 51,
+          "n_eff": 2.0,
+          "ic_mean": 0.0887,
+          "ic_t": 0.73,
+          "ic_pos_pct": 60.8
+        },
+        "2020": {
+          "n_dates": 50,
+          "n_eff": 2.0,
+          "ic_mean": -0.1026,
+          "ic_t": -0.47,
+          "ic_pos_pct": 38.0
+        },
+        "2021": {
+          "n_dates": 51,
+          "n_eff": 2.0,
+          "ic_mean": -0.0359,
+          "ic_t": -0.21,
+          "ic_pos_pct": 45.1
+        },
+        "2022": {
+          "n_dates": 50,
+          "n_eff": 2.0,
+          "ic_mean": 0.0162,
+          "ic_t": 0.31,
+          "ic_pos_pct": 50.0
+        },
+        "2023": {
+          "n_dates": 50,
+          "n_eff": 2.0,
+          "ic_mean": 0.0805,
+          "ic_t": 1.28,
+          "ic_pos_pct": 76.0
+        },
+        "2024": {
+          "n_dates": 50,
+          "n_eff": 2.0,
+          "ic_mean": -0.0259,
+          "ic_t": -0.39,
+          "ic_pos_pct": 52.0
+        },
+        "2025": {
+          "n_dates": 50,
+          "n_eff": 2.0,
+          "ic_mean": -0.0627,
+          "ic_t": -1.8,
+          "ic_pos_pct": 6.0
+        },
+        "2026": {
+          "n_dates": 16,
+          "n_eff": 0.6,
+          "ic_mean": 0.0011,
+          "ic_t": null,
+          "ic_pos_pct": 50.0
+        }
+      }
+    }
+  },
+  "validation": {
+    "validated": false,
+    "rule": "fund_score rank IC >= 0.02 and overlap-corrected t >= 2.0 at 21d or 63d",
+    "fund_score_ic": {
+      "21": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": 0.0112,
+        "ic_t": 0.73,
+        "ic_pos_pct": 56.4
+      },
+      "63": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": 0.0082,
+        "ic_t": 0.29,
+        "ic_pos_pct": 53.3
+      },
+      "126": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": 0.0076,
+        "ic_t": 0.18,
+        "ic_pos_pct": 50.5
+      }
+    },
+    "passing_horizons": []
+  }
+}

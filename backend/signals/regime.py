@@ -233,10 +233,11 @@ def get_ml_aware_signal(
         return "HOLD"
 
     # ── Fallback: confluence-only (no ML model yet) ───────────────────────
-    if c >= 70:
-        return "BUY"
+    # The composite is an entry-timing read, not a selection signal: 10y pooled S&P 500
+    # backtest rank IC ≈ 0.008 (t 0.9) at 21d, score 70–100 trailed SPY. A high score alone
+    # therefore never emits BUY — it surfaces as WATCH (timing favourable, needs evidence).
     if c >= buy_min:
-        return "BUY"
+        return "WATCH"
     if c <= sell_max:
         return "SELL"
     return "HOLD"

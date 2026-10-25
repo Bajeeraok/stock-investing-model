@@ -1,0 +1,28 @@
+{
+  "validated": false,
+  "rule": "fund_score rank IC >= 0.02 and overlap-corrected t >= 2.0 at 21d or 63d",
+  "fund_score_ic": {
+    "21": {
+      "n_dates": 447,
+      "n_eff": 111.8,
+      "ic_mean": 0.0112,
+      "ic_t": 0.73,
+      "ic_pos_pct": 56.4
+    },
+    "63": {
+      "n_dates": 439,
+      "n_eff": 33.8,
+      "ic_mean": 0.0082,
+      "ic_t": 0.29,
+      "ic_pos_pct": 53.3
+    },
+    "126": {
+      "n_dates": 426,
+      "n_eff": 17.0,
+      "ic_mean": 0.0076,
+      "ic_t": 0.18,
+      "ic_pos_pct": 50.5
+    }
+  },
+  "passing_horizons": []
+}
