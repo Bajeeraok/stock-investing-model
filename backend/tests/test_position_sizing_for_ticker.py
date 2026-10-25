@@ -12,7 +12,15 @@ view. size_position_for_ticker() is the missing bridge.
 """
 from __future__ import annotations
 
+import pytest
+
 from signals.tier1_risk_engine import regime_label_from_bull_pct, size_position_for_ticker
+
+
+@pytest.fixture(autouse=True)
+def _no_measured_cohorts(monkeypatch):
+    """Exercise the sizing mechanics, not whatever cohort_expectancy.json currently says."""
+    monkeypatch.setattr("signals.alpha.excess.load_artifact", lambda *a, **k: {})
 
 
 def test_regime_label_thresholds():
