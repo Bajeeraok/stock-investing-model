@@ -69,6 +69,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
           fair_value: detail?.investor_summary?.fair_value,
         },
         effectivePrice,
+        priceTargets?.technical_levels,
       )}
       className="mb-3"
     />

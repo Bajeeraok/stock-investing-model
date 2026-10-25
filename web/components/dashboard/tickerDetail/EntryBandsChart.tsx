@@ -13,7 +13,7 @@
 import React from "react";
 import clsx from "clsx";
 
-type Band = { label: string; low?: number | null; high?: number | null; kind: "entry" | "tier" | "stop" | "target" | "fv" };
+type Band = { label: string; low?: number | null; high?: number | null; kind: "entry" | "tier" | "stop" | "target" | "fv" | "ma" };
 type Props = {
   currentPrice?: number | null;
   bands: Band[];
@@ -26,6 +26,7 @@ const KIND_STYLE: Record<Band["kind"], { fill: string; stroke: string; text: str
   stop: { fill: "rgba(244,63,94,0.15)", stroke: "#F43F5E", text: "text-rose-300" },
   target: { fill: "rgba(34,211,238,0.12)", stroke: "#22D3EE", text: "text-cyan-300" },
   fv: { fill: "rgba(168,85,247,0.10)", stroke: "#A855F7", text: "text-purple-300" },
+  ma: { fill: "rgba(129,140,248,0.10)", stroke: "#818CF8", text: "text-indigo-300" },
 };
 
 const EDGE_SPAN = 0.5;   // a level within ±50% of spot stays on-axis; beyond → edge tag
@@ -113,7 +114,7 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
             const p = b.low ?? b.high;
             if (p == null) return null;
             return <line key={i} x1={8} x2={88} y1={y(p)} y2={y(p)} stroke={s.stroke}
-              strokeWidth={0.4} strokeDasharray={b.kind === "stop" ? "1.5 1" : "2.5 1.5"} />;
+              strokeWidth={0.4} strokeDasharray={b.kind === "stop" ? "1.5 1" : b.kind === "ma" ? "0.5 1.5" : "2.5 1.5"} />;
           })}
           {spot != null && (
             <line x1={4} x2={96} y1={y(spot)} y2={y(spot)}
@@ -159,8 +160,9 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
   );
 }
 
-/** Build bands[] from a horizons payload (short/medium/long entry zones + stops/targets + FV). */
-export function bandsFromHorizons(horizons: any, currentPrice?: number | null): Band[] {
+/** Build bands[] from a horizons payload (short/medium/long entry zones + stops/targets + FV).
+ * `technicalLevels` (optional, priceTargets.technical_levels) adds MA50/MA200 markers. */
+export function bandsFromHorizons(horizons: any, currentPrice?: number | null, technicalLevels?: { ma50?: number | null; ma200?: number | null } | null): Band[] {
   const out: Band[] = [];
   const H = horizons || {};
   const push = (label: string, ez: any, kind: Band["kind"]) => {
@@ -182,5 +184,7 @@ export function bandsFromHorizons(horizons: any, currentPrice?: number | null): 
   }
   const fv = H.long?.fair_value ?? H.fair_value;
   if (fv) out.push({ label: "FV", low: fv, high: null, kind: "fv" });
+  if (technicalLevels?.ma50 != null) out.push({ label: "MA50", low: technicalLevels.ma50, high: null, kind: "ma" });
+  if (technicalLevels?.ma200 != null) out.push({ label: "MA200", low: technicalLevels.ma200, high: null, kind: "ma" });
   return out;
 }
