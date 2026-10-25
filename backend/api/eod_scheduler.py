@@ -138,6 +138,20 @@ def _run_eod_job() -> None:
             logger.debug("[eod-scheduler] memory hygiene skipped", exc_info=True)
 
     if eod_ok:
+        # FMP consensus vintages: revision signals can only be backtested from history we save.
+        try:
+            import threading
+
+            from config_loader import load_config as _lc
+            from signals.alpha.estimates_snapshot import run as _snap_estimates
+
+            threading.Thread(
+                target=lambda: logger.info("[eod-scheduler] estimates snapshot %s", _snap_estimates(_lc())),
+                daemon=True,
+                name="fmp-estimates-snapshot",
+            ).start()
+        except Exception:
+            logger.exception("[eod-scheduler] estimates snapshot failed to start")
         # New snapshot → recompute forward tracking now (daily 1d calls, per-ticker index)
         # instead of waiting for someone to open Analysis/Track and hit the staleness check.
         try:
