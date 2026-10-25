@@ -462,6 +462,7 @@ def size_position_for_ticker(
     confluence_score: float | None = None,
     risk_tolerance: RiskTolerance = RiskTolerance.MODERATE,
     tranche_pcts: tuple[float, float, float] = (0.40, 0.30, 0.30),
+    entry_mode: str | None = None,
 ) -> dict | None:
     """
     Ticker-detail-friendly wrapper around PositionSizingEngine.size_position() — resolves
@@ -486,6 +487,16 @@ def size_position_for_ticker(
         except (TypeError, ValueError):
             conf_pattern = None
 
+    # Prefer measured cohort hit rate / payoff (data/alpha/cohort_expectancy.json) over the
+    # score-derived heuristic when enough outcomes have been tracked.
+    measured = None
+    try:
+        from signals.alpha.excess import measured_kelly_inputs
+
+        measured = measured_kelly_inputs(entry_mode=entry_mode, score=signal_score)
+    except Exception:
+        measured = None
+
     engine = PositionSizingEngine(portfolio_value, risk_tolerance=risk_tolerance)
     result = engine.size_position(
         ticker=ticker,
@@ -496,9 +507,9 @@ def size_position_for_ticker(
         atr_14=atr,
         vix=v,
         regime=regime,
-        win_rate=None,  # derived from score/confidence/regime — see _derive_win_rate
-        avg_win_pct=7.0,
-        avg_loss_pct=4.0,
+        win_rate=measured["win_rate"] if measured else None,  # else _derive_win_rate heuristic
+        avg_win_pct=measured["avg_win_pct"] if measured else 7.0,
+        avg_loss_pct=measured["avg_loss_pct"] if measured else 4.0,
         confluence_score=conf_pattern,
     )
     pcts = tranche_pcts if abs(sum(tranche_pcts) - 1.0) < 1e-6 else (0.40, 0.30, 0.30)

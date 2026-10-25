@@ -119,14 +119,18 @@ def build_cohort_expectancy(
 ) -> dict[str, Any]:
     """Group records by cohort and summarize excess returns. Records need ``excess_field``."""
     buckets: dict[str, list[float]] = {}
+    rets: dict[str, list[float]] = {}
     for r in records:
         if horizon_days is not None and r.get("horizon_days") not in (None, horizon_days):
             continue
         exc = _f(r.get(excess_field))
         if exc is None:
             continue
+        ret = _f(r.get("actual_return_pct"))
         for k in cohort_keys(record_entry_mode(r), record_score(r)):
             buckets.setdefault(k, []).append(exc)
+            if ret is not None:
+                rets.setdefault(k, []).append(ret)
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "benchmark": benchmark,
@@ -134,9 +138,55 @@ def build_cohort_expectancy(
         "cost_pct": cost_pct,
         "prior_n": prior_n,
         "cohorts": {
-            k: summarize_excess(v, cost_pct=cost_pct, prior_n=prior_n) for k, v in sorted(buckets.items())
+            k: {**summarize_excess(v, cost_pct=cost_pct, prior_n=prior_n), **summarize_payoff(rets.get(k, []), cost_pct=cost_pct)}
+            for k, v in sorted(buckets.items())
         },
     }
+
+
+def summarize_payoff(returns: Iterable[float], *, cost_pct: float = 0.0) -> dict[str, Any]:
+    """Measured win rate and average win / loss of after-cost absolute returns (percent)."""
+    net = [float(x) - cost_pct for x in returns]
+    if not net:
+        return {}
+    wins = [x for x in net if x > 0]
+    losses = [-x for x in net if x <= 0]
+    return {
+        "n_ret": len(net),
+        "win_rate": round(len(wins) / len(net), 4),
+        "avg_win_pct": round(sum(wins) / len(wins), 3) if wins else 0.0,
+        "avg_loss_pct": round(sum(losses) / len(losses), 3) if losses else 0.0,
+    }
+
+
+def measured_kelly_inputs(
+    *,
+    entry_mode: str | None,
+    score: Any,
+    artifact: dict[str, Any] | None = None,
+    min_n: int = 30,
+    prior_n: float = 30.0,
+) -> dict[str, Any] | None:
+    """
+    Win rate / avg win / avg loss for sizing from the most specific cohort with ``min_n``
+    tracked outcomes. Win rate is shrunk toward 50% with ``prior_n`` pseudo-observations so
+    a lucky small cohort cannot drive an oversized Kelly fraction. None when unmeasured.
+    """
+    art = artifact if artifact is not None else load_artifact()
+    cohorts = (art or {}).get("cohorts") or {}
+    for k in cohort_keys(entry_mode, score):
+        c = cohorts.get(k) or {}
+        n = int(c.get("n_ret") or 0)
+        if n >= min_n and c.get("avg_loss_pct"):
+            wr = (c["win_rate"] * n + 0.5 * prior_n) / (n + prior_n)
+            return {
+                "cohort": k,
+                "n": n,
+                "win_rate": round(wr, 4),
+                "avg_win_pct": float(c["avg_win_pct"]),
+                "avg_loss_pct": float(c["avg_loss_pct"]),
+            }
+    return None
 
 
 def save_artifact(artifact: dict[str, Any], path: str | Path | None = None) -> Path:
