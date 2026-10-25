@@ -71,3 +71,27 @@ def test_aggregate_horizon_stats_reports_excess():
     out = aggregate_horizon_stats(rows, quality_only=False)
     assert out["avg_excess_return_pct"] == -0.5
     assert out["beat_benchmark_pct"] == 50.0
+
+
+def test_summarize_excess_clusters_by_date_and_overlap():
+    from signals.alpha.excess import summarize_excess
+
+    # 40 dates x 10 names, all names on a date share the same excess
+    vals, dates = [], []
+    for i in range(40):
+        for _ in range(10):
+            vals.append(1.0 if i % 2 else -0.5)
+            dates.append(f"d{i}")
+    naive = summarize_excess(vals)
+    adj = summarize_excess(vals, dates=dates, horizon_days=5)
+    assert adj["n_dates"] == 40 and adj["n_eff"] == 8.0
+    assert abs(adj["t_stat"]) < abs(naive["t_stat"])
+    assert adj["t_stat_naive"] == naive["t_stat"]
+    assert adj["ci95_low_pct"] < naive["ci95_low_pct"]
+
+
+def test_summarize_excess_too_few_independent_periods():
+    from signals.alpha.excess import summarize_excess
+
+    out = summarize_excess([1.0, 2.0, 3.0], dates=["a", "b", "c"], horizon_days=21)
+    assert out["t_stat"] is None and out["ci95_low_pct"] is None

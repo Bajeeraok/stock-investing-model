@@ -83,16 +83,49 @@ def summarize_excess(
     *,
     cost_pct: float = 0.0,
     prior_n: float = 30.0,
+    dates: Iterable[Any] | None = None,
+    horizon_days: int | None = None,
 ) -> dict[str, Any]:
-    """Mean/beat-rate/t-stat of excess returns, net of cost, with shrinkage toward 0."""
-    xs = [float(v) for v in values if _f(v) is not None]
+    """
+    Mean/beat-rate/t-stat of excess returns, net of cost, with shrinkage toward 0.
+
+    With ``dates`` (one per value) the standard error is clustered by date and corrected
+    for overlapping ``horizon_days`` windows: same-day names move together and daily
+    snapshots of an N-day return share most of their path, so the naive SE is too small.
+    """
+    vals = list(values)
+    ds = list(dates) if dates is not None else None
+    if ds is not None and len(ds) != len(vals):
+        ds = None
+    pairs = [(float(v), ds[i] if ds is not None else None) for i, v in enumerate(vals) if _f(v) is not None]
+    xs = [x for x, _ in pairs]
     n = len(xs)
     if n == 0:
         return {"n": 0}
     mean = sum(xs) / n
     var = sum((x - mean) ** 2 for x in xs) / (n - 1) if n > 1 else 0.0
     std = math.sqrt(var)
-    se = std / math.sqrt(n) if n > 1 else float("inf")
+    se_naive = std / math.sqrt(n) if n > 1 else float("inf")
+    se = se_naive
+    extra: dict[str, Any] = {}
+    if ds is not None:
+        by_date: dict[Any, list[float]] = {}
+        for x, d in pairs:
+            by_date.setdefault(d, []).append(x)
+        dm = [sum(v) / len(v) for v in by_date.values()]
+        n_dates = len(dm)
+        n_eff = n_dates / max(int(horizon_days or 1), 1)
+        if n_dates > 1 and n_eff > 1:
+            mu = sum(dm) / n_dates
+            sd = math.sqrt(sum((x - mu) ** 2 for x in dm) / (n_dates - 1))
+            se = max(sd / math.sqrt(n_eff), se_naive)
+        else:
+            se = float("inf")
+        extra = {
+            "n_dates": n_dates,
+            "n_eff": round(n_eff, 1),
+            "t_stat_naive": round((mean - cost_pct) / se_naive, 3) if se_naive not in (0.0, float("inf")) else None,
+        }
     net = mean - cost_pct
     shrink = n / (n + max(prior_n, 0.0))
     return {
@@ -105,6 +138,7 @@ def summarize_excess(
         "t_stat": round(net / se, 3) if se not in (0.0, float("inf")) else None,
         "ci95_low_pct": round(net - 1.96 * se, 4) if math.isfinite(se) else None,
         "ci95_high_pct": round(net + 1.96 * se, 4) if math.isfinite(se) else None,
+        **extra,
     }
 
 
@@ -119,6 +153,7 @@ def build_cohort_expectancy(
 ) -> dict[str, Any]:
     """Group records by cohort and summarize excess returns. Records need ``excess_field``."""
     buckets: dict[str, list[float]] = {}
+    bucket_dates: dict[str, list[Any]] = {}
     rets: dict[str, list[float]] = {}
     for r in records:
         if horizon_days is not None and r.get("horizon_days") not in (None, horizon_days):
@@ -129,6 +164,7 @@ def build_cohort_expectancy(
         ret = _f(r.get("actual_return_pct"))
         for k in cohort_keys(record_entry_mode(r), record_score(r)):
             buckets.setdefault(k, []).append(exc)
+            bucket_dates.setdefault(k, []).append(r.get("as_of_date"))
             if ret is not None:
                 rets.setdefault(k, []).append(ret)
     return {
@@ -138,7 +174,16 @@ def build_cohort_expectancy(
         "cost_pct": cost_pct,
         "prior_n": prior_n,
         "cohorts": {
-            k: {**summarize_excess(v, cost_pct=cost_pct, prior_n=prior_n), **summarize_payoff(rets.get(k, []), cost_pct=cost_pct)}
+            k: {
+                **summarize_excess(
+                    v,
+                    cost_pct=cost_pct,
+                    prior_n=prior_n,
+                    dates=bucket_dates[k] if all(d is not None for d in bucket_dates[k]) else None,
+                    horizon_days=horizon_days,
+                ),
+                **summarize_payoff(rets.get(k, []), cost_pct=cost_pct),
+            }
             for k, v in sorted(buckets.items())
         },
     }
