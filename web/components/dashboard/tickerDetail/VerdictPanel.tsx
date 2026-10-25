@@ -379,14 +379,17 @@ export function VerdictPanel({
 
       {/* 3 · Tiles */}
       <div className="grid grid-cols-2 gap-3">
+        {/* Hidden entirely when R:R is unknown — a "—" tile teaches nothing. */}
+        {rr != null && rr > 0 && (
         <div className="rounded-xl border border-td-line bg-td-surface px-3.5 py-3">
           <p className="text-[11px] text-td-muted">Risk : Reward</p>
-          <p className="mt-1 font-mono text-lg font-bold text-td-text tabular-nums">{rr != null && rr > 0 ? `1 : ${rr.toFixed(1)}` : "—"}</p>
+          <p className="mt-1 font-mono text-lg font-bold text-td-text tabular-nums">{`1 : ${rr.toFixed(1)}`}</p>
           <p className="text-[10.5px] text-td-muted">
             {rrSub}
             {horizon?.target ? ` · ${usd(horizon.target, 0)}` : ""}
           </p>
         </div>
+        )}
         <div
           className={clsx(
             "rounded-xl border px-3.5 py-3",
