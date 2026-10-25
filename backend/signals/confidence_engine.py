@@ -269,7 +269,13 @@ def _compute_horizon_confidence(
     Applies the same HMM bear penalty as the main engine.
     Asset-type zero-weight rules from effective_weights are respected.
     """
-    hw = dict(_HORIZON_WEIGHTS[horizon])
+    try:
+        from signals.alpha.stacker import learned_horizon_weights
+
+        learned = learned_horizon_weights(horizon)
+    except Exception:
+        learned = None
+    hw = dict(learned or _HORIZON_WEIGHTS[horizon])
     for k in list(hw.keys()):
         if effective_weights.get(k, 0) <= 0:
             hw[k] = 0.0
