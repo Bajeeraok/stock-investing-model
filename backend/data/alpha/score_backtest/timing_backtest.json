@@ -1,0 +1,442 @@
+{
+  "n": 205262,
+  "band_position": {
+    "st": {
+      "above": {
+        "share_pct": 10.5,
+        "21": {
+          "n": 21446,
+          "mean_excess_pct": 1.4346,
+          "t_stat": 2.967,
+          "n_eff": 263.2
+        },
+        "63": {
+          "n": 21181,
+          "mean_excess_pct": 3.1916,
+          "t_stat": 2.455,
+          "n_eff": 78.7
+        },
+        "126": {
+          "n": 20573,
+          "mean_excess_pct": 3.505,
+          "t_stat": 1.586,
+          "n_eff": 39.1
+        }
+      },
+      "below": {
+        "share_pct": 0.0,
+        "21": {
+          "n": 18,
+          "mean_excess_pct": 34.7347,
+          "t_stat": 1.616,
+          "n_eff": 1.2
+        },
+        "63": {
+          "n": 18,
+          "mean_excess_pct": 48.3414,
+          "t_stat": null,
+          "n_eff": 0.4
+        },
+        "126": {
+          "n": 18,
+          "mean_excess_pct": 29.6624,
+          "t_stat": null,
+          "n_eff": 0.2
+        }
+      },
+      "inside": {
+        "share_pct": 89.4,
+        "21": {
+          "n": 181797,
+          "mean_excess_pct": -0.1727,
+          "t_stat": -0.493,
+          "n_eff": 431.2
+        },
+        "63": {
+          "n": 178074,
+          "mean_excess_pct": -0.3845,
+          "t_stat": -0.432,
+          "n_eff": 129.5
+        },
+        "126": {
+          "n": 172258,
+          "mean_excess_pct": -0.4217,
+          "t_stat": -0.284,
+          "n_eff": 64.8
+        }
+      }
+    },
+    "mt": {
+      "inside": {
+        "share_pct": 100.0,
+        "21": {
+          "n": 203261,
+          "mean_excess_pct": -0.0,
+          "t_stat": -0.0,
+          "n_eff": 467.8
+        },
+        "63": {
+          "n": 199273,
+          "mean_excess_pct": 0.0,
+          "t_stat": 0.0,
+          "n_eff": 140.7
+        },
+        "126": {
+          "n": 192849,
+          "mean_excess_pct": -0.0,
+          "t_stat": -0.0,
+          "n_eff": 70.6
+        }
+      }
+    }
+  },
+  "wait_for_pullback": {
+    "st": {
+      "n": 21181,
+      "fill_rate_pct": 92.3,
+      "mean_gain_vs_buy_now_pct": -0.079,
+      "t_stat": -0.324,
+      "pct_cases_better": 92.4
+    }
+  },
+  "signal_following": {
+    "n_stocks": 548,
+    "median": {
+      "buy_hold": {
+        "cagr": 8.057,
+        "sharpe": 0.418,
+        "max_dd": -52.324,
+        "in_mkt": 100.0
+      },
+      "score": {
+        "cagr": 4.489,
+        "sharpe": 0.313,
+        "max_dd": -43.318,
+        "in_mkt": 50.911
+      },
+      "regime": {
+        "cagr": 4.965,
+        "sharpe": 0.322,
+        "max_dd": -47.658,
+        "in_mkt": 81.919
+      },
+      "score_regime": {
+        "cagr": 1.802,
+        "sharpe": 0.197,
+        "max_dd": -37.358,
+        "in_mkt": 39.017
+      }
+    },
+    "pct_stocks_better_than_buy_hold": {
+      "score": {
+        "cagr": 33.0,
+        "sharpe": 31.6,
+        "smaller_drawdown": 83.9
+      },
+      "regime": {
+        "cagr": 22.3,
+        "sharpe": 23.0,
+        "smaller_drawdown": 67.9
+      },
+      "score_regime": {
+        "cagr": 24.6,
+        "sharpe": 24.3,
+        "smaller_drawdown": 89.1
+      }
+    },
+    "equal_weight_portfolio": {
+      "buy_hold": {
+        "cagr": 12.341,
+        "sharpe": 0.694,
+        "max_dd": -39.815
+      },
+      "score": {
+        "cagr": 7.059,
+        "sharpe": 0.602,
+        "max_dd": -25.869
+      },
+      "regime": {
+        "cagr": 7.299,
+        "sharpe": 0.619,
+        "max_dd": -22.327
+      },
+      "score_regime": {
+        "cagr": 3.122,
+        "sharpe": 0.478,
+        "max_dd": -13.646
+      }
+    },
+    "examples": {
+      "AAPL": {
+        "buy_hold_cagr": 27.0,
+        "buy_hold_sharpe": 0.94,
+        "buy_hold_max_dd": -38.52,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 12.61,
+        "score_sharpe": 0.61,
+        "score_max_dd": -35.94,
+        "score_in_mkt": 44.69,
+        "regime_cagr": 24.13,
+        "regime_sharpe": 1.06,
+        "regime_max_dd": -21.49,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 10.06,
+        "score_regime_sharpe": 0.76,
+        "score_regime_max_dd": -18.2,
+        "score_regime_in_mkt": 26.65
+      },
+      "AMZN": {
+        "buy_hold_cagr": 18.99,
+        "buy_hold_sharpe": 0.68,
+        "buy_hold_max_dd": -56.15,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 17.45,
+        "score_sharpe": 0.71,
+        "score_max_dd": -52.31,
+        "score_in_mkt": 50.02,
+        "regime_cagr": 10.4,
+        "regime_sharpe": 0.5,
+        "regime_max_dd": -44.89,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 9.0,
+        "score_regime_sharpe": 0.56,
+        "score_regime_max_dd": -37.41,
+        "score_regime_in_mkt": 31.94
+      },
+      "CAT": {
+        "buy_hold_cagr": 23.01,
+        "buy_hold_sharpe": 0.8,
+        "buy_hold_max_dd": -43.36,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 10.02,
+        "score_sharpe": 0.59,
+        "score_max_dd": -30.41,
+        "score_in_mkt": 36.03,
+        "regime_cagr": 12.18,
+        "regime_sharpe": 0.57,
+        "regime_max_dd": -50.67,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 5.96,
+        "score_regime_sharpe": 0.44,
+        "score_regime_max_dd": -25.16,
+        "score_regime_in_mkt": 31.94
+      },
+      "GOOGL": {
+        "buy_hold_cagr": 23.4,
+        "buy_hold_sharpe": 0.84,
+        "buy_hold_max_dd": -44.32,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 15.75,
+        "score_sharpe": 0.73,
+        "score_max_dd": -41.65,
+        "score_in_mkt": 46.25,
+        "regime_cagr": 18.07,
+        "regime_sharpe": 0.79,
+        "regime_max_dd": -34.77,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 10.91,
+        "score_regime_sharpe": 0.74,
+        "score_regime_max_dd": -25.29,
+        "score_regime_in_mkt": 28.3
+      },
+      "JNJ": {
+        "buy_hold_cagr": 10.12,
+        "buy_hold_sharpe": 0.59,
+        "buy_hold_max_dd": -27.37,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 8.21,
+        "score_sharpe": 0.58,
+        "score_max_dd": -23.4,
+        "score_in_mkt": 53.58,
+        "regime_cagr": 8.88,
+        "regime_sharpe": 0.63,
+        "regime_max_dd": -22.79,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 4.58,
+        "score_regime_sharpe": 0.46,
+        "score_regime_max_dd": -16.1,
+        "score_regime_in_mkt": 37.85
+      },
+      "JPM": {
+        "buy_hold_cagr": 17.41,
+        "buy_hold_sharpe": 0.71,
+        "buy_hold_max_dd": -43.63,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 14.02,
+        "score_sharpe": 0.68,
+        "score_max_dd": -35.08,
+        "score_in_mkt": 44.69,
+        "regime_cagr": 12.55,
+        "regime_sharpe": 0.67,
+        "regime_max_dd": -32.66,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 9.1,
+        "score_regime_sharpe": 0.7,
+        "score_regime_max_dd": -21.59,
+        "score_regime_in_mkt": 26.92
+      },
+      "LIN": {
+        "buy_hold_cagr": 16.81,
+        "buy_hold_sharpe": 0.77,
+        "buy_hold_max_dd": -32.59,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 10.31,
+        "score_sharpe": 0.62,
+        "score_max_dd": -28.0,
+        "score_in_mkt": 48.15,
+        "regime_cagr": 11.18,
+        "regime_sharpe": 0.69,
+        "regime_max_dd": -19.61,
+        "regime_in_mkt": 80.11,
+        "score_regime_cagr": 5.04,
+        "score_regime_sharpe": 0.48,
+        "score_regime_max_dd": -20.39,
+        "score_regime_in_mkt": 29.66
+      },
+      "META": {
+        "buy_hold_cagr": 38.83,
+        "buy_hold_sharpe": 0.98,
+        "buy_hold_max_dd": -51.46,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 26.36,
+        "score_sharpe": 0.87,
+        "score_max_dd": -51.46,
+        "score_in_mkt": 45.46,
+        "regime_cagr": 32.54,
+        "regime_sharpe": 1.0,
+        "regime_max_dd": -33.84,
+        "regime_in_mkt": 80.84,
+        "score_regime_cagr": 22.07,
+        "score_regime_sharpe": 1.06,
+        "score_regime_max_dd": -11.19,
+        "score_regime_in_mkt": 26.49
+      },
+      "MSFT": {
+        "buy_hold_cagr": 24.24,
+        "buy_hold_sharpe": 0.9,
+        "buy_hold_max_dd": -37.15,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 16.51,
+        "score_sharpe": 0.77,
+        "score_max_dd": -32.24,
+        "score_in_mkt": 42.47,
+        "regime_cagr": 14.36,
+        "regime_sharpe": 0.71,
+        "regime_max_dd": -34.23,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 7.86,
+        "score_regime_sharpe": 0.58,
+        "score_regime_max_dd": -32.08,
+        "score_regime_in_mkt": 24.88
+      },
+      "NEE": {
+        "buy_hold_cagr": 11.25,
+        "buy_hold_sharpe": 0.54,
+        "buy_hold_max_dd": -44.97,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 8.66,
+        "score_sharpe": 0.56,
+        "score_max_dd": -44.92,
+        "score_in_mkt": 40.47,
+        "regime_cagr": 8.84,
+        "regime_sharpe": 0.51,
+        "regime_max_dd": -55.51,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 6.0,
+        "score_regime_sharpe": 0.48,
+        "score_regime_max_dd": -46.71,
+        "score_regime_in_mkt": 34.07
+      },
+      "NVDA": {
+        "buy_hold_cagr": 51.99,
+        "buy_hold_sharpe": 1.09,
+        "buy_hold_max_dd": -66.34,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 21.91,
+        "score_sharpe": 0.72,
+        "score_max_dd": -51.66,
+        "score_in_mkt": 43.36,
+        "regime_cagr": 39.67,
+        "regime_sharpe": 1.03,
+        "regime_max_dd": -49.0,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 11.99,
+        "score_regime_sharpe": 0.6,
+        "score_regime_max_dd": -40.1,
+        "score_regime_in_mkt": 25.77
+      },
+      "PG": {
+        "buy_hold_cagr": 9.91,
+        "buy_hold_sharpe": 0.57,
+        "buy_hold_max_dd": -23.77,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 1.59,
+        "score_sharpe": 0.18,
+        "score_max_dd": -30.82,
+        "score_in_mkt": 48.02,
+        "regime_cagr": 9.89,
+        "regime_sharpe": 0.7,
+        "regime_max_dd": -22.08,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 4.79,
+        "score_regime_sharpe": 0.52,
+        "score_regime_max_dd": -21.1,
+        "score_regime_in_mkt": 34.43
+      },
+      "PLD": {
+        "buy_hold_cagr": 10.67,
+        "buy_hold_sharpe": 0.5,
+        "buy_hold_max_dd": -43.3,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 9.62,
+        "score_sharpe": 0.58,
+        "score_max_dd": -33.48,
+        "score_in_mkt": 43.14,
+        "regime_cagr": 7.69,
+        "regime_sharpe": 0.46,
+        "regime_max_dd": -36.8,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 5.73,
+        "score_regime_sharpe": 0.5,
+        "score_regime_max_dd": -25.25,
+        "score_regime_in_mkt": 33.1
+      },
+      "T": {
+        "buy_hold_cagr": 6.43,
+        "buy_hold_sharpe": 0.37,
+        "buy_hold_max_dd": -39.43,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 1.7,
+        "score_sharpe": 0.18,
+        "score_max_dd": -39.17,
+        "score_in_mkt": 49.8,
+        "regime_cagr": 6.17,
+        "regime_sharpe": 0.4,
+        "regime_max_dd": -37.02,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 3.04,
+        "score_regime_sharpe": 0.28,
+        "score_regime_max_dd": -26.76,
+        "score_regime_in_mkt": 38.87
+      },
+      "XOM": {
+        "buy_hold_cagr": 13.8,
+        "buy_hold_sharpe": 0.58,
+        "buy_hold_max_dd": -61.01,
+        "buy_hold_in_mkt": 100.0,
+        "score_cagr": 4.48,
+        "score_sharpe": 0.34,
+        "score_max_dd": -30.49,
+        "score_in_mkt": 44.91,
+        "regime_cagr": 6.81,
+        "regime_sharpe": 0.4,
+        "regime_max_dd": -65.59,
+        "regime_in_mkt": 81.92,
+        "score_regime_cagr": 3.55,
+        "score_regime_sharpe": 0.3,
+        "score_regime_max_dd": -33.57,
+        "score_regime_in_mkt": 42.96
+      }
+    }
+  }
+}
