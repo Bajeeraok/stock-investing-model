@@ -60,6 +60,87 @@ export interface ScanAlert {
 
 type ViewMode = "action" | "all";
 
+const ENTRY_MODE_LABEL: Record<string, { text: string; cls: string; title: string }> = {
+  full_go: { text: "Full GO", cls: "bg-emerald-500/10 text-emerald-300 border-emerald-500/30", title: "All primary gates pass — staged add allowed" },
+  starter_only: { text: "Starter only", cls: "bg-amber-500/10 text-amber-200 border-amber-500/30", title: "Valuation passes, technicals blocked — small starter at most" },
+  hard_lock: { text: "Locked", cls: "bg-slate-700/40 text-slate-300 border-slate-600/50", title: "Gates blocked — no new adds; holders keep default HOLD" },
+};
+
+function ModeChips({ signals }: { signals?: Record<string, unknown> }) {
+  if (!signals) return null;
+  const em = typeof signals.entryMode === "string" ? ENTRY_MODE_LABEL[signals.entryMode] : undefined;
+  const held = signals.held === true;
+  const protect = typeof signals.protectActive === "boolean" ? (signals.protectActive as boolean) : null;
+  return (
+    <>
+      {held && (
+        <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-sky-500/10 text-sky-300 border-sky-500/30" title="You hold this position">
+          Held
+        </span>
+      )}
+      {em && (
+        <span className={clsx("text-[10px] px-2 py-0.5 rounded border shrink-0", em.cls)} title={em.title}>
+          {em.text}
+        </span>
+      )}
+      {protect === true && (
+        <span
+          className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-violet-500/10 text-violet-300 border-violet-500/30"
+          title="Optional protect mode is on (stock below 200-day average or SPY risk-off): ~half position if you use it"
+        >
+          Protect on
+        </span>
+      )}
+    </>
+  );
+}
+
+const ALERT_RULES: { type: string; when: string; who: string; mode: string }[] = [
+  { type: "In entry band", when: "Price enters a plan band (ST/MT/LT). Re-alerts after 4h if still inside.", who: "Holdings + watchlist", mode: "Full GO → staged add OK. Starter only → small size, watchlist needs ≥2% below band top. Locked → suppressed." },
+  { type: "Stop hit / near stop", when: "Price below a plan stop, or within 2% of it.", who: "Holdings only", mode: "Plan traders trim/exit per plan. Long-term holders: default HOLD; protect mode is the lower-risk option." },
+  { type: "Target hit / near target", when: "Price at target, or within 5% of it.", who: "Holdings only", mode: "Optional trim / scale-out — not a sell signal." },
+  { type: "Protect mode on / off", when: "Stock crosses its 200-day average (±1% band) or SPY turns risk-off / back on. Fires only on change.", who: "Holdings + watchlist", mode: "Optional insurance: ~50% position when on, full when off. Default action stays HOLD." },
+  { type: "Earnings soon", when: "Earnings within the alert window.", who: "Holdings; watchlist only if Full GO", mode: "No new positions before the report; holders may trim speculative size." },
+  { type: "Almost ready", when: "Moves to 3/4 gates + short-term verdict supports add.", who: "Watchlist", mode: "Not full GO — watch the last blocking gate." },
+  { type: "Model cross", when: "ML probability crosses the add threshold.", who: "Holdings; watchlist only if Full GO", mode: "Split entry: starter now, optional band limit for a cheaper fill." },
+  { type: "RSI oversold", when: "RSI-14 crosses below 35 or drops 3+ points deeper.", who: "Holdings; watchlist only if Full GO", mode: "Informational — oversold dips were not an edge in our 10-year test." },
+  { type: "Tactical velocity", when: "Volume/Bollinger breakout with ≥2 gates.", who: "Watchlist", mode: "Short-term track only — not an accumulate GO." },
+];
+
+function AlertRulesExplainer() {
+  return (
+    <details className="rounded-lg border border-slate-700/60 bg-slate-950/30 px-3 py-2 text-xs text-slate-400">
+      <summary className="cursor-pointer text-slate-300 font-medium">How alerts are checked (rules &amp; modes)</summary>
+      <p className="mt-2 text-[11px] text-slate-500">
+        Checked on every dashboard refresh (~15 min in market hours). No alert means &quot;sell because the score is low&quot; —
+        a chosen stock&apos;s default is HOLD. Chips on each alert show Held, entry mode (Full GO / Starter only / Locked) and Protect on.
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[560px] text-left border-collapse">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-700">
+              <th className="py-1 pr-3 font-medium">Alert</th>
+              <th className="py-1 pr-3 font-medium">Fires when</th>
+              <th className="py-1 pr-3 font-medium">For</th>
+              <th className="py-1 font-medium">Mode / what to do</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ALERT_RULES.map((r) => (
+              <tr key={r.type} className="border-b border-slate-800 align-top">
+                <td className="py-1 pr-3 text-slate-300 whitespace-nowrap">{r.type}</td>
+                <td className="py-1 pr-3">{r.when}</td>
+                <td className="py-1 pr-3 whitespace-nowrap">{r.who}</td>
+                <td className="py-1">{r.mode}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
 function prLabel(p: number): string {
   return p === 1 ? "CRITICAL" : p === 2 ? "HIGH" : p === 3 ? "MEDIUM" : "LOW";
 }
@@ -289,6 +370,7 @@ function AlertCard({
             >
               {prLabel(a.priority)}
             </span>
+            <ModeChips signals={a.signals} />
             <span className="text-[10px] text-slate-500 shrink-0">{`Risk: ${a.risk_level}`}</span>
             {a.timestamp ? (
               <span
@@ -587,6 +669,8 @@ export function AlertsPanel({
           Refresh
         </button>
       </div>
+
+      <AlertRulesExplainer />
 
       <div className="flex flex-wrap gap-2 items-center">
         <span className="text-[10px] uppercase tracking-wide text-slate-500 shrink-0">Tracks</span>

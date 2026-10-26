@@ -60,6 +60,14 @@ async function fetchWithTimeout(
   }
 }
 
+/** Content-Type plus Content-Disposition so file downloads keep their filename. */
+function passthroughHeaders(res: Response): Record<string, string> {
+  const h: Record<string, string> = { "Content-Type": res.headers.get("Content-Type") || "application/json" };
+  const cd = res.headers.get("Content-Disposition");
+  if (cd) h["Content-Disposition"] = cd;
+  return h;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path?: string[] }> }
@@ -89,11 +97,8 @@ export async function GET(
       await new Promise((r) => setTimeout(r, backoffMs[i]));
       res = await doFetch();
     }
-    const body = await res.text();
-    return new NextResponse(body, {
-      status: res.status,
-      headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
-    });
+    const body = await res.arrayBuffer();
+    return new NextResponse(body, { status: res.status, headers: passthroughHeaders(res) });
   } catch (e) {
     lastErr = e;
     const isAbort = e instanceof Error && (e as Error & { name?: string }).name === "AbortError";
@@ -110,11 +115,8 @@ export async function GET(
           console.warn("[proxy] Retry", i + 1, "in", backoffMs[i] / 1000, "s...");
           await new Promise((r) => setTimeout(r, backoffMs[i]));
           const res = await doFetch();
-          const body = await res.text();
-          return new NextResponse(body, {
-            status: res.status,
-            headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
-          });
+          const body = await res.arrayBuffer();
+          return new NextResponse(body, { status: res.status, headers: passthroughHeaders(res) });
         } catch (retryErr) {
           lastErr = retryErr;
           const retryCause = retryErr instanceof Error && "cause" in retryErr ? (retryErr as Error & { cause?: unknown }).cause : null;

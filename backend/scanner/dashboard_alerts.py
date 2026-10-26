@@ -440,10 +440,27 @@ def run_retail_alerts_from_dashboard_refresh(
     store = ScannerStore(data_root)
     appended = 0
 
+    try:
+        protect_alerts = evaluate_protect_mode_alerts(rows_by_ticker, watchlist | set(portfolio_tickers), data_root)
+    except Exception as e:
+        logger.debug("protect-mode alerts failed: %s", e)
+        protect_alerts = []
+    try:
+        protect_state = json.loads((Path(data_root) / "alerts" / "protect_state.json").read_text(encoding="utf-8"))
+    except Exception:
+        protect_state = {}
+    held = {str(t).upper() for t in portfolio_tickers}
+
     def on_alert(a) -> None:
         nonlocal appended
         if a.id in store.load_dismissed():
             return
+        t = str(a.ticker or "").upper()
+        ps = protect_state.get(t) or {}
+        if "active" in ps:
+            a.signals = {**(a.signals or {}), "protectActive": bool(ps["active"])}
+        if t and "held" not in (a.signals or {}):
+            a.signals = {**(a.signals or {}), "held": t in held}
         store.append_alert(a)
         appended += 1
 
@@ -458,11 +475,8 @@ def run_retail_alerts_from_dashboard_refresh(
         enable_options_alerts=False,
     )
 
-    try:
-        for a in evaluate_protect_mode_alerts(rows_by_ticker, watchlist | set(portfolio_tickers), data_root):
-            on_alert(a)
-    except Exception as e:
-        logger.debug("protect-mode alerts failed: %s", e)
+    for a in protect_alerts:
+        on_alert(a)
 
     from signals.time_et import now_iso_et
 

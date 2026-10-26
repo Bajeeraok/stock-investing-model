@@ -670,6 +670,7 @@ def evaluate_retail_alerts(
         price = snap.price
         in_wl = ticker in watchlist
         in_portfolio = ticker in portfolio_set
+        n_alerts_before = len(alerts)
         st = new_state.get(ticker) or {}
         last_price = st.get("last_price")
         prev_ml = st.get("previous_ml_prob")
@@ -825,17 +826,21 @@ def evaluate_retail_alerts(
                     priority_override=pr,
                     emoji_override=em_override,
                 ))
-            if stop and price < stop:
+            # Stop/target are exit-side plans — only meaningful for positions you hold.
+            if in_portfolio and stop and price < stop:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.STOP_HIT,
                     f"{ticker} ({label}) below stop ${stop:.2f}",
-                    f"Price below {band_key} stop — consider exit or trim.",
+                    (
+                        f"Price below the {label.lower()} plan stop. If you trade the {label.lower()} plan, exit or trim per plan. "
+                        f"Long-term holders: default stays HOLD — protect mode (about half position) is the lower-risk option."
+                    ),
                     snap.scan_tier,
                     {"band": band_key, "stopLoss": stop, "price": price},
                     actionable=(
-                        f"Exit: price ${price:.2f} is below {band_key} stop ${stop:.2f}. "
-                        f"Trim or close now to limit loss."
+                        f"{label} plan stop hit: ${price:.2f} < ${stop:.2f}. "
+                        f"Trading this plan → trim or close per plan. Holding long term → HOLD, or use protect mode."
                     ),
                     one_liner=_bias_prob_range_line(
                         price=price,
@@ -846,7 +851,7 @@ def evaluate_retail_alerts(
                     ),
                     dedupe_extra=dex,
                 ))
-            elif stop and price > stop and price <= stop * 1.02:
+            elif in_portfolio and stop and price > stop and price <= stop * 1.02:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.STOP_APPROACHING,
@@ -867,7 +872,7 @@ def evaluate_retail_alerts(
                     ),
                     dedupe_extra=dex,
                 ))
-            if target and price >= target:
+            if in_portfolio and target and price >= target:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.TARGET_HIT,
@@ -888,7 +893,7 @@ def evaluate_retail_alerts(
                     ),
                     dedupe_extra=dex,
                 ))
-            elif target and tf < 1 and price >= tf * target:
+            elif in_portfolio and target and tf < 1 and price >= tf * target:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.TARGET_APPROACHING,
@@ -930,11 +935,11 @@ def evaluate_retail_alerts(
                     ticker,
                     AlertType.ML_PROB_CROSSED,
                     f"{ticker} ML prob now {ml_current:.0f}% (crossed {ML_PROB_CROSS_THRESHOLD:.0f}%)",
-                    f"Model now supports add. Consider adding on pullbacks.",
+                    f"Model now supports add. Split entry: part now, optional limit in the band for the rest.",
                     snap.scan_tier,
                     {"mlProb": ml_current, "previousMlProb": prev, "threshold": ML_PROB_CROSS_THRESHOLD, "price": price},
                     actionable=(
-                        f"Entry: model supports adding at current price ${price:.2f}; consider on pullbacks. "
+                        f"Entry: model supports adding at ${price:.2f}. Split entry — starter now, optional band limit for a cheaper fill. "
                         f"Set your own stop and target. Duration: medium term (weeks)."
                     ),
                     one_liner=_bias_prob_range_line(
@@ -982,7 +987,7 @@ def evaluate_retail_alerts(
                     f"{ticker} RSI oversold — {rsi_f:.0f} (< {RSI_OVERSOLD_THRESHOLD:.0f})",
                     (
                         f"RSI-14 is {rsi_f:.1f}, in oversold territory. "
-                        f"Regime: {snap.regime}. Consider watching for reversal or staged entry."
+                        f"Regime: {snap.regime}. Informational only — buying oversold dips was not an edge in our 10y test."
                     ),
                     snap.scan_tier,
                     {
@@ -996,8 +1001,8 @@ def evaluate_retail_alerts(
                     },
                     actionable=(
                         f"RSI-14 oversold at {rsi_f:.0f} (spot ${price:.2f}). "
-                        f"Look for a reversal signal (bullish candle, volume uptick) before adding. "
-                        f"Initial support at {support_str}. Keep size small until regime confirms."
+                        f"Informational: oversold alone is not a buy reason (no edge in our 10y same-stock test). "
+                        f"Support near {support_str}. Holders: default HOLD."
                     ),
                     one_liner=_bias_prob_range_line(
                         price=price,
@@ -1011,6 +1016,9 @@ def evaluate_retail_alerts(
             if rsi_f is not None:
                 st = {**new_state.get(ticker, st), "previous_rsi": rsi_f}
                 new_state[ticker] = st
+
+        for _a in alerts[n_alerts_before:]:
+            _a.signals = {**(_a.signals or {}), "entryMode": entry_mode, "held": in_portfolio}
 
         # Keep last_price for tickers that didn't have levels
         if ticker not in new_state and (last_price is not None or price):
