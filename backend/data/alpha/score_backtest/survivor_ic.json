@@ -1,0 +1,157 @@
+{
+  "n": 205262,
+  "coverage_pct": {
+    "mom6m": 100.0,
+    "mom12m_off": 100.0,
+    "net_buyback": 90.5,
+    "oper_prof": 73.2,
+    "tax_ratio": 86.6,
+    "survivor_score": 98.8
+  },
+  "horizons": {
+    "21": {
+      "mom6m": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": -0.006,
+        "ic_t": -0.32,
+        "ic_pos_pct": 53.5
+      },
+      "mom12m_off": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": 0.0029,
+        "ic_t": 0.14,
+        "ic_pos_pct": 53.7
+      },
+      "net_buyback": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": 0.0102,
+        "ic_t": 0.87,
+        "ic_pos_pct": 52.8
+      },
+      "oper_prof": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": 0.0164,
+        "ic_t": 1.48,
+        "ic_pos_pct": 55.7
+      },
+      "tax_ratio": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": -0.0004,
+        "ic_t": -0.04,
+        "ic_pos_pct": 47.0
+      },
+      "survivor_score": {
+        "n_dates": 447,
+        "n_eff": 111.8,
+        "ic_mean": 0.0072,
+        "ic_t": 0.5,
+        "ic_pos_pct": 51.5
+      }
+    },
+    "63": {
+      "mom6m": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": 0.0088,
+        "ic_t": 0.32,
+        "ic_pos_pct": 57.9
+      },
+      "mom12m_off": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": -0.0009,
+        "ic_t": -0.03,
+        "ic_pos_pct": 52.6
+      },
+      "net_buyback": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": 0.0165,
+        "ic_t": 0.83,
+        "ic_pos_pct": 56.9
+      },
+      "oper_prof": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": 0.0223,
+        "ic_t": 1.16,
+        "ic_pos_pct": 54.2
+      },
+      "tax_ratio": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": -0.0029,
+        "ic_t": -0.2,
+        "ic_pos_pct": 47.6
+      },
+      "survivor_score": {
+        "n_dates": 439,
+        "n_eff": 33.8,
+        "ic_mean": 0.0153,
+        "ic_t": 0.67,
+        "ic_pos_pct": 53.5
+      }
+    },
+    "126": {
+      "mom6m": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": 0.0347,
+        "ic_t": 0.9,
+        "ic_pos_pct": 64.8
+      },
+      "mom12m_off": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": 0.0051,
+        "ic_t": 0.11,
+        "ic_pos_pct": 56.6
+      },
+      "net_buyback": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": 0.0237,
+        "ic_t": 0.85,
+        "ic_pos_pct": 58.2
+      },
+      "oper_prof": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": 0.0302,
+        "ic_t": 1.15,
+        "ic_pos_pct": 56.1
+      },
+      "tax_ratio": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": -0.007,
+        "ic_t": -0.41,
+        "ic_pos_pct": 45.3
+      },
+      "survivor_score": {
+        "n_dates": 426,
+        "n_eff": 17.0,
+        "ic_mean": 0.033,
+        "ic_t": 1.06,
+        "ic_pos_pct": 63.6
+      }
+    }
+  },
+  "survivor_ic_by_year_63": {
+    "2017": 0.2238,
+    "2018": -0.0398,
+    "2019": 0.0155,
+    "2020": -0.026,
+    "2021": 0.0073,
+    "2022": 0.02,
+    "2023": 0.0818,
+    "2024": 0.0066,
+    "2025": 0.0131,
+    "2026": 0.0329
+  }
+}
