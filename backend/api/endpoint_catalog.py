@@ -63,6 +63,7 @@ CATALOG: list[dict[str, Any]] = [
     # EOD & audit
     {"group": "EOD & Audit", "method": "GET", "path": "/api/eod/status", "description": "EOD scheduler + snapshot status"},
     {"group": "EOD & Audit", "method": "GET", "path": "/api/eod/snapshots", "description": "List EOD snapshot dates (Redis ∪ disk)"},
+    {"group": "EOD & Audit", "method": "GET", "path": "/api/estimates/snapshots", "description": "List saved daily FMP consensus vintages (download via /api/estimates/snapshots/{name})"},
     {"group": "EOD & Audit", "method": "GET", "path": "/api/eod/snapshots/{date}", "description": "Download one full EOD snapshot JSON by date"},
     {"group": "EOD & Audit", "method": "POST", "path": "/api/eod/save-from-last-run", "description": "Save EOD from last dashboard run", "confirm": True},
     {

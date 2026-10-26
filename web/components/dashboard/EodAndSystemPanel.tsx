@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Database, RefreshCw, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Database, RefreshCw, CheckCircle, XCircle, AlertCircle, Download } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -34,6 +34,17 @@ interface EodAndSystemPanelProps {
   redisStatus: RedisStatus | undefined;
   dataRoot?: string | null;
   onRefresh?: () => void;
+}
+
+interface EstimatesFile {
+  name: string;
+  as_of: string;
+  size_bytes: number;
+  modified?: string | null;
+}
+
+function apiPath(path: string): string {
+  return API_BASE ? `${API_BASE}${path}` : path;
 }
 
 function formatBytes(n: number): string {
@@ -80,6 +91,28 @@ export function EodAndSystemPanel({
   const [liveLatest, setLiveLatest] = useState<string | null>(null);
   const [liveDataRoot, setLiveDataRoot] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [estFiles, setEstFiles] = useState<EstimatesFile[] | null>(null);
+  const [estDir, setEstDir] = useState<string | null>(null);
+  const [estLatestRows, setEstLatestRows] = useState<number | null>(null);
+  const [estError, setEstError] = useState<string | null>(null);
+
+  const fetchEstimates = useCallback(async () => {
+    setEstError(null);
+    try {
+      const res = await fetch(apiPath("/api/estimates/snapshots"), { cache: "no-store", headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setEstFiles(Array.isArray(data?.files) ? (data.files as EstimatesFile[]) : []);
+      setEstDir(typeof data?.dir === "string" ? data.dir : null);
+      setEstLatestRows(typeof data?.latest_rows === "number" ? data.latest_rows : null);
+    } catch (err) {
+      setEstError(err instanceof Error ? err.message : "Failed to load estimates list");
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchEstimates();
+  }, [fetchEstimates]);
 
   const fetchLiveList = useCallback(async () => {
     setLiveLoading(true);
@@ -236,13 +269,65 @@ export function EodAndSystemPanel({
                       </span>
                     )}
                   </span>
-                  <span className="text-slate-500 text-xs">
+                  <span className="text-slate-500 text-xs flex items-center gap-2">
                     {formatBytes(s.size_bytes ?? 0)}
                     {s.run_date ? ` · ${formatRunDateEt(s.run_date)}` : ""}
+                    <a
+                      href={apiPath(`/api/eod/snapshots/${s.date}?download=true`)}
+                      download={`${s.date}.json`}
+                      className="text-slate-400 hover:text-emerald-400"
+                      title={`Download ${s.date}.json`}
+                      aria-label={`Download ${s.date}.json`}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
                   </span>
                 </li>
               );
             })}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t border-slate-700 pt-3">
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+          FMP estimate snapshots ({estFiles?.length ?? 0})
+        </p>
+        <p className="text-xs text-slate-500 mb-2">
+          Daily analyst-consensus vintages saved after each EOD run
+          {estDir ? (
+            <>
+              {" "}under <code className="bg-slate-800 px-1 rounded">{estDir}/</code>
+            </>
+          ) : null}
+          {estLatestRows != null ? ` · latest has ${estLatestRows} tickers` : ""}
+        </p>
+        {estError ? (
+          <p className="text-xs text-amber-400">{estError}</p>
+        ) : estFiles == null ? (
+          <p className="text-sm text-slate-500">Loading…</p>
+        ) : estFiles.length === 0 ? (
+          <p className="text-sm text-slate-500">None saved yet — the first one is written after the next successful EOD run.</p>
+        ) : (
+          <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
+            {estFiles.map((f) => (
+              <li key={f.name} className="flex items-center justify-between gap-2 py-0.5 text-slate-300">
+                <span className="font-mono">{f.name}</span>
+                <span className="text-slate-500 text-xs flex items-center gap-2">
+                  {formatBytes(f.size_bytes ?? 0)}
+                  {f.modified ? ` · ${formatRunDateEt(f.modified)}` : ""}
+                  <a
+                    href={apiPath(`/api/estimates/snapshots/${f.name}`)}
+                    download={f.name}
+                    className="text-slate-400 hover:text-emerald-400"
+                    title={`Download ${f.name}`}
+                    aria-label={`Download ${f.name}`}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </a>
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </div>

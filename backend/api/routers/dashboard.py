@@ -4838,7 +4838,7 @@ def eod_snapshots_list():
 
 
 @router.get("/eod/snapshots/{snapshot_date}")
-def eod_snapshot_get(snapshot_date: str):
+def eod_snapshot_get(snapshot_date: str, download: bool = False):
     """
     Return one full EOD snapshot JSON (Redis first, then DATA_ROOT/eod).
 
@@ -4874,6 +4874,18 @@ def eod_snapshot_get(snapshot_date: str):
     if not snap or not isinstance(snap, dict):
         raise HTTPException(status_code=404, detail=f"No EOD snapshot for {date_str}")
 
+    if download:
+        from fastapi.responses import FileResponse, Response
+
+        disk = get_data_root() / "eod" / f"{date_str}.json"
+        if disk.is_file():
+            return FileResponse(disk, media_type="application/json", filename=f"{date_str}.json")
+        return Response(
+            json.dumps(snap, default=str),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{date_str}.json"'},
+        )
+
     # Keep payload lean for clients that only need run_results + meta.
     out = dict(snap)
     out["_meta"] = {
@@ -4882,6 +4894,57 @@ def eod_snapshot_get(snapshot_date: str):
         "tickers": len(out.get("run_results") or []),
     }
     return out
+
+
+def _estimates_dir():
+    from config_loader import get_data_root
+    from signals.alpha.estimates_snapshot import DATASET
+
+    return get_data_root() / "alpha" / "pit_store" / DATASET
+
+
+@router.get("/estimates/snapshots")
+def estimates_snapshots_list():
+    """Daily FMP consensus vintages saved after each EOD run (DATA_ROOT/alpha/pit_store/fmp_estimates)."""
+    from datetime import datetime
+
+    from signals.time_et import ET
+
+    d = _estimates_dir()
+    files = []
+    if d.is_dir():
+        for p in sorted(d.glob("*.csv.gz"), reverse=True):
+            st = p.stat()
+            files.append({
+                "name": p.name,
+                "as_of": p.name[:10],
+                "size_bytes": st.st_size,
+                "modified": datetime.fromtimestamp(st.st_mtime, tz=ET).isoformat(timespec="seconds"),
+            })
+    latest_rows = None
+    if files:
+        try:
+            import pandas as pd
+
+            latest_rows = int(len(pd.read_csv(d / files[0]["name"])))
+        except Exception:
+            latest_rows = None
+    return {"dir": str(d), "count": len(files), "latest_as_of": files[0]["as_of"] if files else None,
+            "latest_rows": latest_rows, "files": files}
+
+
+@router.get("/estimates/snapshots/{name}")
+def estimates_snapshot_download(name: str):
+    import re
+
+    from fastapi.responses import FileResponse
+
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}\.csv\.gz", name or ""):
+        raise HTTPException(status_code=400, detail="name must be YYYY-MM-DD.csv.gz")
+    p = _estimates_dir() / name
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail=f"No estimates snapshot {name}")
+    return FileResponse(p, media_type="application/gzip", filename=name)
 
 
 @router.post("/eod/run")
