@@ -882,6 +882,11 @@ export interface DashboardData {
       hit_rate_pct?: number;
     } | null;
     summary_by_model_version?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
+    summary_timing_vs_hold?: {
+      horizon_days: number;
+      by_signal: Record<string, { n: number; tickers: number; avg_return_pct: number; hold_same_stock_avg_return_pct: number; edge_vs_hold_pct: number; beat_hold_pct: number; avg_excess_vs_spy_pct?: number | null }>;
+      note?: string;
+    } | null;
     data_source_note?: string | null;
     meta?: {
       eod_date_first?: string | null;

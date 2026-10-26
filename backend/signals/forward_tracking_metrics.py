@@ -456,6 +456,45 @@ def aggregate_by_signal(rows: list[dict[str, Any]], horizon: int) -> dict[str, d
     return out
 
 
+def aggregate_timing_vs_hold(rows: list[dict[str, Any]], horizon: int = 20) -> dict[str, Any]:
+    """Per signal bucket: avg forward return vs simply holding the same stock.
+
+    Baseline = that ticker's average forward return over every tracked day at this horizon
+    (what holding it all along earned per window). edge = signal-day return minus baseline,
+    averaged across signal days. Positive edge = the label picked better-than-usual days for
+    that stock; ~0 = holding was as good. Also reports excess vs SPY.
+    """
+    hrows = [r for r in _quality_rows(rows) if r.get("horizon_days") == horizon and r.get("actual_return_pct") is not None]
+    if not hrows:
+        return {}
+    by_tk: dict[str, list[float]] = {}
+    for r in hrows:
+        by_tk.setdefault(str(r.get("ticker") or "").upper(), []).append(float(r["actual_return_pct"]))
+    base = {t: sum(v) / len(v) for t, v in by_tk.items() if v}
+    buckets: dict[str, list[dict]] = {}
+    for r in hrows:
+        buckets.setdefault(str(r.get("our_signal") or "N/A"), []).append(r)
+    out: dict[str, Any] = {}
+    for sig, grp in buckets.items():
+        rets = [float(r["actual_return_pct"]) for r in grp]
+        bl = [base[str(r.get("ticker") or "").upper()] for r in grp]
+        edges = [a - b for a, b in zip(rets, bl)]
+        exc = [float(r["excess_return_pct"]) for r in grp if r.get("excess_return_pct") is not None]
+        out[sig] = {
+            "n": len(grp),
+            "tickers": len({str(r.get("ticker") or "").upper() for r in grp}),
+            "avg_return_pct": round(sum(rets) / len(rets), 2),
+            "hold_same_stock_avg_return_pct": round(sum(bl) / len(bl), 2),
+            "edge_vs_hold_pct": round(sum(edges) / len(edges), 2),
+            "beat_hold_pct": round(100.0 * sum(1 for e in edges if e > 0) / len(edges), 1),
+            "avg_excess_vs_spy_pct": round(sum(exc) / len(exc), 2) if exc else None,
+        }
+    return {"horizon_days": horizon, "by_signal": out, "note": (
+        "Edge vs hold = return on days with this label minus the same stock's average return over all "
+        "tracked days. Overlapping windows; small samples are noisy."
+    )}
+
+
 def build_ticker_track_record(
     records: list[dict[str, Any]],
     ticker: str,

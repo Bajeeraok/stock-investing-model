@@ -14,7 +14,7 @@ PROJECT_BUGS_OPTIMIZATIONS_REPORT.md, DATA_DRIVEN_IMPROVEMENT_GUIDE.md.
   (retail_action_payload, commodity_vol, config, ml_horizons.json, forward_tracking,
   calibration, backtest, web components). EOD snapshot JSONs + val_probs.csv left
   untracked per user — prod regenerates them, not required in git.
-- [ ] Deploy to Railway → `POST /api/eod/run?force=true` → verify payloads carry
+- [x] Deploy to Railway (auto-deploys from main; live `/api/ticker/AAPL` verified carrying `protect_mode`, split-entry copy) → `POST /api/eod/run?force=true` → verify payloads carry
   `dip_zone`, `full_go_via`, `macro_regime`, `commodity_vol`, entry_mode shift
   (needs user's Railway access — cannot be done from this environment)
 - [x] `cd web && npm install && npx tsc --noEmit` — **PASS**; fixed 4 pre-existing
@@ -23,7 +23,7 @@ PROJECT_BUGS_OPTIMIZATIONS_REPORT.md, DATA_DRIVEN_IMPROVEMENT_GUIDE.md.
 
 ## P1 — Data-driven validation (next ~21 trading days)
 
-- [ ] Re-slice `starter_only` expectancy with new `in_zone AND val_starter` rule
+- [ ] (parked — starter_only disabled by default) Re-slice `starter_only` expectancy with new `in_zone AND val_starter` rule
 - [ ] Measure `full_go_via: "market_regime_override"` cohort vs strict `all_gates`
 - [ ] `dip_zone` cohort outcomes vs the +6.01%/62.6% bucket — flag confirmed to
   capture the same rows (n=6 in current snapshots — needs accumulation)
@@ -47,26 +47,28 @@ PROJECT_BUGS_OPTIMIZATIONS_REPORT.md, DATA_DRIVEN_IMPROVEMENT_GUIDE.md.
   interactions, entry_mode/regime one-hots). Test AUC **0.530 vs 0.481 raw-prob
   baseline**; excess-label mode (`--label excess`) AUC 0.522 vs 0.487. Artifacts:
   `data/models/lgbm_own_outcomes_short.pkl` + `own_outcomes_report.json`
-- [ ] **Macro gate rescue** — still gated on override-cohort validation
-- [ ] **COT positioning** — still deferred until GVZ/OVX proves out
+- [ ] **Macro gate rescue** — parked: 10y same-stock tests show extra gating/timing layers don't beat holding
+- [ ] **COT positioning** — parked (same reason)
 - [x] **Grains vol (WEAT, CORN)** — realized-vol percentile fallback in
   commodity_vol.py (`RV:WEAT` symbol); live-verified: WEAT → 27th pct "calm"
 - [x] **Sector relative strength** — `sector_relative_strength()` per-ticker
   sector-ETF RS vs SPY (per-day cached) attached as `sector_rs` on EOD rows;
   available to outcomes retrain + downstream. No score nudge yet (untested)
-- [ ] **Intraday trigger layer** — "alert me when price enters the band";
+- [x] **Intraday trigger layer** — `alerts/band_triggers.py` (worker) + scanner ENTRY_ZONE_ENTERED/STOP_HIT on dashboard refresh; PROTECT_MODE_ON/OFF flip alerts added in `scanner/dashboard_alerts.py`. — "alert me when price enters the band";
   backend/alerts engine exists but band-entry triggers not implemented
+
+- [x] **Track record vs same-stock hold** — `summary_timing_vs_hold` in forward tracking (edge vs holding the same stock + vs SPY), shown in ForwardTracking.
 
 ## P3 — UX polish remaining
 
-- [ ] Hide tiles entirely when `risk_reward == null` (don't render "—")
+- [x] Hide tiles entirely when `risk_reward == null` (VerdictPanel already guards `rr != null && rr > 0`) (don't render "—")
 - [ ] `tabular-nums` on remaining % cells in modal
 - [ ] Gate detail strings now include `· macro: …` / `· GVZ: …` — verify
   WhyGateCards renders multi-line details cleanly
 - [x] EntryBandsChart decluttered: domain clamped to ±50% of spot, far levels
   (deep tiers, 2x targets) pin as edge tags (▲/▼), right-edge labels
-  collision-resolved, duplicate bands deduped. Still TODO: MA50/MA200 markers
-- [ ] `DIP_ZONE` row badge on dashboard signal tables (DecisionDeck already
+  collision-resolved, duplicate bands deduped. MA50/MA200 markers done (`bandsFromHorizons` technicalLevels)
+- [x] `DIP_ZONE` row badge on dashboard signal tables (`DipZoneBadge` in SignalsTable) (DecisionDeck already
   consumes `ra.dip_zone` — table badge still open)
 
 ## P4 — Code health

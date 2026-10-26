@@ -634,6 +634,7 @@ def get_forward_tracking(
         "summary_by_gates": summary_by_gates,
         "summary_by_ml_bucket": summary_by_ml_bucket,
         "summary_by_trim_gates": summary_by_trim_gates,
+        "summary_timing_vs_hold": _timing_vs_hold(records),
         "signal_source_counts": signal_source_counts,
         # Per-ticker stats + recent daily calls from ALL records (records above are capped to
         # the newest N watchlist-wide, which silently truncated single-ticker history).
@@ -703,6 +704,16 @@ def _call_right(signal: str, ret: float | None) -> bool | None:
     if "TRIM" in s:
         return ret < 0
     return None
+
+
+def _timing_vs_hold(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    from signals.forward_tracking_metrics import aggregate_timing_vs_hold
+
+    try:
+        return aggregate_timing_vs_hold(records, 20) or None
+    except Exception as e:
+        logger.debug("timing_vs_hold: %s", e)
+        return None
 
 
 def _build_by_ticker_index(records: list[dict[str, Any]]) -> dict[str, Any]:

@@ -15,6 +15,7 @@ const BUY_TYPES = new Set([
   "MOMENTUM_BREAKOUT",
   "SUPPORT_BOUNCE",
   "TACTICAL_VELOCITY",
+  "PROTECT_MODE_OFF",
 ]);
 
 const SELL_TYPES = new Set([
@@ -25,6 +26,7 @@ const SELL_TYPES = new Set([
   "KELLY_REDUCTION",
   "MACRO_RISK_OFF",
   "REGIME_CHANGE",
+  "PROTECT_MODE_ON",
 ]);
 
 export function loadAlertSideFilter(): AlertSideFilter {

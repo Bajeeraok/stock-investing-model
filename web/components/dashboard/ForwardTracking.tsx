@@ -83,6 +83,22 @@ interface ForwardMeta {
   current_model_version?: string | null;
 }
 
+interface TimingVsHoldRow {
+  n: number;
+  tickers: number;
+  avg_return_pct: number;
+  hold_same_stock_avg_return_pct: number;
+  edge_vs_hold_pct: number;
+  beat_hold_pct: number;
+  avg_excess_vs_spy_pct?: number | null;
+}
+
+interface TimingVsHold {
+  horizon_days: number;
+  by_signal: Record<string, TimingVsHoldRow>;
+  note?: string;
+}
+
 interface Props {
   records: RecordRow[];
   summary_by_horizon: SummaryByHorizon;
@@ -92,6 +108,7 @@ interface Props {
   summary_actionable_buy?: HorizonSummary & { label?: string; avg_return_20d_pct?: number };
   summary_by_entry_mode?: Record<string, HorizonSummary & { avg_return_20d_pct?: number; hit_rate_pct?: number }>;
   summary_by_model_version?: SummaryByModelVersion;
+  summary_timing_vs_hold?: TimingVsHold | null;
   data_source_note?: string | null;
   message?: string | null;
   meta?: ForwardMeta | null;
@@ -155,6 +172,7 @@ export function ForwardTracking({
   summary_actionable_buy,
   summary_by_entry_mode,
   summary_by_model_version,
+  summary_timing_vs_hold,
   data_source_note,
   message,
   meta,
@@ -585,6 +603,45 @@ export function ForwardTracking({
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {summary_timing_vs_hold && Object.keys(summary_timing_vs_hold.by_signal || {}).length > 0 && (
+        <div className="mb-3">
+          <p className="text-xs text-slate-500 mb-1">
+            Track record vs holding the same stock ({summary_timing_vs_hold.horizon_days}d) and vs SPY
+          </p>
+          <div className="overflow-x-auto">
+            <table className="text-xs text-left border-collapse min-w-[520px]">
+              <thead>
+                <tr className="text-slate-500 border-b border-slate-700">
+                  <th className="py-1 pr-3 font-medium">Label</th>
+                  <th className="py-1 pr-3 font-medium text-right">Avg return</th>
+                  <th className="py-1 pr-3 font-medium text-right">Hold same stock</th>
+                  <th className="py-1 pr-3 font-medium text-right">Edge vs hold</th>
+                  <th className="py-1 pr-3 font-medium text-right">Beat hold</th>
+                  <th className="py-1 pr-3 font-medium text-right">vs SPY</th>
+                  <th className="py-1 pr-3 font-medium text-right">n (tickers)</th>
+                </tr>
+              </thead>
+              <tbody className="tabular-nums">
+                {Object.entries(summary_timing_vs_hold.by_signal).map(([sig, r]) => (
+                  <tr key={sig} className="border-b border-slate-800">
+                    <td className="py-1 pr-3 text-slate-300">{sig}</td>
+                    <td className="py-1 pr-3 text-right">{fmt(r.avg_return_pct)}</td>
+                    <td className="py-1 pr-3 text-right text-slate-400">{fmt(r.hold_same_stock_avg_return_pct)}</td>
+                    <td className={clsx("py-1 pr-3 text-right", r.edge_vs_hold_pct >= 0 ? "text-emerald-400" : "text-red-400")}>
+                      {fmt(r.edge_vs_hold_pct)}
+                    </td>
+                    <td className="py-1 pr-3 text-right">{r.beat_hold_pct.toFixed(0)}%</td>
+                    <td className="py-1 pr-3 text-right">{r.avg_excess_vs_spy_pct != null ? fmt(r.avg_excess_vs_spy_pct) : "—"}</td>
+                    <td className="py-1 pr-3 text-right text-slate-500">{r.n} ({r.tickers})</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {summary_timing_vs_hold.note && <p className="text-[11px] text-slate-500 mt-1">{summary_timing_vs_hold.note}</p>}
         </div>
       )}
 

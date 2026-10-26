@@ -37,6 +37,9 @@ class AlertType(str, Enum):
     TACTICAL_VELOCITY = "TACTICAL_VELOCITY"
     # Buy-side: RSI oversold (< threshold) on watchlist ticker — works even above entry bands
     RSI_OVERSOLD = "RSI_OVERSOLD"
+    # Optional protect mode flipped (stock vs own MA200 or SPY risk-off) — sizing insurance, not a sell call
+    PROTECT_MODE_ON = "PROTECT_MODE_ON"
+    PROTECT_MODE_OFF = "PROTECT_MODE_OFF"
 
 
 class ScanTier(str, Enum):

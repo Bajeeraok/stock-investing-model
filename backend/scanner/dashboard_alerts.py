@@ -7,6 +7,7 @@ Retail alerts chained to dashboard Refresh — same bands/gates as signals, one 
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Any
 from scanner.engine import MarketSnapshot, ScanEngine
 from scanner.horizon_levels import read_horizon_levels, write_horizon_levels
 from scanner.store import ScannerStore
-from scanner.ticker_universe import ScanTier, TICKER_META
+from scanner.ticker_universe import AlertType, ScanTier, TICKER_META
 
 logger = logging.getLogger("scanner.dashboard_alerts")
 
@@ -262,6 +263,96 @@ def _fetch_prices_for_tickers(tickers: list[str], config: dict, existing: dict[s
     return prices
 
 
+
+def _ma200_state(row: dict | None, prev: bool | None, band_pct: float = 1.0) -> bool | None:
+    """True when close is below MA200 (1% hysteresis band, same rule as signals.protect_mode)."""
+    if not row:
+        return None
+    try:
+        close, ma = float(row.get("close") or 0), float(row.get("ma200") or 0)
+    except (TypeError, ValueError):
+        return None
+    if close <= 0 or ma <= 0:
+        return None
+    if close < ma * (1 - band_pct / 100.0):
+        return True
+    if close > ma * (1 + band_pct / 100.0):
+        return False
+    return bool(prev) if prev is not None else close < ma
+
+
+def evaluate_protect_mode_alerts(
+    rows_by_ticker: dict[str, dict],
+    tickers: set[str],
+    data_root: Path,
+    *,
+    reduced_pct: int = 50,
+) -> list:
+    """PROTECT_MODE_ON/OFF when a held/watched stock's optional protect state flips.
+
+    Protect = stock below its own 200-day average or SPY below its 200-day average. On flip only
+    (state persisted in alerts/protect_state.json); first observation just records state.
+    """
+    from scanner.engine import _build_retail_alert
+    from signals.time_et import today_est
+
+    path = Path(data_root) / "alerts" / "protect_state.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+    spy_prev = (state.get("SPY") or {}).get("below")
+    spy_below = _ma200_state(rows_by_ticker.get("SPY"), spy_prev)
+    if spy_below is not None:
+        state["SPY"] = {"below": spy_below}
+    alerts = []
+    today = today_est()
+    for t in sorted(tickers):
+        row = rows_by_ticker.get(t)
+        if not row or t == "SPY":
+            continue
+        st = state.get(t) or {}
+        below = _ma200_state(row, st.get("below"))
+        if below is None:
+            continue
+        active = bool(below or spy_below)
+        prev_active = st.get("active")
+        state[t] = {"below": below, "active": active}
+        if prev_active is None or prev_active == active:
+            continue
+        reasons = []
+        if below:
+            reasons.append("below its 200-day average")
+        if spy_below:
+            reasons.append("SPY is risk-off (below its 200-day average)")
+        if active:
+            atype = AlertType.PROTECT_MODE_ON
+            head = f"{t} protect mode on (optional): ~{reduced_pct}% position"
+            body = (
+                f"{t}: {' and '.join(reasons)}. If you use protect mode, hold about {reduced_pct}% of a full "
+                "position. Default is still HOLD — this is drawdown insurance, not a sell signal."
+            )
+        else:
+            atype = AlertType.PROTECT_MODE_OFF
+            head = f"{t} protect mode off: full position"
+            body = f"{t} is back above its 200-day average and SPY is not risk-off. Protect mode returns to a full position."
+        alerts.append(
+            _build_retail_alert(
+                t, atype, head, body, ScanTier.TIER1_CORE,
+                {"price": row.get("close"), "ma200": row.get("ma200"), "stock_below_ma200": below,
+                 "spy_risk_off": spy_below, "suggested_position_pct": reduced_pct if active else 100},
+                one_liner=head,
+                dedupe_extra=today,
+            )
+        )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state), encoding="utf-8")
+    except Exception as e:
+        logger.debug("protect_state save failed: %s", e)
+    return alerts
+
+
 def run_retail_alerts_from_dashboard_refresh(
     results: list[dict],
     config: dict,
@@ -366,6 +457,12 @@ def run_retail_alerts_from_dashboard_refresh(
         data_root=data_root,
         enable_options_alerts=False,
     )
+
+    try:
+        for a in evaluate_protect_mode_alerts(rows_by_ticker, watchlist | set(portfolio_tickers), data_root):
+            on_alert(a)
+    except Exception as e:
+        logger.debug("protect-mode alerts failed: %s", e)
 
     from signals.time_et import now_iso_et
 
