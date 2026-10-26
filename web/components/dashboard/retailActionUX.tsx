@@ -220,8 +220,16 @@ export function deriveShortTermBehavioralBadge(
     /rsi\s*(6[0-9]|[7-9]\d|100)/i.test(horizon.rationale || "") ||
     /rsi\s*elevated/i.test(horizon.entry_zone?.anchor || "");
 
-  if (verdict === "WAIT" || (verdict === "WATCH" && rsiElevated)) {
-    return { emoji: "🔴", label: "DO NOT CHASE", tone: "red", hint: "Wait for pullback — momentum is extended." };
+  if (verdict === "WAIT") {
+    return { emoji: "🟡", label: "HOLD · NO NEW ADDS", tone: "amber", hint: "Gates not cleared — hold what you own." };
+  }
+  if (verdict === "WATCH" && rsiElevated) {
+    return {
+      emoji: "🟡",
+      label: "ABOVE ZONE · TREND INTACT",
+      tone: "amber",
+      hint: "Split the entry: part now, optional limit in the band for the rest. Waiting has not improved returns on average.",
+    };
   }
   if (
     (verdict === "BUY" || verdict === "STRONG BUY") &&
@@ -873,10 +881,10 @@ export function deriveListActionStatus(signal: SignalListInput): {
     return { title: "TACTICAL ENTRY", light: "green" };
   }
   if (pa.includes("AVOID") || pa.includes("REDUCE") || pa.includes("SELL")) {
-    return { title: "DO NOT CHASE", light: "red" };
+    return { title: "HOLD · NO NEW ADDS", light: "yellow" };
   }
   if (pa.includes("WAIT")) {
-    return { title: "DO NOT CHASE", light: "red" };
+    return { title: "HOLD · NO NEW ADDS", light: "yellow" };
   }
   return { title: "WATCH OR HOLD", light: "yellow" };
 }
@@ -1304,7 +1312,7 @@ export function EntryZonePriceBar({
     statusLine = (
       <>
         <span className="text-amber-300 font-semibold">{gapPct.toFixed(1)}% above band</span>
-        <span className="text-slate-500"> — wait for pullback into the green zone before adding.</span>
+        <span className="text-slate-500"> — trend intact; optional limit in the green zone for a cheaper fill.</span>
       </>
     );
   } else {
@@ -1424,7 +1432,7 @@ export function EntryZonePriceBar({
       )}
       {stretch && (
         <p className="text-[11px] text-amber-300/85 leading-snug">
-          Stretched vs anchor — band still valid; pullback toward band low improves entry quality.
+          Above anchor — band still valid. A pullback toward the band is a cheaper fill, not a better outcome on average.
         </p>
       )}
       {anchorNote && (
@@ -1564,7 +1572,7 @@ export function LongTermAccumulationScale({
   } else if (abovePrimary) {
     const gapPct = ((currentPrice - primaryHi) / primaryHi) * 100;
     statusHeadline = `${gapPct.toFixed(1)}% above ${tierLabel}`;
-    statusDetail = "Wait for pullback into the highlighted band.";
+    statusDetail = "Hold is fine. Optional: limit in the highlighted band for a cheaper fill.";
   } else {
     const gapPct = ((primaryLo - currentPrice) / primaryLo) * 100;
     statusHeadline = `${gapPct.toFixed(1)}% below ${tierLabel} low`;
@@ -2230,7 +2238,7 @@ export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentP
     oa?.bottom_line ||
     oa?.action_today ||
     (summary.overall_verdict === "WAIT" || summary.overall_verdict === "WATCH"
-      ? "DO NOT CHASE — wait for gates to turn green."
+      ? "Hold what you own — no new adds until gates turn green."
       : "Stage in via tier ladder — nibble, then core.");
 
   return {

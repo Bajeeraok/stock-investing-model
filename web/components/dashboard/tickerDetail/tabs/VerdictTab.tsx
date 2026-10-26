@@ -14,6 +14,7 @@ import { HorizonProjectionChart } from "../../HorizonProjectionChart";
 import { ReferenceDetailGrid } from "../ReferenceDetailGrid";
 import { CopyTradePlanButton } from "../../CopyTradePlanButton";
 import { WatchZoneCallout } from "../../zoneContextUX";
+import { ProtectModeCard } from "../../ProtectModeCard";
 import type { TabCtx } from "./tabCtx";
 
 export function VerdictTab({ ctx }: { ctx: TabCtx }) {
@@ -76,6 +77,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
       <p className="text-xs text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
     </section>
   )}
+  <ProtectModeCard data={detail.investor_summary?.protect_mode} />
 
   {confidence && playbookStage3 && (
     <button

@@ -115,9 +115,9 @@ function computeRetailActionStatus(input: {
   if (discountPct >= 5 && regime != null && regime < 48 && pattern != null && pattern < 55) {
     return {
       light: "yellow",
-      title: "DO NOT CHASE",
+      title: "WAIT FOR GATES",
       subtitle:
-        "Valuation is attractive, but regime and chart still cautious — sit on your hands until gates clear.",
+        "Valuation is attractive, but regime and chart still cautious — hold what you own until gates clear.",
     };
   }
 
@@ -683,7 +683,7 @@ export function TickerDetailModal({
       return { light: "green", title: "TACTICAL ENTRY", subtitle: "Horizons align — confirm gates and sizing." };
     }
     if (v === "WAIT") {
-      return { light: "red", title: "DO NOT CHASE", subtitle: "Gates are blocking new entries — see checklist below." };
+      return { light: "yellow", title: "HOLD · NO NEW ADDS", subtitle: "Gates are blocking new entries — hold what you own; see checklist below." };
     }
     return { light: "yellow", title: "WATCH OR HOLD", subtitle: "Mixed setup — wait for locked gates to clear." };
   }, [retailActionStatus, detail?.investor_summary?.retail_action, detail?.investor_summary?.overall_verdict, decisionMode]);

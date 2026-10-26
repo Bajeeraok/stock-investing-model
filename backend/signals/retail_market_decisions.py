@@ -72,7 +72,7 @@ def _market_temperature(
     elif level in ("hot", "warm_hot"):
         interp = (
             "Not the best time to chase new positions aggressively. "
-            "Hold winners, trim extended names, wait for pullbacks to add."
+            "Hold winners and add in stages rather than all at once."
         )
     else:
         interp = (
@@ -507,8 +507,8 @@ def _five_questions(
         buy_answer = f"Wait until after today's {scheduled[0].get('event_type', 'macro')} release, then reassess."
     elif primary and last_close and st.get("action") in (_ACTION_BUY, _ACTION_HOLD):
         buy_answer = (
-            f"Wait for pullback toward SPY ${primary:.0f} support (last ${last_close:.0f}). "
-            "Scale in if held — don't chase green opens."
+            f"Scale in: part now, optional limit near SPY ${primary:.0f} support (last ${last_close:.0f}) "
+            "for the rest."
         )
 
     sell_answer = _sell_guidance(

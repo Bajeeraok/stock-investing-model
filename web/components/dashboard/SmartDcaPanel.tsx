@@ -36,7 +36,7 @@ const ACTION_META: Record<DcaAction, { label: string; chip: string; icon: React.
     label: "HOLD TRANCHE",
     chip: "border-td-crit/45 bg-td-crit/10 text-td-crit",
     icon: <Pause className="h-3.5 w-3.5" aria-hidden />,
-    hint: "Extended vs band — park this tranche in cash; schedule catches up later.",
+    hint: "Optional: park this tranche until price is back in the band. Waiting has been roughly break-even historically.",
   },
 };
 
@@ -73,7 +73,7 @@ function dcaActionFor(r: Signal): { action: DcaAction; reason: string } {
   }
   return {
     action: em === "hard_lock" ? "hold" : "on_schedule",
-    reason: em === "hard_lock" ? "No margin of safety at spot — wait for pullback" : "No edge — keep the schedule",
+    reason: em === "hard_lock" ? "No margin of safety at spot — optional pause" : "No edge — keep the schedule",
   };
 }
 

@@ -484,7 +484,7 @@ def classify_spot_band_position(
             "next_add_at": _r(hi),
             "label": f"{gap_pct:.1f}% above {band_label}",
             "detail": (
-                f"Wait for pullback into ${lo:.2f}–${hi:.2f}. "
+                f"Trend intact. Optional limit in ${lo:.2f}–${hi:.2f} for a cheaper fill. "
                 f"First limit near band high ${hi:.2f}, scale toward ${lo:.2f}."
             ),
         }
@@ -1150,10 +1150,10 @@ def _apply_horizon_plan_invariants(
     if fv is not None and px > 0 and px > fv * (1.0 + EXTENDED_ABOVE_FV_PCT / 100.0):
         gap = _r((px - fv) / fv * 100, 1)
         payload["plan_mode"] = "pullback_conditional"
-        payload["chase_banner"] = "DO NOT CHASE"
+        payload["chase_banner"] = "ABOVE FAIR VALUE"
         payload["chase_detail"] = (
-            f"Spot ${px:.2f} is ~{gap:.0f}% above model FV ${fv:.2f} — "
-            "every horizon is a conditional pullback plan, not a chase-from-here blueprint."
+            f"Spot ${px:.2f} is ~{gap:.0f}% above model FV ${fv:.2f}. Bands below are optional "
+            "cheaper-fill levels; stocks trading above their bands have not done worse on average."
         )
         for key in ("short", "medium", "long"):
             h = payload.get(key)
@@ -1435,7 +1435,7 @@ def compute_short_term_entry(inp: ShortTermInputs) -> HorizonSignal:
         quality, q_color = "Stretched", "#ff6b6b"
         zone_anchor = "Current price — RSI elevated ({:.0f}), not ideal".format(inp.rsi)
         warnings.append(
-            "RSI {:.0f} is elevated — wait for pullback to VWAP (${:.2f}) for better entry".format(
+            "RSI {:.0f} is elevated — optional limit near VWAP (${:.2f}) for a cheaper fill".format(
                 inp.rsi, inp.vwap))
 
     el, eh, fv_capped, fv_note = _cap_short_entry_zone_vs_fair_value(
@@ -1807,7 +1807,7 @@ def compute_medium_term_entry(inp: MediumTermInputs) -> HorizonSignal:
     else:
         el, eh = _r(inp.ma50 * 0.99), _r(inp.ma50 * 1.04)
         quality, q_color = "Stretched", "#ff6b6b"
-        zone_anchor = "Price {:.1f}% above MA50 — wait for pullback to ${:.2f}".format(
+        zone_anchor = "Price {:.1f}% above MA50 — optional limit near ${:.2f} for a cheaper fill".format(
             pct_above_ma50, inp.ma50)
         warnings.append(
             "Price is {:.1f}% above MA50 (${:.2f}). "

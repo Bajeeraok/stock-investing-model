@@ -607,7 +607,7 @@ def render_retail_scan(p: SignalPacket, c: ActionContract, cats: list["Catalyst"
         elif pos == "above":
             zone = (
                 f"📍 Zone: ${float(p.spot):,.2f} is ABOVE buy zone {p.entry_band.fmt()} "
-                "— wait for pullback"
+                "— trend intact; optional limit in the zone"
             )
         else:
             zone = f"📍 Zone: ${float(p.spot):,.2f} is BELOW buy zone {p.entry_band.fmt()}"

@@ -128,7 +128,7 @@ def _playbook(quadrant: str, *, vix: float | None, hmm_bull: float | None, credi
             "primary_message": "GREED IN A BULL MARKET — HOLD, DON'T CHASE",
             "explanation": (
                 f"Bull regime intact (HMM ~{hb:.0f}% bull) but sentiment is extended. "
-                "Chasing here risks buying a short-term top — trim extended winners, wait for pullbacks."
+                "Stay invested; add in stages rather than all at once. Pullbacks are cheaper fills, not a reason to sell."
             ),
             "historical_analog": "Jul 2023, Feb 2024 — brief 3–5% pullbacks before resuming higher.",
             "short_action": _ACTION_REDUCE,

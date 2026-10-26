@@ -214,6 +214,8 @@ export interface InvestorDecisionSummary {
   valuation_deck?: import("./valuationDeckTypes").ValuationDeckPayload | null;
   /** Short-term pattern score (0-100); when low, show signal-deterioration banner. */
   pattern_score?: number | null;
+  /** Optional half-position insurance (stock below MA200 or SPY risk-off); default stays HOLD. */
+  protect_mode?: import("./ProtectModeCard").ProtectModePayload | null;
   /** Confidence-adjusted headline (gates × fused confidence). setup_quality = raw pattern. */
   actionable_score?: {
     setup_quality?: number | null;
@@ -825,7 +827,7 @@ function BuyRangeRetailCard({
       statusBadgeClass =
         "text-sm px-2 py-0.5 rounded border font-semibold border-td-accent/45 bg-td-accent/15 text-td-accent";
     } else if (currentPrice > high) {
-      statusLabel = "Wait for pullback";
+      statusLabel = "Above buy zone";
       statusBadgeClass =
         "text-sm px-2 py-0.5 rounded border font-semibold border-td-warn/45 bg-td-warn/15 text-td-warn";
     } else {
@@ -938,7 +940,7 @@ function BuyRangeRetailCard({
                 React.createElement(
                   "p",
                   { className: "text-xs text-td-warn/80 mt-0.5 leading-snug" },
-                  "\"Stretched\" means price is extended above its key support level (VWAP or MA50) \u2014 the band is still valid but the risk/reward is less favorable here. Waiting for a pullback toward the band low improves the entry; buying now isn\u2019t wrong for long-term conviction, just less optimal short-term."
+                  "\"Stretched\" means price is above its key support level (VWAP or MA50). In our 10-year S&P 500 test, stocks above their band did not do worse than average \u2014 a pullback toward the band low is a cheaper fill, not a better outcome. Splitting the entry (part now, optional limit for the rest) is a reasonable default."
                 ),
               String(ez.quality).toLowerCase() === "waiting" &&
                 React.createElement(
@@ -1081,7 +1083,7 @@ function BuyRangeRetailCard({
               React.createElement(
                 "p",
                 { className: "text-xs text-td-warn/90 mt-1.5 leading-snug border-t border-td-warn/20 pt-1.5" },
-                "Asymmetric risk: large downside slice vs thin upside to target \u2014 wait for pullback or use long-term tiers."
+                "Asymmetric risk: large downside slice vs thin upside to target \u2014 size smaller or use long-term tiers."
               )
           )
       ),
@@ -1362,7 +1364,7 @@ export function InvestorDecisionSummarySection({
         React.createElement(
           "p",
           { className: "text-[11px] font-semibold uppercase tracking-wide text-td-crit" },
-          chase_banner || "DO NOT CHASE",
+          chase_banner || "ABOVE FAIR VALUE",
         ),
         React.createElement(
           "p",
@@ -1508,7 +1510,7 @@ export function InvestorDecisionSummarySection({
               : one_answer?.action_today === "hold"
                 ? "Hold"
                 : one_answer?.action_today === "wait_for_pullback"
-                  ? "Wait for pullback"
+                  ? "Split entry"
                   : one_answer?.action_today === "no_new_position"
                     ? "No new position"
                     : null,

@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 REGIME_PLAIN_ENGLISH = {
-    "Risk-On": "Favor small adds on pullbacks. Don't chase; use your levels.",
+    "Risk-On": "Stay invested. Add in stages; use your levels for sizing and stops.",
     "Neutral": "Hold core; skip big new buys until the trend is clearer.",
-    "Risk-Off": "Tighten stops and trim extended positions. Raise cash slowly — don't panic sell core holdings.",
+    "Risk-Off": "Hold core. Optional protect mode: about half size until SPY reclaims its 200-day average.",
 }
 
 # Approx % of portfolio at risk if all stops hit (simplified: risk_per_position = value * stop_pct/100)
@@ -96,15 +96,15 @@ def _one_liner(
             parts.append(f"Target ${target:.2f} reached. Consider trimming partial.")
         elif earnings_note:
             parts.append(f"{earnings_note}. Reduce size or wait for reaction.")
-        elif score is not None and score < 35:
-            parts.append(f"Score {score:.0f}. Consider trim on strength.")
         else:
             parts.append("Hold. No action needed.")
     else:
         if entry_low is not None and entry_high is not None and _in_entry_zone(price, entry_low, entry_high):
             parts.append(f"In entry zone ${entry_low:.2f}–${entry_high:.2f}. Add small.")
         elif entry_low is not None and entry_high is not None and price > entry_high:
-            parts.append(f"Wait for pullback to ${entry_low:.2f}–${entry_high:.2f}.")
+            parts.append(
+                f"Above entry zone, trend intact. Optional limit at ${entry_low:.2f}–${entry_high:.2f} for a cheaper fill."
+            )
         elif score is not None and score >= 65:
             parts.append(f"Score {score:.0f}. Consider small add on pullback.")
         else:
@@ -132,8 +132,6 @@ def _action_badge(
         if target is not None and price >= target * 0.98:
             return "TRIM"
         if earnings_days is not None and earnings_days <= 3:
-            return "TRIM"
-        if score is not None and score < 35:
             return "TRIM"
         return "HOLD"
     if entry_low is not None and entry_high is not None and _in_entry_zone(price, entry_low, entry_high):

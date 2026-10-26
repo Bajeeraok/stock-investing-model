@@ -220,6 +220,7 @@ function buyStageCue(when: string): { emoji: string; rowBg: string } {
   const w = (when || "").toLowerCase();
   if (w.includes("do not buy") || w.includes("don't")) return { emoji: "🔴", rowBg: "bg-td-crit/5" };
   if (w.includes("watch only")) return { emoji: "👀", rowBg: "bg-td-line/5" };
+  if (w.includes("split entry")) return { emoji: "🟡", rowBg: "bg-td-warn/5" };
   if (w.includes("start small")) return { emoji: "🟡", rowBg: "bg-td-warn/5" };
   if (w.includes("add position")) return { emoji: "🟢", rowBg: "bg-td-accent/5" };
   if (w.includes("core position")) return { emoji: "🔵", rowBg: "bg-td-info/5" };

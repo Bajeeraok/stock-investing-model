@@ -207,10 +207,10 @@ def get_ml_aware_signal(
       BUY        — confluence ≥ buy_min AND ML ≥ ml_buy_prob
       WATCH      — confluence ≥ buy_min but ML < ml_buy_prob (technical good, ML cautious)
       HOLD       — neither extreme
-      REDUCE     — confluence ≤ sell_max OR ML < ml_avoid_max_prob
+      REDUCE     — ML < ml_avoid_max_prob (a low confluence score alone is not an exit)
       AVOID      — confluence ≤ sell_max AND ML < ml_avoid_max_prob
 
-    Without ML: falls back to BUY/HOLD/SELL from confluence only.
+    Without ML: WATCH (high score) or HOLD — never BUY or SELL from confluence alone.
 
     interpretation_style MEAN_REVERTING: use (100 - confluence) for threshold routing only —
     raw score in API unchanged; low momentum score maps to "buy the fear" path.
@@ -228,7 +228,9 @@ def get_ml_aware_signal(
             return "WATCH"
         if c <= sell_max and ml_short_prob < ml_avoid_max_prob:
             return "AVOID"
-        if c <= sell_max or ml_short_prob < ml_avoid_max_prob:
+        # A low technical score alone is not an exit: score-based selling trailed buy-and-hold on
+        # the same stock (10y, 548 S&P 500 stocks). Only the ML layer can push to REDUCE.
+        if ml_short_prob < ml_avoid_max_prob:
             return "REDUCE"
         return "HOLD"
 
@@ -236,8 +238,8 @@ def get_ml_aware_signal(
     # The composite is an entry-timing read, not a selection signal: 10y pooled S&P 500
     # backtest rank IC ≈ 0.008 (t 0.9) at 21d, score 70–100 trailed SPY. A high score alone
     # therefore never emits BUY — it surfaces as WATCH (timing favourable, needs evidence).
+    # Likewise a low score never emits SELL: exiting on score cut median CAGR 8.1% → 4.5%
+    # vs holding the same stock (scripts/timing_backtest.py). Default is HOLD.
     if c >= buy_min:
         return "WATCH"
-    if c <= sell_max:
-        return "SELL"
     return "HOLD"

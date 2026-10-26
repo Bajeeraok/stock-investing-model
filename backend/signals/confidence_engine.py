@@ -1579,10 +1579,10 @@ def _confidence_to_action(confidence: float, thresholds: dict[str, float] | None
         return "STRONG BUY"
     if confidence >= t["buy"]:
         return "BUY"
-    if confidence >= t["hold"]:
-        return "HOLD / WATCH"
     if confidence >= t["reduce"]:
-        return "REDUCE"
+        # Score-based trimming trailed buy-and-hold on the same stock (10y backtest), so a
+        # middling-to-low blend reads HOLD / WATCH; AVOID only blocks new buys, it is not a sell.
+        return "HOLD / WATCH"
     return "AVOID"
 
 

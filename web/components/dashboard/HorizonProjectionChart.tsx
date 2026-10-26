@@ -591,11 +591,11 @@ export function HorizonProjectionChart({
         {(chaseBanner || planMode === "pullback_conditional") && (
           <div className="mb-3 rounded-lg border border-td-crit/40 bg-td-crit-weak/30 px-3 py-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-td-crit">
-              {chaseBanner || "DO NOT CHASE"}
+              {chaseBanner || "ABOVE FAIR VALUE"}
             </p>
             <p className="text-[11px] text-td-crit/80 mt-0.5 leading-snug">
               {chaseDetail ||
-                "Spot is extended vs model FV — forward channels are conditional pullback plans from the entry band, not a path that invents a crash from today's print."}
+                "Spot is above model FV — forward channels start from the entry band as optional cheaper-fill plans, not a forecast of a drop from today's print."}
             </p>
           </div>
         )}

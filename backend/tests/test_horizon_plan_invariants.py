@@ -89,7 +89,7 @@ def test_apply_invariants_lifts_long_above_medium_and_marks_bad_short():
     assert payload["short"]["setup_status"] == "no_setup"
     assert payload["short"]["verdict"] == "WAIT"
     assert payload.get("plan_mode") == "pullback_conditional"
-    assert payload.get("chase_banner") == "DO NOT CHASE"
+    assert payload.get("chase_banner") == "ABOVE FAIR VALUE"
     assert payload.get("fv_staleness", {}).get("flagged") is True
 
 

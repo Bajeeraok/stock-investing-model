@@ -766,6 +766,12 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     inv = response.get("investor_summary")
     if isinstance(inv, dict):
         try:
+            from signals.protect_mode import compute_protect_mode
+
+            inv["protect_mode"] = compute_protect_mode(close_ticker, close_spy)
+        except Exception as exc:
+            logger.debug("protect_mode for %s: %s", ticker, exc)
+        try:
             from signals.retail_action_payload import enrich_investor_summary_retail_action
 
             ctx = response.get("market_context") if isinstance(response.get("market_context"), dict) else {}
@@ -2241,7 +2247,7 @@ def _roadmap_you_are_here(buy_stages: list[dict], price: float) -> dict | None:
             "timeline_key": None,
             "label": None,
             "within_zone": False,
-            "note": "Price is extended above all staged buy zones — wait for pullback into a band before adding.",
+            "note": "Price is above all staged buy zones — trend intact. Buy part now if you want the position; an optional limit in a band is a cheaper fill, not a better outcome.",
         }
     return {
         "timeline_key": None,
@@ -2432,13 +2438,13 @@ def _build_trade_roadmap(
         conv = "None"
         pos = 0
     elif align_buy_rows_to_core and not near_term_use_st_band:
-        when = "Watch only"
+        when = "Split entry"
         cond = (
             f"Spot is above preferred adds at {core_zone_fmt} (MA200 / core tier — same ladder as summary). "
-            f"Wait for pullback; short-term band is not the plan entry."
+            f"Trend intact: starter now; optional limit in that zone for the rest."
         )
-        conv = "None"
-        pos = 0
+        conv = "Low-Medium"
+        pos = 25
     elif near_term_use_st_band and align_buy_rows_to_core:
         when = "Watch only"
         cond = (
@@ -2452,7 +2458,7 @@ def _build_trade_roadmap(
         st_conv = (short.get("conviction") or "").strip()
         st_conv_l = st_conv.lower()
         if not in_st_band:
-            cond = "Wait for pullback"
+            cond = "Above entry zone — optional limit for a cheaper fill"
         elif st_conv_l in ("medium", "high"):
             cond = "In entry zone"
         else:
@@ -2471,7 +2477,7 @@ def _build_trade_roadmap(
 
     # Cumulative % is staged deployment (legacy: 25 → 25 → 60 → 85 → 100), not a raw sum of rows.
     if align_buy_rows_to_core:
-        cum_today, cum_days, cum_week, cum_13, cum_36, cum_612 = 0, 0, 0, 35, 60, 100
+        cum_today, cum_days, cum_week, cum_13, cum_36, cum_612 = pos, pos, pos, 35, 60, 100
     else:
         cum_today = cum_days = pos
         cum_week = 25
@@ -3012,8 +3018,8 @@ def _build_trade_roadmap(
         ).strip()
     elif align_buy_rows_to_core:
         trader_summary_short = (
-            f"Short-term ({ticker}): watch only — spot is extended above preferred adds at {core_zone_fmt} "
-            f"(same as the Today row). Wait for pullback into that ladder; do not treat current print as the primary entry."
+            f"Short-term ({ticker}): spot is above preferred adds at {core_zone_fmt} (same as the Today row). "
+            f"Trend intact — split the entry: starter now, optional limit in that ladder for the rest."
         ).strip()
     elif when == "Start small":
         parts_ts = [
@@ -3181,7 +3187,7 @@ def _build_trade_roadmap(
             )
         elif z_today and align_buy_rows_to_core:
             execution_plan_lines.append(
-                f"Wait for pullback into core ladder {z_today} before scaling in (spot above preferred adds)."
+                f"Spot above preferred adds: starter now, optional limit in core ladder {z_today} for the rest."
             )
 
     starter_anchor = None
@@ -3305,7 +3311,7 @@ def _build_trade_roadmap(
             + f" · {regime_label}"
         ),
         "strategy": (
-            "Wait for pullback into core / MA200 zones before scaling"
+            "Split entry: starter now, optional limits in core / MA200 zones"
             if align_buy_rows_to_core
             else "Staged adds on planned dips (per rows below)"
         ),
@@ -3739,7 +3745,7 @@ def _build_one_answer_roadmaps(
                 headline_parts.append(f"{verdict_label}: Enter in the zone {z}.")
         elif action_today == "wait_for_pullback":
             z = f"${s_lo:.2f}–${s_hi:.2f}" if (s_lo and s_hi) else (f"${m_lo:.2f}–${m_hi:.2f}" if (m_lo and m_hi) else "entry zone")
-            headline_parts.append(f"{verdict_label}: Wait for pullback. Buy at {z}.")
+            headline_parts.append(f"{verdict_label}: Above the zone, trend intact. Buy part now; optional limit at {z} for the rest.")
         else:
             headline_parts.append(f"{verdict_label}: Hold. No new position here.")
         # Show stop + target only when target is genuinely above current price (upside target).
@@ -3854,8 +3860,8 @@ def _build_one_answer_roadmaps(
             )
     elif action_today == "wait_for_pullback":
         bottom_line = (
-            f"Bottom line: constructive setup, but wait for pullback toward {short_zone} "
-            f"(fallback: {medium_zone}) before adding."
+            f"Bottom line: constructive setup above {short_zone}. Split the entry — part now, "
+            f"optional limit in {short_zone} for the rest (waiting has not improved returns historically)."
         )
     elif action_today == "hold" and in_short:
         bottom_line = (

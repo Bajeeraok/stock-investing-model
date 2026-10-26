@@ -96,7 +96,8 @@ export function groupSignalsByAction(
 const ACTION_GROUP_PRIORITY: Record<string, number> = {
   "TACTICAL ENTRY": 0,
   "WATCH OR HOLD": 1,
-  "DO NOT CHASE": 2,
+  "HOLD · NO NEW ADDS": 2,
+  "DO NOT CHASE": 3,
 };
 
 /** Stable action-first ordering for grouped quick view. */

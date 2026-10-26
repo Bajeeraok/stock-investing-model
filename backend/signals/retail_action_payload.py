@@ -969,7 +969,7 @@ def derive_entry_mode(
         else:
             detail = (
                 "Insufficient margin of safety and no actionable band at spot — "
-                "wait for pullback or better MOS."
+                "hold what you own; optional limit lower for a better MOS."
             )
         light = "red"
 
@@ -1044,7 +1044,7 @@ def derive_action_title(overall_verdict: str | None, gate_cleared: bool) -> tupl
         # return the same green "TACTICAL ENTRY" (NVDA, SOFI, GTLB while no_go / hard-locked).
         return "SETUP FORMING · WAIT FOR GATES", "yellow"
     if v in ("AVOID", "REDUCE", "SELL", "WAIT"):
-        return "DO NOT CHASE", "red"
+        return "HOLD · NO NEW ADDS", "yellow"
     return "WATCH OR HOLD", "yellow"
 
 

@@ -65,7 +65,7 @@ function entryBandPct(
   }
   if (price > hi) {
     const pct = ((price - hi) / hi) * 100;
-    return { inside: false, line: `${pct.toFixed(1)}% above band — wait for pullback.` };
+    return { inside: false, line: `${pct.toFixed(1)}% above band — trend intact; optional limit in band.` };
   }
   const pct = ((lo - price) / lo) * 100;
   return { inside: false, line: `${pct.toFixed(1)}% below band low — not at entry yet.` };
@@ -129,7 +129,7 @@ function verdictIcon(verdict: string) {
 
 const ACTION_TODAY_LABEL: Record<string, string> = {
   enter_now: "Short-term add OK (staged)",
-  wait_for_pullback: "Wait for pullback",
+  wait_for_pullback: "Above zone · split entry",
   hold: "Hold / watch",
   trim: "Trim",
   no_new_position: "No new adds",
