@@ -4225,11 +4225,22 @@ async def get_ticker_track_record(ticker: str):
     from signals.model_version import MODEL_VERSION
 
     sym = ticker.upper().strip()
+    # Freshest source first: the forward_tracking slice the post-EOD refresh writes. The
+    # bundle fallback chain needs all three core slices, so one missing slice dropped it to an
+    # older dedicated bundle (served 10-24 data while the slice already had 10-26).
+    ft = None
     try:
-        bundle = compute_analysis_bundle(allow_heavy=False)
+        from signals.cache import get_analysis_slice
+
+        ft = get_analysis_slice("forward_tracking")
     except Exception:
-        bundle = None
-    ft = bundle.get("forward_tracking") if isinstance(bundle, dict) else None
+        ft = None
+    if not (isinstance(ft, dict) and isinstance(ft.get("by_ticker"), dict)):
+        try:
+            bundle = compute_analysis_bundle(allow_heavy=False)
+        except Exception:
+            bundle = None
+        ft = bundle.get("forward_tracking") if isinstance(bundle, dict) else None
     if not isinstance(ft, dict):
         return {"available": False, "ticker": sym, "reason": "forward-tracking data not cached yet"}
 

@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect } from "react";
 import { clsx } from "clsx";
 import { RefreshCw } from "lucide-react";
 import { paginateRows, TablePager } from "./TablePager";
+import LatestModelDailyCard from "./LatestModelDailyCard";
+import type { LatestModelDaily } from "@/lib/useTickerTrackRecord";
 
 const FORWARD_PAGE_SIZE = 30;
 
@@ -109,6 +111,7 @@ interface Props {
   summary_by_entry_mode?: Record<string, HorizonSummary & { avg_return_20d_pct?: number; hit_rate_pct?: number }>;
   summary_by_model_version?: SummaryByModelVersion;
   summary_timing_vs_hold?: TimingVsHold | null;
+  latest_model_daily?: LatestModelDaily | null;
   data_source_note?: string | null;
   message?: string | null;
   meta?: ForwardMeta | null;
@@ -173,6 +176,7 @@ export function ForwardTracking({
   summary_by_entry_mode,
   summary_by_model_version,
   summary_timing_vs_hold,
+  latest_model_daily,
   data_source_note,
   message,
   meta,
@@ -411,6 +415,12 @@ export function ForwardTracking({
           ) : (
             <span className="text-slate-500">No matching records.</span>
           )}
+        </div>
+      )}
+
+      {meta?.current_model_version && (
+        <div className="mb-3">
+          <LatestModelDailyCard data={latest_model_daily} version={meta.current_model_version} scope="all" />
         </div>
       )}
 

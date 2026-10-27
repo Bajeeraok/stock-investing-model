@@ -4,6 +4,7 @@ import { useState } from "react";
 import { History } from "lucide-react";
 import { earliestAvailableHorizon, useTickerTrackRecord } from "@/lib/useTickerTrackRecord";
 import { fmtPct } from "./ReferenceDetailGrid";
+import LatestModelDailyCard from "../LatestModelDailyCard";
 
 function fmtPrice(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
@@ -20,6 +21,7 @@ function fmtPrice(n: number | null | undefined): string {
 export default function TrackRecordPanel({ ticker }: { ticker: string }) {
   const { data, loading } = useTickerTrackRecord(ticker);
   const [showLegacyRows, setShowLegacyRows] = useState(false);
+  const [showOlderCalls, setShowOlderCalls] = useState(false);
 
   const current = data?.current;
   const legacy = data?.legacy;
@@ -33,7 +35,10 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
     return <p className="text-sm text-slate-500">No forward-tracking history available for {ticker} yet.</p>;
   }
 
-  const dailyCalls = data?.daily_calls ?? [];
+  const allCalls = data?.daily_calls ?? [];
+  const currentCalls = version ? allCalls.filter((c) => c.model_version === version) : allCalls;
+  const olderCalls = version ? allCalls.filter((c) => c.model_version !== version) : [];
+  const dailyCalls = showOlderCalls ? allCalls : currentCalls;
   const scored = dailyCalls.filter((c) => c.right != null);
   const rightN = scored.filter((c) => c.right).length;
   const allTrades = data?.daily_trades ?? [];
@@ -51,6 +56,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
         What we said vs. what happened, for this ticker specifically — from the same
         forward-tracking data behind the Analysis tab.
       </p>
+
+      <LatestModelDailyCard data={data?.latest_model_daily} version={version} scope="ticker" />
 
       {current && (current.n_observations ?? 0) > 0 ? (
         <p className="text-sm text-slate-300 leading-relaxed">
@@ -85,21 +92,35 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
         </p>
       )}
 
-      {dailyCalls.length > 0 && (
+      {allCalls.length > 0 && (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className="text-xs font-semibold text-slate-300">
-              Daily calls — scored every session
+              Daily calls{version && !showOlderCalls ? ` — ${version} only` : " — all models"}
               {scored.length > 0 && (
                 <span className="ml-2 font-normal text-slate-500">
                   {rightN}/{scored.length} right on ADD/TRIM calls
                 </span>
               )}
             </p>
-            {data?.eod_date_last && (
-              <span className="text-[11px] text-slate-600">through {data.eod_date_last}</span>
-            )}
+            <span className="flex items-baseline gap-3">
+              {data?.eod_date_last && (
+                <span className="text-[11px] text-slate-600">through {data.eod_date_last}</span>
+              )}
+              {olderCalls.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowOlderCalls((s) => !s)}
+                  className="text-xs text-slate-500 hover:text-slate-300"
+                >
+                  {showOlderCalls ? "Hide previous models" : `Show ${olderCalls.length} from previous models`} ›
+                </button>
+              )}
+            </span>
           </div>
+          {dailyCalls.length === 0 ? (
+            <p className="text-xs text-slate-600">No daily calls under {version} for {ticker} yet.</p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs min-w-[520px]">
               <thead>
@@ -110,7 +131,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                   <th className="py-1 pr-2 font-medium">Close</th>
                   <th className="py-1 pr-2 font-medium">Next close</th>
                   <th className="py-1 pr-2 font-medium">Next day</th>
-                  <th className="py-1 font-medium">Right?</th>
+                  <th className="py-1 pr-2 font-medium">Right?</th>
+                  {showOlderCalls && <th className="py-1 font-medium">Ver.</th>}
                 </tr>
               </thead>
               <tbody>
@@ -122,7 +144,15 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                       {c.gates_passed != null ? `${c.gates_passed}/${c.gates_total ?? 4}` : "—"}
                     </td>
                     <td className="py-1 pr-2 font-mono">{fmtPrice(c.close)}</td>
-                    <td className="py-1 pr-2 font-mono">{c.status === "pending" ? "pending" : fmtPrice(c.next_close)}</td>
+                    <td className="py-1 pr-2 font-mono">{c.data_quality === "stale_session" ? (
+                        <span className="text-slate-500" title="No new prices between these snapshots (holiday, duplicate run or late data) — not scored">
+                          no new session
+                        </span>
+                      ) : c.status === "pending" ? (
+                        "pending"
+                      ) : (
+                        fmtPrice(c.next_close)
+                      )}</td>
                     <td
                       className={
                         c.return_pct == null
@@ -134,7 +164,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                     >
                       {c.return_pct == null ? "—" : fmtPct(c.return_pct)}
                     </td>
-                    <td className="py-1">
+                    <td className="py-1 pr-2">
                       {c.right == null ? (
                         <span className="text-slate-600" title="HOLD calls aren't scored for direction">—</span>
                       ) : c.right ? (
@@ -143,11 +173,13 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                         <span className="text-red-400">✗</span>
                       )}
                     </td>
+                    {showOlderCalls && <td className="py-1 text-slate-600 whitespace-nowrap">{c.model_version ?? "—"}</td>}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          )}
           <p className="text-[11px] text-slate-600 leading-snug">
             Every EOD snapshot, the model&apos;s call vs the next session&apos;s close — no waiting for a 5d/20d
             window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored.

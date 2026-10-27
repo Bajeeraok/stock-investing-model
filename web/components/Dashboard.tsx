@@ -1924,6 +1924,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     summary_by_entry_mode={forwardTracking?.summary_by_entry_mode ?? {}}
                     summary_by_model_version={forwardTracking?.summary_by_model_version ?? {}}
                     summary_timing_vs_hold={forwardTracking?.summary_timing_vs_hold ?? null}
+                    latest_model_daily={forwardTracking?.latest_model_daily ?? null}
                     data_source_note={forwardTracking?.data_source_note ?? null}
                     message={forwardTracking?.message ?? undefined}
                     meta={forwardTracking?.meta ?? null}

@@ -50,11 +50,42 @@ export interface DailyCallRow {
   gates_passed?: number | null;
   gates_total?: number | null;
   model_version?: string | null;
+  data_quality?: string | null;
   /** ADD right if up, TRIM right if down, HOLD unscored (null). */
   right: boolean | null;
 }
 
+export interface LatestModelDailyRow {
+  date: string;
+  next_date: string | null;
+  tickers: number;
+  signal: string | null;
+  /** 1 = full position, 0.5 = trimmed/reduced (averaged across tickers when pooled). */
+  exposure: number;
+  model_return_pct: number;
+  hold_return_pct: number;
+  spy_return_pct: number | null;
+}
+
+/** Day-by-day scorecard for the live model version: following its calls vs holding vs SPY. */
+export interface LatestModelDaily {
+  model_version: string;
+  days: number;
+  target_days: number;
+  first_date: string | null;
+  last_date: string | null;
+  model_cum_pct: number | null;
+  hold_cum_pct: number | null;
+  spy_cum_pct: number | null;
+  model_vs_hold_pct: number | null;
+  model_vs_spy_pct: number | null;
+  days_reduced: number;
+  skipped_days: string[];
+  rows: LatestModelDailyRow[];
+}
+
 export interface TrackRecordResponse {
+  latest_model_daily?: LatestModelDaily | null;
   available: boolean;
   daily_calls?: DailyCallRow[] | null;
   latest_call_date?: string | null;

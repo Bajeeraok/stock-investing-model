@@ -603,6 +603,7 @@ def get_forward_tracking(
 
     total_records = len(records)
     by_ticker = _build_by_ticker_index(records)
+    latest_model_daily = build_latest_model_daily(records)
     capped = _cap_records_recent(records, record_cap)
     as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
     newest_completed_as_of = dates[-2] if len(dates) >= 2 else None
@@ -640,6 +641,7 @@ def get_forward_tracking(
         # the newest N watchlist-wide, which silently truncated single-ticker history).
         # Server-side only — stripped from HTTP responses (see _strip_forward_tracking_heavy).
         "by_ticker": by_ticker,
+        "latest_model_daily": latest_model_daily,
         "meta": meta,
         "data_source_note": (
             "Returns and ST stop/target touches from EOD OHLCV between snapshot dates "
@@ -706,6 +708,92 @@ def _call_right(signal: str, ret: float | None) -> bool | None:
     return None
 
 
+_DAILY_SCORECARD_TARGET_DAYS = 20
+_DAILY_SCORECARD_ROWS = 30
+_TRIM_EXPOSURE = 0.5
+
+
+def _model_exposure(signal: str | None) -> float:
+    """Position the model implies for a stock you already chose: full unless it says trim/reduce."""
+    s = (signal or "").upper()
+    return _TRIM_EXPOSURE if any(x in s for x in ("TRIM", "REDUCE", "SELL", "AVOID")) else 1.0
+
+
+def _compound_pct(rets: list[float]) -> float:
+    g = 1.0
+    for r in rets:
+        g *= 1.0 + r / 100.0
+    return round(100.0 * (g - 1.0), 2)
+
+
+def build_latest_model_daily(
+    records: list[dict[str, Any]], version: str = MODEL_VERSION
+) -> dict[str, Any]:
+    """
+    Day-by-day scorecard for one model version: following its calls (full position, half on
+    TRIM/REDUCE) vs holding the same stock(s) vs SPY, from 1-snapshot forward records.
+    Multi-ticker input is equal-weighted per day. Skips days whose starting snapshot carried
+    no new session (holiday/duplicate EOD or stale vendor prices) so a multi-day move isn't
+    scored as one day.
+    """
+    h1 = [r for r in records if r.get("horizon_days") == 1]
+    no_new_session = {
+        (str(r.get("ticker") or "").upper(), r.get("next_date"))
+        for r in h1
+        if r.get("data_quality") == "stale_session"
+    }
+    by_day: dict[str, list[dict[str, Any]]] = {}
+    skipped: set[str] = set()
+    for r in h1:
+        if str(r.get("model_version") or "legacy") != version:
+            continue
+        d = str(r.get("as_of_date") or "")
+        tk = str(r.get("ticker") or "").upper()
+        ret = r.get("actual_return_pct")
+        if r.get("forward_status") != "complete" or ret is None or (tk, d) in no_new_session:
+            skipped.add(d)
+            continue
+        by_day.setdefault(d, []).append(r)
+    rows: list[dict[str, Any]] = []
+    for d in sorted(by_day):
+        rs = by_day[d]
+        n = len(rs)
+        hold = sum(float(r["actual_return_pct"]) for r in rs) / n
+        model = sum(_model_exposure(r.get("our_signal")) * float(r["actual_return_pct"]) for r in rs) / n
+        spy = next((r.get("benchmark_return_pct") for r in rs if r.get("benchmark_return_pct") is not None), None)
+        signals = sorted({str(r.get("our_signal") or "—") for r in rs})
+        rows.append({
+            "date": d,
+            "next_date": rs[0].get("next_date"),
+            "tickers": n,
+            "signal": signals[0] if len(signals) == 1 else ", ".join(signals),
+            "exposure": round(sum(_model_exposure(r.get("our_signal")) for r in rs) / n, 3),
+            "model_return_pct": round(model, 3),
+            "hold_return_pct": round(hold, 3),
+            "spy_return_pct": None if spy is None else round(float(spy), 3),
+        })
+    skipped -= set(by_day)
+    model_cum = _compound_pct([r["model_return_pct"] for r in rows])
+    hold_cum = _compound_pct([r["hold_return_pct"] for r in rows])
+    spy_rets = [r["spy_return_pct"] for r in rows]
+    spy_cum = _compound_pct(spy_rets) if rows and all(x is not None for x in spy_rets) else None
+    return {
+        "model_version": version,
+        "days": len(rows),
+        "target_days": _DAILY_SCORECARD_TARGET_DAYS,
+        "first_date": rows[0]["date"] if rows else None,
+        "last_date": rows[-1]["next_date"] if rows else None,
+        "model_cum_pct": model_cum if rows else None,
+        "hold_cum_pct": hold_cum if rows else None,
+        "spy_cum_pct": spy_cum,
+        "model_vs_hold_pct": round(model_cum - hold_cum, 2) if rows else None,
+        "model_vs_spy_pct": round(model_cum - spy_cum, 2) if spy_cum is not None else None,
+        "days_reduced": sum(1 for r in rows if r["exposure"] < 1.0),
+        "skipped_days": sorted(skipped),
+        "rows": list(reversed(rows))[:_DAILY_SCORECARD_ROWS],
+    }
+
+
 def _timing_vs_hold(records: list[dict[str, Any]]) -> dict[str, Any] | None:
     from signals.forward_tracking_metrics import aggregate_timing_vs_hold
 
@@ -754,11 +842,13 @@ def _build_by_ticker_index(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "gates_passed": r.get("gates_passed"),
                 "gates_total": r.get("gates_total"),
                 "model_version": r.get("model_version") or "legacy",
+                "data_quality": r.get("data_quality"),
                 "right": _call_right(str(r.get("our_signal") or ""), r.get("actual_return_pct")),
             }
             for r in daily
         ]
         track["latest_call_date"] = track["daily_calls"][0]["date"] if track["daily_calls"] else None
+        track["latest_model_daily"] = build_latest_model_daily(rows)
         out[tk] = track
     return out
 

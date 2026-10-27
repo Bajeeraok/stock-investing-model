@@ -60,8 +60,14 @@ History:
   force_trending 0->7 tickers fitted from 21d forward spreads on 148 prod EOD
   snapshots. Forward records before this boundary mix pre/post entry-mode
   semantics — compare cohorts by version, not pooled.
+- 2026.10.2 — HOLD by default for chosen stocks: no score-only SELL (low score ->
+  HOLD/WATCH, REDUCE only on genuine risk), optional protect mode (half position when
+  the stock is below its 200d MA or SPY is risk-off), "stretched / wait for pullback"
+  replaced by "above zone, trend intact"; EOD falls back to yfinance when FMP's last
+  bar is stale (the 2026-10-26 snapshot carried Friday's closes). Daily latest-model
+  scorecard starts here.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.10.1"
+MODEL_VERSION = "2026.10.2"
