@@ -125,7 +125,7 @@ See **scripts/deploy-railway.md** for step-by-step instructions to deploy backen
 
 To build historical snapshots for forward tracking and model validation:
 - **Manual:** `cd backend && python scripts/run_daily.py`
-- **Python scheduler:** `cd backend && python scripts/scheduler_eod.py` – runs EOD snapshot daily at 8pm ET (set `eod_schedule_time` and `eod_schedule_tz` in `config.yaml`)
+- **Python scheduler:** `cd backend && python scripts/scheduler_eod.py` – runs EOD snapshot daily at 9pm ET (set `eod_schedule_time` and `eod_schedule_tz` in `config.yaml`)
 - **Ad-hoc API:** `POST /api/eod/run` (e.g. `curl -X POST http://localhost:8002/api/eod/run`) – may take 1–2 min
 
 ## Backtesting signals
