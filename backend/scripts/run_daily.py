@@ -256,6 +256,10 @@ def run_signals(
         except Exception:
             pass
 
+    from signals.market_calendar import latest_completed_session, series_last_bar_stale
+
+    expected_session = latest_completed_session()
+
     # ── Per-ticker processing extracted so ThreadPoolExecutor can run tickers in parallel ──
     def _process_single_ticker(ticker: str) -> dict:  # noqa: C901 — long but self-contained
         close = None
@@ -265,6 +269,12 @@ def run_signals(
             close, volume = fetch_ohlcv_close_and_volume(ticker, period, config)
             if close is None:
                 close, volume = fetch_ohlcv_with_volume(ticker, period)
+            elif series_last_bar_stale(close, expected_session):
+                # FMP sometimes hasn't posted the latest session by 8pm ET — use Yahoo instead.
+                yf_close, yf_volume = fetch_ohlcv_with_volume(ticker, period)
+                if yf_close is not None and not series_last_bar_stale(yf_close, expected_session):
+                    logger.warning("[run_signals] %s FMP last bar stale (< %s) — using yfinance", ticker, expected_session)
+                    close, volume = yf_close, yf_volume
         else:
             close, volume = fetch_ohlcv_with_volume(ticker, period)
         if close is None:

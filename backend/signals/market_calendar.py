@@ -121,3 +121,28 @@ def next_us_equity_session_day(from_date: date) -> date:
             return d
         d += timedelta(days=1)
     return from_date
+
+
+def latest_completed_session(now=None, close_hour: int = 16, close_minute: int = 15) -> date:
+    """Most recent NYSE session whose close has passed (ET). Before 4:15pm ET → prior session."""
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    d = now.date()
+    if (now.hour, now.minute) < (close_hour, close_minute):
+        d -= timedelta(days=1)
+    while d.weekday() >= 5 or is_nyse_holiday(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def series_last_bar_stale(series, expected: date) -> bool:
+    """True when a date-indexed price series ends before the expected session."""
+    try:
+        import pandas as pd
+
+        return pd.Timestamp(series.index[-1]).date() < expected
+    except Exception:
+        return False
+
