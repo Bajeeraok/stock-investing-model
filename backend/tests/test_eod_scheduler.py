@@ -9,7 +9,7 @@ def test_resolve_eod_schedule_from_config_defaults(monkeypatch):
     resolved = eod_scheduler.resolve_eod_schedule()
     assert resolved is not None
     cron, tz = resolved
-    assert cron == "0 20 * * mon-fri"
+    assert cron == "0 21 * * mon-fri"
     assert tz == "America/New_York"
 
 

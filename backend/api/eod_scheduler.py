@@ -3,7 +3,7 @@ Optional in-process EOD snapshot schedule (APScheduler).
 
 Enable via (first match wins):
   1. EOD_SCHEDULER_CRON — 5-field cron (e.g. 0 20 * * 1-5)
-  2. config.yaml eod_schedule_time + eod_schedule_tz (default 20:00 America/New_York, Mon–Fri)
+  2. config.yaml eod_schedule_time + eod_schedule_tz (default 21:00 America/New_York, Mon–Fri)
 Disable: EOD_SCHEDULER_OFF=1
 """
 from __future__ import annotations
@@ -64,7 +64,7 @@ def resolve_eod_schedule() -> tuple[str, str] | None:
         config = load_config()
         if config.get("eod_scheduler_enabled") is False:
             return None
-        schedule_time = str(config.get("eod_schedule_time") or "20:00").strip()
+        schedule_time = str(config.get("eod_schedule_time") or "21:00").strip()
         tz_name = str(config.get("eod_schedule_tz") or "America/New_York").strip()
         parts = schedule_time.split(":")
         hour = int(parts[0])
@@ -98,9 +98,9 @@ def _run_eod_job() -> None:
             logger.error("[eod-scheduler] %s", result["error"])
             # Allow eod_job safety-net to retry soon (do not leave a sticky "success" day).
             try:
-                from api.eod_job import trigger_full_eod_background_if_missing
+                from api.eod_job import EOD_HOUR_ET, trigger_full_eod_background_if_missing
 
-                trigger_full_eod_background_if_missing(min_hour_et=20, force_retry=True)
+                trigger_full_eod_background_if_missing(min_hour_et=EOD_HOUR_ET, force_retry=True)
             except Exception:
                 pass
         elif result.get("skipped"):
@@ -123,9 +123,9 @@ def _run_eod_job() -> None:
     except Exception:
         logger.exception("[eod-scheduler] job failed")
         try:
-            from api.eod_job import trigger_full_eod_background_if_missing
+            from api.eod_job import EOD_HOUR_ET, trigger_full_eod_background_if_missing
 
-            trigger_full_eod_background_if_missing(min_hour_et=20, force_retry=True)
+            trigger_full_eod_background_if_missing(min_hour_et=EOD_HOUR_ET, force_retry=True)
         except Exception:
             pass
     finally:

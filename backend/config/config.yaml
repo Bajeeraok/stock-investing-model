@@ -961,7 +961,7 @@ income_book:
 # Python scheduler (scripts/scheduler_eod.py): run EOD snapshot daily at this time
 # In-process APScheduler (uvicorn / Docker) uses the same keys when EOD_SCHEDULER_CRON is unset.
 # Skips weekends and NYSE full-day holidays (Independence Day observed, Good Friday, etc.).
-eod_schedule_time: "20:00"   # 8pm ET, Mon–Fri (non-holiday)
+eod_schedule_time: "21:00"   # 9pm ET (FMP sometimes posts the session late), Mon–Fri (non-holiday)
 eod_schedule_tz: "America/New_York"
 # eod_scheduler_enabled: false   # set to disable in-process EOD without env vars
 

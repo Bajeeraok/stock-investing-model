@@ -53,7 +53,7 @@ export default function LatestModelDailyCard({
 
       {days === 0 ? (
         <p className="text-slate-500 leading-snug">
-          No scored day yet under {v}. Each EOD run (8pm ET) scores the previous day&apos;s call against
+          No scored day yet under {v}. Each EOD run (9pm ET) scores the previous day&apos;s call against
           the next close, so this starts filling in after the next clean snapshot.
           {skipped.length > 0 && ` Skipped (no new prices): ${skipped.join(", ")}.`}
         </p>

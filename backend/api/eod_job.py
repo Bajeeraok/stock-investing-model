@@ -14,6 +14,9 @@ from typing import Any
 
 logger = logging.getLogger("api.eod_job")
 
+# Hour (ET) after which today's session is final for EOD; matches config eod_schedule_time.
+EOD_HOUR_ET = 21
+
 # Retry cooldown after a failed/skipped attempt (seconds). Prevents stampede, allows recovery.
 _RETRY_COOLDOWN_SEC = 15 * 60
 
@@ -74,7 +77,7 @@ def eod_job_state() -> dict[str, Any]:
 def last_completed_session_date(
     now: datetime | None = None,
     *,
-    min_hour_et: int = 20,
+    min_hour_et: int = EOD_HOUR_ET,
 ) -> str:
     """
     Market date the in-process job should persist.
@@ -182,7 +185,7 @@ def _start_full_eod_thread(date_str: str, *, force_retry: bool = False) -> bool:
 
 def trigger_full_eod_background_if_missing(
     *,
-    min_hour_et: int = 20,
+    min_hour_et: int = EOD_HOUR_ET,
     force_retry: bool = False,
 ) -> bool:
     """

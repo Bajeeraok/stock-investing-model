@@ -2797,9 +2797,9 @@ def _compute_full_dashboard_sync() -> dict:
                 eod_auto.get("reason"),
             )
             try:
-                from api.eod_job import trigger_full_eod_background_if_missing
+                from api.eod_job import EOD_HOUR_ET, trigger_full_eod_background_if_missing
 
-                if trigger_full_eod_background_if_missing(min_hour_et=20):
+                if trigger_full_eod_background_if_missing(min_hour_et=EOD_HOUR_ET):
                     logger.info("[dashboard] queued background full EOD (missing after 8pm ET)")
             except Exception as eod_exc:
                 logger.debug("[dashboard] full EOD safety-net skipped: %s", eod_exc)
@@ -4787,11 +4787,11 @@ def eod_status():
     job_state: dict = {}
     safety_net_queued = False
     try:
-        from api.eod_job import eod_job_state, trigger_full_eod_background_if_missing
+        from api.eod_job import EOD_HOUR_ET, eod_job_state, trigger_full_eod_background_if_missing
 
         job_state = eod_job_state()
         # Lightweight kick: if full cohort missing after 8pm, queue background job (with cooldown).
-        safety_net_queued = bool(trigger_full_eod_background_if_missing(min_hour_et=20))
+        safety_net_queued = bool(trigger_full_eod_background_if_missing(min_hour_et=EOD_HOUR_ET))
     except Exception as e:
         job_state = {"error": str(e)}
 
