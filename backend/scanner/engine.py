@@ -727,6 +727,7 @@ def evaluate_retail_alerts(
         # Re-entry cooldown: re-alert when price stays in zone >4h so sustained
         # buy setups surface again after the initial edge-trigger fired.
         _reentry_cooldown_hours = 4
+        _prev_price = st.get("last_price")
 
         for band_key, levels in bands.items():
             el = float(levels.get("entry_low") or 0)
@@ -827,7 +828,13 @@ def evaluate_retail_alerts(
                     emoji_override=em_override,
                 ))
             # Stop/target are exit-side plans — only meaningful for positions you hold.
-            if in_portfolio and stop and price < stop:
+            # Stops fire once, on the scan where price crosses them (not every scan while below),
+            # and only for short/medium trade plans: long-term holders default to HOLD and get
+            # the protect-mode flip alert instead. The long-term stop is recomputed from the
+            # current zone, so it can sit far above price without the holder having crossed it.
+            _stop_plan = bool(stop) and band_key != "long" and _prev_price is not None
+            _prev = float(_prev_price) if _stop_plan else 0.0
+            if in_portfolio and _stop_plan and price < stop <= _prev:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.STOP_HIT,
@@ -851,7 +858,7 @@ def evaluate_retail_alerts(
                     ),
                     dedupe_extra=dex,
                 ))
-            elif in_portfolio and stop and price > stop and price <= stop * 1.02:
+            elif in_portfolio and _stop_plan and stop < price <= stop * 1.02 < _prev:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.STOP_APPROACHING,

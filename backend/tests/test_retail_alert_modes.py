@@ -17,7 +17,8 @@ LEVELS = {"short": {"entry_low": 95.0, "entry_high": 100.0, "stop_loss": 90.0, "
 def test_stop_and_target_alerts_only_for_holdings():
     levels = {"AAA": LEVELS, "BBB": LEVELS}
     snaps = [_snap("AAA", 85.0), _snap("BBB", 85.0)]
-    alerts, _ = evaluate_retail_alerts(snaps, levels, {}, {}, {"AAA", "BBB"}, portfolio={"AAA"})
+    state = {"AAA": {"last_price": 96.0}, "BBB": {"last_price": 96.0}}
+    alerts, _ = evaluate_retail_alerts(snaps, levels, state, {}, {"AAA", "BBB"}, portfolio={"AAA"})
     stop = [a for a in alerts if a.type == AlertType.STOP_HIT]
     assert [a.ticker for a in stop] == ["AAA"]
     assert "HOLD" in stop[0].actionable
@@ -30,3 +31,24 @@ def test_rsi_alert_is_informational():
     alerts, _ = evaluate_retail_alerts([s], {}, {}, {}, {"AAA"}, portfolio={"AAA"})
     rsi = [a for a in alerts if a.type == AlertType.RSI_OVERSOLD]
     assert rsi and "not" in rsi[0].actionable.lower()
+
+
+def _stop_alerts(levels, prev_price, price):
+    state = {"AAA": {"last_price": prev_price}} if prev_price is not None else {}
+    alerts, new_state = evaluate_retail_alerts([_snap("AAA", price)], {"AAA": levels}, state, {}, {"AAA"}, portfolio={"AAA"})
+    return [a for a in alerts if a.type in (AlertType.STOP_HIT, AlertType.STOP_APPROACHING)], new_state
+
+
+def test_stop_fires_once_on_cross_not_while_below():
+    fired, st = _stop_alerts(LEVELS, 96.0, 85.0)
+    assert [a.type for a in fired] == [AlertType.STOP_HIT]
+    again, _ = _stop_alerts(LEVELS, st["AAA"]["last_price"], 84.0)
+    assert again == []
+    first_scan, _ = _stop_alerts(LEVELS, None, 85.0)
+    assert first_scan == []
+
+
+def test_no_stop_alerts_for_long_term_band():
+    long_levels = {"long": {**LEVELS["short"], "stop_loss": 310.0, "entry_low": 320.0, "entry_high": 340.0, "horizon_label": "Long-term"}}
+    fired, _ = _stop_alerts(long_levels, 330.0, 253.0)
+    assert fired == []

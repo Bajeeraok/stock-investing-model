@@ -97,7 +97,7 @@ function ModeChips({ signals }: { signals?: Record<string, unknown> }) {
 
 const ALERT_RULES: { type: string; when: string; who: string; mode: string }[] = [
   { type: "In entry band", when: "Price enters a plan band (ST/MT/LT). Re-alerts after 4h if still inside.", who: "Holdings + watchlist", mode: "Full GO → staged add OK. Starter only → small size, watchlist needs ≥2% below band top. Locked → suppressed." },
-  { type: "Stop hit / near stop", when: "Price below a plan stop, or within 2% of it.", who: "Holdings only", mode: "Plan traders trim/exit per plan. Long-term holders: default HOLD; protect mode is the lower-risk option." },
+  { type: "Stop hit / near stop", when: "Once, when price crosses below a short- or medium-term plan stop, or into the 2% just above it. Not repeated while price stays below.", who: "Holdings only", mode: "Plan traders trim/exit per plan. Long-term holders: no stop alerts; default HOLD, and the protect-mode alert covers long-term risk." },
   { type: "Target hit / near target", when: "Price at target, or within 5% of it.", who: "Holdings only", mode: "Optional trim / scale-out — not a sell signal." },
   { type: "Protect mode on / off", when: "Stock crosses its 200-day average (±1% band) or SPY turns risk-off / back on. Fires only on change.", who: "Holdings + watchlist", mode: "Optional insurance: ~50% position when on, full when off. Default action stays HOLD." },
   { type: "Earnings soon", when: "Earnings within the alert window.", who: "Holdings; watchlist only if Full GO", mode: "No new positions before the report; holders may trim speculative size." },
