@@ -64,7 +64,7 @@ export function plainVerdictSentence(light: Light, title: string, entryMode: str
   }
   if (light === "red") {
     if (/TRIM|REDUCE|SELL|EXIT|STOP|AVOID/.test(t)) return held ? "Trim. Protect the position." : "Avoid. Don't open a position.";
-    return held ? "Hold. Don't add here." : "Don't chase. Wait for the pullback.";
+    return held ? "Hold. Don't add here." : "No new entries yet. Wait for the gates to clear.";
   }
   return held ? "Hold. Don't add today." : "Wait. Don't buy today.";
 }

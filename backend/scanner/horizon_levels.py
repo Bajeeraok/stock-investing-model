@@ -370,7 +370,22 @@ def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]
         try:
             from signals.readiness_score import compute_readiness
 
-            readiness = compute_readiness(r)
+            # Alerts must agree with the ticker detail, which gates on investor_summary.retail_action
+            # (row-level go_no_go/gates_passed can say GO 4/4 while the detail says HARD LOCK 3/4).
+            inv = r.get("investor_summary") if isinstance(r.get("investor_summary"), dict) else {}
+            ra = inv.get("retail_action") if isinstance(inv.get("retail_action"), dict) else {}
+            factors = ((inv.get("actionable_score") or {}).get("factors") or {}) if isinstance(inv.get("actionable_score"), dict) else {}
+            ra_over: dict[str, Any] = {}
+            if ra.get("go_no_go"):
+                ra_over["go_no_go"] = ra["go_no_go"]
+                ra_over["gate_cleared"] = ra["go_no_go"] == "go"
+            if ra.get("entry_mode"):
+                ra_over["entry_mode"] = ra["entry_mode"]
+            if factors.get("gates_passed") is not None:
+                ra_over["gates_passed"] = factors["gates_passed"]
+                if factors.get("gates_total") is not None:
+                    ra_over["gates_total"] = factors["gates_total"]
+            readiness = compute_readiness({**r, **ra_over})
             payload = {**readiness}
             for k in (
                 "velocity_triggered",
@@ -388,6 +403,7 @@ def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]
             ):
                 if r.get(k) is not None:
                     payload[k] = r.get(k)
+            payload.update(ra_over)
             merge_readiness_for_ticker(data_root, ticker, payload)
             wrote = True
         except Exception:

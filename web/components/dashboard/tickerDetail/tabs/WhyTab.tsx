@@ -93,7 +93,7 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
         const t = headerActionStatus.title.toUpperCase();
         if (headerActionStatus.light === "green") return "Buy";
         if (/TRIM|REDUCE|SELL|EXIT|AVOID/.test(t)) return "Trim";
-        if (headerActionStatus.light === "red") return "Don't chase";
+        if (headerActionStatus.light === "red") return "Wait";
         return "Wait";
       })()}
       gates={tradingGates}

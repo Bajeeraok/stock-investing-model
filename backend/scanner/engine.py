@@ -879,17 +879,22 @@ def evaluate_retail_alerts(
                     ),
                     dedupe_extra=dex,
                 ))
-            if in_portfolio and target and price >= target:
+            # "Target" here is the top of the entry band, not a profit target — fire once on the
+            # cross, short/medium plans only (long-term holders HOLD; above-band tended to keep running).
+            _tgt_plan = bool(target) and band_key != "long" and _prev_price is not None
+            _prev_t = float(_prev_price) if _tgt_plan else 0.0
+            if in_portfolio and _tgt_plan and _prev_t < target <= price:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.TARGET_HIT,
                     f"{ticker} ({label}) reached target ${target:.2f}",
-                    f"Target hit — consider taking profit or trimming.",
+                    f"Top of the {label.lower()} band reached. If you trade this plan, take profit per plan. "
+                    f"Long-term holders: default stays HOLD.",
                     snap.scan_tier,
                     {"band": band_key, "target": target, "price": price},
                     actionable=(
                         f"Exit: {band_key} target ${target:.2f} reached (price ${price:.2f}). "
-                        f"Consider taking profit or scaling out."
+                        f"Plan traders: take profit per plan. Long-term holders: HOLD."
                     ),
                     one_liner=_bias_prob_range_line(
                         price=price,
@@ -900,17 +905,17 @@ def evaluate_retail_alerts(
                     ),
                     dedupe_extra=dex,
                 ))
-            elif in_portfolio and target and tf < 1 and price >= tf * target:
+            elif in_portfolio and _tgt_plan and tf < 1 and _prev_t < tf * target <= price < target:
                 alerts.append(_build_retail_alert(
                     ticker,
                     AlertType.TARGET_APPROACHING,
-                    f"{ticker} ({label}) near target ${target:.2f} — consider trim",
-                    f"Within {(1 - tf) * 100:.0f}% of {band_key} target; good zone to scale out partially.",
+                    f"{ticker} ({label}) near top of band ${target:.2f}",
+                    f"Within {(1 - tf) * 100:.0f}% of the {band_key} band top. Optional scale-out if you trade this plan; long-term holders HOLD.",
                     snap.scan_tier,
                     {"band": band_key, "target": target, "price": price, "trimFraction": tf},
                     actionable=(
                         f"Price ${price:.2f} is near {band_key} target ${target:.2f}. "
-                        f"Consider trimming a portion or tightening stops."
+                        f"Plan traders: optional partial take-profit. Long-term holders: HOLD."
                     ),
                     one_liner=_bias_prob_range_line(
                         price=price,
