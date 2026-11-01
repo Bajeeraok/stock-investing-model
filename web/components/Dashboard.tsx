@@ -84,6 +84,7 @@ import {
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
 import { MarketPulseCard } from "./dashboard/MarketPulseCard";
+import { ReportCardPanel } from "./dashboard/ReportCardPanel";
 import { SignalUniversePanel } from "./dashboard/SignalUniversePanel";
 import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
 import {
@@ -1935,6 +1936,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     meta={forwardTracking?.meta ?? null}
                   />
                 )}
+              </ToggleSection>
+              <ToggleSection id="analysis-report-card" title="Model report card (private)" icon={<Target />} defaultOpen>
+                <ReportCardPanel data={forwardTracking?.report_card ?? null} />
               </ToggleSection>
               <ToggleSection id="analysis-calibration" title="Calibration curve" icon={<Activity />} defaultOpen>
                 <CalibrationCurvePanel

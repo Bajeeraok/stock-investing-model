@@ -646,6 +646,7 @@ def get_forward_tracking(
         # Server-side only — stripped from HTTP responses (see _strip_forward_tracking_heavy).
         "by_ticker": by_ticker,
         "latest_model_daily": latest_model_daily,
+        "report_card": _report_card(records),
         "meta": meta,
         "data_source_note": (
             "Returns and ST stop/target touches from EOD OHLCV between snapshot dates "
@@ -805,6 +806,18 @@ def _timing_vs_hold(records: list[dict[str, Any]]) -> dict[str, Any] | None:
         return aggregate_timing_vs_hold(records, 20) or None
     except Exception as e:
         logger.debug("timing_vs_hold: %s", e)
+        return None
+
+
+def _report_card(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    try:
+        from config_loader import load_config
+        from signals.report_card import build_report_card
+
+        rc_cfg = (load_config() or {}).get("report_card") or {}
+        return build_report_card(records, MODEL_VERSION, public=bool(rc_cfg.get("public", False)))
+    except Exception as e:
+        logger.debug("report_card: %s", e)
         return None
 
 

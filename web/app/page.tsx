@@ -883,6 +883,7 @@ export interface DashboardData {
     } | null;
     summary_by_model_version?: Record<string, { avg_return_20d_pct?: number; n_observations?: number; hit_rate_pct?: number }>;
     latest_model_daily?: import("@/lib/useTickerTrackRecord").LatestModelDaily | null;
+    report_card?: import("@/components/dashboard/ReportCardPanel").ReportCard | null;
     summary_second_opinions?: import("@/components/dashboard/ForwardTracking").SecondOpinionsScorecard | null;
     summary_timing_vs_hold?: {
       horizon_days: number;
