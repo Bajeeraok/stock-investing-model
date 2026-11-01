@@ -1715,6 +1715,10 @@ def enrich_dashboard_signal_row(
         inside_buy_band=bool(payload.get("inside_buy_band")),
     )
     payload.update(entry)
+    # Same rule as the ticker detail: hard lock headlines "No new entries", not
+    # "SETUP FORMING" (audit rows showed SETUP FORMING next to HARD LOCK).
+    if entry.get("entry_mode") == "hard_lock":
+        payload["action_title"] = entry.get("entry_mode_headline") or "No new entries"
     payload["unlock_sequence"] = build_unlock_sequence(
         payload.get("gates") or [],
         stock_bull_pct=rb,

@@ -960,7 +960,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <th className="py-1.5 pr-2 font-medium">ML</th>
                   <th className="py-1.5 pr-2 font-medium">Gates</th>
                   <th className="py-1.5 pr-2 font-medium">Conf</th>
-                  <th className="py-1.5 pr-2 font-medium">Track</th>
+                  <th className="py-1.5 pr-2 font-medium" title="Holding style bucket, not an action: long-term (accumulate) vs tactical (velocity)">Style</th>
                   <th className="py-1.5 pr-2 font-medium" title="full_go = 4/4 · starter_only = value OK, tech gates blocked · hard_lock = no MOS / overvalued">Entry Mode</th>
                   <th className="py-1.5 pr-2 font-medium">Price</th>
                   <th className="py-1.5 pr-2 font-medium">Score</th>
@@ -1103,7 +1103,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                             : "bg-slate-700/50 text-slate-400",
                         )}
                       >
-                        {r.track || "accumulate"}
+                        {(r.track || "accumulate") === "velocity" ? "tactical" : "long-term"}
                       </span>
                     </td>
                     <td className="py-1 pr-2">
