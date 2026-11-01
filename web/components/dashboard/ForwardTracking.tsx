@@ -580,7 +580,7 @@ export function ForwardTracking({
       {summary_actionable_buy && (summary_actionable_buy.n_observations ?? 0) > 0 && (
         <div className="mb-3 rounded-lg border border-emerald-500/35 bg-emerald-950/30 px-3 py-2">
           <p className="text-xs text-emerald-300/90 font-medium mb-1">
-            Entry slice (20d) — full_go + BUY/HOLD/ADD only
+            Entry slice (20d) — full_go (all gates cleared)
           </p>
           <p className="text-sm text-slate-200">
             Avg return{" "}
@@ -598,7 +598,7 @@ export function ForwardTracking({
             </span>
           </p>
           <p className="text-[10px] text-slate-500 mt-1">
-            Use this row for entry quality — broad HOLD/ADD bucket mixes gate-blocked high scores.
+            Use this row for entry quality — the broad HOLD bucket mixes gate-blocked names.
           </p>
         </div>
       )}

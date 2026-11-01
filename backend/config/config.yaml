@@ -658,6 +658,7 @@ velocity_tactical:
   require_rvol_or_bb: true
   log_paper_trades: true
   require_buy_side_for_paper: true   # skip REDUCE/TRIM/SELL velocity rows (long-only paper)
+  skip_hard_lock_for_paper: true     # ticker page says "No new entries" on hard lock
   min_gates_for_paper: 2            # align with tactical_min_gates_for_alert (was 0 — logged hard_lock noise)
   tactical_min_gates_for_alert: 2
 

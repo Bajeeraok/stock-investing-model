@@ -309,7 +309,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           {versionSummary && (
             <span className="text-slate-500">
               Book {versionFilter}: n={versionSummary.completed_n}
-              {versionSummary.win_rate_pct != null ? ` · win ${versionSummary.win_rate_pct.toFixed(1)}%` : ""}
+              {versionSummary.win_rate_pct != null ? ` · target hit ${versionSummary.win_rate_pct.toFixed(1)}%` : ""}
               {versionSummary.avg_return_pct != null ? ` · avg ${fmtPct(versionSummary.avg_return_pct)}` : ""}
             </span>
           )}
@@ -337,11 +337,19 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               <span>
                 <span className="text-slate-500">
                   {summary.headline_track === "accumulate" || summary.headline_track === "accumulate_thin"
-                    ? "Win rate (accumulate):"
-                    : "Win rate:"}
+                    ? "Target hit (accumulate):"
+                    : "Target hit:"}
                 </span>{" "}
                 <span className={summary.win_rate_pct >= 55 ? "text-emerald-400" : "text-amber-300"}>
                   {summary.win_rate_pct.toFixed(1)}%
+                </span>
+              </span>
+            )}
+            {summary.positive_rate_pct != null && (
+              <span title="Share of completed trades with a positive return at exit">
+                <span className="text-slate-500">Positive return:</span>{" "}
+                <span className={summary.positive_rate_pct >= 50 ? "text-emerald-400" : "text-amber-300"}>
+                  {summary.positive_rate_pct.toFixed(1)}%
                 </span>
               </span>
             )}
@@ -387,7 +395,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               <span className="text-slate-500"> — n={summary.buy_signals_summary.completed_n}</span>
               {summary.buy_signals_summary.win_rate_pct != null && (
                 <span className="ml-2">
-                  Win {summary.buy_signals_summary.win_rate_pct.toFixed(1)}%
+                  Target hit {summary.buy_signals_summary.win_rate_pct.toFixed(1)}%
                 </span>
               )}
               {summary.buy_signals_summary.avg_return_pct != null && (
@@ -407,7 +415,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <span className="font-medium text-emerald-300">{summary.accumulate_summary.label}</span>
                   <span className="text-slate-500"> — n={summary.accumulate_summary.completed_n}</span>
                   {summary.accumulate_summary.win_rate_pct != null && (
-                    <span className="ml-2">Win {summary.accumulate_summary.win_rate_pct.toFixed(1)}%</span>
+                    <span className="ml-2">Target hit {summary.accumulate_summary.win_rate_pct.toFixed(1)}%</span>
                   )}
                   {summary.accumulate_summary.avg_return_pct != null && (
                     <span className="ml-2">Avg {fmtPct(summary.accumulate_summary.avg_return_pct)}</span>
@@ -419,7 +427,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <span className="font-medium text-violet-300">{summary.tactical_summary.label}</span>
                   <span className="text-slate-500"> — n={summary.tactical_summary.completed_n}</span>
                   {summary.tactical_summary.win_rate_pct != null && (
-                    <span className="ml-2">Win {summary.tactical_summary.win_rate_pct.toFixed(1)}%</span>
+                    <span className="ml-2">Target hit {summary.tactical_summary.win_rate_pct.toFixed(1)}%</span>
                   )}
                   {summary.tactical_summary.avg_return_pct != null && (
                     <span className="ml-2">Avg {fmtPct(summary.tactical_summary.avg_return_pct)}</span>
@@ -451,7 +459,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                       <span className="font-medium uppercase text-[10px] tracking-wide">{gm.replace("_", " ")}</span>
                       <span className="text-slate-500 text-[10px]">n={s.n}</span>
                       {s.win_rate_pct != null && (
-                        <span>Win {s.win_rate_pct.toFixed(0)}%</span>
+                        <span>Target hit {s.win_rate_pct.toFixed(0)}%</span>
                       )}
                       {s.avg_return_pct != null && (
                         <span className={s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
@@ -490,7 +498,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                       {ver === currentModelVersion ? `${ver} (current)` : ver}
                     </span>
                     <span className="text-slate-500 text-[10px]">n={s.completed_n}</span>
-                    {s.win_rate_pct != null && <span>Win {s.win_rate_pct.toFixed(0)}%</span>}
+                    {s.win_rate_pct != null && <span>Target hit {s.win_rate_pct.toFixed(0)}%</span>}
                     {s.avg_return_pct != null && (
                       <span className={s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
                         {fmtPct(s.avg_return_pct)}

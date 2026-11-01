@@ -951,6 +951,7 @@ export interface DashboardData {
       horizon_note?: string | null;
       benchmark_ticker?: string | null;
       win_rate_pct?: number | null;
+      positive_rate_pct?: number | null;
       avg_return_pct?: number | null;
       avg_win_pct?: number | null;
       avg_loss_pct?: number | null;
@@ -967,12 +968,14 @@ export interface DashboardData {
       accumulate_summary?: {
         completed_n: number;
         win_rate_pct?: number | null;
+        positive_rate_pct?: number | null;
         avg_return_pct?: number | null;
         label: string;
       } | null;
       tactical_summary?: {
         completed_n: number;
         win_rate_pct?: number | null;
+        positive_rate_pct?: number | null;
         avg_return_pct?: number | null;
         label: string;
       } | null;

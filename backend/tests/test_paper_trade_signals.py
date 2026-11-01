@@ -22,7 +22,7 @@ def test_buy_side_excludes_trim_hold_watch():
     assert _is_buy_side_signal("REDUCE") is False
 
 
-def test_completed_equity_curve_compounds():
+def test_completed_equity_curve_running_average():
     fake_rows = [
         {"outcome": "HIT", "return_pct": 10, "next_date": "2025-01-02", "ticker": "AAA", "signal": "BUY"},
         {"outcome": "MISS", "return_pct": -5, "next_date": "2025-01-03", "ticker": "BBB", "signal": "BUY"},
@@ -32,5 +32,5 @@ def test_completed_equity_curve_compounds():
         curve = pt.get_completed_equity_curve()
     assert len(curve) == 2
     assert curve[0]["equity_index"] == pytest.approx(110.0, rel=1e-9)
-    assert curve[1]["equity_index"] == pytest.approx(104.5, rel=1e-9)
-    assert curve[1]["cumulative_return_pct"] == pytest.approx(4.5, rel=1e-9)
+    assert curve[1]["equity_index"] == pytest.approx(102.5, rel=1e-9)
+    assert curve[1]["cumulative_return_pct"] == pytest.approx(2.5, rel=1e-9)

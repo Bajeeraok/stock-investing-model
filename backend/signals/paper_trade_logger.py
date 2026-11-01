@@ -524,6 +524,9 @@ def _velocity_eligible_for_paper(r: dict[str, Any], config: dict | None) -> bool
     sig = str(r.get("signal") or r.get("short_suggestion") or "")
     if vt.get("require_buy_side_for_paper", True) and _is_bearish_signal(sig):
         return False
+    # The ticker page says "No new entries" on hard lock; the paper book must not buy then.
+    if vt.get("skip_hard_lock_for_paper", True) and str(r.get("entry_mode") or "") == "hard_lock":
+        return False
     min_gates = vt.get("min_gates_for_paper")
     if min_gates is None:
         min_gates = vt.get("tactical_min_gates_for_alert", 0)
@@ -1961,14 +1964,17 @@ class PaperTradeLogger:
             return str(r.get("next_date") or r.get("date") or "")
 
         completed.sort(key=_exit_date)
+        # Running average trade return, not compounded: trades overlap (hundreds open at
+        # once), so chaining each one on the full account showed +12,000% then -99.7%.
         curve: list[dict[str, Any]] = []
-        equity = 100.0
+        total = 0.0
         for i, r in enumerate(completed):
             rp = _safe_float(r.get("return_pct"))
             if rp is None:
                 continue
             ret = float(rp)
-            equity *= 1.0 + ret / 100.0
+            total += ret
+            equity = 100.0 + total / (i + 1)
             curve.append(
                 {
                     "date": _exit_date(r),
@@ -2003,6 +2009,7 @@ class PaperTradeLogger:
         avg_return = round(sum(returns) / len(returns), 2) if returns else None
         wins = [float(r["return_pct"]) for r in completed if str(r.get("hit_target")) == "1" and _safe_float(r.get("return_pct")) is not None]
         losses = [float(r["return_pct"]) for r in completed if str(r.get("hit_target")) == "0" and _safe_float(r.get("return_pct")) is not None]
+        positive_rate = round(100 * sum(1 for x in returns if x > 0) / len(returns), 1) if returns else None
         avg_win = round(sum(wins) / len(wins), 2) if wins else None
         avg_loss = round(sum(losses) / len(losses), 2) if losses else None
 
@@ -2017,6 +2024,7 @@ class PaperTradeLogger:
             _gm_stats[gm] = {
                 "n": len(gm_rows),
                 "win_rate_pct": round(100 * sum(gm_hits) / len(gm_hits), 1) if gm_hits else None,
+                "positive_rate_pct": round(100 * sum(1 for x in gm_rets if x > 0) / len(gm_rets), 1) if gm_rets else None,
                 "avg_return_pct": round(sum(gm_rets) / len(gm_rets), 2) if gm_rets else None,
             }
         excesses: list[float] = []
@@ -2033,6 +2041,7 @@ class PaperTradeLogger:
         out: dict[str, Any] = {
             "completed_n": len(completed),
             "win_rate_pct": win_rate,
+            "positive_rate_pct": positive_rate,
             "avg_return_pct": avg_return,
             "avg_win_pct": avg_win,
             "avg_loss_pct": avg_loss,
@@ -2186,6 +2195,7 @@ class PaperTradeLogger:
                 out["message"] = tac_note if not out.get("message") else f"{out['message']} {tac_note}"
 
         out["win_rate_pct"] = headline_stats.get("win_rate_pct")
+        out["positive_rate_pct"] = headline_stats.get("positive_rate_pct")
         out["avg_return_pct"] = headline_stats.get("avg_return_pct")
         out["avg_win_pct"] = headline_stats.get("avg_win_pct")
         out["avg_loss_pct"] = headline_stats.get("avg_loss_pct")
@@ -2206,14 +2216,16 @@ class PaperTradeLogger:
             out["accumulate_summary"] = {
                 "completed_n": acc_stats["completed_n"],
                 "win_rate_pct": acc_stats["win_rate_pct"],
+                "positive_rate_pct": acc_stats["positive_rate_pct"],
                 "avg_return_pct": acc_stats["avg_return_pct"],
-                "label": "Accumulate track (4-gate GO / swing)",
+                "label": "Accumulate track (all gate modes)",
             }
         if tactical:
             tac_stats = self._stats_for_completed(tactical, benchmark)
             out["tactical_summary"] = {
                 "completed_n": tac_stats["completed_n"],
                 "win_rate_pct": tac_stats["win_rate_pct"],
+                "positive_rate_pct": tac_stats["positive_rate_pct"],
                 "avg_return_pct": tac_stats["avg_return_pct"],
                 "label": "Tactical velocity track (T+5)",
             }

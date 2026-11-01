@@ -531,13 +531,14 @@ def get_forward_tracking(
         for r in records
         if r.get("horizon_days") == 20
         and str(r.get("entry_mode") or "").lower() == "full_go"
-        and str(r.get("our_signal") or "") == "HOLD/ADD"
+        # Score-only BUY is off, so full_go names are labelled HOLD; HOLD/ADD-only froze at n=4.
+        and str(r.get("our_signal") or "") in ("HOLD/ADD", "HOLD")
     ]
     summary_actionable_buy: dict[str, Any] = {}
     if actionable_buy_rows:
         summary_actionable_buy = aggregate_horizon_stats(actionable_buy_rows)
         summary_actionable_buy["avg_return_20d_pct"] = summary_actionable_buy.get("avg_return_pct")
-        summary_actionable_buy["label"] = "full_go + HOLD/ADD (entry slice)"
+        summary_actionable_buy["label"] = "full_go (all gates cleared) entry slice"
         band_counts: dict[str, int] = {}
         for r in actionable_buy_rows:
             k = str(r.get("entry_band_position") or "unknown")
@@ -556,7 +557,7 @@ def get_forward_tracking(
             "avg_return_pct"
         )
         summary_actionable_buy_in_band["label"] = (
-            "full_go + HOLD/ADD, entry-band fills only (excludes chasing above band)"
+            "full_go, entry-band fills only (excludes chasing above band)"
         )
 
     summary_by_entry_band_position: dict[str, dict[str, Any]] = {}

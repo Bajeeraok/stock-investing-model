@@ -308,14 +308,13 @@ export default function TrackRecordPanel({
         </div>
       )}
 
-      {/* Cumulative paper-trade equity (compounded by completed trade returns) */}
+      {/* Running average completed paper-trade return (trades overlap, so no compounding) */}
       {hasEquity && (
         <div>
-          <p className="text-[11px] text-slate-400 mb-1 font-medium">Paper trade equity curve</p>
+          <p className="text-[11px] text-slate-400 mb-1 font-medium">Average paper trade return (running)</p>
           <p className="text-[10px] text-slate-500 mb-2">
-            Index starts at 100; each completed trade updates by (1&nbsp;+&nbsp;return%).{" "}
-            Chronological by exit date. Early curve decline is from tactical-track trades that were
-            re-classified by a logic fix — they will reset to correct outcomes on the next EOD run.
+            Index = 100 + average return of all completed trades so far, by exit date. Trades overlap, so
+            returns are averaged, not compounded.
           </p>
           <div className="h-[200px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
@@ -335,7 +334,7 @@ export default function TrackRecordPanel({
                 />
                 <Tooltip
                   contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #475569", fontSize: 11 }}
-                  formatter={(value: number) => [value?.toFixed?.(2) ?? value, "Equity index"]}
+                  formatter={(value: number) => [value?.toFixed?.(2) ?? value, "100 + avg trade %"]}
                   labelFormatter={(label) => `Exit ${label}`}
                 />
                 <Line type="monotone" dataKey="equity_index" stroke="#34d399" strokeWidth={2} dot={false} name="Equity" />

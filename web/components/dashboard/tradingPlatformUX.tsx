@@ -565,7 +565,7 @@ export function TrustMetricsStrip({
   }
   if (paperWinRate != null) {
     items.push({
-      label: "Paper win",
+      label: "Paper target hit",
       value: `${paperWinRate.toFixed(0)}%`,
       tone: paperWinRate >= 55 ? "good" : "neutral",
     });
@@ -634,7 +634,7 @@ export function MiniEquityCurve({
   return (
     <div className={clsx("rounded-lg border border-slate-700/60 bg-slate-900/50 p-3", className)}>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500">Paper equity curve</span>
+        <span className="text-[10px] uppercase tracking-wider text-slate-500">Avg paper trade</span>
         <span className={clsx("text-sm font-bold tabular-nums", positive ? "text-emerald-400" : "text-red-400")}>
           {last >= 0 ? "+" : ""}
           {last.toFixed(1)}%
