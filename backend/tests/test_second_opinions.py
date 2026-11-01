@@ -51,3 +51,12 @@ def test_scorecard_like_for_like():
     assert src["tv_1d"]["by_bias"]["bullish"]["avg_return_pct"] == 3.0
     assert src["tv_1d"]["bull_minus_bear_pct"] == 3.0
     assert src["ours"]["by_bias"]["neutral"]["n"] == 4
+
+
+def test_analyst_row_keeps_display_name():
+    from signals.second_opinions import build_second_opinions
+
+    dist = {"strong_buy": 5, "buy": 5, "hold": 2, "sell": 0, "strong_sell": 0, "total": 12, "bullish_pct": 83.3, "source": "fmp"}
+    out = build_second_opinions({}, "AAA", _df(0.001), analyst_dist=dist, include_finnhub=False)
+    a = next(o for o in out["opinions"] if o["key"] == "analyst")
+    assert a["source"] == "Analyst consensus" and a["provider"] == "fmp"

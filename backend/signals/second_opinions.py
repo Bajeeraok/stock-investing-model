@@ -250,7 +250,7 @@ def _analyst_entry(dist: dict | None) -> dict[str, Any] | None:
         "total": dist.get("total"),
         "bullish_pct": dist.get("bullish_pct"),
         "counts": {k: dist.get(k, 0) for k in ("strong_buy", "buy", "hold", "sell", "strong_sell")},
-        "source": dist.get("source"),
+        "provider": dist.get("source"),
     }
 
 
