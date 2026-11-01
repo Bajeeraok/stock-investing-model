@@ -723,6 +723,12 @@ def run_signals(
                 row["model_confidence_pct"] = round(float(row["composite_buy"]), 1)
             except (TypeError, ValueError):
                 pass
+        try:
+            from signals.second_opinions import compact_for_row
+
+            row["second_opinions"] = compact_for_row(config, ticker, ohlcv_df, use_fmp=bool(use_fmp))
+        except Exception as _so_exc:
+            logger.debug("second_opinions %s: %s", ticker, _so_exc)
         return row
     # end _process_single_ticker
 
@@ -792,6 +798,8 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
             # Calibration inputs: lets forward tracking test whether high ML probabilities
             # cluster on falling knives (suspected inversion) — not stored before.
             "ml_short_prob": r.get("ml_short_prob"),
+            # Outside-style ratings (technical D/W/M, analyst consensus, Finnhub) scored in Track.
+            "second_opinions": r.get("second_opinions"),
         }
         try:
             from signals.readiness_score import is_falling_knife

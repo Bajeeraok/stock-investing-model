@@ -112,9 +112,82 @@ interface Props {
   summary_by_model_version?: SummaryByModelVersion;
   summary_timing_vs_hold?: TimingVsHold | null;
   latest_model_daily?: LatestModelDaily | null;
+  summary_second_opinions?: SecondOpinionsScorecard | null;
   data_source_note?: string | null;
   message?: string | null;
   meta?: ForwardMeta | null;
+}
+
+type OpinionBias = "bullish" | "neutral" | "bearish";
+interface OpinionBucket { n: number; tickers: number; avg_return_pct: number; edge_vs_hold_pct: number; avg_excess_vs_spy_pct?: number | null }
+export interface SecondOpinionsScorecard {
+  by_horizon: Record<string, { n: number; dates: number; sources: Record<string, { label: string; by_bias: Partial<Record<OpinionBias, OpinionBucket>>; bull_minus_bear_pct?: number | null }> }>;
+  note?: string;
+}
+
+function SecondOpinionsTable({ data }: { data: SecondOpinionsScorecard }) {
+  const horizons = Object.keys(data.by_horizon || {}).sort((a, b) => Number(a) - Number(b));
+  const [h, setH] = useState<string>(horizons.includes("20") ? "20" : horizons[horizons.length - 1]);
+  const block = data.by_horizon[h];
+  if (!block) return null;
+  const cell = (b?: OpinionBucket) =>
+    b ? (
+      <span>
+        {fmt(b.avg_return_pct)}{" "}
+        <span className={b.edge_vs_hold_pct >= 0 ? "text-emerald-400" : "text-red-400"}>({fmt(b.edge_vs_hold_pct)})</span>
+        <span className="text-slate-500"> n={b.n}</span>
+      </span>
+    ) : (
+      <span className="text-slate-600">—</span>
+    );
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <p className="text-xs text-slate-500">Second opinions scored on the same days: avg return (edge vs holding the same stock)</p>
+        <div className="ml-auto flex gap-1">
+          {horizons.map((x) => (
+            <button
+              key={x}
+              type="button"
+              onClick={() => setH(x)}
+              className={clsx("px-2 py-0.5 rounded text-[11px] border", x === h ? "border-sky-500 text-sky-300" : "border-slate-700 text-slate-400")}
+            >
+              {x}d
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="text-xs text-left border-collapse min-w-[620px]">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-700">
+              <th className="py-1 pr-3 font-medium">Source</th>
+              <th className="py-1 pr-3 font-medium text-right">After bullish call</th>
+              <th className="py-1 pr-3 font-medium text-right">After neutral / hold</th>
+              <th className="py-1 pr-3 font-medium text-right">After bearish call</th>
+              <th className="py-1 pr-3 font-medium text-right">Bull − bear</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            {Object.entries(block.sources).map(([k, s]) => (
+              <tr key={k} className="border-b border-slate-800">
+                <td className="py-1 pr-3 text-slate-300">{s.label}</td>
+                <td className="py-1 pr-3 text-right">{cell(s.by_bias.bullish)}</td>
+                <td className="py-1 pr-3 text-right">{cell(s.by_bias.neutral)}</td>
+                <td className="py-1 pr-3 text-right">{cell(s.by_bias.bearish)}</td>
+                <td className={clsx("py-1 pr-3 text-right", (s.bull_minus_bear_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
+                  {s.bull_minus_bear_pct != null ? fmt(s.bull_minus_bear_pct) : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-slate-500 mt-1">
+        {block.n} windows over {block.dates} days. {data.note}
+      </p>
+    </div>
+  );
 }
 
 function isTrimSignal(sig: string): boolean {
@@ -177,6 +250,7 @@ export function ForwardTracking({
   summary_by_model_version,
   summary_timing_vs_hold,
   latest_model_daily,
+  summary_second_opinions,
   data_source_note,
   message,
   meta,
@@ -653,6 +727,10 @@ export function ForwardTracking({
           </div>
           {summary_timing_vs_hold.note && <p className="text-[11px] text-slate-500 mt-1">{summary_timing_vs_hold.note}</p>}
         </div>
+      )}
+
+      {summary_second_opinions && Object.keys(summary_second_opinions.by_horizon || {}).length > 0 && (
+        <SecondOpinionsTable data={summary_second_opinions} />
       )}
 
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">

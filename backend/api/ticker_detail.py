@@ -763,6 +763,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     except Exception:
         response["session_vwap"] = None
 
+    try:
+        from signals.second_opinions import build_second_opinions
+
+        response["second_opinions"] = build_second_opinions(config, ticker, df_ticker)
+    except Exception as exc:
+        logger.debug("second_opinions for %s: %s", ticker, exc)
+
     inv = response.get("investor_summary")
     if isinstance(inv, dict):
         try:

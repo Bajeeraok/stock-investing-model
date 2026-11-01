@@ -476,6 +476,8 @@ def get_forward_tracking(
                 }
                 if trim_m:
                     rec.update(trim_m)
+                if isinstance(row_work.get("second_opinions"), dict) and row_work["second_opinions"]:
+                    rec["second_opinions"] = row_work["second_opinions"]
                 records.append(rec)
                 signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
 
@@ -636,6 +638,7 @@ def get_forward_tracking(
         "summary_by_ml_bucket": summary_by_ml_bucket,
         "summary_by_trim_gates": summary_by_trim_gates,
         "summary_timing_vs_hold": _timing_vs_hold(records),
+        "summary_second_opinions": _second_opinions(records),
         "signal_source_counts": signal_source_counts,
         # Per-ticker stats + recent daily calls from ALL records (records above are capped to
         # the newest N watchlist-wide, which silently truncated single-ticker history).
@@ -801,6 +804,16 @@ def _timing_vs_hold(records: list[dict[str, Any]]) -> dict[str, Any] | None:
         return aggregate_timing_vs_hold(records, 20) or None
     except Exception as e:
         logger.debug("timing_vs_hold: %s", e)
+        return None
+
+
+def _second_opinions(records: list[dict[str, Any]]) -> dict[str, Any] | None:
+    try:
+        from signals.second_opinions import aggregate_second_opinions
+
+        return aggregate_second_opinions(records)
+    except Exception as e:
+        logger.debug("second_opinions scorecard: %s", e)
         return None
 
 
