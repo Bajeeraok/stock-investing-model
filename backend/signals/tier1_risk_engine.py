@@ -412,15 +412,10 @@ def portfolio_context_from_cached_dashboard(ticker: str) -> tuple[Optional[float
                 total_value = 0.0
             if total_value <= 0:
                 continue
-            held_value = 0.0
-            for h in report.get("per_holding") or []:
-                if isinstance(h, dict) and str(h.get("ticker") or "").upper() == sym:
-                    try:
-                        held_value = float(h.get("value") or 0)
-                    except (TypeError, ValueError):
-                        held_value = 0.0
-                    break
-            return total_value, held_value
+            # "All" has one row per account — sum them (first-match undercounted multi-account names).
+            from signals.position_advice import holding_from_report
+
+            return total_value, float(holding_from_report(report, sym)["value"])
     except Exception:
         pass
     return None, 0.0

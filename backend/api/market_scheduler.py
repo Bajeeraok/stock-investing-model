@@ -102,6 +102,16 @@ def _run_premarket_job() -> None:
         logger.exception("[market-scheduler] pre-market job failed")
 
 
+def _run_market_pulse_job() -> None:
+    try:
+        from signals.market_pulse import build_market_pulse
+
+        out = build_market_pulse(log=True)
+        logger.info("[market-scheduler] market pulse logged %s phase=%s", out.get("logged_today"), out.get("phase"))
+    except Exception:
+        logger.exception("[market-scheduler] market pulse job failed")
+
+
 def _run_signal_warm_job() -> None:
     if not _is_signal_warm_window():
         logger.info("[market-scheduler] signal warm skipped (outside 8:30–16:00 ET weekday window)")
@@ -209,6 +219,20 @@ def start() -> None:
             max_instances=1,
             coalesce=True,
             misfire_grace_time=900,
+        )
+
+    for hour, minute in ((9, 20), (10, 31), (12, 31)):
+        _scheduler.add_job(
+            _run_market_pulse_job,
+            "cron",
+            minute=minute,
+            hour=hour,
+            day_of_week="mon-fri",
+            id=f"market_pulse_{hour:02d}{minute:02d}",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=600,
         )
 
     warm_step = _dashboard_warm_interval_min()

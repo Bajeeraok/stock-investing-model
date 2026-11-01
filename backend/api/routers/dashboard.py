@@ -3868,6 +3868,34 @@ def _premarket_with_catalysts(data: dict) -> dict:
         return data
 
 
+_MARKET_PULSE_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+@router.get("/market-pulse")
+async def get_market_pulse(refresh: bool = Query(False)):
+    """Pre-open outlook + intraday likely-close range for SPY, with a daily scorecard of past calls."""
+    from starlette.concurrency import run_in_threadpool
+
+    now = time.time()
+    if not refresh and _MARKET_PULSE_CACHE["data"] and now - _MARKET_PULSE_CACHE["ts"] < 120:
+        return _MARKET_PULSE_CACHE["data"]
+
+    def _build() -> dict:
+        from signals.market_pulse import build_market_pulse, scorecard
+
+        out = build_market_pulse(log=False)
+        try:
+            out["scorecard"] = scorecard(today=out.get("date"))
+        except Exception as e:
+            logger.debug("market pulse scorecard failed: %s", e)
+            out["scorecard"] = None
+        return out
+
+    data = await run_in_threadpool(_build)
+    _MARKET_PULSE_CACHE.update(ts=now, data=data)
+    return data
+
+
 @router.get("/pre-market")
 async def get_pre_market(refresh: bool = Query(False)):
     """

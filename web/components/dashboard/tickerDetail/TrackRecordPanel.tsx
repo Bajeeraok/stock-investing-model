@@ -128,9 +128,9 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                   <th className="py-1 pr-2 font-medium">Date</th>
                   <th className="py-1 pr-2 font-medium">Call</th>
                   <th className="py-1 pr-2 font-medium">Gates</th>
-                  <th className="py-1 pr-2 font-medium">Close</th>
+                  <th className="py-1 pr-2 font-medium" title="Price when the call was made (that day's close)">Price at call</th>
                   <th className="py-1 pr-2 font-medium">Next close</th>
-                  <th className="py-1 pr-2 font-medium">Next day</th>
+                  <th className="py-1 pr-2 font-medium">What happened</th>
                   <th className="py-1 pr-2 font-medium">Right?</th>
                   {showOlderCalls && <th className="py-1 font-medium">Ver.</th>}
                 </tr>
@@ -181,7 +181,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           </div>
           )}
           <p className="text-[11px] text-slate-600 leading-snug">
-            Every EOD snapshot, the model&apos;s call vs the next session&apos;s close — no waiting for a 5d/20d
+            What we said vs what happened: each EOD call with its price, then the next session&apos;s close — no waiting for a 5d/20d
             window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored.
           </p>
         </div>

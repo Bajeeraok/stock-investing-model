@@ -298,6 +298,7 @@ export interface TickerDetail {
    * band-math input used elsewhere in the pipeline. */
   session_vwap?: { vwap: number; close_vs_vwap_pct: number; bars_used: number } | null;
   second_opinions?: import("./SecondOpinionsCard").SecondOpinionsPayload | null;
+  position_advice?: import("./PositionAdviceCard").PositionAdvicePayload | null;
   beta?: number | null;
   st_band?: { low: number; high: number } | null;
   mt_band?: { low: number; high: number } | null;

@@ -813,6 +813,19 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         except Exception:
             pass
         try:
+            from signals.position_advice import position_advice_from_cache
+
+            response["position_advice"] = position_advice_from_cache(
+                ticker,
+                response.get("current_price"),
+                config=config,
+                entry_mode=(inv.get("retail_action") or {}).get("entry_mode"),
+                protect_mode=inv.get("protect_mode"),
+                horizons=inv.get("horizons"),
+            )
+        except Exception as exc:
+            logger.debug("position_advice for %s: %s", ticker, exc)
+        try:
             from signals.velocity_engine import attach_velocity_to_row, build_tactical_ui_payload
 
             if close_ticker is not None:

@@ -60,7 +60,9 @@ export interface HorizonPlaybookPayload {
   } | null;
   sizing?: {
     rule: string;
-    example_portfolio_usd: number;
+    example_portfolio_usd?: number;
+    portfolio_value_usd?: number;
+    sizing_source?: "real_portfolio" | "illustrative";
     max_loss_usd: number;
     risk_per_share_usd: number;
     shares_example: number;
@@ -420,8 +422,9 @@ export function HorizonPlaybookCard({
           <SectionToggle title="Sizing example" icon={<Scale className="h-3.5 w-3.5" />}>
             <p className="text-sm text-td-text">{data.sizing.rule}</p>
             <p className="text-sm text-td-muted">
-              On ${data.sizing.example_portfolio_usd.toLocaleString()} portfolio: ~{data.sizing.shares_example} shares (~$
-              {data.sizing.notional_usd.toLocaleString()} notional at mid-band).
+              {data.sizing.sizing_source === "real_portfolio"
+                ? `On your $${Math.round(data.sizing.portfolio_value_usd ?? 0).toLocaleString()} portfolio: add ~${data.sizing.shares_example} shares (~$${Math.round(data.sizing.notional_usd).toLocaleString()}).`
+                : `On $${(data.sizing.example_portfolio_usd ?? 50000).toLocaleString()} example portfolio: ~${data.sizing.shares_example} shares (~$${data.sizing.notional_usd.toLocaleString()} notional at mid-band).`}
             </p>
             <BulletList items={data.sizing.scale_in} />
           </SectionToggle>

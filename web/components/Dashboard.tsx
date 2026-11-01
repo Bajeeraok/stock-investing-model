@@ -83,6 +83,7 @@ import {
   DegradedDataBanner,
 } from "./dashboard/index";
 import { SignalTestSuite } from "./dashboard/SignalTestSuite";
+import { MarketPulseCard } from "./dashboard/MarketPulseCard";
 import { SignalUniversePanel } from "./dashboard/SignalUniversePanel";
 import { deriveRegimeBullPctFromDashboard } from "./dashboard/retailActionUX";
 import {
@@ -1647,6 +1648,9 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
             </div>
           )}
                     </div>
+                  </ToggleSection>
+                  <ToggleSection id="markets-pulse" title="Market pulse — pre-open & likely close" icon={<Activity />} defaultOpen>
+                    <MarketPulseCard />
                   </ToggleSection>
                   <ToggleSection id="markets-tape" title="Live market tape" icon={<Globe className="h-5 w-5" />} defaultOpen={false}>
                     <MarketStatePanel compactHeader />

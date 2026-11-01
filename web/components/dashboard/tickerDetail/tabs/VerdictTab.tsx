@@ -16,6 +16,7 @@ import { CopyTradePlanButton } from "../../CopyTradePlanButton";
 import { WatchZoneCallout } from "../../zoneContextUX";
 import { ProtectModeCard } from "../../ProtectModeCard";
 import { SecondOpinionsCard } from "../../SecondOpinionsCard";
+import { PositionAdviceCard } from "../../PositionAdviceCard";
 import type { TabCtx } from "./tabCtx";
 
 export function VerdictTab({ ctx }: { ctx: TabCtx }) {
@@ -79,6 +80,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
     </section>
   )}
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
+  <PositionAdviceCard data={detail.position_advice} />
   <SecondOpinionsCard data={detail.second_opinions} actionStatus={headerActionStatus} />
 
   {confidence && playbookStage3 && (
