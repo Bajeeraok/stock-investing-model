@@ -10,7 +10,8 @@ Rules (transparent, no score-based sizing — the 10y tests found no score/timin
     hard_lock → $0 (no new adds).
   • Sell side (held only): default HOLD. Optional trims are shown with share counts:
     over the cap → trim back to the cap; protect mode on → trim to ~50%; short/medium plan
-    stop → exit that plan's shares (long-term holders HOLD).
+    stop crossings are handled by the holdings-only stop alerts (horizon stops are re-derived
+    from the current band and can sit above price, so they are not shown here as 'hit').
 """
 from __future__ import annotations
 
@@ -143,16 +144,6 @@ def build_position_advice(
                     "shares": n,
                     "dollars": round(n * p, 2),
                     "note": "Optional insurance: smaller drawdowns, but lower return in our 10-year test.",
-                })
-        for hk, name in (("short", "Short-term"), ("medium", "Medium-term")):
-            hs = _f((horizons.get(hk) or {}).get("stop_loss"))
-            if hs and p <= hs:
-                sell_options.append({
-                    "reason": f"{hk}_stop",
-                    "label": f"{name} plan stop ${hs:,.2f} hit",
-                    "shares": None,
-                    "dollars": None,
-                    "note": f"Exit only the shares you bought for the {name.lower()} plan; long-term holders HOLD.",
                 })
     sell = {
         "default": "HOLD" if held else None,
