@@ -4,7 +4,7 @@ from api.routers.dashboard import _paper_trading_slice_stale
 
 
 def _pt(as_of):
-    return {"recent": [{"date": as_of}], "summary": {"completed": 3}, "mtm": {"as_of": as_of}}
+    return {"recent": [{"date": as_of}], "summary": {"completed": 3, "positive_rate_pct": 66.7}, "mtm": {"as_of": as_of}}
 
 
 def test_older_mtm_than_latest_snapshot_is_stale(monkeypatch):
@@ -15,3 +15,10 @@ def test_older_mtm_than_latest_snapshot_is_stale(monkeypatch):
 def test_current_mtm_is_fresh(monkeypatch):
     monkeypatch.setattr(cache_mod, "build_eod_snapshot_index", lambda: [{"date": "2026-10-19"}])
     assert _paper_trading_slice_stale(_pt("2026-10-19")) is False
+
+
+def test_summary_without_positive_rate_is_stale(monkeypatch):
+    monkeypatch.setattr(cache_mod, "build_eod_snapshot_index", lambda: [{"date": "2026-10-19"}])
+    pt = _pt("2026-10-19")
+    del pt["summary"]["positive_rate_pct"]
+    assert _paper_trading_slice_stale(pt) is True

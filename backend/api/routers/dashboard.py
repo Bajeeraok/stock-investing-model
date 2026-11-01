@@ -3393,7 +3393,15 @@ async def get_dashboard_signals_panel():
             logger.info("[signals-panel] warming — compact caches empty")
             return {"signals": [], "warming": True}
 
-        logger.warning("[signals-panel] compact caches empty; dashboard may need a full Refresh")
+        logger.warning("[signals-panel] compact caches empty — starting background refresh")
+        try:
+            from api.dashboard_job import is_refresh_running, trigger_background_refresh
+            from api.dashboard_warm import compute_for_background_refresh
+
+            if trigger_background_refresh(compute_for_background_refresh) or is_refresh_running():
+                return {"signals": [], "warming": True}
+        except Exception as e:
+            logger.warning("[signals-panel] background refresh failed to start: %s", e)
         return {
             "signals": [],
             "warming": False,

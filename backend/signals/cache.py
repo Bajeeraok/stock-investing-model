@@ -1002,12 +1002,12 @@ def merge_dashboard_cache_updates(updates: dict) -> bool:
 # Dedicated compact signal-universe key — written after every dashboard run.
 # Much smaller than the full dashboard payload so it survives Redis memory pressure.
 UNIVERSE_SIGNALS_KEY = "dashboard:universe_signals"
-UNIVERSE_SIGNALS_TTL = 25 * 3600  # 25 hours — survives overnight + weekend
+UNIVERSE_SIGNALS_TTL = 4 * 86400  # 4 days — 25h expired every Saturday (no weekend refresh)
 
 # Signals-panel key: full signal rows with heavy nested objects stripped.
 # Written after every dashboard run so /api/dashboard/signals-panel always has data.
 SIGNALS_PANEL_KEY = "dashboard:signals_panel"
-SIGNALS_PANEL_TTL = 25 * 3600  # 25 hours
+SIGNALS_PANEL_TTL = 4 * 86400  # 4 days — covers weekends and 3-day holidays
 
 _SIGNALS_PANEL_STRIP = frozenset({"investor_summary", "horizons_detail", "valuation_deck"})
 
@@ -1085,12 +1085,45 @@ def set_signals_panel(rows: list[dict], as_of: str | None = None) -> bool:
             continue
         slim.append({k: v for k, v in r.items() if k not in _SIGNALS_PANEL_STRIP})
     payload = {"signals": slim, "as_of": as_of}
+    _write_signals_panel_disk(payload)
     return set_cached(SIGNALS_PANEL_KEY, payload, SIGNALS_PANEL_TTL)
 
 
+def _signals_panel_disk_path():
+    from config_loader import get_data_root
+
+    return get_data_root() / "cache" / "signals_panel.json"
+
+
+def _write_signals_panel_disk(payload: dict) -> None:
+    """Disk copy so the Signals tab survives Redis expiry/eviction (no refresh outside market hours)."""
+    if not payload.get("signals"):
+        return
+    try:
+        path = _signals_panel_disk_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, default=str))
+        os.replace(tmp, path)
+    except Exception as e:
+        logger.debug("signals_panel disk write failed: %s", e)
+
+
 def get_signals_panel() -> dict | None:
-    """Return {signals, as_of} from the signals-panel cache, or None on miss."""
-    return get_cached(SIGNALS_PANEL_KEY)
+    """Return {signals, as_of} from the signals-panel cache (Redis, then disk), or None on miss."""
+    hit = get_cached(SIGNALS_PANEL_KEY)
+    if isinstance(hit, dict) and hit.get("signals"):
+        return hit
+    try:
+        path = _signals_panel_disk_path()
+        if path.exists():
+            disk = json.loads(path.read_text())
+            if isinstance(disk, dict) and disk.get("signals"):
+                set_cached(SIGNALS_PANEL_KEY, disk, SIGNALS_PANEL_TTL)
+                return disk
+    except Exception as e:
+        logger.debug("signals_panel disk read failed: %s", e)
+    return hit
 
 
 # Analysis tab bundle — separate from the large dashboard payload (paper trading is heavy).
