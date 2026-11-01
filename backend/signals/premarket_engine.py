@@ -368,9 +368,9 @@ class PreMarketEngine:
     """Runs all 6 categories, 15 sources; returns PreMarketReport with confidence-weighted composite."""
 
     def run(self, verbose: bool = True) -> PreMarketReport:
-    from signals.time_et import now_et
+        from signals.time_et import now_et
 
-    ts = now_et()
+        ts = now_et()
 
         all_signals: list[PreMarketSignal] = []
         fetchers = [

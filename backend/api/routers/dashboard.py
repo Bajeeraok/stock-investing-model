@@ -3396,9 +3396,11 @@ async def get_dashboard_signals_panel():
         logger.warning("[signals-panel] compact caches empty — starting background refresh")
         try:
             from api.dashboard_job import is_refresh_running, trigger_background_refresh
-            from api.dashboard_warm import compute_for_background_refresh
+            from api.dashboard_warm import compute_signal_warm_sync
 
-            if trigger_background_refresh(compute_for_background_refresh) or is_refresh_running():
+            # Signal warm directly: the generic background refresh no-ops outside 8:30–16:00 ET,
+            # which left the Signals tab empty all weekend.
+            if trigger_background_refresh(compute_signal_warm_sync) or is_refresh_running():
                 return {"signals": [], "warming": True}
         except Exception as e:
             logger.warning("[signals-panel] background refresh failed to start: %s", e)
