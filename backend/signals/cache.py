@@ -1096,6 +1096,7 @@ def get_signals_panel() -> dict | None:
 # Analysis tab bundle — separate from the large dashboard payload (paper trading is heavy).
 ANALYSIS_BUNDLE_KEY = "dashboard:analysis_bundle"
 ANALYSIS_BUNDLE_TTL = 6 * 3600  # 6 hours
+FORWARD_TRACKING_SLICE_TTL = 7 * 86400
 
 _PAPER_TRADING_STRIP = frozenset({
     "backfill", "sync_targets", "mtm_history_sync", "mtm_history_log", "fill", "mtm",
@@ -1157,7 +1158,10 @@ _ANALYSIS_SLICE_KEYS = (
 def set_analysis_slice(key: str, data: Any, refresh_ts: str | None = None) -> bool:
     """Write one Analysis section to Redis."""
     payload = {"data": _sanitize_for_json(data), "refresh_ts": refresh_ts}
-    return set_cached(f"analysis:slice:{key}", payload, ANALYSIS_BUNDLE_TTL)
+    # forward_tracking only changes after an EOD run (freshness is checked against the EOD
+    # index), so a 6h TTL just let it expire overnight/weekends and fall back to an old bundle.
+    ttl = FORWARD_TRACKING_SLICE_TTL if key == "forward_tracking" else ANALYSIS_BUNDLE_TTL
+    return set_cached(f"analysis:slice:{key}", payload, ttl)
 
 
 def set_analysis_slices(bundle: dict, refresh_ts: str | None = None) -> bool:

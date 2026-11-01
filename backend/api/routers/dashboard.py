@@ -4242,7 +4242,10 @@ async def get_ticker_track_record(ticker: str):
             bundle = None
         ft = bundle.get("forward_tracking") if isinstance(bundle, dict) else None
     if not isinstance(ft, dict):
+        _ensure_forward_tracking_refresh()
         return {"available": False, "ticker": sym, "reason": "forward-tracking data not cached yet"}
+    if (_forward_tracking_staleness_days({"forward_tracking": ft}) or 0) > _FORWARD_TRACKING_STALE_DAYS:
+        _ensure_forward_tracking_refresh()
 
     # Preferred: per-ticker index built from ALL records at compute time (full EOD universe,
     # not truncated by the watchlist-wide records cap).
