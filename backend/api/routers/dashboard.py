@@ -1168,6 +1168,11 @@ def _paper_trading_slice_stale(pt: Any) -> bool:
                 return True
         except Exception:
             pass
+    # Payload built before a summary-schema change (positive_rate_pct, running-average
+    # equity curve) — rebuild instead of serving the old numbers until the next EOD.
+    _summ = pt.get("summary")
+    if isinstance(_summ, dict) and (_summ.get("completed") or 0) and "positive_rate_pct" not in _summ:
+        return True
     recent = pt.get("recent")
     if isinstance(recent, list) and len(recent) > 0:
         return False
