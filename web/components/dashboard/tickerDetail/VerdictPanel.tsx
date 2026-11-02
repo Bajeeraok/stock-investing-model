@@ -80,17 +80,29 @@ function gateUnlockLabel(g: TradingGateRow): string {
   }
   if (g.id === "valuation") return "Valuation clears its margin of safety";
   if (g.id === "regime") return "Weather gate flips to pass";
-  if (g.id === "momentum") return "Momentum resets";
+  if (g.id === "momentum") return g.rsiStatus === "hot" ? "Momentum cools (RSI under 70)" : "Chart pattern firms up";
   if (g.id === "ml") return "ML confidence clears its floor";
   return `${g.label} clears`;
 }
 
 function gateValue(g: TradingGateRow): string {
   if (g.id === "regime" && g.regimeWeatherStatus) return g.pass ? "" : `${g.regimeWeatherStatus} now`;
-  if (g.id === "momentum" && g.rsiStatus && !g.pass) return g.rsiStatus;
+  if (g.id === "momentum" && g.rsiStatus === "hot" && !g.pass) return "RSI overbought";
   if (g.pass) return "";
-  const d = g.detail || "";
-  return d.length > 34 ? `${d.slice(0, 33)}…` : d;
+  const d = (g.detail || "").split(" · ")[0];
+  return d.length > 40 ? `${d.slice(0, 39)}…` : d;
+}
+
+const GATE_SHORT: Record<string, string> = {
+  valuation: "Valuation",
+  regime: "Weather",
+  momentum: "Momentum",
+  ml: "ML",
+  confidence: "Confidence",
+};
+
+function lockedGateNames(gates: TradingGateRow[]): string[] {
+  return gates.filter((g) => !g.pass).map((g) => GATE_SHORT[g.id] ?? g.label.replace(/\s*\(.*\)$/, ""));
 }
 
 function VerdictActionBar({
@@ -98,11 +110,13 @@ function VerdictActionBar({
   alertLevel,
   currentPrice,
   extra,
+  lockedGates = [],
 }: {
   ticker: string;
   alertLevel: number | null;
   currentPrice: number | null | undefined;
   extra?: ReactNode;
+  lockedGates?: string[];
 }) {
   const [alert, setAlert] = useState<PriceAlert | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -149,7 +163,7 @@ function VerdictActionBar({
           <button
             type="button"
             onClick={() => {
-              addPriceAlert(ticker, alertLevel, currentPrice);
+              addPriceAlert(ticker, alertLevel, currentPrice, lockedGates);
               if (typeof Notification !== "undefined" && Notification.permission === "default") {
                 void Notification.requestPermission().catch(() => {});
               }
@@ -175,6 +189,12 @@ function VerdictActionBar({
         </button>
         {extra}
       </div>
+      {lockedGates.length > 0 && (alert || alertLevel != null) && (
+        <p className="text-[10.5px] text-td-warn leading-snug">
+          Price ping only: entries stay locked until {lockedGates.join(", ")}{" "}
+          {lockedGates.length === 1 ? "clears" : "clear"}. Recheck this card when it fires.
+        </p>
+      )}
       {notesOpen && (
         <div className="rounded-xl border border-td-line bg-td-surface p-3 space-y-2">
           <label htmlFor={`note-${ticker}`} className="text-[11px] text-td-muted">
@@ -435,7 +455,13 @@ export function VerdictPanel({
       </button>
 
       {/* 5 · Actions */}
-      <VerdictActionBar ticker={ticker} alertLevel={alertLevel} currentPrice={price} extra={actionExtra} />
+      <VerdictActionBar
+        ticker={ticker}
+        alertLevel={alertLevel}
+        currentPrice={price}
+        extra={actionExtra}
+        lockedGates={lockedGateNames(gates)}
+      />
     </div>
   );
 }

@@ -43,7 +43,9 @@ export function PriceAlertWatcher() {
       const p = prices[a.ticker];
       if (p == null || !alertCrossed(a, p)) continue;
       markPriceAlertTriggered(a.id, p);
-      const body = `${a.ticker} is at $${p.toFixed(2)} (your alert: ${a.direction === "below" ? "≤" : "≥"} $${a.price.toFixed(2)})`;
+      const body = `${a.ticker} is at $${p.toFixed(2)} (your alert: ${a.direction === "below" ? "≤" : "≥"} $${a.price.toFixed(2)})${
+        a.lockedGates?.length ? ` · price ping only — when set, entries were still locked by ${a.lockedGates.join(", ")}; recheck the card` : ""
+      }`;
       try {
         if (typeof Notification !== "undefined" && Notification.permission === "granted") {
           new Notification("Thrive Alpha price alert", { body, tag: a.id });

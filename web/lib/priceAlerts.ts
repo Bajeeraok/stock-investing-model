@@ -17,6 +17,8 @@ export type PriceAlert = {
   /** ISO timestamp once triggered; triggered alerts stay listed until removed. */
   triggeredAt?: string | null;
   triggeredPrice?: number | null;
+  /** Entry gates still failing when the alert was set — the alert is a price ping, not an unlock. */
+  lockedGates?: string[] | null;
 };
 
 const STORAGE_KEY = "thrive-price-alerts";
@@ -43,7 +45,12 @@ function writeAll(alerts: PriceAlert[]): void {
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }
 
-export function addPriceAlert(ticker: string, price: number, currentPrice: number | null | undefined): PriceAlert {
+export function addPriceAlert(
+  ticker: string,
+  price: number,
+  currentPrice: number | null | undefined,
+  lockedGates?: string[] | null,
+): PriceAlert {
   const t = ticker.toUpperCase();
   const alert: PriceAlert = {
     id: `${t}-${price.toFixed(2)}-${Date.now()}`,
@@ -52,6 +59,7 @@ export function addPriceAlert(ticker: string, price: number, currentPrice: numbe
     direction: currentPrice != null && currentPrice < price ? "above" : "below",
     createdAt: new Date().toISOString(),
     triggeredAt: null,
+    lockedGates: lockedGates && lockedGates.length ? lockedGates : null,
   };
   // One active alert per ticker+level — re-adding the same level replaces it.
   const rest = listPriceAlerts().filter((a) => !(a.ticker === t && Math.abs(a.price - price) < 0.005));

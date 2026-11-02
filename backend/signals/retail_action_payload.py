@@ -739,7 +739,7 @@ def build_trading_gates(
                 "id": "confidence",
                 "label": "CONFIDENCE",
                 "detail": (
-                    f"{round(confidence_mid)}% fused confidence (gate {CONFIDENCE_GATE}%+)"
+                    f"{round(confidence_mid)}% confidence (gate {CONFIDENCE_GATE:.0f}%+)"
                     if confidence_mid is not None
                     else "Confidence not available"
                 ),
@@ -1376,8 +1376,9 @@ def enrich_investor_summary_retail_action(
     tr = investor_out.get("trade_roadmap") or {}
     tldr = tr.get("tldr") or {}
     conf_band = tldr.get("model_confidence_band")
+    # Same number as the ticker header's "Confidence"; band midpoint only as a fallback.
     confidence_mid = investor_out.get("model_confidence_pct")
-    if isinstance(conf_band, str):
+    if confidence_mid is None and isinstance(conf_band, str):
         import re
 
         m = re.match(r"(\d+)\s*-\s*(\d+)", conf_band)

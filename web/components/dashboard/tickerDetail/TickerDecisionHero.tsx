@@ -159,13 +159,24 @@ function LevelRows({
           >
             <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{t.id}</span>
             <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
-              &le; {fmt(t.high)}
-              <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
-                {TIER_ANCHOR[t.id] ?? ""}
-              </span>
+              {currentPrice && t.high > currentPrice ? (
+                <>
+                  at spot {fmt(currentPrice)}
+                  <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
+                    {TIER_ANCHOR[t.id] ?? "zone"} ({fmt(t.high)}) is above price
+                  </span>
+                </>
+              ) : (
+                <>
+                  &le; {fmt(t.high)}
+                  <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
+                    {TIER_ANCHOR[t.id] ?? ""}
+                  </span>
+                </>
+              )}
             </span>
             <span className="text-[10px] font-mono text-td-muted tabular-nums">
-              {pctFromSpot(t.high, currentPrice)}
+              {currentPrice && t.high > currentPrice ? "now" : pctFromSpot(t.high, currentPrice)}
             </span>
           </div>
         ))}
@@ -180,7 +191,11 @@ function LevelRows({
   // when flattened into one range — show the staged scale-in rungs instead (data already
   // computed server-side via build_entry_band_levels, just unused in this compact card until now).
   const stagedLevels =
-    ezWidthPct >= 8 ? (ez?.levels ?? []).filter((l) => l.role !== "anchor") : [];
+    ezWidthPct >= 8
+      ? (ez?.levels ?? []).filter(
+          (l) => l.role !== "anchor" && (!currentPrice || l.price <= currentPrice * 1.005),
+        )
+      : [];
   if (stagedLevels.length > 0) {
     const picked = [
       stagedLevels[0],
