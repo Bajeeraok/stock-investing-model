@@ -131,7 +131,7 @@ def _signal_data_from_dashboard_row(row: dict) -> dict:
     }
 
 
-def get_ticker_detail(ticker: str, config: dict) -> dict:
+def get_ticker_detail(ticker: str, config: dict, *, allow_stale: bool = True) -> dict:
     """
     Full ticker detail: thesis, earnings, sector, peers, benchmark comparison.
     Uses 5-min cache (Redis) and parallel fetches to reduce timeout risk.
@@ -147,6 +147,7 @@ def get_ticker_detail(ticker: str, config: dict) -> dict:
             ticker,
             config_hash,
             lambda: _fetch_ticker_detail_impl(ticker, config),
+            allow_stale=allow_stale,
         )
     except Exception:
         out = _fetch_ticker_detail_impl(ticker, config)

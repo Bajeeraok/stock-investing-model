@@ -832,15 +832,51 @@ def set_cached_bands(ticker: str, bands: dict, ttl_seconds: int | None = None) -
     return set_cached(key, bands, ttl)
 
 
-def cached_ticker_detail(ticker: str, config_hash: str, fetch_fn):
-    """Cache full ticker detail response. TTL 5 min. config_hash = hash of relevant config (period)."""
+TTL_TICKER_DETAIL_LAST = 36 * 3600  # last good build — served instantly while a fresh one builds
+_DETAIL_REFRESHING: set[str] = set()
+_DETAIL_REFRESH_LOCK = threading.Lock()
+
+
+def _store_ticker_detail(key: str, last_key: str, out: Any) -> None:
+    if out is not None and isinstance(out, dict) and out.get("ticker"):
+        set_cached(key, out, TTL_TICKER_DETAIL)
+        set_cached(last_key, out, TTL_TICKER_DETAIL_LAST)
+
+
+def _refresh_ticker_detail_bg(key: str, last_key: str, fetch_fn) -> None:
+    with _DETAIL_REFRESH_LOCK:
+        if key in _DETAIL_REFRESHING:
+            return
+        _DETAIL_REFRESHING.add(key)
+
+    def _run() -> None:
+        try:
+            _store_ticker_detail(key, last_key, fetch_fn())
+        except Exception:
+            pass
+        finally:
+            with _DETAIL_REFRESH_LOCK:
+                _DETAIL_REFRESHING.discard(key)
+
+    threading.Thread(target=_run, daemon=True, name=f"detail-refresh-{key[-24:]}").start()
+
+
+def cached_ticker_detail(ticker: str, config_hash: str, fetch_fn, *, allow_stale: bool = True):
+    """Cache full ticker detail (TTL 5 min). On a miss, serve the last good build (≤36h, flagged
+    `served_stale`) and rebuild in the background, so pages open instantly. The post-EOD audit
+    builds every page with allow_stale=False, which pre-warms both keys."""
     key = cache_key("ticker_detail", ticker, config_hash)
+    last_key = cache_key("ticker_detail_last", ticker, config_hash)
     hit = get_cached(key)
     if hit is not None:
         return hit
+    if allow_stale:
+        last = get_cached(last_key)
+        if isinstance(last, dict) and last.get("ticker"):
+            _refresh_ticker_detail_bg(key, last_key, fetch_fn)
+            return {**last, "served_stale": True}
     out = fetch_fn()
-    if out is not None and isinstance(out, dict) and out.get("ticker"):
-        set_cached(key, out, TTL_TICKER_DETAIL)
+    _store_ticker_detail(key, last_key, out)
     return out
 
 

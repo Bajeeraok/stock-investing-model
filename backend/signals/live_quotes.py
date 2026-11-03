@@ -1,6 +1,7 @@
 """Live quote overlay — batch FMP or yfinance; keeps ohlcv_close for indicators."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -115,6 +116,7 @@ def overlay_detail_current_price(detail: dict[str, Any], live: float, *, source:
     detail["current_price"] = live
     detail["live_price"] = live
     detail["live_price_source"] = source
+    detail["live_price_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     hist = detail.get("price_history") or []
     if prior is not None and len(hist) >= 2:
         try:

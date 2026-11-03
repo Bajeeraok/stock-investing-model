@@ -250,6 +250,9 @@ export interface TickerDetail {
   peers: string[];
   current_price: number | null;
   daily_move_pct?: number | null;
+  /** Last good build served while a fresh one builds in the background. */
+  served_stale?: boolean;
+  live_price_at?: string | null;
   price_history?: { date: string; close: number }[];
   returns: Record<string, number>;
   benchmark_spy: Record<string, number>;
@@ -517,6 +520,17 @@ export function TickerDetailModal({
         });
         if (cancelled) return;
         setDetail(d);
+        if (d.served_stale) {
+          setTimeout(async () => {
+            if (cancelled) return;
+            try {
+              const fresh = await fetchJsonWithRetry<TickerDetail>(`/api/ticker/${ticker}`, { signal: ac.signal, retries: 1 });
+              if (!cancelled && !fresh.served_stale) setDetail(fresh);
+            } catch {
+              /* keep the last good build */
+            }
+          }, 12_000);
+        }
         if (d.confidence) {
           setConfidence(d.confidence);
         } else {
@@ -962,6 +976,17 @@ export function TickerDetailModal({
                     ) : (
                       "Market closed · last close"
                     )}
+                    {detail.live_price_at && (
+                      <span className="font-mono">
+                        · {new Date(detail.live_price_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
+                      </span>
+                    )}
+                    {detail.price_history?.length ? (
+                      <span title="Bands, gates and scores come from this daily close; only the price is live">
+                        · model{" "}
+                        {new Date(`${detail.price_history[detail.price_history.length - 1].date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </span>
+                    ) : null}
                   </span>
                 </div>
               )}

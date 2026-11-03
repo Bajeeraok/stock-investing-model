@@ -635,7 +635,7 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
         for t in tickers:
             PROGRESS["done"] += 1
             try:
-                detail = get_ticker_detail(t, config)
+                detail = get_ticker_detail(t, config, allow_stale=False)
             except Exception as exc:
                 detail = {"ticker": t, "error": str(exc)[:200]}
             row = rows.get(t) or _signal_row_from_dashboard_cache(t)
