@@ -161,6 +161,10 @@ def rule_bands(d: dict, c: _Collector, row: dict | None) -> None:
         if h != "long" and hi > p * 1.01:
             c.add("band_above_price", "error", f"{mode} band top ${hi:.2f} is above price ${p:.2f} (chasing)",
                   horizon=h, high=hi, price=p)
+        max_add = _f(ez.get("max_add"))
+        if h == "long" and max_add is not None and hi > max_add + 0.02:
+            c.add("owner_band_above_max_add", "error",
+                  f"Owner band top ${hi:.2f} is above the max add ${max_add:.2f}", horizon=h, high=hi, max_add=max_add)
         width = 100.0 * (hi - lo) / p  # same basis as the band-width cap in horizon_entry_calculator
         cap = MAX_BAND_WIDTH_PCT.get(h)
         if cap and width > cap + 0.1:

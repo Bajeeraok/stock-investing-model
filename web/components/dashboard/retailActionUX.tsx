@@ -2011,6 +2011,17 @@ export function resolveLongHorizonEntryZone(
 ): { low: number; high: number; tierId: string | null; tierLabel: string | null; inside: boolean } {
   const fallback = horizon.entry_zone;
   const tiers = entryTiers?.tiers ?? [];
+  if (fallback?.max_add != null) {
+    // Backend capped the Owner band at the margin-of-safety max add; tiers above it are context only.
+    const insideCapped = tiers.find((t) => fallback.high >= t.low && fallback.high <= t.high);
+    return {
+      low: fallback.low,
+      high: fallback.high,
+      tierId: insideCapped?.id ?? null,
+      tierLabel: "Max-add band",
+      inside: currentPrice >= fallback.low && currentPrice <= fallback.high,
+    };
+  }
   if (!tiers.length || !(currentPrice > 0)) {
     return {
       low: fallback.low,

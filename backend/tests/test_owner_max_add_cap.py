@@ -1,0 +1,40 @@
+from signals.horizon_entry_calculator import LT_PARTIAL_MOS_PCT, _enrich_horizon_entry_zone_extras
+
+
+def _payload(long_lo, long_hi, fv, mos_pct):
+    return {
+        "short": {"entry_zone": {"low": 320.0, "high": 330.0}},
+        "medium": {"entry_zone": {"low": 300.0, "high": 330.0}},
+        "long": {
+            "fair_value": fv,
+            "entry_zone": {"low": long_lo, "high": long_hi},
+            "entry_tiers": {"current_assessment": {"margin_of_safety_pct": mos_pct}},
+        },
+    }
+
+
+def _run(p):
+    _enrich_horizon_entry_zone_extras(p, current_price=330.0, vwap=328.0, support_level=322.0, ma50=334.0)
+    return p["long"]["entry_zone"]
+
+
+def test_band_above_max_add_moves_under_it():
+    cap = round(260.0 * (1 - LT_PARTIAL_MOS_PCT / 100), 2)
+    ez = _run(_payload(276.28, 311.9, 260.0, -14.0))
+    assert ez["high"] == ez["max_add"] == cap
+    assert ez["low"] < ez["high"]
+    assert ez["chart_band"] == {"low": 276.28, "high": 311.9}
+    assert ez["trigger_ceiling"] == cap
+    assert all(lv["price"] <= cap + 0.02 and lv["price"] >= ez["low"] - 0.02 for lv in ez["levels"])
+
+
+def test_band_straddling_max_add_keeps_low():
+    cap = round(320.0 * (1 - LT_PARTIAL_MOS_PCT / 100), 2)
+    lo = round(cap - 20, 2)
+    ez = _run(_payload(lo, cap + 30, 320.0, 0.0))
+    assert ez["low"] == lo and ez["high"] == cap
+
+
+def test_band_below_max_add_unchanged():
+    ez = _run(_payload(200.0, 220.0, 400.0, 40.0))
+    assert ez["low"] == 200.0 and ez["high"] == 220.0 and "max_add" not in ez

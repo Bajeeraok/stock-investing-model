@@ -274,6 +274,9 @@ export interface HorizonSignalPayload {
     anchor: string;
     quality: string;
     quality_color: string;
+    /** Owner only: band capped at the margin-of-safety max add (chart band kept for context). */
+    max_add?: number;
+    chart_band?: { low: number; high: number };
     spot_position?: {
       state?: string;
       band_low?: number;

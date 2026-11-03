@@ -190,3 +190,11 @@ def test_track_catches_hold_scoring_and_bad_math():
 def test_track_unavailable_is_silent():
     assert audit_track_record({"available": False}, "X") == []
     assert audit_track_record(None, "X") == []
+
+
+def test_owner_band_above_max_add():
+    d = _detail()
+    d["investor_summary"]["horizons"]["long"]["entry_zone"]["max_add"] = 90.0
+    assert "owner_band_above_max_add" in _rules(audit_ticker_detail(d))
+    d["investor_summary"]["horizons"]["long"]["entry_zone"]["max_add"] = 95.0
+    assert "owner_band_above_max_add" not in _rules(audit_ticker_detail(d))

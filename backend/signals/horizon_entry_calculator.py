@@ -281,6 +281,10 @@ class HorizonSignal:
 # SHARED HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Owner band width below the max add when the whole chart band sits above it.
+LT_MOS_CAPPED_BAND_PCT = 5.0
+
+
 def _r(value: float, decimals: int = 2) -> float:
     return round(value, decimals)
 
@@ -875,9 +879,20 @@ def _enrich_horizon_entry_zone_extras(
             cap = min(lt_hi, fv * (1 - LT_PARTIAL_MOS_PCT / 100))
         elif fv > 0 and mos_pct < LT_REQUIRED_MOS_PCT:
             cap = min(lt_hi, fv * (1 - LT_REQUIRED_MOS_PCT / 100))
+        if cap < lt_hi - 0.01:
+            # Owner adds never sit above the margin-of-safety max add: the band itself stops there.
+            chart_lo, chart_hi = lt_lo, lt_hi
+            lt_hi = _r(cap)
+            if lt_lo >= lt_hi * 0.995:
+                lt_lo = _r(lt_hi * (1 - LT_MOS_CAPPED_BAND_PCT / 100))
+            long_ez["low"], long_ez["high"] = lt_lo, lt_hi
+            long_ez["max_add"] = lt_hi
+            long_ez["chart_band"] = {"low": _r(chart_lo), "high": _r(chart_hi)}
+            long_ez["anchor"] = (
+                f"Capped at max add ${lt_hi:.2f} (margin of safety); chart band ${chart_lo:.2f}–${chart_hi:.2f}"
+            )
         levels = build_entry_band_levels(lt_lo, lt_hi)
-        capped = [row for row in levels if float(row["price"]) <= cap + 0.02]
-        long_ez["levels"] = capped or [
+        long_ez["levels"] = levels or [
             {"id": "mos_cap", "label": f"MOS cap · max add ${cap:.2f}", "price": round(cap, 2), "role": "entry", "sort": 1}
         ]
         long_ez["spot_position"] = classify_spot_band_position(
