@@ -272,8 +272,22 @@ export function VerdictPanel({
     track?.daily_calls?.length ? track.daily_calls : track?.daily_trades,
   );
 
+  // Count the gates actually listed below so header, sentence and rows agree.
+  const shownTotal = gates.length || gatesTotal;
+  const shownPassed = gates.length ? gates.filter((g) => g.pass).length : gatesPassed;
+
+  // Valuation gate measures upside to fair value, (FV − price) / price, against a required %;
+  // solve for the price at which it clears: FV / (1 + required).
+  const valGate = gates.find((g) => g.id === "valuation");
+  const reqMatch = valGate?.detail?.match(/(?:need|required)\s+(\d+(?:\.\d+)?)%/);
+  const asmt = ra?.assessment_pct;
+  const valClearPrice =
+    valGate && !valGate.pass && reqMatch && price != null && asmt != null && asmt > -100
+      ? (price * (1 + asmt / 100)) / (1 + parseFloat(reqMatch[1]) / 100)
+      : null;
+
   // ── why-in-one-line ─────────────────────────────────────────────
-  const blocked = Math.max(0, gatesTotal - gatesPassed);
+  const blocked = Math.max(0, shownTotal - shownPassed);
   let bandClause = "";
   if (hasBand && price != null) {
     const band = `${usd(ez!.low)}–${usd(ez!.high)}`;
@@ -285,7 +299,7 @@ export function VerdictPanel({
           : `Price is inside the ${band} entry band`;
   }
   const gateClause =
-    gatesTotal > 0 ? (blocked === 0 ? `all ${gatesTotal} gates pass` : `${blocked} of ${gatesTotal} gates are blocked`) : "";
+    shownTotal > 0 ? (blocked === 0 ? `all ${shownTotal} gates pass` : `${blocked} of ${shownTotal} gates are blocked`) : "";
   const whyLine = [bandClause, gateClause].filter(Boolean).join(" and ");
 
   // ── unlock rows ─────────────────────────────────────────────────
@@ -301,7 +315,13 @@ export function VerdictPanel({
   }
   const sortedGates = [...gates].sort((a, b) => Number(a.pass) - Number(b.pass) || (b.blockerWeight ?? 0) - (a.blockerWeight ?? 0));
   for (const g of sortedGates) {
-    rows.push({ key: g.id, ok: g.pass, label: gateUnlockLabel(g), value: gateValue(g), title: g.detail });
+    const value =
+      g.id === "valuation" && valClearPrice != null
+        ? valClearPrice < (price ?? 0)
+          ? `clears at ≤ ${usd(valClearPrice)}`
+          : "clears on fair-value change"
+        : gateValue(g);
+    rows.push({ key: g.id, ok: g.pass, label: gateUnlockLabel(g), value, title: g.detail });
   }
 
   // ── tiles ───────────────────────────────────────────────────────
@@ -331,6 +351,13 @@ export function VerdictPanel({
   let alertLevel: number | null = null;
   if (hasBand && price != null) alertLevel = price > ez!.high ? ez!.high : ez!.low;
   else if (horizon?.stop_loss) alertLevel = horizon.stop_loss;
+  // Valuation still locked: ping where it clears (and the band, if price is above it), not at a
+  // band edge where entries would stay locked anyway.
+  const alertAtValuation = valClearPrice != null && price != null && valClearPrice < price;
+  if (alertAtValuation) {
+    alertLevel = hasBand && price! > ez!.high ? Math.min(ez!.high, valClearPrice!) : valClearPrice;
+  }
+  const alertLockedGates = lockedGateNames(gates).filter((n) => !(alertAtValuation && n === "Valuation"));
 
   return (
     <div className="space-y-3">
@@ -361,7 +388,7 @@ export function VerdictPanel({
               {blocked === 0 && rows.every((r) => r.ok) ? "All clear" : "Unlocks when"}
             </h4>
             <span className="font-mono text-[10.5px] text-td-muted tabular-nums">
-              {gatesPassed}/{gatesTotal} gates
+              {shownPassed}/{shownTotal} gates
             </span>
           </div>
           <ul className="divide-y divide-td-line">
@@ -460,7 +487,7 @@ export function VerdictPanel({
         alertLevel={alertLevel}
         currentPrice={price}
         extra={actionExtra}
-        lockedGates={lockedGateNames(gates)}
+        lockedGates={alertLockedGates}
       />
     </div>
   );
