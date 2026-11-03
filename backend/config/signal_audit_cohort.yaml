@@ -88,25 +88,25 @@ categories:
 
   macro_commodity:
     - USO
-    - CORN
-    - WEAT
+    # - CORN  # removed: under $50M/day traded (watchlist cleanup)
+    # - WEAT  # removed: under $50M/day traded (watchlist cleanup)
     - UNG
     - COPX
-    - LIT
-    - REMX
-    - URNM
+    # - LIT  # removed: under $50M/day traded (watchlist cleanup)
+    # - REMX  # removed: under $50M/day traded (watchlist cleanup)
+    # - URNM  # removed: under $50M/day traded (watchlist cleanup)
     # - "^VIX"  # removed: index, not tradable — still fetched as data via cross_asset_tickers
     - URA
 
   problem_names:
     - SNDK
     - SOLV
-    - LCID
+    # - LCID  # removed: under $50M/day traded (watchlist cleanup)
     - RIVN
     - PLUG
     # - NKLA  # removed: bankrupt / delisted — fetch fails
     # - SAVA  # removed: fetch fails — removed until data source recovers
-    - DJT
+    # - DJT  # removed: under $50M/day traded (watchlist cleanup)
     - GRAB
     - ARM
     - BIIB
