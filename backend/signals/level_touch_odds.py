@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-WINDOW_SESSIONS = {"short": 20, "medium": 63, "long": 126}
+WINDOW_SESSIONS = {"short": 20, "medium": 63, "long": 252}
 MIN_SAMPLES = 120
 SIMILAR_MIN_N = 60
 SIMILAR_STRETCH_PTS = 3.0

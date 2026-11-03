@@ -950,6 +950,7 @@ def _mark_horizon_no_setup(h: dict[str, Any], reason: str) -> None:
 # any sane bound when fair_value itself is elevated (e.g. an EPS data artifact) and the
 # forward-FV lift / cross-horizon monotonicity steps push it even higher.
 _PLAUSIBILITY_SIGMA_MULT = 2.0
+_MT_REALISTIC_SIGMA_MULT = 1.0  # Swing: ~1x ATR-scaled 3-month move (reached often enough to plan on)
 _PLAUSIBILITY_ANALYST_HIGH_BUFFER = 1.15  # allow the model to see 15% past the published Street high
 _MT_TRADING_DAYS = 63    # ~3 months
 _LT_TRADING_DAYS = 252   # ~12 months
@@ -963,6 +964,7 @@ def _plausibility_cap(
     atr: float | None,
     analyst_high: float | None,
     trading_days: int,
+    sigma_mult: float = _PLAUSIBILITY_SIGMA_MULT,
 ) -> float | None:
     """Lower of a volatility-implied ceiling (~sigma_mult * daily-vol-proxy over the horizon)
     and a buffered analyst-consensus-high ceiling — whichever constrains the target more.
@@ -970,7 +972,7 @@ def _plausibility_cap(
     caps: list[float] = []
     if atr and atr > 0 and current_price > 0:
         daily_vol_pct = atr / current_price
-        move_pct = daily_vol_pct * _PLAUSIBILITY_SIGMA_MULT * math.sqrt(trading_days)
+        move_pct = daily_vol_pct * sigma_mult * math.sqrt(trading_days)
         caps.append(current_price * (1 + move_pct))
     if analyst_high and analyst_high > 0:
         caps.append(analyst_high * _PLAUSIBILITY_ANALYST_HIGH_BUFFER)
@@ -1060,15 +1062,17 @@ def _apply_horizon_plan_invariants(
     # and monotonicity steps above, since either can push a target past a sane bound when
     # fair_value itself is elevated (a bad EPS input, a stale estimate, etc.).
     if px > 0:
-        mt_cap = _plausibility_cap(px, atr, analyst_target_high, _MT_TRADING_DAYS)
+        mt_cap = _plausibility_cap(
+            px, atr, analyst_target_high, _MT_TRADING_DAYS, sigma_mult=_MT_REALISTIC_SIGMA_MULT
+        )
         if mt_cap is not None:
             mt_t = float(medium.get("target") or 0)
             if mt_t > mt_cap + 1e-6:
                 medium["target"] = _r(mt_cap)
                 warns = list(medium.get("warnings") or [])
                 note = (
-                    f"Medium target capped to ${mt_cap:.2f} — the uncapped target implied a move "
-                    "beyond plausible 3-month volatility and/or well past the analyst consensus high."
+                    f"Swing target capped to ${mt_cap:.2f}, a realistic ~3-month move for this stock's "
+                    "volatility (fair-value target stays on Owner and the sell roadmap)."
                 )
                 if note not in warns:
                     warns.append(note)

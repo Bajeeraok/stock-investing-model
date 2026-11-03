@@ -272,7 +272,7 @@ def rule_freshness(d: dict, c: _Collector, row: dict | None, today: date | None 
 
 
 KNOWN_ENTRY_MODES = {"full_go", "starter_only", "hard_lock", "go", "watch", "protect"}
-WINDOW_BY_HORIZON = {"short": 20, "medium": 63, "long": 126}
+WINDOW_BY_HORIZON = {"short": 20, "medium": 63, "long": 252}
 
 
 def rule_ranges(d: dict, c: _Collector, row: dict | None) -> None:

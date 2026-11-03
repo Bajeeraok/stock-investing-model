@@ -3,8 +3,8 @@ Scenario target helpers.
 
 `compute_initial_scenario_target` seeds the roadmap before RC-1 alignment.
 After `apply_roadmap_consistency` in ticker detail, the roadmap’s `scenario_target`
-is canonical; `sync_medium_horizon_target` sets `horizons["medium"]["target"]` to that
-value so horizon cards and trade roadmap stay aligned (one source of truth).
+is canonical for the sell roadmap; `sync_medium_horizon_target` only lowers the Swing
+target to it, so a long-term fair-value destination never becomes a 3-month target.
 """
 
 from __future__ import annotations
@@ -43,13 +43,18 @@ def sync_medium_horizon_target(
     spot: float | None = None,
 ) -> None:
     """
-    Set `horizons["medium"]["target"]` to the canonical scenario target (post roadmap alignment).
+    Align `horizons["medium"]["target"]` with the canonical scenario target (post roadmap alignment),
+    but never raise it: the scenario target is the fair-value sell band, while the Swing target
+    must stay a realistic ~3-month move (already volatility-capped upstream).
     Mutates horizons in place and refreshes R:R from the painted stop/target/spot.
     """
     if scenario <= 0:
         return
     med = horizons.get("medium")
     if not isinstance(med, dict):
+        return
+    cur = _sf(med.get("target"))
+    if cur is not None and scenario >= cur:
         return
     med["target"] = round(scenario, 2)
     refresh_horizon_rr_from_levels(med, spot)

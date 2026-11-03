@@ -37,7 +37,7 @@ def test_refresh_rr_also_rederives_rr_from_entry_after_target_move():
     h = {
         "entry_zone": {"low": 33.03, "high": 34.39},
         "stop_loss": 32.01,
-        "target": 38.0,
+        "target": 55.0,
         "risk_reward_from_entry": 2.5,
     }
     horizons = {"medium": h}
