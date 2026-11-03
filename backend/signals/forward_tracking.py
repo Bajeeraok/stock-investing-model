@@ -605,7 +605,14 @@ def get_forward_tracking(
             )
 
     total_records = len(records)
-    by_ticker = _build_by_ticker_index(records)
+    level_check = None
+    try:
+        from signals.level_touch_odds import score_level_odds
+
+        level_check = score_level_odds([d for d in dates if d in rows_by_date], rows_by_date)
+    except Exception as e:
+        logger.debug("level odds check: %s", e)
+    by_ticker = _build_by_ticker_index(records, level_check)
     latest_model_daily = build_latest_model_daily(records)
     capped = _cap_records_recent(records, record_cap)
     as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
@@ -637,6 +644,7 @@ def get_forward_tracking(
         "summary_by_entry_band_position": summary_by_entry_band_position,
         "summary_by_gates": summary_by_gates,
         "summary_by_ml_bucket": summary_by_ml_bucket,
+        "level_odds_check": (level_check or {}).get("pooled"),
         "summary_by_trim_gates": summary_by_trim_gates,
         "summary_timing_vs_hold": _timing_vs_hold(records),
         "summary_second_opinions": _second_opinions(records),
@@ -831,11 +839,38 @@ def _second_opinions(records: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
 
 
-def _build_by_ticker_index(records: list[dict[str, Any]]) -> dict[str, Any]:
+def _call_error_fields(r1: dict[str, Any], r20: dict[str, Any] | None, target_pct) -> dict[str, Any]:
+    """Expected move (short-term target vs price at call) and how far the 20d result missed it."""
+    tp = target_pct(r1) if r1.get("st_target_at_signal") else (target_pct(r20) if r20 else None)
+    p = r1.get("ml_short_prob")
+    if p is not None:
+        p = float(p) * 100.0 if float(p) <= 1.0 else float(p)
+    out: dict[str, Any] = {"target_pct": tp, "ml_prob_pct": round(p, 1) if p is not None else None}
+    if r20 and r20.get("actual_return_pct") is not None:
+        a = float(r20["actual_return_pct"])
+        out["ret_20d_pct"] = round(a, 2)
+        out["miss_pp"] = round(a - tp, 2) if tp is not None else None
+        stop, tgt, fwd = r20.get("st_stop_at_signal"), r20.get("st_target_at_signal"), r20.get("close_at_forward")
+        out["in_range"] = (float(stop) < float(fwd) < float(tgt)) if stop and tgt and fwd else None
+    return out
+
+
+def _build_by_ticker_index(
+    records: list[dict[str, Any]], level_check: dict[str, Any] | None = None
+) -> dict[str, Any]:
     from signals.forward_tracking_metrics import (
+        _target_pct,
+        build_error_summary,
+        build_prob_calibration,
         build_ticker_track_record,
         build_ticker_track_record_all_horizons,
     )
+
+    def _complete(rows: list[dict[str, Any]], h: int) -> list[dict[str, Any]]:
+        return [r for r in rows if r.get("horizon_days") == h and r.get("forward_status") == "complete"]
+
+    pooled_cal = {str(h): build_prob_calibration(_complete(records, h)) for h in (5, 20)}
+    level_pooled = (level_check or {}).get("pooled")
 
     grouped: dict[str, list[dict[str, Any]]] = {}
     for r in records:
@@ -857,6 +892,9 @@ def _build_by_ticker_index(records: list[dict[str, Any]]) -> dict[str, Any]:
             key=lambda r: str(r.get("as_of_date") or ""),
             reverse=True,
         )[:_DAILY_CALLS_PER_TICKER]
+        by_date_20 = {
+            r.get("as_of_date"): r for r in rows if r.get("horizon_days") == 20 and r.get("forward_status") == "complete"
+        }
         track["daily_calls"] = [
             {
                 "date": r.get("as_of_date"),
@@ -871,9 +909,23 @@ def _build_by_ticker_index(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "model_version": r.get("model_version") or "legacy",
                 "data_quality": r.get("data_quality"),
                 "right": _call_right(str(r.get("our_signal") or ""), r.get("actual_return_pct")),
+                **_call_error_fields(r, by_date_20.get(r.get("as_of_date")), _target_pct),
             }
             for r in daily
         ]
+        cur = [r for r in rows if str(r.get("model_version") or "legacy") == MODEL_VERSION]
+        track["error_summary"] = {
+            "horizon_days": 20,
+            "current": build_error_summary(_complete(cur, 20)),
+            "all": build_error_summary(_complete(rows, 20)),
+        }
+        track["prob_calibration"] = {str(h): build_prob_calibration(_complete(rows, h)) for h in (5, 20)}
+        track["prob_calibration_pooled"] = pooled_cal
+        track["level_odds_check"] = {
+            "ticker": ((level_check or {}).get("by_ticker") or {}).get(tk),
+            "pooled": level_pooled,
+            "pending": (level_check or {}).get("pending"),
+        }
         track["latest_call_date"] = track["daily_calls"][0]["date"] if track["daily_calls"] else None
         track["latest_model_daily"] = build_latest_model_daily(rows)
         out[tk] = track

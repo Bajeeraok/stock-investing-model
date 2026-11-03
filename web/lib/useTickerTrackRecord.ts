@@ -53,6 +53,41 @@ export interface DailyCallRow {
   data_quality?: string | null;
   /** ADD right if up, TRIM right if down, HOLD unscored (null). */
   right: boolean | null;
+  /** Short-term target vs price at call, %. */
+  target_pct?: number | null;
+  ml_prob_pct?: number | null;
+  ret_20d_pct?: number | null;
+  /** 20d actual minus target, percentage points. */
+  miss_pp?: number | null;
+  in_range?: boolean | null;
+}
+
+export interface ErrorSummary {
+  n: number;
+  avg_expected_pct: number;
+  avg_actual_pct: number;
+  mae_pp: number;
+  bias_pp: number;
+  within_range_pct: number | null;
+  target_hit_pct: number;
+  stop_hit_pct: number;
+}
+
+export interface CalibrationBucket {
+  range: string;
+  n: number;
+  avg_predicted_pct: number;
+  actual_up_pct?: number;
+  actual_hit_pct?: number;
+}
+
+export interface Calibration {
+  n: number;
+  avg_predicted_pct: number;
+  actual_up_pct?: number;
+  actual_hit_pct?: number;
+  brier: number;
+  buckets: CalibrationBucket[];
 }
 
 export interface LatestModelDailyRow {
@@ -97,6 +132,14 @@ export interface TrackRecordResponse {
   legacy?: TrackRecordHorizonStats | null;
   by_horizon?: Record<string, { current?: TrackRecordHorizonStats | null; legacy?: TrackRecordHorizonStats | null }> | null;
   daily_trades?: DailyTradeRow[] | null;
+  error_summary?: { horizon_days: number; current?: ErrorSummary | null; all?: ErrorSummary | null } | null;
+  prob_calibration?: Record<string, Calibration | null> | null;
+  prob_calibration_pooled?: Record<string, Calibration | null> | null;
+  level_odds_check?: {
+    ticker?: Record<string, Calibration | null> | null;
+    pooled?: Record<string, Calibration | null> | null;
+    pending?: number | null;
+  } | null;
 }
 
 const cache = new Map<string, { at: number; data: TrackRecordResponse | null }>();

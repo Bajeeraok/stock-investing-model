@@ -5,6 +5,7 @@ import { History } from "lucide-react";
 import { earliestAvailableHorizon, useTickerTrackRecord } from "@/lib/useTickerTrackRecord";
 import { fmtPct } from "./ReferenceDetailGrid";
 import LatestModelDailyCard from "../LatestModelDailyCard";
+import TrackErrorCard from "./TrackErrorCard";
 
 function fmtPrice(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
@@ -122,7 +123,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
             <p className="text-xs text-slate-600">No daily calls under {version} for {ticker} yet.</p>
           ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[520px]">
+            <table className="w-full text-xs min-w-[680px]">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-700">
                   <th className="py-1 pr-2 font-medium">Date</th>
@@ -132,6 +133,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                   <th className="py-1 pr-2 font-medium">Next close</th>
                   <th className="py-1 pr-2 font-medium">What happened</th>
                   <th className="py-1 pr-2 font-medium">Right?</th>
+                  <th className="py-1 pr-2 font-medium" title="Short-term target vs price at call">Target</th>
+                  <th className="py-1 pr-2 font-medium" title="20-day result, and actual minus target in points">20d · missed by</th>
                   {showOlderCalls && <th className="py-1 font-medium">Ver.</th>}
                 </tr>
               </thead>
@@ -173,6 +176,27 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                         <span className="text-red-400">✗</span>
                       )}
                     </td>
+                    <td className="py-1 pr-2 font-mono text-slate-400">
+                      {c.target_pct == null ? "—" : fmtPct(c.target_pct)}
+                    </td>
+                    <td className="py-1 pr-2 font-mono whitespace-nowrap">
+                      {c.ret_20d_pct == null ? (
+                        <span className="text-slate-600">pending</span>
+                      ) : (
+                        <>
+                          {fmtPct(c.ret_20d_pct)}
+                          {c.miss_pp != null && (
+                            <span
+                              className={Math.abs(c.miss_pp) <= 3 ? "text-emerald-400" : "text-amber-400"}
+                              title={c.in_range ? "Closed between stop and target" : "Closed outside stop–target"}
+                            >
+                              {" "}· {c.miss_pp >= 0 ? "+" : ""}
+                              {c.miss_pp.toFixed(1)} pts
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </td>
                     {showOlderCalls && <td className="py-1 text-slate-600 whitespace-nowrap">{c.model_version ?? "—"}</td>}
                   </tr>
                 ))}
@@ -182,10 +206,13 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           )}
           <p className="text-[11px] text-slate-600 leading-snug">
             What we said vs what happened: each EOD call with its price, then the next session&apos;s close — no waiting for a 5d/20d
-            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored.
+            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored. Target is the
+            short-term target at the call; &quot;missed by&quot; is the 20-day result minus that target (negative = fell short).
           </p>
         </div>
       )}
+
+      {data && <TrackErrorCard data={data} />}
 
       {legacy && (legacy.n_observations ?? 0) > 0 && (
         <p className="text-xs text-slate-600 leading-relaxed">

@@ -586,3 +586,78 @@ def build_ticker_track_record_all_horizons(
         "current_model_version": current_model_version,
         "by_horizon": by_horizon,
     }
+
+
+def _target_pct(r: dict[str, Any]) -> float | None:
+    try:
+        c, t = float(r.get("close_at_signal") or 0), float(r.get("st_target_at_signal") or 0)
+    except (TypeError, ValueError):
+        return None
+    return round((t / c - 1.0) * 100.0, 2) if c > 0 and t > 0 else None
+
+
+def build_error_summary(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """How far off the short-term target was at the horizon: size of miss, direction of bias,
+    and how often the close landed between stop and target."""
+    obs = []
+    for r in rows:
+        if r.get("forward_status") != "complete" or r.get("actual_return_pct") is None:
+            continue
+        tp = _target_pct(r)
+        if tp is None:
+            continue
+        a = float(r["actual_return_pct"])
+        stop, tgt, fwd = r.get("st_stop_at_signal"), r.get("st_target_at_signal"), r.get("close_at_forward")
+        in_range = None
+        if stop and tgt and fwd:
+            in_range = float(stop) < float(fwd) < float(tgt)
+        obs.append((tp, a, in_range, r.get("hit_st_target"), r.get("hit_st_stop")))
+    if not obs:
+        return None
+    n = len(obs)
+    miss = [a - tp for tp, a, *_ in obs]
+    rng = [x[2] for x in obs if x[2] is not None]
+    return {
+        "n": n,
+        "avg_expected_pct": round(sum(x[0] for x in obs) / n, 2),
+        "avg_actual_pct": round(sum(x[1] for x in obs) / n, 2),
+        "mae_pp": round(sum(abs(m) for m in miss) / n, 2),
+        "bias_pp": round(sum(miss) / n, 2),
+        "within_range_pct": round(100.0 * sum(rng) / len(rng), 1) if rng else None,
+        "target_hit_pct": round(100.0 * sum(1 for x in obs if x[3]) / n, 1),
+        "stop_hit_pct": round(100.0 * sum(1 for x in obs if x[4]) / n, 1),
+    }
+
+
+_PROB_BUCKETS = ((0, 40), (40, 50), (50, 60), (60, 70), (70, 101))
+
+
+def build_prob_calibration(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Predicted ML up-probability vs how often price actually rose over the horizon."""
+    obs = []
+    for r in rows:
+        if r.get("ml_short_prob") is None or r.get("actual_return_pct") is None:
+            continue
+        p = float(r["ml_short_prob"])
+        p = p * 100.0 if p <= 1.0 else p
+        obs.append((p, float(r["actual_return_pct"]) > 0))
+    if not obs:
+        return None
+    n = len(obs)
+    buckets = []
+    for lo, hi in _PROB_BUCKETS:
+        g = [(p, y) for p, y in obs if lo <= p < hi]
+        if g:
+            buckets.append({
+                "range": f"{lo}–{min(hi, 100)}%",
+                "n": len(g),
+                "avg_predicted_pct": round(sum(p for p, _ in g) / len(g), 1),
+                "actual_up_pct": round(100.0 * sum(1 for _, y in g if y) / len(g), 1),
+            })
+    return {
+        "n": n,
+        "avg_predicted_pct": round(sum(p for p, _ in obs) / n, 1),
+        "actual_up_pct": round(100.0 * sum(1 for _, y in obs if y) / n, 1),
+        "brier": round(sum((p / 100.0 - (1.0 if y else 0.0)) ** 2 for p, y in obs) / n, 4),
+        "buckets": buckets,
+    }
