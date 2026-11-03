@@ -208,11 +208,12 @@ class TestStreetDivergenceDisclosure:
 
     def test_discloses_gap_without_changing_the_target(self):
         payload = self._payload(long_target=545.94)
+        # atr=None isolates the street note from the volatility cap on the Owner target.
         _apply_horizon_plan_invariants(
-            payload, current_price=340.63, fair_value=None, atr=8.47,
+            payload, current_price=340.63, fair_value=None, atr=None,
             analyst_target_median=431.57,
         )
-        assert payload["long"]["target"] == 545.94  # unchanged — no clamp
+        assert payload["long"]["target"] == 545.94  # unchanged — no street clamp
         assert any("street consensus" in w.lower() for w in payload["long"]["warnings"])
         assert any("+26" in w or "+27" in w for w in payload["long"]["warnings"])
 
@@ -284,3 +285,22 @@ def test_medium_stop_never_above_spot_when_price_just_under_ma50():
     ))
     assert sig.stop_loss < sig.entry_zone.low
     assert sig.stop_loss < 206.65
+
+
+def test_owner_target_capped_to_realistic_12m_move_keeps_fair_value_target():
+    payload = {
+        "short": {"entry_zone": {"low": 20.0, "high": 21.0}, "stop_loss": 19.0, "target": 22.0,
+                  "verdict": "WATCH", "warnings": []},
+        "medium": {"entry_zone": {"low": 20.0, "high": 21.0}, "stop_loss": 19.0, "target": 24.0,
+                   "verdict": "WATCH", "warnings": []},
+        "long": {"entry_zone": {"low": 19.0, "high": 21.0}, "stop_loss": 17.0, "target": 91.8,
+                 "verdict": "WAIT", "warnings": []},
+    }
+    _apply_horizon_plan_invariants(
+        payload, current_price=24.3, fair_value=None, atr=1.2, analyst_target_high=None,
+    )
+    lg = payload["long"]
+    expected_cap = 24.3 * (1 + (1.2 / 24.3) * 252 ** 0.5)
+    assert abs(lg["target"] - round(expected_cap, 2)) < 0.02
+    assert lg["fair_value_target"] == 91.8
+    assert any("Owner target capped" in w for w in lg["warnings"])

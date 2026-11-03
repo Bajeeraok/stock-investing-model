@@ -967,6 +967,7 @@ def _mark_horizon_no_setup(h: dict[str, Any], reason: str) -> None:
 # forward-FV lift / cross-horizon monotonicity steps push it even higher.
 _PLAUSIBILITY_SIGMA_MULT = 2.0
 _MT_REALISTIC_SIGMA_MULT = 1.0  # Swing: ~1x ATR-scaled 3-month move (reached often enough to plan on)
+_LT_REALISTIC_SIGMA_MULT = 1.0  # Owner: ~1x ATR-scaled 12-month move; full forward FV stays on the roadmap
 _PLAUSIBILITY_ANALYST_HIGH_BUFFER = 1.15  # allow the model to see 15% past the published Street high
 _MT_TRADING_DAYS = 63    # ~3 months
 _LT_TRADING_DAYS = 252   # ~12 months
@@ -1094,15 +1095,18 @@ def _apply_horizon_plan_invariants(
                     warns.append(note)
                 medium["warnings"] = warns
                 refresh_horizon_rr_from_levels(medium, px or None)
-        lt_cap = _plausibility_cap(px, atr, analyst_target_high, _LT_TRADING_DAYS)
+        lt_cap = _plausibility_cap(
+            px, atr, analyst_target_high, _LT_TRADING_DAYS, sigma_mult=_LT_REALISTIC_SIGMA_MULT
+        )
         if lt_cap is not None:
             lt_t = float(long_h.get("target") or 0)
             if lt_t > lt_cap + 1e-6:
+                long_h["fair_value_target"] = _r(lt_t)
                 long_h["target"] = _r(lt_cap)
                 warns = list(long_h.get("warnings") or [])
                 note = (
-                    f"Long target capped to ${lt_cap:.2f} — the uncapped target implied a move "
-                    "beyond plausible 12-month volatility and/or well past the analyst consensus high."
+                    f"Owner target capped to ${lt_cap:.2f}, a realistic ~12-month move for this stock's "
+                    f"volatility (full fair-value target ${lt_t:.2f} stays on the sell roadmap)."
                 )
                 if note not in warns:
                     warns.append(note)

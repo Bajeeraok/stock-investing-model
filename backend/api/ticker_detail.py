@@ -4396,7 +4396,12 @@ def _apply_sell_roadmap_band_alignment(
     short_stop = _safe_float(short_h.get("stop_loss"))
     short_tgt = _safe_float(short_h.get("target"))
     medium_tgt = _safe_float(medium_h.get("target"))
-    long_tgt = _safe_float(long_h.get("target")) or (fair_value if fair_value > 0 else None)
+    # Sell roadmap keeps the full fair-value target; the Owner target may be volatility-capped.
+    long_tgt = (
+        _safe_float(long_h.get("fair_value_target"))
+        or _safe_float(long_h.get("target"))
+        or (fair_value if fair_value > 0 else None)
+    )
 
     _st_lo, st_hi = _band_edges(st_band)
     _mt_lo, mt_hi = _band_edges(mt_band)
