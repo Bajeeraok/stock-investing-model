@@ -17,6 +17,11 @@ import { apiUrl } from "@/lib/apiBase";
 export { MiniPriceSparkline };
 
 /** U1 — gate pass progress (buy 4/4 or trim 2/4). */
+/** Internal enum codes (NO_NEW_ENTRIES, full_go) leak into LLM wraps — show them as words. */
+function plainCodes(t: string): string {
+  return t.replace(/\b[A-Za-z]+(?:_[A-Za-z]+)+\b/g, (m) => m.toLowerCase().replace(/_/g, " ")).replace(/\bno new entries mode\b/g, "no-new-entries mode");
+}
+
 export function GateProgressBar({
   passed,
   total = 4,
@@ -430,7 +435,6 @@ export function NewsSentimentRail({
           ? "Bearish"
           : "Neutral"
       : "Neutral";
-  const wrapping = wrapStatus === "ok" || wrapStatus === "cached";
 
   async function addNote(card: CatalystNoteCard) {
     if (!ticker) return;
@@ -471,7 +475,7 @@ export function NewsSentimentRail({
         <div className="space-y-2">
           <p className="text-[11px] text-td-muted">
             Catalyst cards — advisory only; does not change bands or gates.
-            {wrapStatus === "loading" ? " Summarizing…" : wrapping ? " Guarded wrap." : ""}
+            {wrapStatus === "loading" ? " Summarizing…" : ""}
           </p>
           {cards.map((c) => {
             const key = c.event_type || c.name;
@@ -492,11 +496,11 @@ export function NewsSentimentRail({
                     {c.direction}
                   </span>
                   <span className="text-[11px] font-semibold text-td-text">{c.name}</span>
-                  {c.age_label && <span className="text-[11px] text-td-muted">{c.age_label}</span>}
+                  {c.age_label && <span className="text-[11px] text-td-muted">{c.age_label === "0h ago" ? "just now" : c.age_label}</span>}
                   {c.source && <span className="text-[11px] text-td-muted truncate">{c.source}</span>}
                 </div>
                 {wrapText && (
-                  <p className="text-[13px] text-td-text leading-snug">{wrapText}</p>
+                  <p className="text-[13px] text-td-text leading-snug">{plainCodes(wrapText)}</p>
                 )}
                 {c.url ? (
                   <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-td-muted leading-relaxed hover:text-td-info line-clamp-2">

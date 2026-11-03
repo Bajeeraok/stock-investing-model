@@ -944,7 +944,7 @@ export function TickerDetailModal({
               </p>
               {detail && !loading && effectivePrice != null && (
                 <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="font-mono text-2xl font-bold text-td-text tabular-nums">${effectivePrice.toFixed(2)}</span>
+                  <span className="font-mono text-2xl font-bold text-td-text tabular-nums">${effectivePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   {quoteDailyMovePct != null && (
                     <span className={clsx("font-mono text-[13px] tabular-nums", quoteDailyMovePct >= 0 ? "text-td-accent" : "text-td-crit")}>
                       {quoteDailyMovePct >= 0 ? "+" : "−"}
@@ -966,19 +966,22 @@ export function TickerDetailModal({
                 </div>
               )}
               {detail && !loading && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
+                <div className="mt-1.5 flex flex-nowrap items-center gap-1.5 overflow-x-auto text-[12px] font-mono [scrollbar-width:none]">
                   {headlineScore.actionable != null && (
                     <span
-                      className="px-1.5 py-0.5 rounded border border-td-line bg-td-surface2 text-td-text"
-                      title={headlineScore.note || "Confidence-adjusted — gates × fused confidence applied to setup quality"}
+                      className="shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full border border-td-line bg-td-surface2 text-td-text"
+                      title={[
+                        headlineScore.note || "Confidence-adjusted — gates × fused confidence applied to setup quality",
+                        headlineScore.setup != null ? `Setup ${Math.round(headlineScore.setup)}/100` : null,
+                        headlineScore.confidencePct != null ? `Model confidence ${Math.round(headlineScore.confidencePct)}%` : null,
+                      ].filter(Boolean).join(" · ")}
                     >
-                      Score {Math.round(headlineScore.actionable)}
-                      {headlineScore.setup != null && <span className="text-td-muted"> · setup {Math.round(headlineScore.setup)}</span>}
+                      Score <span className="font-bold">{Math.round(headlineScore.actionable)}</span>
                     </span>
                   )}
                   <span
                     className={clsx(
-                      "px-1.5 py-0.5 rounded border",
+                      "shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full border",
                       headerRegime === "UP" && "border-td-accent/40 text-td-accent",
                       headerRegime === "DOWN" && "border-td-crit/40 text-td-crit",
                       headerRegime === "EXTENDED" && "border-td-warn/40 text-td-warn",
@@ -987,21 +990,17 @@ export function TickerDetailModal({
                   >
                     {headerRegime}
                   </span>
-                  {headlineScore.confidencePct != null && (
-                    <span className="px-1.5 py-0.5 rounded border border-td-line text-td-muted" title="Fused 7-layer model confidence">
-                      Confidence {Math.round(headlineScore.confidencePct)}%
-                    </span>
-                  )}
                   {detail.investor_summary && (
                     <span
                       className={clsx(
-                        "px-1.5 py-0.5 rounded border border-td-line",
+                        "shrink-0 whitespace-nowrap px-2 py-0.5 rounded-full border",
                         // (price-FV)/FV: negative = discount (constructive), positive = premium
-                        assessmentPctForHeader <= 0 ? "text-td-info" : "text-td-warn",
+                        assessmentPctForHeader <= 0 ? "border-td-info/40 text-td-info" : "border-td-warn/40 text-td-warn",
                       )}
+                      title="Price vs model fair value"
                     >
-                      {assessmentPctForHeader >= 0 ? "+" : "−"}
-                      {Math.abs(assessmentPctForHeader).toFixed(1)}% vs FV
+                      {assessmentPctForHeader <= 0 ? "Below FV " : "Above FV "}
+                      {Math.abs(assessmentPctForHeader).toFixed(1)}%
                     </span>
                   )}
                 </div>

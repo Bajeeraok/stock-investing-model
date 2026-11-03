@@ -13,6 +13,8 @@
 import React from "react";
 import clsx from "clsx";
 
+const usd0 = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+
 type Band = { label: string; low?: number | null; high?: number | null; kind: "entry" | "tier" | "stop" | "target" | "fv" | "ma" };
 type Props = {
   currentPrice?: number | null;
@@ -34,8 +36,8 @@ const LABEL_GAP = 7;     // min vertical gap between right-edge labels (% of cha
 
 function bandPriceText(b: Band): string {
   return b.low != null && b.high != null && b.high !== b.low
-    ? `$${b.low.toFixed(0)}–$${b.high.toFixed(0)}`
-    : `$${(b.low ?? b.high)!.toFixed(0)}`;
+    ? `${usd0(b.low)}–${usd0(b.high)}`
+    : usd0((b.low ?? b.high)!);
 }
 
 export function EntryBandsChart({ currentPrice, bands, className }: Props) {
@@ -152,7 +154,7 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
         {spot != null && (
           <span className="absolute left-1 rounded-sm bg-td-surface/85 px-0.5 text-[11px] font-mono font-bold leading-none text-amber-300"
             style={{ top: `${y(spot)}%`, transform: "translateY(-110%)" }}>
-            SPOT ${spot.toFixed(2)}
+            SPOT ${spot.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         )}
       </div>
@@ -162,25 +164,31 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
 
 /** Build bands[] from a horizons payload (short/medium/long entry zones + stops/targets + FV).
  * `technicalLevels` (optional, priceTargets.technical_levels) adds MA50/MA200 markers. */
-export function bandsFromHorizons(horizons: any, currentPrice?: number | null, technicalLevels?: { ma50?: number | null; ma200?: number | null } | null): Band[] {
+export function bandsFromHorizons(
+  horizons: any,
+  currentPrice?: number | null,
+  technicalLevels?: { ma50?: number | null; ma200?: number | null } | null,
+  only?: "short" | "medium" | "long" | null,
+): Band[] {
+  const show = (h: "short" | "medium" | "long") => !only || only === h;
   const out: Band[] = [];
   const H = horizons || {};
   const push = (label: string, ez: any, kind: Band["kind"]) => {
     const lo = ez?.low ?? ez?.[0], hi = ez?.high ?? ez?.[1];
     if (lo != null || hi != null) out.push({ label, low: lo, high: hi ?? lo, kind });
   };
-  push("ST zone", H.short?.entry_zone, "entry");
-  push("MT zone", H.medium?.entry_zone, "entry");
+  if (show("short")) push("ST zone", H.short?.entry_zone, "entry");
+  if (show("medium")) push("MT zone", H.medium?.entry_zone, "entry");
   const lt = H.long || {};
-  push("T1 MA200", lt.entry_zone, "tier");
-  for (const t of lt.entry_tiers?.tiers || []) {
+  if (show("long")) push(only ? "Owner band" : "T1 MA200", lt.entry_zone, only ? "entry" : "tier");
+  for (const t of show("long") ? lt.entry_tiers?.tiers || [] : []) {
     push(t.id || "tier", { low: t.low, high: t.high }, t.id === "T2" ? "entry" : "tier");
   }
-  for (const [k, h] of [["ST stop", H.short], ["MT stop", H.medium]] as const) {
-    if (h?.stop_loss) out.push({ label: k, low: h.stop_loss, high: null, kind: "stop" });
+  for (const [k, h, hz] of [["ST stop", H.short, "short"], ["MT stop", H.medium, "medium"]] as const) {
+    if (show(hz) && h?.stop_loss) out.push({ label: k, low: h.stop_loss, high: null, kind: "stop" });
   }
-  for (const [k, h] of [["ST tgt", H.short], ["MT tgt", H.medium], ["LT tgt", H.long]] as const) {
-    if (h?.target) out.push({ label: k, low: h.target, high: null, kind: "target" });
+  for (const [k, h, hz] of [["ST tgt", H.short, "short"], ["MT tgt", H.medium, "medium"], ["LT tgt", H.long, "long"]] as const) {
+    if (show(hz) && h?.target) out.push({ label: k, low: h.target, high: null, kind: "target" });
   }
   const fv = H.long?.fair_value ?? H.fair_value;
   if (fv) out.push({ label: "FV", low: fv, high: null, kind: "fv" });

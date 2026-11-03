@@ -40,7 +40,7 @@ export function WhyGateCards({
   return (
     <section className="space-y-2.5" aria-label="Gate checks">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="text-[15px] font-semibold text-td-text">Why the verdict is {verdictWord}</h3>
+        <h3 className="text-[15px] font-semibold text-td-text">Why: {verdictWord}</h3>
         <span className="text-[11.5px] text-td-muted tabular-nums">
           {gatesPassed} of {gatesTotal} gates pass
         </span>

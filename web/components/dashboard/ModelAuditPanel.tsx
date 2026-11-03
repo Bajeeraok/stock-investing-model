@@ -60,7 +60,7 @@ export type ModelAuditRecord = {
 const ENTRY_MODE_CFG = {
   full_go:      { label: "FULL GO",   cls: "border-emerald-500/50 bg-emerald-500/15 text-emerald-200" },
   starter_only: { label: "STARTER",   cls: "border-amber-500/40  bg-amber-500/10  text-amber-200"   },
-  hard_lock:    { label: "HARD LOCK", cls: "border-red-500/35    bg-red-500/10    text-red-300"      },
+  hard_lock:    { label: "NO NEW ENTRIES", cls: "border-red-500/35    bg-red-500/10    text-red-300"      },
 } as const;
 
 function EntryModePill({ mode }: { mode?: string | null }) {

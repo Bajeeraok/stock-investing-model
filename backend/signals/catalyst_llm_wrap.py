@@ -31,7 +31,8 @@ HARD RULES:
 4. Output ONLY JSON (no markdown fences): {"cards":[{"event_type":"...","wrap":"1-2 sentences","watch":"optional one clause"}]}
 5. wrap explains what the headline means for THIS ticker's existing plan using PACKET levels when they appear in PACKET. If a number is not in SOURCE or PACKET, speak qualitatively.
 6. Tone: measured. No hype, no certainty language.
-7. End implicit stance: the note does not change bands or gates."""
+7. End implicit stance: the note does not change bands or gates.
+8. Plain English only: never write internal codes or snake_case/ALL_CAPS identifiers (e.g. NO_NEW_ENTRIES, full_go, hard_lock); say "no new entries", "entries open", etc."""
 
 _CACHE_TTL_SECONDS = 2 * 24 * 3600  # 2 days; headline hash already busts on news change
 

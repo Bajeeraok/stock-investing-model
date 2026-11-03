@@ -90,7 +90,7 @@ function gateValue(g: TradingGateRow): string {
   if (g.id === "momentum" && g.rsiStatus === "hot" && !g.pass) return "RSI overbought";
   if (g.pass) return "";
   const d = (g.detail || "").split(" · ")[0];
-  return d.length > 40 ? `${d.slice(0, 39)}…` : d;
+  return d;
 }
 
 const GATE_SHORT: Record<string, string> = {

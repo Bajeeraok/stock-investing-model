@@ -238,7 +238,7 @@ def detect_catalysts(
     top = events[0]
 
     friendly = FRIENDLY_LABELS.get(top.event_type, top.event_type.lower().replace("_", " "))
-    age_label = f"{top.age_hours:.0f}h ago" if top.age_hours < 24 else f"{top.age_hours / 24:.0f}d ago"
+    age_label = ("just now" if top.age_hours < 1 else f"{top.age_hours:.0f}h ago") if top.age_hours < 24 else f"{top.age_hours / 24:.0f}d ago"
 
     if top.event_type in BULLISH_EVENTS:
         override = (
@@ -288,6 +288,8 @@ def _horizon_from_age(hours: float) -> str:
 def _age_label(hours: float) -> str:
     if hours >= 900:
         return ""
+    if hours < 1:
+        return "just now"
     if hours < 24:
         return f"{hours:.0f}h ago"
     return f"{hours / 24:.0f}d ago"

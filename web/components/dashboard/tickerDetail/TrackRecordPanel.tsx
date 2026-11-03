@@ -7,6 +7,12 @@ import { fmtPct } from "./ReferenceDetailGrid";
 import LatestModelDailyCard from "../LatestModelDailyCard";
 import TrackErrorCard from "./TrackErrorCard";
 
+function shortDay(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function fmtPrice(n: number | null | undefined): string {
   return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
 }
@@ -134,7 +140,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
               <tbody>
                 {dailyCalls.slice(0, 15).map((c) => (
                   <tr key={`${c.date}-${c.next_date}`} className="border-b border-slate-800 text-slate-300">
-                    <td className="py-1 pr-2 font-mono">{c.date}</td>
+                    <td className="py-1 pr-2 font-mono whitespace-nowrap">{shortDay(c.date)}</td>
                     <td className="py-1 pr-2">{c.signal ?? "—"}</td>
                     <td className="py-1 pr-2 font-mono text-slate-500">
                       {c.gates_passed != null ? `${c.gates_passed}/${c.gates_total ?? 4}` : "—"}

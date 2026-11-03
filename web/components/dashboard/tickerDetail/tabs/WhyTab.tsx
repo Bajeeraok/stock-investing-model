@@ -91,9 +91,9 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
     <WhyGateCards
       verdictWord={(() => {
         const t = headerActionStatus.title.toUpperCase();
-        if (headerActionStatus.light === "green") return "Buy";
-        if (/TRIM|REDUCE|SELL|EXIT|AVOID/.test(t)) return "Trim";
-        if (headerActionStatus.light === "red") return "Wait";
+        if (headerActionStatus.light === "green") return "Can add";
+        if (/TRIM|REDUCE|SELL|EXIT/.test(t)) return "Trim";
+        if (headerActionStatus.light === "red") return "No new entries";
         return "Wait";
       })()}
       gates={tradingGates}

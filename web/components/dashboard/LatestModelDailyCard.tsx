@@ -2,6 +2,12 @@
 
 import type { LatestModelDaily } from "@/lib/useTickerTrackRecord";
 
+function shortDay(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function pct(n: number | null | undefined, digits = 2): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return `${n >= 0 ? "+" : ""}${n.toFixed(digits)}%`;
@@ -46,7 +52,7 @@ export default function LatestModelDailyCard({
         </p>
         {data?.first_date && (
           <span className="text-[13px] text-slate-500">
-            {data.first_date} → {data.last_date}
+            {shortDay(data.first_date)} → {shortDay(data.last_date)}
           </span>
         )}
       </div>
@@ -97,7 +103,7 @@ export default function LatestModelDailyCard({
                 {(data?.rows ?? []).slice(0, maxRows).map((r) => (
                   <tr key={r.date} className="border-b border-slate-800 text-slate-300">
                     <td className="py-1 pr-2 font-mono whitespace-nowrap">
-                      {r.date} → {r.next_date?.slice(5) ?? "—"}
+                      {shortDay(r.date)} → {shortDay(r.next_date)}
                     </td>
                     <td className="py-1 pr-2">{scope === "all" ? `${r.tickers} stocks` : r.signal ?? "—"}</td>
                     <td className="py-1 pr-2 font-mono tabular-nums">{Math.round(r.exposure * 100)}%</td>

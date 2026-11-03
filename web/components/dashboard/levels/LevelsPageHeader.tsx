@@ -21,9 +21,9 @@ const MODE_DOT: Record<string, string> = {
   hard_lock:    "bg-td-crit",
 };
 const MODE_LABEL: Record<string, string> = {
-  full_go:      "FULL GO",
-  starter_only: "STARTER",
-  hard_lock:    "HARD LOCK",
+  full_go:      "CAN ADD",
+  starter_only: "STARTER ONLY",
+  hard_lock:    "NO NEW ENTRIES",
 };
 
 function fmt(v: number | null | undefined): string {

@@ -519,7 +519,7 @@ export function EntryModeBanner({
         ? "border-amber-500/40 bg-amber-950/30 text-amber-100"
         : "border-red-500/40 bg-red-950/30 text-red-100";
   const badge =
-    mode === "full_go" ? "FULL GO" : mode === "starter_only" ? "STARTER ONLY" : "HARD LOCK";
+    mode === "full_go" ? "CAN ADD" : mode === "starter_only" ? "STARTER ONLY" : "NO NEW ENTRIES";
   return (
     <div className={clsx("rounded-lg border px-3 py-2.5 space-y-1", styles, className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">

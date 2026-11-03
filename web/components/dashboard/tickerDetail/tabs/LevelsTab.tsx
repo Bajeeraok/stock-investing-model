@@ -48,6 +48,8 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
   // P2 chart-first: the dense reference grid starts collapsed — the band chart
   // and anchors carry the at-a-glance answer; the grid is on demand.
   const [gridOpen, setGridOpen] = useState(false);
+  const [allBands, setAllBands] = useState(false);
+  const modeHorizon = decisionMode === "scout" ? "short" : decisionMode === "owner" ? "long" : "medium";
 
   return (
     <DensityProvider>
@@ -70,9 +72,17 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
         },
         effectivePrice,
         priceTargets?.technical_levels,
+        allBands ? null : modeHorizon,
       )}
-      className="mb-3"
+      className="mb-1"
     />
+    <button
+      type="button"
+      onClick={() => setAllBands((v) => !v)}
+      className="mb-3 rounded-full border border-td-line px-2.5 py-0.5 text-[12px] text-td-info hover:border-td-info/50"
+    >
+      {allBands ? "Show this mode only" : "Show all modes"}
+    </button>
 
   {confidence && playbookStage3 && (
     <section
