@@ -52,6 +52,9 @@ export function SecondOpinionsCard({
   const ops = data?.opinions ?? [];
   if (!ops.some((o) => o.available)) return null;
   const ours = ourBias(actionStatus);
+  // A missing API key is setup detail, not something a reader can act on.
+  const rows = ops.filter((o) => o.available || !(o.key === "finnhub" && !data?.finnhub_configured));
+  const hasTally = rows.some((o) => o.available && o.ma && o.osc);
   return (
     <div className="rounded-lg border border-td-line/60 bg-td-line/10 px-3 py-2">
       <div className="flex items-center gap-2">
@@ -61,13 +64,18 @@ export function SecondOpinionsCard({
       </div>
       <table className="mt-1 w-full text-[12px] tabular-nums">
         <tbody>
-          {ops.map((o) => {
+          {rows.map((o) => {
             const detail = !o.available
-              ? o.key === "finnhub" && !data?.finnhub_configured
-                ? "No Finnhub key set"
-                : "Unavailable"
+              ? "Unavailable"
               : o.ma && o.osc
-                ? `MAs ${o.ma.buy}↑ ${o.ma.sell}↓ · Osc ${o.osc.buy}↑ ${o.osc.neutral}– ${o.osc.sell}↓`
+                ? (
+                    <>
+                      <span className="block whitespace-nowrap">MAs {o.ma.buy}↑ {o.ma.sell}↓</span>
+                      <span className="block whitespace-nowrap">
+                        Osc {o.osc.buy}↑ {o.osc.neutral}– {o.osc.sell}↓
+                      </span>
+                    </>
+                  )
                 : o.total
                   ? `${o.total} analysts · ${o.bullish_pct ?? "—"}% buy`
                   : "";
@@ -94,6 +102,13 @@ export function SecondOpinionsCard({
           })}
         </tbody>
       </table>
+      {hasTally && (
+        <p className="text-[11px] text-td-muted mt-1 leading-snug">
+          <span className="text-td-text/80">MAs</span> = moving averages (price above the average votes buy ↑,
+          below votes sell ↓). <span className="text-td-text/80">Osc</span> = oscillators such as RSI, MACD and
+          Stochastic: ↑ buy · – neutral · ↓ sell. The rating is the balance of these votes.
+        </p>
+      )}
       {data?.note && <p className="text-[11px] text-td-muted mt-1 leading-snug">{data.note}</p>}
     </div>
   );
