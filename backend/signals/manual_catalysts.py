@@ -52,6 +52,8 @@ def add_manual_article(
     text: str,
     url: str | None = None,
     source: str | None = None,
+    club: dict[str, Any] | None = None,
+    summary: str | None = None,
 ) -> dict[str, Any]:
     """Store one clipped article, most-recent-first, capped per ticker."""
     sym = (ticker or "").strip().upper()
@@ -69,6 +71,11 @@ def add_manual_article(
         "source": (source or "").strip() or None,
         "submitted_at": now_iso_et(),
     }
+    if club:
+        # Structured Club view replaces the article text: keep facts + a short summary only.
+        row["club"] = club
+        row["summary"] = (summary or "").strip()[:400] or None
+        row["text"] = row["summary"] or title
     data = _load()
     articles = data.get(sym) or []
     articles.insert(0, row)
@@ -110,6 +117,52 @@ def _fallback_card(row: dict[str, Any], ticker: str) -> dict[str, Any]:
     }
 
 
+def latest_club_view(ticker: str, *, max_age_days: int = 120) -> dict[str, Any] | None:
+    """Most recent extracted Club view for this ticker (with date, title, url), or None."""
+    from signals.catalyst_detector import _article_age_hours
+
+    sym = (ticker or "").strip().upper()
+    for row in _load().get(sym) or []:
+        club = row.get("club")
+        if not isinstance(club, dict):
+            continue
+        if _article_age_hours(row.get("submitted_at")) > max_age_days * 24:
+            return None
+        return {**club, "as_of": row.get("submitted_at"), "title": row.get("title"), "url": row.get("url"), "summary": row.get("summary")}
+    return None
+
+
+def _club_card(row: dict[str, Any], ticker: str) -> dict[str, Any]:
+    card = _fallback_card(row, ticker)
+    club = row.get("club") or {}
+    from signals.club_extract import club_label
+
+    label, bias = club_label(club)
+    bits = [f"Club: {label}"]
+    if club.get("rating"):
+        bits.append(f"rated {club['rating']}")
+    if club.get("price_target"):
+        bits.append(f"PT ${club['price_target']:,.2f}")
+    if club.get("action"):
+        trade = club["action"]
+        if club.get("shares"):
+            trade += f" {club['shares']} sh"
+        if club.get("trade_price"):
+            trade += f" @ ${club['trade_price']:,.2f}"
+        bits.append(trade)
+    thesis = "; ".join(club.get("thesis") or [])
+    card.update({
+        "name": "CNBC Investing Club",
+        "event_type": "CLUB_VIEW",
+        "direction": {"bullish": "positive", "bearish": "negative"}.get(bias, "watch"),
+        "mechanism": (" · ".join(bits) + (f". {thesis}" if thesis else ""))[:300],
+        "watch": "; ".join(club.get("risks") or []) or card.get("watch"),
+        "draft_note": (f"{ticker.upper()} · {' · '.join(bits)} — {row.get('summary') or row['title']} "
+                       "Advisory only — does not change bands or gates.")[:500],
+    })
+    return card
+
+
 def manual_cards_for_ticker(ticker: str, *, max_cards: int = 2) -> list[dict[str, Any]]:
     """Cards from manually-clipped articles for this ticker, most-recent first.
 
@@ -134,8 +187,11 @@ def manual_cards_for_ticker(ticker: str, *, max_cards: int = 2) -> list[dict[str
             "published": row.get("submitted_at"),
             "url": row.get("url"),
         }
-        matched = build_catalyst_note_cards([headline], ticker=sym, max_cards=1)
-        card = matched[0] if matched else _fallback_card(row, sym)
+        if isinstance(row.get("club"), dict):
+            card = _club_card(row, sym)
+        else:
+            matched = build_catalyst_note_cards([headline], ticker=sym, max_cards=1)
+            card = matched[0] if matched else _fallback_card(row, sym)
         card["origin"] = "manual"
         cards.append(card)
     return cards

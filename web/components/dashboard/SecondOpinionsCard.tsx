@@ -20,6 +20,10 @@ export interface SecondOpinion {
   bullish_pct?: number;
   ma?: { buy: number; neutral: number; sell: number };
   osc?: { buy: number; neutral: number; sell: number };
+  detail?: string | null;
+  thesis?: string[];
+  risks?: string[];
+  url?: string | null;
 }
 
 export interface SecondOpinionsPayload {
@@ -77,7 +81,9 @@ export function SecondOpinionsCard({
           {rows.map((o) => {
             const detail = !o.available
               ? "Unavailable"
-              : o.ma && o.osc
+              : o.detail
+                ? o.detail
+                : o.ma && o.osc
                 ? (
                     <>
                       <span className="block whitespace-nowrap">MAs {o.ma.buy}↑ {o.ma.sell}↓</span>
@@ -101,7 +107,15 @@ export function SecondOpinionsCard({
                     {o.available ? o.label : "—"}
                   </span>
                 </td>
-                <td className="py-1 pr-2 text-[13px] text-td-muted">{detail}</td>
+                <td
+                  className="py-1 pr-2 text-[13px] text-td-muted"
+                  title={o.thesis?.length ? `Why: ${o.thesis.join("; ")}${o.risks?.length ? ` · Risks: ${o.risks.join("; ")}` : ""}` : undefined}
+                >
+                  {detail}
+                  {o.thesis?.length ? (
+                    <span className="mt-0.5 block text-[12px] text-td-text/80 leading-snug">{o.thesis[0]}</span>
+                  ) : null}
+                </td>
                 <td className="py-1 text-right text-[13px] whitespace-nowrap">
                   {agrees == null ? "" : agrees ? (
                     <span className="rounded-full bg-td-accent/15 px-2 py-0.5 text-td-accent">agrees</span>

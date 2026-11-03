@@ -42,24 +42,50 @@ async def ingest_article(request: Request) -> dict:
     if secret and str(payload.get("secret") or "").strip() != secret:
         raise HTTPException(status_code=403, detail="Invalid or missing secret")
 
-    ticker = str(payload.get("ticker") or "").strip()
+    ticker = str(payload.get("ticker") or "").strip().upper()
     title = str(payload.get("title") or "").strip()
     text = str(payload.get("text") or "").strip()
-    if not ticker or not title or not text:
-        raise HTTPException(status_code=400, detail="ticker, title, and text are required")
+    hints = [str(t) for t in (payload.get("tickers") or []) if t] if isinstance(payload.get("tickers"), list) else []
+    if not title or not text:
+        raise HTTPException(status_code=400, detail="title and text are required")
 
+    from fastapi.concurrency import run_in_threadpool
+
+    from signals.club_extract import detect_tickers, extract_club_view
     from signals.manual_catalysts import add_manual_article
 
-    try:
-        row = add_manual_article(
-            ticker,
-            title=title,
-            text=text,
-            url=payload.get("url"),
-            source=payload.get("source"),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    extraction = await run_in_threadpool(extract_club_view, title, text, hints=([ticker] if ticker else []) + hints)
+    club_by_ticker = (extraction or {}).get("tickers") or {}
+    symbols = [ticker] if ticker else []
+    for s in list(club_by_ticker) + detect_tickers(text, hints):
+        if s not in symbols:
+            symbols.append(s)
+    if not symbols:
+        raise HTTPException(status_code=400, detail="ticker is required (none detected in the article)")
 
-    logger.info("[article_ingest] stored clip for %s: %s", ticker.upper(), title[:80])
-    return {"status": "ok", "ticker": ticker.upper(), "submitted_at": row["submitted_at"]}
+    stored: list[str] = []
+    row: dict = {}
+    for sym in symbols[:12]:
+        try:
+            row = add_manual_article(
+                sym,
+                title=title,
+                text=text,
+                url=payload.get("url"),
+                source=payload.get("source"),
+                club=club_by_ticker.get(sym),
+                summary=(extraction or {}).get("summary"),
+            )
+            stored.append(sym)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    logger.info("[article_ingest] stored clip for %s (club fields: %s): %s",
+                ",".join(stored), ",".join(club_by_ticker) or "none", title[:80])
+    return {
+        "status": "ok",
+        "ticker": stored[0],
+        "tickers": stored,
+        "club_tickers": list(club_by_ticker),
+        "submitted_at": row.get("submitted_at"),
+    }

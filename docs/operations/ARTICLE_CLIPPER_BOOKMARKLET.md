@@ -46,22 +46,27 @@ sends it to your own backend. No credentials are stored anywhere, and nothing ru
 (function () {
   var INGEST_URL = "https://YOUR-BACKEND-HOST/api/ingest/article";
   var SECRET = "REPLACE_WITH_YOUR_SECRET";
-  var ticker = window.prompt("Ticker for this article?", "");
-  if (!ticker) return;
-  var payload = {
-    secret: SECRET,
-    ticker: ticker,
-    title: document.title,
-    text: document.body.innerText,
-    url: location.href,
-  };
+  // Article body only (no nav/ads); falls back to <main>/<body>.
+  var root = document.querySelector(".ArticleBody-articleBody, [data-module='ArticleBody'], article")
+    || document.querySelector("main") || document.body;
+  // Tickers the article links to (CNBC quote links look like /quotes/AAPL).
+  var tickers = [];
+  root.querySelectorAll('a[href*="/quotes/"]').forEach(function (a) {
+    var m = a.href.match(/\/quotes\/([A-Za-z.\-]{1,6})/);
+    if (m && tickers.indexOf(m[1].toUpperCase()) < 0) tickers.push(m[1].toUpperCase());
+  });
+  var ticker = window.prompt("Main ticker (optional). Detected: " + (tickers.join(", ") || "none"), "");
+  if (ticker === null) return;
   fetch(INGEST_URL, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "text/plain" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      secret: SECRET, ticker: ticker, tickers: tickers,
+      title: document.title, text: root.innerText, url: location.href,
+    }),
   });
-  alert("Sent to Thrive Alpha - check " + ticker.toUpperCase() + "'s catalyst notes shortly.");
+  alert("Sent to Thrive Alpha: " + (ticker || tickers.join(", ") || "auto-detect"));
 })();
 ```
 
@@ -69,29 +74,36 @@ sends it to your own backend. No credentials are stored anywhere, and nothing ru
 placeholders):
 
 ```
-javascript:(function(){var u="REPLACE_WITH_YOUR_BACKEND_URL/api/ingest/article";var s="REPLACE_WITH_YOUR_SECRET";var t=window.prompt("Ticker for this article?","");if(!t)return;var p={secret:s,ticker:t,title:document.title,text:document.body.innerText,url:location.href};fetch(u,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify(p)});alert("Sent to Thrive Alpha - check "+t.toUpperCase()+"'s catalyst notes shortly.");})();
+javascript:(function(){var u="REPLACE_WITH_YOUR_BACKEND_URL/api/ingest/article";var s="REPLACE_WITH_YOUR_SECRET";var r=document.querySelector(".ArticleBody-articleBody, [data-module='ArticleBody'], article")||document.querySelector("main")||document.body;var k=[];r.querySelectorAll('a[href*="/quotes/"]').forEach(function(a){var m=a.href.match(/\/quotes\/([A-Za-z.\-]{1,6})/);if(m&&k.indexOf(m[1].toUpperCase())<0)k.push(m[1].toUpperCase());});var t=window.prompt("Main ticker (optional). Detected: "+(k.join(", ")||"none"),"");if(t===null)return;fetch(u,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({secret:s,ticker:t,tickers:k,title:document.title,text:r.innerText,url:location.href})});alert("Sent to Thrive Alpha: "+(t||k.join(", ")||"auto-detect"));})();
 ```
 
 ## Use
 
 While reading an article (e.g. an Investing Club piece):
 1. Click the bookmarklet.
-2. Type the ticker it's about when prompted (e.g. `AMZN`) and confirm.
-3. You'll see a confirmation alert immediately (it can't confirm the server actually accepted
-   it — see the CORS note above — so check the ticker's News rail / Why panel a moment later to
-   verify the clip actually landed).
+2. Press OK. Type a ticker only if the article is about one stock and none was detected.
+3. Check the ticker's Verdict tab (Second opinions) or News a moment later.
 
-## Known limitations (v1)
+## What happens to a clip
 
-- **No ticker auto-detection.** Nothing in the backend today scans text for ticker/company
-  mentions, so you type it yourself. Simplest reliable option given no such utility exists yet.
-- **Body extraction is `document.body.innerText`** — whatever text is visibly rendered on the
-  page, including nav/boilerplate. The event classifier and LLM wrap both tolerate noise fine,
-  but a smarter `<article>`-tag-aware extraction would produce cleaner input if this gets used
-  heavily.
-- **The shared secret lives in the bookmarklet's own source.** Since it's a static snippet you
-  install locally, its only protection is not sharing that bookmarklet text with anyone else —
-  an accepted tradeoff for a single-user personal tool (this app has no per-user auth system).
-- Clips are capped at 20 most recent per ticker and ~20,000 characters each
-  (`manual_catalysts.MAX_ARTICLES_PER_TICKER` / `MAX_TEXT_CHARS`) — bounds file growth, not
-  meant as a long-term archive.
+- **Tickers:** the one you typed, the article's quote links, and `(NASDAQ:AAPL)`-style mentions
+  (`signals/club_extract.detect_tickers`). Each ticker gets its own copy of the clip (max 12).
+- **Club view extraction** (when `ANTHROPIC_API_KEY` is set): Claude Haiku pulls, per ticker, the
+  Club's 1/2/3 rating, price target, any trade (bought/sold/trimmed, shares, price), stance, up to
+  3 thesis points and 2 risks, plus a 2-sentence summary (`signals/club_extract.py`). Only those
+  fields and the summary are stored; the article text is dropped. Without the key, v1 behavior
+  (text stored, generic card).
+- **Where it shows:** a "CNBC Investing Club" row in Second opinions (label Buy / Wait for
+  pullback / Don't buy / Trim, with PT and trade) for 120 days, and a Club card in News.
+- **Tracking:** the nightly EOD row saves the Club label beside the other second opinions, so the
+  Track tab scores Club calls against the same forward returns as ours. It does not feed the
+  model; only consider that after months of tracked results.
+- **Privacy:** clips stay in your backend's `DATA_ROOT/manual_catalysts.json`; nothing is shown
+  publicly or redistributed.
+
+## Known limitations
+
+- **The shared secret lives in the bookmarklet's own source.** Its only protection is not sharing
+  that bookmarklet text — an accepted tradeoff for a single-user personal tool.
+- Clips are capped at 20 most recent per ticker (`manual_catalysts.MAX_ARTICLES_PER_TICKER`).
+- Extraction can miss or misread a value; every Club row links back to the article.

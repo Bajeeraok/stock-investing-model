@@ -27,6 +27,7 @@ SOURCE_LABELS = {
     "tv_1m": "Technical rating (monthly)",
     "analyst": "Analyst consensus",
     "finnhub": "Finnhub analysts",
+    "club": "CNBC Investing Club",
 }
 
 
@@ -333,14 +334,55 @@ def build_second_opinions(
     opinions.append({"key": "analyst", "source": SOURCE_LABELS["analyst"], "horizon": "~12 months", **(a or {}), "available": a is not None})
     f = _analyst_entry(fh)
     opinions.append({"key": "finnhub", "source": SOURCE_LABELS["finnhub"], "horizon": "~12 months", **(f or {}), "available": f is not None})
+    club = club_opinion(ticker)
+    if club:
+        opinions.append(club)
+    compact = compact_opinions(tv, a, f)
+    if club:
+        compact["club"] = club["label"]
     return {
         "opinions": opinions,
-        "compact": compact_opinions(tv, a, f),
+        "compact": compact,
         "finnhub_configured": fh_configured,
         "note": (
             "Technical ratings are our own calculation of TradingView's published method, not TradingView data. "
             "Agreement is not proof; the Track tab scores every source against the same forward returns."
         ),
+    }
+
+
+def club_opinion(ticker: str) -> dict[str, Any] | None:
+    """Latest clipped CNBC Investing Club view (≤120 days old) as a Second opinions row."""
+    try:
+        from signals.club_extract import club_label
+        from signals.manual_catalysts import latest_club_view
+
+        v = latest_club_view(ticker)
+    except Exception as e:
+        logger.debug("club opinion %s: %s", ticker, e)
+        return None
+    if not v:
+        return None
+    label, bias = club_label(v)
+    bits = []
+    if v.get("rating"):
+        bits.append(f"rated {v['rating']}")
+    if v.get("price_target"):
+        bits.append(f"PT ${v['price_target']:,.0f}")
+    if v.get("action"):
+        bits.append(v["action"] + (f" @ ${v['trade_price']:,.2f}" if v.get("trade_price") else ""))
+    as_of = str(v.get("as_of") or "")[:10]
+    return {
+        "key": "club",
+        "source": SOURCE_LABELS["club"],
+        "horizon": f"clipped {as_of}" if as_of else "clipped article",
+        "label": label,
+        "bias": bias,
+        "available": True,
+        "detail": " · ".join(bits) or None,
+        "thesis": v.get("thesis") or [],
+        "risks": v.get("risks") or [],
+        "url": v.get("url"),
     }
 
 
@@ -362,7 +404,11 @@ def compact_for_row(config: dict, ticker: str, df: pd.DataFrame | None, *, use_f
     tv = technical_ratings(df)
     a = _analyst_entry(fmp_analyst_distribution(config, ticker)) if use_fmp else None
     f = _analyst_entry(finnhub_distribution(config, ticker))
-    return compact_opinions(tv, a, f)
+    out = compact_opinions(tv, a, f)
+    club = club_opinion(ticker)
+    if club:
+        out["club"] = club["label"]
+    return out
 
 
 # ── Forward-tracking scorecard ──────────────────────────────────────────────
