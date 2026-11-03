@@ -393,7 +393,7 @@ export function VerdictPanel({
           </div>
           <ul className="divide-y divide-td-line">
             {rows.map((r) => (
-              <li key={r.key} className="flex items-start justify-between gap-3 py-2" title={r.title}>
+              <li key={r.key} className="flex flex-col gap-0.5 py-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3" title={r.title}>
                 <span className="flex items-start gap-2 text-[13px] text-td-text/90 min-w-0">
                   <span className={clsx("font-bold shrink-0", r.ok ? "text-td-accent" : "text-td-crit")} aria-hidden>
                     {r.ok ? "✓" : "✕"}
@@ -401,7 +401,7 @@ export function VerdictPanel({
                   <span className={clsx(r.ok && "text-td-muted")}>{r.label}</span>
                 </span>
                 {r.value && (
-                  <span className="font-mono text-[13px] text-td-muted whitespace-nowrap tabular-nums text-right">{r.value}</span>
+                  <span className="pl-5 font-mono text-[13px] text-td-muted tabular-nums break-words sm:pl-0 sm:text-right sm:max-w-[55%]">{r.value}</span>
                 )}
               </li>
             ))}

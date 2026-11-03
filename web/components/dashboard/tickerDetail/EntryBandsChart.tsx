@@ -101,7 +101,7 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
       <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-td-muted mb-2">
         Entry levels vs spot
       </p>
-      <div className="relative w-full" style={{ aspectRatio: "3 / 2" }}>
+      <div className="relative w-full aspect-[4/3] sm:aspect-[3/2]">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
           {inWin.map((b, i) => {
             const s = KIND_STYLE[b.kind];
@@ -143,14 +143,14 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
           const s = KIND_STYLE[b.kind];
           return (
             <span key={i}
-              className={clsx("absolute right-1 text-[11px] font-mono leading-none", s.text)}
+              className={clsx("absolute right-1 rounded-sm bg-td-surface/85 px-0.5 text-[11px] font-mono leading-none", s.text)}
               style={{ top: `${top}%`, transform: "translateY(-50%)" }}>
               {b.label} {bandPriceText(b)}
             </span>
           );
         })}
         {spot != null && (
-          <span className="absolute left-1 text-[11px] font-mono font-bold leading-none text-amber-300"
+          <span className="absolute left-1 rounded-sm bg-td-surface/85 px-0.5 text-[11px] font-mono font-bold leading-none text-amber-300"
             style={{ top: `${y(spot)}%`, transform: "translateY(-110%)" }}>
             SPOT ${spot.toFixed(2)}
           </span>
