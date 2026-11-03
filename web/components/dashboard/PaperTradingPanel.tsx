@@ -60,7 +60,7 @@ const ENTRY_MODE_CONFIG = {
 
 function EntryModePill({ mode }: { mode?: string | null }) {
   const cfg = ENTRY_MODE_CONFIG[mode as keyof typeof ENTRY_MODE_CONFIG];
-  if (!cfg) return <span className="text-slate-600 text-[10px]">—</span>;
+  if (!cfg) return <span className="text-slate-600 text-[11px]">—</span>;
   return (
     <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
       {cfg.label}
@@ -115,7 +115,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
     return (
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4">
         <p className="text-sm font-medium text-slate-300 mb-1">Paper trading</p>
-        <p className="text-xs text-slate-500 leading-relaxed">
+        <p className="text-[13px] text-slate-500 leading-relaxed">
           Paper trade data has not loaded yet. Refresh the dashboard, wait for Analysis sections to load,
           then return here. Trades log when GO signals (4/4 gates) fire on your watchlist or portfolio.
         </p>
@@ -184,7 +184,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-slate-300">Paper trading (signals → outcomes)</p>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-[13px] text-slate-500 mt-0.5">
             <strong>Accumulate</strong> track: 4/4 gates GO + actionable signal (BUY / STRONG BUY / HOLD-ADD), ~20 business days.
             <strong> Tactical</strong> track: velocity breakout (RVOL/BB), gates logged but not required, T+5 horizon.
             Entry = limit fill when EOD low/close touches ref entry within the wait window.
@@ -192,12 +192,12 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           </p>
         </div>
         {pt.log?.date && (
-          <div className="text-xs text-slate-500">
+          <div className="text-[13px] text-slate-500">
             Logged {pt.log.appended}/{pt.log.seen} signals for {pt.log.date}
           </div>
         )}
         {backfill != null && backfill.appended > 0 && (
-          <div className="text-xs text-sky-400">
+          <div className="text-[13px] text-sky-400">
             Backfilled {backfill.appended} limit fills from EOD
             {backfill.skipped_no_fill != null ? ` (${backfill.skipped_no_fill} GO signals had no touch)` : ""}
           </div>
@@ -209,7 +209,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <select
           value={tickerFilter}
           onChange={(e) => setTickerFilter(e.target.value)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All tickers ({uniqueTickers.length})</option>
           {uniqueTickers.map((t) => (
@@ -219,7 +219,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <select
           value={signalFilter}
           onChange={(e) => setSignalFilter(e.target.value)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All signals</option>
           {uniqueSignals.map((s) => (
@@ -229,7 +229,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="ALL">Open + done</option>
           <option value="OPEN">Open only</option>
@@ -238,7 +238,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <select
           value={modeFilter}
           onChange={(e) => setModeFilter(e.target.value as ModeFilter)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="ALL">All entry modes</option>
           <option value="full_go">Full Go only</option>
@@ -248,7 +248,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
         <select
           value={versionFilter}
           onChange={(e) => setVersionFilter(e.target.value)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           title="Which gate/band/regime logic version opened the trade — defaults to current so win-rate isn't blended with pre-fix history"
         >
           <option value="">All versions</option>
@@ -268,7 +268,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               type="button"
               onClick={() => setDateRange(dr.value)}
               className={clsx(
-                "px-2.5 py-1 text-xs font-medium transition-colors",
+                "px-2.5 py-1 text-[13px] font-medium transition-colors",
                 dateRange === dr.value
                   ? "bg-emerald-600/70 text-white"
                   : "bg-slate-900 text-slate-400 hover:bg-slate-800",
@@ -279,14 +279,14 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           ))}
         </div>
         {filtersActive && (
-          <span className="text-[10px] text-slate-500">
+          <span className="text-[11px] text-slate-500">
             Showing {recent.length} / {allRecent.length} trades
           </span>
         )}
       </div>
 
       {filtersActive && (
-        <div className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+        <div className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-[13px] text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered slice</span>
           <span>{filterStats.n} rows</span>
           <span>{filterStats.completed} completed</span>
@@ -354,7 +354,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
               </span>
             )}
             {summary.headline_track === "no_accumulate" && summary.tactical_summary && (
-              <span className="text-xs text-amber-300/90" title="Model GO track not measured — see velocity card below">
+              <span className="text-[13px] text-amber-300/90" title="Model GO track not measured — see velocity card below">
                 No accumulate headline — use tactical breakdown
               </span>
             )}
@@ -390,7 +390,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             {summary.message && <span className="text-slate-500">{summary.message}</span>}
           </div>
           {summary.buy_signals_summary && (
-            <div className="rounded border border-slate-600/80 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
+            <div className="rounded border border-slate-600/80 bg-slate-900/40 px-3 py-2 text-[13px] text-slate-400">
               <span className="font-medium text-slate-300">{summary.buy_signals_summary.label}</span>
               <span className="text-slate-500"> — n={summary.buy_signals_summary.completed_n}</span>
               {summary.buy_signals_summary.win_rate_pct != null && (
@@ -411,7 +411,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           {(summary.accumulate_summary || summary.tactical_summary) && (
             <div className="flex flex-wrap gap-2">
               {summary.accumulate_summary && (
-                <div className="rounded border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-xs text-slate-400 flex-1 min-w-[12rem]">
+                <div className="rounded border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-[13px] text-slate-400 flex-1 min-w-[12rem]">
                   <span className="font-medium text-emerald-300">{summary.accumulate_summary.label}</span>
                   <span className="text-slate-500"> — n={summary.accumulate_summary.completed_n}</span>
                   {summary.accumulate_summary.win_rate_pct != null && (
@@ -423,7 +423,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 </div>
               )}
               {summary.tactical_summary && (
-                <div className="rounded border border-violet-500/25 bg-violet-950/20 px-3 py-2 text-xs text-slate-400 flex-1 min-w-[12rem]">
+                <div className="rounded border border-violet-500/25 bg-violet-950/20 px-3 py-2 text-[13px] text-slate-400 flex-1 min-w-[12rem]">
                   <span className="font-medium text-violet-300">{summary.tactical_summary.label}</span>
                   <span className="text-slate-500"> — n={summary.tactical_summary.completed_n}</span>
                   {summary.tactical_summary.win_rate_pct != null && (
@@ -439,7 +439,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           {/* Gate-mode tiered breakdown */}
           {summary.by_gate_mode && Object.keys(summary.by_gate_mode).length > 0 && (
             <div className="mt-2">
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 By gate mode (accumulate track)
               </p>
               <div className="flex flex-wrap gap-2">
@@ -450,14 +450,14 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     <div
                       key={gm}
                       className={clsx(
-                        "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs",
+                        "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px]",
                         gm === "full_go" ? "border-emerald-500/35 bg-emerald-950/20 text-emerald-300"
                           : gm === "starter_only" ? "border-amber-500/35 bg-amber-950/20 text-amber-300"
                           : "border-slate-600/50 bg-slate-800/40 text-slate-400",
                       )}
                     >
-                      <span className="font-medium uppercase text-[10px] tracking-wide">{gm.replace("_", " ")}</span>
-                      <span className="text-slate-500 text-[10px]">n={s.n}</span>
+                      <span className="font-medium uppercase text-[11px] tracking-wide">{gm.replace("_", " ")}</span>
+                      <span className="text-slate-500 text-[11px]">n={s.n}</span>
                       {s.win_rate_pct != null && (
                         <span>Target hit {s.win_rate_pct.toFixed(0)}%</span>
                       )}
@@ -477,7 +477,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           )}
           {summary.summary_by_model_version && Object.keys(summary.summary_by_model_version).length > 0 && (
             <div className="mt-2">
-              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
                 By model version
               </p>
               <div className="flex flex-wrap gap-2">
@@ -487,17 +487,17 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     type="button"
                     onClick={() => setVersionFilter(ver === versionFilter ? "" : ver)}
                     className={clsx(
-                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors",
+                      "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] transition-colors",
                       ver === versionFilter
                         ? "border-emerald-500/50 bg-emerald-950/30 text-emerald-200"
                         : "border-slate-600/50 bg-slate-800/40 text-slate-400 hover:border-slate-500",
                     )}
                     title={ver === currentModelVersion ? "Current model version" : undefined}
                   >
-                    <span className="font-medium text-[10px] tracking-wide">
+                    <span className="font-medium text-[11px] tracking-wide">
                       {ver === currentModelVersion ? `${ver} (current)` : ver}
                     </span>
-                    <span className="text-slate-500 text-[10px]">n={s.completed_n}</span>
+                    <span className="text-slate-500 text-[11px]">n={s.completed_n}</span>
                     {s.win_rate_pct != null && <span>Target hit {s.win_rate_pct.toFixed(0)}%</span>}
                     {s.avg_return_pct != null && (
                       <span className={s.avg_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
@@ -510,22 +510,22 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
             </div>
           )}
           {summary.marketing_note && (
-            <p className="text-[11px] text-slate-600 leading-snug">{summary.marketing_note}</p>
+            <p className="text-[13px] text-slate-600 leading-snug">{summary.marketing_note}</p>
           )}
           {summary.horizon_note && (
-            <p className="text-xs text-slate-600 leading-snug">{summary.horizon_note}</p>
+            <p className="text-[13px] text-slate-600 leading-snug">{summary.horizon_note}</p>
           )}
         </div>
       )}
 
-      {pt.fill?.message && <p className="text-xs text-slate-500">{pt.fill.message}</p>}
+      {pt.fill?.message && <p className="text-[13px] text-slate-500">{pt.fill.message}</p>}
       {pt.mtm?.as_of && (
-        <p className="text-xs text-slate-500">
+        <p className="text-[13px] text-slate-500">
           Mark-to-market updated as of {pt.mtm.as_of} (open trades only).
         </p>
       )}
       {pt.persistence_note && (
-        <p className="text-xs text-slate-500" title={pt.data_root ?? undefined}>
+        <p className="text-[13px] text-slate-500" title={pt.data_root ?? undefined}>
           {pt.persistence_note}
         </p>
       )}
@@ -597,7 +597,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                 <tr key={`${r.date}-${r.ticker}-${r.signal}-${i}`} className="border-b border-slate-700/50 hover:bg-slate-800/30">
                   <td className="py-1.5 pr-2 text-slate-400">{r.date}</td>
                   <td className="py-1.5 pr-2 font-mono text-slate-200">{r.ticker}</td>
-                  <td className="py-1.5 pr-2 text-xs">
+                  <td className="py-1.5 pr-2 text-[13px]">
                     {String(r.track || "accumulate") === "velocity" ? (
                       <span className="text-violet-300">tactical</span>
                     ) : String(r.track || "") === "swing" ? (
@@ -607,10 +607,10 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                     )}
                   </td>
                   <td className="py-1.5 pr-2 text-slate-400">{r.signal}</td>
-                  <td className="py-1.5 pr-2 text-[11px] text-slate-500 font-mono">
+                  <td className="py-1.5 pr-2 text-[13px] text-slate-500 font-mono">
                     {rowModelVersion(r)}
                   </td>
-                  <td className="py-1.5 pr-2 text-slate-400 text-xs">
+                  <td className="py-1.5 pr-2 text-slate-400 text-[13px]">
                     {r.gates_passed != null && r.gates_total != null ? (
                       <span className={(r.gate_mode || r.entry_mode) === "full_go" ? "text-emerald-400" : (r.gate_mode || r.entry_mode) === "starter_only" ? "text-amber-300" : "text-slate-500"}>
                         {r.gates_passed}/{r.gates_total}
@@ -636,7 +636,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   <td className="py-1.5 pr-2">
                     {r.outcome ? (
                       <span className={clsx(
-                        "px-2 py-0.5 rounded text-xs font-medium",
+                        "px-2 py-0.5 rounded text-[13px] font-medium",
                         r.outcome === "HIT" && "bg-emerald-500/15 text-emerald-300",
                         r.outcome === "MISS" && "bg-red-500/15 text-red-300",
                         r.outcome === "STOP_HIT" && "bg-amber-500/15 text-amber-200",
@@ -645,7 +645,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                       </span>
                     ) : (
                       <span
-                        className="text-slate-500 text-xs"
+                        className="text-slate-500 text-[13px]"
                         title={
                           r.effective_entry_source === "signal_entry_provisional"
                             ? "Provisional entry — marks use latest EOD; upgrades to next-session close when that snapshot exists. Final outcome after horizon (default 20 business days)."
@@ -707,7 +707,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
           </table>
         </div>
       ) : (
-        <p className="text-xs text-slate-500">
+        <p className="text-[13px] text-slate-500">
           {filtersActive
             ? "No paper trades match these filters. Try All versions if older trades predate model stamps."
             : "No paper trades logged yet (load dashboard once per day to start logging)."}

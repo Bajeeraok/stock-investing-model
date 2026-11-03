@@ -33,7 +33,7 @@ export function ExternalContextChip({ context }: { context: ExternalContextPaylo
       )}
       title={context.source_note ?? undefined}
     >
-      <p className="text-[10px] uppercase tracking-wide font-semibold text-slate-400 flex items-center gap-1.5">
+      <p className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 flex items-center gap-1.5">
         <Globe className="h-3.5 w-3.5 shrink-0 opacity-80" />
         How popular screeners read this tape
       </p>
@@ -42,16 +42,16 @@ export function ExternalContextChip({ context }: { context: ExternalContextPaylo
           {tags.map((t) => (
             <span
               key={t}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-slate-600/80 bg-slate-900/50 text-slate-300 tabular-nums"
+              className="text-[11px] px-1.5 py-0.5 rounded border border-slate-600/80 bg-slate-900/50 text-slate-300 tabular-nums"
             >
               {t}
             </span>
           ))}
         </div>
       )}
-      <p className="text-xs leading-snug">{context.summary_line}</p>
+      <p className="text-[13px] leading-snug">{context.summary_line}</p>
       {context.source_note && (
-        <p className="text-[10px] text-slate-500 leading-snug">{context.source_note}</p>
+        <p className="text-[11px] text-slate-500 leading-snug">{context.source_note}</p>
       )}
     </div>
   );

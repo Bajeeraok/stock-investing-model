@@ -56,7 +56,7 @@ export function DecisionModeSelector({
   }
   return (
     <div className={clsx("space-y-1.5", className)} role="group" aria-label="Decision mode">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold px-0.5">
+      <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold px-0.5">
         I am deciding as a…
       </p>
       <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-slate-600/80 bg-slate-950/60 p-1">
@@ -80,12 +80,12 @@ export function DecisionModeSelector({
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden />
-              <span className="text-xs font-semibold leading-tight">{decisionModeLabel(id)}</span>
+              <span className="text-[13px] font-semibold leading-tight">{decisionModeLabel(id)}</span>
             </button>
           );
         })}
       </div>
-      <p className="text-[11px] text-slate-500 leading-snug px-0.5">{decisionModeHint(mode)}</p>
+      <p className="text-[13px] text-slate-500 leading-snug px-0.5">{decisionModeHint(mode)}</p>
     </div>
   );
 }

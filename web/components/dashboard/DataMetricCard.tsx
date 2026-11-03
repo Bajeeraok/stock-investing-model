@@ -48,7 +48,7 @@ export function DataMetricCard({
           <div
             className={clsx(
               "flex items-center gap-2 text-slate-400 mb-1",
-              dense ? "text-[11px]" : "text-sm",
+              dense ? "text-[13px]" : "text-sm",
               titleClassName,
             )}
           >
@@ -59,7 +59,7 @@ export function DataMetricCard({
             {primary}
           </div>
           {secondary != null && (
-            <p className={clsx("text-slate-500 mt-0.5", dense ? "text-[10px] leading-snug" : "text-xs")}>{secondary}</p>
+            <p className={clsx("text-slate-500 mt-0.5", dense ? "text-[11px] leading-snug" : "text-[13px]")}>{secondary}</p>
           )}
         </div>
         {expandable && (

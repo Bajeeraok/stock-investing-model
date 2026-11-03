@@ -89,7 +89,7 @@ export function RetailBriefingPanel({ data, onTickerClick, marketQuadrant }: Pro
         {/* Suggested actions */}
         {suggested.length > 0 && (
           <div>
-            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Do one thing</h3>
+            <h3 className="text-[13px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Do one thing</h3>
             <ul className="space-y-1.5">
               {suggested.slice(0, 5).map((a, i) => (
                 <li key={`${a.ticker}-${i}`} className="flex items-center gap-2 flex-wrap">
@@ -100,7 +100,7 @@ export function RetailBriefingPanel({ data, onTickerClick, marketQuadrant }: Pro
                   >
                     {a.ticker}
                   </button>
-                  <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded", ACTION_STYLE[a.action]?.bg, ACTION_STYLE[a.action]?.text)}>
+                  <span className={clsx("text-[13px] font-semibold px-2 py-0.5 rounded", ACTION_STYLE[a.action]?.bg, ACTION_STYLE[a.action]?.text)}>
                     {a.action}
                   </span>
                   <span className="text-slate-400 text-sm">{a.reason}</span>

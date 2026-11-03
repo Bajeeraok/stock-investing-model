@@ -41,7 +41,7 @@ export function AnalystRatingBar({
         })}
       </div>
       {!compact && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-400">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
           {SEGMENTS.map(({ key, label }) => {
             const n = Number(ratings[key]) || 0;
             if (n <= 0) return null;
@@ -53,7 +53,7 @@ export function AnalystRatingBar({
           })}
         </div>
       )}
-      <p className="text-[10px] text-slate-500">
+      <p className="text-[11px] text-slate-500">
         {total} analysts · {sourceLabel}
         {ratings.bullish_pct != null ? (
           <span className="text-slate-400"> · {ratings.bullish_pct}% bullish (buy+strong buy)</span>

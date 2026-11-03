@@ -32,12 +32,12 @@ function BucketMonthCell({
         {formatPct(d.avg_return_pct)}
       </span>
       {d.margin_of_error_pct != null && (
-        <span className="text-slate-500 text-xs ml-1">±{d.margin_of_error_pct}%</span>
+        <span className="text-slate-500 text-[13px] ml-1">±{d.margin_of_error_pct}%</span>
       )}
-      <span className="text-slate-500 text-xs ml-1">({d.hit_rate != null ? `${d.hit_rate}%` : "–"} hit)</span>
+      <span className="text-slate-500 text-[13px] ml-1">({d.hit_rate != null ? `${d.hit_rate}%` : "–"} hit)</span>
       {d.avg_excess_vs_benchmark_pct != null && (
         <span
-          className={`text-xs block mt-0.5 ${
+          className={`text-[13px] block mt-0.5 ${
             d.avg_excess_vs_benchmark_pct >= 0 ? "text-sky-400/90" : "text-amber-400/90"
           }`}
           title={`Average net return minus ${benchmark} over the same forward window`}
@@ -46,7 +46,7 @@ function BucketMonthCell({
         </span>
       )}
       {d.count != null && d.count > 0 && (
-        <span className="text-slate-500 text-xs block mt-0.5">N={d.count}</span>
+        <span className="text-slate-500 text-[13px] block mt-0.5">N={d.count}</span>
       )}
     </td>
   );
@@ -68,7 +68,7 @@ function BucketTable({
           <th className="px-3 py-2 font-medium">Actual 3m</th>
           <th className="px-3 py-2 font-medium">Actual 6m</th>
         </tr>
-        <tr className="text-left text-slate-500 border-b border-slate-700/60 bg-slate-800/30 text-[10px]">
+        <tr className="text-left text-slate-500 border-b border-slate-700/60 bg-slate-800/30 text-[11px]">
           <th className="px-3 py-1 font-normal" />
           {FORWARD_MONTHS.map((m) => (
             <th key={m} className="px-3 py-1 font-normal">
@@ -117,7 +117,7 @@ function ByPeriodTable({
           <th className="px-3 py-2 font-medium">Actual 3m</th>
           <th className="px-3 py-2 font-medium">Actual 6m</th>
         </tr>
-        <tr className="text-left text-slate-500 border-b border-slate-700/60 bg-slate-800/30 text-[10px]">
+        <tr className="text-left text-slate-500 border-b border-slate-700/60 bg-slate-800/30 text-[11px]">
           <th className="px-3 py-1 font-normal" colSpan={2} />
           {FORWARD_MONTHS.map((m) => (
             <th key={m} className="px-3 py-1 font-normal">
@@ -164,7 +164,7 @@ function WalkForwardSummary({ wf }: { wf: WalkForwardBacktest }) {
     <div className="px-4 py-3 border-t border-slate-700/50 bg-slate-900/30 text-sm space-y-2">
       <p className="font-medium text-slate-200">Walk-forward validation</p>
       {(wf.train_years != null || wf.test_months != null || wf.windows?.length) && (
-        <p className="text-xs text-slate-400">
+        <p className="text-[13px] text-slate-400">
           {wf.train_years != null && <>Train {wf.train_years}y · </>}
           {wf.test_months != null && <>Test {wf.test_months}m · </>}
           {wf.windows?.length ? <>{wf.windows.length} rolling windows</> : null}
@@ -172,7 +172,7 @@ function WalkForwardSummary({ wf }: { wf: WalkForwardBacktest }) {
       )}
       {rows.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="text-slate-500 border-b border-slate-700">
                 <th className="text-left py-1 pr-3 font-medium">Horizon</th>
@@ -205,14 +205,14 @@ function WalkForwardSummary({ wf }: { wf: WalkForwardBacktest }) {
         </div>
       )}
       {wf.regime_breakdown && Object.keys(wf.regime_breakdown).length > 0 && (
-        <p className="text-xs text-slate-500 font-mono">
+        <p className="text-[13px] text-slate-500 font-mono">
           By regime:{" "}
           {Object.entries(wf.regime_breakdown)
             .map(([k, v]) => `${k}:${v.window_count ?? 0}w`)
             .join(" · ")}
         </p>
       )}
-      {wf.regime_note && <p className="text-xs text-slate-500 leading-snug">{wf.regime_note}</p>}
+      {wf.regime_note && <p className="text-[13px] text-slate-500 leading-snug">{wf.regime_note}</p>}
     </div>
   );
 }
@@ -233,7 +233,7 @@ function MrSpreadLine({
   if (!spread || spread.edge_pct == null) return null;
   const edge = spread.edge_pct;
   return (
-    <p className="px-4 py-1.5 text-xs text-slate-400 bg-slate-900/30 border-b border-slate-700/40 leading-snug">
+    <p className="px-4 py-1.5 text-[13px] text-slate-400 bg-slate-900/30 border-b border-slate-700/40 leading-snug">
       <span className="font-medium text-sky-400">{label}:</span> dip 70–100{" "}
       {spread.dip_avg_return_pct != null ? `${spread.dip_avg_return_pct >= 0 ? "+" : ""}${spread.dip_avg_return_pct}%` : "—"}{" "}
       (N={spread.dip_n ?? "—"}) vs momentum 0–30{" "}
@@ -326,7 +326,7 @@ export function BacktestStatus() {
 
       <div className="flex flex-wrap gap-4 mb-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700">
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Tickers</label>
+          <label className="block text-[13px] text-slate-500 mb-1">Tickers</label>
           <div className="flex flex-wrap gap-2">
             {availableTickers.map((t) => (
               <label key={t} className="flex items-center gap-1 cursor-pointer">
@@ -352,7 +352,7 @@ export function BacktestStatus() {
           </div>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Years</label>
+          <label className="block text-[13px] text-slate-500 mb-1">Years</label>
           <select
             value={years}
             onChange={(e) => setYears(Number(e.target.value) as 2 | 5 | 10)}
@@ -364,7 +364,7 @@ export function BacktestStatus() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-500 mb-1">Add ticker</label>
+          <label className="block text-[13px] text-slate-500 mb-1">Add ticker</label>
           <div className="flex gap-1">
             <input
               type="text"
@@ -408,7 +408,7 @@ export function BacktestStatus() {
       </div>
 
       {lastBypassedCache && !loading && (
-        <p className="text-xs text-amber-300/90 mb-2" title="Cache was skipped; results reflect current server code.">
+        <p className="text-[13px] text-amber-300/90 mb-2" title="Cache was skipped; results reflect current server code.">
           Last run: cache bypassed — full backtest recomputed.
         </p>
       )}
@@ -427,7 +427,7 @@ export function BacktestStatus() {
         <span className="text-emerald-400">average actual</span> forward return (1m / 3m / 6m) when the model was in that bucket. How you read “high vs low” depends on whether buckets are raw momentum or MR-mapped — see the callout above and the spread line under each ticker.
       </p>
       {results.some((r) => r.schema_version != null) && (
-        <p className="text-xs text-slate-500 mb-2 leading-snug" title={SCHEMA_V2_NOTE}>
+        <p className="text-[13px] text-slate-500 mb-2 leading-snug" title={SCHEMA_V2_NOTE}>
           <span className="text-slate-400 font-medium">Backtest schema:</span> {SCHEMA_V2_NOTE} After a deploy, use{" "}
           <span className="text-slate-300">Re-run fresh</span> so Redis does not serve stale JSON.
         </p>
@@ -465,7 +465,7 @@ export function BacktestStatus() {
                   <span className="font-mono font-medium text-slate-200">{r.ticker}</span>
                   {r.schema_version != null && (
                     <span
-                      className="text-[10px] uppercase tracking-wide font-sans font-normal text-emerald-400/90 px-2 py-0.5 rounded border border-emerald-700/50 bg-emerald-950/40"
+                      className="text-[11px] uppercase tracking-wide font-sans font-normal text-emerald-400/90 px-2 py-0.5 rounded border border-emerald-700/50 bg-emerald-950/40"
                       title="API bucket-assignment schema — compare across deploys"
                     >
                       Schema v{r.schema_version}
@@ -473,7 +473,7 @@ export function BacktestStatus() {
                   )}
                 </div>
                 {r.score_parity && (
-                  <p className="px-4 py-1.5 text-xs text-sky-300/90 bg-sky-950/30 border-b border-sky-900/40 leading-snug">
+                  <p className="px-4 py-1.5 text-[13px] text-sky-300/90 bg-sky-950/30 border-b border-sky-900/40 leading-snug">
                     <span className="font-medium">Live parity:</span>{" "}
                     {r.score_parity.live_ctx_active
                       ? "regime + MRO applied on each bar"
@@ -484,7 +484,7 @@ export function BacktestStatus() {
                   </p>
                 )}
                 {r.bucket_assignment_note && (
-                  <p className="px-4 py-1.5 text-xs text-slate-400 bg-slate-900/40 border-b border-slate-700/50 leading-snug">
+                  <p className="px-4 py-1.5 text-[13px] text-slate-400 bg-slate-900/40 border-b border-slate-700/50 leading-snug">
                     {r.bucket_assignment_note}
                   </p>
                 )}
@@ -493,7 +493,7 @@ export function BacktestStatus() {
                   r.bucket_assignment_stats.pct_mean_reverting != null &&
                   r.bucket_assignment_stats.pct_trending != null && (
                     <p
-                      className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/30 border-b border-slate-700/40 leading-snug font-mono"
+                      className="px-4 py-1.5 text-[13px] text-slate-500 bg-slate-900/30 border-b border-slate-700/40 leading-snug font-mono"
                       title="Per trading day in the backtest window: MR = bucket uses (100 − raw score); Trending = raw composite bucket. Add ticker to force_mean_reverting if MR% is low and buckets look inverted."
                     >
                       Bucket rows:{" "}
@@ -535,7 +535,7 @@ export function BacktestStatus() {
                 })()}
                 {r.bucket_return_ordering_notes &&
                   r.bucket_return_ordering_notes.length > 0 && (
-                    <ul className="px-4 py-2 text-xs text-slate-400 bg-amber-950/25 border-b border-amber-900/35 leading-snug space-y-1 list-disc list-inside marker:text-amber-600/80">
+                    <ul className="px-4 py-2 text-[13px] text-slate-400 bg-amber-950/25 border-b border-amber-900/35 leading-snug space-y-1 list-disc list-inside marker:text-amber-600/80">
                       {r.bucket_return_ordering_notes.map((note, i) => (
                         <li key={i}>{note}</li>
                       ))}
@@ -543,7 +543,7 @@ export function BacktestStatus() {
                   )}
                 {r.earnings_exclusion && r.earnings_exclusion.enabled && (
                   <p
-                    className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/35 border-b border-slate-700/40 leading-snug"
+                    className="px-4 py-1.5 text-[13px] text-slate-500 bg-slate-900/35 border-b border-slate-700/40 leading-snug"
                     title="Short-horizon noise reduction: bars skipped when next earnings within N calendar days (FMP). See docs/backend/BACKTEST_DATA.md."
                   >
                     <span className="text-slate-400">Earnings exclusion:</span>{" "}
@@ -560,7 +560,7 @@ export function BacktestStatus() {
                   r.spy_regime_summary.bars_counted != null &&
                   r.spy_regime_summary.bars_counted > 0 && (
                     <p
-                      className="px-4 py-1.5 text-xs text-slate-500 bg-slate-900/25 border-b border-slate-700/35 leading-snug"
+                      className="px-4 py-1.5 text-[13px] text-slate-500 bg-slate-900/25 border-b border-slate-700/35 leading-snug"
                       title={r.spy_regime_summary.note ?? ""}
                     >
                       <span className="text-slate-400">Market regime (window):</span>{" "}
@@ -592,7 +592,7 @@ export function BacktestStatus() {
                   <WalkForwardSummary wf={r.walk_forward} />
                 )}
                 {r.walk_forward?.error && (
-                  <p className="px-4 py-2 text-xs text-amber-400/90 border-t border-slate-700/50">
+                  <p className="px-4 py-2 text-[13px] text-amber-400/90 border-t border-slate-700/50">
                     Walk-forward: {r.walk_forward.error}
                   </p>
                 )}
@@ -606,7 +606,7 @@ export function BacktestStatus() {
                       ))}
                     </ul>
                     {r.validation.data_quality_score != null && (
-                      <p className="text-amber-400/80 text-xs mt-1">Score: {r.validation.data_quality_score}/100</p>
+                      <p className="text-amber-400/80 text-[13px] mt-1">Score: {r.validation.data_quality_score}/100</p>
                     )}
                   </div>
                 )}

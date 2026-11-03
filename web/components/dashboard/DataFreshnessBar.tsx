@@ -63,7 +63,7 @@ function SnapshotMetaLine({
     const quotesLabel = formatSnapshotEt(quotesIso) || "—";
     const signalsLabel = formatSnapshotEt(signalsIso) || "—";
     return (
-      <div className={clsx("flex flex-wrap items-center gap-x-2 gap-y-1", compact ? "text-xs" : "text-sm")}>
+      <div className={clsx("flex flex-wrap items-center gap-x-2 gap-y-1", compact ? "text-[13px]" : "text-sm")}>
         <Clock className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden />
         <span className="text-slate-400">Prices as of</span>
         <span className="font-mono text-slate-200">{quotesLabel}</span>
@@ -71,12 +71,12 @@ function SnapshotMetaLine({
         <span className="text-slate-400">Signals as of</span>
         <span className="font-mono text-slate-200">{signalsLabel}</span>
         {!isUsEquityRth() && (
-          <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
+          <span className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
             After close
           </span>
         )}
         {data.serving_stale && (
-          <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
+          <span className="text-[11px] uppercase tracking-wide font-semibold text-slate-400 border border-slate-600/60 bg-slate-800/60 px-1.5 py-0.5 rounded">
             Loading first snapshot
           </span>
         )}
@@ -88,7 +88,7 @@ function SnapshotMetaLine({
   const stale = data.serving_stale || tone === "stale";
 
   return (
-    <div className={clsx("flex flex-wrap items-center gap-x-2 gap-y-1", compact ? "text-xs" : "text-sm")}>
+    <div className={clsx("flex flex-wrap items-center gap-x-2 gap-y-1", compact ? "text-[13px]" : "text-sm")}>
       <Clock className="h-3.5 w-3.5 text-slate-500 shrink-0" aria-hidden />
       <span className="text-slate-400">Snapshot updated</span>
       <span className="font-mono text-slate-200">{timeLabel}</span>
@@ -105,15 +105,15 @@ function SnapshotMetaLine({
         </span>
       )}
       {data.serving_stale && (
-        <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 rounded">
+        <span className="text-[11px] uppercase tracking-wide font-semibold text-amber-300 border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 rounded">
           Stale — refreshing
         </span>
       )}
       {!data.serving_stale && stale && age && (
-        <span className="text-[10px] text-slate-500">older snapshot</span>
+        <span className="text-[11px] text-slate-500">older snapshot</span>
       )}
       {!compact && data.snapshot_source && (
-        <span className="text-slate-600 text-[10px]">source: {data.snapshot_source.replace("_", " ")}</span>
+        <span className="text-slate-600 text-[11px]">source: {data.snapshot_source.replace("_", " ")}</span>
       )}
     </div>
   );
@@ -130,7 +130,7 @@ export function DataFreshnessBar({
   if (compact) {
     return (
       <div
-        className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1"
+        className="rounded-lg border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-[13px] text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1"
         title="When the dashboard snapshot was last saved on the server"
       >
         <SnapshotMetaLine data={data} compact />
@@ -147,7 +147,7 @@ export function DataFreshnessBar({
 
   return (
     <div
-      className="rounded-lg border border-slate-600/80 bg-slate-800/40 px-3 py-2.5 text-xs text-slate-400 flex flex-wrap items-start gap-2"
+      className="rounded-lg border border-slate-600/80 bg-slate-800/40 px-3 py-2.5 text-[13px] text-slate-400 flex flex-wrap items-start gap-2"
       title={[data.prices, data.fundamentals, data.macro].filter(Boolean).join(" ")}
     >
       <Info className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" aria-hidden />

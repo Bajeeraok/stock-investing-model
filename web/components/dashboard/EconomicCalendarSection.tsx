@@ -21,7 +21,7 @@ export function EconomicCalendarSection({ events }: { events: EconomicCalendarEv
         <Calendar className="h-4 w-4 text-emerald-500" />
         Event calendar (next 7 days)
       </h3>
-      <p className="text-xs text-slate-500 mb-2">CPI, FOMC, NFP, etc. – volatility/event risk flag.</p>
+      <p className="text-[13px] text-slate-500 mb-2">CPI, FOMC, NFP, etc. – volatility/event risk flag.</p>
       <ul className="space-y-1.5 text-sm">
         {events.slice(0, 15).map((e, i) => (
           <li key={i} className="flex gap-2 text-slate-300">

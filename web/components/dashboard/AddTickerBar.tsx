@@ -120,7 +120,7 @@ export function AddTickerBar({ onAdded }: { onAdded?: () => void }) {
       </div>
       {(showJournal || journalNote) && (
         <div className="px-4 py-3 rounded-lg border border-slate-700 bg-slate-900/60 space-y-2">
-          <label className="block text-xs text-slate-400">One-line journal (optional — why add now?)</label>
+          <label className="block text-[13px] text-slate-400">One-line journal (optional — why add now?)</label>
           <input
             type="text"
             value={journalNote}
@@ -130,7 +130,7 @@ export function AddTickerBar({ onAdded }: { onAdded?: () => void }) {
             maxLength={500}
           />
           {cooldownMsg && (
-            <label className="flex items-start gap-2 text-xs text-amber-200/90 cursor-pointer">
+            <label className="flex items-start gap-2 text-[13px] text-amber-200/90 cursor-pointer">
               <input
                 type="checkbox"
                 checked={thesisOverride}

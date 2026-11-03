@@ -105,7 +105,7 @@ function DipZoneBadge({ r }: { r: Signal }) {
   }
   return (
     <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-semibold whitespace-nowrap bg-cyan-500/15 text-cyan-300 border-cyan-500/40"
+      className="inline-flex items-center px-1.5 py-0.5 rounded border text-[11px] font-semibold whitespace-nowrap bg-cyan-500/15 text-cyan-300 border-cyan-500/40"
       title="Dip-zone: 'dip, not broken' score band with an actionable entry — the measured edge cohort"
     >
       DIP ZONE
@@ -119,7 +119,7 @@ function SignalBadge({ signal }: { signal: string | null | undefined }) {
   return (
     <span
       className={clsx(
-        "inline-flex items-center px-2 py-0.5 rounded border text-xs font-semibold whitespace-nowrap",
+        "inline-flex items-center px-2 py-0.5 rounded border text-[13px] font-semibold whitespace-nowrap",
         style.bg, style.text, style.border,
       )}
       title={style.title}
@@ -139,7 +139,7 @@ function PlanActionBadge({
 }) {
   if (!action) {
     return (
-      <span className="text-[10px] text-slate-500" title="Run dashboard with watchlist tickers to load 7-layer plan">
+      <span className="text-[11px] text-slate-500" title="Run dashboard with watchlist tickers to load 7-layer plan">
         —
       </span>
     );
@@ -165,7 +165,7 @@ function PlanActionBadge({
   return (
     <span
       className={clsx(
-        "inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-semibold max-w-[10rem] text-left leading-snug",
+        "inline-flex items-center px-2 py-0.5 rounded border text-[13px] font-semibold max-w-[10rem] text-left leading-snug",
         style.bg,
         style.text,
         style.border,
@@ -190,7 +190,7 @@ function CatalystBadge({ catalyst }: { catalyst?: Signal["catalyst"] }) {
   const tip = catalyst.headline_summary || catalyst.override_note || "High-impact news catalyst (48h)";
   return (
     <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/40"
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide bg-amber-500/20 text-amber-200 ring-1 ring-amber-500/40"
       title={tip}
     >
       {label}
@@ -224,7 +224,7 @@ function SignalDot({ type, dir }: { type: "trend" | "rsi" | "macd"; dir: string 
 
 function MLProbPill({ prob }: { prob: number | null | undefined }) {
   if (prob == null) return (
-    <span className="text-[10px] text-slate-600 font-mono" title="ML model not yet trained for this ticker — run daily training to populate">
+    <span className="text-[11px] text-slate-600 font-mono" title="ML model not yet trained for this ticker — run daily training to populate">
       ML –
     </span>
   );
@@ -235,7 +235,7 @@ function MLProbPill({ prob }: { prob: number | null | undefined }) {
                 "text-red-300    bg-red-500/15    border-red-500/30";
   return (
     <span
-      className={clsx("text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded border", colour)}
+      className={clsx("text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded border", colour)}
       title={`ML short-term: ${pct}% probability of gaining threshold% in 20 days (LightGBM). Click ticker for full 7-layer breakdown.`}
     >
       ML {pct}%
@@ -255,19 +255,19 @@ function EarningsCell({ signal: r }: { signal: Signal }) {
     <div className="space-y-1 max-w-[9rem]">
       {r.earnings_caution && (
         <span
-          className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40"
+          className="inline-flex px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40"
           title="Within earnings caution window — extra score reduction applied"
         >
           Caution{r.earnings_days_until != null ? ` · ${r.earnings_days_until}d` : ""}
         </span>
       )}
       {!r.earnings_caution && r.earnings_days_until != null && r.earnings_days_until <= 14 && (
-        <span className="text-[10px] text-slate-500" title="Days until next earnings (when known)">
+        <span className="text-[11px] text-slate-500" title="Days until next earnings (when known)">
           {r.earnings_days_until}d
         </span>
       )}
       {grade && (
-        <div className="text-slate-300 text-xs" title={flags.length ? flags.join("; ") : undefined}>
+        <div className="text-slate-300 text-[13px]" title={flags.length ? flags.join("; ") : undefined}>
           <span className="font-semibold">EQ {grade}</span>
           {q?.quality_score != null && (
             <span className="text-slate-500 ml-1 tabular-nums">({Math.round(q.quality_score)})</span>
@@ -276,7 +276,7 @@ function EarningsCell({ signal: r }: { signal: Signal }) {
       )}
       {flagStr ? (
         <span
-          className="text-[10px] text-slate-500 block truncate"
+          className="text-[11px] text-slate-500 block truncate"
           title={flags.join("; ")}
         >
           {sanitizeEarningsFlag(flagStr)}
@@ -308,7 +308,7 @@ function ConfluenceCell({ signal: r }: { signal: Signal }) {
         >
           {scorePct != null ? scorePct : "–"}
           {r.confidence_tag === "low (bear/neutral market)" && (
-            <span className="text-amber-400 text-[10px] ml-0.5" title="Score down-weighted in BEAR/NEUTRAL regime">↓</span>
+            <span className="text-amber-400 text-[11px] ml-0.5" title="Score down-weighted in BEAR/NEUTRAL regime">↓</span>
           )}
         </span>
         <MLProbPill prob={r.ml_short_prob} />
@@ -338,7 +338,7 @@ function LiquidityCell({ signal: r }: { signal: Signal }) {
   const days = r.liquidity_days_to_exit;
   const score = r.liquidity_score;
   if (days == null && score == null) {
-    return <span className="text-slate-600 text-xs">—</span>;
+    return <span className="text-slate-600 text-[13px]">—</span>;
   }
   const color =
     score != null && score >= 4
@@ -347,11 +347,11 @@ function LiquidityCell({ signal: r }: { signal: Signal }) {
         ? "text-emerald-300"
         : "text-slate-300";
   return (
-    <div className="text-xs space-y-0.5" title={r.liquidity_flag ?? "Days to exit at 20% of average daily volume"}>
+    <div className="text-[13px] space-y-0.5" title={r.liquidity_flag ?? "Days to exit at 20% of average daily volume"}>
       <span className={clsx("font-medium tabular-nums", color)}>
         {days != null ? `${days.toFixed(1)}d` : "—"}
       </span>
-      {score != null && <span className="text-[10px] text-slate-500 block">LIS {score}/5</span>}
+      {score != null && <span className="text-[11px] text-slate-500 block">LIS {score}/5</span>}
     </div>
   );
 }
@@ -381,7 +381,7 @@ function AuditColumnCells({
   const py = compact ? "py-1.5" : "py-2.5";
   return (
     <>
-      <td className={clsx("px-3 text-center font-mono text-xs align-middle", py)}>
+      <td className={clsx("px-3 text-center font-mono text-[13px] align-middle", py)}>
         <span
           className={clsx(
             passed === total ? "text-emerald-400" : passed >= 2 ? "text-amber-400" : "text-red-400/90",
@@ -394,7 +394,7 @@ function AuditColumnCells({
       <td className={clsx("px-3 text-center align-middle", py)}>
         <span
           className={clsx(
-            "inline-flex px-1.5 py-0.5 rounded border text-[10px] font-semibold whitespace-nowrap",
+            "inline-flex px-1.5 py-0.5 rounded border text-[11px] font-semibold whitespace-nowrap",
             cls,
           )}
           title="Entry sizing mode from gate stack"
@@ -403,7 +403,7 @@ function AuditColumnCells({
         </span>
       </td>
       <td
-        className={clsx("px-3 text-right font-mono text-xs text-slate-300 align-middle", py)}
+        className={clsx("px-3 text-right font-mono text-[13px] text-slate-300 align-middle", py)}
         title="Fused model confidence %"
       >
         {conf != null ? `${conf}%` : "—"}
@@ -523,14 +523,14 @@ function SignalsQuickTickerRow({
         </td>
         <td className="px-3 py-1.5 align-middle">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(status.light))}>
+            <span className={clsx("text-[13px] font-bold uppercase tracking-wide", listStatusTone(status.light))}>
               {status.title}
             </span>
-            <span className="text-[10px] font-mono text-slate-500">{tradingGateSummaryLabel(gates)}</span>
+            <span className="text-[11px] font-mono text-slate-500">{tradingGateSummaryLabel(gates)}</span>
           </div>
         </td>
         {showEarningsCol && (
-          <td className="px-3 py-1.5 align-middle text-xs">
+          <td className="px-3 py-1.5 align-middle text-[13px]">
             <EarningsCell signal={r} />
           </td>
         )}
@@ -580,22 +580,22 @@ function SignalsMobileActionGroupHeader({
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(light))}>
+            <span className={clsx("text-[13px] font-bold uppercase tracking-wide", listStatusTone(light))}>
               {group.title}
             </span>
-            <span className="text-[10px] font-mono text-slate-500">
+            <span className="text-[11px] font-mono text-slate-500">
               {group.rows.length} {group.rows.length === 1 ? "ticker" : "tickers"}
             </span>
           </div>
           {collapsed ? (
-            <p className="mt-1 text-xs text-slate-400 truncate">
+            <p className="mt-1 text-[13px] text-slate-400 truncate">
               {preview}
               {extra}
             </p>
           ) : group.subtitle ? (
-            <p className="mt-1 text-xs text-slate-400 line-clamp-2 leading-snug">{group.subtitle}</p>
+            <p className="mt-1 text-[13px] text-slate-400 line-clamp-2 leading-snug">{group.subtitle}</p>
           ) : (
-            <p className="mt-1 text-xs text-slate-500 truncate">
+            <p className="mt-1 text-[13px] text-slate-500 truncate">
               {preview}
               {extra}
             </p>
@@ -687,26 +687,26 @@ function SignalsMobileQuickCard({
             <MiniPriceSparkline closes={r.sparkline_closes} width={64} height={22} />
           )}
           {r.daily_move_pct != null && (
-            <span className={clsx("text-[10px] font-semibold tabular-nums", formatDailyMovePct(r.daily_move_pct).className)}>
+            <span className={clsx("text-[11px] font-semibold tabular-nums", formatDailyMovePct(r.daily_move_pct).className)}>
               {formatDailyMovePct(r.daily_move_pct).text}
             </span>
           )}
         </div>
       </div>
       <div className="mt-1 pl-8 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(status.light))}>
+        <span className={clsx("text-[13px] font-bold uppercase tracking-wide", listStatusTone(status.light))}>
           {status.title}
         </span>
         <TradingGateMiniPills gates={gates} />
       </div>
       {r.story_change && (
-        <p className="mt-1 pl-8 text-amber-400/90 text-xs line-clamp-2 leading-snug">{r.story_change}</p>
+        <p className="mt-1 pl-8 text-amber-400/90 text-[13px] line-clamp-2 leading-snug">{r.story_change}</p>
       )}
       {(r.stress_label) && (
-        <p className="mt-1 pl-8 text-[10px] text-sky-300/90 leading-snug">{r.stress_label}</p>
+        <p className="mt-1 pl-8 text-[11px] text-sky-300/90 leading-snug">{r.stress_label}</p>
       )}
       {r.post_earnings_transition?.transition_note && (
-        <p className="mt-1 pl-8 text-[10px] text-indigo-300/90 line-clamp-2 leading-snug">
+        <p className="mt-1 pl-8 text-[11px] text-indigo-300/90 line-clamp-2 leading-snug">
           {r.post_earnings_transition.transition_note}
         </p>
       )}
@@ -799,7 +799,7 @@ function SignalsMobileFullCard({
             ) : tickerActions?.[r.ticker] ? (
               <span
                 className={clsx(
-                  "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                  "text-[11px] font-semibold px-1.5 py-0.5 rounded",
                   RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600",
                   RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300"
                 )}
@@ -814,7 +814,7 @@ function SignalsMobileFullCard({
             <MiniPriceSparkline closes={r.sparkline_closes} width={72} height={24} />
           )}
           {r.daily_move_pct != null && (
-            <span className={clsx("text-[10px] font-semibold tabular-nums", formatDailyMovePct(r.daily_move_pct).className)}>
+            <span className={clsx("text-[11px] font-semibold tabular-nums", formatDailyMovePct(r.daily_move_pct).className)}>
               {formatDailyMovePct(r.daily_move_pct).text}
             </span>
           )}
@@ -824,7 +824,7 @@ function SignalsMobileFullCard({
             return (
               <span
                 className={clsx(
-                  "text-[10px] font-semibold tabular-nums",
+                  "text-[11px] font-semibold tabular-nums",
                   rr >= 2 ? "text-emerald-400" : rr >= 1 ? "text-slate-400" : "text-amber-400"
                 )}
                 title={`Reward:risk from ST stop $${r.st_band!.low.toFixed(2)} / target $${r.st_band!.high.toFixed(2)} vs close`}
@@ -858,7 +858,7 @@ function SignalsMobileFullCard({
           <MLProbPill prob={r.ml_short_prob} />
           <span
             className={clsx(
-              "px-2 py-0.5 rounded text-xs font-medium",
+              "px-2 py-0.5 rounded text-[13px] font-medium",
               r.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
               r.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
               r.regime === "DOWN" && "bg-red-500/20 text-red-400"
@@ -871,13 +871,13 @@ function SignalsMobileFullCard({
           {r.rsi != null && <span className="text-slate-500 text-sm">RSI {r.rsi.toFixed(0)}</span>}
         </div>
       )}
-      {r.earnings_note && <p className="text-amber-400 text-xs mt-1">{r.earnings_note}</p>}
+      {r.earnings_note && <p className="text-amber-400 text-[13px] mt-1">{r.earnings_note}</p>}
       {showEarningsCol && (
         <div className="mt-1">
           <EarningsCell signal={r} />
         </div>
       )}
-      {r.story_change && <p className="text-amber-400/90 text-xs mt-0.5">{r.story_change}</p>}
+      {r.story_change && <p className="text-amber-400/90 text-[13px] mt-0.5">{r.story_change}</p>}
       <div className="mt-2">
         <CompactSignalActionStrip
           signal={r}
@@ -889,7 +889,7 @@ function SignalsMobileFullCard({
       </div>
       <button
         type="button"
-        className="mt-2 w-full flex items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800/70 touch-manipulation"
+        className="mt-2 w-full flex items-center justify-between gap-2 rounded-lg border border-slate-700/80 bg-slate-800/40 px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-slate-800/70 touch-manipulation"
         aria-expanded={openMobileTicker === r.ticker}
         onClick={() => setOpenMobileTicker((t) => (t === r.ticker ? null : r.ticker))}
       >
@@ -899,7 +899,7 @@ function SignalsMobileFullCard({
         <span className="text-slate-500 tabular-nums">{openMobileTicker === r.ticker ? "−" : "+"}</span>
       </button>
       {openMobileTicker === r.ticker && (
-        <div className="mt-2 space-y-1.5 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-[11px] text-slate-300 leading-snug">
+        <div className="mt-2 space-y-1.5 rounded-lg border border-slate-700/60 bg-slate-900/50 px-3 py-2 text-[13px] text-slate-300 leading-snug">
           <div className="flex gap-1.5">
             <span className="text-slate-600 shrink-0 w-7">ST</span>
             <span className="min-w-0">{r.short_suggestion || "—"}</span>
@@ -914,7 +914,7 @@ function SignalsMobileFullCard({
           </div>
           {(r.st_band || r.mt_band || r.lt_band) && (
             <div
-              className="text-[10px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5"
+              className="text-[11px] text-slate-500 pt-1 border-t border-slate-700/60 space-y-0.5"
               title="ST: stop–target. MT: vol band. LT: fair+consensus"
             >
               {r.st_band && (
@@ -1213,7 +1213,7 @@ export function SignalsTable({
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="hidden lg:block text-[11px] text-slate-500 max-w-md truncate flex-1">
+        <p className="hidden lg:block text-[13px] text-slate-500 max-w-md truncate flex-1">
           {isQuick
             ? "Quick view — grouped by action. Expand groups with the chevron · switch to Full detail for a flat list."
             : showModelDetail
@@ -1226,7 +1226,7 @@ export function SignalsTable({
               type="button"
               onClick={() => applyViewMode("quick")}
               className={clsx(
-                "text-xs px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 touch-manipulation",
+                "text-[13px] px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 touch-manipulation",
                 isQuick ? "bg-emerald-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800"
               )}
             >
@@ -1236,7 +1236,7 @@ export function SignalsTable({
               type="button"
               onClick={() => applyViewMode("full")}
               className={clsx(
-                "text-xs px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 touch-manipulation",
+                "text-[13px] px-2.5 py-1.5 sm:py-1 min-h-[44px] sm:min-h-0 touch-manipulation",
                 !isQuick ? "bg-emerald-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800"
               )}
             >
@@ -1247,7 +1247,7 @@ export function SignalsTable({
             type="button"
             onClick={toggleAuditColumns}
             className={clsx(
-              "text-xs px-2.5 py-1.5 sm:py-1 rounded border min-h-[44px] sm:min-h-0 touch-manipulation",
+              "text-[13px] px-2.5 py-1.5 sm:py-1 rounded border min-h-[44px] sm:min-h-0 touch-manipulation",
               showAuditColumns
                 ? "border-sky-500/40 bg-sky-500/10 text-sky-200"
                 : "border-slate-600 text-slate-400 hover:text-slate-200"
@@ -1261,7 +1261,7 @@ export function SignalsTable({
             type="button"
             onClick={toggleModelDetail}
             className={clsx(
-              "text-xs px-2.5 py-1.5 sm:py-1 rounded border min-h-[44px] sm:min-h-0 touch-manipulation",
+              "text-[13px] px-2.5 py-1.5 sm:py-1 rounded border min-h-[44px] sm:min-h-0 touch-manipulation",
               showModelDetail
                 ? "border-violet-500/40 bg-violet-500/10 text-violet-200"
                 : "border-slate-600 text-slate-400 hover:text-slate-200"
@@ -1270,11 +1270,11 @@ export function SignalsTable({
             {showModelDetail ? "Retail view" : "Model detail"}
           </button>
           )}
-          <span className="text-xs text-slate-400">Sort:</span>
+          <span className="text-[13px] text-slate-400">Sort:</span>
           <select
             value={sortBy}
             onChange={(e) => applySort(e.target.value as SignalsSortKey)}
-            className="text-sm sm:text-xs bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
+            className="text-sm sm:text-[13px] bg-slate-800 border border-slate-600 rounded px-2 py-2 sm:py-1 text-slate-300 min-h-[44px] sm:min-h-0 touch-manipulation"
             aria-label="Sort preset"
           >
           <option value="buy_readiness">Best to buy</option>
@@ -1293,7 +1293,7 @@ export function SignalsTable({
         </div>
         </div>
         {showAuditColumns && (
-          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <div className="flex flex-wrap items-center gap-2 text-[13px]">
             <span className="text-slate-500">Min gates:</span>
             {[null, 2, 3, 4].map((g) => (
               <button
@@ -1330,14 +1330,14 @@ export function SignalsTable({
           </div>
         )}
         {earningsDataGap && (
-          <p className="text-[11px] text-slate-500 border border-slate-600/60 rounded-md px-2.5 py-1.5 bg-slate-800/40">
+          <p className="text-[13px] text-slate-500 border border-slate-600/60 rounded-md px-2.5 py-1.5 bg-slate-800/40">
             Earnings quality (EQ) is not available from the data source right now — column hidden to reduce noise.
           </p>
         )}
       </div>
 
       {/* Mobile: card list — gates always visible; swipe left for Open / More */}
-      <p className="md:hidden text-[10px] text-slate-500 px-4 py-1.5 border-b border-slate-700/40 bg-slate-900/30">
+      <p className="md:hidden text-[11px] text-slate-500 px-4 py-1.5 border-b border-slate-700/40 bg-slate-900/30">
         Gates shown inline · tap chevron for more · swipe left for full detail
       </p>
       <div className="md:hidden">
@@ -1414,7 +1414,7 @@ export function SignalsTable({
       {/* Desktop: table + sticky detail rail (no height lock — groups show all rows) */}
       <div className={clsx("hidden md:block", !splitPane && "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start lg:gap-0")}>
       <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-        <p className="hidden lg:block px-3 py-1.5 text-xs text-slate-500 border-b border-slate-800/80">
+        <p className="hidden lg:block px-3 py-1.5 text-[13px] text-slate-500 border-b border-slate-800/80">
           {splitPane
             ? "Click a row to open it in the detail pane · Use chevrons on groups to expand/collapse"
             : "Click a row to preview · Open full detail from the rail · Use chevrons on groups to expand/collapse"}
@@ -1591,14 +1591,14 @@ export function SignalsTable({
                             ) : (
                               <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
                             )}
-                            <span className={clsx("text-xs font-bold uppercase tracking-wide", listStatusTone(deriveListActionStatus(group.rows[0]).light))}>
+                            <span className={clsx("text-[13px] font-bold uppercase tracking-wide", listStatusTone(deriveListActionStatus(group.rows[0]).light))}>
                               {group.title}
                             </span>
-                            <span className="text-xs text-slate-500 font-mono shrink-0">
+                            <span className="text-[13px] text-slate-500 font-mono shrink-0">
                               ({group.rows.length} tickers{collapsed ? " — click to expand" : ""})
                             </span>
                             {group.subtitle && (
-                              <span className="text-xs text-slate-400 truncate flex-1 min-w-0">
+                              <span className="text-[13px] text-slate-400 truncate flex-1 min-w-0">
                                 — {group.subtitle}
                               </span>
                             )}
@@ -1626,7 +1626,7 @@ export function SignalsTable({
                         ))}
                       {!collapsed && group.rows.length > 1 && (
                         <tr className="border-b border-slate-700/40 bg-slate-900/30">
-                          <td colSpan={quickBaseCols} className="px-3 py-1.5 text-xs text-slate-500 text-center">
+                          <td colSpan={quickBaseCols} className="px-3 py-1.5 text-[13px] text-slate-500 text-center">
                             End of {group.title} · {group.rows.length} tickers
                           </td>
                         </tr>
@@ -1668,7 +1668,7 @@ export function SignalsTable({
                     {!r.plan_action && tickerActions?.[r.ticker] && (
                       <span
                         className={clsx(
-                          "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+                          "text-[11px] font-semibold px-1.5 py-0.5 rounded",
                           RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.bg ?? "bg-slate-600",
                           RETAIL_ACTION_STYLE[tickerActions[r.ticker].action]?.text ?? "text-slate-300"
                         )}
@@ -1707,14 +1707,14 @@ export function SignalsTable({
                 </td>
                 )}
                 {showEarningsCol && (
-                <td className="px-3 py-2.5 align-top text-xs">
+                <td className="px-3 py-2.5 align-top text-[13px]">
                   <EarningsCell signal={r} />
                 </td>
                 )}
                 {showModelDetail && (
                   <>
                 <td
-                  className="px-3 py-2.5 text-xs text-slate-300 align-top"
+                  className="px-3 py-2.5 text-[13px] text-slate-300 align-top"
                   title={
                     r.risk_sizing
                       ? `Risk $${(r.risk_sizing.risk_budget_dollars ?? "").toString()} if ${r.risk_sizing.stop_pct}% stop hits; notional ~$${r.risk_sizing.size_dollars.toLocaleString()}`
@@ -1747,7 +1747,7 @@ export function SignalsTable({
                 <td className="px-3 py-2.5">
                   <span
                     className={clsx(
-                      "px-2 py-0.5 rounded text-xs font-medium",
+                      "px-2 py-0.5 rounded text-[13px] font-medium",
                       r.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
                       r.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
                       r.regime === "DOWN" && "bg-red-500/20 text-red-400"

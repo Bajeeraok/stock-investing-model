@@ -180,7 +180,7 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
         title="What to do"
         description="Plan levels did not line up for this persona — notes are withheld until the packet is consistent."
         body={
-          <p className="text-xs text-td-muted leading-relaxed">
+          <p className="text-[13px] text-td-muted leading-relaxed">
             Trading notes unavailable in this mode right now. Try Swing or Scout, or refresh after the next signal run.
           </p>
         }
@@ -219,7 +219,7 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
       description="Verdict first, then the levels that matter. Open Why for gate checks."
       body={
         loading ? (
-          <p className="text-xs text-td-muted italic animate-pulse">Building the 10-second scan…</p>
+          <p className="text-[13px] text-td-muted italic animate-pulse">Building the 10-second scan…</p>
         ) : scan ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-start gap-2">
@@ -228,34 +228,34 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
               </p>
               {driverChip ? (
                 <span
-                  className="shrink-0 rounded border border-td-accent/40/60 bg-td-accent-weak/40 px-1.5 py-0.5 text-[10px] font-medium text-td-accent/90"
+                  className="shrink-0 rounded border border-td-accent/40/60 bg-td-accent-weak/40 px-1.5 py-0.5 text-[11px] font-medium text-td-accent/90"
                   title={driverHeadline || undefined}
                 >
                   {driverChip}
                 </span>
               ) : null}
             </div>
-            <p className="text-xs text-td-muted leading-relaxed">{scan.reason}</p>
+            <p className="text-[13px] text-td-muted leading-relaxed">{scan.reason}</p>
             <ul className="space-y-1">
               {scan.lines.map((line, i) => (
-                <li key={i} className="text-xs text-td-text leading-relaxed">
+                <li key={i} className="text-[13px] text-td-text leading-relaxed">
                   {line}
                 </li>
               ))}
             </ul>
             {scan.timing ? (
-              <p className="text-[11px] text-td-muted italic">{scan.timing}</p>
+              <p className="text-[13px] text-td-muted italic">{scan.timing}</p>
             ) : null}
           </div>
         ) : showTradingNotes ? (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[10px] uppercase tracking-wide text-td-accent/90 font-semibold">
+              <p className="text-[11px] uppercase tracking-wide text-td-accent/90 font-semibold">
                 Trading notes
               </p>
               {driverChip ? (
                 <span
-                  className="rounded border border-td-accent/40/60 bg-td-accent-weak/40 px-1.5 py-0.5 text-[10px] font-medium text-td-accent/90"
+                  className="rounded border border-td-accent/40/60 bg-td-accent-weak/40 px-1.5 py-0.5 text-[11px] font-medium text-td-accent/90"
                   title={driverHeadline || undefined}
                 >
                   {driverChip}
@@ -263,13 +263,13 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
               ) : null}
             </div>
             {noteParagraphs.map((p, i) => (
-              <p key={i} className="text-xs text-td-text leading-relaxed">
+              <p key={i} className="text-[13px] text-td-text leading-relaxed">
                 {p}
               </p>
             ))}
           </div>
         ) : data?.action ? (
-          <p className="text-xs text-td-text leading-relaxed">{data.action.text}</p>
+          <p className="text-[13px] text-td-text leading-relaxed">{data.action.text}</p>
         ) : undefined
       }
       toggleLabel={hasWhy ? "Why? →" : undefined}
@@ -279,9 +279,9 @@ export function NarrativeWaterfallCard({ ticker, mode }: { ticker: string; mode:
           <ModelChecksPanel checks={checks} whyExplainer={data?.why_explainer} />
         ) : (
           <div className="space-y-1">
-            <p className="text-[10px] uppercase tracking-wide text-td-muted font-semibold">Model checks</p>
+            <p className="text-[11px] uppercase tracking-wide text-td-muted font-semibold">Model checks</p>
             {whyLines.map((line, i) => (
-              <p key={i} className="text-xs text-td-muted leading-relaxed whitespace-pre-wrap">
+              <p key={i} className="text-[13px] text-td-muted leading-relaxed whitespace-pre-wrap">
                 {line}
               </p>
             ))}
@@ -309,26 +309,26 @@ function ModelChecksPanel({
 
   return (
     <div className="space-y-3">
-      <p className="text-[10px] uppercase tracking-wide text-td-muted font-semibold">Model checks</p>
+      <p className="text-[11px] uppercase tracking-wide text-td-muted font-semibold">Model checks</p>
 
       {/* Plain-English translation of the gates/targets/catalysts below — the numbers and
           pills stay put underneath as the verifiable detail; this is a reading aid on top
           of them, not a replacement. Silently absent when the LLM path is unavailable. */}
       {explainer ? (
-        <p className="text-xs text-td-text leading-relaxed rounded-lg border border-td-line/60 bg-td-surface2/40 px-2.5 py-2">
+        <p className="text-[13px] text-td-text leading-relaxed rounded-lg border border-td-line/60 bg-td-surface2/40 px-2.5 py-2">
           {explainer}
         </p>
       ) : null}
 
       {unlock ? (
         <div className="rounded-lg border border-td-warn/35 bg-td-warn-weak/25 px-2.5 py-2">
-          <p className="text-xs font-semibold text-td-warn leading-snug">{unlock}</p>
+          <p className="text-[13px] font-semibold text-td-warn leading-snug">{unlock}</p>
         </div>
       ) : null}
 
       {gates.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">Logic checks</p>
+          <p className="text-[11px] uppercase tracking-wide text-td-muted font-medium">Logic checks</p>
           <div className="flex flex-wrap gap-1.5">
             {gates.map((g) => (
               <span
@@ -336,8 +336,8 @@ function ModelChecksPanel({
                 title={g.detail || undefined}
                 className={
                   g.passed
-                    ? "inline-flex items-center gap-1 rounded-full border border-td-accent/40 bg-td-accent-weak/30 px-2 py-0.5 text-[10px] font-medium text-td-accent-ink"
-                    : "inline-flex items-center gap-1 rounded-full border border-td-crit/35 bg-td-crit-weak/25 px-2 py-0.5 text-[10px] font-medium text-td-crit/90"
+                    ? "inline-flex items-center gap-1 rounded-full border border-td-accent/40 bg-td-accent-weak/30 px-2 py-0.5 text-[11px] font-medium text-td-accent-ink"
+                    : "inline-flex items-center gap-1 rounded-full border border-td-crit/35 bg-td-crit-weak/25 px-2 py-0.5 text-[11px] font-medium text-td-crit/90"
                 }
               >
                 <span aria-hidden>{g.passed ? "✓" : "✗"}</span>
@@ -350,12 +350,12 @@ function ModelChecksPanel({
 
       {targets.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">Execution targets</p>
+          <p className="text-[11px] uppercase tracking-wide text-td-muted font-medium">Execution targets</p>
           <ul className="space-y-1">
             {targets.map((t) => (
               <li
                 key={`${t.kind}-${t.value}`}
-                className="flex items-baseline justify-between gap-2 text-xs leading-relaxed"
+                className="flex items-baseline justify-between gap-2 text-[13px] leading-relaxed"
               >
                 <span className="text-td-muted shrink-0">{t.label}</span>
                 <span className="text-td-text font-medium text-right tabular-nums">{t.value}</span>
@@ -367,7 +367,7 @@ function ModelChecksPanel({
 
       {linked.length > 0 ? (
         <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">
+          <p className="text-[11px] uppercase tracking-wide text-td-muted font-medium">
             Gate-linked catalysts
           </p>
           {ROLE_SECTIONS.map(({ role, label, className }) => {
@@ -375,7 +375,7 @@ function ModelChecksPanel({
             if (!rows.length) return null;
             return (
               <div key={role} className="space-y-1.5">
-                <p className="text-[10px] font-medium text-td-muted">{label}</p>
+                <p className="text-[11px] font-medium text-td-muted">{label}</p>
                 <ul className="space-y-1.5">
                   {rows.map((c, i) => (
                     <li
@@ -383,7 +383,7 @@ function ModelChecksPanel({
                       className={`rounded-md border px-2 py-1.5 ${className}`}
                     >
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs font-medium leading-snug">{c.summary || c.name}</span>
+                        <span className="text-[13px] font-medium leading-snug">{c.summary || c.name}</span>
                         {!c.clears_gate ? (
                           <span className="text-[9px] uppercase tracking-wide opacity-70">
                             context only
@@ -391,15 +391,15 @@ function ModelChecksPanel({
                         ) : null}
                       </div>
                       {c.related_gates?.length ? (
-                        <p className="mt-0.5 text-[10px] opacity-80">
+                        <p className="mt-0.5 text-[11px] opacity-80">
                           Related: {c.related_gates.map(gateLabel).join(", ")}
                         </p>
                       ) : null}
                       {c.watch ? (
-                        <p className="mt-0.5 text-[10px] opacity-90">Watch: {c.watch}</p>
+                        <p className="mt-0.5 text-[11px] opacity-90">Watch: {c.watch}</p>
                       ) : null}
                       {c.horizon ? (
-                        <p className="text-[10px] opacity-60">{c.horizon}</p>
+                        <p className="text-[11px] opacity-60">{c.horizon}</p>
                       ) : null}
                     </li>
                   ))}
@@ -410,12 +410,12 @@ function ModelChecksPanel({
         </div>
       ) : newsFallback.length > 0 ? (
         <div className="space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-td-muted font-medium">
+          <p className="text-[11px] uppercase tracking-wide text-td-muted font-medium">
             Company / event catalysts
           </p>
           <ul className="space-y-1">
             {newsFallback.map((n, i) => (
-              <li key={`${n.name}-${i}`} className="text-xs text-td-text leading-relaxed">
+              <li key={`${n.name}-${i}`} className="text-[13px] text-td-text leading-relaxed">
                 <span className="text-td-text">{n.summary || n.name}</span>
                 {n.horizon ? <span className="text-td-muted"> · {n.horizon}</span> : null}
               </li>

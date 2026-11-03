@@ -25,9 +25,9 @@ export function RegimeChart({ report, embedded }: { report: PortfolioReport; emb
         </h3>
       )}
       {embedded && (
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Regime mix</h4>
+        <h4 className="text-[13px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Regime mix</h4>
       )}
-      <p className="text-xs text-slate-500 mb-3">
+      <p className="text-[13px] text-slate-500 mb-3">
         UP = trend supports position; NEUTRAL = mixed; DOWN = consider trim or avoid new buys.
       </p>
       <div className="h-64">

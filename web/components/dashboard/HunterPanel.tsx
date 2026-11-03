@@ -128,7 +128,7 @@ function HunterCard({ r, onTickerClick }: { r: HunterCandidate; onTickerClick?: 
         </span>
         <span className="flex items-center gap-2 shrink-0">
           {r.composite_buy != null && (
-            <span className="font-mono text-[11px] text-td-muted tabular-nums">Score {r.composite_buy.toFixed(0)}</span>
+            <span className="font-mono text-[13px] text-td-muted tabular-nums">Score {r.composite_buy.toFixed(0)}</span>
           )}
           <span className={clsx("font-mono text-[10.5px] font-bold px-2 py-0.5 rounded-full", badge.cls)}>{badge.label}</span>
         </span>
@@ -232,7 +232,7 @@ export function HunterPanel({
               aria-pressed={on}
               title={t.hint}
               className={clsx(
-                "shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                "shrink-0 rounded-full px-3 py-1.5 text-sm font-semibold transition-colors",
                 on ? t.chipOn : "bg-td-surface2/70 text-td-muted hover:text-td-text",
                 n === 0 && !on && "opacity-50",
               )}
@@ -246,7 +246,7 @@ export function HunterPanel({
           onClick={() => setFiltersOpen((o) => !o)}
           aria-expanded={filtersOpen}
           className={clsx(
-            "ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+            "ml-auto shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold",
             filtersOpen || activeFilterCount ? "bg-td-surface2 text-td-text" : "text-td-muted hover:text-td-text",
           )}
         >
@@ -255,7 +255,7 @@ export function HunterPanel({
         </button>
       </div>
 
-      <p className="text-[11px] text-td-muted">
+      <p className="text-[13px] text-td-muted">
         {shownCount} of {panel?.universe_size ?? allCandidates.length}
         {" · "}
         {source === "portfolio" ? "owning" : source === "watchlist_only" ? "watching" : "your book"}
@@ -265,7 +265,7 @@ export function HunterPanel({
       {filtersOpen && (
         <div className="rounded-xl border border-td-line bg-td-surface p-3 space-y-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-td-muted uppercase tracking-wide shrink-0 w-12">Screen</span>
+            <span className="text-[11px] text-td-muted uppercase tracking-wide shrink-0 w-12">Screen</span>
             {BUILTIN_HUNTER_SCREENS.map((s) => (
               <button
                 key={s.id}
@@ -273,7 +273,7 @@ export function HunterPanel({
                 title={s.hint}
                 onClick={() => handleScreen(s.id)}
                 className={clsx(
-                  "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                  "text-[13px] px-2 py-1 rounded-full border shrink-0",
                   screen === s.id
                     ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
                     : "border-slate-600 text-slate-400 hover:text-slate-200",
@@ -288,7 +288,7 @@ export function HunterPanel({
                 type="button"
                 onClick={() => handleScreen(`custom:${c.id}` as HunterScreenId)}
                 className={clsx(
-                  "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                  "text-[13px] px-2 py-1 rounded-full border shrink-0",
                   screen === `custom:${c.id}`
                     ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
                     : "border-slate-600 text-slate-400",
@@ -299,7 +299,7 @@ export function HunterPanel({
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-td-muted uppercase tracking-wide shrink-0 w-12">Book</span>
+            <span className="text-[11px] text-td-muted uppercase tracking-wide shrink-0 w-12">Book</span>
             {TICKER_SOURCE_FILTERS.map((f) => (
               <button
                 key={f.id}
@@ -307,7 +307,7 @@ export function HunterPanel({
                 title={f.hint}
                 onClick={() => onSourceChange(f.id)}
                 className={clsx(
-                  "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                  "text-[13px] px-2 py-1 rounded-full border shrink-0",
                   source === f.id
                     ? "border-sky-500/45 bg-sky-500/15 text-sky-200"
                     : "border-slate-600 text-slate-400 hover:text-slate-200",
@@ -317,7 +317,7 @@ export function HunterPanel({
               </button>
             ))}
           </div>
-          <details className="text-[11px] text-slate-500">
+          <details className="text-[13px] text-slate-500">
             <summary className="cursor-pointer hover:text-slate-400">Save custom screen (max 2)</summary>
             <CustomScreenEditor
               screens={customScreens}
@@ -327,7 +327,7 @@ export function HunterPanel({
               }}
             />
           </details>
-          <p className="text-[10.5px] text-td-muted leading-snug">
+          <p className="text-[10.5px] text-td-muted leading-relaxed">
             {panel?.methodology ??
               "Your book (watchlist + portfolio) — tactical velocity or readiness tiers. Updates on Dashboard Refresh."}
           </p>
@@ -335,7 +335,7 @@ export function HunterPanel({
       )}
 
       {panel?.message && (
-        <p className="text-xs text-amber-200/90 border border-amber-500/30 rounded-lg px-3 py-2">{panel.message}</p>
+        <p className="text-[13px] text-amber-200/90 border border-amber-500/30 rounded-lg px-3 py-2">{panel.message}</p>
       )}
 
       {filtered.length === 0 ? (
@@ -355,7 +355,7 @@ export function HunterPanel({
                   <h4 className={clsx("text-[11.5px] font-bold uppercase tracking-wider", t.head)}>
                     {t.title} · {rows.length}
                   </h4>
-                  <span className="text-[11px] text-td-muted">{t.hint}</span>
+                  <span className="text-[13px] text-td-muted">{t.hint}</span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                   {visible.map((r) => (
@@ -403,7 +403,7 @@ function CustomScreenEditor({
         value={label}
         onChange={(e) => setLabel(e.target.value)}
         placeholder="Screen name"
-        className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+        className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-200"
       />
       <div className="flex flex-wrap gap-1">
         {(["velocity", "go_ready", "almost_ready", "warming"] as HunterReason[]).map((r) => (
@@ -414,7 +414,7 @@ function CustomScreenEditor({
               setReasons((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]))
             }
             className={clsx(
-              "text-[10px] px-2 py-0.5 rounded border",
+              "text-[11px] px-2 py-0.5 rounded border",
               reasons.includes(r) ? "border-emerald-500/40 text-emerald-200" : "border-slate-600 text-slate-500",
             )}
           >
@@ -426,7 +426,7 @@ function CustomScreenEditor({
         type="button"
         onClick={add}
         disabled={screens.length >= 2}
-        className="text-xs text-emerald-300 border border-emerald-500/40 rounded px-2 py-1 disabled:opacity-40"
+        className="text-[13px] text-emerald-300 border border-emerald-500/40 rounded px-2 py-1 disabled:opacity-40"
       >
         Add screen
       </button>

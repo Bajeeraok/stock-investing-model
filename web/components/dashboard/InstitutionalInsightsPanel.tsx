@@ -172,7 +172,7 @@ export function InstitutionalInsightsPanel({
   if (loading) {
     if (silentOnError) return null;
     return (
-      <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-500">
         Loading institutional ownership & positioning… (first load may take up to 60s)
       </div>
     );
@@ -181,7 +181,7 @@ export function InstitutionalInsightsPanel({
   if (error) {
     if (silentOnError) return null;
     return (
-      <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-xs text-slate-500 flex items-center gap-2">
+      <div className="rounded-lg border border-slate-600/80 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-500 flex items-center gap-2">
         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
         Positioning data unavailable — {error}
       </div>
@@ -206,18 +206,18 @@ export function InstitutionalInsightsPanel({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <Building2 className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <p className="text-[13px] font-semibold uppercase tracking-wider text-slate-400">
             Institutional positioning
           </p>
         </div>
         <div className="flex items-center gap-2">
           {instPct != null && (
-            <span className="text-[11px] font-mono font-semibold text-emerald-300">
+            <span className="text-[13px] font-mono font-semibold text-emerald-300">
               {instPct.toFixed(1)}% held
             </span>
           )}
           {io?.major_holders?.institutions_count != null && (
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[11px] text-slate-500">
               {Math.round(io.major_holders.institutions_count).toLocaleString()} institutions
             </span>
           )}
@@ -241,9 +241,9 @@ export function InstitutionalInsightsPanel({
                   {/* Rank */}
                   <span className="text-[9px] text-slate-700 w-3 shrink-0 text-right">{i + 1}</span>
                   {/* Name */}
-                  <span className="text-[11px] text-slate-300 truncate flex-1">{h.holder ?? "—"}</span>
+                  <span className="text-[13px] text-slate-300 truncate flex-1">{h.holder ?? "—"}</span>
                   {/* % held */}
-                  <span className="text-[11px] font-mono text-slate-200 tabular-nums shrink-0 w-10 text-right">
+                  <span className="text-[13px] font-mono text-slate-200 tabular-nums shrink-0 w-10 text-right">
                     {h.pct_held != null ? `${h.pct_held.toFixed(1)}%` : "—"}
                   </span>
                   {/* Q/Q bar + label */}
@@ -257,14 +257,14 @@ export function InstitutionalInsightsPanel({
                           )} style={{ width: `${Math.min(Math.abs(chg) * 8, 32)}px`, minWidth: "4px" }} />
                         </div>
                         <span className={clsx(
-                          "text-[10px] font-mono tabular-nums shrink-0 w-12 text-right",
+                          "text-[11px] font-mono tabular-nums shrink-0 w-12 text-right",
                           isUp ? "text-emerald-400" : isDown ? "text-red-400" : "text-slate-500",
                         )}>
                           {chg >= 0 ? "+" : ""}{chg.toFixed(1)}%
                         </span>
                       </>
                     ) : (
-                      <span className="text-[10px] text-slate-700 w-12 text-right">—</span>
+                      <span className="text-[11px] text-slate-700 w-12 text-right">—</span>
                     )}
                   </div>
                 </div>
@@ -277,17 +277,17 @@ export function InstitutionalInsightsPanel({
         </div>
       ) : (
         <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
-          <p className="text-[10px] uppercase text-slate-500 mb-0.5">Institutional % (Yahoo, delayed)</p>
+          <p className="text-[11px] uppercase text-slate-500 mb-0.5">Institutional % (Yahoo, delayed)</p>
           {instPct != null ? (
             <>
               <p className="text-lg font-semibold text-emerald-300 font-mono">{instPct.toFixed(1)}%</p>
-              <p className="text-[10px] text-slate-500 leading-snug mt-0.5">
+              <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
                 {io?.source_note ?? "Aggregated from quarterly 13F filings via Yahoo Finance"}
                 {io?.as_of ? ` · as of ${io.as_of}` : ""}
               </p>
             </>
           ) : (
-            <p className="text-slate-500 text-xs">{io?.error || "Institutional % unavailable"}</p>
+            <p className="text-slate-500 text-[13px]">{io?.error || "Institutional % unavailable"}</p>
           )}
         </div>
       )}
@@ -304,10 +304,10 @@ export function InstitutionalInsightsPanel({
           )}
         >
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-[10px] uppercase text-slate-500">13F conviction filter (Layer 3)</p>
+            <p className="text-[11px] uppercase text-slate-500">13F conviction filter (Layer 3)</p>
             <span
               className={clsx(
-                "text-[10px] font-bold uppercase tracking-wider",
+                "text-[11px] font-bold uppercase tracking-wider",
                 cf.verdict === "supports"
                   ? "text-emerald-400"
                   : cf.verdict === "concerns"
@@ -328,21 +328,21 @@ export function InstitutionalInsightsPanel({
                 : ""}
             </p>
           )}
-          <p className="text-[10px] text-slate-500 leading-snug mt-1">
+          <p className="text-[11px] text-slate-500 leading-snug mt-1">
             {cf.pct_of_float != null && <>Float {cf.pct_of_float >= 0 ? "+" : ""}{cf.pct_of_float}% · </>}
             {cf.pct_of_adv != null && <>ADV {cf.pct_of_adv >= 0 ? "+" : ""}{cf.pct_of_adv}% · </>}
             {cf.buy_the_dip ? "Buy-the-dip pattern · " : ""}
             {cf.lag_note ?? "Quarterly 13F — not a daily entry trigger."}
           </p>
-          {cf.detail && <p className="text-[10px] text-slate-400 mt-1 leading-snug">{cf.detail}</p>}
+          {cf.detail && <p className="text-[11px] text-slate-400 mt-1 leading-snug">{cf.detail}</p>}
         </div>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-3 text-xs">
+      <div className="grid gap-2 sm:grid-cols-3 text-[13px]">
         <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">
-          <p className="text-[10px] uppercase text-slate-500 mb-0.5">Insider (FMP list)</p>
+          <p className="text-[11px] uppercase text-slate-500 mb-0.5">Insider (FMP list)</p>
           {iw?.error ? (
-            <p className="text-slate-500 text-[10px] leading-snug">No FMP list — Form 4 insider still in confidence layer.</p>
+            <p className="text-slate-500 text-[11px] leading-snug">No FMP list — Form 4 insider still in confidence layer.</p>
           ) : (
             <p className="text-slate-200 flex items-center gap-1">
               {(iw?.signal ?? 0) >= 0 ? (
@@ -357,13 +357,13 @@ export function InstitutionalInsightsPanel({
         </div>
 
         <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">
-          <p className="text-[10px] uppercase text-slate-500 mb-0.5">Short interest</p>
+          <p className="text-[11px] uppercase text-slate-500 mb-0.5">Short interest</p>
           {si?.short_float_pct != null ? (
             <>
               <p className="text-slate-200 font-mono">{si.short_float_pct.toFixed(1)}% float</p>
-              <p className="text-slate-500 text-[10px] leading-snug">{si.signal}</p>
+              <p className="text-slate-500 text-[11px] leading-snug">{si.signal}</p>
               {si.days_to_cover != null && (
-                <p className="text-slate-600 text-[10px]">DTC {si.days_to_cover.toFixed(1)}d · {si.source}</p>
+                <p className="text-slate-600 text-[11px]">DTC {si.days_to_cover.toFixed(1)}d · {si.source}</p>
               )}
             </>
           ) : (
@@ -372,12 +372,12 @@ export function InstitutionalInsightsPanel({
         </div>
 
         <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">
-          <p className="text-[10px] uppercase text-slate-500 mb-0.5">Holder trend</p>
+          <p className="text-[11px] uppercase text-slate-500 mb-0.5">Holder trend</p>
           {it?.trend && it.trend !== "UNKNOWN" ? (
             <>
               <p className={clsx("font-medium", trendColor(it.trend))}>{it.trend}</p>
               {it.pct_institutions_increasing != null && (
-                <p className="text-slate-500 text-[10px]">
+                <p className="text-slate-500 text-[11px]">
                   {(it.pct_institutions_increasing * 100).toFixed(0)}% increasing · n={it.total_institutions}
                   {" · "}
                   {sourceLabel(it.source ?? undefined)}
@@ -385,7 +385,7 @@ export function InstitutionalInsightsPanel({
               )}
             </>
           ) : (
-            <p className="text-slate-500 text-[10px] leading-snug">
+            <p className="text-slate-500 text-[11px] leading-snug">
               {it?.error || "Trend unavailable — check top holders below."}
             </p>
           )}
@@ -396,15 +396,15 @@ export function InstitutionalInsightsPanel({
 
       {e13 && !e13.error && (e13.top_holder_changes?.length ?? 0) > 0 && (
         <div className="rounded-md border border-slate-700/60 bg-slate-900/40 px-2.5 py-2">
-          <p className="text-[10px] uppercase text-slate-500 mb-0.5">SEC 13F holder changes (sample)</p>
-          <p className="text-[10px] text-slate-600 mb-1.5">
+          <p className="text-[11px] uppercase text-slate-500 mb-0.5">SEC 13F holder changes (sample)</p>
+          <p className="text-[11px] text-slate-600 mb-1.5">
             {e13.source_note}
             {e13.period_ending ? ` · Q ending ${e13.period_ending}` : ""}
             {e13.filings_analyzed ? ` · ${e13.filings_analyzed} filings parsed` : ""}
           </p>
           <ul className="space-y-1">
             {e13.top_holder_changes!.slice(0, 4).map((r, i) => (
-              <li key={`${r.filer}-${i}`} className="flex justify-between gap-2 text-[11px]">
+              <li key={`${r.filer}-${i}`} className="flex justify-between gap-2 text-[13px]">
                 <span className="text-slate-400 truncate">{r.filer}</span>
                 <span
                   className={clsx(
@@ -421,7 +421,7 @@ export function InstitutionalInsightsPanel({
       )}
 
       {e13?.timed_out && (
-        <p className="text-[10px] text-amber-400/90">
+        <p className="text-[11px] text-amber-400/90">
           SEC 13F sample timed out — institutional % and Yahoo holder trend above are still valid.
         </p>
       )}

@@ -12,7 +12,7 @@ export function StoryAlerts({ items, onTickerClick }: { items: Signal[]; onTicke
         <h2 className="font-semibold text-amber-400">Story Change Alerts</h2>
         <AlertHorizonChip kind="story" compact />
       </div>
-      <p className="text-[11px] text-slate-500 mb-3 ml-7">
+      <p className="text-[13px] text-slate-500 mb-3 ml-7">
         Chip shows what fired the alert (composite regime/score or ST/MT/LT suggestion flip)
       </p>
       <div className="space-y-2">
@@ -50,7 +50,7 @@ export function StoryAlerts({ items, onTickerClick }: { items: Signal[]; onTicke
                 />
               </div>
               {horizonLine && (
-                <p className="text-[10px] text-slate-500 font-mono" title="Current horizon suggestions for context">
+                <p className="text-[11px] text-slate-500 font-mono" title="Current horizon suggestions for context">
                   Playbooks: {horizonLine}
                 </p>
               )}

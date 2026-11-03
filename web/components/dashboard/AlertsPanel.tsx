@@ -74,18 +74,18 @@ function ModeChips({ signals }: { signals?: Record<string, unknown> }) {
   return (
     <>
       {held && (
-        <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-sky-500/10 text-sky-300 border-sky-500/30" title="You hold this position">
+        <span className="text-[11px] px-2 py-0.5 rounded border shrink-0 bg-sky-500/10 text-sky-300 border-sky-500/30" title="You hold this position">
           Held
         </span>
       )}
       {em && (
-        <span className={clsx("text-[10px] px-2 py-0.5 rounded border shrink-0", em.cls)} title={em.title}>
+        <span className={clsx("text-[11px] px-2 py-0.5 rounded border shrink-0", em.cls)} title={em.title}>
           {em.text}
         </span>
       )}
       {protect === true && (
         <span
-          className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-violet-500/10 text-violet-300 border-violet-500/30"
+          className="text-[11px] px-2 py-0.5 rounded border shrink-0 bg-violet-500/10 text-violet-300 border-violet-500/30"
           title="Optional protect mode is on (stock below 200-day average or SPY risk-off): ~half position if you use it"
         >
           Protect on
@@ -109,9 +109,9 @@ const ALERT_RULES: { type: string; when: string; who: string; mode: string }[] =
 
 function AlertRulesExplainer() {
   return (
-    <details className="rounded-lg border border-slate-700/60 bg-slate-950/30 px-3 py-2 text-xs text-slate-400">
+    <details className="rounded-lg border border-slate-700/60 bg-slate-950/30 px-3 py-2 text-[13px] text-slate-400">
       <summary className="cursor-pointer text-slate-300 font-medium">How alerts are checked (rules &amp; modes)</summary>
-      <p className="mt-2 text-[11px] text-slate-500">
+      <p className="mt-2 text-[13px] text-slate-500">
         Checked on every dashboard refresh (~15 min in market hours). No alert means &quot;sell because the score is low&quot; —
         a chosen stock&apos;s default is HOLD. Chips on each alert show Held, entry mode (Full GO / Starter only / Locked) and Protect on.
       </p>
@@ -259,10 +259,10 @@ function TickerAlertAccordion({
         ) : (
           <span className="font-mono text-slate-200 text-sm font-semibold">MACRO</span>
         )}
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 tabular-nums">
+        <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 tabular-nums">
           {group.alerts.length} alerts
         </span>
-        <span className="text-[10px] font-bold uppercase text-amber-300/90 ml-auto">{prLabel(topPriority)}</span>
+        <span className="text-[11px] font-bold uppercase text-amber-300/90 ml-auto">{prLabel(topPriority)}</span>
       </button>
       {open && (
         <div className="p-2 pt-0 space-y-2 border-t border-slate-700/40">
@@ -339,26 +339,26 @@ function AlertCard({
             )}
             <span className="text-sm text-slate-200 font-semibold">{a.headline}</span>
             {side === "buy" ? (
-              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-semibold uppercase tracking-wide">
+              <span className="text-[11px] px-2 py-0.5 rounded border shrink-0 bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-semibold uppercase tracking-wide">
                 Buy
               </span>
             ) : side === "sell" ? (
-              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-red-500/10 text-red-300 border-red-500/30 font-semibold uppercase tracking-wide">
+              <span className="text-[11px] px-2 py-0.5 rounded border shrink-0 bg-red-500/10 text-red-300 border-red-500/30 font-semibold uppercase tracking-wide">
                 Sell
               </span>
             ) : null}
             {zoneOnly && buyZone ? (
-              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-amber-500/15 text-amber-200 border-amber-500/35 font-semibold uppercase tracking-wide">
+              <span className="text-[11px] px-2 py-0.5 rounded border shrink-0 bg-amber-500/15 text-amber-200 border-amber-500/35 font-semibold uppercase tracking-wide">
                 Zone only
               </span>
             ) : gatesClear && buyZone ? (
-              <span className="text-[10px] px-2 py-0.5 rounded border shrink-0 bg-emerald-500/15 text-emerald-200 border-emerald-500/35 font-semibold uppercase tracking-wide">
+              <span className="text-[11px] px-2 py-0.5 rounded border shrink-0 bg-emerald-500/15 text-emerald-200 border-emerald-500/35 font-semibold uppercase tracking-wide">
                 Gates OK
               </span>
             ) : null}
             <span
               className={clsx(
-                "text-[10px] px-2 py-0.5 rounded border shrink-0",
+                "text-[11px] px-2 py-0.5 rounded border shrink-0",
                 a.priority === 1
                   ? "bg-red-500/15 text-red-300 border-red-500/30"
                   : a.priority === 2
@@ -371,10 +371,10 @@ function AlertCard({
               {prLabel(a.priority)}
             </span>
             <ModeChips signals={a.signals} />
-            <span className="text-[10px] text-slate-500 shrink-0">{`Risk: ${a.risk_level}`}</span>
+            <span className="text-[11px] text-slate-500 shrink-0">{`Risk: ${a.risk_level}`}</span>
             {a.timestamp ? (
               <span
-                className="text-[10px] text-slate-500 shrink-0 tabular-nums"
+                className="text-[11px] text-slate-500 shrink-0 tabular-nums"
                 title={formatSnapshotEt(a.timestamp)}
               >
                 Generated{" "}
@@ -382,9 +382,9 @@ function AlertCard({
               </span>
             ) : null}
           </div>
-          <p className="text-xs text-slate-300 mt-1 leading-relaxed">{entryZonePrimaryCopy(a)}</p>
+          <p className="text-[13px] text-slate-300 mt-1 leading-relaxed">{entryZonePrimaryCopy(a)}</p>
           {buyZone && zoneOnly && (
-            <p className="text-[11px] text-amber-200/90 mt-1.5 leading-snug rounded-md border border-amber-500/25 bg-amber-950/30 px-2 py-1.5">
+            <p className="text-[13px] text-amber-200/90 mt-1.5 leading-snug rounded-md border border-amber-500/25 bg-amber-950/30 px-2 py-1.5">
               <span className="font-semibold">Not a buy signal yet.</span> Band = where you&apos;d add if gates pass.
               {zoneSig?.gatesPassed != null
                 ? ` Currently ${zoneSig.gatesPassed}/${zoneSig.gatesTotal} primary gates — open ticker detail for the blocker.`
@@ -392,19 +392,19 @@ function AlertCard({
             </p>
           )}
           {buyZone && gatesClear && (
-            <p className="text-[11px] text-emerald-200/90 mt-1.5 leading-snug">
+            <p className="text-[13px] text-emerald-200/90 mt-1.5 leading-snug">
               Gates clear — staged add allowed. Still use stop/target and tranche sizing.
             </p>
           )}
           {almostReady && (
-            <p className="text-[11px] text-amber-300/85 mt-1 leading-snug">
+            <p className="text-[13px] text-amber-300/85 mt-1 leading-snug">
               Almost ready (3/4 gates + ST buy) — not full GO yet. Watch the last blocker; paper track still needs 4/4.
             </p>
           )}
           {a.one_liner && (
             <p
               className={clsx(
-                "text-[11px] mt-1 leading-snug tabular-nums",
+                "text-[13px] mt-1 leading-snug tabular-nums",
                 zoneOnly && buyZone ? "text-slate-500" : "text-slate-400",
               )}
             >
@@ -412,7 +412,7 @@ function AlertCard({
             </p>
           )}
           {a.actionable && a.body && (
-            <p className="text-[11px] text-slate-500 mt-1 leading-snug" title="Context">
+            <p className="text-[13px] text-slate-500 mt-1 leading-snug" title="Context">
               {a.body}
             </p>
           )}
@@ -472,12 +472,12 @@ function AlertGroup({
             ) : (
               <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" />
             )}
-            <span className="text-xs font-semibold uppercase tracking-wide text-slate-300">{title}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 tabular-nums">
+            <span className="text-[13px] font-semibold uppercase tracking-wide text-slate-300">{title}</span>
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 tabular-nums">
               {alerts.length}
             </span>
           </div>
-          {subtitle && <p className="text-[11px] text-slate-500 mt-0.5 ml-6">{subtitle}</p>}
+          {subtitle && <p className="text-[13px] text-slate-500 mt-0.5 ml-6">{subtitle}</p>}
         </div>
       </button>
       {open && (
@@ -641,12 +641,12 @@ export function AlertsPanel({
             <Bell className="h-4 w-4 text-emerald-400 shrink-0" />
             <h3 className="text-sm font-semibold text-slate-200">Alerts</h3>
             {actionCount > 0 ? (
-              <span className="text-xs text-amber-300 font-medium tabular-nums">{actionCount} action</span>
+              <span className="text-[13px] text-amber-300 font-medium tabular-nums">{actionCount} action</span>
             ) : null}
             {watchCount > 0 && (
-              <span className="text-xs text-slate-500 tabular-nums">{watchCount} watch soon</span>
+              <span className="text-[13px] text-slate-500 tabular-nums">{watchCount} watch soon</span>
             )}
-            <span className="text-xs text-slate-600 tabular-nums">
+            <span className="text-[13px] text-slate-600 tabular-nums">
               ({visibleAlerts.length} shown
               {alerts.length > visibleAlerts.length
                 ? ` · ${alerts.length - visibleAlerts.length} hidden by filters`
@@ -659,7 +659,7 @@ export function AlertsPanel({
           type="button"
           onClick={() => fetchAlerts()}
           className={clsx(
-            "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs shrink-0 touch-manipulation",
+            "flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] shrink-0 touch-manipulation",
             "border-slate-600 text-slate-300 hover:bg-slate-800 disabled:opacity-50",
           )}
           disabled={loading}
@@ -673,12 +673,12 @@ export function AlertsPanel({
       <AlertRulesExplainer />
 
       <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 shrink-0">Tracks</span>
+        <span className="text-[11px] uppercase tracking-wide text-slate-500 shrink-0">Tracks</span>
         <button
           type="button"
           onClick={() => updateTrackPref("accumulate", !trackPrefs.accumulate)}
           className={clsx(
-            "px-2.5 py-1 rounded border text-[11px] font-medium touch-manipulation",
+            "px-2.5 py-1 rounded border text-[13px] font-medium touch-manipulation",
             trackPrefs.accumulate
               ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
               : "border-slate-600 text-slate-500 hover:border-slate-500",
@@ -691,7 +691,7 @@ export function AlertsPanel({
           type="button"
           onClick={() => updateTrackPref("tactical", !trackPrefs.tactical)}
           className={clsx(
-            "px-2.5 py-1 rounded border text-[11px] font-medium touch-manipulation",
+            "px-2.5 py-1 rounded border text-[13px] font-medium touch-manipulation",
             trackPrefs.tactical
               ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
               : "border-slate-600 text-slate-500 hover:border-slate-500",
@@ -703,7 +703,7 @@ export function AlertsPanel({
       </div>
 
       <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-[10px] uppercase tracking-wide text-slate-500 shrink-0">Side</span>
+        <span className="text-[11px] uppercase tracking-wide text-slate-500 shrink-0">Side</span>
         {(
           [
             ["all", "All", null] as const,
@@ -716,7 +716,7 @@ export function AlertsPanel({
             type="button"
             onClick={() => applySideFilter(id)}
             className={clsx(
-              "px-2.5 py-1 rounded border text-[11px] font-medium touch-manipulation",
+              "px-2.5 py-1 rounded border text-[13px] font-medium touch-manipulation",
               sideFilter === id
                 ? id === "buy"
                   ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
@@ -744,7 +744,7 @@ export function AlertsPanel({
           type="button"
           onClick={() => setViewMode("action")}
           className={clsx(
-            "px-3 py-1.5 text-xs font-medium touch-manipulation",
+            "px-3 py-1.5 text-[13px] font-medium touch-manipulation",
             viewMode === "action" ? "bg-emerald-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800",
           )}
         >
@@ -754,7 +754,7 @@ export function AlertsPanel({
           type="button"
           onClick={() => setViewMode("all")}
           className={clsx(
-            "px-3 py-1.5 text-xs font-medium touch-manipulation",
+            "px-3 py-1.5 text-[13px] font-medium touch-manipulation",
             viewMode === "all" ? "bg-emerald-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800",
           )}
         >
@@ -765,7 +765,7 @@ export function AlertsPanel({
       {error && (
         <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
           <AlertTriangle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-red-300">Failed to load alerts: {error}</p>
+          <p className="text-[13px] text-red-300">Failed to load alerts: {error}</p>
         </div>
       )}
 
@@ -812,7 +812,7 @@ export function AlertsPanel({
             <button
               type="button"
               onClick={() => setViewMode("all")}
-              className="text-xs text-violet-300 hover:text-violet-200 underline-offset-2 hover:underline"
+              className="text-[13px] text-violet-300 hover:text-violet-200 underline-offset-2 hover:underline"
             >
               Show {watchCount} watch-soon alert{watchCount === 1 ? "" : "s"} (medium / low)
             </button>
@@ -851,12 +851,12 @@ export function AlertsPanel({
 
       <footer className="pt-2 border-t border-slate-700/50 space-y-1">
         {lastAt && (
-          <p className="text-[11px] text-slate-600">
+          <p className="text-[13px] text-slate-600">
             Last refreshed:{" "}
             {lastAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}
           </p>
         )}
-        <p className="text-[11px] text-slate-500">{headerNote}</p>
+        <p className="text-[13px] text-slate-500">{headerNote}</p>
       </footer>
     </div>
   );

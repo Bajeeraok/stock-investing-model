@@ -52,7 +52,7 @@ export function RiskProfileSelector({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Risk profile</span>
+        <span className="text-[13px] font-medium text-slate-400 uppercase tracking-wide">Risk profile</span>
         <div className="flex rounded-lg border border-slate-700 overflow-hidden">
           {PROFILES.map((p) => (
             <button
@@ -61,7 +61,7 @@ export function RiskProfileSelector({
               title={p.hint}
               onClick={() => setProfile(p.id)}
               className={clsx(
-                "px-3 py-1.5 text-xs font-medium transition-colors touch-manipulation",
+                "px-3 py-1.5 text-[13px] font-medium transition-colors touch-manipulation",
                 current === p.id
                   ? "bg-emerald-600/80 text-white"
                   : "bg-slate-800/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800",
@@ -71,11 +71,11 @@ export function RiskProfileSelector({
             </button>
           ))}
         </div>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-[13px] text-slate-500">
           {PROFILES.find((p) => p.id === current)?.hint}
         </span>
       </div>
-      {error && <p className="text-[11px] text-red-400">{error}</p>}
+      {error && <p className="text-[13px] text-red-400">{error}</p>}
     </div>
   );
 }

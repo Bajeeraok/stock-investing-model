@@ -45,10 +45,10 @@ function BlockingGateStrip({ ctx }: { ctx: TabCtx }) {
             Blocking now: {failing.label}
           </p>
           {failing.detail && (
-            <p className="text-xs text-amber-100/80 leading-snug mt-0.5">{failing.detail}</p>
+            <p className="text-[13px] text-amber-100/80 leading-snug mt-0.5">{failing.detail}</p>
           )}
           {unlock && (
-            <p className="text-xs text-slate-400 leading-snug mt-1.5 pt-1.5 border-t border-amber-500/15">
+            <p className="text-[13px] text-slate-400 leading-snug mt-1.5 pt-1.5 border-t border-amber-500/15">
               {unlock}
             </p>
           )}
@@ -159,7 +159,7 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
               className="w-full flex items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-800/40 transition-colors"
               aria-expanded={debugPanelOpen}
             >
-              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
+              <span className="text-[13px] font-mono uppercase tracking-wider text-slate-500">
                 Show model internals
               </span>
               {debugPanelOpen ? (
@@ -197,7 +197,7 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
             />
           </div>
         ) : (
-          <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+          <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-[13px] animate-pulse">
             <Activity className="h-4 w-4 shrink-0" />
             <span>Computing price ranges &amp; scenarios…</span>
           </div>
@@ -227,13 +227,13 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
     {confidence ? (
       <section className="space-y-2">
         <div className="rounded-lg border border-slate-700/70 bg-slate-900/40 px-3 py-2">
-          <p className="text-xs font-semibold text-slate-200 uppercase tracking-wide">7-Layer model signal</p>
+          <p className="text-[13px] font-semibold text-slate-200 uppercase tracking-wide">7-Layer model signal</p>
           <p className="text-sm text-slate-400">Regime + ML + options + fundamentals fused.</p>
         </div>
         <ConfidenceBreakdownSafe data={confidence} />
       </section>
     ) : (
-      <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-[13px] animate-pulse">
         <Activity className="h-4 w-4 shrink-0" />
         <span>Loading full confidence model…</span>
       </div>
@@ -242,7 +242,7 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
     {unified ? (
       <section className="space-y-2">
         <div className="rounded-lg border border-slate-700/70 bg-slate-900/20 px-3 py-2">
-          <p className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
+          <p className="text-[13px] font-semibold text-slate-300 uppercase tracking-wide">Technical pattern only</p>
           <p className="text-sm text-slate-500">Chart-pattern context only; not the full fused model verdict.</p>
         </div>
         {hasVerdictConflict && (
@@ -257,7 +257,7 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
         <PatternSignalCardSafe data={unified} />
       </section>
     ) : (
-      <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-xs animate-pulse">
+      <div className="rounded-xl border border-slate-700/50 bg-slate-800/20 px-4 py-3 flex items-center gap-3 text-slate-500 text-[13px] animate-pulse">
         <Activity className="h-4 w-4 shrink-0" />
         <span>Loading chart-pattern readout…</span>
       </div>
@@ -269,39 +269,39 @@ export function WhyTab({ ctx }: { ctx: TabCtx }) {
           <BarChart3 className="h-4 w-4 text-emerald-500" />
           Quick momentum check (rules, not odds)
         </h3>
-        <p className="text-slate-500 text-xs mb-3">
+        <p className="text-slate-500 text-[13px] mb-3">
           These are 0–100 rule scores (not win probabilities). For odds and sizing, rely on the confidence block above.
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
           {detail.score_breakdown.trend != null && (
             <div className="bg-slate-800 rounded-lg p-2 text-center">
-              <p className="text-slate-500 text-xs">Trend strength</p>
+              <p className="text-slate-500 text-[13px]">Trend strength</p>
               <p className={clsx("font-mono font-semibold", detail.score_breakdown.trend >= 80 ? "text-emerald-400" : detail.score_breakdown.trend <= 30 ? "text-red-400" : "text-slate-200")}>
-                {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                {detail.score_breakdown.trend.toFixed(0)}<span className="text-slate-600 text-[13px]">/100</span>
               </p>
             </div>
           )}
           {detail.score_breakdown.rsi != null && (
             <div className="bg-slate-800 rounded-lg p-2 text-center">
-              <p className="text-slate-500 text-xs">Stretched vs normal</p>
+              <p className="text-slate-500 text-[13px]">Stretched vs normal</p>
               <p className={clsx("font-mono font-semibold", detail.score_breakdown.rsi >= 80 ? "text-emerald-400" : detail.score_breakdown.rsi <= 30 ? "text-red-400" : "text-slate-200")}>
-                {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                {detail.score_breakdown.rsi.toFixed(0)}<span className="text-slate-600 text-[13px]">/100</span>
               </p>
             </div>
           )}
           {detail.score_breakdown.macd != null && (
             <div className="bg-slate-800 rounded-lg p-2 text-center">
-              <p className="text-slate-500 text-xs">Momentum shift</p>
+              <p className="text-slate-500 text-[13px]">Momentum shift</p>
               <p className={clsx("font-mono font-semibold", detail.score_breakdown.macd >= 80 ? "text-emerald-400" : detail.score_breakdown.macd <= 30 ? "text-red-400" : "text-slate-200")}>
-                {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                {detail.score_breakdown.macd.toFixed(0)}<span className="text-slate-600 text-[13px]">/100</span>
               </p>
             </div>
           )}
           {detail.score_breakdown.composite != null && (
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center">
-              <p className="text-slate-500 text-xs">Blended</p>
+              <p className="text-slate-500 text-[13px]">Blended</p>
               <p className="font-mono font-semibold text-emerald-400">
-                {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-xs">/100</span>
+                {detail.score_breakdown.composite.toFixed(0)}<span className="text-slate-600 text-[13px]">/100</span>
               </p>
             </div>
           )}

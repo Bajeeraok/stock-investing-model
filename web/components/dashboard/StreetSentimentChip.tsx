@@ -28,11 +28,11 @@ export function StreetSentimentChip({
   return (
     <div
       className={clsx(
-        "rounded-lg border px-3 py-2 text-xs leading-snug",
+        "rounded-lg border px-3 py-2 text-[13px] leading-snug",
         "border-amber-500/35 bg-amber-950/30 text-amber-100/95",
       )}
     >
-      <p className="text-[10px] uppercase tracking-wide font-semibold text-amber-300/80 flex items-center gap-1.5 mb-1">
+      <p className="text-[11px] uppercase tracking-wide font-semibold text-amber-300/80 flex items-center gap-1.5 mb-1">
         <Users className="h-3.5 w-3.5" />
         Street vs execution
       </p>

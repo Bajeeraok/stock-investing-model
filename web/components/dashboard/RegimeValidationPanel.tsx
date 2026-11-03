@@ -34,11 +34,11 @@ export function RegimeValidationPanel({ data }: Props) {
       <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-200">
         <ShieldCheck className="h-4 w-4 text-violet-400" />
         Regime validation
-        {data.error && <span className="text-[11px] font-normal text-amber-300">(last run reported an error)</span>}
+        {data.error && <span className="text-[13px] font-normal text-amber-300">(last run reported an error)</span>}
       </h3>
       {data.summary && <p className="text-sm text-slate-400 leading-snug">{data.summary}</p>}
       {flat.length > 0 && (
-        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-[13px]">
           {flat.slice(0, 18).map(([k, val]) => (
             <div key={k} className="flex justify-between gap-2 border-b border-slate-700/40 py-1">
               <dt className="text-slate-500 truncate">{k.replace(/_/g, " ")}</dt>
@@ -49,7 +49,7 @@ export function RegimeValidationPanel({ data }: Props) {
       )}
       {rows.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs text-left min-w-[420px]">
+          <table className="w-full text-[13px] text-left min-w-[420px]">
             <thead>
               <tr className="text-slate-500 border-b border-slate-700">
                 {cols.map((c) => (

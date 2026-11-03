@@ -50,7 +50,7 @@ export function ScenarioTeaser({
           <span className="text-td-crit">{teaser.bearCount} bearish</span>
         </p>
         {teaser.baseReturnPct != null && (
-          <p className="text-xs text-td-muted mt-0.5">
+          <p className="text-[13px] text-td-muted mt-0.5">
             {teaser.baseName ?? "Base"}:{" "}
             <span className={teaser.baseReturnPct >= 0 ? "text-td-accent" : "text-td-warn"}>
               {teaser.baseReturnPct >= 0 ? "+" : ""}

@@ -35,7 +35,7 @@ function Row({ label, value, mono = true }: { label: string; value: string; mono
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
       <span className="text-td-muted shrink-0">{label}</span>
-      <span className={clsx("text-right text-td-text", mono && "font-mono text-[11px]")}>{value}</span>
+      <span className={clsx("text-right text-td-text", mono && "font-mono text-[13px]")}>{value}</span>
     </div>
   );
 }
@@ -109,11 +109,11 @@ export function FairValueDebugPanel({
           <ChevronRight className="h-3.5 w-3.5 text-td-muted shrink-0" />
         )}
         <SlidersHorizontal className="h-3.5 w-3.5 text-td-muted shrink-0" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-td-text">
+        <span className="text-[13px] font-semibold uppercase tracking-wide text-td-text">
           FV inputs (debug)
         </span>
         {meta.fv_suppressed && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded border border-td-warn/40 text-td-warn/90 bg-td-warn/10">
+          <span className="text-[11px] px-1.5 py-0.5 rounded border border-td-warn/40 text-td-warn/90 bg-td-warn/10">
             Model suppressed
           </span>
         )}
@@ -122,10 +122,10 @@ export function FairValueDebugPanel({
       {open && (
         <div className="px-3.5 pb-3 pt-0.5 space-y-2 border-t border-td-line/40">
           {meta.fv_suppressed && meta.fv_suppressed_reason && (
-            <p className="text-[11px] text-td-warn/80 leading-snug">{meta.fv_suppressed_reason}</p>
+            <p className="text-[13px] text-td-warn/80 leading-snug">{meta.fv_suppressed_reason}</p>
           )}
 
-          <div className="text-xs space-y-0.5">
+          <div className="text-[13px] space-y-0.5">
             <Row label="Spot" value={fmtUsd(currentPrice)} />
             <Row
               label="Display FV"
@@ -148,8 +148,8 @@ export function FairValueDebugPanel({
             )}
           </div>
 
-          <div className="border-t border-td-line/40 pt-2 text-xs space-y-0.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-td-text mb-1">EPS / multiples</p>
+          <div className="border-t border-td-line/40 pt-2 text-[13px] space-y-0.5">
+            <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text mb-1">EPS / multiples</p>
             <Row label="TTM EPS" value={meta.ttm_eps != null ? fmtNum(meta.ttm_eps, 4) : "—"} />
             <Row label="Forward EPS (NTM)" value={meta.forward_eps != null ? fmtNum(meta.forward_eps, 4) : "—"} />
             <Row label="TTM P/E" value={fmtNum(ttmPeUsed ?? null, 1)} />
@@ -164,8 +164,8 @@ export function FairValueDebugPanel({
           </div>
 
           {(meta.growth_used_pct != null || meta.method_used) && (
-            <div className="border-t border-td-line/40 pt-2 text-xs space-y-0.5">
-              <p className="text-xs font-semibold uppercase tracking-wide text-td-text mb-1">Method</p>
+            <div className="border-t border-td-line/40 pt-2 text-[13px] space-y-0.5">
+              <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text mb-1">Method</p>
               {meta.fv_route_method_label && (
                 <Row label="Route" value={meta.fv_route_method_label} mono={false} />
               )}
@@ -193,7 +193,7 @@ export function FairValueDebugPanel({
           )}
 
           {external?.yahoo_12m_mean_usd != null && external?.fmp_consensus_median_usd != null && (
-            <div className="border-t border-td-line/40 pt-2 text-xs text-td-muted leading-relaxed">
+            <div className="border-t border-td-line/40 pt-2 text-[13px] text-td-muted leading-relaxed">
               Yahoo ${external.yahoo_12m_mean_usd.toFixed(2)} · FMP median $
               {external.fmp_consensus_median_usd.toFixed(2)}
               {external.fmp_median_is_range_midpoint ? " (range midpoint)" : ""}

@@ -14,7 +14,7 @@ export function ThesisCheck({ items, onTickerClick }: { items: ThesisCheckType[]
   return (
     <div className="space-y-4">
       {hasResurface && (
-        <p className="text-xs text-slate-400 border border-slate-700 rounded-lg px-3 py-2 bg-slate-900/80 flex items-start gap-2">
+        <p className="text-[13px] text-slate-400 border border-slate-700 rounded-lg px-3 py-2 bg-slate-900/80 flex items-start gap-2">
           <RefreshCw className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" aria-hidden />
           <span>
             When regime or score moves vs your last saved run, we surface your stored thesis and exit rule so you can re-check whether the setup still matches.

@@ -28,7 +28,7 @@ export default function LearnLayout({ children }: { children: React.ReactNode })
           {NAV.map((n) => (
             <Link key={n.href} href={n.href} className="text-slate-400 hover:text-slate-100">{n.label}</Link>
           ))}
-          {!PUBLISHED && <span className="ml-auto rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-400">Unlisted preview</span>}
+          {!PUBLISHED && <span className="ml-auto rounded bg-slate-800 px-2 py-0.5 text-[13px] text-slate-400">Unlisted preview</span>}
         </nav>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-10 [&_h1]:text-3xl [&_h1]:font-extrabold [&_h2]:mt-10 [&_h2]:mb-3 [&_h2]:text-xl [&_h2]:font-bold [&_p]:my-3 [&_p]:leading-relaxed [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-6 [&_li]:my-1 [&_table]:my-4 [&_table]:w-full [&_table]:text-sm [&_th]:border-b [&_th]:border-slate-700 [&_th]:p-2 [&_th]:text-left [&_td]:border-b [&_td]:border-slate-800 [&_td]:p-2">

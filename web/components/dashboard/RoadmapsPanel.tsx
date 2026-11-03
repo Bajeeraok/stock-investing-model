@@ -166,11 +166,11 @@ export function RoadmapsPanel({
                           <>
                             <p className="text-sm text-slate-200 mt-1 line-clamp-2">{item.one_answer.headline}</p>
                             {item.one_answer.subline && (
-                              <p className="text-xs text-amber-200/90 mt-0.5">{item.one_answer.subline}</p>
+                              <p className="text-[13px] text-amber-200/90 mt-0.5">{item.one_answer.subline}</p>
                             )}
                             <span
                               className={clsx(
-                                "inline-block mt-2 text-xs font-medium px-2 py-0.5 rounded",
+                                "inline-block mt-2 text-[13px] font-medium px-2 py-0.5 rounded",
                                 (item.one_answer.verdict === "AVOID" || item.one_answer.verdict === "REDUCE") &&
                                   "bg-red-500/20 text-red-300",
                                 (item.one_answer.verdict === "BUY" || item.one_answer.verdict === "STRONG BUY") &&
@@ -184,14 +184,14 @@ export function RoadmapsPanel({
                           </>
                         )}
                         {!item.one_answer && !item.trade_roadmap && (
-                          <p className="text-xs text-slate-500 mt-1">Roadmap not available</p>
+                          <p className="text-[13px] text-slate-500 mt-1">Roadmap not available</p>
                         )}
                       </div>
                       <div className="flex flex-col gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => onTickerClick(item.ticker)}
-                          className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5"
+                          className="text-[13px] font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-0.5"
                         >
                           Open <ChevronRight className="h-3.5 w-3.5" />
                         </button>
@@ -205,7 +205,7 @@ export function RoadmapsPanel({
                               }
                               setExpandedTicker(isExpanded ? null : item.ticker);
                             }}
-                            className="text-xs text-slate-400 hover:text-slate-300"
+                            className="text-[13px] text-slate-400 hover:text-slate-300"
                           >
                             {isMobile ? "Roadmap" : isExpanded ? "Collapse" : "Expand roadmap"}
                           </button>

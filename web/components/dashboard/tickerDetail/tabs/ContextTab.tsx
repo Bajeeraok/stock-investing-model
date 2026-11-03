@@ -107,7 +107,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
       </h3>
       {detail.earnings && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 text-sm text-amber-200 mb-3">
-          <span className="text-slate-400 text-xs mr-2">Next report</span>
+          <span className="text-slate-400 text-[13px] mr-2">Next report</span>
           {detail.earnings.date}
           {detail.earnings.days_until != null && (
             <span className="text-amber-400/80 ml-2">
@@ -115,7 +115,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
             </span>
           )}
           {detail.earnings_history?.next_consensus && (
-            <span className="text-amber-300/70 ml-2 text-xs">
+            <span className="text-amber-300/70 ml-2 text-[13px]">
               — Street expects EPS {detail.earnings_history.next_consensus.eps_estimated != null ? `$${detail.earnings_history.next_consensus.eps_estimated.toFixed(2)}` : "–"}
               {detail.earnings_history.next_consensus.revenue_estimated != null && (
                 <>, revenue {fmtUsdCompact(detail.earnings_history.next_consensus.revenue_estimated)}</>
@@ -126,8 +126,8 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
       )}
       {detail.earnings_history && (detail.earnings_history.history?.length ?? 0) > 0 && (
         <>
-      <p className="text-xs text-slate-500 mb-1">Recent quarters vs expectations</p>
-      <p className="text-slate-400 text-xs mb-2">{detail.earnings_history.summary}</p>
+      <p className="text-[13px] text-slate-500 mb-1">Recent quarters vs expectations</p>
+      <p className="text-slate-400 text-[13px] mb-2">{detail.earnings_history.summary}</p>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -199,7 +199,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
                 </>
               )}
             </div>
-            <span className="text-slate-500 text-xs whitespace-nowrap">
+            <span className="text-slate-500 text-[13px] whitespace-nowrap">
               {a.published_at ? new Date(a.published_at).toLocaleDateString() : ""}
             </span>
           </div>
@@ -218,7 +218,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
       aria-expanded={moreContextOpen}
     >
       <span className="text-sm font-semibold text-td-text">More fundamentals &amp; data notes</span>
-      <span className="flex items-center gap-1 text-[11px] text-td-muted">
+      <span className="flex items-center gap-1 text-[13px] text-td-muted">
         Returns vs peers · price zones · sector &amp; macro · data quality
         {moreContextOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </span>
@@ -232,7 +232,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
         <BarChart3 className="h-4 w-4" />
         How the stock has performed
       </h3>
-      <p className="text-xs text-slate-500 mb-3">
+      <p className="text-[13px] text-slate-500 mb-3">
         &ldquo;Market&rdquo; is the broad U.S. market (S&amp;P 500, ticker SPY). &ldquo;Sector&rdquo; is {detail.sector_etf_name || "the sector ETF"} ({detail.sector_etf}). &ldquo;Extra vs market&rdquo; is this stock&apos;s return minus the market for the same period.
       </p>
       <div className="rounded-lg border border-slate-700 overflow-hidden">
@@ -315,7 +315,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
     {(detail.peer_returns?.length ?? 0) > 0 && (
       <div>
         <h4 className="text-sm font-semibold text-slate-300 mb-2">Similar companies (for context)</h4>
-        <p className="text-xs text-slate-500 mb-2">{detail.industry || detail.sector || "Peers in the same area"} — returns over the same windows. Your ticker is in the table above.</p>
+        <p className="text-[13px] text-slate-500 mb-2">{detail.industry || detail.sector || "Peers in the same area"} — returns over the same windows. Your ticker is in the table above.</p>
         <div className="rounded-lg border border-slate-700 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -332,7 +332,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
                 <td className="px-4 py-2 font-mono text-slate-300">
                   {pr.ticker}
                   {pr.data_quality_warning && (
-                    <span className="text-amber-400 text-xs ml-1" title={pr.data_quality_warning}>⚠</span>
+                    <span className="text-amber-400 text-[13px] ml-1" title={pr.data_quality_warning}>⚠</span>
                   )}
                 </td>
                 {periods.map((p) => (
@@ -364,19 +364,19 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
       </h3>
       <p className="text-sm text-slate-200 font-mono flex flex-wrap gap-x-3 gap-y-1">
         {detail.current_price != null && (
-          <span><span className="text-slate-500 font-sans text-xs mr-1">Last price</span>${detail.current_price.toFixed(2)}</span>
+          <span><span className="text-slate-500 font-sans text-[13px] mr-1">Last price</span>${detail.current_price.toFixed(2)}</span>
         )}
         {detail.ma20 != null && (
-          <span><span className="text-slate-500 font-sans text-xs mr-1">20-day avg</span>${detail.ma20.toFixed(2)}</span>
+          <span><span className="text-slate-500 font-sans text-[13px] mr-1">20-day avg</span>${detail.ma20.toFixed(2)}</span>
         )}
         {detail.ma50 != null && (
-          <span><span className="text-slate-500 font-sans text-xs mr-1">50-day avg</span>${detail.ma50.toFixed(2)}</span>
+          <span><span className="text-slate-500 font-sans text-[13px] mr-1">50-day avg</span>${detail.ma50.toFixed(2)}</span>
         )}
         {detail.ma200 != null && (
-          <span><span className="text-slate-500 font-sans text-xs mr-1">200-day avg</span>${detail.ma200.toFixed(2)}</span>
+          <span><span className="text-slate-500 font-sans text-[13px] mr-1">200-day avg</span>${detail.ma200.toFixed(2)}</span>
         )}
       </p>
-      <p className="text-xs text-slate-500 mt-2">
+      <p className="text-[13px] text-slate-500 mt-2">
         When price sits above the 50- and 200-day averages, the trend is usually stronger; below both often means a weaker setup. (Also covered in Overview when entry zones are shown.)
       </p>
     </section>
@@ -411,7 +411,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
             )}
             <p className="text-sm text-slate-500 mt-0.5">Based on recent volatility and short-term averages—not a price promise. The hit-rate note is from similar past periods.</p>
             {detail.st_level_hit === "target" && (
-              <p className="text-xs text-emerald-400 mt-0.5">Target hit — bands trailed up (stop locked at prior target)</p>
+              <p className="text-[13px] text-emerald-400 mt-0.5">Target hit — bands trailed up (stop locked at prior target)</p>
             )}
             {detail.st_level_hit === "stop" && (
               <p className="text-sm text-amber-400 mt-0.5">Stop hit — bands recomputed from current price</p>
@@ -511,7 +511,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
         </h3>
         {hasPriceReasoning && (
           <div className={clsx("space-y-2 text-sm", showHorizonSignals && "border-b border-slate-700/50 pb-3 mb-3")}>
-            <p className="text-xs text-slate-500">From chart rules (not the full confidence model)</p>
+            <p className="text-[13px] text-slate-500">From chart rules (not the full confidence model)</p>
             <p className="text-sm text-slate-500 leading-snug">
               These add/trim zones follow momentum and average-price rules. Prefer the <span className="text-slate-400">confidence section</span> above for the main buy/sell read—they can disagree on purpose.
             </p>
@@ -534,7 +534,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
         )}
         {showHorizonSignals && (
           <div className="space-y-3">
-            <p className="text-xs text-slate-500">By holding period</p>
+            <p className="text-[13px] text-slate-500">By holding period</p>
             {detail.short_suggestion && (
               <div className="bg-slate-800/50 rounded-lg p-3">
                 <span className={clsx(
@@ -611,7 +611,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
         Tendency to move with the Treasury bond ETF (TLT): <span className="font-mono text-slate-100">{detail.rate_sensitivity.correlation_with_tlt}</span>
         {" · "}{detail.rate_sensitivity.interpretation}
       </p>
-      <p className="text-slate-500 text-xs mt-1">{detail.rate_sensitivity.note}</p>
+      <p className="text-slate-500 text-[13px] mt-1">{detail.rate_sensitivity.note}</p>
     </section>
   )}
 
@@ -631,7 +631,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
           Additional flags: {(detail.sanity_errors ?? []).filter((e) => e !== "yield" && !detail.listing_profile?.warnings?.includes(e)).join(", ")}
         </p>
       )}
-      <p className="text-xs text-slate-500 mt-2">
+      <p className="text-[13px] text-slate-500 mt-2">
         Spin-offs and recent listings can distort MA200 and 52-week lows — tiers and structural stops use adjusted levels when flagged.
       </p>
     </section>

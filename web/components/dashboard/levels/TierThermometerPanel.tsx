@@ -76,13 +76,13 @@ export function TierThermometerPanel({
   return (
     <div className={clsx("rounded-2xl border border-td-owner/20 bg-gradient-to-b from-td-owner-weak/25 via-td-bg/60 to-td-bg/80 backdrop-blur-sm overflow-hidden", className)}>
       <div className="px-4 py-2.5 border-b border-td-owner/15 bg-td-owner-weak/30 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-td-owner">
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-td-owner">
           Price thermometer · Long-term tiers
         </p>
         <div className="flex items-center gap-2">
           {mos != null && (
             <span className={clsx(
-              "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+              "text-[11px] font-semibold px-2 py-0.5 rounded-full border",
               mos >= 25
                 ? "border-td-accent/40 bg-td-accent/10 text-td-accent"
                 : mos >= 15
@@ -92,7 +92,7 @@ export function TierThermometerPanel({
               {mos.toFixed(1)}% MOS
             </span>
           )}
-          <span className="text-[10px] font-semibold text-td-warn/90 uppercase">
+          <span className="text-[11px] font-semibold text-td-warn/90 uppercase">
             {assessment?.label ?? "Watching"}
           </span>
         </div>
@@ -140,7 +140,7 @@ export function TierThermometerPanel({
                       {!inside && above && <span className="text-[8px] text-td-muted">↑</span>}
                     </div>
                     <span className={clsx(
-                      "text-[10px] font-mono tabular-nums",
+                      "text-[11px] font-mono tabular-nums",
                       inside ? "text-td-accent" : "text-td-muted",
                     )}>
                       ${tier.low.toFixed(0)}–${tier.high.toFixed(0)}
@@ -151,7 +151,7 @@ export function TierThermometerPanel({
               {minBuy != null && (
                 <div className="flex flex-col gap-0.5 border-t border-td-line/50 pt-2 mt-1">
                   <span className="text-[9px] text-td-info/70 uppercase">Full MOS</span>
-                  <span className="text-[10px] font-mono text-td-info/80 tabular-nums">≤${minBuy.toFixed(0)}</span>
+                  <span className="text-[11px] font-mono text-td-info/80 tabular-nums">≤${minBuy.toFixed(0)}</span>
                 </div>
               )}
             </div>

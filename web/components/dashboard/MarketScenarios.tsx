@@ -18,7 +18,7 @@ export function MarketScenarios({ scenarios }: { scenarios: EventScenario[] }) {
     return (
       <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
         <p className="text-slate-400 text-sm">No upcoming events with scenario stats.</p>
-        <p className="text-slate-500 text-xs mt-1">Economic calendar events (FOMC, CPI, etc.) will show historical next-day move when available.</p>
+        <p className="text-slate-500 text-[13px] mt-1">Economic calendar events (FOMC, CPI, etc.) will show historical next-day move when available.</p>
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function MarketScenarios({ scenarios }: { scenarios: EventScenario[] }) {
         </table>
       </div>
       {scenarios.some((s) => s.scenario?.rationale) && (
-        <p className="text-slate-500 text-xs" title={scenarios.find((s) => s.scenario?.rationale)?.scenario?.rationale}>
+        <p className="text-slate-500 text-[13px]" title={scenarios.find((s) => s.scenario?.rationale)?.scenario?.rationale}>
           {scenarios.find((s) => s.scenario?.rationale)?.scenario?.rationale}
         </p>
       )}

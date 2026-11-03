@@ -14,7 +14,7 @@ export function RegimeBar({
   return (
     <div className="space-y-1.5">
       {momentumExtended && (
-        <p className="text-[10px] text-amber-300/90 font-medium">
+        <p className="text-[11px] text-amber-300/90 font-medium">
           Momentum extended — low HMM bull % at highs (pullback-risk, not bear)
         </p>
       )}
@@ -30,7 +30,7 @@ export function RegimeBar({
           />
         )}
       </div>
-      <div className="flex justify-between text-[10px] font-mono tabular-nums">
+      <div className="flex justify-between text-[11px] font-mono tabular-nums">
         <span className="text-teal-400">Bull {bull.toFixed(0)}%</span>
         <span className="text-amber-400/90">Trans / other {transitional.toFixed(0)}%</span>
       </div>

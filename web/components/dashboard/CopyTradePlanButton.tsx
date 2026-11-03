@@ -42,7 +42,7 @@ export function CopyTradePlanButton({ ticker, summary, currentPrice, mode, riskP
     <button
       type="button"
       onClick={handleCopy}
-      className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800/60 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300 transition-colors"
+      className="inline-flex items-center gap-1.5 text-[13px] px-2.5 py-1.5 rounded-lg border border-slate-600 bg-slate-800/60 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300 transition-colors"
       title="Copy action, entry, stop, and target for manual broker entry"
     >
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}

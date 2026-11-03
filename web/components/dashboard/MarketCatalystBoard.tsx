@@ -93,7 +93,7 @@ function ReleaseBadge({ release }: { release?: MarketCatalystRelease | null }) {
   return (
     <span
       className={clsx(
-        "text-[10px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wide",
+        "text-[11px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wide",
         pending ? "border-amber-500/40 text-amber-300 bg-amber-500/10" : "border-emerald-500/30 text-emerald-300 bg-emerald-500/10",
       )}
     >
@@ -119,20 +119,20 @@ export function MarketCatalystBoardPanel({
   return (
     <div className={clsx("rounded-lg border border-violet-500/25 bg-violet-950/20 p-4 space-y-4", compact && "p-3 space-y-3")}>
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
+        <p className="text-[13px] font-semibold uppercase tracking-wider text-violet-300 flex items-center gap-1.5">
           <Target className="h-3.5 w-3.5" />
           Today&apos;s catalyst board
         </p>
         {board.summary_line && <p className="text-sm text-slate-300 mt-1">{board.summary_line}</p>}
         {(board.spy_regime || board.macro_regime) && (
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-[13px] text-slate-500 mt-1">
             {board.spy_regime && <>SPY regime: {board.spy_regime}</>}
             {board.spy_regime && board.macro_regime && " · "}
             {board.macro_regime && <>Macro: {board.macro_regime}</>}
           </p>
         )}
         {board.premarket_vs_close?.pct_contradict != null && (
-          <p className="text-xs text-slate-500 mt-1">
+          <p className="text-[13px] text-slate-500 mt-1">
             Pre-market vs close: contradicted {board.premarket_vs_close.pct_contradict}% of days (n=
             {board.premarket_vs_close.n_days})
           </p>
@@ -141,7 +141,7 @@ export function MarketCatalystBoardPanel({
 
       {scheduled.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+          <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <Calendar className="h-3 w-3" /> Scheduled (today)
           </p>
           <ul className="space-y-2">
@@ -156,19 +156,19 @@ export function MarketCatalystBoardPanel({
                   )}
                   <ReleaseBadge release={ev.release} />
                   <span className="text-slate-200">{ev.name}</span>
-                  <span className="text-xs text-slate-500">{ev.event_type}</span>
-                  <span className="text-xs text-amber-400/90">{ev.impact}</span>
+                  <span className="text-[13px] text-slate-500">{ev.event_type}</span>
+                  <span className="text-[13px] text-amber-400/90">{ev.impact}</span>
                 </div>
                 {ev.gap_fade_line && (
-                  <p className="text-xs text-violet-300/90 mt-1 font-medium">{ev.gap_fade_line}</p>
+                  <p className="text-[13px] text-violet-300/90 mt-1 font-medium">{ev.gap_fade_line}</p>
                 )}
                 {ev.scenario && !ev.gap_fade_line && ev.scenario.pct_gap_fade != null && (
-                  <p className="text-xs text-violet-300/90 mt-1">
+                  <p className="text-[13px] text-violet-300/90 mt-1">
                     Gap faded {ev.scenario.pct_gap_fade}% on past {ev.event_type} days (n={ev.scenario.n_events})
                   </p>
                 )}
                 {ev.scenario && (
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-[13px] text-slate-500 mt-1">
                     Hist. SPY next-day: avg {ev.scenario.avg_return_pct != null && ev.scenario.avg_return_pct >= 0 ? "+" : ""}
                     {ev.scenario.avg_return_pct}%
                     {ev.scenario.avg_same_day_pct != null && (
@@ -186,7 +186,7 @@ export function MarketCatalystBoardPanel({
 
       {live.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+          <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <Zap className="h-3 w-3" /> Live tape (moving now)
           </p>
           <div className="flex flex-wrap gap-2">
@@ -194,7 +194,7 @@ export function MarketCatalystBoardPanel({
               <span
                 key={d.name}
                 className={clsx(
-                  "text-xs px-2 py-1 rounded border font-mono",
+                  "text-[13px] px-2 py-1 rounded border font-mono",
                   d.direction === "Bullish" && "border-emerald-500/30 text-emerald-400 bg-emerald-500/5",
                   d.direction === "Bearish" && "border-red-500/30 text-red-400 bg-red-500/5",
                   d.direction === "Neutral" && "border-slate-600 text-slate-400",
@@ -209,12 +209,12 @@ export function MarketCatalystBoardPanel({
 
       {tensions.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
+          <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
             <AlertTriangle className="h-3 w-3" /> Tension / flip setup
           </p>
           <ul className="space-y-1.5">
             {tensions.map((t) => (
-              <li key={t.code} className={clsx("text-xs px-2.5 py-1.5 rounded border", levelClass(t.level))}>
+              <li key={t.code} className={clsx("text-[13px] px-2.5 py-1.5 rounded border", levelClass(t.level))}>
                 <span className="font-medium">{t.level}:</span> {t.message}
               </li>
             ))}
@@ -224,11 +224,11 @@ export function MarketCatalystBoardPanel({
 
       {flips.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">What could flip direction?</p>
+          <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">What could flip direction?</p>
           {flips.map((f) => (
             <div key={f.event_type} className="mb-2 last:mb-0">
-              <p className="text-xs font-medium text-slate-400 mb-1">{f.title}</p>
-              <ul className="list-disc list-inside text-xs text-slate-500 space-y-0.5">
+              <p className="text-[13px] font-medium text-slate-400 mb-1">{f.title}</p>
+              <ul className="list-disc list-inside text-[13px] text-slate-500 space-y-0.5">
                 {f.bullets.map((b, i) => (
                   <li key={i}>{b}</li>
                 ))}
@@ -238,7 +238,7 @@ export function MarketCatalystBoardPanel({
         </div>
       )}
 
-      {board.disclaimer && <p className="text-[10px] text-slate-600 leading-snug">{board.disclaimer}</p>}
+      {board.disclaimer && <p className="text-[11px] text-slate-600 leading-snug">{board.disclaimer}</p>}
     </div>
   );
 }

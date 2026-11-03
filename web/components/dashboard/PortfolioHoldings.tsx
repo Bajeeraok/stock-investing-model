@@ -115,7 +115,7 @@ export function PortfolioHoldings({
                 <td className="px-3 py-2.5">
                   <span
                     className={clsx(
-                      "inline-flex min-w-[2rem] justify-center px-1.5 py-0.5 rounded text-xs font-mono tabular-nums",
+                      "inline-flex min-w-[2rem] justify-center px-1.5 py-0.5 rounded text-[13px] font-mono tabular-nums",
                       scoreTileClass(h.score),
                     )}
                     title="Composite chart score"
@@ -148,7 +148,7 @@ export function PortfolioHoldings({
                 <td className="px-3 py-2.5">
                   <span
                     className={clsx(
-                      "px-2 py-0.5 rounded text-xs font-medium",
+                      "px-2 py-0.5 rounded text-[13px] font-medium",
                       h.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
                       h.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
                       h.regime === "DOWN" && "bg-red-500/20 text-red-400"
@@ -162,7 +162,7 @@ export function PortfolioHoldings({
                   {h.action && (
                     <span
                       className={clsx(
-                        "ml-2 inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium",
+                        "ml-2 inline-flex items-center px-2 py-0.5 rounded text-[13px] font-medium",
                         (h.action === "STRONG BUY" || h.action === "BUY") && "bg-emerald-500/15 text-emerald-300",
                         (h.action === "HOLD / WATCH") && "bg-slate-500/20 text-slate-300",
                         (h.action === "REDUCE") && "bg-amber-500/15 text-amber-300",
@@ -174,11 +174,11 @@ export function PortfolioHoldings({
                     </span>
                   )}
                   {h.gain_loss_pct != null && h.gain_loss_pct >= 20 && (
-                    <span className="block text-xs text-amber-400/90 mt-0.5" title="Consider holding 12+ months for long-term capital gains treatment (taxable accounts).">LTCG note                    </span>
+                    <span className="block text-[13px] text-amber-400/90 mt-0.5" title="Consider holding 12+ months for long-term capital gains treatment (taxable accounts).">LTCG note                    </span>
                   )}
                 </td>
                 {hasActionToday && (
-                  <td className="px-3 py-2.5 text-xs text-slate-400 max-w-[14rem] align-top">
+                  <td className="px-3 py-2.5 text-[13px] text-slate-400 max-w-[14rem] align-top">
                     {h.action_today ? <span className="text-slate-300 leading-snug">{h.action_today}</span> : "—"}
                   </td>
                 )}

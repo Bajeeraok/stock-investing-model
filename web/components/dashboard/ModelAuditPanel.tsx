@@ -240,7 +240,7 @@ function ColFilterSelect({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className={clsx(
-        "w-full min-w-0 rounded border border-slate-700 bg-slate-950/80 px-1 py-0.5 text-[10px] text-slate-300",
+        "w-full min-w-0 rounded border border-slate-700 bg-slate-950/80 px-1 py-0.5 text-[11px] text-slate-300",
         className,
       )}
     >
@@ -267,7 +267,7 @@ function ColFilterNum({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full min-w-0 rounded border border-slate-700 bg-slate-950/80 px-1 py-0.5 text-[10px] text-slate-300 tabular-nums"
+      className="w-full min-w-0 rounded border border-slate-700 bg-slate-950/80 px-1 py-0.5 text-[11px] text-slate-300 tabular-nums"
     />
   );
 }
@@ -306,10 +306,10 @@ function BreakdownTable({
   return (
     <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 overflow-hidden">
       <div className="px-3 py-2 border-b border-slate-700/60">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500">{title}</p>
-        {hint && <p className="text-[10px] text-slate-600 mt-0.5">{hint}</p>}
+        <p className="text-[11px] uppercase tracking-wider text-slate-500">{title}</p>
+        {hint && <p className="text-[11px] text-slate-600 mt-0.5">{hint}</p>}
       </div>
-      <table className="w-full text-xs">
+      <table className="w-full text-[13px]">
         <thead>
           <tr className="text-slate-500 border-b border-slate-700/50">
             <th className="text-left py-1.5 px-3 font-medium">{bucketLabel}</th>
@@ -472,13 +472,13 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               Model audit — {audit.cohort_tag ?? "cohort"}{" "}
               <span className="text-violet-300">({audit.cohort_size ?? "—"} tickers)</span>
             </span>
-          </p>          <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+          </p>          <p className="text-[13px] text-slate-500 mt-1 max-w-2xl leading-relaxed">
             {audit.methodology ??
               "Fixed cohort captured once per EOD run. Gates and levels frozen at signal time in signal_audit.db."}
           </p>
         </div>
         {audit.pilot?.last_date && (
-          <div className="text-xs text-slate-500 text-right">
+          <div className="text-[13px] text-slate-500 text-right">
             Last capture <span className="font-mono text-slate-300">{audit.pilot.last_date}</span>
             <br />
             {audit.pilot.total_events ?? 0} total rows
@@ -487,7 +487,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         {audit.export_url && (
           <a
             href={audit.export_url}
-            className="text-xs font-medium text-violet-300 hover:text-violet-200 border border-violet-500/40 rounded px-2.5 py-1.5"
+            className="text-[13px] font-medium text-violet-300 hover:text-violet-200 border border-violet-500/40 rounded px-2.5 py-1.5"
             download
           >
             Export CSV
@@ -497,7 +497,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
       {/* Pilot progress */}
       <div className="rounded-lg border border-violet-500/25 bg-slate-900/50 px-3 py-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[13px] mb-2">
           <span className="text-violet-200/90 font-semibold uppercase tracking-wide">30-day pilot progress</span>
           <span className="text-slate-400 tabular-nums">
             Day {progressDays} of {targetDays}
@@ -511,7 +511,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
           />
         </div>
         {audit.last_session && (
-          <p className="text-[11px] text-slate-500 mt-2">
+          <p className="text-[13px] text-slate-500 mt-2">
             Last session:{" "}
             <span className="text-slate-300 tabular-nums">
               {audit.last_session.captured}/{audit.last_session.expected}
@@ -532,12 +532,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
       {(audit.daily_captures?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">Daily cohort captures</p>
+          <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Daily cohort captures</p>
           <div className="flex flex-wrap gap-1.5">
             {audit.daily_captures!.slice(0, 10).map((d) => (
               <span
                 key={d.date}
-                className="inline-flex items-center gap-1 rounded bg-slate-800/80 px-2 py-0.5 text-[11px] text-slate-300 tabular-nums"
+                className="inline-flex items-center gap-1 rounded bg-slate-800/80 px-2 py-0.5 text-[13px] text-slate-300 tabular-nums"
               >
                 <span className="font-mono text-slate-400">{d.date.slice(5)}</span>
                 <span className="text-violet-300">{d.count}</span>
@@ -547,12 +547,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         </div>
       )}
 
-      {audit.message && (        <p className="text-xs text-amber-200/90 rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2">{audit.message}</p>
+      {audit.message && (        <p className="text-[13px] text-amber-200/90 rounded-lg border border-amber-500/30 bg-amber-950/30 px-3 py-2">{audit.message}</p>
       )}
 
       {audit.batch_queues && (
         <div className="rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5 space-y-2">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500">
+          <p className="text-[11px] uppercase tracking-wider text-slate-500">
             Batch split
             {audit.batch_queues.signal_date ? ` · ${audit.batch_queues.signal_date}` : ""}
           </p>
@@ -561,7 +561,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               type="button"
               onClick={() => setTrackFilter("accumulate")}
               className={clsx(
-                "rounded border px-2.5 py-1 text-[11px] font-medium touch-manipulation",
+                "rounded border px-2.5 py-1 text-[13px] font-medium touch-manipulation",
                 trackFilter === "accumulate"
                   ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200"
                   : "border-slate-600 text-slate-400 hover:border-slate-500",
@@ -574,7 +574,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               type="button"
               onClick={() => setTrackFilter("velocity")}
               className={clsx(
-                "rounded border px-2.5 py-1 text-[11px] font-medium touch-manipulation",
+                "rounded border px-2.5 py-1 text-[13px] font-medium touch-manipulation",
                 trackFilter === "velocity"
                   ? "border-violet-500/40 bg-violet-500/15 text-violet-200"
                   : "border-slate-600 text-slate-400 hover:border-slate-500",
@@ -587,7 +587,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               type="button"
               onClick={() => setTrackFilter("all")}
               className={clsx(
-                "rounded border px-2.5 py-1 text-[11px] touch-manipulation",
+                "rounded border px-2.5 py-1 text-[13px] touch-manipulation",
                 trackFilter === "all"
                   ? "border-slate-500 bg-slate-800 text-slate-200"
                   : "border-slate-700 text-slate-500 hover:border-slate-600",
@@ -597,7 +597,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             </button>
           </div>
           {(audit.batch_queues.tactical_tickers?.length ?? 0) > 0 && (
-            <p className="text-[11px] text-violet-300/80 leading-snug">
+            <p className="text-[13px] text-violet-300/80 leading-snug">
               Velocity: {audit.batch_queues.tactical_tickers!.slice(0, 12).join(", ")}
               {(audit.batch_queues.tactical_tickers!.length ?? 0) > 12 ? "…" : ""}
             </p>
@@ -606,12 +606,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       )}
 
       {audit.outcomes_note && (
-        <p className="text-xs text-slate-500 border-l-2 border-violet-500/40 pl-2">{audit.outcomes_note}</p>
+        <p className="text-[13px] text-slate-500 border-l-2 border-violet-500/40 pl-2">{audit.outcomes_note}</p>
       )}
 
       {(audit.gate_blocker_breakdown?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
             Gate blocker attribution — which gate fails most
             <span className="ml-1 font-normal text-slate-600">(% of all captured events where this gate was blocking)</span>
           </p>
@@ -632,12 +632,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   )}
                 >
                   <span className={clsx(
-                    "text-[10px] font-bold uppercase tracking-wider",
+                    "text-[11px] font-bold uppercase tracking-wider",
                     isValuation ? "text-amber-300" : isRegime ? "text-sky-300" : isMomentum ? "text-violet-300" : "text-slate-400",
                   )}>
                     {b.gate}
                   </span>
-                  <span className="text-xs font-mono tabular-nums text-slate-200">
+                  <span className="text-[13px] font-mono tabular-nums text-slate-200">
                     {b.pct_of_events != null ? `${b.pct_of_events.toFixed(1)}%` : ""}
                   </span>
                   <span className="text-[9px] text-slate-500">n={b.n}</span>
@@ -654,7 +654,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
       {(audit.gate_pass_rates?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3">
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
             Gate pass rates
             <span className="ml-1 font-normal text-slate-600">(% of captured events where gate cleared)</span>
           </p>
@@ -664,8 +664,8 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 key={g.gate}
                 className="flex items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-900/30 px-3 py-2"
               >
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{g.gate}</span>
-                <span className="text-xs font-mono tabular-nums text-emerald-300/90">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{g.gate}</span>
+                <span className="text-[13px] font-mono tabular-nums text-emerald-300/90">
                   {g.pass_pct != null ? `${g.pass_pct.toFixed(1)}% pass` : "—"}
                 </span>
                 <span className="text-[9px] text-slate-600">n={g.pass_n ?? "—"}</span>
@@ -677,11 +677,11 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
       {(audit.gate_calibration?.notes?.length ?? 0) > 0 && (
         <div className="rounded-lg border border-violet-500/25 bg-violet-950/15 px-3 py-2.5 space-y-1.5">
-          <p className="text-[10px] font-semibold text-violet-300/90 uppercase tracking-wider">
+          <p className="text-[11px] font-semibold text-violet-300/90 uppercase tracking-wider">
             Gate calibration — keep or loosen?
           </p>
           {audit.gate_calibration!.notes!.map((note, i) => (
-            <p key={i} className="text-[11px] text-slate-400 leading-snug">{note}</p>
+            <p key={i} className="text-[13px] text-slate-400 leading-snug">{note}</p>
           ))}
           {audit.gate_calibration?.thresholds && (
             <p className="text-[9px] text-slate-600 pt-1">
@@ -699,16 +699,16 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       {audit.outcome_summary &&
         ((audit.outcome_summary.resolved_n ?? 0) > 0 || (audit.outcome_summary.partial_7d_n ?? 0) > 0) && (
         <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5 space-y-2">
-          <p className="text-xs font-semibold text-emerald-200/90 uppercase tracking-wide">
+          <p className="text-[13px] font-semibold text-emerald-200/90 uppercase tracking-wide">
             Outcome track record
-            <span className="ml-2 text-[10px] font-normal text-slate-500 normal-case">
+            <span className="ml-2 text-[11px] font-normal text-slate-500 normal-case">
               accumulate · excludes velocity tactical
             </span>
           </p>
           {(audit.outcome_summary.headline_actionable_win_rate_pct != null ||
             (audit.outcome_summary.headline_actionable_n ?? 0) > 0) && (
             <div className="rounded border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wider text-emerald-300/80 mb-1">
+              <p className="text-[11px] uppercase tracking-wider text-emerald-300/80 mb-1">
                 Actionable slice ({audit.outcome_summary.headline_actionable_slice_label ?? "4/4 GO or full_go"})
               </p>
               <p className="text-sm text-slate-200">
@@ -724,7 +724,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                     ? `${audit.outcome_summary.headline_actionable_win_rate_pct.toFixed(1)}%`
                     : "—"}
                 </strong>
-                <span className="text-slate-500 text-xs">
+                <span className="text-slate-500 text-[13px]">
                   {" "}
                   (n={audit.outcome_summary.headline_actionable_n ?? 0} resolved)
                 </span>
@@ -737,7 +737,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               </p>
             </div>
           )}
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-300">
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-slate-300">
             <span>
               Resolved:{" "}
               <strong className="text-slate-100 tabular-nums">
@@ -745,7 +745,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 {audit.outcome_summary.events_total}
               </strong>
               {(audit.outcome_summary.resolved_n_velocity ?? 0) > 0 && (
-                <span className="text-violet-400/80 text-[10px] ml-1">
+                <span className="text-violet-400/80 text-[11px] ml-1">
                   (+{audit.outcome_summary.resolved_n_velocity} velocity tactical separate)
                 </span>
               )}
@@ -791,7 +791,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             )}
           </div>
           {(audit.outcome_summary.by_go_no_go?.length ?? 0) > 0 && (
-            <div className="flex flex-wrap gap-2 text-[11px]">
+            <div className="flex flex-wrap gap-2 text-[13px]">
               {audit.outcome_summary.by_go_no_go!.map((r) => (
                 <span key={String(r.bucket)} className="rounded bg-slate-800/80 px-2 py-0.5 text-slate-400">
                   {String(r.bucket ?? "—").toUpperCase()}: n={r.n}
@@ -801,7 +801,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             </div>
           )}
           {audit.outcome_summary.actionable_slices && (
-            <div className="flex flex-wrap gap-2 text-[10px]">
+            <div className="flex flex-wrap gap-2 text-[11px]">
               {Object.entries(audit.outcome_summary.actionable_slices).map(([key, slice]) => (
                 <span
                   key={key}
@@ -821,13 +821,13 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
       {/* BUY win-rate gap (ml_signal=BUY vs headline) */}
       {audit.buy_win_gap && (audit.buy_win_gap.buy_all?.n ?? 0) > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
-          <p className="text-[11px] font-semibold text-amber-200 uppercase tracking-wide">
+          <p className="text-[13px] font-semibold text-amber-200 uppercase tracking-wide">
             BUY win-rate gap
           </p>
-          <p className="text-[10px] text-slate-400 leading-relaxed">
+          <p className="text-[11px] text-slate-400 leading-relaxed">
             {audit.buy_win_gap.methodology_note}
           </p>
-          <div className="flex flex-wrap gap-2 text-[10px]">
+          <div className="flex flex-wrap gap-2 text-[11px]">
             {[
               { label: "All BUY labels", data: audit.buy_win_gap.buy_all },
               { label: "full_go BUY", data: audit.buy_win_gap.buy_full_go },
@@ -848,7 +848,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             )}
           </div>
           {audit.buy_win_gap.recommendations && audit.buy_win_gap.recommendations.length > 0 && (
-            <ul className="text-[10px] text-slate-400 space-y-1 list-disc pl-4">
+            <ul className="text-[11px] text-slate-400 space-y-1 list-disc pl-4">
               {audit.buy_win_gap.recommendations.slice(0, 4).map((note) => (
                 <li key={note}>{note}</li>
               ))}
@@ -891,13 +891,13 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
 
       {/* Recent captures table */}
       <div>
-        <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Recent captures</p>
+        <p className="text-[13px] font-medium text-slate-400 uppercase tracking-wide mb-2">Recent captures</p>
         <div className="flex flex-wrap items-center gap-2 mb-2">
           <button
             type="button"
             onClick={() => setRecommendedOnly((v) => !v)}
             className={clsx(
-              "rounded border px-2.5 py-1 text-[11px] font-medium touch-manipulation",
+              "rounded border px-2.5 py-1 text-[13px] font-medium touch-manipulation",
               recommendedOnly
                 ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
                 : "border-slate-600 text-slate-400 hover:border-slate-500",
@@ -913,7 +913,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 type="button"
                 onClick={() => setDateRange(dr.value)}
                 className={clsx(
-                  "px-2.5 py-1 text-xs font-medium",
+                  "px-2.5 py-1 text-[13px] font-medium",
                   dateRange === dr.value ? "bg-violet-600/70 text-white" : "bg-slate-900 text-slate-400 hover:bg-slate-800",
                 )}
               >
@@ -924,7 +924,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
           <select
             value={colFilters.version}
             onChange={(e) => setColFilter("version", e.target.value)}
-            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
+            className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-violet-500"
             title="Which gate/band/regime logic version produced the signal — defaults to current so win-rate numbers aren't blended with pre-fix history"
           >
             <option value="">All versions</option>
@@ -938,19 +938,19 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             <button
               type="button"
               onClick={clearAllFilters}
-              className="text-[11px] text-violet-300 hover:text-violet-200 underline"
+              className="text-[13px] text-violet-300 hover:text-violet-200 underline"
             >
               Clear filters
             </button>
           )}
-          <span className="text-[10px] text-slate-600">{filtered.length} rows</span>
+          <span className="text-[11px] text-slate-600">{filtered.length} rows</span>
         </div>
 
         {filtered.length === 0 ? (
           <p className="text-sm text-slate-500">No audit rows match filters yet.</p>
         ) : (
           <div className="overflow-x-auto [-webkit-overflow-scrolling:touch]">
-            <table className="w-full text-xs text-left border-collapse min-w-[720px]">
+            <table className="w-full text-[13px] text-left border-collapse min-w-[720px]">
               <thead>
                 <tr className="text-slate-500 border-b border-slate-600">
                   <th className="py-1.5 pr-2 font-medium">Date</th>
@@ -1089,7 +1089,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                         </span>
                       ) : null}
                     </td>
-                    <td className="py-1 pr-2 tabular-nums text-slate-500 text-[10px]">
+                    <td className="py-1 pr-2 tabular-nums text-slate-500 text-[11px]">
                       {r.confidence_low != null && r.confidence_high != null
                         ? `${r.confidence_low}-${r.confidence_high}`
                         : "—"}
@@ -1097,7 +1097,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                     <td className="py-1 pr-2">
                       <span
                         className={clsx(
-                          "px-1.5 py-0.5 rounded text-[10px] uppercase",
+                          "px-1.5 py-0.5 rounded text-[11px] uppercase",
                           (r.track || "accumulate") === "velocity"
                             ? "bg-violet-500/15 text-violet-300"
                             : "bg-slate-700/50 text-slate-400",
@@ -1134,7 +1134,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                       {r.verdict ? (
                         <span
                           className={clsx(
-                            "px-1.5 py-0.5 rounded text-[10px] uppercase",
+                            "px-1.5 py-0.5 rounded text-[11px] uppercase",
                             r.verdict === "WIN" && "bg-emerald-500/15 text-emerald-300",
                             r.verdict === "LOSS" && "bg-red-500/15 text-red-300",
                             r.verdict === "NEUTRAL" && "bg-slate-700 text-slate-400",
@@ -1155,7 +1155,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
         <TablePager page={page} pageSize={AUDIT_PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
       </div>
       {audit.pilot?.db_path && (
-        <p className="text-[10px] text-slate-600 truncate" title={audit.pilot.db_path}>
+        <p className="text-[11px] text-slate-600 truncate" title={audit.pilot.db_path}>
           DB: {audit.pilot.db_path}
           {audit.export_url ? " · CSV via Export button (verdict rule audit_v1, 7/20 EOD-step horizons)" : ""}
         </p>

@@ -74,7 +74,7 @@ export function TradingViewWidget({ ticker, height = 360 }: { ticker: string; he
 
   return (
     <div className="rounded-lg border border-slate-600/80 bg-slate-900/50 overflow-hidden">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500 px-3 pt-2">
+      <p className="text-[11px] uppercase tracking-wider text-slate-500 px-3 pt-2">
         Chart · TradingView (delayed)
       </p>
       <div id={containerId} ref={containerRef} style={{ height }} className="w-full" />

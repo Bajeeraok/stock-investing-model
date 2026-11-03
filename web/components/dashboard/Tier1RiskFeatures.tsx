@@ -139,7 +139,7 @@ function Badge({ label, color }: { label: string; color: "green" | "amber" | "re
     blue:  "bg-blue-500/15 text-blue-300 border-blue-500/30",
   }[color];
   return (
-    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border", classes)}>
+    <span className={clsx("inline-flex items-center px-2 py-0.5 rounded-full text-[13px] font-medium border", classes)}>
       {label}
     </span>
   );
@@ -154,9 +154,9 @@ function MetricCard({ label, value, sub, color = "slate" }: {
   }[color];
   return (
     <div className="rounded-lg border border-slate-700/50 bg-slate-800/40 p-3">
-      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className="text-[13px] text-slate-500 mb-1">{label}</p>
       <p className={clsx("text-lg font-bold font-mono", valueClass)}>{value}</p>
-      {sub && <p className="text-xs text-slate-600 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[13px] text-slate-600 mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -226,7 +226,7 @@ export function PositionSizingPanel({
 
   return (
     <div className="space-y-4">
-      <p className="text-[11px] text-slate-600">
+      <p className="text-[13px] text-slate-600">
         Kelly-criterion trade sizing: sized for a new/incremental buy from today&apos;s signal
         quality, capped at the same {riskProfile || "current"} profile limit as Portfolio
         Doctor. Portfolio Doctor&apos;s trim/add panel uses a different method (equal-weight
@@ -240,7 +240,7 @@ export function PositionSizingPanel({
               key={i.ticker}
               onClick={() => setSelected(i.ticker)}
               className={clsx(
-                "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+                "px-3 py-1.5 rounded-lg border text-[13px] font-medium transition-colors",
                 selected === i.ticker
                   ? "bg-emerald-600/20 border-emerald-500/50 text-emerald-300"
                   : "border-slate-700 text-slate-400 hover:bg-slate-800"
@@ -256,7 +256,7 @@ export function PositionSizingPanel({
       {data.warning && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-200">{data.warning}</p>
+          <p className="text-[13px] text-amber-200">{data.warning}</p>
         </div>
       )}
 
@@ -269,7 +269,7 @@ export function PositionSizingPanel({
       )}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Recommended Add</p>
+            <p className="text-[13px] text-slate-500 uppercase tracking-wider mb-1">Recommended Add</p>
             <p className={clsx("text-3xl font-bold font-mono", hasSize ? "text-emerald-300" : "text-slate-500")}>
               {hasSize ? `$${data.recommended_dollars.toLocaleString()}` : "No Add"}
             </p>
@@ -280,17 +280,17 @@ export function PositionSizingPanel({
             )}
           </div>
           <div className="text-right">
-            <p className="text-xs text-slate-500 mb-1">Kelly Fraction</p>
+            <p className="text-[13px] text-slate-500 mb-1">Kelly Fraction</p>
             <p className="text-2xl font-mono font-bold text-slate-300">
               {(data.adjusted_fraction * 100).toFixed(1)}%
             </p>
-            <p className="text-xs text-slate-600">adjusted</p>
+            <p className="text-[13px] text-slate-600">adjusted</p>
           </div>
         </div>
 
         {/* Position bar */}
         <div className="space-y-1 mb-3">
-          <div className="flex justify-between text-xs text-slate-600">
+          <div className="flex justify-between text-[13px] text-slate-600">
             <span>Current: {(data.current_pct * 100).toFixed(1)}%</span>
             <span>Target: {(data.target_pct * 100).toFixed(1)}%</span>
             <span>Max: 10%</span>
@@ -332,7 +332,7 @@ export function PositionSizingPanel({
             <li
               key={i}
               className={clsx(
-                "flex items-start gap-2 text-xs",
+                "flex items-start gap-2 text-[13px]",
                 r.startsWith("Win rate derived") || r.startsWith("Win rate input")
                   ? "text-emerald-300"
                   : "text-slate-400"
@@ -368,7 +368,7 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
         <div className="flex flex-wrap gap-2">
           {items.map(i => (
             <button key={i.ticker} onClick={() => setSelected(i.ticker)}
-              className={clsx("px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+              className={clsx("px-3 py-1.5 rounded-lg border text-[13px] font-medium transition-colors",
                 selected === i.ticker
                   ? "bg-red-600/20 border-red-500/50 text-red-300"
                   : "border-slate-700 text-slate-400 hover:bg-slate-800"
@@ -390,7 +390,7 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
       {/* Scenario table */}
       <div className="rounded-xl border border-slate-700/50 overflow-hidden">
         <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700/50">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <p className="text-[13px] font-semibold text-slate-400 uppercase tracking-wider">
             Loss Scenarios â€” Ask "Can I survive this?"
           </p>
         </div>
@@ -406,13 +406,13 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
                       <span className="text-sm font-medium text-slate-300">{s.label}</span>
                       {isWorst && <Badge label="Stress" color="red" />}
                     </div>
-                    <p className="text-xs text-slate-600 mt-0.5">{s.description}</p>
+                    <p className="text-[13px] text-slate-600 mt-0.5">{s.description}</p>
                   </div>
                   <div className="text-right shrink-0">
                     <p className={clsx("text-base font-bold font-mono", pctColor)}>
                       {s.pct_change > 0 ? "+" : ""}{s.pct_change.toFixed(1)}%
                     </p>
-                    <p className="text-xs text-slate-500">â†’ ${s.price_target}</p>
+                    <p className="text-[13px] text-slate-500">â†’ ${s.price_target}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -420,10 +420,10 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
                     <ProbabilityBar pct={s.probability}
                       color={s.probability > 0.4 ? "bg-slate-500" : s.probability > 0.2 ? "bg-amber-500/60" : "bg-red-500/60"} />
                   </div>
-                  <span className="text-xs text-slate-500 shrink-0">
+                  <span className="text-[13px] text-slate-500 shrink-0">
                     P={Math.round(s.probability * 100)}%
                   </span>
-                  <span className={clsx("text-xs font-mono shrink-0",
+                  <span className={clsx("text-[13px] font-mono shrink-0",
                     s.portfolio_impact_dollars < -1000 ? "text-red-400" :
                     s.portfolio_impact_dollars < -200  ? "text-amber-400" : "text-slate-400"
                   )}>
@@ -438,7 +438,7 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
 
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-slate-700/40 bg-slate-800/20">
         <Info className="h-3.5 w-3.5 text-slate-600 shrink-0 mt-0.5" />
-        <p className="text-xs text-slate-500">
+        <p className="text-[13px] text-slate-500">
           Breakeven: <span className="text-slate-400 font-mono">${data.breakeven_price}</span> Â·
           ATR(14): <span className="text-slate-400 font-mono">${data.atr_14}</span> Â·
           Historical max drawdown: <span className="text-slate-400">{data.historical_max_drawdown_pct.toFixed(0)}%</span>
@@ -476,7 +476,7 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
         <div className="flex flex-wrap gap-2">
           {items.map(i => (
             <button key={i.ticker} onClick={() => setSelected(i.ticker)}
-              className={clsx("px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors",
+              className={clsx("px-3 py-1.5 rounded-lg border text-[13px] font-medium transition-colors",
                 selected === i.ticker
                   ? "bg-blue-600/20 border-blue-500/50 text-blue-300"
                   : "border-slate-700 text-slate-400 hover:bg-slate-800"
@@ -500,7 +500,7 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
 
       {/* Visual price ladder */}
       <div className="rounded-xl border border-slate-700/50 bg-slate-900/30 p-4">
-        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Price Ladder</p>
+        <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Price Ladder</p>
         <div className="space-y-1">
           {levels.map((lv, i) => {
             const pct = priceRange > 0 ? ((lv.price - data.invalidation_price) / priceRange) * 100 : 50;
@@ -518,9 +518,9 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
                     )} style={{ width: `${pct}%` }} />
                   </div>
                 </div>
-                <span className={clsx("text-xs font-medium w-20 shrink-0", lv.color)}>{lv.label}</span>
+                <span className={clsx("text-[13px] font-medium w-20 shrink-0", lv.color)}>{lv.label}</span>
                 <span className="text-sm font-mono text-slate-300 w-20 shrink-0">${lv.price}</span>
-                <span className="text-xs text-slate-600">{lv.note}</span>
+                <span className="text-[13px] text-slate-600">{lv.note}</span>
               </div>
             );
           })}
@@ -531,9 +531,9 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
       <Collapsible title="Thesis checkpoints â€” verify regularly" defaultOpen>
         <ul className="space-y-2">
           {data.thesis_check_points.map((chk, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
+            <li key={i} className="flex items-start gap-2 text-[13px] text-slate-400">
               <span className="w-4 h-4 rounded border border-slate-600 shrink-0 mt-0.5 flex items-center justify-center">
-                <span className="text-slate-600 text-xs">âœ“</span>
+                <span className="text-slate-600 text-[13px]">âœ“</span>
               </span>
               {chk}
             </li>
@@ -578,7 +578,7 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
                   <Badge label={`Risk: ${data.risk_rating}`} color={cfg.badge} />
                   {isUrgent && <Badge label={`${data.days_to_earnings}d away`} color="red" />}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-[13px] text-slate-500 mt-1">
                   {data.next_earnings_date} Â· {data.days_to_earnings} days to earnings
                 </p>
               </div>
@@ -586,24 +586,24 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
                 <p className={clsx("text-xl font-bold font-mono", cfg.color)}>
                   Â±{data.expected_move_pct}%
                 </p>
-                <p className="text-xs text-slate-600">implied move</p>
+                <p className="text-[13px] text-slate-600">implied move</p>
               </div>
             </div>
 
             {/* Key stats */}
             <div className="grid grid-cols-3 gap-2">
               <div className="text-center">
-                <p className="text-xs text-slate-600">Beat rate</p>
+                <p className="text-[13px] text-slate-600">Beat rate</p>
                 <p className={clsx("text-base font-bold",
                   data.beat_rate_pct >= 70 ? "text-emerald-400" : data.beat_rate_pct >= 50 ? "text-amber-400" : "text-red-400"
                 )}>{data.beat_rate_pct.toFixed(0)}%</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-slate-600">Hist avg move</p>
+                <p className="text-[13px] text-slate-600">Hist avg move</p>
                 <p className="text-base font-bold text-slate-300">Â±{data.historical_avg_move.toFixed(1)}%</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-slate-600">IV percentile</p>
+                <p className="text-[13px] text-slate-600">IV percentile</p>
                 <p className={clsx("text-base font-bold",
                   data.iv_percentile > 75 ? "text-red-400" : data.iv_percentile > 50 ? "text-amber-400" : "text-emerald-400"
                 )}>{data.iv_percentile.toFixed(0)}th</p>
@@ -612,21 +612,21 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
 
             {/* Recommendation */}
             <div className="rounded-lg border border-slate-700/40 bg-slate-900/40 px-3 py-2">
-              <p className={clsx("text-xs font-semibold mb-1", cfg.color)}>
+              <p className={clsx("text-[13px] font-semibold mb-1", cfg.color)}>
                 {data.position_recommendation}
               </p>
-              <p className="text-xs text-slate-400">{data.suggested_action}</p>
+              <p className="text-[13px] text-slate-400">{data.suggested_action}</p>
             </div>
 
             {/* Last 4 quarters */}
             {data.last_4_quarters.length > 0 && (
               <div>
-                <p className="text-xs text-slate-600 mb-1.5">Last {data.last_4_quarters.length} quarters</p>
+                <p className="text-[13px] text-slate-600 mb-1.5">Last {data.last_4_quarters.length} quarters</p>
                 <div className="flex gap-2 flex-wrap">
                   {data.last_4_quarters.map((q, i) => (
                     <div key={i} className="rounded-lg border border-slate-700/40 bg-slate-800/40 px-2 py-1.5 text-center min-w-[80px]">
-                      <p className="text-xs text-slate-600">{q.quarter}</p>
-                      <p className={clsx("text-xs font-bold",
+                      <p className="text-[13px] text-slate-600">{q.quarter}</p>
+                      <p className={clsx("text-[13px] font-bold",
                         (q.beat_pct ?? 0) > 0 ? "text-emerald-400" : "text-red-400"
                       )}>
                         {(q.beat_pct ?? 0) > 0 ? "Beat" : "Miss"} {Math.abs(q.beat_pct ?? 0).toFixed(1)}%
@@ -661,7 +661,7 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
           <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-amber-300">Concentration Risk Detected</p>
-            <p className="text-xs text-amber-400/70 mt-0.5">Your portfolio has fewer independent bets than it appears. See details below.</p>
+            <p className="text-[13px] text-amber-400/70 mt-0.5">Your portfolio has fewer independent bets than it appears. See details below.</p>
           </div>
         </div>
       )}
@@ -683,7 +683,7 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
       {/* Sector breakdown */}
       {Object.keys(data.sector_weights).length > 0 && (
         <div className="rounded-xl border border-slate-700/50 bg-slate-900/30 p-4">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Sector Weights</p>
+          <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-3">Sector Weights</p>
           <div className="space-y-2">
             {Object.entries(data.sector_weights)
               .sort(([,a],[,b]) => b - a)
@@ -692,7 +692,7 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
                 const overweight = pct > 25;
                 return (
                   <div key={sector} className="space-y-1">
-                    <div className="flex justify-between text-xs">
+                    <div className="flex justify-between text-[13px]">
                       <span className={overweight ? "text-amber-400" : "text-slate-400"}>{sector}</span>
                       <span className={clsx("font-mono", overweight ? "text-amber-400" : "text-slate-400")}>
                         {pct.toFixed(1)}%
@@ -737,7 +737,7 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
                     color={alert.severity === "Extreme" ? "red" : "amber"}
                   />
                 </div>
-                <p className="text-xs text-slate-400">{alert.note}</p>
+                <p className="text-[13px] text-slate-400">{alert.note}</p>
               </div>
             ))}
           </div>
@@ -747,10 +747,10 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
       {/* Top risk contributors */}
       {data.top_risk_contributors.length > 0 && (
         <div className="rounded-lg border border-slate-700/50 bg-slate-800/20 p-3">
-          <p className="text-xs text-slate-500 mb-2">Top risk contributors</p>
+          <p className="text-[13px] text-slate-500 mb-2">Top risk contributors</p>
           <div className="flex flex-wrap gap-2">
             {data.top_risk_contributors.map((c, i) => (
-              <span key={i} className="text-xs text-slate-300 bg-slate-800 border border-slate-700 px-2 py-1 rounded-lg">
+              <span key={i} className="text-[13px] text-slate-300 bg-slate-800 border border-slate-700 px-2 py-1 rounded-lg">
                 {c}
               </span>
             ))}
@@ -835,13 +835,13 @@ export function RiskDashboard({
       {(earningsUrgent > 0 || concAlert) && (
         <div className="flex flex-wrap gap-2">
           {earningsUrgent > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300">
+            <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[13px] text-amber-300">
               <Calendar className="h-3.5 w-3.5" />
               {earningsUrgent} position{earningsUrgent > 1 ? "s" : ""} with earnings in â‰¤14 days
             </div>
           )}
           {concAlert && (
-            <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300">
+            <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[13px] text-red-300">
               <Layers className="h-3.5 w-3.5" />
               Concentration risk detected
             </div>
@@ -884,7 +884,7 @@ export function RiskDashboard({
                 <select
                   value={exitHorizon}
                   onChange={(e) => setExitHorizon(e.target.value as ExitHorizon)}
-                  className="rounded border border-slate-600 bg-slate-800 text-slate-200 text-xs px-2 py-1 focus:border-emerald-500 focus:outline-none"
+                  className="rounded border border-slate-600 bg-slate-800 text-slate-200 text-[13px] px-2 py-1 focus:border-emerald-500 focus:outline-none"
                   aria-label="Time horizon"
                 >
                   {(["short", "medium", "long"] as const).map((h) => (
@@ -932,7 +932,7 @@ export function RiskDashboard({
         </Collapsible>
       ) : null}
 
-      <p className="text-xs text-slate-600 text-center pt-2">
+      <p className="text-[13px] text-slate-600 text-center pt-2">
         Not financial advice. Sizing models are probabilistic â€” always verify with your own risk tolerance.
       </p>
     </div>

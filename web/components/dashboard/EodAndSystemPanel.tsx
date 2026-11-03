@@ -187,7 +187,7 @@ export function EodAndSystemPanel({
           type="button"
           onClick={() => void fetchLiveList()}
           disabled={liveLoading}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-slate-600 text-slate-400 hover:bg-slate-800 text-xs disabled:opacity-50"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-slate-600 text-slate-400 hover:bg-slate-800 text-[13px] disabled:opacity-50"
         >
           <RefreshCw className={`h-3 w-3 ${liveLoading ? "animate-spin" : ""}`} />
           Refresh list
@@ -195,32 +195,32 @@ export function EodAndSystemPanel({
       </div>
 
       {liveLatest && (
-        <p className="text-xs text-emerald-400/90">
+        <p className="text-[13px] text-emerald-400/90">
           Live latest: <span className="font-mono">{liveLatest}</span>
           {displaySnapshots.length ? ` · ${displaySnapshots.length} files` : ""}
         </p>
       )}
       {liveError && (
-        <p className="text-xs text-amber-400">
+        <p className="text-[13px] text-amber-400">
           Live list failed ({liveError}) — showing dashboard cache
           {eodSnapshots?.[0]?.date ? ` (top: ${eodSnapshots[0].date})` : ""}.
         </p>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-xs text-slate-500 uppercase tracking-wider">Redis</span>
+        <span className="text-[13px] text-slate-500 uppercase tracking-wider">Redis</span>
         {!redis.configured ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1.5 text-[13px] text-slate-500">
             <AlertCircle className="h-3.5 w-3.5" />
             Not configured (set REDIS_URL / REDIS_PRIVATE_URL)
           </span>
         ) : redis.connected ? (
-          <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
+          <span className="inline-flex items-center gap-1.5 text-[13px] text-emerald-400">
             <CheckCircle className="h-3.5 w-3.5" />
             Connected{redis.source ? ` (${redis.source})` : ""}
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 text-xs text-amber-400">
+          <span className="inline-flex items-center gap-1.5 text-[13px] text-amber-400">
             <XCircle className="h-3.5 w-3.5" />
             <span title={redis.error ?? undefined}>
               Not connected
@@ -230,16 +230,16 @@ export function EodAndSystemPanel({
         )}
       </div>
       {!redis.connected && redis.error && (
-        <p className="text-xs text-slate-500 -mt-2">
+        <p className="text-[13px] text-slate-500 -mt-2">
           <span className="text-slate-400">Redis error:</span> {redis.error}
         </p>
       )}
 
       <div>
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+        <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">
           EOD snapshot files ({displaySnapshots.length})
         </p>
-        <p className="text-xs text-slate-500 mb-2">
+        <p className="text-[13px] text-slate-500 mb-2">
           Files under{" "}
           <code className="bg-slate-800 px-1 rounded">
             {rootLabel ? `${rootLabel.replace(/\/$/, "")}/eod/` : "DATA_ROOT/eod/"}
@@ -263,13 +263,13 @@ export function EodAndSystemPanel({
                     {s.date}.json
                     {(s.tickers_count ?? 0) > 0 && (
                       <span
-                        className={`text-xs font-sans ${thin ? "text-amber-400" : "text-slate-500"}`}
+                        className={`text-[13px] font-sans ${thin ? "text-amber-400" : "text-slate-500"}`}
                       >
                         {s.tickers_count} tickers{thin ? " (dashboard-only)" : ""}
                       </span>
                     )}
                   </span>
-                  <span className="text-slate-500 text-xs flex items-center gap-2">
+                  <span className="text-slate-500 text-[13px] flex items-center gap-2">
                     {formatBytes(s.size_bytes ?? 0)}
                     {s.run_date ? ` · ${formatRunDateEt(s.run_date)}` : ""}
                     <a
@@ -290,10 +290,10 @@ export function EodAndSystemPanel({
       </div>
 
       <div className="border-t border-slate-700 pt-3">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+        <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">
           FMP estimate snapshots ({estFiles?.length ?? 0})
         </p>
-        <p className="text-xs text-slate-500 mb-2">
+        <p className="text-[13px] text-slate-500 mb-2">
           Daily analyst-consensus vintages saved after each EOD run
           {estDir ? (
             <>
@@ -303,7 +303,7 @@ export function EodAndSystemPanel({
           {estLatestRows != null ? ` · latest has ${estLatestRows} tickers` : ""}
         </p>
         {estError ? (
-          <p className="text-xs text-amber-400">{estError}</p>
+          <p className="text-[13px] text-amber-400">{estError}</p>
         ) : estFiles == null ? (
           <p className="text-sm text-slate-500">Loading…</p>
         ) : estFiles.length === 0 ? (
@@ -313,7 +313,7 @@ export function EodAndSystemPanel({
             {estFiles.map((f) => (
               <li key={f.name} className="flex items-center justify-between gap-2 py-0.5 text-slate-300">
                 <span className="font-mono">{f.name}</span>
-                <span className="text-slate-500 text-xs flex items-center gap-2">
+                <span className="text-slate-500 text-[13px] flex items-center gap-2">
                   {formatBytes(f.size_bytes ?? 0)}
                   {f.modified ? ` · ${formatRunDateEt(f.modified)}` : ""}
                   <a
@@ -333,12 +333,12 @@ export function EodAndSystemPanel({
       </div>
 
       <div className="border-t border-slate-700 pt-3">
-        <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+        <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">
           Upload EOD snapshot
         </p>
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="block text-xs text-slate-500 mb-1">File (JSON)</label>
+            <label className="block text-[13px] text-slate-500 mb-1">File (JSON)</label>
             <input
               ref={fileInputRef}
               type="file"
@@ -349,7 +349,7 @@ export function EodAndSystemPanel({
             />
           </div>
           <div className="min-w-[10rem]">
-            <label className="block text-xs text-slate-500 mb-1">Date override (YYYY-MM-DD)</label>
+            <label className="block text-[13px] text-slate-500 mb-1">Date override (YYYY-MM-DD)</label>
             <input
               type="text"
               placeholder="Optional"
@@ -359,14 +359,14 @@ export function EodAndSystemPanel({
             />
           </div>
         </div>
-        {uploading && <p className="text-xs text-slate-500 mt-1">Uploading…</p>}
+        {uploading && <p className="text-[13px] text-slate-500 mt-1">Uploading…</p>}
         {uploadError && (
-          <p className="text-xs text-amber-400 mt-1 flex items-center gap-1">
+          <p className="text-[13px] text-amber-400 mt-1 flex items-center gap-1">
             <AlertCircle className="h-3 w-3 shrink-0" /> {uploadError}
           </p>
         )}
         {uploadSuccess && (
-          <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
+          <p className="text-[13px] text-emerald-400 mt-1 flex items-center gap-1">
             <CheckCircle className="h-3 w-3 shrink-0" /> {uploadSuccess}
           </p>
         )}

@@ -28,7 +28,7 @@ export function TickerDetailWhyNav({
             type="button"
             onClick={() => onChange(id)}
             className={clsx(
-              "flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-md text-xs font-medium transition-colors min-w-0",
+              "flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-md text-[13px] font-medium transition-colors min-w-0",
               active === id
                 ? "bg-td-accent text-slate-950 shadow-sm"
                 : "text-td-muted hover:text-td-text hover:bg-td-surface2",

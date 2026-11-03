@@ -76,7 +76,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
     <section className="rounded-xl border border-slate-700 bg-slate-800/50 p-6 text-center">
       <AlertCircle className="h-8 w-8 text-slate-500 mx-auto mb-2" />
       <p className="text-sm text-slate-400">Signal summary is still loading or unavailable for this ticker.</p>
-      <p className="text-xs text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
+      <p className="text-[13px] text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
     </section>
   )}
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
@@ -146,11 +146,11 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
 
   {detail.cross_asset && (detail.cross_asset.badges?.length ?? 0) > 0 && (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-td-muted">Tends to move with:</span>
+      <span className="text-[13px] text-td-muted">Tends to move with:</span>
       {detail.cross_asset.badges.map((b) => (
         <span
           key={b}
-          className="text-[12px] px-2 py-0.5 rounded-md bg-td-surface2 border border-td-line text-td-text/85"
+          className="text-sm px-2 py-0.5 rounded-md bg-td-surface2 border border-td-line text-td-text/85"
           title="How this stock has tended to move with gold, the U.S. dollar, and the fear gauge (VIX) over the last ~60 trading days"
         >
           {b}
@@ -178,7 +178,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
 
   {detail.fundamentals_snapshot && !detail.fundamentals_snapshot.point_in_time && (
     <p
-      className="text-[11px] text-td-muted leading-snug"
+      className="text-[13px] text-td-muted leading-relaxed"
       title={detail.fundamentals_snapshot.detail}
     >
       Fair value and valuation numbers reflect the latest available data, not a historical snapshot — treat them as context, not a precise calculation.

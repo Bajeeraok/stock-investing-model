@@ -74,11 +74,11 @@ export function UnifiedValuationSummary({
         <div className="bg-td-owner/5 border border-td-owner/20 rounded-xl px-3.5 py-3 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
             <Target size={11} className="text-td-owner shrink-0" />
-            <span className="text-[10px] font-semibold text-td-owner uppercase tracking-widest">
+            <span className="text-[11px] font-semibold text-td-owner uppercase tracking-widest">
               Valuation summary — Wall Street
               {analystCount ? ` · ${analystCount} analysts` : ""}
             </span>
-            <span className="text-[10px] text-td-muted font-normal normal-case tracking-normal">
+            <span className="text-[11px] text-td-muted font-normal normal-case tracking-normal">
               (FMP · anchors Bull/Base scenarios)
             </span>
           </div>
@@ -87,27 +87,27 @@ export function UnifiedValuationSummary({
             <div className="flex items-center gap-5 flex-wrap">
               {high != null && (
                 <div className="text-center">
-                  <p className="text-[10px] text-td-muted">Analyst High</p>
+                  <p className="text-[11px] text-td-muted">Analyst High</p>
                   <p className={clsx("text-sm font-mono font-bold", returnColor(highRet ?? 0))}>{fmt(high)}</p>
-                  <p className={clsx("text-[10px]", returnColor(highRet ?? 0))}>{fmtPct(highRet)}</p>
+                  <p className={clsx("text-[11px]", returnColor(highRet ?? 0))}>{fmtPct(highRet)}</p>
                 </div>
               )}
               {median != null && (
                 <div className="text-center">
-                  <p className="text-[10px] text-td-muted">Consensus</p>
+                  <p className="text-[11px] text-td-muted">Consensus</p>
                   <p className={clsx("text-sm font-mono font-bold", returnColor(medRet ?? 0))}>{fmt(median)}</p>
-                  <p className={clsx("text-[10px]", returnColor(medRet ?? 0))}>{fmtPct(medRet)}</p>
+                  <p className={clsx("text-[11px]", returnColor(medRet ?? 0))}>{fmtPct(medRet)}</p>
                 </div>
               )}
               {low != null && (
                 <div className="text-center">
-                  <p className="text-[10px] text-td-muted">Analyst Low</p>
+                  <p className="text-[11px] text-td-muted">Analyst Low</p>
                   <p className={clsx("text-sm font-mono font-bold", returnColor(lowRet ?? 0))}>{fmt(low)}</p>
-                  <p className={clsx("text-[10px]", returnColor(lowRet ?? 0))}>{fmtPct(lowRet)}</p>
+                  <p className={clsx("text-[11px]", returnColor(lowRet ?? 0))}>{fmtPct(lowRet)}</p>
                 </div>
               )}
               <div className="text-center">
-                <p className="text-[10px] text-td-muted">Current</p>
+                <p className="text-[11px] text-td-muted">Current</p>
                 <p className="text-sm font-mono font-bold text-td-text">{fmt(currentPrice)}</p>
               </div>
             </div>
@@ -116,7 +116,7 @@ export function UnifiedValuationSummary({
           {hasRatings && <AnalystRatingBar ratings={ratings!} />}
 
           {at?.note && !hasRatings && (
-            <p className="text-[10px] text-td-muted leading-snug">{at.note}</p>
+            <p className="text-[11px] text-td-muted leading-relaxed">{at.note}</p>
           )}
         </div>
       )}

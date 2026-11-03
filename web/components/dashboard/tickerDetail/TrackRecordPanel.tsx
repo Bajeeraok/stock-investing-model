@@ -53,7 +53,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
         <History className="h-4 w-4 text-emerald-400 shrink-0" aria-hidden />
         Signal track record
       </h3>
-      <p className="text-xs text-slate-500 leading-relaxed">
+      <p className="text-[13px] text-slate-500 leading-relaxed">
         What we said vs. what happened, for this ticker specifically — from the same
         forward-tracking data behind the Analysis tab.
       </p>
@@ -89,7 +89,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
       {allCalls.length > 0 && (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-xs font-semibold text-slate-300">
+            <p className="text-[13px] font-semibold text-slate-300">
               Daily calls{version && !showOlderCalls ? ` — ${version} only` : " — all models"}
               {scored.length > 0 && (
                 <span className="ml-2 font-normal text-slate-500">
@@ -99,13 +99,13 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
             </p>
             <span className="flex items-baseline gap-3">
               {data?.eod_date_last && (
-                <span className="text-[11px] text-slate-600">through {data.eod_date_last}</span>
+                <span className="text-[13px] text-slate-600">through {data.eod_date_last}</span>
               )}
               {olderCalls.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowOlderCalls((s) => !s)}
-                  className="text-xs text-slate-500 hover:text-slate-300"
+                  className="text-[13px] text-slate-500 hover:text-slate-300"
                 >
                   {showOlderCalls ? "Hide previous models" : `Show ${olderCalls.length} from previous models`} ›
                 </button>
@@ -113,10 +113,10 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
             </span>
           </div>
           {dailyCalls.length === 0 ? (
-            <p className="text-xs text-slate-600">No daily calls under {version} for {ticker} yet.</p>
+            <p className="text-[13px] text-slate-600">No daily calls under {version} for {ticker} yet.</p>
           ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[680px]">
+            <table className="w-full text-[13px] min-w-[680px]">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-700">
                   <th className="py-1 pr-2 font-medium">Date</th>
@@ -197,7 +197,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
             </table>
           </div>
           )}
-          <p className="text-[11px] text-slate-600 leading-snug">
+          <p className="text-[13px] text-slate-600 leading-snug">
             What we said vs what happened: each EOD call with its price, then the next session&apos;s close — no waiting for a 5d/20d
             window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored. Target is the
             short-term target at the call; &quot;missed by&quot; is the 20-day result minus that target (negative = fell short).
@@ -208,7 +208,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
       {data && <TrackErrorCard data={data} />}
 
       {legacy && (legacy.n_observations ?? 0) > 0 && (
-        <p className="text-xs text-slate-600 leading-relaxed">
+        <p className="text-[13px] text-slate-600 leading-relaxed">
           Pre-{version || "current"} history: <CallsRight stats={legacy} /> — kept separate, not blended
           into the number above.
         </p>
@@ -217,24 +217,24 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
       {allTrades.length > 0 && (
         <div>
           <div className="flex items-baseline justify-between gap-2 mb-1">
-            <p className="text-xs text-slate-500">
+            <p className="text-[13px] text-slate-500">
               Per-trade detail (most recent first){version && !showLegacyRows ? ` — ${version} only` : ""}
             </p>
             {legacyTrades.length > 0 && (
               <button
                 type="button"
                 onClick={() => setShowLegacyRows((s) => !s)}
-                className="text-xs text-slate-500 hover:text-slate-300 shrink-0"
+                className="text-[13px] text-slate-500 hover:text-slate-300 shrink-0"
               >
                 {showLegacyRows ? "Hide" : `Show ${legacyTrades.length} legacy`} ›
               </button>
             )}
           </div>
           {shownTrades.length === 0 ? (
-            <p className="text-xs text-slate-600">No trades logged under {version} for this ticker yet.</p>
+            <p className="text-[13px] text-slate-600">No trades logged under {version} for this ticker yet.</p>
           ) : (
             <>
-              <table className="w-full text-xs border-collapse">
+              <table className="w-full text-[13px] border-collapse">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-700/70">
                     <th className="pr-3 py-1.5 font-medium">Date</th>
@@ -304,7 +304,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                   ))}
                 </tbody>
               </table>
-              <p className="text-[11px] text-slate-600 mt-1.5">
+              <p className="text-[13px] text-slate-600 mt-1.5">
                 * stop also touched intraday that day, but the close still cleared target — counted as a win, same rule the headline win rate uses.
                 {allTrades.some((t) => t.track === "velocity") && " \"vel\" = velocity track (T+N rules), kept separate from accumulate's win criterion."}
               </p>

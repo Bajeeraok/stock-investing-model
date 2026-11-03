@@ -135,7 +135,7 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
   const bar = payload[0].payload;
   return (
-    <div className="bg-td-surface border border-td-line rounded-lg px-3 py-2 text-xs shadow-xl">
+    <div className="bg-td-surface border border-td-line rounded-lg px-3 py-2 text-[13px] shadow-xl">
       <p className="text-td-muted mb-1">{formatTime(bar.t, period)}</p>
       <p className="text-td-text font-mono font-semibold">${bar.c.toFixed(2)}</p>
       <div className="mt-1 space-y-0.5 text-td-muted">
@@ -238,13 +238,13 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold text-td-text uppercase tracking-wide">{ticker}</span>
+          <span className="text-[13px] font-semibold text-td-text uppercase tracking-wide">{ticker}</span>
           {lastClose > 0 && (
             <>
               <span className="text-sm font-mono font-bold text-td-text">${lastClose.toFixed(2)}</span>
               <span
                 className={clsx(
-                  "text-xs font-mono px-1.5 py-0.5 rounded",
+                  "text-[13px] font-mono px-1.5 py-0.5 rounded",
                   isUp ? "text-td-accent bg-td-accent/10" : "text-td-crit bg-td-crit/10",
                 )}
               >
@@ -253,7 +253,7 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
             </>
           )}
           {loading && (
-            <span className="text-[10px] text-td-muted animate-pulse">loading…</span>
+            <span className="text-[11px] text-td-muted animate-pulse">loading…</span>
           )}
         </div>
 
@@ -265,7 +265,7 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
               onClick={() => setPeriod(key)}
               title={PERIODS.find((p) => p.key === key)?.desc}
               className={clsx(
-                "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                "px-2.5 py-1 rounded-md text-[13px] font-medium transition-colors",
                 period === key
                   ? "bg-td-surface2 text-td-text shadow-sm"
                   : "text-td-muted hover:text-td-text",
@@ -279,11 +279,11 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
 
       {/* ── Chart ── */}
       {error ? (
-        <div className="h-40 flex items-center justify-center text-xs text-td-muted">
+        <div className="h-40 flex items-center justify-center text-[13px] text-td-muted">
           {error}
         </div>
       ) : bars.length === 0 && !loading ? (
-        <div className="h-40 flex items-center justify-center text-xs text-td-muted">
+        <div className="h-40 flex items-center justify-center text-[13px] text-td-muted">
           No data for {ticker}
         </div>
       ) : (
@@ -350,11 +350,11 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
 
       {/* ── Footer: last updated + delay note ── */}
       <div className="flex items-center justify-between gap-2 mt-2">
-        <span className="text-[10px] text-td-muted">
+        <span className="text-[11px] text-td-muted">
           {periodInfo.desc}
           {fetchedAt && ` · updated ${timeAgo(fetchedAt.toISOString())}`}
         </span>
-        <span className="text-[10px] text-td-muted italic">
+        <span className="text-[11px] text-td-muted italic">
           Delayed ~15 min · not for execution
         </span>
       </div>

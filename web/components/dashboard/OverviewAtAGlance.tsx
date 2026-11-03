@@ -81,9 +81,9 @@ function KpiChip({
       className={clsx("rounded-lg border px-3 py-2 min-w-[7rem] flex-1", toneCls)}
       title={title}
     >
-      <p className="text-[10px] uppercase tracking-wider text-slate-300 font-medium">{label}</p>
+      <p className="text-[11px] uppercase tracking-wider text-slate-300 font-medium">{label}</p>
       <p className="text-sm font-semibold text-slate-100 mt-0.5 tabular-nums">{value}</p>
-      {sub && <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{sub}</p>}
+      {sub && <p className="text-[13px] text-slate-300 mt-0.5 leading-snug">{sub}</p>}
     </div>
   );
 }
@@ -95,10 +95,10 @@ function RiskMeter({ score, scale }: { score?: number; scale?: string }) {
   return (
     <div className="flex-1 min-w-[10rem]">
       <div className="flex items-baseline justify-between gap-2 mb-1">
-        <span className="text-[10px] uppercase tracking-wider text-slate-300 font-medium">Portfolio risk</span>
+        <span className="text-[11px] uppercase tracking-wider text-slate-300 font-medium">Portfolio risk</span>
         <span className="text-sm font-bold text-slate-100 tabular-nums">
           {score ?? "—"}
-          <span className="text-xs font-normal text-slate-400 ml-1">{scale}</span>
+          <span className="text-[13px] font-normal text-slate-400 ml-1">{scale}</span>
         </span>
       </div>
       <div className="h-2 rounded-full bg-slate-700/80 overflow-hidden">
@@ -203,16 +203,16 @@ export function OverviewAtAGlance({
             )}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <span className="text-[13px] font-semibold uppercase tracking-wider text-slate-300">
                 {tag} · {label}
                 {isPrimary && (
-                  <span className="ml-1 text-[10px] text-emerald-400 font-normal normal-case">focus</span>
+                  <span className="ml-1 text-[11px] text-emerald-400 font-normal normal-case">focus</span>
                 )}
               </span>
               {row.action && (
                 <span
                   className={clsx(
-                    "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
+                    "text-[11px] font-bold uppercase px-2 py-0.5 rounded border",
                     MATRIX_ACTION[row.action] ?? MATRIX_ACTION.HOLD
                   )}
                 >
@@ -222,7 +222,7 @@ export function OverviewAtAGlance({
             </div>
             {row.stance && <p className="text-sm font-medium text-slate-100">{row.stance}</p>}
             {(STANCE_ACTION_HINT[row.stance ?? ""] ?? (row.bullets ?? [])[0]) && (
-              <p className="text-xs text-emerald-200/90 leading-snug">
+              <p className="text-[13px] text-emerald-200/90 leading-snug">
                 {STANCE_ACTION_HINT[row.stance ?? ""] ?? (row.bullets ?? [])[0]}
               </p>
             )}
@@ -235,12 +235,12 @@ export function OverviewAtAGlance({
   const priorityBlock =
     suggested.length > 0 ? (
       <div className="rounded-xl border border-slate-600/80 bg-slate-800/40 px-4 py-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-200 mb-2 flex items-center gap-1.5">
+        <h3 className="text-[13px] font-semibold uppercase tracking-wider text-slate-200 mb-2 flex items-center gap-1.5">
           <Grid3X3 className="h-3.5 w-3.5 text-emerald-400" />
           {skippedSuggested > 0 || coveredTickers?.size ? "More priority actions" : "Priority actions"}
         </h3>
         {skippedSuggested > 0 && (
-          <p className="text-[11px] text-slate-400 mb-2">
+          <p className="text-[13px] text-slate-400 mb-2">
             {skippedSuggested} ticker{skippedSuggested === 1 ? "" : "s"} already in Priority alerts above.
           </p>
         )}
@@ -256,7 +256,7 @@ export function OverviewAtAGlance({
               </button>
               <span
                 className={clsx(
-                  "text-[10px] font-bold uppercase px-2 py-0.5 rounded border",
+                  "text-[11px] font-bold uppercase px-2 py-0.5 rounded border",
                   ACTION_STYLE[a.action] ?? ACTION_STYLE.HOLD
                 )}
               >
@@ -306,7 +306,7 @@ export function OverviewAtAGlance({
             <h2 className="text-base font-semibold text-slate-50">Today at a glance</h2>
           </div>
           {ctx?.quadrant && (
-            <span className="text-[11px] font-medium uppercase tracking-wide text-emerald-300/90 px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-950/30">
+            <span className="text-[13px] font-medium uppercase tracking-wide text-emerald-300/90 px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-950/30">
               {ctx.quadrant.replace(/_/g, " ")}
             </span>
           )}
@@ -326,9 +326,9 @@ export function OverviewAtAGlance({
               className="sm:w-52 shrink-0"
             />
           </div>
-          <p className="text-[11px] text-slate-400 -mt-1">{tradingLensHint(tradingLens)}</p>
+          <p className="text-[13px] text-slate-400 -mt-1">{tradingLensHint(tradingLens)}</p>
           {guestUniverseNote && (
-            <p className="text-[11px] text-sky-200/90 rounded-md border border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5">
+            <p className="text-[13px] text-sky-200/90 rounded-md border border-sky-500/25 bg-sky-950/20 px-2.5 py-1.5">
               {guestUniverseNote}
             </p>
           )}
@@ -342,12 +342,12 @@ export function OverviewAtAGlance({
               )}
               <div className="flex flex-wrap gap-2 mt-3">
                 {ctx.temperature_label && (
-                  <span className="text-xs font-medium px-2.5 py-1 rounded-md border border-sky-500/40 bg-sky-950/40 text-sky-100">
+                  <span className="text-[13px] font-medium px-2.5 py-1 rounded-md border border-sky-500/40 bg-sky-950/40 text-sky-100">
                     ST sentiment: {ctx.temperature_label}
                   </span>
                 )}
                 {ctx.regime_label && (
-                  <span className="text-xs font-medium px-2.5 py-1 rounded-md border border-emerald-500/40 bg-emerald-950/35 text-emerald-100">
+                  <span className="text-[13px] font-medium px-2.5 py-1 rounded-md border border-emerald-500/40 bg-emerald-950/35 text-emerald-100">
                     Regime: {ctx.regime_label}
                     {ctx.hmm_bull_pct != null && ` · ${ctx.hmm_bull_pct}% bull`}
                   </span>
@@ -357,7 +357,7 @@ export function OverviewAtAGlance({
                 <div className="flex flex-wrap gap-2 mt-3">
                   {ctx.bull_case_trigger && (
                     <span
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-950/40 px-3 py-1 text-xs text-emerald-100"
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-950/40 px-3 py-1 text-[13px] text-emerald-100"
                       title={ctx.bull_case_trigger}
                     >
                       <span className="font-bold text-emerald-300 shrink-0">Bull</span>
@@ -366,7 +366,7 @@ export function OverviewAtAGlance({
                   )}
                   {ctx.bear_case_trigger && (
                     <span
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-950/35 px-3 py-1 text-xs text-amber-100"
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-950/35 px-3 py-1 text-[13px] text-amber-100"
                       title={ctx.bear_case_trigger}
                     >
                       <span className="font-bold text-amber-300 shrink-0">Bear</span>
@@ -379,14 +379,14 @@ export function OverviewAtAGlance({
                 <button
                   type="button"
                   onClick={() => setAnalogOpen((o) => !o)}
-                  className="mt-2 text-xs text-slate-300 hover:text-slate-100 flex items-center gap-1"
+                  className="mt-2 text-[13px] text-slate-300 hover:text-slate-100 flex items-center gap-1"
                 >
                   {analogOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                   Historical analog
                 </button>
               )}
               {analogOpen && ctx.historical_analog && (
-                <p className="text-xs text-slate-300 mt-1 pl-5 border-l-2 border-slate-600">{ctx.historical_analog}</p>
+                <p className="text-[13px] text-slate-300 mt-1 pl-5 border-l-2 border-slate-600">{ctx.historical_analog}</p>
               )}
             </div>
           )}
@@ -441,7 +441,7 @@ export function OverviewAtAGlance({
           />
 
           {(vixStr || macroDriver || hyDriver || temp?.macro_overlay) && (
-            <p className="text-xs text-slate-300">
+            <p className="text-[13px] text-slate-300">
               {[vixStr && `VIX ${vixStr}`, macroDriver, hyDriver, temp?.macro_overlay].filter(Boolean).join(" · ")}
             </p>
           )}
@@ -489,7 +489,7 @@ export function OverviewAtAGlance({
           <ul className="space-y-2">
             {market!.morning_checklist!.map((c, i) => (
               <li key={i} className="text-sm flex gap-3 rounded-lg border border-slate-600/60 bg-slate-800/40 px-3 py-2">
-                <span className="text-sky-300 shrink-0 text-xs font-mono font-semibold min-w-[6.5rem]">{c.time}</span>
+                <span className="text-sky-300 shrink-0 text-[13px] font-mono font-semibold min-w-[6.5rem]">{c.time}</span>
                 <span className="text-slate-100 leading-snug">{c.task}</span>
               </li>
             ))}

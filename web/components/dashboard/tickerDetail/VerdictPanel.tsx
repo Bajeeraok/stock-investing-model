@@ -197,7 +197,7 @@ function VerdictActionBar({
       )}
       {notesOpen && (
         <div className="rounded-xl border border-td-line bg-td-surface p-3 space-y-2">
-          <label htmlFor={`note-${ticker}`} className="text-[11px] text-td-muted">
+          <label htmlFor={`note-${ticker}`} className="text-[13px] text-td-muted">
             One line for your decision journal — saved to the same log Portfolio shows.
           </label>
           <textarea
@@ -214,12 +214,12 @@ function VerdictActionBar({
               type="button"
               onClick={saveNote}
               disabled={!note.trim() || noteState === "saving"}
-              className="rounded-lg bg-td-accent px-3 py-1.5 text-xs font-bold text-slate-950 disabled:opacity-50"
+              className="rounded-lg bg-td-accent px-3 py-1.5 text-[13px] font-bold text-slate-950 disabled:opacity-50"
             >
               {noteState === "saving" ? "Saving…" : "Save note"}
             </button>
-            {noteState === "saved" && <span className="text-xs text-td-accent">Saved to journal</span>}
-            {noteState === "error" && <span className="text-xs text-td-crit">Could not save — try again</span>}
+            {noteState === "saved" && <span className="text-[13px] text-td-accent">Saved to journal</span>}
+            {noteState === "error" && <span className="text-[13px] text-td-crit">Could not save — try again</span>}
           </div>
         </div>
       )}
@@ -363,7 +363,7 @@ export function VerdictPanel({
     <div className="space-y-3">
       {/* 1 · Verdict */}
       <section className={clsx("rounded-2xl border px-4 sm:px-5 py-4", tone.card)} aria-label="Verdict">
-        <p className={clsx("flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-wider", tone.text)}>
+        <p className={clsx("flex items-center gap-2 font-mono text-[13px] font-bold uppercase tracking-wider", tone.text)}>
           <span className={clsx("h-2 w-2 rounded-full", tone.dot)} />
           {actionStatus.title}
         </p>
@@ -372,9 +372,9 @@ export function VerdictPanel({
         </h3>
         {whyLine && <p className="mt-1.5 text-[13.5px] text-td-text/85 leading-snug">{whyLine}.</p>}
         {actionStatus.subtitle && actionStatus.subtitle !== whyLine && (
-          <p className="mt-1 text-[12.5px] text-td-muted leading-snug">{actionStatus.subtitle}</p>
+          <p className="mt-1 text-[12.5px] text-td-muted leading-relaxed">{actionStatus.subtitle}</p>
         )}
-        <p className={clsx("mt-2 text-[11px]", tone.text)}>
+        <p className={clsx("mt-2 text-[13px]", tone.text)}>
           {since ? `Signal ${since.signal} since ${shortDate(since.since)}` : trackLoading ? "Checking signal history…" : "No signal history yet"}
           {" · changes only when a new signal prints"}
         </p>
@@ -384,7 +384,7 @@ export function VerdictPanel({
       {rows.length > 0 && (
         <section className="rounded-2xl border border-td-line bg-td-surface px-4 sm:px-5 py-3" aria-label="Unlocks when">
           <div className="flex items-baseline justify-between gap-2 mb-1">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-td-muted">
+            <h4 className="text-[13px] font-semibold uppercase tracking-wider text-td-muted">
               {blocked === 0 && rows.every((r) => r.ok) ? "All clear" : "Unlocks when"}
             </h4>
             <span className="font-mono text-[10.5px] text-td-muted tabular-nums">
@@ -401,7 +401,7 @@ export function VerdictPanel({
                   <span className={clsx(r.ok && "text-td-muted")}>{r.label}</span>
                 </span>
                 {r.value && (
-                  <span className="font-mono text-[11px] text-td-muted whitespace-nowrap tabular-nums text-right">{r.value}</span>
+                  <span className="font-mono text-[13px] text-td-muted whitespace-nowrap tabular-nums text-right">{r.value}</span>
                 )}
               </li>
             ))}
@@ -429,7 +429,7 @@ export function VerdictPanel({
         {/* Hidden entirely when R:R is unknown — a "—" tile teaches nothing. */}
         {rr != null && rr > 0 && (
         <div className="rounded-xl border border-td-line bg-td-surface px-3.5 py-3">
-          <p className="text-[11px] text-td-muted">Risk : Reward</p>
+          <p className="text-[13px] text-td-muted">Risk : Reward</p>
           <p className="mt-1 font-mono text-lg font-bold text-td-text tabular-nums">{`1 : ${rr.toFixed(1)}`}</p>
           <p className="text-[10.5px] text-td-muted">
             {rrSub}
@@ -443,7 +443,7 @@ export function VerdictPanel({
             earningsSoon ? "border-td-warn/40 bg-td-warn-weak/50" : "border-td-line bg-td-surface",
           )}
         >
-          <p className="text-[11px] text-td-muted">Next catalyst</p>
+          <p className="text-[13px] text-td-muted">Next catalyst</p>
           <p className={clsx("mt-1 font-mono text-[15px] font-bold tabular-nums truncate", earningsSoon ? "text-td-warn" : "text-td-text")}>
             {catalystValue}
           </p>
@@ -460,7 +460,7 @@ export function VerdictPanel({
         onClick={onOpenTrack}
         className="w-full text-left rounded-xl border border-td-line bg-td-surface px-4 py-3 hover:border-td-accent/40 transition-colors"
       >
-        <p className="text-[11px] text-td-muted">Historical hit rate for this ticker</p>
+        <p className="text-[13px] text-td-muted">Historical hit rate for this ticker</p>
         {hitStats && (hitStats.n_observations ?? 0) > 0 ? (
           <p className="mt-0.5 text-[14px] font-semibold text-td-text">
             <span className={(hitStats.win_rate_pct ?? 0) >= 50 ? "text-td-accent" : "text-td-warn"}>
@@ -478,7 +478,7 @@ export function VerdictPanel({
             Current model {track.current_model_version} is too new for its own read (n={curN}) — this is prior-version history. See Track tab ›
           </p>
         )}
-        <p className="mt-1 text-[10px] text-td-muted/80">Based on similar past signals; not a guarantee.</p>
+        <p className="mt-1 text-[11px] text-td-muted/80">Based on similar past signals; not a guarantee.</p>
       </button>
 
       {/* 5 · Actions */}

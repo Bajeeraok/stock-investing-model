@@ -63,7 +63,7 @@ export function RoadmapSummaries({
             onClick={() => setTraderOpen((o) => !o)}
             className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
           >
-            <span className="flex items-center gap-2 text-xs font-semibold text-slate-200 uppercase tracking-wider">
+            <span className="flex items-center gap-2 text-[13px] font-semibold text-slate-200 uppercase tracking-wider">
               <TrendingUp className="h-3.5 w-3.5 text-amber-400" />
               Trader roadmap
               <ActionBadge text={traderRoadmap.action_today} />
@@ -80,7 +80,7 @@ export function RoadmapSummaries({
                 <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2.5 grid grid-cols-3 gap-2">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[9px] uppercase text-slate-500 font-semibold">Short entry</span>
-                    <span className="text-xs font-mono text-slate-200 tabular-nums">
+                    <span className="text-[13px] font-mono text-slate-200 tabular-nums">
                       ${traderRoadmap.short.entry_zone.low?.toFixed(2)}–${traderRoadmap.short.entry_zone.high?.toFixed(2)}
                     </span>
                   </div>
@@ -93,13 +93,13 @@ export function RoadmapSummaries({
                   {traderRoadmap.short.stop != null && (
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[9px] uppercase text-slate-500 font-semibold">Stop</span>
-                      <span className="font-mono tabular-nums text-red-300 text-xs">
+                      <span className="font-mono tabular-nums text-red-300 text-[13px]">
                         ${traderRoadmap.short.stop.toFixed(2)}
                       </span>
                     </div>
                   )}
                   {traderRoadmap.short.trigger && (
-                    <p className="col-span-3 text-[10px] text-slate-400 leading-snug">{traderRoadmap.short.trigger}</p>
+                    <p className="col-span-3 text-[11px] text-slate-400 leading-snug">{traderRoadmap.short.trigger}</p>
                   )}
                 </div>
               )}
@@ -107,7 +107,7 @@ export function RoadmapSummaries({
                 <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2.5 grid grid-cols-3 gap-2">
                   <div className="flex flex-col gap-0.5">
                     <span className="text-[9px] uppercase text-slate-500 font-semibold">Med entry</span>
-                    <span className="text-xs font-mono text-slate-200 tabular-nums">
+                    <span className="text-[13px] font-mono text-slate-200 tabular-nums">
                       ${traderRoadmap.medium.entry_zone.low?.toFixed(2)}–${traderRoadmap.medium.entry_zone.high?.toFixed(2)}
                     </span>
                   </div>
@@ -120,13 +120,13 @@ export function RoadmapSummaries({
                   {traderRoadmap.medium.stop != null && (
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[9px] uppercase text-slate-500 font-semibold">Stop</span>
-                      <span className="font-mono tabular-nums text-red-300 text-xs">
+                      <span className="font-mono tabular-nums text-red-300 text-[13px]">
                         ${traderRoadmap.medium.stop.toFixed(2)}
                       </span>
                     </div>
                   )}
                   {traderRoadmap.medium.trigger && (
-                    <p className="col-span-3 text-[10px] text-slate-400 leading-snug">{traderRoadmap.medium.trigger}</p>
+                    <p className="col-span-3 text-[11px] text-slate-400 leading-snug">{traderRoadmap.medium.trigger}</p>
                   )}
                 </div>
               )}
@@ -143,7 +143,7 @@ export function RoadmapSummaries({
             onClick={() => setInvestorOpen((o) => !o)}
             className="w-full flex items-center justify-between gap-2 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
           >
-            <span className="flex items-center gap-2 text-xs font-semibold text-slate-200 uppercase tracking-wider">
+            <span className="flex items-center gap-2 text-[13px] font-semibold text-slate-200 uppercase tracking-wider">
               <Calendar className="h-3.5 w-3.5 text-emerald-400" />
               Investor roadmap
               <ActionBadge text={investorRoadmap.action_today} />
@@ -164,8 +164,8 @@ export function RoadmapSummaries({
                       .filter(t => t.low != null && t.high != null)
                       .map(t => (
                         <div key={t.id} className="flex items-center justify-between gap-2 rounded-lg border border-slate-700/40 bg-slate-800/25 px-3 py-2">
-                          <span className="text-[10px] text-slate-400">{t.label ?? t.id}</span>
-                          <span className="text-xs font-mono font-semibold text-emerald-300 tabular-nums">
+                          <span className="text-[11px] text-slate-400">{t.label ?? t.id}</span>
+                          <span className="text-[13px] font-mono font-semibold text-emerald-300 tabular-nums">
                             ${(t.low as number).toFixed(2)}–${(t.high as number).toFixed(2)}
                           </span>
                           {(t.allocation_pct ?? 0) > 0 && (
@@ -178,12 +178,12 @@ export function RoadmapSummaries({
               )}
               <div className="flex items-center gap-2">
                 <span className="text-[9px] uppercase text-slate-500 font-semibold shrink-0">Trim near</span>
-                <span className="text-xs font-mono font-semibold text-amber-300 tabular-nums">
+                <span className="text-[13px] font-mono font-semibold text-amber-300 tabular-nums">
                   ${investorRoadmap.trim_near.toFixed(2)}
                 </span>
               </div>
               {investorRoadmap.hold_thesis && (
-                <p className="text-[10px] text-slate-400 leading-snug">{investorRoadmap.hold_thesis}</p>
+                <p className="text-[11px] text-slate-400 leading-snug">{investorRoadmap.hold_thesis}</p>
               )}
             </div>
           )}

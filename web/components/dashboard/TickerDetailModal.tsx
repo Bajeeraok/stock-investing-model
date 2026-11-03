@@ -900,7 +900,7 @@ export function TickerDetailModal({
               <p id="ticker-detail-title" className="flex items-baseline gap-2 min-w-0">
                 <span className="font-mono text-lg font-bold text-td-text tracking-tight">{ticker}</span>
                 {detail && !loading && (
-                  <span className="text-[12px] text-td-muted truncate">
+                  <span className="text-sm text-td-muted truncate">
                     {detail.company_name ?? ""}
                     {detail.sector ? ` · ${detail.sector}` : ""}
                   </span>
@@ -915,7 +915,7 @@ export function TickerDetailModal({
                       {Math.abs(quoteDailyMovePct).toFixed(2)}%
                     </span>
                   )}
-                  <span className="inline-flex items-center gap-1.5 text-[11px] text-td-muted">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] text-td-muted">
                     {livePrice != null ? (
                       <>
                         <span className="h-1.5 w-1.5 rounded-full bg-td-accent animate-pulse" />
@@ -1028,15 +1028,15 @@ export function TickerDetailModal({
               className="w-full flex items-start gap-2 text-left touch-manipulation"
               aria-expanded={catalystExpanded}
             >
-              <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-td-warn/20 px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-td-warn ring-1 ring-td-warn/40">
+              <span className="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-td-warn/20 px-2 py-0.5 text-[13px] font-bold uppercase tracking-wider text-td-warn ring-1 ring-td-warn/40">
                 {detail.catalyst.top_event_type?.replace(/_/g, " ") ?? "CATALYST"}
               </span>
-              <span className="text-xs text-td-text/85 leading-relaxed flex-1 min-w-0">
+              <span className="text-[13px] text-td-text/85 leading-relaxed flex-1 min-w-0">
                 {catalystExpanded
                   ? detail.catalyst.override_note
                   : `${(detail.catalyst.override_note || "").slice(0, 140)}${(detail.catalyst.override_note || "").length > 140 ? "…" : ""}`}
               </span>
-              <span className="shrink-0 text-td-warn/80 text-xs font-semibold pt-0.5">{catalystExpanded ? "Hide" : "More"}</span>
+              <span className="shrink-0 text-td-warn/80 text-[13px] font-semibold pt-0.5">{catalystExpanded ? "Hide" : "More"}</span>
             </button>
           </div>
         )}
@@ -1050,7 +1050,7 @@ export function TickerDetailModal({
                 ? "border-red-500/30 bg-red-950/80"
                 : "border-slate-600 bg-slate-800/80"
           }`}>
-            <span className={`shrink-0 mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold uppercase tracking-wider ring-1 ${
+            <span className={`shrink-0 mt-0.5 inline-flex items-center rounded-full px-2 py-0.5 text-[13px] font-bold uppercase tracking-wider ring-1 ${
               detail.post_earnings_transition.beat_or_miss === "beat"
                 ? "bg-emerald-500/20 text-emerald-300 ring-emerald-500/40"
                 : detail.post_earnings_transition.beat_or_miss === "miss"
@@ -1060,7 +1060,7 @@ export function TickerDetailModal({
               {detail.post_earnings_transition.beat_or_miss === "beat" ? "EARNINGS BEAT" :
                detail.post_earnings_transition.beat_or_miss === "miss" ? "EARNINGS MISS" : "EARNINGS INLINE"}
             </span>
-            <p className="text-xs text-slate-200/90 leading-relaxed">
+            <p className="text-[13px] text-slate-200/90 leading-relaxed">
               {detail.post_earnings_transition.transition_note}
             </p>
           </div>

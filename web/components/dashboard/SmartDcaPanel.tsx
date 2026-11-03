@@ -84,10 +84,10 @@ export function SmartDcaPanel({ signals }: { signals: Signal[] }) {
   return (
     <section className="rounded-xl border border-td-line bg-td-surface/60 overflow-hidden mb-3">
       <div className="px-4 py-2.5 border-b border-td-line/70 flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">
+        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-td-muted">
           Smart DCA — index tranche timing
         </p>
-        <p className="text-[10px] text-td-muted normal-case">
+        <p className="text-[11px] text-td-muted normal-case">
           Same dollars, better entries — timing the schedule, not stock-picking
         </p>
       </div>
@@ -102,23 +102,23 @@ export function SmartDcaPanel({ signals }: { signals: Signal[] }) {
                 <div className="flex items-baseline gap-2 min-w-0">
                   <span className="font-mono text-sm font-bold text-td-text">{r.ticker}</span>
                   {r.close != null && (
-                    <span className="font-mono text-xs text-td-muted tabular-nums">${r.close.toFixed(2)}</span>
+                    <span className="font-mono text-[13px] text-td-muted tabular-nums">${r.close.toFixed(2)}</span>
                   )}
                   {r.composite_buy != null && (
-                    <span className="text-[10px] text-td-muted tabular-nums">score {Math.round(r.composite_buy)}</span>
+                    <span className="text-[11px] text-td-muted tabular-nums">score {Math.round(r.composite_buy)}</span>
                   )}
                 </div>
-                <span className={clsx("inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded border shrink-0", meta.chip)}>
+                <span className={clsx("inline-flex items-center gap-1 text-[11px] font-bold uppercase px-2 py-0.5 rounded border shrink-0", meta.chip)}>
                   {meta.icon}
                   {meta.label}
                 </span>
               </div>
-              <p className="text-xs text-td-text leading-snug">
+              <p className="text-[13px] text-td-text leading-snug">
                 {reason}
                 <span className="text-td-muted">{ACTION_META[action].hint ? "" : ""}</span>
               </p>
-              <p className="text-[11px] text-td-muted leading-snug">{meta.hint}</p>
-              {unlock && <p className="text-[11px] text-td-info/90 leading-snug">{unlock}</p>}
+              <p className="text-[13px] text-td-muted leading-relaxed">{meta.hint}</p>
+              {unlock && <p className="text-[13px] text-td-info/90 leading-snug">{unlock}</p>}
             </div>
           );
         })}

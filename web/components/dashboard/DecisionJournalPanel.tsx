@@ -53,11 +53,11 @@ export function DecisionJournalPanel({ defaultOpen = false }: { defaultOpen?: bo
         onClick={() => setExpanded((v) => !v)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-800/50"
       >
-        <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <span className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-wider text-slate-400">
           <BookOpen className="h-4 w-4" />
           Decision log
         </span>
-        <span className="text-[10px] text-slate-600">{expanded ? "Hide" : "Show"}</span>
+        <span className="text-[11px] text-slate-600">{expanded ? "Hide" : "Show"}</span>
       </button>
 
       {expanded && (
@@ -70,7 +70,7 @@ export function DecisionJournalPanel({ defaultOpen = false }: { defaultOpen?: bo
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search notes…"
-                className="w-full pl-7 pr-2 py-1.5 text-xs rounded-md bg-slate-900 border border-slate-600 text-slate-200 placeholder-slate-600"
+                className="w-full pl-7 pr-2 py-1.5 text-[13px] rounded-md bg-slate-900 border border-slate-600 text-slate-200 placeholder-slate-600"
               />
             </div>
             <input
@@ -78,19 +78,19 @@ export function DecisionJournalPanel({ defaultOpen = false }: { defaultOpen?: bo
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
               placeholder="Ticker"
-              className="w-20 py-1.5 px-2 text-xs font-mono rounded-md bg-slate-900 border border-slate-600 text-slate-200 uppercase"
+              className="w-20 py-1.5 px-2 text-[13px] font-mono rounded-md bg-slate-900 border border-slate-600 text-slate-200 uppercase"
             />
           </div>
 
-          {loading && <p className="text-xs text-slate-500">Loading…</p>}
+          {loading && <p className="text-[13px] text-slate-500">Loading…</p>}
           {!loading && entries.length === 0 && (
-            <p className="text-xs text-slate-500">No journal entries yet. Log a note when you add or trim.</p>
+            <p className="text-[13px] text-slate-500">No journal entries yet. Log a note when you add or trim.</p>
           )}
           <ul className="space-y-1.5 max-h-48 overflow-y-auto">
             {entries.map((e, i) => (
               <li
                 key={`${e.at}-${e.ticker}-${i}`}
-                className="text-xs rounded-md border border-slate-700/50 bg-slate-900/40 px-2 py-1.5"
+                className="text-[13px] rounded-md border border-slate-700/50 bg-slate-900/40 px-2 py-1.5"
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-mono font-semibold text-slate-200">{e.ticker}</span>
@@ -107,7 +107,7 @@ export function DecisionJournalPanel({ defaultOpen = false }: { defaultOpen?: bo
                   >
                     {e.action}
                   </span>
-                  <span className="text-slate-600 ml-auto font-mono text-[10px]">
+                  <span className="text-slate-600 ml-auto font-mono text-[11px]">
                     {e.at ? e.at.slice(0, 10) : ""}
                   </span>
                 </div>

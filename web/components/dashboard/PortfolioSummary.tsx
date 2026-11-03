@@ -87,7 +87,7 @@ export function PortfolioSummary({ report }: { report: PortfolioReport }) {
               <span className="block text-slate-500 mt-0.5">Top 3 = {report.top3_pct}% of portfolio</span>
             )}
             {report.concentration_alert.length > 0 && (
-              <span className="block text-amber-400 text-xs mt-1">{report.concentration_alert.join(" · ")}</span>
+              <span className="block text-amber-400 text-[13px] mt-1">{report.concentration_alert.join(" · ")}</span>
             )}
           </>
         }

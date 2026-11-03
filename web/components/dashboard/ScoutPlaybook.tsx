@@ -26,14 +26,14 @@ export function ScoutPlaybook({
             key={`${c.time}-${i}`}
             className="text-sm flex gap-3 rounded-lg border border-slate-600/60 bg-slate-800/40 px-3 py-2"
           >
-            <span className="text-violet-300 shrink-0 text-xs font-mono font-semibold min-w-[6.5rem]">
+            <span className="text-violet-300 shrink-0 text-[13px] font-mono font-semibold min-w-[6.5rem]">
               {c.time}
             </span>
             <span className="text-slate-100 leading-snug">{c.task}</span>
           </li>
         ))}
       </ul>
-      <p className="text-[10px] text-slate-500 mt-2">
+      <p className="text-[11px] text-slate-500 mt-2">
         Scout mode — quick in/out rules before sizing tactical or earnings plays.
       </p>
     </ToggleSection>

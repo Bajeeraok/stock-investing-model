@@ -112,10 +112,10 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
           <Globe className="h-4 w-4 text-violet-400 shrink-0" />
           <span className="text-sm font-semibold text-slate-200">Market state</span>
           {!compactHeader && unified?.coexistence_note ? (
-            <span className="text-[11px] text-slate-500 leading-snug max-w-xl">{unified.coexistence_note}</span>
+            <span className="text-[13px] text-slate-500 leading-snug max-w-xl">{unified.coexistence_note}</span>
           ) : !compactHeader ? (
             (state.macro_regime || state.global_market_regime || unified?.regime_label) && (
-              <span className="text-xs text-slate-500">
+              <span className="text-[13px] text-slate-500">
                 {state.macro_regime && <>Macro overlay (ST): {state.macro_regime}</>}
                 {(unified?.regime_label || state.global_market_regime) && (
                   <>
@@ -130,13 +130,13 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
               </span>
             )
           ) : compactHeader ? (
-            <span className="text-[11px] text-slate-600">Session tape — pre-market, catalysts, next-day levels</span>
+            <span className="text-[13px] text-slate-600">Session tape — pre-market, catalysts, next-day levels</span>
           ) : null}
         </div>
         <button
           type="button"
           onClick={() => fetchState(false)}
-          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-300"
+          className="flex items-center gap-1 text-[13px] text-slate-500 hover:text-slate-300"
         >
           <RefreshCw className={clsx("h-3 w-3", loading && "animate-spin")} />
           Refresh
@@ -148,8 +148,8 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
 
         {Array.isArray(techMoversDetail) && techMoversDetail.length > 0 && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Pre-market movers (why)</p>
-            <ul className="space-y-1 text-xs">
+            <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">Pre-market movers (why)</p>
+            <ul className="space-y-1 text-[13px]">
               {techMoversDetail.slice(0, 6).map((m) => (
                   <li key={m.ticker} className="text-slate-300">
                     <span className={m.pct >= 0 ? "text-emerald-400" : "text-red-400"}>
@@ -164,7 +164,7 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
         )}
 
         {intraday && (
-          <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
             <span className="text-slate-500 flex items-center gap-1">
               <Activity className="h-3 w-3" /> Intraday SPY
             </span>
@@ -192,7 +192,7 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
 
         {(state.next_day_outlook?.length ?? 0) > 0 && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Next-day outlook</p>
+            <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">Next-day outlook</p>
             {state.next_day_summary && (
               <p className="text-sm text-slate-300 mb-2">{state.next_day_summary}</p>
             )}
@@ -212,7 +212,7 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
                     </span>
                   )}
                   {o.pct_green != null && (o as { edge_strength?: string }).edge_strength !== "none" && (
-                    <span className="text-slate-500 text-xs"> ({o.pct_green}% green)</span>
+                    <span className="text-slate-500 text-[13px]"> ({o.pct_green}% green)</span>
                   )}
                 </span>
               ))}
@@ -222,13 +222,13 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
 
         {(state.typical_move?.length ?? 0) > 0 && (
           <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-3">
-            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Typical 1-day range</p>
+            <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2">Typical 1-day range</p>
             <div className="space-y-1 text-sm text-slate-300">
               {state.typical_move!.map((m) => (
                 <div key={m.ticker}>
                   {m.ticker}: ±{m.typical_pct_1d}%
                   {(m as { range_note?: string }).range_note && (
-                    <span className="block text-xs text-amber-300/80">{(m as { range_note?: string }).range_note}</span>
+                    <span className="block text-[13px] text-amber-300/80">{(m as { range_note?: string }).range_note}</span>
                   )}
                 </div>
               ))}
@@ -236,7 +236,7 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
           </div>
         )}
 
-        {state.disclaimer && <p className="text-[10px] text-slate-600">{state.disclaimer}</p>}
+        {state.disclaimer && <p className="text-[11px] text-slate-600">{state.disclaimer}</p>}
       </div>
     </div>
   );

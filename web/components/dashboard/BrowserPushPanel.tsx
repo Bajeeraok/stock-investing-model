@@ -128,7 +128,7 @@ export default function BrowserPushPanel() {
         <Bell className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
         <div>
           <p className="text-sm font-medium text-slate-200">Browser push (Stage 2)</p>
-          <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+          <p className="text-[13px] text-slate-500 mt-1 leading-relaxed">
             Subscribe this device for background notifications. Requires{" "}
             <code className="text-slate-400">VAPID_PUBLIC_KEY</code> / <code className="text-slate-400">VAPID_PRIVATE_KEY</code>{" "}
             on the API (see <code className="text-slate-400">backend/env.example</code>). Email/Telegram digests remain unchanged.
@@ -137,7 +137,7 @@ export default function BrowserPushPanel() {
       </div>
 
       {!enabledOnServer && (
-        <p className="text-xs text-amber-400/90">
+        <p className="text-[13px] text-amber-400/90">
           Server has no VAPID public key — set env vars and redeploy to enable subscribe.
         </p>
       )}
@@ -147,7 +147,7 @@ export default function BrowserPushPanel() {
           type="button"
           disabled={!enabledOnServer || busy || subscribed}
           onClick={registerAndSubscribe}
-          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none px-3 py-2 text-xs font-semibold text-white"
+          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-40 disabled:pointer-events-none px-3 py-2 text-[13px] font-semibold text-white"
         >
           {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bell className="w-4 h-4" />}
           Enable on this device
@@ -156,15 +156,15 @@ export default function BrowserPushPanel() {
           type="button"
           disabled={busy || !subscribed}
           onClick={unsubscribe}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700/80 disabled:opacity-40"
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-slate-700/80 disabled:opacity-40"
         >
           <BellOff className="w-4 h-4" />
           Disable
         </button>
       </div>
 
-      {status && <p className="text-xs text-slate-400">{status}</p>}
-      <p className="text-[10px] text-slate-600">
+      {status && <p className="text-[13px] text-slate-400">{status}</p>}
+      <p className="text-[11px] text-slate-600">
         Ops test (optional): POST <code className="text-slate-500">/api/push/test</code> with header{" "}
         <code className="text-slate-500">X-Push-Admin-Secret</code> when <code className="text-slate-500">WEB_PUSH_ADMIN_SECRET</code> is set.
       </p>

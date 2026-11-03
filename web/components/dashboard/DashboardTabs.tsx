@@ -119,7 +119,7 @@ export function DashboardTabs({ active, onChange, badges, variant = "rail", comp
             <Icon className={clsx("h-[18px] w-[18px] shrink-0", isActive && "text-td-accent")} strokeWidth={2} />
             {!compact && <span className="flex-1 text-left">{label}</span>}
             {!compact && badge != null && badge > 0 && (
-              <span className="min-w-[1.4rem] h-5 px-1.5 rounded-md text-[11px] font-semibold flex items-center justify-center bg-td-surface2 text-td-muted">
+              <span className="min-w-[1.4rem] h-5 px-1.5 rounded-md text-[13px] font-semibold flex items-center justify-center bg-td-surface2 text-td-muted">
                 {badge > 99 ? "99+" : badge}
               </span>
             )}
@@ -160,7 +160,7 @@ export function SubViewSwitch<T extends string>({
           )}
         >
           {o.label}
-          {o.badge != null && o.badge > 0 && <span className="ml-1.5 text-[11px] text-td-muted">{o.badge}</span>}
+          {o.badge != null && o.badge > 0 && <span className="ml-1.5 text-[13px] text-td-muted">{o.badge}</span>}
         </button>
       ))}
     </div>

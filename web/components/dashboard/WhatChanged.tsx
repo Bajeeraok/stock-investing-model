@@ -29,7 +29,7 @@ export function WhatChanged({ items, onTickerClick }: { items: WhatChangedType[]
                 {w.changes.map((c, i) => (
                   <span
                     key={i}
-                    className="px-2 py-1 rounded text-xs bg-slate-800 text-slate-400"
+                    className="px-2 py-1 rounded text-[13px] bg-slate-800 text-slate-400"
                   >
                     {c}
                   </span>

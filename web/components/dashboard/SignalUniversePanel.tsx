@@ -237,19 +237,19 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
         <div>
           <h3 className="text-sm font-semibold text-slate-200">
             Signal Universe
-            {data && <span className="ml-2 text-xs text-slate-500 font-normal">{data.total} tickers</span>}
+            {data && <span className="ml-2 text-[13px] text-slate-500 font-normal">{data.total} tickers</span>}
             {filtered.length !== (data?.total ?? 0) && (
-              <span className="ml-1 text-xs text-slate-500 font-normal">· {filtered.length} shown</span>
+              <span className="ml-1 text-[13px] text-slate-500 font-normal">· {filtered.length} shown</span>
             )}
           </h3>
           {data?.as_of && (
-            <p className="text-[10px] text-slate-500 font-mono mt-0.5">EOD snapshot: {data.as_of}</p>
+            <p className="text-[11px] text-slate-500 font-mono mt-0.5">EOD snapshot: {data.as_of}</p>
           )}
         </div>
         <button
           onClick={() => void load()}
           disabled={loading}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-xs text-slate-400 hover:text-slate-200 hover:border-slate-500 transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-[13px] text-slate-400 hover:text-slate-200 hover:border-slate-500 transition disabled:opacity-50"
         >
           <RefreshCw className={clsx("h-3 w-3", loading && "animate-spin")} />
           {loading ? "Loading…" : "Reload"}
@@ -268,7 +268,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
             onFocus={() => setShowSuggestions(true)}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 120)}
             placeholder="Ticker / sector…"
-            className="pl-7 pr-3 py-1.5 w-36 sm:w-44 text-xs bg-slate-800 border border-slate-700 rounded-md text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60"
+            className="pl-7 pr-3 py-1.5 w-36 sm:w-44 text-[13px] bg-slate-800 border border-slate-700 rounded-md text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60"
           />
           {showSuggestions && suggestions.length > 0 && (
             <div className="absolute top-full mt-1 left-0 z-30 bg-slate-800 border border-slate-700 rounded-md shadow-xl w-36 sm:w-44 py-1">
@@ -276,7 +276,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                 <button
                   key={t}
                   onMouseDown={() => { setSearch(t); setShowSuggestions(false); }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-700 font-mono"
+                  className="w-full text-left px-3 py-1.5 text-[13px] text-slate-300 hover:bg-slate-700 font-mono"
                 >
                   {t}
                 </button>
@@ -296,7 +296,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                 key={m}
                 onClick={() => setEntryModeFilter(m)}
                 className={clsx(
-                  "px-2 py-1 rounded text-[10px] font-medium border transition",
+                  "px-2 py-1 rounded text-[11px] font-medium border transition",
                   entryModeFilter === m ? cls + " ring-1 ring-current" : "text-slate-500 bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
                 )}
               >
@@ -308,14 +308,14 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
 
         {/* Gates filter */}
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-slate-500">Gates≥</span>
+          <span className="text-[11px] text-slate-500">Gates≥</span>
           {gateChips.map(v => (
             <button
               key={v ?? "all"}
               type="button"
               onClick={() => setMinGates(minGates === v ? null : v)}
               className={clsx(
-                "px-1.5 py-0.5 rounded text-[10px] border transition",
+                "px-1.5 py-0.5 rounded text-[11px] border transition",
                 minGates === v
                   ? "text-slate-200 bg-slate-600 border-slate-500"
                   : "text-slate-500 bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
@@ -328,14 +328,14 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
 
         {/* Confidence filter */}
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-slate-500">Conf≥</span>
+          <span className="text-[11px] text-slate-500">Conf≥</span>
           {confChips.map(v => (
             <button
               key={v ?? "all"}
               type="button"
               onClick={() => setMinConf(minConf === v ? null : v)}
               className={clsx(
-                "px-1.5 py-0.5 rounded text-[10px] border transition",
+                "px-1.5 py-0.5 rounded text-[11px] border transition",
                 minConf === v
                   ? "text-slate-200 bg-slate-600 border-slate-500"
                   : "text-slate-500 bg-slate-800/50 border-slate-700/50 hover:border-slate-600"
@@ -351,7 +351,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
           <select
             value={regimeFilter}
             onChange={e => setRegimeFilter(e.target.value)}
-            className="text-[10px] px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-slate-400 focus:outline-none focus:border-emerald-500/60"
+            className="text-[11px] px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-md text-slate-400 focus:outline-none focus:border-emerald-500/60"
           >
             <option value="all">All regimes</option>
             {allRegimes.map(r => <option key={r} value={r}>{r}</option>)}
@@ -361,7 +361,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
 
       {/* Error */}
       {error && (
-        <div className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
+        <div className="text-[13px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">
           {error}
         </div>
       )}
@@ -369,7 +369,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
       {/* Table */}
       {!error && (
         <div className="overflow-x-auto rounded-lg border border-slate-700/60">
-          <table className="w-full text-xs">
+          <table className="w-full text-[13px]">
             <thead>
               <tr className="bg-slate-800/80 border-b border-slate-700/60">
                 {COLS.map(col => (
@@ -439,7 +439,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                         {fmtNum(row.score, 0)}
                       </td>
                       {/* Regime */}
-                      <td className={clsx("px-2 py-1.5 text-center font-mono text-[10px]", regimeColor(row.regime))}>
+                      <td className={clsx("px-2 py-1.5 text-center font-mono text-[11px]", regimeColor(row.regime))}>
                         {row.regime}
                       </td>
                       {/* RSI */}
@@ -452,7 +452,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                         {fmtNum(row.rsi, 0)}
                       </td>
                       {/* Signal */}
-                      <td className={clsx("px-2 py-1.5 text-center text-[10px]", signalColor(row.signal))}>
+                      <td className={clsx("px-2 py-1.5 text-center text-[11px]", signalColor(row.signal))}>
                         {row.signal}
                       </td>
                       {/* Entry mode */}
@@ -464,7 +464,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                       {/* Gates */}
                       <td className="px-2 py-1.5 text-center">
                         <span className={clsx(
-                          "font-mono text-[10px]",
+                          "font-mono text-[11px]",
                           row.gates_passed === row.gates_total ? "text-emerald-400"
                             : row.gates_passed >= 2 ? "text-amber-400"
                               : "text-slate-500"
@@ -496,7 +496,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
           <button
             type="button"
             onClick={() => load()}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30"
+            className="flex items-center gap-1.5 text-[13px] px-3 py-1.5 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30"
           >
             <RefreshCw className="h-3 w-3" />
             Retry

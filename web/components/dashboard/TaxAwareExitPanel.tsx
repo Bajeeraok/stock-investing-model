@@ -48,15 +48,15 @@ export function TaxAwareExitPanel({ data, onTickerClick }: TaxAwareExitPanelProp
         <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
         <span className="text-sm font-semibold text-slate-300">Tax-Aware Exit Optimizer</span>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="text-[13px] text-slate-500">
         Positions approaching 1-year (long-term capital gains). Short-term = taxed as income (e.g. 32% federal + 7% SC);
         long-term = 0–20% federal + 7% SC. Holding to day 366 can save $1,700+ on a $10K gain.
       </p>
       {message && items.length === 0 && (
-        <p className="text-xs text-amber-400">{message}</p>
+        <p className="text-[13px] text-amber-400">{message}</p>
       )}
       {items.length === 0 && !message && (
-        <p className="text-xs text-slate-500">No positions approaching LTCG, or add purchase_date to holdings (config or Excel: column purchase_date YYYY-MM-DD).</p>
+        <p className="text-[13px] text-slate-500">No positions approaching LTCG, or add purchase_date to holdings (config or Excel: column purchase_date YYYY-MM-DD).</p>
       )}
       {items.length > 0 && (
         <div className="overflow-x-auto">
@@ -87,7 +87,7 @@ export function TaxAwareExitPanel({ data, onTickerClick }: TaxAwareExitPanelProp
                   <td className="py-2 pr-2 text-amber-400 font-medium">{row.days_to_ltcg}</td>
                   <td className="py-2 pr-2 text-slate-300">${row.gain.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                   <td className="py-2 pr-2 text-emerald-400">${row.tax_savings_if_hold.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                  <td className="py-2 pr-2 text-slate-400 text-xs max-w-[280px]">{row.recommendation}</td>
+                  <td className="py-2 pr-2 text-slate-400 text-[13px] max-w-[280px]">{row.recommendation}</td>
                 </tr>
               ))}
             </tbody>

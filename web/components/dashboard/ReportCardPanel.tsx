@@ -40,20 +40,20 @@ const ci = (c: [number, number] | null) => (c ? ` (95% range ${c[0]}% to ${c[1]}
 /** Private report card: what the model said vs what happened, plus the publish checklist. */
 export function ReportCardPanel({ data }: { data?: ReportCard | null }) {
   const [showDraft, setShowDraft] = useState(false);
-  if (!data) return <p className="text-xs text-slate-500">Report card appears after the next forward-tracking refresh.</p>;
+  if (!data) return <p className="text-[13px] text-slate-500">Report card appears after the next forward-tracking refresh.</p>;
   const met = data.publish_checks.filter((c) => c.ok).length;
   return (
     <div className="space-y-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-0.5 text-xs text-slate-300">
+        <span className="inline-flex items-center gap-1 rounded border border-slate-600 px-2 py-0.5 text-[13px] text-slate-300">
           <Lock className="h-3 w-3" /> {data.public ? "Public" : "Private — not published"}
         </span>
-        <span className="text-xs text-slate-400">Model {data.model_version}</span>
-        <span className={clsx("text-xs font-semibold", data.ready_to_publish ? "text-emerald-400" : "text-amber-300")}>
+        <span className="text-[13px] text-slate-400">Model {data.model_version}</span>
+        <span className={clsx("text-[13px] font-semibold", data.ready_to_publish ? "text-emerald-400" : "text-amber-300")}>
           Publish checklist {met}/{data.publish_checks.length}
         </span>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3 text-xs tabular-nums">
+      <div className="grid gap-2 sm:grid-cols-3 text-[13px] tabular-nums">
         <div className="rounded border border-slate-700 px-2 py-1.5">
           <p className="text-slate-500">20-day edge vs holding (after costs)</p>
           <p className={clsx("text-base font-semibold", tone(data.edge_vs_hold_20d.mean))}>{pct(data.edge_vs_hold_20d.mean, 3)}</p>
@@ -73,10 +73,10 @@ export function ReportCardPanel({ data }: { data?: ReportCard | null }) {
         </div>
       </div>
       <div className="rounded border border-slate-700 px-3 py-2">
-        <p className="text-xs text-slate-400 mb-1">Before publishing</p>
+        <p className="text-[13px] text-slate-400 mb-1">Before publishing</p>
         <ul className="space-y-1">
           {data.publish_checks.map((c) => (
-            <li key={c.label} className="flex items-start gap-2 text-xs">
+            <li key={c.label} className="flex items-start gap-2 text-[13px]">
               {c.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 mt-0.5" /> : <Circle className="h-3.5 w-3.5 text-slate-500 mt-0.5" />}
               <span className="text-slate-200">{c.label}</span>
               <span className="ml-auto text-slate-500 tabular-nums">{c.detail}</span>
@@ -85,8 +85,8 @@ export function ReportCardPanel({ data }: { data?: ReportCard | null }) {
         </ul>
       </div>
       <div className="overflow-x-auto">
-        <p className="text-xs text-slate-400 mb-1">What we said vs what happened (latest calls)</p>
-        <table className="w-full text-xs min-w-[640px] tabular-nums">
+        <p className="text-[13px] text-slate-400 mb-1">What we said vs what happened (latest calls)</p>
+        <table className="w-full text-[13px] min-w-[640px] tabular-nums">
           <thead>
             <tr className="text-left text-slate-500 border-b border-slate-700">
               <th className="py-1 pr-2 font-medium">Date</th>
@@ -121,15 +121,15 @@ export function ReportCardPanel({ data }: { data?: ReportCard | null }) {
       </div>
       {data.weekly_draft && (
         <div>
-          <button type="button" onClick={() => setShowDraft((s) => !s)} className="text-xs text-sky-400 hover:underline">
+          <button type="button" onClick={() => setShowDraft((s) => !s)} className="text-[13px] text-sky-400 hover:underline">
             {showDraft ? "Hide" : "Show"} weekly post draft
           </button>
           {showDraft && (
-            <pre className="mt-1 whitespace-pre-wrap rounded border border-slate-700 bg-slate-900/60 p-2 text-[11px] text-slate-300">{data.weekly_draft}</pre>
+            <pre className="mt-1 whitespace-pre-wrap rounded border border-slate-700 bg-slate-900/60 p-2 text-[13px] text-slate-300">{data.weekly_draft}</pre>
           )}
         </div>
       )}
-      <p className="text-[11px] text-slate-500">{data.method} HOLD calls count as holding, so they add zero edge.</p>
+      <p className="text-[13px] text-slate-500">{data.method} HOLD calls count as holding, so they add zero edge.</p>
     </div>
   );
 }

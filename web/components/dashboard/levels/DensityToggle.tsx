@@ -57,7 +57,7 @@ export function DensityToggle({ className }: { className?: string }) {
       onClick={toggle}
       title={density === "comfort" ? "Switch to Compact" : "Switch to Comfort"}
       className={clsx(
-        "flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-semibold uppercase tracking-wider transition-all",
+        "flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-semibold uppercase tracking-wider transition-all",
         density === "comfort"
           ? "border-td-line text-td-muted hover:border-td-line hover:text-td-text"
           : "border-td-accent/40 bg-td-accent/10 text-td-accent hover:border-td-accent/60",

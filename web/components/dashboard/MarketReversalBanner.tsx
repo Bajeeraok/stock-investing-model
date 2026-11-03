@@ -28,9 +28,9 @@ export function MarketReversalBanner({ overlay }: { overlay: MarketReversalOverl
       <div className="flex items-start gap-2">
         <Activity className="h-4 w-4 text-sky-400 shrink-0 mt-0.5" aria-hidden />
         <div className="min-w-0 space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Market tape overlay</p>
+          <p className="text-[13px] font-semibold uppercase tracking-wide text-slate-400">Market tape overlay</p>
           <p className="text-sm text-slate-200 leading-snug">{overlay.headline ?? "Market backdrop"}</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs font-mono text-slate-400">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] font-mono text-slate-400">
             {overlay.stress_score != null && <span>Stress {overlay.stress_score.toFixed(0)}/100</span>}
             {overlay.bounce_setup_score != null && <span>Bounce-setup {overlay.bounce_setup_score.toFixed(0)}/100</span>}
             {overlay.composite_buy_delta != null && overlay.composite_buy_delta !== 0 && (
@@ -45,13 +45,13 @@ export function MarketReversalBanner({ overlay }: { overlay: MarketReversalOverl
         </div>
       </div>
       {overlay.bullets && overlay.bullets.length > 0 && (
-        <ul className="text-xs text-slate-500 list-disc list-inside space-y-0.5 pl-1">
+        <ul className="text-[13px] text-slate-500 list-disc list-inside space-y-0.5 pl-1">
           {overlay.bullets.slice(0, 4).map((b, i) => (
             <li key={i}>{b}</li>
           ))}
         </ul>
       )}
-      <p className="text-[10px] text-slate-600 leading-snug">
+      <p className="text-[11px] text-slate-600 leading-snug">
         Illustrative index-level risk context + optional ML on SPY/VIX features. Does not predict a specific next-day close.
       </p>
     </div>

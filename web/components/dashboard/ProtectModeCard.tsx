@@ -29,19 +29,19 @@ export function ProtectModeCard({ data }: { data?: ProtectModePayload | null }) 
     >
       <div className="flex items-center gap-2">
         <ShieldCheck className={clsx("h-4 w-4 shrink-0", active ? "text-td-warn" : "text-td-muted")} aria-hidden />
-        <p className="text-xs font-semibold uppercase tracking-wide text-td-text">
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text">
           Protect mode (optional) · {active ? `~${data.suggested_position_pct ?? 50}% position` : "full position"}
         </p>
       </div>
-      {data.headline && <p className="text-[12px] text-td-text/90 mt-1 leading-snug">{data.headline}</p>}
+      {data.headline && <p className="text-sm text-td-text/90 mt-1 leading-snug">{data.headline}</p>}
       {active && (data.reasons?.length ?? 0) > 0 && (
-        <ul className="mt-1 list-disc pl-5 text-[11px] text-td-text/80">
+        <ul className="mt-1 list-disc pl-5 text-[13px] text-td-text/80">
           {data.reasons!.map((r) => (
             <li key={r}>{r}</li>
           ))}
         </ul>
       )}
-      {data.note && <p className="text-[11px] text-td-muted mt-1 leading-snug">{data.note}</p>}
+      {data.note && <p className="text-[13px] text-td-muted mt-1 leading-relaxed">{data.note}</p>}
     </div>
   );
 }

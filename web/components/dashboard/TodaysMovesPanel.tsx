@@ -94,7 +94,7 @@ export function TodaysMovesPanel({
       <div className="flex items-center justify-between gap-2 mb-3">
         <div>
           <h2 className="font-semibold text-emerald-300 text-sm">Priority alerts</h2>
-          <p className="text-[11px] text-slate-400 mt-0.5">
+          <p className="text-[13px] text-slate-400 mt-0.5">
             Action triage — not price movers. Mixed story, trim, and earnings — hover chips for drivers.
           </p>
         </div>
@@ -102,7 +102,7 @@ export function TodaysMovesPanel({
           <button
             type="button"
             onClick={onViewAll}
-            className="text-[11px] text-emerald-400 hover:text-emerald-300 shrink-0"
+            className="text-[13px] text-emerald-400 hover:text-emerald-300 shrink-0"
           >
             All signals →
           </button>
@@ -146,7 +146,7 @@ export function TodaysMovesPanel({
                               key={t}
                               type="button"
                               onClick={() => onTickerClick(t)}
-                              className="font-mono text-xs font-semibold text-emerald-400 hover:underline px-1.5 py-0.5 rounded border border-slate-600/80"
+                              className="font-mono text-[13px] font-semibold text-emerald-400 hover:underline px-1.5 py-0.5 rounded border border-slate-600/80"
                             >
                               {t}
                             </button>
@@ -172,12 +172,12 @@ export function TodaysMovesPanel({
                     trim={move.trimProvenance}
                   />
                 </div>
-                <p className="text-xs text-slate-300 mt-0.5 leading-snug">{move.detail}</p>
+                <p className="text-[13px] text-slate-300 mt-0.5 leading-snug">{move.detail}</p>
                 {trimAvoidClarify && (
-                  <p className="text-[11px] text-amber-200/90 mt-1 leading-snug">{trimAvoidClarify}</p>
+                  <p className="text-[13px] text-amber-200/90 mt-1 leading-snug">{trimAvoidClarify}</p>
                 )}
                 {horizonLine && (
-                  <p className="text-[10px] text-slate-400 mt-1 font-mono" title="Horizon suggestions on file — context only; alert was not triggered by a horizon flip">
+                  <p className="text-[11px] text-slate-400 mt-1 font-mono" title="Horizon suggestions on file — context only; alert was not triggered by a horizon flip">
                     Playbooks: {horizonLine}
                   </p>
                 )}

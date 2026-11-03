@@ -79,12 +79,12 @@ function SrRow({
   const shown = srSideTag(tag, level);
   return (
     <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/50 border border-td-line">
-      <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{shown}</span>
+      <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">{shown}</span>
       <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
         {fmt(level.price)}
-        <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">{level.label}</span>
+        <span className="ml-1.5 text-[11px] font-td-sans font-medium text-td-muted normal-case">{level.label}</span>
       </span>
-      <span className={clsx("text-[10px] font-mono tabular-nums", below ? "text-td-crit/80" : "text-td-accent/80")}>
+      <span className={clsx("text-[11px] font-mono tabular-nums", below ? "text-td-crit/80" : "text-td-accent/80")}>
         {level.dist_pct >= 0 ? "+" : "−"}
         {Math.abs(level.dist_pct).toFixed(1)}%
       </span>
@@ -113,16 +113,16 @@ function StopTargetRows({
   return (
     <>
       <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">Stop</span>
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">Stop</span>
         <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(horizon.stop_loss)}</span>
-        <span className="text-[10px] font-mono text-td-crit/80 tabular-nums">
+        <span className="text-[11px] font-mono text-td-crit/80 tabular-nums">
           {pctFromSpot(horizon.stop_loss, currentPrice)}
         </span>
       </div>
       <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">Target</span>
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">Target</span>
         <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(horizon.target)}</span>
-        <span className="text-[10px] font-mono text-td-accent/80 tabular-nums">
+        <span className="text-[11px] font-mono text-td-accent/80 tabular-nums">
           {pctFromSpot(horizon.target, currentPrice)}
           {/* Same R:R (and basis) as the Verdict tile — entry-mid when the plan has one, else spot. */}
           {(horizon.risk_reward_from_entry ?? horizon.risk_reward)
@@ -158,28 +158,28 @@ function LevelRows({
             <>
               {above.length > 0 && (
                 <div className={rowCls}>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">
                     {above.map((t) => t.id).join("·")}
                   </span>
                   <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
                     at spot {fmt(currentPrice)}
-                    <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
+                    <span className="ml-1.5 text-[11px] font-td-sans font-medium text-td-muted normal-case">
                       price is already under {above.map((t) => TIER_ANCHOR[t.id] ?? t.id).join(", ")}
                     </span>
                   </span>
-                  <span className="text-[10px] font-mono text-td-muted tabular-nums">now</span>
+                  <span className="text-[11px] font-mono text-td-muted tabular-nums">now</span>
                 </div>
               )}
               {below.map((t) => (
                 <div key={t.id} className={rowCls}>
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{t.id}</span>
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">{t.id}</span>
                   <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
                     {fmt(t.low)} – {fmt(t.high)}
-                    <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
+                    <span className="ml-1.5 text-[11px] font-td-sans font-medium text-td-muted normal-case">
                       {TIER_ANCHOR[t.id] ?? ""}
                     </span>
                   </span>
-                  <span className="text-[10px] font-mono text-td-muted tabular-nums">{pctFromSpot(t.high, currentPrice)}</span>
+                  <span className="text-[11px] font-mono text-td-muted tabular-nums">{pctFromSpot(t.high, currentPrice)}</span>
                 </div>
               ))}
             </>
@@ -209,7 +209,7 @@ function LevelRows({
     const picked = stagedLevels;
     return (
       <div className="flex flex-col gap-1.5">
-        <p className="text-[10px] text-td-muted leading-snug -mt-0.5 mb-0.5">
+        <p className="text-[11px] text-td-muted leading-relaxed -mt-0.5 mb-0.5">
           Entry band {fmt(ez?.low)} – {fmt(ez?.high)}
           {ezWidthPct > 0 ? ` (${ezWidthPct.toFixed(1)}% wide)` : ""} — scale in across these levels, not one price
           {picked.some((l) => l.touch_pct != null) &&
@@ -220,11 +220,11 @@ function LevelRows({
             key={lvl.id}
             className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
           >
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted truncate">
+            <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted truncate">
               {tag(lvl)}
             </span>
             <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(lvl.price)}</span>
-            <span className="text-[10px] font-mono text-td-muted tabular-nums text-right leading-tight">
+            <span className="text-[11px] font-mono text-td-muted tabular-nums text-right leading-tight">
               {pctFromSpot(lvl.price, currentPrice)}
               {lvl.touch_pct != null && lvl.median_days != null && lvl.median_days > 0 && (
                 <span
@@ -245,11 +245,11 @@ function LevelRows({
   return (
     <div className="flex flex-col gap-1.5">
       <div className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">Entry</span>
+        <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">Entry</span>
         <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
           {ez?.low != null && ez?.high != null ? `${fmt(ez.low)} – ${fmt(ez.high)}` : "—"}
         </span>
-        <span className="text-[10px] font-mono text-td-muted tabular-nums">
+        <span className="text-[11px] font-mono text-td-muted tabular-nums">
           {pctFromSpot(ez?.low, currentPrice)}
         </span>
       </div>
@@ -303,7 +303,7 @@ export function TickerDecisionHero({
         <div className="min-w-0">
           <div className="flex items-baseline gap-2">
             <span className="font-mono text-lg font-bold text-td-text tracking-tight">{ticker}</span>
-            <span className="text-xs text-td-muted truncate">
+            <span className="text-[13px] text-td-muted truncate">
               {companyName ?? ""}
               {sector ? ` · ${sector}` : ""}
             </span>
@@ -311,7 +311,7 @@ export function TickerDecisionHero({
         </div>
         <span
           className={clsx(
-            "inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-[12px] font-mono font-bold uppercase whitespace-nowrap",
+            "inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-sm font-mono font-bold uppercase whitespace-nowrap",
             LIGHT_BADGE[actionStatus.light],
           )}
         >
@@ -323,7 +323,7 @@ export function TickerDecisionHero({
           {dailyMovePct != null && (
             <p
               className={clsx(
-                "text-[11px] font-mono tabular-nums",
+                "text-[13px] font-mono tabular-nums",
                 dailyMovePct >= 0 ? "text-td-accent" : "text-td-crit",
               )}
             >
@@ -353,7 +353,7 @@ export function TickerDecisionHero({
                 <span
                   key={f.id ?? i}
                   className={clsx(
-                    "text-[11px] font-medium px-2 py-1 rounded-md border",
+                    "text-[13px] font-medium px-2 py-1 rounded-md border",
                     STANCE_CHIP[f.stance ?? "neutral"],
                   )}
                 >
@@ -374,7 +374,7 @@ export function TickerDecisionHero({
           )}
         </div>
         <div>
-          <p className="text-[10px] font-mono uppercase tracking-wider text-td-muted mb-1.5">
+          <p className="text-[11px] font-mono uppercase tracking-wider text-td-muted mb-1.5">
             {horizonLabel(horizonKey)} levels
           </p>
           <LevelRows mode={mode} horizon={horizon} currentPrice={currentPrice} />
@@ -404,7 +404,7 @@ export function TickerDecisionHero({
               </div>
             </div>
           ))}
-          <div className="col-span-2 sm:col-span-4 text-[10px] font-mono text-td-muted tabular-nums pt-0.5">
+          <div className="col-span-2 sm:col-span-4 text-[11px] font-mono text-td-muted tabular-nums pt-0.5">
             {gatesPassed}/{gatesTotal} gates
           </div>
         </div>

@@ -59,10 +59,10 @@ export function SecondOpinionsCard({
     <div className="rounded-lg border border-td-line/60 bg-td-line/10 px-3 py-2">
       <div className="flex items-center gap-2">
         <Users className="h-4 w-4 shrink-0 text-td-muted" aria-hidden />
-        <p className="text-xs font-semibold uppercase tracking-wide text-td-text">Second opinions</p>
-        {actionStatus && <span className="ml-auto text-[11px] text-td-muted">Ours: {actionStatus.title}</span>}
+        <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text">Second opinions</p>
+        {actionStatus && <span className="ml-auto text-[13px] text-td-muted">Ours: {actionStatus.title}</span>}
       </div>
-      <table className="mt-1 w-full text-[12px] tabular-nums">
+      <table className="mt-1 w-full text-sm tabular-nums">
         <tbody>
           {rows.map((o) => {
             const detail = !o.available
@@ -84,13 +84,13 @@ export function SecondOpinionsCard({
               <tr key={o.key} className="border-t border-td-line/40">
                 <td className="py-1 pr-2 text-td-text/90">
                   {o.source}
-                  <span className="block text-[10px] text-td-muted">{o.horizon}</span>
+                  <span className="block text-[11px] text-td-muted">{o.horizon}</span>
                 </td>
                 <td className={clsx("py-1 pr-2 font-semibold whitespace-nowrap", o.bias ? biasClass[o.bias] : "text-td-muted")}>
                   {o.available ? o.label : "—"}
                 </td>
-                <td className="py-1 pr-2 text-[11px] text-td-muted">{detail}</td>
-                <td className="py-1 text-right text-[11px] whitespace-nowrap">
+                <td className="py-1 pr-2 text-[13px] text-td-muted">{detail}</td>
+                <td className="py-1 text-right text-[13px] whitespace-nowrap">
                   {agrees == null ? "" : agrees ? (
                     <span className="text-td-accent">agrees</span>
                   ) : (
@@ -103,13 +103,13 @@ export function SecondOpinionsCard({
         </tbody>
       </table>
       {hasTally && (
-        <p className="text-[11px] text-td-muted mt-1 leading-snug">
+        <p className="text-[13px] text-td-muted mt-1 leading-relaxed">
           <span className="text-td-text/80">MAs</span> = moving averages (price above the average votes buy ↑,
           below votes sell ↓). <span className="text-td-text/80">Osc</span> = oscillators such as RSI, MACD and
           Stochastic: ↑ buy · – neutral · ↓ sell. The rating is the balance of these votes.
         </p>
       )}
-      {data?.note && <p className="text-[11px] text-td-muted mt-1 leading-snug">{data.note}</p>}
+      {data?.note && <p className="text-[13px] text-td-muted mt-1 leading-relaxed">{data.note}</p>}
     </div>
   );
 }

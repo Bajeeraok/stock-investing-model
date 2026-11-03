@@ -72,7 +72,7 @@ export function ExecutionPlanRationale({
         </span>
       </div>
       <p
-        className="text-xs text-slate-500 leading-snug mb-2 cursor-help"
+        className="text-[13px] text-slate-500 leading-snug mb-2 cursor-help"
         title="Cheap vs fair value answers margin of safety; verdict answers whether to size in today."
       >
         You can be undervalued on this line and still see WATCH or REDUCE elsewhere — value without timing yet,
@@ -118,7 +118,7 @@ export function ExecutionPlanRationale({
 
       {vm.whyBullets.length > 0 && (
         <div className="mt-3 rounded-lg border border-slate-600/70 bg-slate-900/40 px-3 py-2.5">
-          <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1.5">Why this call</p>
+          <p className="text-[13px] text-slate-500 uppercase tracking-wide font-semibold mb-1.5">Why this call</p>
           <ul className="space-y-1.5 text-sm text-slate-200 leading-snug">
             {vm.whyBullets.map((line, i) => (
               <li key={i} className="flex items-start gap-2">
@@ -137,7 +137,7 @@ export function ExecutionPlanRationale({
             {vm.triggerText}
           </p>
           {vm.actWhenLine && (
-            <p className="text-xs text-slate-400 mt-1.5 leading-snug">
+            <p className="text-[13px] text-slate-400 mt-1.5 leading-snug">
               <span className="text-slate-500 font-medium">Horizon act-when: </span>
               {vm.actWhenLine}
             </p>
@@ -147,7 +147,7 @@ export function ExecutionPlanRationale({
 
       {vm.executionBullets.length > 0 && (
         <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/20 px-3 py-2.5">
-          <p className="text-xs text-emerald-300/80 uppercase tracking-wide font-semibold mb-1.5">Action plan</p>
+          <p className="text-[13px] text-emerald-300/80 uppercase tracking-wide font-semibold mb-1.5">Action plan</p>
           <ol className="space-y-1.5 text-sm text-slate-200 leading-snug list-none">
             {vm.executionBullets.map((line, i) => (
               <li key={i} className="flex items-start gap-2">
@@ -186,13 +186,13 @@ export function ExecutionPlanRationale({
                 className="w-full px-3.5 py-2.5 text-left hover:bg-slate-800/70 flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
-                  <span className="text-xs text-slate-200 flex items-center gap-2">
+                  <span className="text-[13px] text-slate-200 flex items-center gap-2">
                     {row.label}
-                    <span className={clsx("text-xs px-1.5 py-0.5 rounded border", statusTone(row.status))}>
+                    <span className={clsx("text-[13px] px-1.5 py-0.5 rounded border", statusTone(row.status))}>
                       {row.status}
                     </span>
                   </span>
-                  <p className="text-xs text-slate-500 mt-0.5 truncate">{row.summary}</p>
+                  <p className="text-[13px] text-slate-500 mt-0.5 truncate">{row.summary}</p>
                 </div>
                 {row.expanded ? (
                   <ChevronDown className="h-3.5 w-3.5 text-slate-500 shrink-0" />

@@ -85,7 +85,7 @@ export function TrimCandidates({
 
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
-      <p className="text-xs text-slate-400 mb-3">
+      <p className="text-[13px] text-slate-400 mb-3">
         Trim list requires score trigger plus ≥2/4 trim gates (extension, tape, ML/momentum, plan).
         Log a trim to start a re-add cooldown (default 14 days).
       </p>
@@ -121,11 +121,11 @@ export function TrimCandidates({
               </div>
             </div>
             {h.trim_detail && (
-              <p className="text-[11px] text-slate-400 leading-snug">{h.trim_detail}</p>
+              <p className="text-[13px] text-slate-400 leading-snug">{h.trim_detail}</p>
             )}
             <TrimGatePills holding={h} />
             {logged[h.ticker] ? (
-              <p className="text-xs text-emerald-400/90">Cooldown until {logged[h.ticker]}</p>
+              <p className="text-[13px] text-emerald-400/90">Cooldown until {logged[h.ticker]}</p>
             ) : pending === h.ticker ? (
               <div className="space-y-1.5">
                 <input
@@ -133,20 +133,20 @@ export function TrimCandidates({
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Why trim? (optional)"
-                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-600 text-xs text-slate-200"
+                  className="w-full px-2 py-1 rounded bg-slate-950 border border-slate-600 text-[13px] text-slate-200"
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={() => void logTrim(h.ticker)}
-                    className="text-xs px-2 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white"
+                    className="text-[13px] px-2 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white"
                   >
                     Confirm
                   </button>
                   <button
                     type="button"
                     onClick={() => { setPending(null); setNote(""); }}
-                    className="text-xs px-2 py-1 rounded border border-slate-600 text-slate-400"
+                    className="text-[13px] px-2 py-1 rounded border border-slate-600 text-slate-400"
                   >
                     Cancel
                   </button>
@@ -156,7 +156,7 @@ export function TrimCandidates({
               <button
                 type="button"
                 onClick={() => setPending(h.ticker)}
-                className="text-xs text-left text-amber-300/90 hover:text-amber-200 underline-offset-2 hover:underline"
+                className="text-[13px] text-left text-amber-300/90 hover:text-amber-200 underline-offset-2 hover:underline"
               >
                 Log trim + cooldown
               </button>

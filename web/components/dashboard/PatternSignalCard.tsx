@@ -75,7 +75,7 @@ function RegimeBadge({ regime }: { regime: string }) {
   };
   const style = styles[regime] ?? styles.NEUTRAL;
   return (
-    <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded border", style)}>
+    <span className={clsx("text-[13px] font-semibold px-2 py-0.5 rounded border", style)}>
       {regime.replace("_", " ")}
     </span>
   );
@@ -99,7 +99,7 @@ function ActionBadge({ action }: { action: string }) {
     a.includes("WAIT")  ? Ban          :
     a.includes("WATCH") ? Eye          : Minus;
   return (
-    <span className={clsx("inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded border", style)}>
+    <span className={clsx("inline-flex items-center gap-1 text-[13px] font-bold px-2 py-0.5 rounded border", style)}>
       <Icon size={11} />
       {action}
     </span>
@@ -146,7 +146,7 @@ function BottomScoreMeter({ score }: { score: number }) {
           {pct.toFixed(0)}
         </text>
       </svg>
-      <span className="text-[10px] text-td-muted">Pattern Score</span>
+      <span className="text-[11px] text-td-muted">Pattern Score</span>
     </div>
   );
 }
@@ -160,11 +160,11 @@ function ConfluenceBar({ value }: { value: number }) {
     pct >= 30 ? "bg-td-warn"   : "bg-td-line";
   return (
     <div className="flex items-center gap-2 w-full">
-      <span className="text-[10px] text-td-muted w-16 shrink-0">Confluence</span>
+      <span className="text-[11px] text-td-muted w-16 shrink-0">Confluence</span>
       <div className="flex-1 bg-td-surface2 rounded-full h-1.5 overflow-hidden">
         <div className={clsx("h-full rounded-full transition-all", colour)} style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-xs font-semibold text-td-text w-8 text-right">{pct}%</span>
+      <span className="text-[13px] font-semibold text-td-text w-8 text-right">{pct}%</span>
     </div>
   );
 }
@@ -222,7 +222,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
         <BottomScoreMeter score={patternScore} />
       </div>
 
-      <p className="text-[11px] text-td-info/90 leading-snug border-t border-td-line/70 pt-2 -mt-1">
+      <p className="text-[13px] text-td-info/90 leading-snug border-t border-td-line/70 pt-2 -mt-1">
         <span className="font-semibold text-td-info/95">Why this score? </span>
         {decisionDriverUnified}
       </p>
@@ -231,7 +231,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       {isHighConviction && (
         <div className="flex items-start gap-2 bg-td-accent/10 border border-td-accent/30 rounded-lg px-3 py-2">
           <Zap size={13} className="text-td-accent mt-0.5 shrink-0" />
-          <span className="text-xs text-td-accent">
+          <span className="text-[13px] text-td-accent">
             High-probability reversal setup — confirm with fundamentals before sizing
           </span>
         </div>
@@ -241,7 +241,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       {hasWarning && (
         <div className="flex items-start gap-2 bg-td-warn/10 border border-td-warn/30 rounded-lg px-3 py-2">
           <AlertTriangle size={13} className="text-td-warn mt-0.5 shrink-0" />
-          <span className="text-xs text-td-warn">{data.warning}</span>
+          <span className="text-[13px] text-td-warn">{data.warning}</span>
         </div>
       )}
 
@@ -251,11 +251,11 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       {/* Scores row */}
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="bg-td-surface2 rounded-lg p-2">
-          <div className="text-[10px] text-td-muted mb-0.5">Technical</div>
+          <div className="text-[11px] text-td-muted mb-0.5">Technical</div>
           <div className="text-sm font-bold text-td-text">{(data.composite_score ?? 0).toFixed(0)}</div>
         </div>
         <div className="bg-td-surface2 rounded-lg p-2">
-          <div className="text-[10px] text-td-muted mb-0.5" title={data.pattern_score_source === "confluence_fallback" ? "Confluence used when pattern unavailable" : undefined}>
+          <div className="text-[11px] text-td-muted mb-0.5" title={data.pattern_score_source === "confluence_fallback" ? "Confluence used when pattern unavailable" : undefined}>
             {data.pattern_score_source === "confluence_fallback" ? "Confluence" : "Pattern"}
           </div>
           <div className={clsx("text-sm font-bold",
@@ -264,7 +264,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
           )}>{patternScore.toFixed(0)}</div>
         </div>
         <div className="bg-td-surface2 rounded-lg p-2">
-          <div className="text-[10px] text-td-muted mb-0.5">Kelly ×</div>
+          <div className="text-[11px] text-td-muted mb-0.5">Kelly ×</div>
           <div className={clsx("text-sm font-bold",
             kellyBoost  ? "text-td-accent" :
             kellyReduce ? "text-td-crit"     : "text-td-text"
@@ -276,7 +276,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       {patternSignals.length > 0 && (
         <div className="space-y-1">
           {patternSignals.map((s, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-td-text">
+            <div key={i} className="flex items-start gap-1.5 text-[13px] text-td-text">
               <TrendingUp size={11} className="text-td-accent mt-0.5 shrink-0" />
               {s}
             </div>
@@ -288,7 +288,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       {momentumSignals.length > 0 && (
         <div className="space-y-1">
           {momentumSignals.map((s, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-td-muted">
+            <div key={i} className="flex items-start gap-1.5 text-[13px] text-td-muted">
               <Activity size={11} className="text-td-info mt-0.5 shrink-0" />
               {s}
             </div>
@@ -300,7 +300,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       {data.pattern_details && (
         <button
           onClick={() => setExpanded(v => !v)}
-          className="flex items-center gap-1 text-[11px] text-td-muted hover:text-td-text transition-colors"
+          className="flex items-center gap-1 text-[13px] text-td-muted hover:text-td-text transition-colors"
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
           {expanded ? "Hide" : "Show"} raw indicator values
@@ -308,7 +308,7 @@ export function PatternSignalCard({ data }: { data: UnifiedSignalData }) {
       )}
 
       {expanded && data.pattern_details && (
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 bg-td-surface2/60 rounded-lg p-3 text-[11px]">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 bg-td-surface2/60 rounded-lg p-3 text-[13px]">
           {data.pattern_details.dist_from_52w_low_pct != null && (
             <Row label="52w low dist" value={`${data.pattern_details.dist_from_52w_low_pct.toFixed(1)}%`} />
           )}

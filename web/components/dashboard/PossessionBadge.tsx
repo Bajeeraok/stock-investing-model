@@ -18,7 +18,7 @@ export function PossessionBadge({ status }: { status: PositionStatus | string | 
   return (
     <span
       className={clsx(
-        "inline-flex px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide border",
+        "inline-flex px-1.5 py-0.5 rounded text-[11px] font-medium uppercase tracking-wide border",
         s.className,
       )}
     >

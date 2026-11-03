@@ -112,7 +112,7 @@ export function AlertsScreen({
             <ArrowLeft className="h-5 w-5" />
           </button>
           <h2 className="text-base font-semibold text-td-text">Alerts</h2>
-          <span className="text-[11px] text-td-muted">confirm gates before acting</span>
+          <span className="text-[13px] text-td-muted">confirm gates before acting</span>
         </div>
       </header>
       <div className="max-w-3xl mx-auto px-4 py-4 space-y-5 pb-[calc(2rem+env(safe-area-inset-bottom))]">
@@ -128,10 +128,10 @@ export function AlertsScreen({
                   <li key={a.id} className="flex items-center justify-between gap-3 py-2">
                     <button type="button" onClick={() => onTickerClick(a.ticker)} className="text-left min-w-0">
                       <span className="font-mono text-[13px] font-bold text-td-text">{a.ticker}</span>{" "}
-                      <span className="text-[12px] text-td-muted">
+                      <span className="text-sm text-td-muted">
                         {a.direction === "below" ? "at or below" : "at or above"} ${a.price.toFixed(2)}
                       </span>
-                      <span className="block text-[11px] text-td-muted">
+                      <span className="block text-[13px] text-td-muted">
                         {a.triggeredAt
                           ? `Triggered ${new Date(a.triggeredAt).toLocaleString()} at $${a.triggeredPrice?.toFixed(2) ?? "—"}`
                           : live != null
@@ -141,7 +141,7 @@ export function AlertsScreen({
                     </button>
                     <div className="flex items-center gap-2 shrink-0">
                       {a.triggeredAt && (
-                        <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-td-accent-weak text-td-accent">HIT</span>
+                        <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded-full bg-td-accent-weak text-td-accent">HIT</span>
                       )}
                       <button
                         type="button"

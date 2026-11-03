@@ -21,7 +21,7 @@ export function AnalysisSectionEmpty({
           {title ? <p className="text-sm font-medium text-slate-300">{title}</p> : null}
           <p className="text-sm text-slate-500 leading-relaxed">{message}</p>
           {hints && hints.length > 0 ? (
-            <ul className="text-xs text-slate-500 list-disc pl-4 space-y-1 mt-2">
+            <ul className="text-[13px] text-slate-500 list-disc pl-4 space-y-1 mt-2">
               {hints.map((h) => (
                 <li key={h}>{h}</li>
               ))}

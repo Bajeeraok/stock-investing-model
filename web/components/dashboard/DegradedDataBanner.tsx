@@ -28,7 +28,7 @@ export function DegradedDataBanner({ degradedMode, sources, compact }: Props) {
     <div
       className={clsx(
         "rounded-lg border px-3 py-2 flex items-start gap-2",
-        compact ? "text-xs" : "text-sm",
+        compact ? "text-[13px]" : "text-sm",
         "border-amber-500/30 bg-amber-950/20 text-amber-100/90",
       )}
       role="status"

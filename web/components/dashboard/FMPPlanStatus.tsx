@@ -16,7 +16,7 @@ export function FMPPlanStatus({ status }: { status: FMPPlanStatus | null | undef
           FMP data source
         </h3>
         <p className="text-sm text-slate-300 mb-2">Add fmp_api_key to config for: economic calendar, treasury, price targets, insider stats.</p>
-        <p className="text-xs text-slate-500">
+        <p className="text-[13px] text-slate-500">
           <span className="font-medium text-amber-400">Upgrade path:</span> Starter $22/mo – calendar, analysts, insider. Ultimate $149/mo – 13F, transcripts, ETF holdings.
         </p>
       </div>
@@ -30,7 +30,7 @@ export function FMPPlanStatus({ status }: { status: FMPPlanStatus | null | undef
           <Check className="h-4 w-4" />
           FMP features available
         </h3>
-        <p className="text-xs text-slate-400">All probed features working.</p>
+        <p className="text-[13px] text-slate-400">All probed features working.</p>
       </div>
     );
   }
@@ -41,8 +41,8 @@ export function FMPPlanStatus({ status }: { status: FMPPlanStatus | null | undef
         <XCircle className="h-4 w-4" />
         FMP plan limits
       </h3>
-      <p className="text-xs text-slate-400 mb-2">Current plan doesn&apos;t support these – upgrade to unlock:</p>
-      <ul className="space-y-1 text-xs">
+      <p className="text-[13px] text-slate-400 mb-2">Current plan doesn&apos;t support these – upgrade to unlock:</p>
+      <ul className="space-y-1 text-[13px]">
         {unavailable.map((u, i) => (
           <li key={i} className="text-slate-300">
             <span className="text-amber-400">{u.feature}:</span> upgrade to <span className="font-medium">{u.suggested_plan}</span>
@@ -50,7 +50,7 @@ export function FMPPlanStatus({ status }: { status: FMPPlanStatus | null | undef
           </li>
         ))}
       </ul>
-      <p className="text-xs text-slate-500 mt-2">
+      <p className="text-[13px] text-slate-500 mt-2">
         Ultimate $149/mo unlocks: 13F institutional, earnings transcripts, ETF holdings.
       </p>
     </div>

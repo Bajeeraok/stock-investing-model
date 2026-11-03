@@ -46,10 +46,10 @@ export function RetailMarketDecisionsDeepDive({
     <div className="space-y-4">
       {overnight?.summary && (
         <div className="rounded-lg border border-slate-600/70 bg-slate-800/40 px-3 py-2">
-          <p className="text-xs font-medium text-slate-300 uppercase tracking-wider mb-1">Overnight</p>
+          <p className="text-[13px] font-medium text-slate-300 uppercase tracking-wider mb-1">Overnight</p>
           <p className="text-sm text-slate-100">{overnight.summary}</p>
           {(overnight.lines ?? []).map((l) => (
-            <p key={l.text} className="text-xs text-slate-300 mt-0.5">
+            <p key={l.text} className="text-[13px] text-slate-300 mt-0.5">
               {l.text}
             </p>
           ))}
@@ -58,11 +58,11 @@ export function RetailMarketDecisionsDeepDive({
 
       {!omitChecklist && checklist.length > 0 && (
         <div className="rounded-lg border border-slate-600/70 bg-slate-800/40 px-3 py-2">
-          <p className="text-xs font-medium text-slate-300 uppercase tracking-wider mb-2">Today&apos;s checklist</p>
+          <p className="text-[13px] font-medium text-slate-300 uppercase tracking-wider mb-2">Today&apos;s checklist</p>
           <ul className="space-y-1.5">
             {checklist.map((c, i) => (
               <li key={i} className="text-sm flex gap-2">
-                <span className="text-slate-400 shrink-0 text-xs font-mono min-w-[5.5rem]">{c.time}</span>
+                <span className="text-slate-400 shrink-0 text-[13px] font-mono min-w-[5.5rem]">{c.time}</span>
                 <span className="text-slate-100">{c.task}</span>
               </li>
             ))}
@@ -72,11 +72,11 @@ export function RetailMarketDecisionsDeepDive({
 
       {questions.length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">Five questions</p>
+          <p className="text-[13px] font-semibold uppercase tracking-wider text-slate-300 mb-2">Five questions</p>
           <div className="flex flex-col gap-2">
             {questions.map((q) => (
               <div key={q.question} className="rounded-lg border border-slate-600/70 bg-slate-800/40 px-3 py-2">
-                <p className="text-xs font-medium text-slate-300">{q.question}</p>
+                <p className="text-[13px] font-medium text-slate-300">{q.question}</p>
                 <p className="text-sm text-slate-100 mt-0.5 leading-snug whitespace-pre-line">{q.answer}</p>
               </div>
             ))}
@@ -86,7 +86,7 @@ export function RetailMarketDecisionsDeepDive({
 
       {data.hold_vs_trade?.answer && (
         <div className="rounded-lg border border-sky-500/30 bg-sky-950/25 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-sky-200 mb-1">
+          <p className="text-[13px] font-semibold uppercase tracking-wider text-sky-200 mb-1">
             {data.hold_vs_trade.headline ?? "Hold vs tactical trim"}
           </p>
           <p className="text-sm text-slate-100 leading-snug">{data.hold_vs_trade.answer}</p>
@@ -101,15 +101,15 @@ export function RetailMarketDecisionsDeepDive({
 
       {scenarios.length > 0 && (
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2 flex items-center gap-1">
+          <p className="text-[13px] font-semibold uppercase tracking-wider text-slate-300 mb-2 flex items-center gap-1">
             <GitBranch className="h-3.5 w-3.5" /> Key scenarios
           </p>
           <ul className="space-y-2">
             {scenarios.map((s, i) => (
               <li key={i} className="rounded-lg border border-violet-500/25 bg-violet-950/15 px-3 py-2">
                 <p className="text-sm font-medium text-violet-100">IF {s.condition}</p>
-                {s.impact && <p className="text-xs text-slate-300 mt-0.5">→ {s.impact}</p>}
-                {s.action && <p className="text-xs text-emerald-200 mt-1">Action: {s.action}</p>}
+                {s.impact && <p className="text-[13px] text-slate-300 mt-0.5">→ {s.impact}</p>}
+                {s.action && <p className="text-[13px] text-emerald-200 mt-1">Action: {s.action}</p>}
               </li>
             ))}
           </ul>
@@ -117,14 +117,14 @@ export function RetailMarketDecisionsDeepDive({
       )}
 
       {(data.portfolio_risk?.adjustments ?? []).length > 0 && (
-        <ul className="text-xs text-amber-100/90 list-disc list-inside space-y-1">
+        <ul className="text-[13px] text-amber-100/90 list-disc list-inside space-y-1">
           {data.portfolio_risk!.adjustments!.map((a, i) => (
             <li key={i}>{a}</li>
           ))}
         </ul>
       )}
       {(data.portfolio_risk?.do_nothing_if ?? []).length > 0 && (
-        <p className="text-xs text-slate-300 flex items-start gap-1">
+        <p className="text-[13px] text-slate-300 flex items-start gap-1">
           <TrendingUp className="h-3 w-3 shrink-0 mt-0.5" />
           Do nothing if: {data.portfolio_risk!.do_nothing_if!.join("; ")}
         </p>
@@ -132,10 +132,10 @@ export function RetailMarketDecisionsDeepDive({
 
       {hasContextPillars && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1">
+          <p className="text-[13px] font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1">
             <RotateCw className="h-3.5 w-3.5" /> Context pillars
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[13px]">
             {breadth?.plain_english && (
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-950/10 px-3 py-2 text-slate-200">
                 <span className="text-emerald-300 font-medium">Breadth: </span>
@@ -180,12 +180,12 @@ export function RetailMarketDecisionsDeepDive({
           <button
             type="button"
             onClick={() => setContextExpanded((o) => !o)}
-            className="text-xs text-slate-300 hover:text-slate-100"
+            className="text-[13px] text-slate-300 hover:text-slate-100"
           >
             {contextExpanded ? "Less" : "More"} pillar detail
           </button>
           {contextExpanded && (
-            <div className="mt-2 space-y-2 text-xs text-slate-300">
+            <div className="mt-2 space-y-2 text-[13px] text-slate-300">
               {crowd?.aaii?.note && <p>{crowd.aaii.note}</p>}
               {triggers?.tech_rule && <p>{triggers.tech_rule}</p>}
               {personalEarnings?.items?.map((it) => (
@@ -203,12 +203,12 @@ export function RetailMarketDecisionsDeepDive({
           <button
             type="button"
             onClick={() => setMacroExpanded((o) => !o)}
-            className="text-xs font-semibold uppercase tracking-wider text-slate-300 hover:text-slate-100"
+            className="text-[13px] font-semibold uppercase tracking-wider text-slate-300 hover:text-slate-100"
           >
             Macro backdrop ({macroBullets.length})
           </button>
           {macroExpanded && (
-            <ul className="mt-2 list-disc list-inside text-xs text-slate-300 space-y-1">
+            <ul className="mt-2 list-disc list-inside text-[13px] text-slate-300 space-y-1">
               {macroBullets.map((b) => (
                 <li key={b}>{b}</li>
               ))}
@@ -217,7 +217,7 @@ export function RetailMarketDecisionsDeepDive({
         </div>
       )}
 
-      {data.disclaimer && <p className="text-[10px] text-slate-400">{data.disclaimer}</p>}
+      {data.disclaimer && <p className="text-[11px] text-slate-400">{data.disclaimer}</p>}
     </div>
   );
 }

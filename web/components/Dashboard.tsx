@@ -1077,7 +1077,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           </form>
           {snapshotIso && (
             <span
-              className="text-[11px] hidden lg:inline font-mono text-td-muted whitespace-nowrap"
+              className="text-[13px] hidden lg:inline font-mono text-td-muted whitespace-nowrap"
               title={
                 data.data_freshness?.quotes_updated_at || data.data_freshness?.signals_updated_at
                   ? `Prices ${formatSnapshotEt(data.data_freshness?.quotes_updated_at ?? undefined) ?? "—"} · Signals ${formatSnapshotEt(data.data_freshness?.signals_updated_at ?? undefined) ?? "—"}${lastRefreshedAt ? ` · fetched ${formatLastRefresh(lastRefreshedAt)}` : ""}`
@@ -1099,7 +1099,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           >
             <Bell className="h-5 w-5" />
             {bellCount > 0 && (
-              <span className="absolute top-0.5 right-0.5 min-w-[1.05rem] h-4 px-1 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center leading-none">
+              <span className="absolute top-0.5 right-0.5 min-w-[1.05rem] h-4 px-1 rounded-full bg-red-500 text-[11px] font-bold text-white flex items-center justify-center leading-none">
                 {bellCount > 99 ? "99+" : bellCount}
               </span>
             )}
@@ -1123,14 +1123,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         >
           {!showPane && (
             <div>
-              <p className="px-1 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-td-muted">Deciding as</p>
+              <p className="px-1 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-td-muted">Deciding as</p>
               <DecisionModeSelector mode={tradingLens} onChange={handleTradingLensChange} variant="segmented" />
             </div>
           )}
           <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="rail" compact={showPane} />
           {!showPane && (
-            <div className="mt-auto px-1 text-[10.5px] text-td-muted leading-snug">
-              <ModelDisclaimer className="text-[10px] text-td-muted/80 leading-snug flex items-start gap-1.5" />
+            <div className="mt-auto px-1 text-[10.5px] text-td-muted leading-relaxed">
+              <ModelDisclaimer className="text-[11px] text-td-muted/80 leading-relaxed flex items-start gap-1.5" />
             </div>
           )}
         </aside>
@@ -1269,7 +1269,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     <span className="text-slate-500" title="Open any ticker to see the 7-layer confidence breakdown.">Open a ticker for confidence layers vs chart score.</span>
                   </div>
                   {data.config?.risk_sizing && (
-                    <p className="text-xs text-slate-400 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2">
+                    <p className="text-[13px] text-slate-400 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2">
                       <strong className="text-slate-300">Risk-based sizing:</strong> each row uses{" "}
                       <strong>{data.config.risk_sizing.risk_pct}%</strong> of total portfolio as the dollar risk budget if your{" "}
                       <strong>{data.config.risk_sizing.stop_pct}%</strong> stop is hit. The <strong>Risk (size)</strong> column shows implied shares and notional.
@@ -1280,7 +1280,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     <span className="text-slate-400">Buy:</span> add-on · <span className="text-slate-400">Sell:</span> trim when overbought/weak · <span className="text-slate-400">Support:</span> watch level ·
                     <span className="text-slate-400"> Short:</span> ~1 mo · <span className="text-slate-400">Medium:</span> ~3–6 mo · <span className="text-slate-400">Long:</span> ~12–18 mo
                   </p>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[13px] text-slate-500">
                     Macro, breadth, pre-market and next-day outlook now live under{" "}
                     <button type="button" onClick={() => openMore("markets")} className="text-emerald-400 hover:text-emerald-300 underline">
                       More → Markets
@@ -1289,7 +1289,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </p>
                 </div>
               </ToggleSection>
-              <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+              <ModelDisclaimer className="text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
             </div>
           )}
 
@@ -1307,7 +1307,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {planSub === "income" && (
                 <div className="space-y-4">
                   <IncomeBookPanel onTickerClick={openTickerDetail} />
-                  <ModelDisclaimer className="text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                  <ModelDisclaimer className="text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
                 </div>
               )}
               {planSub === "opportunities" && (
@@ -1411,7 +1411,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
                     <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
                     <p className="text-slate-400 text-sm">No holdings</p>
-                    <p className="text-slate-500 text-xs mt-1">Add portfolios in config or upload via Signals → add ticker.</p>
+                    <p className="text-slate-500 text-[13px] mt-1">Add portfolios in config or upload via Signals → add ticker.</p>
                   </div>
                 )}
               </ToggleSection>
@@ -1420,7 +1420,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <div className="space-y-6">
                     {data.portfolio_stress?.scenarios?.length ? <PortfolioStressStrip stress={data.portfolio_stress} /> : null}
                     <div>
-                      <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">VaR / CVaR & correlation (holdings)</p>
+                      <p className="text-[13px] font-medium text-slate-400 uppercase tracking-wide mb-2">VaR / CVaR & correlation (holdings)</p>
                       <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
                     </div>
                     <RiskDashboard
@@ -1457,10 +1457,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 />
                 <div className="mt-6 space-y-6">
                   {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
-                    <p className="text-xs text-slate-500">Loading add ideas (opportunity scan)…</p>
+                    <p className="text-[13px] text-slate-500">Loading add ideas (opportunity scan)…</p>
                   )}
                   {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
-                    <p className="text-xs text-amber-300/90">{oppFetchErr}</p>
+                    <p className="text-[13px] text-amber-300/90">{oppFetchErr}</p>
                   )}
                   <PortfolioDoctorRecommendations
                     recommendation={mergedDoctorRec?.[selectedPortfolio]}
@@ -1491,7 +1491,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
                     <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
                     <p className="text-slate-400 text-sm">No trim candidates</p>
-                    <p className="text-slate-500 text-xs mt-1">Positions with action REDUCE/AVOID (or score {'<'} 40 fallback) will appear here.</p>
+                    <p className="text-slate-500 text-[13px] mt-1">Positions with action REDUCE/AVOID (or score {'<'} 40 fallback) will appear here.</p>
                   </div>
                 )}
               </ToggleSection>
@@ -1510,7 +1510,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     message={data.performance_vs_benchmark?.message}
                     as_of={data.performance_vs_benchmark?.as_of}
                   />
-                  <ModelDisclaimer className="mt-4 text-[10px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                  <ModelDisclaimer className="mt-4 text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
                 </ToggleSection>
               )}
             </div>
@@ -1702,7 +1702,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               )}
               {moreSub === "admin" && (
                 <div className="space-y-4 sm:space-y-6">
-                  <p className="text-xs text-td-muted">
+                  <p className="text-[13px] text-td-muted">
                     Model validation and data health — not decision inputs. Read-only on mobile.
                   </p>
                   <div className="hidden md:flex flex-wrap items-center gap-2">
@@ -1748,7 +1748,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       {advancedMode ? "Dev tools on" : "Dev tools"}
                     </button>
                     {eodMessage && (
-                      <span className={clsx("text-xs px-2 py-1 rounded", eodMessage.type === "ok" ? "text-emerald-300 bg-emerald-900/30" : "text-amber-200 bg-amber-900/30")}>
+                      <span className={clsx("text-[13px] px-2 py-1 rounded", eodMessage.type === "ok" ? "text-emerald-300 bg-emerald-900/30" : "text-amber-200 bg-amber-900/30")}>
                         {eodMessage.text}
                       </span>
                     )}
@@ -1816,7 +1816,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       setAnalysisFetchErr(null);
                       setAnalysisRetryKey((k) => k + 1);
                     }}
-                    className="text-xs px-3 py-1.5 rounded border border-amber-500/40 text-amber-100 hover:bg-amber-500/10"
+                    className="text-[13px] px-3 py-1.5 rounded border border-amber-500/40 text-amber-100 hover:bg-amber-500/10"
                   >
                     Retry analysis load
                   </button>

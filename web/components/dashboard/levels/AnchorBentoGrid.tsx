@@ -74,13 +74,13 @@ export function AnchorBentoGrid({
         <div key={a.id} className="flex items-center gap-1.5 min-w-0">
           {/* Separator between items */}
           {i > 0 && (
-            <span className="text-td-muted text-[10px] select-none mr-1">·</span>
+            <span className="text-td-muted text-[11px] select-none mr-1">·</span>
           )}
           <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", DOT[a.color])} />
-          <span className="text-[10px] text-td-muted uppercase tracking-wide font-medium shrink-0">
+          <span className="text-[11px] text-td-muted uppercase tracking-wide font-medium shrink-0">
             {a.label}
           </span>
-          <span className={clsx("text-[11px] font-mono font-semibold tabular-nums", TEXT[a.color])}>
+          <span className={clsx("text-[13px] font-mono font-semibold tabular-nums", TEXT[a.color])}>
             {fmt(a.value)}
           </span>
           {a.distPct != null && a.role !== "current" && (

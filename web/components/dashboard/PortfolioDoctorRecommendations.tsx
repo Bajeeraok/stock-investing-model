@@ -16,7 +16,7 @@ export function PortfolioDoctorRecommendations({
     return (
       <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
         <p className="text-slate-400 text-sm">No allocation recommendations for {selectedPortfolio}.</p>
-        <p className="text-slate-500 text-xs mt-1">Set portfolio_doctor in config (risk_appetite, goal, target_portfolio_value, time_period_years).</p>
+        <p className="text-slate-500 text-[13px] mt-1">Set portfolio_doctor in config (risk_appetite, goal, target_portfolio_value, time_period_years).</p>
       </div>
     );
   }
@@ -26,7 +26,7 @@ export function PortfolioDoctorRecommendations({
   return (
     <div className="space-y-6">
       <p className="text-slate-500 text-sm">When you have multiple accounts (e.g. IRA + Taxable), prefer trimming in IRA first to avoid taxable gains; trim in Taxable when you want to realize losses or rebalance.</p>
-      <p className="text-[11px] text-slate-600 -mt-4">
+      <p className="text-[13px] text-slate-600 -mt-4">
         Rebalance-based sizing: trims/adds bring existing holdings back toward equal-weight
         targets under your {profile} profile&apos;s cap. The Tier-1 panel elsewhere uses a
         different method (Kelly-criterion new-trade sizing) with the same cap — the two $
@@ -108,7 +108,7 @@ export function PortfolioDoctorRecommendations({
           <p className="text-slate-500 text-sm">No add suggestions; consider rebalancing or adding cash.</p>
         ) : (
           <>
-          <p className="text-slate-500 text-xs mb-2">Consider limit orders for illiquid names; avoid market orders in size.</p>
+          <p className="text-slate-500 text-[13px] mb-2">Consider limit orders for illiquid names; avoid market orders in size.</p>
           <div className="overflow-x-auto rounded-xl border border-slate-700">
             <table className="w-full text-sm">
               <thead>
@@ -145,13 +145,13 @@ export function PortfolioDoctorRecommendations({
                     <td className={clsx("px-4 py-3 font-mono tabular-nums", (a.confidence ?? 0) >= 65 ? "text-emerald-400" : (a.confidence ?? 0) >= 45 ? "text-slate-300" : "text-amber-300")}>
                       {a.confidence != null ? `${Math.round(a.confidence)}%` : "—"}
                       {a.action && (
-                        <span className="ml-2 text-[11px] text-slate-500">
+                        <span className="ml-2 text-[13px] text-slate-500">
                           ({a.action})
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={clsx("px-2 py-0.5 rounded text-xs", a.regime === "UP" && "bg-emerald-500/20 text-emerald-400", a.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400", a.regime === "DOWN" && "bg-red-500/20 text-red-400")}>
+                      <span className={clsx("px-2 py-0.5 rounded text-[13px]", a.regime === "UP" && "bg-emerald-500/20 text-emerald-400", a.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400", a.regime === "DOWN" && "bg-red-500/20 text-red-400")}>
                         {a.regime || "—"}
                       </span>
                     </td>

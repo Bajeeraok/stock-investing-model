@@ -95,7 +95,7 @@ function EventRiskCard({
                 </span>
               ))}
             </div>
-            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-slate-400 tabular-nums">
+            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-400 tabular-nums">
               {row.expected_move_pct != null && (
                 <span>±{row.expected_move_pct.toFixed(1)}% 1d</span>
               )}
@@ -109,7 +109,7 @@ function EventRiskCard({
           <div className="text-right shrink-0">
             <span className="text-sm font-mono text-slate-200">{fmt(row.close)}</span>
             {row.event_score != null && (
-              <p className="text-[10px] text-slate-500">score {row.event_score.toFixed(0)}</p>
+              <p className="text-[11px] text-slate-500">score {row.event_score.toFixed(0)}</p>
             )}
           </div>
         </div>
@@ -117,7 +117,7 @@ function EventRiskCard({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span
             className={clsx(
-              "text-[10px] font-semibold uppercase px-2 py-0.5 rounded border",
+              "text-[11px] font-semibold uppercase px-2 py-0.5 rounded border",
               biasTone(row.pre_earnings_bias),
             )}
           >
@@ -125,7 +125,7 @@ function EventRiskCard({
             {row.bias_prob_pct != null ? ` ${Math.round(row.bias_prob_pct)}%` : ""}
           </span>
           {row.post_earnings_directional != null && (
-            <span className="text-[10px] text-slate-400">
+            <span className="text-[11px] text-slate-400">
               Post-ER target{" "}
               <span className="font-mono text-slate-200">{fmt(row.post_earnings_directional)}</span>
             </span>
@@ -136,7 +136,7 @@ function EventRiskCard({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-slate-500 border-t border-slate-700/50 hover:bg-slate-800/30 touch-manipulation"
+        className="w-full flex items-center justify-center gap-1 py-1 text-[11px] text-slate-500 border-t border-slate-700/50 hover:bg-slate-800/30 touch-manipulation"
       >
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         {open ? "Hide calibration" : "Calibration & targets"}
@@ -144,7 +144,7 @@ function EventRiskCard({
 
       {open && (
         <div className="px-3 pb-3 pt-1 space-y-2 border-t border-slate-700/40 bg-slate-950/40">
-          <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
             <div>
               <p className="text-slate-500">Upside (post-ER)</p>
               <p className="font-mono text-emerald-300">{fmt(row.post_earnings_upside)}</p>
@@ -171,13 +171,13 @@ function EventRiskCard({
 
           {!!row.recent_earnings_moves?.length && (
             <div>
-              <p className="text-[10px] text-slate-500 mb-1">Recent earnings reactions</p>
+              <p className="text-[11px] text-slate-500 mb-1">Recent earnings reactions</p>
               <div className="flex flex-wrap gap-2">
                 {row.recent_earnings_moves.map((ev) => (
                   <span
                     key={ev.date}
                     className={clsx(
-                      "text-[10px] font-mono px-1.5 py-0.5 rounded",
+                      "text-[11px] font-mono px-1.5 py-0.5 rounded",
                       (ev.move_pct ?? 0) >= 0 ? "text-emerald-300 bg-emerald-500/10" : "text-red-300 bg-red-500/10",
                     )}
                   >
@@ -189,7 +189,7 @@ function EventRiskCard({
           )}
 
           {row.calibration_note && (
-            <p className="text-[10px] text-slate-500 leading-snug">{row.calibration_note}</p>
+            <p className="text-[11px] text-slate-500 leading-snug">{row.calibration_note}</p>
           )}
         </div>
       )}
@@ -214,10 +214,10 @@ export function EventRiskStrip({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-amber-100">High 1-day event risk</p>
-            <span className="text-[10px] text-slate-500">Scout · ER + ATR + velocity</span>
+            <span className="text-[11px] text-slate-500">Scout · ER + ATR + velocity</span>
           </div>
           {payload?.rank_note && (
-            <p className="text-[10px] text-slate-500 mt-1 leading-snug line-clamp-3">{payload.rank_note}</p>
+            <p className="text-[11px] text-slate-500 mt-1 leading-snug line-clamp-3">{payload.rank_note}</p>
           )}
         </div>
         <Target className="h-4 w-4 text-slate-600 shrink-0" aria-hidden />

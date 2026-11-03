@@ -68,13 +68,13 @@ export function PerformanceVsBenchmark({ periods, message, as_of }: Props) {
       <div className="flex items-center gap-2 mb-3">
         <BarChart3 className="h-4 w-4 text-emerald-400 shrink-0" />
         <p className="text-sm font-medium text-slate-300">Performance vs benchmark</p>
-        {as_of && <span className="text-xs text-slate-500 ml-auto">As of {new Date(as_of).toLocaleDateString()}</span>}
+        {as_of && <span className="text-[13px] text-slate-500 ml-auto">As of {new Date(as_of).toLocaleDateString()}</span>}
       </div>
-      <p className="text-xs text-slate-500 mb-3" title="Portfolio total return vs SPY (S&P 500) and QQQ (Nasdaq 100). vs SPY = portfolio − SPY.">
+      <p className="text-[13px] text-slate-500 mb-3" title="Portfolio total return vs SPY (S&P 500) and QQQ (Nasdaq 100). vs SPY = portfolio − SPY.">
         Total return over period. Positive vs SPY/QQQ = outperformed.
       </p>
       {hiddenLong && (
-        <p className="text-[11px] text-slate-500 mb-2">
+        <p className="text-[13px] text-slate-500 mb-2">
           1-year portfolio return hidden until enough history
           {as_of ? ` (tracking since ${new Date(as_of).toLocaleDateString()})` : ""}.
         </p>

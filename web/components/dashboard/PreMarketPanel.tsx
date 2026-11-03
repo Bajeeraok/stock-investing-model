@@ -108,18 +108,18 @@ function SignalRow({ signal }: { signal: PreMarketSignal }) {
       >
         <DirectionIcon direction={signal.direction} />
         <span className="text-sm text-slate-300 font-medium min-w-0 flex-1 truncate">{signal.name}</span>
-        <span className={clsx("text-xs font-mono shrink-0", signal.direction === "Bullish" ? "text-emerald-400" : signal.direction === "Bearish" ? "text-red-400" : "text-slate-500")}>
+        <span className={clsx("text-[13px] font-mono shrink-0", signal.direction === "Bullish" ? "text-emerald-400" : signal.direction === "Bearish" ? "text-red-400" : "text-slate-500")}>
           {signal.raw_value}
         </span>
         <div className="w-16 shrink-0 hidden sm:block">
           <ScoreBar score={signal.score} size="sm" />
         </div>
-        <span className="text-xs text-slate-600 font-mono w-8 text-right shrink-0 hidden sm:block">
+        <span className="text-[13px] text-slate-600 font-mono w-8 text-right shrink-0 hidden sm:block">
           {(signal.confidence * 100).toFixed(0)}%
         </span>
         {signal.note && (expanded ? <ChevronDown className="h-3 w-3 text-slate-600 shrink-0" /> : <ChevronRight className="h-3 w-3 text-slate-600 shrink-0" />)}
       </button>
-      {expanded && signal.note && <div className="px-8 pb-2 text-xs text-slate-500 italic">{signal.note}</div>}
+      {expanded && signal.note && <div className="px-8 pb-2 text-[13px] text-slate-500 italic">{signal.note}</div>}
     </div>
   );
 }
@@ -131,8 +131,8 @@ function CategoryGroup({ category, signals }: { category: string; signals: PreMa
     <div className="rounded-lg border border-slate-700/50 overflow-hidden">
       <button type="button" className="w-full flex items-center gap-2 px-3 py-2 bg-slate-800/50 hover:bg-slate-800/70 transition-colors text-left" onClick={() => setOpen((v) => !v)}>
         <DirectionIcon direction={avgScore > 0.1 ? "Bullish" : avgScore < -0.1 ? "Bearish" : "Neutral"} size={12} />
-        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex-1">{category}</span>
-        <span className="text-xs text-slate-600">{signals.length} signal{signals.length !== 1 ? "s" : ""}</span>
+        <span className="text-[13px] font-semibold text-slate-400 uppercase tracking-wider flex-1">{category}</span>
+        <span className="text-[13px] text-slate-600">{signals.length} signal{signals.length !== 1 ? "s" : ""}</span>
         {open ? <ChevronDown className="h-3 w-3 text-slate-600" /> : <ChevronRight className="h-3 w-3 text-slate-600" />}
       </button>
       {open && <div className="bg-slate-900/20">{signals.map((s) => <SignalRow key={s.name} signal={s} />)}</div>}
@@ -147,17 +147,17 @@ function CompositeGauge({ score, bias, confidence }: { score: number; bias: stri
     <div className={clsx("rounded-xl border p-4 sm:p-5", cfg.bg, cfg.border)}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-medium text-slate-500 uppercase tracking-widest mb-1">Pre-Market Bias</p>
+          <p className="text-[13px] font-medium text-slate-500 uppercase tracking-widest mb-1">Pre-Market Bias</p>
           <p className={clsx("text-2xl sm:text-3xl font-bold tracking-tight", cfg.color)}>{bias}</p>
-          <p className="text-xs text-slate-500 mt-1">Confidence: {(confidence * 100).toFixed(0)}%</p>
+          <p className="text-[13px] text-slate-500 mt-1">Confidence: {(confidence * 100).toFixed(0)}%</p>
         </div>
         <div className="text-right shrink-0">
           <p className={clsx("text-3xl font-mono font-bold", cfg.color)}>{score >= 0 ? "+" : ""}{score.toFixed(2)}</p>
-          <p className="text-xs text-slate-600 mt-0.5">composite score</p>
+          <p className="text-[13px] text-slate-600 mt-0.5">composite score</p>
         </div>
       </div>
       <div className="mt-4 space-y-1">
-        <div className="flex justify-between text-xs text-slate-600"><span>Bear</span><span>Neutral</span><span>Bull</span></div>
+        <div className="flex justify-between text-[13px] text-slate-600"><span>Bear</span><span>Neutral</span><span>Bull</span></div>
         <div className="relative h-2 rounded-full bg-slate-700/60 overflow-hidden">
           <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-red-900/40 to-transparent rounded-l-full" />
           <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-emerald-900/40 to-transparent rounded-r-full" />
@@ -181,13 +181,13 @@ export function PreMarketStrip({ data }: { data: PreMarketData }) {
         <Activity className="h-3.5 w-3.5 text-slate-500 shrink-0" />
         <span className="text-slate-400 font-medium">Pre-Market</span>
         <span className={clsx("font-semibold", cfg.color)}>{data.bias}</span>
-        <span className="text-slate-600 font-mono text-xs">{data.composite_score >= 0 ? "+" : ""}{data.composite_score.toFixed(2)}</span>
+        <span className="text-slate-600 font-mono text-[13px]">{data.composite_score >= 0 ? "+" : ""}{data.composite_score.toFixed(2)}</span>
       </div>
-      {data.minutes_to_open > 0 && <span className="text-slate-600 text-xs">{data.minutes_to_open}m to open</span>}
-      {data.top_bullish.slice(0, 1).map((b, i) => <span key={i} className="text-emerald-500 text-xs hidden sm:inline">↑ {b.split(":")[0]}</span>)}
-      {data.top_bearish.slice(0, 1).map((b, i) => <span key={i} className="text-red-500 text-xs hidden sm:inline">↓ {b.split(":")[0]}</span>)}
+      {data.minutes_to_open > 0 && <span className="text-slate-600 text-[13px]">{data.minutes_to_open}m to open</span>}
+      {data.top_bullish.slice(0, 1).map((b, i) => <span key={i} className="text-emerald-500 text-[13px] hidden sm:inline">↑ {b.split(":")[0]}</span>)}
+      {data.top_bearish.slice(0, 1).map((b, i) => <span key={i} className="text-red-500 text-[13px] hidden sm:inline">↓ {b.split(":")[0]}</span>)}
       {data.rotation_risk_premarket && data.rotation_risk_premarket !== "Low" && (
-        <span className={clsx("text-xs flex items-center gap-1", data.rotation_risk_premarket === "High" ? "text-amber-400" : "text-slate-400")}>
+        <span className={clsx("text-[13px] flex items-center gap-1", data.rotation_risk_premarket === "High" ? "text-amber-400" : "text-slate-400")}>
           <AlertTriangle className="h-3 w-3" /> Rotation risk: {data.rotation_risk_premarket}
         </span>
       )}
@@ -277,12 +277,12 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
           <Globe className="h-4 w-4 text-slate-400 shrink-0" />
           <span className="text-sm font-semibold text-slate-300">Pre-Market Signal Engine</span>
           {data?.minutes_to_open != null && data.minutes_to_open > 0 && (
-            <span className="text-xs text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">{data.minutes_to_open}m to open</span>
+            <span className="text-[13px] text-slate-500 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded-full">{data.minutes_to_open}m to open</span>
           )}
         </div>
         <div className="flex items-center gap-3">
-          {lastFetch && <span className="text-xs text-slate-600 hidden sm:inline">{lastFetch.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })} ET</span>}
-          <button type="button" onClick={() => fetchData(false)} disabled={loading} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:bg-slate-800 text-xs disabled:opacity-50 transition-colors">
+          {lastFetch && <span className="text-[13px] text-slate-600 hidden sm:inline">{lastFetch.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })} ET</span>}
+          <button type="button" onClick={() => fetchData(false)} disabled={loading} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-600 text-slate-400 hover:bg-slate-800 text-[13px] disabled:opacity-50 transition-colors">
             <RefreshCw className={clsx("h-3 w-3", loading && "animate-spin")} />
             <span>{loading ? "Fetching…" : "Refresh"}</span>
           </button>
@@ -294,7 +294,7 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
           <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-4 py-6 text-center space-y-2">
             <Activity className="h-6 w-6 text-slate-600 mx-auto" />
             <p className="text-sm font-medium text-slate-400">Pre-market signals not yet available</p>
-            <p className="text-xs text-slate-600">Data is generated at 4:00 AM ET on trading days.<br />Check back before market open or run the pre-market scheduler.</p>
+            <p className="text-[13px] text-slate-600">Data is generated at 4:00 AM ET on trading days.<br />Check back before market open or run the pre-market scheduler.</p>
           </div>
         )}
 
@@ -303,13 +303,13 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">Could not fetch pre-market data</p>
-              <p className="text-amber-300/70 text-xs mt-0.5">{error}</p>
+              <p className="text-amber-300/70 text-[13px] mt-0.5">{error}</p>
             </div>
           </div>
         )}
 
         {data?.stale && (
-          <div className="rounded-lg border border-slate-600/50 bg-slate-800/40 px-3 py-2 text-slate-400 text-xs flex items-center gap-2">
+          <div className="rounded-lg border border-slate-600/50 bg-slate-800/40 px-3 py-2 text-slate-400 text-[13px] flex items-center gap-2">
             <AlertTriangle className="h-3.5 w-3.5 text-slate-500 shrink-0" />
             <span>{data.stale_message ?? "Showing cached pre-market data — refreshes at 4:00 AM ET on trading days"}</span>
           </div>
@@ -332,41 +332,41 @@ export function PreMarketPanel({ data: initialData, apiEndpoint = "/api/pre-mark
             {data.market_catalysts && <MarketCatalystBoardPanel board={data.market_catalysts} />}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
-                <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><TrendingUp className="h-3 w-3" /> Bullish Drivers</p>
-                {data.top_bullish.length > 0 ? <ul className="space-y-1">{data.top_bullish.map((item, i) => <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5"><span className="text-emerald-500 shrink-0 mt-0.5">+</span>{item}</li>)}</ul> : <p className="text-xs text-slate-600">No significant bullish signals</p>}
+                <p className="text-[13px] font-semibold text-emerald-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><TrendingUp className="h-3 w-3" /> Bullish Drivers</p>
+                {data.top_bullish.length > 0 ? <ul className="space-y-1">{data.top_bullish.map((item, i) => <li key={i} className="text-[13px] text-slate-300 flex items-start gap-1.5"><span className="text-emerald-500 shrink-0 mt-0.5">+</span>{item}</li>)}</ul> : <p className="text-[13px] text-slate-600">No significant bullish signals</p>}
               </div>
               <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
-                <p className="text-xs font-semibold text-red-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><TrendingDown className="h-3 w-3" /> Bearish Drivers</p>
-                {data.top_bearish.length > 0 ? <ul className="space-y-1">{data.top_bearish.map((item, i) => <li key={i} className="text-xs text-slate-300 flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">−</span>{item}</li>)}</ul> : <p className="text-xs text-slate-600">No significant bearish signals</p>}
+                <p className="text-[13px] font-semibold text-red-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><TrendingDown className="h-3 w-3" /> Bearish Drivers</p>
+                {data.top_bearish.length > 0 ? <ul className="space-y-1">{data.top_bearish.map((item, i) => <li key={i} className="text-[13px] text-slate-300 flex items-start gap-1.5"><span className="text-red-500 shrink-0 mt-0.5">−</span>{item}</li>)}</ul> : <p className="text-[13px] text-slate-600">No significant bearish signals</p>}
               </div>
             </div>
             {data.key_risks.length > 0 && (
               <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                <p className="text-xs font-semibold text-amber-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3" /> Key Risks / Notes</p>
-                <ul className="space-y-1">{data.key_risks.map((r, i) => <li key={i} className="text-xs text-slate-400">{r}</li>)}</ul>
+                <p className="text-[13px] font-semibold text-amber-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><AlertTriangle className="h-3 w-3" /> Key Risks / Notes</p>
+                <ul className="space-y-1">{data.key_risks.map((r, i) => <li key={i} className="text-[13px] text-slate-400">{r}</li>)}</ul>
               </div>
             )}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Signal Breakdown ({data.signals.length} sources)</p>
-                <div className="hidden sm:flex items-center gap-3 text-xs text-slate-600"><span>Raw value</span><span className="w-16 text-center">Score</span><span className="w-8 text-right">Conf</span></div>
+                <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wider">Signal Breakdown ({data.signals.length} sources)</p>
+                <div className="hidden sm:flex items-center gap-3 text-[13px] text-slate-600"><span>Raw value</span><span className="w-16 text-center">Score</span><span className="w-8 text-right">Conf</span></div>
               </div>
               <div className="space-y-2">{sortedGroups.map(([category, signals]) => <CategoryGroup key={category} category={category} signals={signals} />)}</div>
             </div>
             {Object.keys(data.sector_plays || {}).length > 0 && (
               <div className="rounded-lg border border-slate-700/50 bg-slate-800/20 p-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Sector Implications</p>
+                <p className="text-[13px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Sector Implications</p>
                 <div className="flex flex-wrap gap-x-6 gap-y-2">
                   {Object.entries(data.sector_plays).map(([category, tickers]) => (
                     <div key={category}>
-                      <span className={clsx("text-xs font-medium", category.toLowerCase().includes("avoid") ? "text-amber-400" : category.toLowerCase().includes("short") ? "text-red-400" : "text-emerald-400")}>{category}:</span>
-                      <span className="text-xs text-slate-400 ml-1.5">{tickers.join(", ")}</span>
+                      <span className={clsx("text-[13px] font-medium", category.toLowerCase().includes("avoid") ? "text-amber-400" : category.toLowerCase().includes("short") ? "text-red-400" : "text-emerald-400")}>{category}:</span>
+                      <span className="text-[13px] text-slate-400 ml-1.5">{tickers.join(", ")}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-            <p className="text-xs text-slate-600 text-center pt-1">Educational only. Not financial advice. Signals: Equity Futures 35%, Intl 20%, VIX 10%, Rates 12%, FX 8%, Commodities 10%, Crypto+Mega-cap 5%.</p>
+            <p className="text-[13px] text-slate-600 text-center pt-1">Educational only. Not financial advice. Signals: Equity Futures 35%, Intl 20%, VIX 10%, Rates 12%, FX 8%, Commodities 10%, Crypto+Mega-cap 5%.</p>
           </>
         )}
       </div>

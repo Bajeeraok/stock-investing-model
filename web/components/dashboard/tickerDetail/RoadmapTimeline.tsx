@@ -84,16 +84,16 @@ function TimelineRow({
       </div>
       <div className={clsx("flex-1 min-w-0", isLast ? "pb-0" : "pb-3")}>
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-          <span className="text-xs font-medium text-slate-300 shrink-0 min-w-[5.5rem]">{gapLabel}</span>
+          <span className="text-[13px] font-medium text-slate-300 shrink-0 min-w-[5.5rem]">{gapLabel}</span>
           <span
             className={clsx(
-              "text-xs font-medium px-1.5 py-0.5 rounded shrink-0",
+              "text-[13px] font-medium px-1.5 py-0.5 rounded shrink-0",
               stageActChipClass(stage.when_to_act),
             )}
           >
             {stage.when_to_act}
           </span>
-          <span className="text-[11px] font-mono text-slate-400 sm:ml-auto tabular-nums">
+          <span className="text-[13px] font-mono text-slate-400 sm:ml-auto tabular-nums">
             {isGap && !stage.label?.includes("Watch") ? "Gap span " : ""}$
             {stage.price_zone_low.toFixed(2)}–${stage.price_zone_high.toFixed(2)}
             {stage.position_pct > 0 ? (
@@ -102,13 +102,13 @@ function TimelineRow({
           </span>
         </div>
         {stage.condition && (
-          <p className="text-[11px] text-slate-400 mt-1 leading-snug">{stage.condition}</p>
+          <p className="text-[13px] text-slate-400 mt-1 leading-snug">{stage.condition}</p>
         )}
         {stage.sync_note && (
-          <p className="text-[10px] text-sky-300/80 mt-1 leading-snug">{stage.sync_note}</p>
+          <p className="text-[11px] text-sky-300/80 mt-1 leading-snug">{stage.sync_note}</p>
         )}
         {isGap && stage.bridge_zone_low != null && stage.bridge_zone_high != null && showSharedCatch && (
-          <p className="text-[10px] text-slate-400 mt-1 leading-snug">{BRIDGE_RATIONALE}</p>
+          <p className="text-[11px] text-slate-400 mt-1 leading-snug">{BRIDGE_RATIONALE}</p>
         )}
         {showRowCatch && (
           <CatchLevelsRow
@@ -179,7 +179,7 @@ export function RoadmapTimeline({
     <div className="rounded-2xl border border-slate-700/50 bg-slate-900/60 p-4">
       <div className="flex items-center justify-between gap-2 mb-3">
         {title ? (
-          <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">{title}</p>
+          <p className="text-[11px] font-mono uppercase tracking-widest text-slate-500">{title}</p>
         ) : (
           <span />
         )}
@@ -187,7 +187,7 @@ export function RoadmapTimeline({
           <button
             type="button"
             onClick={() => setTimelineExpanded((v) => !v)}
-            className="text-[10px] text-cyan-400/90 hover:text-cyan-300"
+            className="text-[11px] text-cyan-400/90 hover:text-cyan-300"
           >
             {timelineExpanded ? "Collapse periods" : "Expand Today · Days 1–10 · Week 2–4"}
           </button>
@@ -204,7 +204,7 @@ export function RoadmapTimeline({
             bridgeRationale={uniformBridge ? BRIDGE_RATIONALE : undefined}
             sharedLabel="Catch levels valid across all watch periods"
           />
-          <p className="text-[10px] text-slate-600 leading-snug">
+          <p className="text-[11px] text-slate-600 leading-snug">
             Rows below differ by <span className="text-slate-500">when to act</span>, not price steps.
           </p>
         </div>

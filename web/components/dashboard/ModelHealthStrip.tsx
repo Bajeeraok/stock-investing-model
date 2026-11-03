@@ -101,7 +101,7 @@ export function ModelHealthStrip({ model_health, summary_by_signal, summary_by_h
     return (
       <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-3 py-2 flex items-center gap-2">
         <Activity className="h-4 w-4 text-slate-500 shrink-0" />
-        <span className="text-xs text-slate-500">Model health: {mh.message || message}</span>
+        <span className="text-[13px] text-slate-500">Model health: {mh.message || message}</span>
       </div>
     );
   }
@@ -116,8 +116,8 @@ export function ModelHealthStrip({ model_health, summary_by_signal, summary_by_h
       title="EOD freshness, price-target report, optional weekly backtest (data/model_health.json), forward ADD hit rate."
     >
       <Activity className="h-4 w-4 text-emerald-400 shrink-0" />
-      <span className="text-xs text-slate-400 font-medium">Model health</span>
-      <span className="text-xs text-slate-300">
+      <span className="text-[13px] text-slate-400 font-medium">Model health</span>
+      <span className="text-[13px] text-slate-300">
         {parts.join(" · ")}
         {horizonCount > 0 && ` · ${horizonCount} horizon(s)`}
       </span>

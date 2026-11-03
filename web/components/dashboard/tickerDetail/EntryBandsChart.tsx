@@ -98,7 +98,7 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
 
   return (
     <div className={clsx("rounded-xl border border-td-line bg-td-surface/60 p-3", className)}>
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-td-muted mb-2">
+      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-td-muted mb-2">
         Entry levels vs spot
       </p>
       <div className="relative w-full" style={{ aspectRatio: "3 / 2" }}>
@@ -143,14 +143,14 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
           const s = KIND_STYLE[b.kind];
           return (
             <span key={i}
-              className={clsx("absolute right-1 text-[10px] font-mono leading-none", s.text)}
+              className={clsx("absolute right-1 text-[11px] font-mono leading-none", s.text)}
               style={{ top: `${top}%`, transform: "translateY(-50%)" }}>
               {b.label} {bandPriceText(b)}
             </span>
           );
         })}
         {spot != null && (
-          <span className="absolute left-1 text-[10px] font-mono font-bold leading-none text-amber-300"
+          <span className="absolute left-1 text-[11px] font-mono font-bold leading-none text-amber-300"
             style={{ top: `${y(spot)}%`, transform: "translateY(-110%)" }}>
             SPOT ${spot.toFixed(2)}
           </span>

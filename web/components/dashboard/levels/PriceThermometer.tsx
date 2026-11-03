@@ -145,7 +145,7 @@ export function PriceThermometer({
           className="absolute left-0 flex items-center gap-2 -translate-y-1/2 transition-all duration-300"
           style={{ bottom: `${nowPct}%` }}
         >
-          <span className="text-[11px] font-mono font-bold text-td-text tabular-nums">${currentPrice.toFixed(2)}</span>
+          <span className="text-[13px] font-mono font-bold text-td-text tabular-nums">${currentPrice.toFixed(2)}</span>
           <span className="text-[9px] uppercase tracking-wider text-td-muted font-semibold">Now</span>
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-50" />
@@ -170,11 +170,11 @@ export function PriceThermometer({
               onMouseLeave={() => setHovered(null)}
             >
               {l.band ? (
-                <span className={clsx("text-[10px] font-mono text-right tabular-nums", clr(l.color, "text"))}>
+                <span className={clsx("text-[11px] font-mono text-right tabular-nums", clr(l.color, "text"))}>
                   ${l.band.low.toFixed(0)}–${l.band.high.toFixed(0)}
                 </span>
               ) : (
-                <span className={clsx("text-[10px] font-mono tabular-nums", clr(l.color, "text"))}>
+                <span className={clsx("text-[11px] font-mono tabular-nums", clr(l.color, "text"))}>
                   ${l.value.toFixed(2)}
                 </span>
               )}

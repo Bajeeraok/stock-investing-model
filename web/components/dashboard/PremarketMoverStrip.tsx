@@ -94,7 +94,7 @@ export function PremarketMoverStrip({
 
   return (
     <div className="rounded-lg border border-violet-500/25 bg-violet-950/15 px-3 py-2 space-y-2">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
         <Activity className="h-3.5 w-3.5 text-violet-400 shrink-0" />
         <span className="text-slate-300 font-medium">Pre-market</span>
         {bias && (
@@ -122,13 +122,13 @@ export function PremarketMoverStrip({
       </div>
       {chips.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-[10px] text-slate-400">
+          <p className="text-[11px] text-slate-400">
             <span className="text-emerald-400">Green</span> = up · <span className="text-red-400">Red</span> = down (pre-market vs prior close)
           </p>
           <div className="flex flex-wrap gap-1.5">
           {chips.slice(0, 8).map((c) => {
             const chipCls = clsx(
-              "text-[11px] font-mono px-2 py-0.5 rounded border",
+              "text-[13px] font-mono px-2 py-0.5 rounded border",
               c.tone === "up" && "border-emerald-500/35 text-emerald-200 bg-emerald-500/10",
               c.tone === "down" && "border-red-500/35 text-red-200 bg-red-500/10",
               c.tone === "flat" && "border-slate-600/60 text-slate-200 bg-slate-800/50"

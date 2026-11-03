@@ -195,7 +195,7 @@ function SummaryChip({ value, label, color }: { value: number; label: string; co
   return (
     <div className="bg-slate-900 border border-slate-700/60 rounded-xl p-4 text-center">
       <div className={clsx("font-mono text-3xl font-bold leading-none", color)}>{value}</div>
-      <div className="text-[10px] text-slate-500 uppercase tracking-widest mt-1.5">{label}</div>
+      <div className="text-[11px] text-slate-500 uppercase tracking-widest mt-1.5">{label}</div>
     </div>
   );
 }
@@ -209,13 +209,13 @@ function SignalBar({ label, score, weight }: { label: string; score: number | nu
   return (
     <div className="bg-slate-800/70 rounded-lg p-3">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-slate-400 font-medium">
+        <span className="text-[11px] text-slate-400 font-medium">
           {label}
           {isZero
             ? <span className="ml-1.5 text-red-400/70 text-[9px] font-bold">DISABLED</span>
             : <span className="ml-1 text-slate-600 text-[9px]">({wPct}%)</span>}
         </span>
-        <span className={clsx("font-mono text-xs font-bold", hasData ? scoreColor(sPct) : "text-slate-600")}>
+        <span className={clsx("font-mono text-[13px] font-bold", hasData ? scoreColor(sPct) : "text-slate-600")}>
           {isZero ? "—" : sPct !== null ? `${sPct}%` : "N/A"}
         </span>
       </div>
@@ -236,7 +236,7 @@ function WeightGrid({ wp, label }: { wp: WeightProfile; label: string }) {
   const names = { regime:"Regime", pattern:"Pattern", ml:"ML", options:"Options", insider:"Insider", fundamentals:"Fund.", news:"News" };
   return (
     <div className="p-4 border-t border-slate-700/40">
-      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">
+      <p className="text-[11px] text-slate-500 uppercase tracking-widest font-mono mb-2">
         Weight Profile — {label}
       </p>
       <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
@@ -266,11 +266,11 @@ function PreflightFlags({ flags }: { flags: Flag[] }) {
   if (!flags.length) return null;
   return (
     <div className="p-4 border-t border-slate-700/40 space-y-1.5">
-      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">
+      <p className="text-[11px] text-slate-500 uppercase tracking-widest font-mono mb-2">
         Pre-flight Flags ({flags.length})
       </p>
       {flags.map((f, i) => (
-        <div key={i} className={clsx("flex items-start gap-2 text-xs rounded-lg px-3 py-2 border",
+        <div key={i} className={clsx("flex items-start gap-2 text-[13px] rounded-lg px-3 py-2 border",
           f.type === "error" ? "bg-red-500/10 border-red-500/25 text-red-300" :
           f.type === "warn"  ? "bg-amber-500/10 border-amber-500/25 text-amber-300" :
                                "bg-slate-700/20 border-slate-600/20 text-slate-400"
@@ -299,7 +299,7 @@ function TickerCard({ result, onRunAnalysis }: {
       <div className="bg-slate-900 border border-red-500/30 rounded-xl p-4">
         <div className="flex items-center gap-3">
           <span className="font-mono text-base font-bold text-red-400">{result.ticker}</span>
-          <span className="text-xs text-red-300/70">{result.error ?? "Classification failed"}</span>
+          <span className="text-[13px] text-red-300/70">{result.error ?? "Classification failed"}</span>
         </div>
       </div>
     );
@@ -349,7 +349,7 @@ function TickerCard({ result, onRunAnalysis }: {
         {/* Name + type */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-slate-200 truncate">{cls.name}</p>
-          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+          <p className="text-[13px] text-slate-500 font-mono mt-0.5">
             {ASSET_TYPE_LABELS[cls.asset_type] ?? cls.asset_type} · {cls.sector}
           </p>
         </div>
@@ -360,7 +360,7 @@ function TickerCard({ result, onRunAnalysis }: {
             <RefreshCw size={13} className="text-slate-500 animate-spin" />
           )}
           {result.elapsed_ms > 0 && !result.loading && (
-            <span className="text-[10px] font-mono text-slate-600">{result.elapsed_ms}ms</span>
+            <span className="text-[11px] font-mono text-slate-600">{result.elapsed_ms}ms</span>
           )}
           {headerBadge && (
             <span className={clsx("text-[9px] font-mono font-bold px-2 py-1 rounded border uppercase tracking-wider", headerBadge.cls)}>
@@ -382,7 +382,7 @@ function TickerCard({ result, onRunAnalysis }: {
                 <Ban size={16} className="text-red-400 shrink-0" />
                 <p className="text-sm font-bold text-red-300">Standard Model: INCOMPATIBLE</p>
               </div>
-              <p className="text-xs text-red-300/70 leading-relaxed">
+              <p className="text-[13px] text-red-300/70 leading-relaxed">
                 Volatility instruments behave inversely to equity market regimes.
                 ML models trained on stock price patterns produce systematically misleading outputs.
                 Use a dedicated volatility regime model.
@@ -394,12 +394,12 @@ function TickerCard({ result, onRunAnalysis }: {
               {/* Run Analysis button (if no live data yet) */}
               {!hasLive && !result.loading && (
                 <div className="px-4 py-3 bg-slate-800/30 flex items-center justify-between gap-3">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-[13px] text-slate-400">
                     Classification loaded · Run full analysis to see live signal scores
                   </p>
                   <button
                     onClick={e => { e.stopPropagation(); onRunAnalysis(result.ticker); }}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-1.5 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-1.5 rounded-lg transition-colors"
                   >
                     <Play size={11} />
                     Run Analysis
@@ -408,7 +408,7 @@ function TickerCard({ result, onRunAnalysis }: {
               )}
 
               {result.loading && (
-                <div className="px-4 py-3 flex items-center gap-2 text-xs text-slate-400">
+                <div className="px-4 py-3 flex items-center gap-2 text-[13px] text-slate-400">
                   <RefreshCw size={12} className="animate-spin" />
                   Loading live signal data…
                 </div>
@@ -417,18 +417,18 @@ function TickerCard({ result, onRunAnalysis }: {
               {/* Transition bonus */}
               {bonusActive && pf?.transition_bonus && (
                 <div className="px-4 py-3 bg-amber-500/8 border-b border-amber-500/20">
-                  <p className="text-[10px] font-mono text-amber-400 uppercase tracking-widest mb-1">
+                  <p className="text-[11px] font-mono text-amber-400 uppercase tracking-widest mb-1">
                     ⚡ Transition Momentum Bonus Active
                   </p>
-                  <p className="text-xs font-bold text-amber-300">{pf.transition_bonus.upgrade}</p>
-                  <p className="text-[11px] text-amber-300/70 mt-0.5">{pf.transition_bonus.rationale}</p>
+                  <p className="text-[13px] font-bold text-amber-300">{pf.transition_bonus.upgrade}</p>
+                  <p className="text-[13px] text-amber-300/70 mt-0.5">{pf.transition_bonus.rationale}</p>
                 </div>
               )}
 
               {/* Signal layers grid */}
               {hasLive && (
                 <div className="p-4 border-b border-slate-700/40">
-                  <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-3">Signal Layers</p>
+                  <p className="text-[11px] text-slate-500 uppercase tracking-widest font-mono mb-3">Signal Layers</p>
                   <div className="grid grid-cols-2 gap-2">
                     {Object.entries(layers).map(([key, layer]) => (
                       <SignalBar
@@ -443,12 +443,12 @@ function TickerCard({ result, onRunAnalysis }: {
                   {/* Confidence total */}
                   {conf?.confidence != null && (
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/30">
-                      <span className="text-xs text-slate-400">Overall Confidence</span>
+                      <span className="text-[13px] text-slate-400">Overall Confidence</span>
                       <div className="flex items-center gap-2">
                         <span className={clsx("text-sm font-bold font-mono", scoreColor(Math.round(conf.confidence * 100)))}>
                           {Math.round(conf.confidence * 100)}%
                         </span>
-                        <span className="text-[11px] text-slate-500">→ {conf.action}</span>
+                        <span className="text-[13px] text-slate-500">→ {conf.action}</span>
                       </div>
                     </div>
                   )}
@@ -456,10 +456,10 @@ function TickerCard({ result, onRunAnalysis }: {
                 {/* HMM regime sanity (validated vs MA structure) */}
                 {conf?.hmm && (conf.hmm.dominant_state || conf.hmm.dominant_state_validated || conf.hmm.ma_conflict) && (
                   <div className="mt-3 pt-3 border-t border-slate-700/30">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-2">
+                    <p className="text-[11px] text-slate-500 uppercase tracking-widest font-mono mb-2">
                       HMM Regime Sanity
                     </p>
-                    <div className="text-xs text-slate-300 space-y-1">
+                    <div className="text-[13px] text-slate-300 space-y-1">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-500">HMM dominant</span>
                         <span className="font-mono">{conf.hmm.dominant_state ?? "—"}</span>
@@ -472,11 +472,11 @@ function TickerCard({ result, onRunAnalysis }: {
                       </div>
                       {conf.hmm.ma_conflict && (
                         <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 mt-2">
-                          <p className="text-[11px] text-amber-200 font-mono">
+                          <p className="text-[13px] text-amber-200 font-mono">
                             Conflict: {conf.hmm.ma_conflict.reason ?? "MA_STRUCTURE_OVERRIDE"}
                           </p>
                           {(conf.hmm.ma_conflict.last_close != null || conf.hmm.ma_conflict.ma50 != null || conf.hmm.ma_conflict.ma200 != null) && (
-                            <p className="text-[11px] text-amber-200/70 font-mono mt-1">
+                            <p className="text-[13px] text-amber-200/70 font-mono mt-1">
                               close={conf.hmm.ma_conflict.last_close ?? "—"} · ma50={conf.hmm.ma_conflict.ma50 ?? "—"} · ma200={conf.hmm.ma_conflict.ma200 ?? "—"}
                             </p>
                           )}
@@ -493,12 +493,12 @@ function TickerCard({ result, onRunAnalysis }: {
                 <div className="px-4 py-3 border-b border-slate-700/40">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-1">Signal Coherence</p>
-                      <p className="text-xs text-slate-300 leading-relaxed max-w-sm">{coherence.message}</p>
+                      <p className="text-[11px] text-slate-500 uppercase tracking-widest font-mono mb-1">Signal Coherence</p>
+                      <p className="text-[13px] text-slate-300 leading-relaxed max-w-sm">{coherence.message}</p>
                     </div>
                     <div className="text-right shrink-0">
                       <span className={clsx(
-                        "text-[10px] font-mono font-bold px-2.5 py-1 rounded border",
+                        "text-[11px] font-mono font-bold px-2.5 py-1 rounded border",
                         coherenceColor(coherence.level).text,
                         coherenceColor(coherence.level).bg,
                         coherenceColor(coherence.level).border,
@@ -506,7 +506,7 @@ function TickerCard({ result, onRunAnalysis }: {
                         {coherence.level}
                       </span>
                       {coherence.std_dev != null && (
-                        <p className="text-[10px] text-slate-600 font-mono mt-1">
+                        <p className="text-[11px] text-slate-600 font-mono mt-1">
                           σ={coherence.std_dev} · spread={coherence.spread}pts
                         </p>
                       )}
@@ -520,14 +520,14 @@ function TickerCard({ result, onRunAnalysis }: {
                 <div className="px-4 py-3 border-b border-slate-700/40">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono mb-1">RSI Direction Signal</p>
-                      <p className="text-[11px] text-slate-400">
+                      <p className="text-[11px] text-slate-500 uppercase tracking-widest font-mono mb-1">RSI Direction Signal</p>
+                      <p className="text-[13px] text-slate-400">
                         Current: {rsiDir.rsi_current.toFixed(0)} · Δ {rsiDir.delta > 0 ? "+" : ""}{rsiDir.delta}
                       </p>
                     </div>
                     <div className="text-right shrink-0">
                       <span className={clsx(
-                        "text-[10px] font-mono font-bold px-2.5 py-1 rounded border",
+                        "text-[11px] font-mono font-bold px-2.5 py-1 rounded border",
                         rsiDir.is_oversold  && rsiDir.delta > 0  ? "text-emerald-300 bg-emerald-500/10 border-emerald-500/30" :
                         rsiDir.is_oversold  && rsiDir.delta <= 0 ? "text-red-300 bg-red-500/10 border-red-500/30"           :
                         rsiDir.is_overbought && rsiDir.delta < 0 ? "text-amber-300 bg-amber-500/10 border-amber-500/30"     :
@@ -535,7 +535,7 @@ function TickerCard({ result, onRunAnalysis }: {
                       )}>
                         {rsiDir.label.split(" — ")[0]}
                       </span>
-                      <p className="text-[10px] text-slate-600 font-mono mt-1">
+                      <p className="text-[11px] text-slate-600 font-mono mt-1">
                         Pattern bonus: {rsiDir.pattern_bonus > 0 ? "+" : ""}{rsiDir.pattern_bonus}pts
                       </p>
                     </div>
@@ -703,7 +703,7 @@ export function SignalTestSuite() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-            <span className="text-[11px] font-mono text-slate-400 uppercase tracking-widest">
+            <span className="text-[13px] font-mono text-slate-400 uppercase tracking-widest">
               Thrive Alpha · Asset Classifier v1.0
             </span>
           </div>
@@ -720,7 +720,7 @@ export function SignalTestSuite() {
           {results.some(r => r.confidence) && (
             <button
               onClick={downloadReport}
-              className="flex items-center gap-1.5 text-xs font-semibold text-slate-300 bg-slate-700/50 hover:bg-slate-700 border border-slate-600/50 px-3 py-2 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-300 bg-slate-700/50 hover:bg-slate-700 border border-slate-600/50 px-3 py-2 rounded-lg transition-colors"
             >
               <Download size={13} />
               Export CSV
@@ -729,7 +729,7 @@ export function SignalTestSuite() {
           <button
             onClick={() => runClassify(results.map(r => r.ticker))}
             disabled={running}
-            className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
           >
             <RefreshCw size={13} className={running ? "animate-spin" : ""} />
             Refresh
@@ -738,7 +738,7 @@ export function SignalTestSuite() {
             <button
               onClick={runAllAnalysis}
               disabled={runAllConf}
-              className="flex items-center gap-1.5 text-xs font-semibold text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 text-[13px] font-semibold text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
             >
               <Play size={13} className={runAllConf ? "animate-pulse" : ""} />
               {runAllConf ? "Running…" : "Run All Analysis"}
@@ -770,7 +770,7 @@ export function SignalTestSuite() {
         <button
           onClick={addTicker}
           disabled={!addInput.trim() || running}
-          className="flex items-center gap-1.5 text-xs font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
+          className="flex items-center gap-1.5 text-[13px] font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 px-3 py-2 rounded-lg transition-colors disabled:opacity-40"
         >
           <Plus size={13} />
           Add
@@ -778,7 +778,7 @@ export function SignalTestSuite() {
         {results.length > 0 && (
           <div className="flex items-center gap-1 ml-2 flex-wrap">
             {results.map(r => (
-              <span key={r.ticker} className="group flex items-center gap-1 bg-slate-800/60 border border-slate-700/40 rounded-md px-2 py-1 text-[11px] font-mono">
+              <span key={r.ticker} className="group flex items-center gap-1 bg-slate-800/60 border border-slate-700/40 rounded-md px-2 py-1 text-[13px] font-mono">
                 <span className={assetTypeColor(r.classification?.asset_type ?? "")}>{r.ticker}</span>
                 <button
                   onClick={() => removeTicker(r.ticker)}
@@ -803,7 +803,7 @@ export function SignalTestSuite() {
                 key={tab.id}
                 onClick={() => setFilter(tab.id)}
                 className={clsx(
-                  "text-[10px] font-mono uppercase tracking-wider px-3.5 py-1.5 rounded-full border transition-all",
+                  "text-[11px] font-mono uppercase tracking-wider px-3.5 py-1.5 rounded-full border transition-all",
                   filter === tab.id
                     ? "bg-emerald-500/15 border-emerald-500/50 text-emerald-300"
                     : "bg-slate-800/40 border-slate-700/40 text-slate-500 hover:border-emerald-500/40 hover:text-emerald-400"
@@ -814,7 +814,7 @@ export function SignalTestSuite() {
               </button>
             );
           })}
-          <span className="flex items-center gap-1 text-[10px] text-slate-600 ml-auto">
+          <span className="flex items-center gap-1 text-[11px] text-slate-600 ml-auto">
             <Filter size={10} />
             {filtered.length} shown
           </span>
@@ -861,10 +861,10 @@ export function SignalTestSuite() {
       {/* ── Report legend ── */}
       {results.length > 0 && (
         <div className="rounded-xl bg-slate-900/60 border border-slate-700/30 p-4">
-          <p className="text-[10px] font-mono text-slate-500 uppercase tracking-widest mb-3">
+          <p className="text-[11px] font-mono text-slate-500 uppercase tracking-widest mb-3">
             Quick Reference — What Each Coherence Level Means
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[13px]">
             {[
               { level: "HIGH",       desc: "σ < 15 — Signals aligned, output reliable",         color: "text-emerald-400" },
               { level: "MODERATE",   desc: "σ 15-25 — Some disagreement, reduce size",           color: "text-amber-400"   },
@@ -872,7 +872,7 @@ export function SignalTestSuite() {
               { level: "INCOHERENT", desc: "σ > 35 — All layers fight. No signal. Stand down.", color: "text-red-400"     },
             ].map(r => (
               <div key={r.level} className="bg-slate-800/40 rounded-lg p-2.5 space-y-1">
-                <span className={clsx("font-mono font-bold text-[10px]", r.color)}>{r.level}</span>
+                <span className={clsx("font-mono font-bold text-[11px]", r.color)}>{r.level}</span>
                 <p className="text-slate-500 leading-tight">{r.desc}</p>
               </div>
             ))}

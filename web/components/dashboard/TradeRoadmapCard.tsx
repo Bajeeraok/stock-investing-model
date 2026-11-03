@@ -267,7 +267,7 @@ function ConditionText({ text, className }: { text: string; className?: string }
         <button
           type="button"
           onClick={() => setExpanded((o) => !o)}
-          className="mt-1 text-xs font-medium text-td-accent hover:text-td-accent"
+          className="mt-1 text-[13px] font-medium text-td-accent hover:text-td-accent"
         >
           {expanded ? "Show less" : "Show full detail"}
         </button>
@@ -320,7 +320,7 @@ function BuyRoadmapMobileCard({
         {row.when_to_act}
       </p>
       <div>
-        <p className="text-xs uppercase tracking-wide text-td-muted font-semibold mb-0.5">Price zone</p>
+        <p className="text-[13px] uppercase tracking-wide text-td-muted font-semibold mb-0.5">Price zone</p>
         {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
           <div className="space-y-1 font-mono text-sm text-td-text">
             {row.price_zone_lines.map((z, zi) => (
@@ -334,17 +334,17 @@ function BuyRoadmapMobileCard({
           <p className="font-mono text-td-text">{formatZone(row.price_zone_low, row.price_zone_high)}</p>
         )}
         {sameBandAsPrior && (
-          <p className="text-xs text-td-muted mt-1 leading-tight">
+          <p className="text-[13px] text-td-muted mt-1 leading-tight">
             Same band as prior row — horizon role / tranche step up over time.
           </p>
         )}
       </div>
       {(rr?.risk_reward != null || row.priority_note) && (
         <div>
-          <p className="text-xs uppercase tracking-wide text-td-muted font-semibold mb-0.5">Risk / reward</p>
-          {row.priority_note && <p className="text-xs text-td-warn/90 mb-1">{row.priority_note}</p>}
+          <p className="text-[13px] uppercase tracking-wide text-td-muted font-semibold mb-0.5">Risk / reward</p>
+          {row.priority_note && <p className="text-[13px] text-td-warn/90 mb-1">{row.priority_note}</p>}
           {rr?.risk_reward != null && (
-            <p className="text-sm text-td-muted leading-snug">
+            <p className="text-sm text-td-muted leading-relaxed">
               R:R ~{rr.risk_reward}× · upside ~{rr.upside_to_model_fv_pct ?? "—"}% / downside ~{rr.downside_to_ref_stop_pct ?? "—"}%
               {rr.ref_stop_kind && <span className="text-td-muted"> ({String(rr.ref_stop_kind).replace(/_/g, " ")})</span>}
             </p>
@@ -384,7 +384,7 @@ function SellRoadmapMobileCard({
     <div className={clsx("rounded-xl border border-td-line/70 bg-td-surface/70 p-3 text-sm space-y-2", cue.rowBg, hl && "ring-1 ring-td-warn/35")}>
       <div className="flex items-start justify-between gap-2">
         <p className="font-semibold text-td-text">{row.label}</p>
-        <span className="text-xs text-td-muted font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
+        <span className="text-[13px] text-td-muted font-mono">{row.exit_category?.replace(/_/g, " ") ?? ""}</span>
       </div>
       <p className="text-td-text leading-snug">
         <span className="mr-1" aria-hidden>
@@ -518,7 +518,7 @@ export function TradeRoadmapCard({
     <div className="rounded-2xl border border-td-line/80 bg-td-surface2/55 overflow-hidden shadow-xl shadow-black/20">
       {tablesOnly && (
         <div className="px-4 py-2.5 border-b border-td-line/80 bg-td-surface/40">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-td-muted">
             Stage plan — tranche tables
             <span className="ml-2 normal-case tracking-normal font-normal">
               — verdict &amp; triggers are in the playbook above
@@ -624,7 +624,7 @@ export function TradeRoadmapCard({
               <div className="rounded-lg border border-td-line/70 bg-td-surface/40 px-3 py-2 flex items-center gap-3 flex-wrap">
                 <span
                   className={clsx(
-                    "text-xs font-bold px-2 py-0.5 rounded border",
+                    "text-[13px] font-bold px-2 py-0.5 rounded border",
                     data.display_verdict === "AVOID" || data.display_verdict === "REDUCE"
                       ? "bg-td-crit/20 text-td-crit border-td-crit/45"
                       : data.display_verdict === "BUY" || data.display_verdict === "STRONG BUY"
@@ -639,7 +639,7 @@ export function TradeRoadmapCard({
                   {data.display_verdict}
                 </span>
                 <span
-                  className="text-xs text-td-muted cursor-help"
+                  className="text-[13px] text-td-muted cursor-help"
                   title="FV = model fair value from fundamentals (e.g. EPS × P/E). This line is price vs that anchor — not the same as the 7-layer confidence gauge on Details."
                 >
                   ${data.current_price.toFixed(2)} · FV ${data.fair_value.toFixed(2)} · {data.regime_label}
@@ -656,7 +656,7 @@ export function TradeRoadmapCard({
               </button>
               {showRoadmapAnalysis && data.tldr && (
                 <div className="rounded-lg border border-td-accent/25 bg-td-accent-weak/20 px-3 py-2">
-                  <p className="text-xs text-td-accent-ink/80 uppercase tracking-wide font-medium">TL;DR</p>
+                  <p className="text-[13px] text-td-accent-ink/80 uppercase tracking-wide font-medium">TL;DR</p>
                   <p className="text-sm text-td-muted mt-1">
                     Action
                   </p>
@@ -666,7 +666,7 @@ export function TradeRoadmapCard({
                   {nextTrigger && (
                     <>
                       <p className="text-sm text-td-muted mt-2">Next trigger</p>
-                      <p className="text-xs text-td-info/90 border-l-2 border-td-info/50 pl-2 mt-0.5">{nextTrigger}</p>
+                      <p className="text-[13px] text-td-info/90 border-l-2 border-td-info/50 pl-2 mt-0.5">{nextTrigger}</p>
                     </>
                   )}
                   {(whyLines.length > 0) && (
@@ -758,11 +758,11 @@ export function TradeRoadmapCard({
                   <p className="text-sm text-td-text mt-0.5 font-mono">
                     <span className="text-td-muted font-td-sans">Key level:</span> ${data.tldr.key_level.toFixed(2)}
                     {data.tldr.key_level_label && (
-                      <span className="text-td-muted font-td-sans text-xs ml-1">— {data.tldr.key_level_label}</span>
+                      <span className="text-td-muted font-td-sans text-[13px] ml-1">— {data.tldr.key_level_label}</span>
                     )}
                   </p>
                   {data.tldr.dominant_near_term_action && (
-                    <p className="text-xs text-td-warn/90 mt-1">
+                    <p className="text-[13px] text-td-warn/90 mt-1">
                       Dominant near-term action: <strong>{data.tldr.dominant_near_term_action}</strong>
                       {data.you_are_here?.label && data.you_are_here.within_zone && (
                         <span className="text-td-muted"> · YOU ARE HERE: {data.you_are_here.label}</span>
@@ -778,7 +778,7 @@ export function TradeRoadmapCard({
                     </p>
                   )}
                   {data.tldr.model_confidence_band_note && (
-                    <p className="text-xs text-td-muted leading-snug mt-0.5">{data.tldr.model_confidence_band_note}</p>
+                    <p className="text-[13px] text-td-muted leading-relaxed mt-0.5">{data.tldr.model_confidence_band_note}</p>
                   )}
                   {data.tldr.dual_signal && (
                     <p className="text-sm text-td-info/90 mt-1">
@@ -799,17 +799,17 @@ export function TradeRoadmapCard({
                 </div>
               )}
               {showRoadmapAnalysis && data.market_regime_layer && (
-                <p className="text-xs text-td-text leading-snug">
+                <p className="text-[13px] text-td-text leading-snug">
                   <span className="text-td-info/90 font-medium">Market regime layer:</span> {data.market_regime_layer.label}
                 </p>
               )}
               {showRoadmapAnalysis && data.scenario_outlook && (
-                <p className="text-xs text-td-muted leading-snug">
+                <p className="text-[13px] text-td-muted leading-relaxed">
                   <span className="text-td-text">Scenario mix (illustrative):</span> Bull ~{data.scenario_outlook.bull_pct}% · Base ~{data.scenario_outlook.base_pct}% · Bear ~{data.scenario_outlook.bear_pct}%
                 </p>
               )}
               {showRoadmapAnalysis && data.probabilistic_framing && (
-                <p className="text-xs text-td-muted leading-snug">{data.probabilistic_framing}</p>
+                <p className="text-[13px] text-td-muted leading-relaxed">{data.probabilistic_framing}</p>
               )}
             </div>
           )}
@@ -817,12 +817,12 @@ export function TradeRoadmapCard({
           {/* Simple vs full roadmap — tablesOnly always shows tables */}
           {!tablesOnly && (
           <div className="px-4 py-2 border-b border-td-line/70 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-td-muted uppercase tracking-wide">Detail:</span>
+            <span className="text-[13px] text-td-muted uppercase tracking-wide">Detail:</span>
             <button
               type="button"
               onClick={() => setAdvancedRoadmap(false)}
               className={clsx(
-                "text-xs px-2.5 py-1 rounded font-medium",
+                "text-[13px] px-2.5 py-1 rounded font-medium",
                 !advancedRoadmap ? "bg-td-line text-td-text" : "text-td-muted hover:text-td-text hover:bg-td-surface2/50"
               )}
             >
@@ -832,7 +832,7 @@ export function TradeRoadmapCard({
               type="button"
               onClick={() => setAdvancedRoadmap(true)}
               className={clsx(
-                "text-xs px-2.5 py-1 rounded font-medium",
+                "text-[13px] px-2.5 py-1 rounded font-medium",
                 advancedRoadmap ? "bg-td-line text-td-text" : "text-td-muted hover:text-td-text hover:bg-td-surface2/50"
               )}
             >
@@ -843,14 +843,14 @@ export function TradeRoadmapCard({
 
           {/* Trader type selector */}
           <div className="px-4 py-2 border-b border-td-line/70 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-td-muted uppercase tracking-wide">View:</span>
+            <span className="text-[13px] text-td-muted uppercase tracking-wide">View:</span>
             {(["day_trader", "swing_trader", "investor"] as const).map((tt) => (
               <button
                 key={tt}
                 type="button"
                 onClick={() => setTraderType(tt)}
                 className={clsx(
-                  "text-xs px-2.5 py-1 rounded font-medium",
+                  "text-[13px] px-2.5 py-1 rounded font-medium",
                   traderType === tt
                     ? "bg-td-line text-td-text"
                     : "text-td-muted hover:text-td-text hover:bg-td-surface2/50"
@@ -873,7 +873,7 @@ export function TradeRoadmapCard({
                     type="button"
                     onClick={() => setTimelineIndex(i)}
                     className={clsx(
-                      "text-xs px-2 py-1 rounded",
+                      "text-[13px] px-2 py-1 rounded",
                       activeTimelineKey === key
                         ? "bg-td-warn/20 text-td-warn font-medium"
                         : "text-td-muted hover:text-td-text"
@@ -932,7 +932,7 @@ export function TradeRoadmapCard({
                 >
                   <Newspaper className="h-3.5 w-3.5 shrink-0 text-td-info/90 mt-0.5" aria-hidden />
                   <span className="flex-1 min-w-0">
-                    <span className="text-xs text-td-info/90 font-medium block">Headlines (news sentiment layer)</span>
+                    <span className="text-[13px] text-td-info/90 font-medium block">Headlines (news sentiment layer)</span>
                     <span className="text-sm text-td-muted block mt-0.5">
                       {data.news_sentiment_layer.display_label && (
                         <span className="text-td-muted">{data.news_sentiment_layer.display_label}</span>
@@ -974,7 +974,7 @@ export function TradeRoadmapCard({
                       </p>
                     )}
                     {data.news_sentiment_layer.pipeline_note && (
-                      <p className="text-sm text-td-muted mb-2 leading-snug">{data.news_sentiment_layer.pipeline_note}</p>
+                      <p className="text-sm text-td-muted mb-2 leading-relaxed">{data.news_sentiment_layer.pipeline_note}</p>
                     )}
                     {(data.news_sentiment_layer.fmp_key_configured != null ||
                       data.news_sentiment_layer.alpha_vantage_key_configured != null) && (
@@ -1012,20 +1012,20 @@ export function TradeRoadmapCard({
                       <p className="text-sm text-td-warn/80 mb-2">{data.news_sentiment_layer.message}</p>
                     )}
                     {data.news_sentiment_layer.summary_label && (
-                      <p className="text-xs text-td-muted mb-2 leading-snug">{data.news_sentiment_layer.summary_label}</p>
+                      <p className="text-[13px] text-td-muted mb-2 leading-relaxed">{data.news_sentiment_layer.summary_label}</p>
                     )}
                     {(data.news_sentiment_layer.catalyst_cards ?? []).length > 0 && (
-                      <ul className="space-y-1.5 text-xs text-td-text mb-2">
+                      <ul className="space-y-1.5 text-[13px] text-td-text mb-2">
                         {(data.news_sentiment_layer.catalyst_cards ?? []).map((c) => (
                           <li key={c.event_type || c.name} className="leading-snug">
-                            <span className="uppercase text-[10px] text-td-muted mr-1">{c.direction}</span>
+                            <span className="uppercase text-[11px] text-td-muted mr-1">{c.direction}</span>
                             {c.name}: {c.mechanism}
                           </li>
                         ))}
                       </ul>
                     )}
                     {(data.news_sentiment_layer.headlines?.length ?? 0) > 0 && (
-                      <ul className="space-y-1.5 text-xs text-td-text border-t border-td-line/40 pt-2">
+                      <ul className="space-y-1.5 text-[13px] text-td-text border-t border-td-line/40 pt-2">
                         {(data.news_sentiment_layer.headlines ?? []).map((h, i) => (
                           <li key={i} className="leading-snug pl-2 border-l-2 border-td-line/60">
                             {h.url ? (
@@ -1045,7 +1045,7 @@ export function TradeRoadmapCard({
             )}
 
             {!showTables && (
-              <div className="rounded-lg border border-td-line/50 bg-td-surface2/60 px-3 py-2 text-xs text-td-muted leading-relaxed">
+              <div className="rounded-lg border border-td-line/50 bg-td-surface2/60 px-3 py-2 text-[13px] text-td-muted leading-relaxed">
                 <p>
                   <strong className="text-td-text">Simple mode</strong> shows the TL;DR, scenario mix, and market regime above.
                   Switch to <strong className="text-td-text">Advanced</strong> for full buy/sell tables, R:R context, tranche rationale, and structured exit categories.
@@ -1053,7 +1053,7 @@ export function TradeRoadmapCard({
                 {data.action_glossary && Object.keys(data.action_glossary).length > 0 && (
                   <details className="mt-2 border-t border-td-line/40 pt-2">
                     <summary className="cursor-pointer text-td-text text-sm">Action phrases (glossary)</summary>
-                    <ul className="mt-1.5 space-y-1 text-xs list-disc list-inside text-td-muted">
+                    <ul className="mt-1.5 space-y-1 text-[13px] list-disc list-inside text-td-muted">
                       {Object.entries(data.action_glossary).map(([k, v]) => (
                         <li key={k}>
                           <span className="text-td-muted">{k}:</span> {v}
@@ -1071,7 +1071,7 @@ export function TradeRoadmapCard({
                 <h4 className="flex items-center gap-2 text-sm font-semibold text-td-accent mb-2">
                   <TrendingUp className="h-4 w-4" /> Buy roadmap
                 </h4>
-                <p className="text-xs text-td-muted mb-2 md:hidden">
+                <p className="text-[13px] text-td-muted mb-2 md:hidden">
                   Timeline cards below — full table on desktop.
                 </p>
                 <div className="md:hidden space-y-3">
@@ -1144,7 +1144,7 @@ export function TradeRoadmapCard({
                           </td>
                           <td className="py-2 pr-2 font-mono text-td-text align-top">
                             {row.price_zone_lines && row.price_zone_lines.length > 0 ? (
-                              <div className="space-y-1 text-xs leading-snug">
+                              <div className="space-y-1 text-[13px] leading-snug">
                                 {row.price_zone_lines.map((z, zi) => (
                                   <div key={zi}>
                                     <span className="text-td-muted font-td-sans">{z.label}: </span>
@@ -1165,7 +1165,7 @@ export function TradeRoadmapCard({
                           </td>
                           <td className="py-2 pr-2 align-top break-words min-w-[200px] max-w-[360px]">
                             {row.priority_note && (
-                              <span className="block text-td-warn/90 text-xs font-medium mb-1.5">{row.priority_note}</span>
+                              <span className="block text-td-warn/90 text-[13px] font-medium mb-1.5">{row.priority_note}</span>
                             )}
                             <ConditionText text={row.condition} />
                             {row.risk_reward_context?.risk_reward != null && (
@@ -1237,10 +1237,10 @@ export function TradeRoadmapCard({
                           <td className="py-2 pr-2 font-mono text-td-text">
                             {formatZone(row.price_zone_low, row.price_zone_high)}
                           </td>
-                          <td className="py-2 pr-2 text-td-muted min-w-[200px] max-w-[320px] text-sm leading-snug break-words" title={row.condition}>
+                          <td className="py-2 pr-2 text-td-muted min-w-[200px] max-w-[320px] text-sm leading-relaxed break-words" title={row.condition}>
                             {row.condition}
                           </td>
-                          <td className="py-2 pr-2 text-td-muted font-mono text-xs">
+                          <td className="py-2 pr-2 text-td-muted font-mono text-[13px]">
                             {row.exit_category?.replace(/_/g, " ") ?? "—"}
                           </td>
                           <td className="py-2 pr-2 text-td-warn/90">{row.action}</td>
@@ -1250,7 +1250,7 @@ export function TradeRoadmapCard({
                     </tbody>
                   </table>
                 </div>
-                <p className="text-xs text-td-muted mt-2 leading-snug max-w-3xl">
+                <p className="text-[13px] text-td-muted mt-2 leading-relaxed max-w-3xl">
                   <strong className="text-td-muted">Overlapping trim windows:</strong> Short-term and longer trims can share
                   price ranges when targets align. Earlier rows are the first tranche to consider; later rows size what is
                   left — not a separate trigger that only fires if you skipped an earlier leg.

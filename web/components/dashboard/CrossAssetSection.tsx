@@ -34,7 +34,7 @@ export function CrossAssetSection({ items }: { items: CrossAssetItem[] }) {
             >
               <span className="font-medium text-slate-300">{c.label ?? c.ticker}</span>
               {c.label === "VIX" && c.close != null && (
-                <span className="text-slate-500 text-xs">({c.close.toFixed(1)})</span>
+                <span className="text-slate-500 text-[13px]">({c.close.toFixed(1)})</span>
               )}
               <span
                 className={clsx(

@@ -74,7 +74,7 @@ export function ReferenceCard({
       </h4>
       {description && <p className={TD.footnote}>{description}</p>}
       {stats && stats.length > 0 && (
-        <div className="text-xs">
+        <div className="text-[13px]">
           {stats.map((s, i) => (
             <div
               key={i}
@@ -91,7 +91,7 @@ export function ReferenceCard({
         <button
           type="button"
           onClick={footer.onClick}
-          className="text-xs font-semibold text-td-accent hover:text-td-accent-ink text-left mt-auto pt-0.5"
+          className="text-[13px] font-semibold text-td-accent hover:text-td-accent-ink text-left mt-auto pt-0.5"
         >
           {footer.label} →
         </button>
@@ -101,7 +101,7 @@ export function ReferenceCard({
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="w-full flex items-center justify-between gap-2 text-[11px] font-mono uppercase tracking-wide text-td-muted hover:text-td-text py-1"
+            className="w-full flex items-center justify-between gap-2 text-[13px] font-mono uppercase tracking-wide text-td-muted hover:text-td-text py-1"
             aria-expanded={open}
           >
             {toggleLabel}
@@ -272,7 +272,7 @@ function ChartLevelsCard({
           )}
           <IntradayChart ticker={detail.ticker} levelLines={levelLines} />
           {detail.session_vwap && (
-            <p className="text-[11px] text-td-muted leading-relaxed">
+            <p className="text-[13px] text-td-muted leading-relaxed">
               Session VWAP{" "}
               <span className="font-mono text-td-text">{fmtUsd(detail.session_vwap.vwap)}</span>
               {" — price is "}
@@ -375,19 +375,19 @@ function WhyMovedCard({ detail, decisionMode, onOpenContext }: ReferenceDetailGr
         <div className="space-y-1.5">
           <span
             className={clsx(
-              "inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold",
+              "inline-flex items-center rounded-md border px-2 py-0.5 text-[13px] font-semibold",
               DRIVER_CLASS[driver],
             )}
           >
             {DRIVER_LABEL[driver] ?? "Unclear"}
           </span>
           {mv?.headline ? (
-            <p className="text-xs text-td-text leading-relaxed">{mv.headline}</p>
+            <p className="text-[13px] text-td-text leading-relaxed">{mv.headline}</p>
           ) : (
-            <p className="text-xs text-td-muted italic">No move classification available yet.</p>
+            <p className="text-[13px] text-td-muted italic">No move classification available yet.</p>
           )}
-          {mv?.detail && <p className="text-xs text-td-muted leading-relaxed">{mv.detail}</p>}
-          {mv?.citation && <p className="text-[10px] text-td-muted leading-relaxed">{mv.citation}</p>}
+          {mv?.detail && <p className="text-[13px] text-td-muted leading-relaxed">{mv.detail}</p>}
+          {mv?.citation && <p className="text-[11px] text-td-muted leading-relaxed">{mv.citation}</p>}
         </div>
       }
       footer={detail.thesis ? { label: "Story & catalysts", onClick: onOpenContext } : undefined}
@@ -412,7 +412,7 @@ function NearBottomCard({ detail, decisionMode, onOpenProof }: ReferenceDetailGr
       ]}
       body={
         signals.length > 0 ? (
-          <ul className="text-xs text-td-muted space-y-1 list-disc list-inside">
+          <ul className="text-[13px] text-td-muted space-y-1 list-disc list-inside">
             {signals.slice(0, 4).map((s, i) => (
               <li key={i}>{s}</li>
             ))}
@@ -442,9 +442,9 @@ function ConfidenceCard({ detail, confidence, onOpenProof }: ReferenceDetailGrid
       ]}
       body={
         <div className="space-y-1.5">
-          {confidence?.action && <p className="text-xs text-td-muted">{confidence.action}</p>}
+          {confidence?.action && <p className="text-[13px] text-td-muted">{confidence.action}</p>}
           {unlockText?.trim() && (
-            <p className="text-xs text-td-accent/90 leading-snug">
+            <p className="text-[13px] text-td-accent/90 leading-snug">
               <span aria-hidden>🔓</span> {unlockText.replace(/^Unlocks when:\s*/i, "Unlocks when: ")}
             </p>
           )}
@@ -468,7 +468,7 @@ function SqueezeBadge({ risk }: { risk: string }) {
   return (
     <span
       className={clsx(
-        "inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide",
+        "inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide",
         SQUEEZE_RISK_CLASS[risk] ?? SQUEEZE_RISK_CLASS.none,
       )}
     >
@@ -505,7 +505,7 @@ function OptionsCard({ confidence, onOpenProof }: ReferenceDetailGridProps) {
         { label: "Max pain", value: fmtUsd(opts.max_pain) },
       ]}
       body={
-        <p className="text-xs text-td-muted leading-relaxed">
+        <p className="text-[13px] text-td-muted leading-relaxed">
           {opts.options_label || (leaning ? `Options are ${leaning}.` : "No options read available yet.")}
         </p>
       }
@@ -536,9 +536,9 @@ function ShortInterestCard({ confidence, onOpenProof }: ReferenceDetailGridProps
       body={
         <div className="space-y-1.5">
           <SqueezeBadge risk={si.squeeze_risk ?? "none"} />
-          {si.label && <p className="text-xs text-td-muted leading-relaxed">{si.label}</p>}
+          {si.label && <p className="text-[13px] text-td-muted leading-relaxed">{si.label}</p>}
           {si.bear_signal && (
-            <p className="text-[11px] text-td-crit/90 leading-relaxed">
+            <p className="text-[13px] text-td-crit/90 leading-relaxed">
               Heavy short interest with no bullish technical setup — a risk factor, not a squeeze signal.
             </p>
           )}
@@ -627,11 +627,11 @@ function PreTradeImpactCard({ detail, portfolioImpactContext }: ReferenceDetailG
       body={
         <div className="space-y-2">
           <div className="rounded-lg border border-td-line/70 bg-td-bg/40 px-2.5 py-2 space-y-1.5">
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center justify-between text-[13px]">
               <span className="text-td-muted">New position size</span>
               <span className="font-mono text-td-text">{newPositionPct.toFixed(1)}% of book</span>
             </div>
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center justify-between text-[13px]">
               <span className="text-td-muted">{sector} weight</span>
               <span className="font-mono text-td-text">
                 {currentSectorPct.toFixed(1)}% → <span className="text-td-warn">{newSectorPct.toFixed(1)}%</span>
@@ -639,7 +639,7 @@ function PreTradeImpactCard({ detail, portfolioImpactContext }: ReferenceDetailG
             </div>
           </div>
           {corrData?.available && (corrData.correlations?.length ?? 0) > 0 && (
-            <p className="text-[11px] text-td-muted leading-relaxed">
+            <p className="text-[13px] text-td-muted leading-relaxed">
               1y correlation to top holdings:{" "}
               {corrData.correlations!.map((p, i) => (
                 <span key={p.ticker}>
@@ -713,13 +713,13 @@ function FundamentalsCard({ detail, onOpenContext, suppressOpenContext }: Refere
       ]}
       body={
         <div className="space-y-2">
-          <p className="text-xs text-td-muted leading-relaxed">
+          <p className="text-[13px] text-td-muted leading-relaxed">
             {detail.sector ?? "—"}
             {peers ? ` · Peers: ${peers}` : ""}
           </p>
           {rankRows.length >= 2 && (
             <div className="rounded-lg border border-td-line/70 bg-td-bg/40 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wide text-td-muted mb-1.5">
+              <p className="text-[11px] uppercase tracking-wide text-td-muted mb-1.5">
                 1-month relative strength — {detail.ticker} ranks #{selfRank} of {rankRows.length}
               </p>
               <ul className="space-y-0.5">
@@ -727,7 +727,7 @@ function FundamentalsCard({ detail, onOpenContext, suppressOpenContext }: Refere
                   <li
                     key={r.ticker}
                     className={clsx(
-                      "flex items-center justify-between gap-2 text-[11px]",
+                      "flex items-center justify-between gap-2 text-[13px]",
                       r.isSelf ? "text-td-text font-semibold" : "text-td-muted",
                     )}
                   >

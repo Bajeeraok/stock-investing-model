@@ -28,7 +28,7 @@ export function ScoreChart({
     <>
       {!embedded && <h3 className="text-sm font-medium text-slate-400 mb-4">Confidence by Ticker</h3>}
       {embedded && (
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Confidence by ticker</h4>
+        <h4 className="text-[13px] font-semibold uppercase tracking-wider text-slate-500 mb-3">Confidence by ticker</h4>
       )}
       <div className={embedded ? "h-[min(28rem,70vh)]" : "h-64"}>
         <ResponsiveContainer width="100%" height="100%">

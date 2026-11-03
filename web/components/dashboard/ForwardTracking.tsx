@@ -143,14 +143,14 @@ function SecondOpinionsTable({ data }: { data: SecondOpinionsScorecard }) {
   return (
     <div className="mb-3">
       <div className="flex items-center gap-2 mb-1 flex-wrap">
-        <p className="text-xs text-slate-500">Second opinions scored on the same days: avg return (edge vs holding the same stock)</p>
+        <p className="text-[13px] text-slate-500">Second opinions scored on the same days: avg return (edge vs holding the same stock)</p>
         <div className="ml-auto flex gap-1">
           {horizons.map((x) => (
             <button
               key={x}
               type="button"
               onClick={() => setH(x)}
-              className={clsx("px-2 py-0.5 rounded text-[11px] border", x === h ? "border-sky-500 text-sky-300" : "border-slate-700 text-slate-400")}
+              className={clsx("px-2 py-0.5 rounded text-[13px] border", x === h ? "border-sky-500 text-sky-300" : "border-slate-700 text-slate-400")}
             >
               {x}d
             </button>
@@ -158,7 +158,7 @@ function SecondOpinionsTable({ data }: { data: SecondOpinionsScorecard }) {
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="text-xs text-left border-collapse min-w-[620px]">
+        <table className="text-[13px] text-left border-collapse min-w-[620px]">
           <thead>
             <tr className="text-slate-500 border-b border-slate-700">
               <th className="py-1 pr-3 font-medium">Source</th>
@@ -183,7 +183,7 @@ function SecondOpinionsTable({ data }: { data: SecondOpinionsScorecard }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-slate-500 mt-1">
+      <p className="text-[13px] text-slate-500 mt-1">
         {block.n} windows over {block.dates} days. {data.note}
       </p>
     </div>
@@ -350,7 +350,7 @@ export function ForwardTracking({
         <RefreshCw className="h-4 w-4 text-emerald-400 shrink-0" />
         <p className="text-sm font-medium text-slate-300">Forward tracking (what we said vs what happened)</p>
       </div>
-      <p className="text-xs text-slate-500 mb-3" title="Multi-horizon actual returns for all portfolio/watchlist tickers based on EOD snapshots. Signal accuracy: when we said CONSIDER TRIM vs HOLD/ADD, avg 20d return.">
+      <p className="text-[13px] text-slate-500 mb-3" title="Multi-horizon actual returns for all portfolio/watchlist tickers based on EOD snapshots. Signal accuracy: when we said CONSIDER TRIM vs HOLD/ADD, avg 20d return.">
         EOD OHLCV between snapshot dates — return % plus ST stop/target touches. Gates frozen on new daily saves.
         {data_source_note && <span className="block mt-1 text-slate-600">{data_source_note}</span>}
         {meta?.eod_date_last && (
@@ -382,7 +382,7 @@ export function ForwardTracking({
         <select
           value={tickerFilter}
           onChange={(e) => setTickerFilter(e.target.value)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All tickers ({uniqueTickers.length})</option>
           {uniqueTickers.map((t) => (
@@ -392,7 +392,7 @@ export function ForwardTracking({
         <select
           value={horizonFilter === "" ? "" : String(horizonFilter)}
           onChange={(e) => setHorizonFilter(e.target.value === "" ? "" : Number(e.target.value))}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All horizons</option>
           {horizonOptions.map((h) => (
@@ -402,7 +402,7 @@ export function ForwardTracking({
         <select
           value={signalFilter}
           onChange={(e) => setSignalFilter(e.target.value)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All signals</option>
           {signalOptions.map((s) => (
@@ -412,7 +412,7 @@ export function ForwardTracking({
         <select
           value={gateFilter}
           onChange={(e) => setGateFilter(e.target.value as "" | "4" | "0" | "3plus" | "go")}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
         >
           <option value="">All gates</option>
           <option value="4">4/4 pass</option>
@@ -423,7 +423,7 @@ export function ForwardTracking({
         <select
           value={versionFilter}
           onChange={(e) => setVersionFilter(e.target.value)}
-          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-[13px] text-slate-300 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           title="Which gate/band/regime logic version produced the signal — defaults to current so win-rate numbers aren't blended with pre-fix history"
         >
           <option value="">All versions</option>
@@ -440,7 +440,7 @@ export function ForwardTracking({
               type="button"
               onClick={() => setDateRange(dr.value)}
               className={clsx(
-                "px-2.5 py-1 text-xs font-medium transition-colors",
+                "px-2.5 py-1 text-[13px] font-medium transition-colors",
                 dateRange === dr.value
                   ? "bg-emerald-600/70 text-white"
                   : "bg-slate-900 text-slate-400 hover:bg-slate-800",
@@ -451,14 +451,14 @@ export function ForwardTracking({
           ))}
         </div>
         {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || signalFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
-          <span className="text-[10px] text-slate-500">
+          <span className="text-[11px] text-slate-500">
             Showing {records.length} / {allRecords.length} records
           </span>
         )}
       </div>
 
       {(tickerFilter || dateRange !== "ALL" || horizonFilter !== "" || signalFilter !== "" || gateFilter !== "" || versionFilter !== "") && (
-        <div className="mb-3 rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
+        <div className="mb-3 rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-[13px] text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
           <span className="text-slate-500 font-medium uppercase tracking-wide">Filtered</span>
           {filterStats ? (
             <>
@@ -499,7 +499,7 @@ export function ForwardTracking({
       )}
 
       {meta?.current_model_version && (
-        <div className="mb-3 rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-3 py-2 text-xs">
+        <div className="mb-3 rounded-lg border border-emerald-700/50 bg-emerald-950/20 px-3 py-2 text-[13px]">
           <p className="text-emerald-400/90 font-medium mb-1">
             Current model ({meta.current_model_version}) · 20d win rate
           </p>
@@ -539,7 +539,7 @@ export function ForwardTracking({
             return (
               <div
                 key={h}
-                className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-xs"
+                className="rounded-lg border border-slate-600/80 bg-slate-900/50 px-3 py-2 text-[13px]"
               >
                 <p className="text-slate-400 font-medium mb-1">{h} EOD steps</p>
                 <p className="text-slate-500">
@@ -564,10 +564,10 @@ export function ForwardTracking({
                   >
                     {fmt(s.avg_return_pct ?? 0)}
                   </span>
-                  <span className="text-slate-600 text-[10px]"> (not win %)</span>
+                  <span className="text-slate-600 text-[11px]"> (not win %)</span>
                 </p>
                 {s.win_rate_pct != null && (
-                  <p className="text-slate-600 text-[10px] mt-0.5">
+                  <p className="text-slate-600 text-[11px] mt-0.5">
                     ST tgt {s.st_target_hit_rate_pct ?? "—"}% · ST stop {s.st_stop_hit_rate_pct ?? "—"}%
                   </p>
                 )}
@@ -579,7 +579,7 @@ export function ForwardTracking({
 
       {summary_actionable_buy && (summary_actionable_buy.n_observations ?? 0) > 0 && (
         <div className="mb-3 rounded-lg border border-emerald-500/35 bg-emerald-950/30 px-3 py-2">
-          <p className="text-xs text-emerald-300/90 font-medium mb-1">
+          <p className="text-[13px] text-emerald-300/90 font-medium mb-1">
             Entry slice (20d) — full_go (all gates cleared)
           </p>
           <p className="text-sm text-slate-200">
@@ -593,11 +593,11 @@ export function ForwardTracking({
             >
               {fmt(summary_actionable_buy.avg_return_20d_pct ?? summary_actionable_buy.avg_return_pct ?? 0)}
             </span>
-            <span className="text-slate-500 text-xs ml-2">
+            <span className="text-slate-500 text-[13px] ml-2">
               win {summary_actionable_buy.win_rate_pct ?? "—"}% · n={summary_actionable_buy.n_observations}
             </span>
           </p>
-          <p className="text-[10px] text-slate-500 mt-1">
+          <p className="text-[11px] text-slate-500 mt-1">
             Use this row for entry quality — the broad HOLD bucket mixes gate-blocked names.
           </p>
         </div>
@@ -605,8 +605,8 @@ export function ForwardTracking({
 
       {summary_by_entry_mode && Object.keys(summary_by_entry_mode).length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">By entry mode (20d forward)</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <p className="text-[13px] text-slate-500 mb-1">By entry mode (20d forward)</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px]">
             {Object.entries(summary_by_entry_mode).map(([em, s]) => (
               <span key={em} className="text-slate-300">
                 <span className="text-slate-400">{em}:</span>{" "}
@@ -620,8 +620,8 @@ export function ForwardTracking({
 
       {summary_by_gates && Object.keys(summary_by_gates).length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">By gates (20d forward)</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <p className="text-[13px] text-slate-500 mb-1">By gates (20d forward)</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[13px]">
             {Object.entries(summary_by_gates)
               .sort(([a], [b]) => b.localeCompare(a))
               .map(([gk, s]) => (
@@ -636,7 +636,7 @@ export function ForwardTracking({
 
       {summary_by_go_no_go && Object.keys(summary_by_go_no_go).length > 0 && (
         <div className="mb-3 rounded-lg border border-emerald-500/20 bg-emerald-950/20 px-3 py-2">
-          <p className="text-xs text-emerald-300/90 font-medium mb-1">
+          <p className="text-[13px] text-emerald-300/90 font-medium mb-1">
             Model alignment (20d forward) — GO vs NO-GO (not the same as full_go entry)
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -646,7 +646,7 @@ export function ForwardTracking({
                 <span className={(s.avg_return_20d_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
                   {fmt(s.avg_return_20d_pct ?? 0)}
                 </span>
-                <span className="text-slate-500 text-xs"> (n={s.n_observations ?? 0})</span>
+                <span className="text-slate-500 text-[13px]"> (n={s.n_observations ?? 0})</span>
               </span>
             ))}
           </div>
@@ -655,7 +655,7 @@ export function ForwardTracking({
 
       {summary_by_signal && Object.keys(summary_by_signal).length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">
+          <p className="text-[13px] text-slate-500 mb-1">
             By signal bucket (20d) — HOLD/ADD requires full_go; high score alone maps to HOLD
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
@@ -668,7 +668,7 @@ export function ForwardTracking({
                       trim net {s.trim_avg_net_score_pct >= 0 ? "+" : ""}
                       {s.trim_avg_net_score_pct.toFixed(1)}%
                     </span>
-                    <span className="text-slate-500 text-xs">
+                    <span className="text-slate-500 text-[13px]">
                       {" "}
                       (helped {s.trim_helped_pct ?? "—"}% · raw {fmt(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0)})
                     </span>
@@ -678,7 +678,7 @@ export function ForwardTracking({
                     <span className={(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}>
                       {fmt(s.avg_return_20d_pct ?? s.avg_return_pct ?? 0)}
                     </span>
-                    <span className="text-slate-500 text-xs">
+                    <span className="text-slate-500 text-[13px]">
                       {" "}
                       (win {s.hit_rate_pct ?? "—"}% · n={s.n_observations ?? 0})
                     </span>
@@ -692,11 +692,11 @@ export function ForwardTracking({
 
       {summary_timing_vs_hold && Object.keys(summary_timing_vs_hold.by_signal || {}).length > 0 && (
         <div className="mb-3">
-          <p className="text-xs text-slate-500 mb-1">
+          <p className="text-[13px] text-slate-500 mb-1">
             Track record vs holding the same stock ({summary_timing_vs_hold.horizon_days}d) and vs SPY
           </p>
           <div className="overflow-x-auto">
-            <table className="text-xs text-left border-collapse min-w-[520px]">
+            <table className="text-[13px] text-left border-collapse min-w-[520px]">
               <thead>
                 <tr className="text-slate-500 border-b border-slate-700">
                   <th className="py-1 pr-3 font-medium">Label</th>
@@ -725,7 +725,7 @@ export function ForwardTracking({
               </tbody>
             </table>
           </div>
-          {summary_timing_vs_hold.note && <p className="text-[11px] text-slate-500 mt-1">{summary_timing_vs_hold.note}</p>}
+          {summary_timing_vs_hold.note && <p className="text-[13px] text-slate-500 mt-1">{summary_timing_vs_hold.note}</p>}
         </div>
       )}
 
@@ -755,7 +755,7 @@ export function ForwardTracking({
                 <td className="sticky left-24 z-[10] min-w-[4rem] w-16 py-1.5 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.ticker}</td>
                 <td className="py-1.5 pr-2 text-slate-400">{r.horizon_days}d</td>
                 <td className="py-1.5 pr-2 text-slate-400">{r.our_signal}</td>
-                <td className="py-1.5 pr-2 text-slate-400 text-xs">
+                <td className="py-1.5 pr-2 text-slate-400 text-[13px]">
                   {r.gates_passed != null && r.gates_total != null ? (
                     <span className={r.go_no_go === "go" || r.gate_cleared ? "text-emerald-400" : "text-amber-300"}>
                       {r.gates_passed}/{r.gates_total}
@@ -768,7 +768,7 @@ export function ForwardTracking({
                 <td className="py-1.5 pr-2">
                   {r.forward_status === "pending" || r.actual_return_pct == null ? (
                     <span
-                      className="text-slate-500 text-xs"
+                      className="text-slate-500 text-[13px]"
                       title={r.pending_reason ?? "Waiting for next trading session EOD"}
                     >
                       pending
@@ -777,25 +777,25 @@ export function ForwardTracking({
                     <span className={r.actual_return_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
                       {fmt(r.actual_return_pct)}
                       {r.data_quality === "split_adjusted" && (
-                        <span className="text-slate-600 text-[10px] ml-1" title="Pre-split close scaled for corporate action (e.g. 4-for-1)">
+                        <span className="text-slate-600 text-[11px] ml-1" title="Pre-split close scaled for corporate action (e.g. 4-for-1)">
                           adj
                         </span>
                       )}
                       {r.data_quality === "reconciled_daily_move" && (
-                        <span className="text-slate-600 text-[10px] ml-1" title="Close chain broken — used EOD daily_move_pct">
+                        <span className="text-slate-600 text-[11px] ml-1" title="Close chain broken — used EOD daily_move_pct">
                           †
                         </span>
                       )}
                     </span>
                   )}
                 </td>
-                <td className="py-1.5 pr-2 text-xs text-slate-400">
+                <td className="py-1.5 pr-2 text-[13px] text-slate-400">
                   {r.hit_st_target === 1 ? "✓" : r.hit_st_target === 0 ? "·" : "—"}
                 </td>
-                <td className="py-1.5 pr-2 text-xs text-slate-400">
+                <td className="py-1.5 pr-2 text-[13px] text-slate-400">
                   {r.hit_st_stop === 1 ? "✓" : r.hit_st_stop === 0 ? "·" : "—"}
                 </td>
-                <td className="py-1.5 pr-2 text-xs">
+                <td className="py-1.5 pr-2 text-[13px]">
                   {r.trim_net_score_pct != null ? (
                     <span className={r.trim_net_score_pct >= 0 ? "text-emerald-400/90" : "text-amber-300/90"}>
                       {r.trim_net_score_pct >= 0 ? "+" : ""}
@@ -809,7 +809,7 @@ export function ForwardTracking({
             ))}
           </tbody>
         </table>
-        <p className="text-[10px] text-slate-600 mt-1">† gates recomputed from EOD (legacy snapshot). New daily runs freeze gates at save time.</p>
+        <p className="text-[11px] text-slate-600 mt-1">† gates recomputed from EOD (legacy snapshot). New daily runs freeze gates at save time.</p>
       </div>
       <TablePager page={page} pageSize={FORWARD_PAGE_SIZE} total={records.length} onPageChange={setPage} />
     </div>

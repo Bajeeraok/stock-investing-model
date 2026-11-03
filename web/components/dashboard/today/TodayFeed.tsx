@@ -202,7 +202,7 @@ export function SinceYesterdayCard({
                 </button>
               </li>
             ))}
-            {shown.length === 0 && <li className="py-2.5 text-[12px] text-td-muted">None in this group.</li>}
+            {shown.length === 0 && <li className="py-2.5 text-sm text-td-muted">None in this group.</li>}
           </ul>
           {shown.length > 4 && (
             <button
@@ -273,7 +273,7 @@ export function MyBookCard({
               className="shrink-0 w-[4.75rem] rounded-xl bg-td-surface2 py-2 text-center hover:bg-td-surface2/70"
               title={h.action_today ?? h.suggestion}
             >
-              <span className="block font-mono text-[12px] font-bold text-td-text">{h.ticker}</span>
+              <span className="block font-mono text-sm font-bold text-td-text">{h.ticker}</span>
               <span className={clsx("block text-[10.5px] mt-0.5", trim ? "text-td-warn" : "text-td-muted")}>
                 {d != null && d !== 0 && (
                   <span className={d > 0 ? "text-td-accent" : "text-td-crit"}>{d > 0 ? "▲ " : "▼ "}</span>
@@ -287,7 +287,7 @@ export function MyBookCard({
           <button
             type="button"
             onClick={onOpenPortfolio}
-            className="shrink-0 w-[4.75rem] rounded-xl border border-dashed border-td-line py-2 text-center text-[11px] font-semibold text-td-muted hover:text-td-text"
+            className="shrink-0 w-[4.75rem] rounded-xl border border-dashed border-td-line py-2 text-center text-[13px] font-semibold text-td-muted hover:text-td-text"
           >
             +{hidden} more
           </button>
@@ -330,7 +330,7 @@ export function MarketMapCard() {
       title="Market map"
       right={
         spy != null && (
-          <span className={clsx("font-mono text-[12px] font-semibold", spy >= 0 ? "text-td-accent" : "text-td-crit")}>
+          <span className={clsx("font-mono text-sm font-semibold", spy >= 0 ? "text-td-accent" : "text-td-crit")}>
             SPY {spy >= 0 ? "+" : ""}
             {spy.toFixed(2)}%
           </span>
@@ -341,7 +341,7 @@ export function MarketMapCard() {
         <div className="grid grid-cols-4 gap-1.5">
           {sectors.map((s) => (
             <div key={s.ticker} className="rounded-lg px-2 py-1.5 font-mono" style={{ background: heatBg(s.change_pct) }} title={s.name}>
-              <span className="block text-[11px] font-bold text-td-text">{s.ticker}</span>
+              <span className="block text-[13px] font-bold text-td-text">{s.ticker}</span>
               <span className="block text-[10.5px] text-td-text/85">
                 {(s.change_pct ?? 0) >= 0 ? "+" : ""}
                 {(s.change_pct ?? 0).toFixed(1)}%
@@ -350,7 +350,7 @@ export function MarketMapCard() {
           ))}
         </div>
       ) : (
-        <p className="text-[12px] text-td-muted">{failed || data?.error ? "Sector data unavailable right now." : "Loading sectors…"}</p>
+        <p className="text-sm text-td-muted">{failed || data?.error ? "Sector data unavailable right now." : "Loading sectors…"}</p>
       )}
     </Card>
   );
@@ -412,7 +412,7 @@ export function ThisWeekCard({
           ))}
         </div>
       ) : (
-        <p className="text-[12px] text-td-muted">No scheduled macro events or held-name earnings in the next 7 days.</p>
+        <p className="text-sm text-td-muted">No scheduled macro events or held-name earnings in the next 7 days.</p>
       )}
     </Card>
   );
@@ -440,11 +440,11 @@ export function MarketWeatherTeaser({
             <span className={clsx("h-2 w-2 rounded-full", st.dot)} />
             Market weather: {weather.label}
           </span>
-          <span className="flex items-center gap-0.5 text-[11px] font-semibold opacity-90">
+          <span className="flex items-center gap-0.5 text-[13px] font-semibold opacity-90">
             Markets <ChevronRight className="h-3.5 w-3.5" />
           </span>
         </span>
-        {weather.detail && <span className="mt-1 block text-[12px] text-td-text/80 leading-snug">{weather.detail}</span>}
+        {weather.detail && <span className="mt-1 block text-sm text-td-text/80 leading-snug">{weather.detail}</span>}
       </button>
       {cautions.length > 0 && (
         <div className="mt-1.5">
@@ -457,7 +457,7 @@ export function MarketWeatherTeaser({
             {open ? "Hide cautions" : `${cautions.length} caution${cautions.length === 1 ? "" : "s"} this week ›`}
           </button>
           {open && (
-            <ul className="mt-1.5 space-y-1 text-[12px] text-td-text/85 leading-snug list-disc pl-4">
+            <ul className="mt-1.5 space-y-1 text-sm text-td-text/85 leading-snug list-disc pl-4">
               {cautions.map((c) => (
                 <li key={c}>{c}</li>
               ))}
@@ -474,7 +474,7 @@ export function CatalystStrip({ ticker, daysUntil, onClick }: { ticker: string; 
     <button
       type="button"
       onClick={onClick}
-      className="w-full text-left rounded-2xl border border-td-warn/30 bg-td-warn-weak/70 px-4 py-2.5 text-[12px] font-semibold text-td-warn hover:brightness-110"
+      className="w-full text-left rounded-2xl border border-td-warn/30 bg-td-warn-weak/70 px-4 py-2.5 text-sm font-semibold text-td-warn hover:brightness-110"
     >
       CATALYST — {ticker} earnings {daysUntil === 0 ? "today" : `in ${daysUntil}d`}: size down into the print
     </button>

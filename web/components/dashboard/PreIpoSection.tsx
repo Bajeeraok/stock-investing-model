@@ -85,7 +85,7 @@ function formatPubDate(iso: string | null | undefined): string {
 function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
   if (!news.available) {
     return (
-      <p className="text-[11px] text-slate-600 leading-snug pt-2 border-t border-slate-800/80">
+      <p className="text-[13px] text-slate-600 leading-snug pt-2 border-t border-slate-800/80">
         {news.message ?? "No matching headlines in FMP feed."}
       </p>
     );
@@ -94,7 +94,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
   return (
     <div className="pt-2 border-t border-slate-800/80 space-y-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500">News</span>
+        <span className="text-[11px] uppercase tracking-wider text-slate-500">News</span>
         {news.sentiment_label && (
           <span
             className={clsx(
@@ -106,7 +106,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
           </span>
         )}
         {news.headline_count != null && news.headline_count > 0 && (
-          <span className="text-[10px] text-slate-600 tabular-nums">{news.headline_count} hits</span>
+          <span className="text-[11px] text-slate-600 tabular-nums">{news.headline_count} hits</span>
         )}
         {(news.themes ?? []).map((t) => (
           <span
@@ -119,13 +119,13 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
       </div>
 
       {news.catalyst?.headline_summary && (
-        <p className="text-[11px] text-amber-300/90 leading-snug bg-amber-950/20 border border-amber-500/20 rounded px-2 py-1">
+        <p className="text-[13px] text-amber-300/90 leading-snug bg-amber-950/20 border border-amber-500/20 rounded px-2 py-1">
           Catalyst: {news.catalyst.headline_summary}
         </p>
       )}
 
       {news.latest?.title && (
-        <div className="text-xs leading-snug">
+        <div className="text-[13px] leading-snug">
           {news.latest.url ? (
             <a
               href={news.latest.url}
@@ -138,7 +138,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
           ) : (
             <span className="text-slate-200">{news.latest.title}</span>
           )}
-          <p className="text-[10px] text-slate-500 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-0.5">
             {[formatPubDate(news.latest.published_at), news.latest.source].filter(Boolean).join(" · ")}
           </p>
         </div>
@@ -147,7 +147,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
       {(news.headlines?.length ?? 0) > 1 && (
         <ul className="space-y-1">
           {news.headlines!.slice(1, 4).map((h, i) => (
-            <li key={`${h.title}-${i}`} className="text-[11px] text-slate-500 leading-snug truncate">
+            <li key={`${h.title}-${i}`} className="text-[13px] text-slate-500 leading-snug truncate">
               {h.url ? (
                 <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-slate-300">
                   {h.title}
@@ -161,7 +161,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
       )}
 
       {news.sources_note && (
-        <p className="text-[10px] text-slate-600">Source: {news.sources_note}</p>
+        <p className="text-[11px] text-slate-600">Source: {news.sources_note}</p>
       )}
     </div>
   );
@@ -184,7 +184,7 @@ export function PreIpoSection({
         <span className="text-slate-500 font-normal">(private — FMP news + public proxies)</span>
       </h3>
       {panel.disclaimer && (
-        <p className="text-[11px] text-slate-500 mb-3 leading-snug">{panel.disclaimer}</p>
+        <p className="text-[13px] text-slate-500 mb-3 leading-snug">{panel.disclaimer}</p>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {items.map((c) => (
@@ -195,9 +195,9 @@ export function PreIpoSection({
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="font-semibold text-slate-100">{c.name}</p>
-                {c.sector && <p className="text-xs text-slate-500 mt-0.5">{c.sector}</p>}
+                {c.sector && <p className="text-[13px] text-slate-500 mt-0.5">{c.sector}</p>}
               </div>
-              <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-violet-500/15 text-violet-300 border border-violet-500/25">
+              <span className="shrink-0 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide bg-violet-500/15 text-violet-300 border border-violet-500/25">
                 {statusLabel(c.status)}
               </span>
             </div>
@@ -207,16 +207,16 @@ export function PreIpoSection({
                 {formatValuation(c.last_valuation_usd_b)}
               </span>
               {c.valuation_as_of && (
-                <span className="text-slate-500 text-xs ml-1">({c.valuation_as_of})</span>
+                <span className="text-slate-500 text-[13px] ml-1">({c.valuation_as_of})</span>
               )}
             </div>
             {c.note && (
-              <p className="text-xs text-slate-400 leading-snug">{c.note}</p>
+              <p className="text-[13px] text-slate-400 leading-snug">{c.note}</p>
             )}
             {c.news && <NewsBlock news={c.news} />}
             {(c.proxy_signals?.length ?? 0) > 0 ? (
               <div className="pt-2 border-t border-slate-800/80">
-                <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Public proxies</p>
+                <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Public proxies</p>
                 <div className="flex flex-wrap gap-1.5">
                   {c.proxy_signals!.map((p) => (
                     <button
@@ -224,7 +224,7 @@ export function PreIpoSection({
                       type="button"
                       onClick={() => onTickerClick?.(p.ticker)}
                       className={clsx(
-                        "inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs",
+                        "inline-flex items-center gap-1.5 px-2 py-1 rounded border text-[13px]",
                         onTickerClick
                           ? "border-slate-600 hover:border-emerald-500/40 hover:bg-emerald-950/20 cursor-pointer"
                           : "border-slate-700 cursor-default"
@@ -256,7 +256,7 @@ export function PreIpoSection({
                 </div>
               </div>
             ) : (c.public_proxies?.length ?? 0) > 0 ? (
-              <p className="text-[11px] text-slate-600">
+              <p className="text-[13px] text-slate-600">
                 Proxies: {c.public_proxies!.join(", ")} (not in today&apos;s signal universe)
               </p>
             ) : null}

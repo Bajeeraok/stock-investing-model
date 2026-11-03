@@ -19,8 +19,8 @@ function CohortTable({
   if (!rows.length) return null;
   return (
     <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">{title}</p>
-      <table className="w-full text-xs">
+      <p className="text-[13px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{title}</p>
+      <table className="w-full text-[13px]">
         <thead>
           <tr className="text-slate-500 text-left">
             <th className="py-1 pr-2 font-medium">Cohort</th>
@@ -32,7 +32,7 @@ function CohortTable({
         <tbody>
           {rows.map(([name, row]) => (
             <tr key={name} className="border-t border-slate-800/80 text-slate-300">
-              <td className="py-1 pr-2 font-mono text-[10px]">{name.replace(/_/g, " ")}</td>
+              <td className="py-1 pr-2 font-mono text-[11px]">{name.replace(/_/g, " ")}</td>
               <td className="py-1 pr-2 tabular-nums">{row.n ?? "—"}</td>
               <td className="py-1 pr-2 tabular-nums text-emerald-300/90">
                 {row.mean_fwd_pct != null ? fmt(row.mean_fwd_pct) : "—"}
@@ -52,7 +52,7 @@ export function BacktestTierPanels({ result }: { result: BacktestResult }) {
   if (!tier && !kpis) return null;
   if (tier?.error) {
     return (
-      <p className="px-4 py-2 text-xs text-amber-400/90 border-t border-slate-700/60">
+      <p className="px-4 py-2 text-[13px] text-amber-400/90 border-t border-slate-700/60">
         Tier enhancements unavailable: {tier.error}
       </p>
     );
@@ -68,25 +68,25 @@ export function BacktestTierPanels({ result }: { result: BacktestResult }) {
     <div className="px-4 py-3 border-t border-slate-700/60 space-y-3 bg-slate-950/30">
       {kpis && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-3 py-2.5">
-          <p className="text-[10px] uppercase tracking-wider text-emerald-400/80 font-semibold mb-1">
+          <p className="text-[11px] uppercase tracking-wider text-emerald-400/80 font-semibold mb-1">
             Primary KPIs (tier 3)
           </p>
           <p className="text-sm font-medium text-emerald-100">{kpis.headline}</p>
-          <p className="text-xs text-slate-400 mt-1 leading-snug">
+          <p className="text-[13px] text-slate-400 mt-1 leading-snug">
             Confidence: <span className="text-slate-200">{kpis.confidence_band}</span>
             {kpis.recommended_horizon_months != null && (
               <> · Prefer <span className="text-slate-200">{kpis.recommended_horizon_months}m</span> horizon</>
             )}
           </p>
           {kpis.calibration_note && (
-            <p className="text-[11px] text-slate-500 mt-1 leading-snug">{kpis.calibration_note}</p>
+            <p className="text-[13px] text-slate-500 mt-1 leading-snug">{kpis.calibration_note}</p>
           )}
         </div>
       )}
 
       {rule?.non_overlapping && (
-        <div className="rounded-lg border border-sky-500/25 bg-sky-950/15 px-3 py-2.5 text-xs text-slate-300 space-y-1">
-          <p className="text-[10px] uppercase tracking-wider text-sky-400 font-semibold">
+        <div className="rounded-lg border border-sky-500/25 bg-sky-950/15 px-3 py-2.5 text-[13px] text-slate-300 space-y-1">
+          <p className="text-[11px] uppercase tracking-wider text-sky-400 font-semibold">
             Rule strategy (tier 1) — non-overlapping
           </p>
           <p className="text-slate-400 leading-snug">{rule.entry_rule}</p>
@@ -108,8 +108,8 @@ export function BacktestTierPanels({ result }: { result: BacktestResult }) {
       )}
 
       {exit && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 px-3 py-2 text-xs text-slate-300 space-y-1">
-          <p className="text-[10px] uppercase tracking-wider text-amber-400/90 font-semibold">
+        <div className="rounded-lg border border-amber-500/20 bg-amber-950/10 px-3 py-2 text-[13px] text-slate-300 space-y-1">
+          <p className="text-[11px] uppercase tracking-wider text-amber-400/90 font-semibold">
             Exit / trim validation (tier 1) — score ≤ {exit.sell_max}
           </p>
           <p>
@@ -122,8 +122,8 @@ export function BacktestTierPanels({ result }: { result: BacktestResult }) {
       )}
 
       {byRegime && Object.keys(byRegime).length > 0 && (
-        <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs">
-          <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
+        <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-[13px]">
+          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-2">
             By market regime @ 6m (tier 2)
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -144,7 +144,7 @@ export function BacktestTierPanels({ result }: { result: BacktestResult }) {
       )}
 
       {thresh && (
-        <div className="text-xs text-slate-400 leading-snug">
+        <div className="text-[13px] text-slate-400 leading-snug">
           <span className="text-slate-300 font-medium">Threshold hint (tier 2):</span> buy_min={thresh.suggested_buy_min}{" "}
           · sell_max={thresh.suggested_sell_max}
           {thresh.notes?.[0] && <> — {thresh.notes[0]}</>}
@@ -152,13 +152,13 @@ export function BacktestTierPanels({ result }: { result: BacktestResult }) {
       )}
 
       {tier?.forward_tracking?.note && (
-        <p className="text-[11px] text-slate-500 leading-snug border-t border-slate-800 pt-2">
+        <p className="text-[13px] text-slate-500 leading-snug border-t border-slate-800 pt-2">
           <span className="text-slate-400">Live (tier 3 / Q-C):</span> {tier.forward_tracking.note}
         </p>
       )}
 
       {tier?.regime_gate_proxy_note && (
-        <p className="text-[10px] text-slate-600 leading-snug">{tier.regime_gate_proxy_note}</p>
+        <p className="text-[11px] text-slate-600 leading-snug">{tier.regime_gate_proxy_note}</p>
       )}
     </div>
   );

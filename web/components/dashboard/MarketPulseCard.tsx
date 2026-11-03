@@ -76,8 +76,8 @@ export function MarketPulseCard() {
     };
   }, []);
 
-  if (err && !data) return <p className="text-xs text-slate-500">Market pulse unavailable right now.</p>;
-  if (!data) return <p className="text-xs text-slate-500">Loading market pulse…</p>;
+  if (err && !data) return <p className="text-[13px] text-slate-500">Market pulse unavailable right now.</p>;
+  if (!data) return <p className="text-[13px] text-slate-500">Loading market pulse…</p>;
   const pre = data.pre_open;
   const intra = data.intraday;
   const sum = data.scorecard?.summary;
@@ -88,7 +88,7 @@ export function MarketPulseCard() {
       {pre && (
         <div className={clsx("rounded-lg border px-3 py-2", pre.high_risk ? "border-red-500/50 bg-red-500/10" : "border-slate-700 bg-slate-800/40")}>
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-xs uppercase tracking-wide text-slate-400">{pre.preview ? "Next session preview (SPY)" : "Pre-open (SPY)"}</span>
+            <span className="text-[13px] uppercase tracking-wide text-slate-400">{pre.preview ? "Next session preview (SPY)" : "Pre-open (SPY)"}</span>
             <span className={clsx("font-semibold", tone(pre.lean))}>{pre.lean}</span>
             <span className="text-slate-300 tabular-nums">Expected open {pct(pre.expected_gap_pct)}</span>
             <span className="text-slate-300 tabular-nums">Close red {Math.round(pre.p_close_red * 100)}%</span>
@@ -98,18 +98,18 @@ export function MarketPulseCard() {
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-400 mt-1 tabular-nums">
+          <p className="text-[13px] text-slate-400 mt-1 tabular-nums">
             Likely close {pct(pre.eod_range_pct.q10)} to {pct(pre.eod_range_pct.q90)} vs yesterday (median {pct(pre.eod_range_pct.q50)}).
             {pre.risk_reasons.length > 0 && ` ${pre.risk_reasons.join(" · ")}.`}
             {pre.engine_bias && ` Engine: ${pre.engine_bias}.`}
           </p>
-          <p className="text-[11px] text-slate-500 mt-0.5">{pre.note}</p>
+          <p className="text-[13px] text-slate-500 mt-0.5">{pre.note}</p>
         </div>
       )}
       {intra && (
         <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-xs uppercase tracking-wide text-slate-400">
+            <span className="text-[13px] uppercase tracking-wide text-slate-400">
               {data.phase === "intraday" ? "Intraday (SPY)" : "Today's close (SPY)"}
             </span>
             <span className={clsx("font-semibold tabular-nums", intra.move_so_far_pct >= 0 ? "text-emerald-400" : "text-red-400")}>
@@ -124,16 +124,16 @@ export function MarketPulseCard() {
               </>
             )}
           </div>
-          {data.phase === "intraday" && <p className="text-[11px] text-slate-500 mt-0.5">{intra.note}</p>}
+          {data.phase === "intraday" && <p className="text-[13px] text-slate-500 mt-0.5">{intra.note}</p>}
         </div>
       )}
-      {!pre && !intra && <p className="text-xs text-slate-500">No pulse yet — pre-open read starts ~4 AM ET on trading days.</p>}
+      {!pre && !intra && <p className="text-[13px] text-slate-500">No pulse yet — pre-open read starts ~4 AM ET on trading days.</p>}
 
       <div>
-        <p className="text-xs text-slate-400 mb-1">How these calls held up</p>
+        <p className="text-[13px] text-slate-400 mb-1">How these calls held up</p>
         {sum && Object.values(sum).some((s) => s.days > 0) ? (
           <>
-            <div className="grid grid-cols-3 gap-2 text-xs tabular-nums">
+            <div className="grid grid-cols-3 gap-2 text-[13px] tabular-nums">
               {(["pre_open", "10:30", "12:30"] as const).map((k) => (
                 <div key={k} className="rounded border border-slate-700 px-2 py-1">
                   <p className="text-slate-500">{k === "pre_open" ? "Pre-open" : k}</p>
@@ -146,7 +146,7 @@ export function MarketPulseCard() {
               ))}
             </div>
             <div className="overflow-x-auto mt-2">
-              <table className="w-full text-xs min-w-[420px] tabular-nums">
+              <table className="w-full text-[13px] min-w-[420px] tabular-nums">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-slate-700">
                     <th className="py-1 pr-2 font-medium">Date</th>
@@ -175,10 +175,10 @@ export function MarketPulseCard() {
             </div>
           </>
         ) : (
-          <p className="text-xs text-slate-500">Scoring starts after the first logged trading day (calls saved at 9:20, 10:31 and 12:31 ET).</p>
+          <p className="text-[13px] text-slate-500">Scoring starts after the first logged trading day (calls saved at 9:20, 10:31 and 12:31 ET).</p>
         )}
       </div>
-      <p className="text-[11px] text-slate-500">{data.disclaimer} MIXED pre-open calls aren&apos;t scored for direction.</p>
+      <p className="text-[13px] text-slate-500">{data.disclaimer} MIXED pre-open calls aren&apos;t scored for direction.</p>
     </div>
   );
 }

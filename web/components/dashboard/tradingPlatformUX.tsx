@@ -125,7 +125,7 @@ export function StickyTickerQuoteBar({
             <span className={clsx("text-sm font-semibold tabular-nums", move.className)}>{move.text}</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
           {scoreStale ? (
             <span
               className="px-2 py-0.5 rounded border border-td-warn/45 bg-td-warn-weak/40 text-td-warn"
@@ -164,7 +164,7 @@ export function StickyTickerQuoteBar({
           {regime && (
             <span
               className={clsx(
-                "px-2 py-0.5 rounded border font-bold uppercase text-[10px]",
+                "px-2 py-0.5 rounded border font-bold uppercase text-[11px]",
                 regime === "UP" && "border-td-accent/40 text-td-accent bg-td-accent-weak/30",
                 regime === "EXTENDED" && "border-td-warn/40 text-td-warn bg-td-warn-weak/30",
                 regime === "DOWN" && "border-td-crit/40 text-td-crit bg-td-crit-weak/30",
@@ -188,7 +188,7 @@ export function StickyTickerQuoteBar({
             {confidencePct != null && (
               <p
                 className={clsx(
-                  "text-[10px] leading-tight",
+                  "text-[11px] leading-tight",
                   confFail ? "text-td-warn/90" : "text-td-muted",
                 )}
                 title="Sizing / meta-confidence — not counted in the 4-of-4 buy-gate bar"
@@ -200,7 +200,7 @@ export function StickyTickerQuoteBar({
           </div>
         )}
         {earningsLabel && (
-          <span className="text-[10px] text-td-warn/90 border border-td-warn/30 rounded px-1.5 py-0.5">
+          <span className="text-[11px] text-td-warn/90 border border-td-warn/30 rounded px-1.5 py-0.5">
             {earningsLabel}
           </span>
         )}
@@ -323,16 +323,16 @@ function SignalLevelsPanel({ signal: r }: { signal: Signal }) {
   if (rows.length === 0) return null;
   return (
     <div className="px-4 pb-4 space-y-1.5">
-      <p className="text-[10px] font-mono uppercase tracking-wider text-slate-600">Levels</p>
+      <p className="text-[11px] font-mono uppercase tracking-wider text-slate-600">Levels</p>
       {rows.map((row) => (
         <div
           key={row.tag}
           className="grid grid-cols-[2.4rem_1fr] items-baseline gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60"
         >
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-slate-500">{row.tag}</span>
+          <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-slate-500">{row.tag}</span>
           <div className="min-w-0">
             <span className="text-[12.5px] font-mono font-semibold text-white tabular-nums">{row.text}</span>
-            {row.sub && <p className="text-[10px] text-slate-500 truncate">{row.sub}</p>}
+            {row.sub && <p className="text-[11px] text-slate-500 truncate">{row.sub}</p>}
           </div>
         </div>
       ))}
@@ -453,23 +453,23 @@ export function NewsSentimentRail({
   return (
     <div className="rounded-lg border border-td-info/25 bg-td-info/10/15 p-3 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[10px] uppercase tracking-wider text-td-info/90 font-semibold">News</span>
-        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border border-td-info/30 text-td-info">
+        <span className="text-[11px] uppercase tracking-wider text-td-info/90 font-semibold">News</span>
+        <span className="text-[11px] font-bold uppercase px-1.5 py-0.5 rounded border border-td-info/30 text-td-info">
           {sentiment}
         </span>
         {headlineCount != null && headlineCount > 0 && (
-          <span className="text-[10px] text-td-muted">{headlineCount} headlines</span>
+          <span className="text-[11px] text-td-muted">{headlineCount} headlines</span>
         )}
       </div>
       {sentimentCaveat && (
-        <p className="text-[11px] text-td-warn/90 leading-snug">{sentimentCaveat}</p>
+        <p className="text-[13px] text-td-warn/90 leading-snug">{sentimentCaveat}</p>
       )}
       {catalystNote && (
-        <p className="text-[11px] text-td-warn/90 leading-snug">{catalystNote}</p>
+        <p className="text-[13px] text-td-warn/90 leading-snug">{catalystNote}</p>
       )}
       {cards.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-td-muted">
+          <p className="text-[11px] text-td-muted">
             Catalyst cards — advisory only; does not change bands or gates.
             {wrapStatus === "loading" ? " Summarizing…" : wrapping ? " Guarded wrap." : ""}
           </p>
@@ -491,29 +491,29 @@ export function NewsSentimentRail({
                   <span className={clsx("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border", tone)}>
                     {c.direction}
                   </span>
-                  <span className="text-[10px] font-semibold text-td-text">{c.name}</span>
-                  {c.age_label && <span className="text-[10px] text-td-muted">{c.age_label}</span>}
-                  {c.source && <span className="text-[10px] text-td-muted truncate">{c.source}</span>}
+                  <span className="text-[11px] font-semibold text-td-text">{c.name}</span>
+                  {c.age_label && <span className="text-[11px] text-td-muted">{c.age_label}</span>}
+                  {c.source && <span className="text-[11px] text-td-muted truncate">{c.source}</span>}
                 </div>
                 {wrapText && (
-                  <p className="text-[11px] text-td-text leading-snug">{wrapText}</p>
+                  <p className="text-[13px] text-td-text leading-snug">{wrapText}</p>
                 )}
                 {c.url ? (
-                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-td-muted leading-snug hover:text-td-info line-clamp-2">
+                  <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-td-muted leading-relaxed hover:text-td-info line-clamp-2">
                     {c.mechanism}
                   </a>
                 ) : (
-                  <p className="text-[11px] text-td-muted leading-snug line-clamp-2">{c.mechanism}</p>
+                  <p className="text-[13px] text-td-muted leading-relaxed line-clamp-2">{c.mechanism}</p>
                 )}
                 {watch && (
-                  <p className="text-[10px] text-td-muted">Watch: {watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
+                  <p className="text-[11px] text-td-muted">Watch: {watch}{c.horizon ? ` · ${c.horizon}` : ""}</p>
                 )}
                 {ticker && (
                   <button
                     type="button"
                     onClick={() => addNote(c)}
                     disabled={st === "saving" || st === "ok"}
-                    className="text-[10px] font-semibold text-td-info hover:text-td-info disabled:text-td-muted"
+                    className="text-[11px] font-semibold text-td-info hover:text-td-info disabled:text-td-muted"
                   >
                     {st === "ok" ? "Saved to notes" : st === "saving" ? "Saving…" : st === "err" ? "Retry add to note" : "Add to note"}
                   </button>
@@ -525,7 +525,7 @@ export function NewsSentimentRail({
       )}
       <ul className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
         {(headlines ?? []).slice(0, 8).map((h, i) => (
-          <li key={i} className="text-[11px] text-td-muted leading-snug line-clamp-2">
+          <li key={i} className="text-[13px] text-td-muted leading-relaxed line-clamp-2">
             {h.url ? (
               <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-td-info" title="Open full article">
                 {h.title}
@@ -582,7 +582,7 @@ export function TrustMetricsStrip({
         className
       )}
     >
-      <span className="text-[10px] uppercase tracking-wider text-emerald-400/80 font-semibold w-full sm:w-auto sm:mr-1">
+      <span className="text-[11px] uppercase tracking-wider text-emerald-400/80 font-semibold w-full sm:w-auto sm:mr-1">
         Track record
       </span>
       {items.map((it) => (
@@ -634,7 +634,7 @@ export function MiniEquityCurve({
   return (
     <div className={clsx("rounded-lg border border-slate-700/60 bg-slate-900/50 p-3", className)}>
       <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-[10px] uppercase tracking-wider text-slate-500">Avg paper trade</span>
+        <span className="text-[11px] uppercase tracking-wider text-slate-500">Avg paper trade</span>
         <span className={clsx("text-sm font-bold tabular-nums", positive ? "text-emerald-400" : "text-red-400")}>
           {last >= 0 ? "+" : ""}
           {last.toFixed(1)}%
@@ -660,7 +660,7 @@ export function SignalSparklineCell({ signal }: { signal: Signal }) {
       {signal.sparkline_closes && signal.sparkline_closes.length >= 3 && (
         <MiniPriceSparkline closes={signal.sparkline_closes} width={72} height={24} />
       )}
-      <span className={clsx("text-[10px] font-semibold tabular-nums", move.className)}>{move.text}</span>
+      <span className={clsx("text-[11px] font-semibold tabular-nums", move.className)}>{move.text}</span>
     </div>
   );
 }

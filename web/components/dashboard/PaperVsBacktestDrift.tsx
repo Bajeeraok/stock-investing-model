@@ -25,20 +25,20 @@ export function PaperVsBacktestDrift({ drift }: { drift: PaperVsBacktestDriftPay
   if (!drift || drift.status === undefined) return null;
 
   return (
-    <div className="rounded-lg border border-slate-600/80 bg-slate-800/40 px-3 py-2.5 text-xs text-slate-400 mb-3">
+    <div className="rounded-lg border border-slate-600/80 bg-slate-800/40 px-3 py-2.5 text-[13px] text-slate-400 mb-3">
       <p className="text-slate-300 font-medium mb-1">Paper vs forward baseline (20d)</p>
       {drift.message && <p className="text-slate-500 mb-1">{drift.message}</p>}
       {drift.status === "insufficient_paper" &&
         drift.forward_20d_baseline_pct != null &&
         drift.forward_20d_n != null && (
-          <p className="text-slate-500 font-mono text-[11px] mb-1">
+          <p className="text-slate-500 font-mono text-[13px] mb-1">
             Forward-tracking 20d mean:{" "}
             <span className="text-slate-300">{drift.forward_20d_baseline_pct.toFixed(2)}%</span>
             <span className="text-slate-600"> (n={drift.forward_20d_n})</span>
           </p>
         )}
       {drift.status !== "insufficient_paper" && drift.paper_completed_n != null && drift.paper_completed_n >= 3 && (
-        <div className="space-y-0.5 font-mono text-[11px]">
+        <div className="space-y-0.5 font-mono text-[13px]">
           {drift.paper_avg_return_pct != null && (
             <p>
               Paper avg return:{" "}

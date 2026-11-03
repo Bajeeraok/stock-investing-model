@@ -110,7 +110,7 @@ export function HorizonPlaybooksPanel({
   return (
     <div className="border-b border-td-line/80">
       <div className="px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 bg-td-surface/60 border-b border-td-line/80">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-td-muted">
+        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-td-muted">
           {TAB_META[intentHorizon].label} playbook
           <span className="ml-2 normal-case tracking-normal font-normal">— follows the mode switch above</span>
         </p>
@@ -122,7 +122,7 @@ export function HorizonPlaybooksPanel({
               if (compareOpen) setActiveHorizon(intentHorizon);
             }}
             aria-expanded={compareOpen}
-            className="text-[11px] font-semibold text-td-muted hover:text-td-text"
+            className="text-[13px] font-semibold text-td-muted hover:text-td-text"
           >
             {compareOpen ? "Hide other horizons" : "Compare other horizons ›"}
           </button>
@@ -137,7 +137,7 @@ export function HorizonPlaybooksPanel({
               type="button"
               onClick={() => setActiveHorizon(h)}
               className={clsx(
-                "shrink-0 px-3 py-2 text-xs font-semibold uppercase tracking-wide border-b-2 transition-colors",
+                "shrink-0 px-3 py-2 text-[13px] font-semibold uppercase tracking-wide border-b-2 transition-colors",
                 activeHorizon === h
                   ? h === "short"
                     ? "border-td-accent text-td-accent"
@@ -158,7 +158,7 @@ export function HorizonPlaybooksPanel({
       )}
 
       {primary && activeHorizon !== intentHorizon && (
-        <p className="mx-4 sm:mx-6 mt-2 rounded-md border border-td-warn/30 bg-td-warn-weak/50 px-2.5 py-1.5 text-[11px] text-td-warn">
+        <p className="mx-4 sm:mx-6 mt-2 rounded-md border border-td-warn/30 bg-td-warn-weak/50 px-2.5 py-1.5 text-[13px] text-td-warn">
           Comparing the {TAB_META[activeHorizon].label} ({horizonLabel(activeHorizon).toLowerCase()}) plan — not your
           selected {TAB_META[intentHorizon].label} mode. Its entry band is for that horizon only.
         </p>
@@ -166,7 +166,7 @@ export function HorizonPlaybooksPanel({
       {primary && (
         <p
           className={clsx(
-            "mx-4 sm:mx-6 mt-2 text-[10px] font-medium uppercase tracking-wide",
+            "mx-4 sm:mx-6 mt-2 text-[11px] font-medium uppercase tracking-wide",
             activeHorizon === "short"
               ? "text-td-accent/80"
               : activeHorizon === "medium"

@@ -33,7 +33,7 @@ export function TradingLensSelector({
       title={tradingLensHint(lens)}
     >
       {!compact && (
-        <p className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold px-0.5">
+        <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold px-0.5">
           Trading as
         </p>
       )}
@@ -64,7 +64,7 @@ export function TradingLensSelector({
               )}
             >
               <Icon className={clsx("shrink-0", compact ? "h-3.5 w-3.5" : "h-4 w-4")} aria-hidden />
-              <span className={clsx("font-semibold leading-tight", compact ? "text-[10px]" : "text-xs")}>
+              <span className={clsx("font-semibold leading-tight", compact ? "text-[11px]" : "text-[13px]")}>
                 {tradingLensLabel(id)}
               </span>
             </button>

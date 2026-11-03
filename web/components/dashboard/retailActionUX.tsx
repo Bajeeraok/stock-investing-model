@@ -523,11 +523,11 @@ export function EntryModeBanner({
   return (
     <div className={clsx("rounded-lg border px-3 py-2.5 space-y-1", styles, className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] opacity-90">Entry mode</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.14em] opacity-90">Entry mode</p>
         <span className="flex items-center gap-1.5 flex-wrap">
           {preferIndex ? (
             <span
-              className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-sky-400/60 bg-sky-400/15 text-sky-300"
+              className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-sky-400/60 bg-sky-400/15 text-sky-300"
               title={indexReason || "Similar setups have not beaten the index after costs"}
             >
               PREFER {benchmark || "SPY"}
@@ -535,13 +535,13 @@ export function EntryModeBanner({
           ) : null}
           {dipZone ? (
             <span
-              className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-emerald-400/60 bg-emerald-400/15 text-emerald-300"
+              className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-emerald-400/60 bg-emerald-400/15 text-emerald-300"
               title="Score 30–50 dip zone inside entry band — the model's measured edge cohort"
             >
               DIP ZONE
             </span>
           ) : null}
-          <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-white/15">
+          <span className="text-[11px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded border border-white/15">
             {badge}
             {maxSizingPct != null && maxSizingPct > 0 && maxSizingPct < 100 ? ` · ≤${maxSizingPct}%` : null}
           </span>
@@ -551,16 +551,16 @@ export function EntryModeBanner({
         {headline}
         {fullGoVia === "market_regime_override" ? (
           <span
-            className="ml-1.5 align-middle text-[10px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-amber-400/50 bg-amber-400/10 text-amber-300"
+            className="ml-1.5 align-middle text-[11px] font-mono font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border border-amber-400/50 bg-amber-400/10 text-amber-300"
             title="Qualified via bull-market catch-up: only the stock regime gate failed while the broader tape is bull"
           >
             catch-up
           </span>
         ) : null}
       </p>
-      {detail ? <p className="text-xs opacity-90 leading-snug">{detail}</p> : null}
+      {detail ? <p className="text-[13px] opacity-90 leading-snug">{detail}</p> : null}
       {preferIndex && indexReason ? (
-        <p className="text-xs leading-snug text-sky-200">{indexReason}</p>
+        <p className="text-[13px] leading-snug text-sky-200">{indexReason}</p>
       ) : null}
     </div>
   );
@@ -605,16 +605,16 @@ export function GlobalActionHeader({
       />
       {contextOnly && nextTrigger && (
         <div className="rounded-lg border border-emerald-500/25 bg-emerald-950/25 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
           <p className="text-sm font-semibold text-emerald-100 mt-0.5">{nextTrigger.headline}</p>
           {nextTrigger.detail ? (
-            <p className="text-xs text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
+            <p className="text-[13px] text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
           ) : null}
         </div>
       )}
       <TradingGateStatus gates={displayGates} />
       {gateTotal > 0 && (
-        <p className={clsx("text-xs text-slate-500", contextOnly ? "px-1" : "mt-2 px-1")}>
+        <p className={clsx("text-[13px] text-slate-500", contextOnly ? "px-1" : "mt-2 px-1")}>
           Gates:{" "}
           <span className="text-slate-200 font-semibold tabular-nums">
             {passCount} of {gateTotal} pass
@@ -625,7 +625,7 @@ export function GlobalActionHeader({
         </p>
       )}
       {unlockSequence && entryMode !== "full_go" ? (
-        <p className={clsx("text-xs text-slate-400 leading-snug", contextOnly ? "px-1" : "px-1")}>
+        <p className={clsx("text-[13px] text-slate-400 leading-snug", contextOnly ? "px-1" : "px-1")}>
           {unlockSequence}
         </p>
       ) : null}
@@ -655,7 +655,7 @@ export function GlobalActionHeader({
     <header className={clsx("border-b bg-gradient-to-b", accent)}>
       <div className="px-4 sm:px-6 pt-3 pb-2 border-b border-white/5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Now</p>
+          <p className="text-[13px] font-bold uppercase tracking-[0.2em] text-slate-500">Now</p>
           <p className="text-base sm:text-lg font-semibold text-slate-100">
             <span className="font-mono text-emerald-400">{ticker}</span>
             {companyName ? <span className="text-slate-300 font-normal"> · {companyName}</span> : null}
@@ -669,7 +669,7 @@ export function GlobalActionHeader({
         <p className="px-4 sm:px-6 pb-2 text-sm uppercase tracking-wider text-slate-500">{sector}</p>
       )}
       <div className="px-4 sm:px-6 pb-3">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">Status</p>
+        <p className="text-[13px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-1">Status</p>
         <p className="text-xl sm:text-2xl font-black tracking-tight text-slate-50 flex items-center gap-2">
           <span aria-hidden>{statusEmoji(statusLight)}</span>
           {statusTitle}
@@ -679,10 +679,10 @@ export function GlobalActionHeader({
         </p>
         {nextTrigger && (
           <div className="mt-3 rounded-lg border border-emerald-500/25 bg-emerald-950/25 px-3 py-2.5 max-w-3xl">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400/90">Next trigger</p>
             <p className="text-sm font-semibold text-emerald-100 mt-0.5">{nextTrigger.headline}</p>
             {nextTrigger.detail ? (
-              <p className="text-xs text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
+              <p className="text-[13px] text-slate-300 mt-1 leading-snug">{nextTrigger.detail}</p>
             ) : null}
           </div>
         )}
@@ -713,13 +713,13 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
           <p className="text-sm font-bold uppercase tracking-[0.15em] text-slate-300">
             Trading gate status
           </p>
-          <p className="text-xs text-slate-500 mt-0.5 normal-case tracking-normal font-normal">
+          <p className="text-[13px] text-slate-500 mt-0.5 normal-case tracking-normal font-normal">
             If / then — what must be true before you add size
           </p>
         </div>
         <span
           className={clsx(
-            "text-xs font-bold uppercase px-2.5 py-1 rounded border tracking-wide",
+            "text-[13px] font-bold uppercase px-2.5 py-1 rounded border tracking-wide",
             allGo
               ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
               : "border-red-500/45 bg-red-500/10 text-red-200"
@@ -757,7 +757,7 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
                   />
                   <span
                     className={clsx(
-                      "shrink-0 font-bold uppercase text-xs px-2 py-0.5 rounded border",
+                      "shrink-0 font-bold uppercase text-[13px] px-2 py-0.5 rounded border",
                       isMarginal
                         ? retailStatusClasses("marginal")
                         : retailStatusClasses(g.pass ? "cleared" : "blocked")
@@ -768,7 +768,7 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
                 </div>
                 <p className="text-slate-300 leading-snug pl-0 sm:pl-0">{g.detail}</p>
                 {g.id === "confidence" ? (
-                  <p className="text-[10px] text-slate-500 mt-0.5">Sizing signal — not counted in the 4-of-4 go/no-go total.</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Sizing signal — not counted in the 4-of-4 go/no-go total.</p>
                 ) : null}
               </div>
             </div>
@@ -1008,7 +1008,7 @@ export function CompactSignalActionStrip({
     <div className={wrapClass}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Now</p>
+          <p className="text-[13px] font-bold uppercase tracking-[0.14em] text-slate-500">Now</p>
           <p className="text-sm font-black text-slate-100 flex items-center gap-1.5 leading-tight">
             <span aria-hidden>{listStatusEmoji(displayStatus.light)}</span>
             <span className="truncate">{displayStatus.title}</span>
@@ -1018,7 +1018,7 @@ export function CompactSignalActionStrip({
           <button
             type="button"
             onClick={onOpenDetail}
-            className="shrink-0 text-xs font-semibold text-emerald-400 hover:text-emerald-300 uppercase"
+            className="shrink-0 text-[13px] font-semibold text-emerald-400 hover:text-emerald-300 uppercase"
           >
             Detail
           </button>
@@ -1028,13 +1028,13 @@ export function CompactSignalActionStrip({
         <p className="mt-1.5 text-sm text-slate-300/95 leading-snug line-clamp-2 italic">&ldquo;{subtitle}&rdquo;</p>
       )}
       {variant !== "column" && signalReason?.wait_plain && (
-        <p className="mt-1.5 text-xs text-amber-200/85 leading-snug border-l-2 border-amber-500/40 pl-2">
+        <p className="mt-1.5 text-[13px] text-amber-200/85 leading-snug border-l-2 border-amber-500/40 pl-2">
           <span className="font-semibold text-amber-300/90">Timing: </span>
           {signalReason.wait_plain}
         </p>
       )}
       {variant === "column" && subtitle && (
-        <p className="mt-1 text-xs text-slate-400 leading-snug line-clamp-1">{subtitle}</p>
+        <p className="mt-1 text-[13px] text-slate-400 leading-snug line-clamp-1">{subtitle}</p>
       )}
       {!hideGatePills && (
         <div className={variant === "column" ? "mt-1.5" : "mt-2"}>
@@ -1045,7 +1045,7 @@ export function CompactSignalActionStrip({
         <button
           type="button"
           onClick={() => setExpanded((o) => !o)}
-          className="mt-2 text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1"
+          className="mt-2 text-[13px] text-slate-500 hover:text-slate-300 flex items-center gap-1"
         >
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {expanded ? "Hide gate checklist" : "Show gate checklist"}
@@ -1055,10 +1055,10 @@ export function CompactSignalActionStrip({
         <div className="mt-2 space-y-2">
           {signalReason?.factors && signalReason.factors.length > 0 && (
             <div className="rounded-md border border-slate-700/60 bg-slate-950/60 px-2.5 py-2">
-              <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Key factors</p>
+              <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">Key factors</p>
               <ul className="space-y-1">
                 {signalReason.factors.slice(0, 3).map((f) => (
-                  <li key={f.id ?? f.label} className="text-[11px] text-slate-400 leading-snug">
+                  <li key={f.id ?? f.label} className="text-[13px] text-slate-400 leading-snug">
                     <span
                       className={
                         f.stance === "helps"
@@ -1139,7 +1139,7 @@ export function StopTargetRiskBar({
 
   return (
     <div className={clsx("space-y-2", className)}>
-      <div className="flex justify-between text-xs font-mono text-slate-500">
+      <div className="flex justify-between text-[13px] font-mono text-slate-500">
         <span className="text-red-300/90">Stop ${stopLoss.toFixed(2)}</span>
         <span className="text-slate-400">Now ${currentPrice.toFixed(2)}</span>
         <span className="text-emerald-300/90">Target ${target.toFixed(2)}</span>
@@ -1167,7 +1167,7 @@ export function StopTargetRiskBar({
           style={{ left: `${pct}%` }}
         />
       </div>
-      <p className="text-xs text-slate-400 leading-snug">
+      <p className="text-[13px] text-slate-400 leading-snug">
         {tightReward ? (
           <>
             <span className="text-red-300 font-semibold">Asymmetric risk:</span> large red zone (fall to stop) vs a small
@@ -1327,7 +1327,7 @@ export function EntryZonePriceBar({
 
   return (
     <div className={clsx("space-y-2", className)} aria-label={`${bandLabel} price scale`}>
-      <div className="flex justify-between gap-2 text-[11px] font-mono text-slate-500">
+      <div className="flex justify-between gap-2 text-[13px] font-mono text-slate-500">
         <span className="text-slate-500 shrink-0">${min.toFixed(2)}</span>
         <span className="text-slate-200 font-medium shrink-0">Now ${currentPrice.toFixed(2)}</span>
         <span className="text-slate-500 shrink-0">${max.toFixed(2)}</span>
@@ -1387,9 +1387,9 @@ export function EntryZonePriceBar({
           );
         })}
       </div>
-      <p className="text-xs text-slate-400 leading-snug">{statusLine}</p>
+      <p className="text-[13px] text-slate-400 leading-snug">{statusLine}</p>
       <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-2.5 py-2 space-y-1.5">
-        <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+        <p className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
           Catch levels · ${low.toFixed(2)}–${high.toFixed(2)}
         </p>
         <div className="flex flex-wrap gap-1.5">
@@ -1397,27 +1397,27 @@ export function EntryZonePriceBar({
             <span
               key={lv.id}
               className={clsx(
-                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
+                "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[13px] font-mono tabular-nums",
                 lv.role === "anchor"
                   ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
                   : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
               )}
               title={lv.label}
             >
-              <span className="text-slate-500 font-sans text-[10px] hidden sm:inline truncate max-w-[7rem]">
+              <span className="text-slate-500 font-sans text-[11px] hidden sm:inline truncate max-w-[7rem]">
                 {lv.label}
               </span>
               <span className="font-semibold">${lv.price.toFixed(2)}</span>
             </span>
           ))}
         </div>
-        <p className="text-[10px] text-slate-600 leading-snug">
+        <p className="text-[11px] text-slate-600 leading-snug">
           Set limits/alerts at these prices inside the band — anchors (cyan) are structural levels from the model.
         </p>
       </div>
       {touchForecast?.touch_probability_pct != null && touchForecast.window_sessions != null && (
         <p
-          className="text-[11px] text-sky-200/90 leading-snug border border-sky-500/20 rounded-lg px-2 py-1.5 bg-sky-950/25"
+          className="text-[13px] text-sky-200/90 leading-snug border border-sky-500/20 rounded-lg px-2 py-1.5 bg-sky-950/25"
           title={touchForecast.note ?? "Pooled index history from EOD OHLCV backtest — not paper trades."}
         >
           <span className="font-medium text-sky-300/90">Band touch (history): </span>
@@ -1431,15 +1431,15 @@ export function EntryZonePriceBar({
         </p>
       )}
       {stretch && (
-        <p className="text-[11px] text-amber-300/85 leading-snug">
+        <p className="text-[13px] text-amber-300/85 leading-snug">
           Above anchor — band still valid. A pullback toward the band is a cheaper fill, not a better outcome on average.
         </p>
       )}
       {anchorNote && (
-        <p className="text-[11px] text-slate-500 leading-snug">{anchorNote}</p>
+        <p className="text-[13px] text-slate-500 leading-snug">{anchorNote}</p>
       )}
       {(stopP != null || (target != null && target > 0)) && (
-        <p className="text-[10px] text-slate-600 leading-snug">
+        <p className="text-[11px] text-slate-600 leading-snug">
           {stopP != null && <span className="text-red-400/80">Red tick = stop </span>}
           {target != null && target > 0 && (
             <span className="text-slate-500">
@@ -1627,7 +1627,7 @@ export function LongTermAccumulationScale({
 
   return (
     <div className={clsx("space-y-2.5", className)} aria-label="Long-term accumulation price scale">
-      <div className="flex justify-between gap-2 text-xs font-mono text-slate-300">
+      <div className="flex justify-between gap-2 text-[13px] font-mono text-slate-300">
         <span className="shrink-0 tabular-nums">${scaleMin.toFixed(2)}</span>
         <span className="text-white font-semibold shrink-0 tabular-nums">Now ${currentPrice.toFixed(2)}</span>
         <span className="shrink-0 tabular-nums">${scaleMax.toFixed(2)}</span>
@@ -1709,7 +1709,7 @@ export function LongTermAccumulationScale({
             <span
               key={`${m.label}-${m.value}`}
               className={clsx(
-                "absolute top-0 -translate-x-1/2 text-[10px] font-mono font-semibold tabular-nums whitespace-nowrap",
+                "absolute top-0 -translate-x-1/2 text-[11px] font-mono font-semibold tabular-nums whitespace-nowrap",
                 markerToneClass[m.tone],
               )}
               style={{ left: `${pct(m.value)}%` }}
@@ -1723,11 +1723,11 @@ export function LongTermAccumulationScale({
         <p className="font-semibold text-amber-100">{statusHeadline}</p>
         <p className="text-slate-200 mt-0.5">{statusDetail}</p>
         {inBridge && (
-          <p className="text-xs text-cyan-300/90 mt-1 font-medium">Inside bridge sleeve — partial starter only.</p>
+          <p className="text-[13px] text-cyan-300/90 mt-1 font-medium">Inside bridge sleeve — partial starter only.</p>
         )}
       </div>
       {variant === "full" && (
-        <p className="text-xs text-slate-200 leading-snug">
+        <p className="text-[13px] text-slate-200 leading-snug">
           <span className="text-emerald-300 font-semibold">{primaryBandLabel}</span>
           {" "}
           <span className="font-mono tabular-nums">
@@ -1750,7 +1750,7 @@ export function LongTermAccumulationScale({
       )}
       {!hideCatchLevels && variant !== "deck" && catchLevels.length > 0 && (
         <div className="rounded-lg border border-slate-700/80 bg-slate-950/60 px-2.5 py-2 space-y-1.5">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+          <p className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
             Catch levels · {primaryId ?? "band"} ${primaryLo.toFixed(2)}–${primaryHi.toFixed(2)}
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -1763,7 +1763,7 @@ export function LongTermAccumulationScale({
                 <span
                   key={lv.id}
                   className={clsx(
-                    "inline-flex flex-col items-center rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
+                    "inline-flex flex-col items-center rounded-md border px-2 py-0.5 text-[13px] font-mono tabular-nums",
                     lv.role === "anchor"
                       ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
                       : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
@@ -1860,7 +1860,7 @@ export function StopHierarchyPanel({
       )}
       aria-label="Stop hierarchy by timeframe"
     >
-      <p className="text-xs uppercase tracking-wide font-semibold text-slate-400 mb-2">
+      <p className="text-[13px] uppercase tracking-wide font-semibold text-slate-400 mb-2">
         Stop hierarchy — match the stop to your horizon
       </p>
       <ul className="space-y-2.5">
@@ -1876,13 +1876,13 @@ export function StopHierarchyPanel({
               </span>
             </div>
             {row.detail && (
-              <p className="text-xs text-slate-500 mt-0.5 leading-snug pl-0.5">{row.detail}</p>
+              <p className="text-[13px] text-slate-500 mt-0.5 leading-snug pl-0.5">{row.detail}</p>
             )}
           </li>
         ))}
       </ul>
       {hmmDiverge && (
-        <p className="text-xs text-sky-300/85 mt-3 pt-2 border-t border-slate-700/70 leading-snug">
+        <p className="text-[13px] text-sky-300/85 mt-3 pt-2 border-t border-slate-700/70 leading-snug">
           HMM: market ~{Math.round(marketRegimeBullPct!)}% bull vs this name ~{Math.round(stockRegimeBullPct!)}% — can mean the stock is lagging a strong tape (not necessarily a model bug). Use stock HMM for this ticker; market HMM for backdrop only.
         </p>
       )}
@@ -1905,7 +1905,7 @@ export function RiskRewardThermometer({
 
   return (
     <div className={clsx("space-y-1.5", className)}>
-      <div className="flex justify-between text-xs font-mono text-slate-500">
+      <div className="flex justify-between text-[13px] font-mono text-slate-500">
         <span className="text-red-300/90">Risk $1.00</span>
         <span className="text-emerald-300/90">Reward ${rr.toFixed(2)}</span>
       </div>
@@ -1913,7 +1913,7 @@ export function RiskRewardThermometer({
         <div className={clsx("h-full", tight ? "bg-red-500/85" : "bg-amber-500/75")} style={{ width: `${riskShare * 100}%` }} />
         <div className={clsx("h-full flex-1", tight ? "bg-emerald-600/30" : "bg-emerald-500/65")} />
       </div>
-      <p className="text-xs text-slate-400">
+      <p className="text-[13px] text-slate-400">
         {tight ? (
           <span className="text-red-300 font-medium">You risk ~$1.00 to make ~${rr.toFixed(2)}</span>
         ) : (
@@ -2072,10 +2072,10 @@ export function LongTermTierLadder({
   return (
     <div className="mt-2 rounded-xl border border-violet-500/25 bg-gradient-to-b from-violet-950/30 to-slate-950/50 overflow-hidden">
       <div className="px-3 py-2 border-b border-violet-500/20 bg-violet-950/40 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-bold uppercase tracking-[0.12em] text-violet-200">
+        <p className="text-[13px] font-bold uppercase tracking-[0.12em] text-violet-200">
           Long-term accumulation mode
         </p>
-        <span className="text-xs font-semibold text-amber-200/90 uppercase">
+        <span className="text-[13px] font-semibold text-amber-200/90 uppercase">
           {modeLabel ?? entryTiers.current_assessment?.label ?? "Watching"}
         </span>
       </div>
@@ -2116,7 +2116,7 @@ export function LongTermTierLadder({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-bold text-slate-200">{tier.label}</span>
-                    <span className="text-xs font-semibold text-emerald-300/90">{copy.zone}</span>
+                    <span className="text-[13px] font-semibold text-emerald-300/90">{copy.zone}</span>
                     {isHighlighted && (
                       <span className="text-[9px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
                         {isInside
@@ -2136,7 +2136,7 @@ export function LongTermTierLadder({
                         <span
                           key={lv.id}
                           className={clsx(
-                            "text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded border",
+                            "text-[11px] font-mono tabular-nums px-1.5 py-0.5 rounded border",
                             lv.role === "anchor"
                               ? "border-cyan-500/35 text-cyan-300/90"
                               : "border-slate-600 text-slate-400",
@@ -2148,8 +2148,8 @@ export function LongTermTierLadder({
                       ))}
                     </div>
                   )}
-                  <p className="text-xs text-slate-500 mt-1">{copy.sizing}</p>
-                  <p className="text-xs mt-1 text-slate-400">
+                  <p className="text-[13px] text-slate-500 mt-1">{copy.sizing}</p>
+                  <p className="text-[13px] mt-1 text-slate-400">
                     {isInside ? (
                       <span className="text-emerald-300/95">
                         {tier.id === "T2" || tier.id === "tier2"
@@ -2284,7 +2284,7 @@ export function PlainEnglishTakeCard({
             <Lightbulb className="h-4 w-4 text-amber-300" />
             The Quick Take
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">Plain English — no jargon</p>
+          <p className="text-[13px] text-slate-500 mt-0.5">Plain English — no jargon</p>
         </div>
         <ul className="px-4 py-3 space-y-2.5 text-sm text-slate-200 leading-relaxed">
           <li>
@@ -2318,7 +2318,7 @@ export function PlainEnglishTakeCard({
         {open ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
       </button>
       {open && (
-        <ul className="px-3.5 pb-3.5 space-y-2 text-[12px] text-slate-200 leading-snug border-t border-slate-700/50">
+        <ul className="px-3.5 pb-3.5 space-y-2 text-sm text-slate-200 leading-snug border-t border-slate-700/50">
           <li>
             <span className="text-emerald-300 font-semibold">Good: </span>
             {take.good}

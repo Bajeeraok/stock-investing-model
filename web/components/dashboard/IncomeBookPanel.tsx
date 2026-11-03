@@ -283,7 +283,7 @@ export function IncomeBookPanel({ onTickerClick }: Props) {
                 ["max_open_trades", "Max open", 1],
               ] as const
             ).map(([key, label, step]) => (
-              <label key={key} className="text-xs text-slate-400">
+              <label key={key} className="text-[13px] text-slate-400">
                 {label}
                 <input
                   type="number"
@@ -349,7 +349,7 @@ export function IncomeBookPanel({ onTickerClick }: Props) {
           </div>
         )}
 
-        <p className="mt-2 text-[11px] text-slate-500">
+        <p className="mt-2 text-[13px] text-slate-500">
           Scanned {plan?.scanned_count ?? 0} of {plan?.universe_size ?? 0} tickers ({plan?.signal_source}) ·{" "}
           {plan?.candidate_pool_count ?? 0} swing candidates · as-of {plan?.as_of ?? "—"}
         </p>
@@ -436,7 +436,7 @@ export function IncomeBookPanel({ onTickerClick }: Props) {
         </section>
       )}
 
-      <p className="text-[10px] text-slate-600 leading-snug">{plan?.disclaimer}</p>
+      <p className="text-[11px] text-slate-600 leading-snug">{plan?.disclaimer}</p>
     </div>
   );
 }
@@ -454,9 +454,9 @@ function StatCard({
 }) {
   return (
     <div className="rounded-lg bg-slate-900/60 border border-slate-700/80 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
       <div className={clsx("text-lg font-semibold mt-0.5", valueClass)}>{value}</div>
-      {sub && <div className="text-xs text-slate-500">{sub}</div>}
+      {sub && <div className="text-[13px] text-slate-500">{sub}</div>}
     </div>
   );
 }
@@ -474,7 +474,7 @@ function SectionTitle({
     <div className="flex items-center gap-2 mb-2">
       {icon && <span className="text-emerald-500">{icon}</span>}
       <h3 className="text-sm font-medium text-slate-200">{title}</h3>
-      {sub && <span className="text-xs text-slate-500">— {sub}</span>}
+      {sub && <span className="text-[13px] text-slate-500">— {sub}</span>}
     </div>
   );
 }
@@ -523,30 +523,30 @@ function CandidateTable({
                 >
                   {c.ticker}
                 </button>
-                <div className="text-xs text-slate-500">{c.sector}</div>
+                <div className="text-[13px] text-slate-500">{c.sector}</div>
               </td>
               <td className="px-3 py-2">
                 <div>{c.swing_setup_label || c.swing_setup_type}</div>
-                <div className="text-xs text-slate-500">Score {c.swing_score?.toFixed(0)} · R:R {c.swing_rr?.toFixed(1) ?? "—"}</div>
+                <div className="text-[13px] text-slate-500">Score {c.swing_score?.toFixed(0)} · R:R {c.swing_rr?.toFixed(1) ?? "—"}</div>
               </td>
               <td className="px-3 py-2">
                 <StatusBadge status={c.status} />
               </td>
-              <td className="px-3 py-2 font-mono text-xs">
+              <td className="px-3 py-2 font-mono text-[13px]">
                 {fmtPrice(c.entry_low)} – {fmtPrice(c.entry_high)}
                 <div className="text-slate-500">Spot {fmtPrice(c.close)}</div>
               </td>
               <td className="px-3 py-2 font-mono">{fmtPrice(c.stop)}</td>
-              <td className="px-3 py-2 font-mono text-xs">
+              <td className="px-3 py-2 font-mono text-[13px]">
                 {fmtPrice(c.t1)} / {fmtPrice(c.t2)}
               </td>
-              <td className="px-3 py-2 text-xs">
+              <td className="px-3 py-2 text-[13px]">
                 {c.sizing?.shares ? `${c.sizing.shares} sh · ${fmtUsd(c.sizing.notional_usd)}` : "—"}
                 {c.sizing?.est_pnl_at_t1_usd != null && (
                   <div className="text-slate-500">Est @ T1 {fmtUsd(c.sizing.est_pnl_at_t1_usd)}</div>
                 )}
               </td>
-              <td className="px-3 py-2 text-xs">
+              <td className="px-3 py-2 text-[13px]">
                 {c.gates_passed}/{c.gates_total}
                 {c.gate_cleared && <span className="text-emerald-500 ml-1">GO</span>}
               </td>
@@ -555,7 +555,7 @@ function CandidateTable({
                   type="button"
                   disabled={saving || blockNew || openCount >= maxOpen}
                   onClick={() => onEnter(c)}
-                  className="px-2 py-1 rounded text-xs bg-emerald-600/80 text-white hover:bg-emerald-500 disabled:opacity-40"
+                  className="px-2 py-1 rounded text-[13px] bg-emerald-600/80 text-white hover:bg-emerald-500 disabled:opacity-40"
                   title={blockNew ? "Regime blocks new entries" : openCount >= maxOpen ? "Max open trades" : "Log entry in income book"}
                 >
                   I entered
@@ -606,19 +606,19 @@ function TradeTable({
               </td>
               <td className="px-3 py-2 font-mono">{fmtPrice(t.entry_price)}</td>
               <td className="px-3 py-2 font-mono">{fmtPrice(t.mark_price)}</td>
-              <td className="px-3 py-2 font-mono text-xs">
+              <td className="px-3 py-2 font-mono text-[13px]">
                 {fmtPrice(t.stop)} / {fmtPrice(t.t1)}
               </td>
               <td className={clsx("px-3 py-2", (t.unrealized_pnl_usd ?? 0) >= 0 ? "text-emerald-400" : "text-red-400")}>
                 {fmtUsd(t.unrealized_pnl_usd)} ({fmtPct(t.unrealized_return_pct)})
               </td>
-              <td className="px-3 py-2 text-xs text-amber-200">{actionLabel(t.today_action)}</td>
+              <td className="px-3 py-2 text-[13px] text-amber-200">{actionLabel(t.today_action)}</td>
               <td className="px-3 py-2">
                 <button
                   type="button"
                   disabled={saving}
                   onClick={() => onClose(t)}
-                  className="px-2 py-1 rounded text-xs border border-slate-600 text-slate-300 hover:bg-slate-800"
+                  className="px-2 py-1 rounded text-[13px] border border-slate-600 text-slate-300 hover:bg-slate-800"
                 >
                   Close
                 </button>
@@ -639,7 +639,7 @@ function StatusBadge({ status }: { status?: string }) {
       : s === "watch"
         ? "bg-slate-600/40 text-slate-300"
         : "bg-amber-500/20 text-amber-200";
-  return <span className={clsx("px-2 py-0.5 rounded text-xs font-medium uppercase", cls)}>{s}</span>;
+  return <span className={clsx("px-2 py-0.5 rounded text-[13px] font-medium uppercase", cls)}>{s}</span>;
 }
 
 function actionLabel(a?: string) {

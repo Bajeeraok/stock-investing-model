@@ -292,7 +292,7 @@ export function AccuracyPriceTargets() {
               </div>
             )}
           </div>
-          <p className="text-xs text-slate-500">
+          <p className="text-[13px] text-slate-500">
             Example in config.yaml: <code className="text-amber-200/90">st_target_atr_mult_overrides: &#123; CRWD: 1.8, SLV: 1.8 &#125;</code>
           </p>
         </div>

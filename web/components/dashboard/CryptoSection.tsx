@@ -36,7 +36,7 @@ export function CryptoSection({ items }: { items: CryptoSignal[] }) {
             <div className="text-right shrink-0">
               <span
                 className={clsx(
-                  "px-2 py-0.5 rounded text-xs font-medium",
+                  "px-2 py-0.5 rounded text-[13px] font-medium",
                   c.regime === "UP" && "bg-emerald-500/20 text-emerald-400",
                   c.regime === "NEUTRAL" && "bg-slate-500/20 text-slate-400",
                   c.regime === "DOWN" && "bg-red-500/20 text-red-400"

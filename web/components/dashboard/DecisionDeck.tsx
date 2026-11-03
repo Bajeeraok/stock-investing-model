@@ -267,13 +267,13 @@ export function DecisionDeck({
       aria-label={`Today’s decision — ${horizonLabel(primaryKey)}`}
     >
       <div className="px-4 py-3 border-b border-td-line/50 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11px] uppercase tracking-[0.14em] font-bold text-td-text">
+        <p className="text-[13px] uppercase tracking-[0.14em] font-bold text-td-text">
           {horizonLabel(primaryKey)} plan
         </p>
         {!hideHero && (
         <span
           className={clsx(
-            "text-[10px] font-mono tabular-nums px-2 py-0.5 rounded border",
+            "text-[11px] font-mono tabular-nums px-2 py-0.5 rounded border",
             passed >= 3
               ? "border-td-accent/35 text-td-accent bg-td-accent/10"
               : "border-td-warn/35 text-td-warn bg-td-warn/10"
@@ -327,7 +327,7 @@ export function DecisionDeck({
 
         <p
           className={clsx(
-            "text-xs font-medium rounded-lg px-2.5 py-1.5 border",
+            "text-[13px] font-medium rounded-lg px-2.5 py-1.5 border",
             splitActive && mode === "owner"
               ? "text-td-owner border-td-owner/35 bg-td-owner-weak/30"
               : splitActive
@@ -351,7 +351,7 @@ export function DecisionDeck({
         {!hideHero && tacticalActive && mode === "scout" && (
           <p
             className={clsx(
-              "text-xs rounded-lg px-2.5 py-1.5 border",
+              "text-[13px] rounded-lg px-2.5 py-1.5 border",
               executionBlocksChase
                 ? "text-td-warn/90 border-td-warn/35 bg-td-warn-weak/30"
                 : splitActive
@@ -428,16 +428,16 @@ export function DecisionDeck({
         )}
 
         {(primary.stop_loss > 0 || primary.target > 0) && (
-          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+          <div className="grid grid-cols-2 gap-2 text-[13px] font-mono">
             {primary.stop_loss > 0 && (
               <div className="rounded-lg bg-td-surface/80 border border-td-crit/35 px-2.5 py-2">
-                <p className="text-[10px] uppercase text-td-crit/90 font-semibold mb-0.5">Stop</p>
+                <p className="text-[11px] uppercase text-td-crit/90 font-semibold mb-0.5">Stop</p>
                 <p className="text-td-crit tabular-nums font-semibold">${primary.stop_loss.toFixed(2)}</p>
               </div>
             )}
             {primary.target > 0 && (
               <div className="rounded-lg bg-td-surface/80 border border-td-accent/35 px-2.5 py-2">
-                <p className="text-[10px] uppercase text-td-accent-ink/90 font-semibold mb-0.5">Target</p>
+                <p className="text-[11px] uppercase text-td-accent-ink/90 font-semibold mb-0.5">Target</p>
                 <p className="text-td-accent-ink tabular-nums font-semibold">
                   ${primary.target.toFixed(2)}
                   {primary.target_pct > 0 ? (
@@ -450,10 +450,10 @@ export function DecisionDeck({
         )}
 
         {(primary.nearby_sr?.next_support || primary.nearby_sr?.next_resistance) && (
-          <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+          <div className="grid grid-cols-2 gap-2 text-[13px] font-mono">
             {primary.nearby_sr?.next_support && (
               <div className="rounded-lg bg-td-surface/60 border border-td-warn/25 px-2.5 py-2">
-                <p className="text-[10px] uppercase text-td-warn/80 font-semibold mb-0.5">
+                <p className="text-[11px] uppercase text-td-warn/80 font-semibold mb-0.5">
                   {(primary.nearby_sr.next_support.label || "").toLowerCase().includes("pivot")
                     ? "Near-term pivot"
                     : "Next support"}
@@ -461,14 +461,14 @@ export function DecisionDeck({
                 <p className="text-td-warn tabular-nums font-semibold">
                   ${primary.nearby_sr.next_support.price.toFixed(2)}
                 </p>
-                <p className="text-[10px] text-td-muted font-td-sans mt-0.5">
+                <p className="text-[11px] text-td-muted font-td-sans mt-0.5">
                   {primary.nearby_sr.next_support.label} · {primary.nearby_sr.next_support.dist_pct.toFixed(1)}%
                 </p>
               </div>
             )}
             {primary.nearby_sr?.next_resistance && (
               <div className="rounded-lg bg-td-surface/60 border border-td-info/25 px-2.5 py-2">
-                <p className="text-[10px] uppercase text-td-info/80 font-semibold mb-0.5">
+                <p className="text-[11px] uppercase text-td-info/80 font-semibold mb-0.5">
                   {(primary.nearby_sr.next_resistance.label || "").toLowerCase().includes("pivot")
                     ? "Near-term pivot"
                     : "Next resist"}
@@ -476,7 +476,7 @@ export function DecisionDeck({
                 <p className="text-td-info tabular-nums font-semibold">
                   ${primary.nearby_sr.next_resistance.price.toFixed(2)}
                 </p>
-                <p className="text-[10px] text-td-muted font-td-sans mt-0.5">
+                <p className="text-[11px] text-td-muted font-td-sans mt-0.5">
                   {primary.nearby_sr.next_resistance.label} · +{primary.nearby_sr.next_resistance.dist_pct.toFixed(1)}%
                 </p>
               </div>
@@ -504,7 +504,7 @@ export function DecisionDeck({
             <button
               type="button"
               onClick={onToggleLtTiers}
-              className="flex items-center gap-1 text-xs text-td-accent hover:text-td-accent"
+              className="flex items-center gap-1 text-[13px] text-td-accent hover:text-td-accent"
             >
               {ltEntryTiersOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               {ltEntryTiersOpen ? "Hide entry tiers" : "Show entry tiers"}

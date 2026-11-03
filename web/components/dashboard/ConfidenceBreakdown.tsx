@@ -424,10 +424,10 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
     <div className="mt-2 rounded-lg bg-td-surface2/60 border border-td-line/40 overflow-hidden">
       {/* Header */}
       <div className="grid grid-cols-[100px_1fr_52px_90px] gap-x-3 px-3 py-1.5 bg-td-surface2/80 border-b border-td-line/40">
-        <span className="text-[11px] font-semibold text-td-muted uppercase tracking-wide">Horizon</span>
-        <span className="text-[11px] font-semibold text-td-muted uppercase tracking-wide">Probability</span>
-        <span className="text-[11px] font-semibold text-td-muted uppercase tracking-wide text-right">Prob</span>
-        <span className="text-[11px] font-semibold text-td-muted uppercase tracking-wide text-right">Signal</span>
+        <span className="text-[13px] font-semibold text-td-muted uppercase tracking-wide">Horizon</span>
+        <span className="text-[13px] font-semibold text-td-muted uppercase tracking-wide">Probability</span>
+        <span className="text-[13px] font-semibold text-td-muted uppercase tracking-wide text-right">Prob</span>
+        <span className="text-[13px] font-semibold text-td-muted uppercase tracking-wide text-right">Signal</span>
       </div>
 
       {/* Rows */}
@@ -455,11 +455,11 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
           >
             {/* Horizon label */}
             <div>
-              <p className="text-xs font-semibold text-td-text">{h.description}</p>
-              <p className="text-[11px] text-td-muted">{h.label} · P({h.threshold_pct}%+)</p>
+              <p className="text-[13px] font-semibold text-td-text">{h.description}</p>
+              <p className="text-[13px] text-td-muted">{h.label} · P({h.threshold_pct}%+)</p>
               <p
                 className={clsx(
-                  "text-[10px] mt-0.5 font-medium",
+                  "text-[11px] mt-0.5 font-medium",
                   inMlWeight ? "text-td-accent/90" : "text-td-muted"
                 )}
               >
@@ -486,7 +486,7 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
 
             {/* Probability % */}
             <span className={clsx(
-              "text-xs font-bold font-mono text-right",
+              "text-[13px] font-bold font-mono text-right",
               !inMlWeight && "opacity-80",
               probPct == null  ? "text-td-muted" :
               probPct >= 65    ? "text-td-accent" :
@@ -500,7 +500,7 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
             {/* Interpretation badge */}
             <div className="flex justify-end">
               <span className={clsx(
-                "text-[11px] font-semibold px-2 py-0.5 rounded border",
+                "text-[13px] font-semibold px-2 py-0.5 rounded border",
                 ic.text, ic.bg, ic.border,
                 !inMlWeight && "opacity-75"
               )}>
@@ -510,7 +510,7 @@ function MLHorizonsPanel({ horizons }: { horizons: MLHorizons }) {
           </div>
         );
       })}
-      <p className="text-[10px] text-td-muted px-3 py-2 border-t border-td-line/40 leading-snug">
+      <p className="text-[11px] text-td-muted px-3 py-2 border-t border-td-line/40 leading-relaxed">
         Only the <span className="text-td-muted font-medium">short</span> row feeds the ML contribution above.
         Medium and long are for context (different horizons, same models) — not averaged into the 20% weight.
       </p>
@@ -550,7 +550,7 @@ function ConfidenceGauge({ value }: { value: number }) {
         <text x="50" y="49" textAnchor="middle" fontSize="17" fontWeight="800"
               fill={colour} dominantBaseline="auto">{pct}%</text>
       </svg>
-      <span className="text-[10px] text-td-muted -mt-1">Model confidence</span>
+      <span className="text-[11px] text-td-muted -mt-1">Model confidence</span>
       <span className="text-[9px] text-td-muted -mt-0.5 max-w-[9rem] text-center leading-tight">7-layer fused (primary)</span>
     </div>
   );
@@ -582,14 +582,14 @@ function ActionBadge({ action, confidence }: { action: string; confidence: numbe
   return (
     <div className="space-y-1">
       <span
-        className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-xs font-bold", cfg.bg, cfg.text, cfg.border)}
+        className={clsx("inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[13px] font-bold", cfg.bg, cfg.text, cfg.border)}
         title="Verdict from the fused 7-layer engine (after gates and penalties). REDUCE / WATCH does not automatically mean the stock is “bad forever” — often it means wait for regime or levels to improve."
       >
         <cfg.Icon size={12} />
         {action}
       </span>
-      <p className="text-xs text-td-text pl-0.5">{sizeHint}</p>
-      {reeval && <p className="text-[11px] text-td-muted pl-0.5">{reeval}</p>}
+      <p className="text-[13px] text-td-text pl-0.5">{sizeHint}</p>
+      {reeval && <p className="text-[13px] text-td-muted pl-0.5">{reeval}</p>}
     </div>
   );
 }
@@ -602,7 +602,7 @@ function RegimePill({ regime, action }: { regime: string; action?: string }) {
   if (trimReduce && looksBull) {
     return (
       <span
-        className="text-[11px] font-semibold px-2 py-0.5 rounded border text-td-warn bg-td-warn/12 border-td-warn/35"
+        className="text-[13px] font-semibold px-2 py-0.5 rounded border text-td-warn bg-td-warn/12 border-td-warn/35"
         title="Regime label can lag the action badge — sizing follows the verdict"
       >
         Mixed tape
@@ -616,7 +616,7 @@ function RegimePill({ regime, action }: { regime: string; action?: string }) {
     regime.includes("BEAR")        ? "text-td-warn  bg-td-warn/10  border-td-warn/30"  :
                                      "text-td-muted   bg-td-line/10   border-td-line/30";
   return (
-    <span className={clsx("text-[11px] font-semibold px-2 py-0.5 rounded border", colour)}>
+    <span className={clsx("text-[13px] font-semibold px-2 py-0.5 rounded border", colour)}>
       {regime.replace(/_/g, " ")}
     </span>
   );
@@ -664,14 +664,14 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
         <div className="flex items-center gap-1.5 min-w-0">
           <Icon size={13} className={available ? "text-td-muted" : "text-td-muted"} />
           <span
-            className={clsx("text-xs font-medium truncate cursor-help", available ? "text-td-text" : "text-td-muted")}
+            className={clsx("text-[13px] font-medium truncate cursor-help", available ? "text-td-text" : "text-td-muted")}
             title={LAYER_PLAIN_ENGLISH[layerKey] ?? `Weight in fuse: ${wPct}%.`}
           >
             {meta.name}
           </span>
-          <span className="text-[11px] text-td-muted shrink-0">({wPct}%)</span>
+          <span className="text-[13px] text-td-muted shrink-0">({wPct}%)</span>
         </div>
-        <span className={clsx("text-xs font-mono font-bold shrink-0", scoreColourClass(pct, "text"))}>
+        <span className={clsx("text-[13px] font-mono font-bold shrink-0", scoreColourClass(pct, "text"))}>
           {pct != null ? `${pct}%` : "N/A"}
         </span>
       </div>
@@ -688,11 +688,11 @@ function LayerBar({ layerKey, layer }: { layerKey: string; layer: BreakdownLayer
       </div>
 
       {/* Label — larger, score-aware colour */}
-      <p className={clsx("text-xs pl-4 leading-snug", labelColour)}>
+      <p className={clsx("text-[13px] pl-4 leading-snug", labelColour)}>
         {cleanLabel}
       </p>
       {patternTechnicalSplit && (
-        <p className="text-[11px] pl-4 leading-snug text-td-muted">
+        <p className="text-[13px] pl-4 leading-snug text-td-muted">
           {patternTechnicalSplit}
         </p>
       )}
@@ -715,7 +715,7 @@ function PenaltyAuditPanel({ pa }: { pa: PenaltyAudit }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-xs text-td-muted hover:text-td-text transition-colors w-full font-medium text-left"
+        className="flex items-center gap-1.5 text-[13px] text-td-muted hover:text-td-text transition-colors w-full font-medium text-left"
       >
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         <span>
@@ -726,7 +726,7 @@ function PenaltyAuditPanel({ pa }: { pa: PenaltyAudit }) {
         </span>
       </button>
       {open && (
-        <div className="mt-2 rounded-lg bg-td-surface2/50 border border-td-line/40 p-3 text-[11px] text-td-muted space-y-2 font-mono">
+        <div className="mt-2 rounded-lg bg-td-surface2/50 border border-td-line/40 p-3 text-[13px] text-td-muted space-y-2 font-mono">
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <span>
               Layer blend: <span className="text-td-text">{Math.round(pa.confidence_blend_only * 100)}%</span>
@@ -739,7 +739,7 @@ function PenaltyAuditPanel({ pa }: { pa: PenaltyAudit }) {
           </div>
           {hmm?.triggered && (
             <div className="border-t border-td-line/40 pt-2 space-y-0.5">
-              <span className="text-td-muted font-td-sans uppercase text-[10px]">HMM bear &gt;80%</span>
+              <span className="text-td-muted font-td-sans uppercase text-[11px]">HMM bear &gt;80%</span>
               <div className="text-td-text">
                 mult {hmm.multiplier_raw != null ? `${hmm.multiplier_raw.toFixed(3)} → ` : ""}
                 {hmm.multiplier.toFixed(3)} effective
@@ -752,7 +752,7 @@ function PenaltyAuditPanel({ pa }: { pa: PenaltyAudit }) {
           )}
           {ins?.triggered && (
             <div className="border-t border-td-line/40 pt-2">
-              <span className="text-td-muted font-td-sans uppercase text-[10px]">Insider sell</span>
+              <span className="text-td-muted font-td-sans uppercase text-[11px]">Insider sell</span>
               <div className="text-td-text">×{ins.multiplier.toFixed(2)}</div>
             </div>
           )}
@@ -788,15 +788,15 @@ function WeightedMathTable({ breakdown, confidence, penalty_audit }: {
     <div className="border-t border-td-line/40 pt-3">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 text-xs text-td-muted hover:text-td-text transition-colors w-full font-medium"
+        className="flex items-center gap-1.5 text-[13px] text-td-muted hover:text-td-text transition-colors w-full font-medium"
       >
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         <span>How is {Math.round(confidence * 100)}% calculated?</span>
       </button>
 
       {open && (
-        <div className="mt-2 rounded-lg bg-td-surface2/50 p-3 text-xs space-y-1.5 font-mono">
-          <div className="grid grid-cols-[1fr_44px_44px_56px] gap-x-2 text-td-muted mb-1.5 uppercase text-[11px] font-td-sans font-semibold tracking-wide">
+        <div className="mt-2 rounded-lg bg-td-surface2/50 p-3 text-[13px] space-y-1.5 font-mono">
+          <div className="grid grid-cols-[1fr_44px_44px_56px] gap-x-2 text-td-muted mb-1.5 uppercase text-[13px] font-td-sans font-semibold tracking-wide">
             <span>Layer</span><span className="text-right">Wt</span>
             <span className="text-right">Score</span><span className="text-right">Contrib</span>
           </div>
@@ -820,12 +820,12 @@ function WeightedMathTable({ breakdown, confidence, penalty_audit }: {
           </div>
           {penalty_audit != null &&
             Math.abs(penalty_audit.confidence_blend_only - confidence) > 0.003 && (
-            <p className="text-[11px] text-td-warn/85 pt-1 font-td-sans border-t border-td-line/30 mt-1">
+            <p className="text-[13px] text-td-warn/85 pt-1 font-td-sans border-t border-td-line/30 mt-1">
               After HMM/insider penalties → <span className="font-mono font-semibold">{Math.round(confidence * 100)}%</span> final
               (see Penalty stack below).
             </p>
           )}
-          <p className="text-[11px] text-td-muted pt-1 font-td-sans">
+          <p className="text-[13px] text-td-muted pt-1 font-td-sans">
             Unavailable layers (N/A) are excluded and their weight is redistributed.
           </p>
         </div>
@@ -909,12 +909,12 @@ function FlipToBuy({ breakdown, action, preFlight }: {
 
   return (
     <div className="rounded-lg border border-td-info/25 bg-td-info/8 p-3.5 space-y-2.5">
-      <p className="text-xs font-semibold text-td-info flex items-center gap-1.5">
+      <p className="text-[13px] font-semibold text-td-info flex items-center gap-1.5">
         <Zap size={13} />
         What would upgrade this to BUY?
       </p>
       {regimeIsHardBlock && (
-        <p className="text-[10px] text-td-warn/85 font-medium leading-snug">
+        <p className="text-[11px] text-td-warn/85 font-medium leading-snug">
           Regime (HMM) is listed first — it is usually the slowest gate. Pattern or ML can improve over days; regime
           alignment typically needs weeks of sustained tape.
         </p>
@@ -930,10 +930,10 @@ function FlipToBuy({ breakdown, action, preFlight }: {
                 isRegime && "border-l-2 border-td-warn/70 pl-2 -ml-0.5 bg-td-warn/5 py-1.5"
               )}
             >
-              <span className={clsx("text-xs font-medium", isRegime ? "text-td-warn" : "text-td-text")}>
+              <span className={clsx("text-[13px] font-medium", isRegime ? "text-td-warn" : "text-td-text")}>
                 {g.label}
               </span>
-              <div className="flex items-center gap-1.5 text-xs font-mono">
+              <div className="flex items-center gap-1.5 text-[13px] font-mono">
                 <span className={clsx("font-semibold", g.current != null ? scoreColourClass(g.current, "text") : "text-td-muted")}>
                   {g.current != null ? `${g.current}%` : "N/A"}
                 </span>
@@ -945,12 +945,12 @@ function FlipToBuy({ breakdown, action, preFlight }: {
         })}
       </div>
       {gateTimeEstimate && (
-        <p className="text-[11px] text-td-info/90 border-t border-td-info/20 pt-2.5 leading-snug">
+        <p className="text-[13px] text-td-info/90 border-t border-td-info/20 pt-2.5 leading-snug">
           Estimated time: {gateTimeEstimate}
         </p>
       )}
       {regimeIsHardBlock && (
-        <p className="text-[11px] text-td-muted border-t border-td-info/20 pt-2.5 leading-snug">
+        <p className="text-[13px] text-td-muted border-t border-td-info/20 pt-2.5 leading-relaxed">
           <span className="text-td-text font-medium">Regime (HMM)</span> encodes multi-week structure (bull vs bear
           state), not a tweak to chart pattern or ML. Getting from deep bear toward the score this layer needs often takes
           roughly <span className="text-td-text">15–30 trading days</span> of supportive follow-through — not a one- or
@@ -973,18 +973,18 @@ function IncompatibleBanner({ ticker, name, flags }: { ticker: string; name: str
         <Ban size={18} className="text-td-crit shrink-0" />
         <div>
           <p className="text-sm font-bold text-td-crit">{ticker} — {name}</p>
-          <p className="text-xs text-td-crit/80">Standard equity model cannot score this instrument</p>
+          <p className="text-[13px] text-td-crit/80">Standard equity model cannot score this instrument</p>
         </div>
       </div>
       <div className="space-y-1.5">
         {flags.map((f, i) => (
-          <div key={i} className="flex items-start gap-2 text-xs">
+          <div key={i} className="flex items-start gap-2 text-[13px]">
             <AlertTriangle size={12} className="text-td-crit mt-0.5 shrink-0" />
             <span className="text-td-crit/90">{f.message}</span>
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-td-muted border-t border-td-crit/20 pt-2">
+      <p className="text-[13px] text-td-muted border-t border-td-crit/20 pt-2">
         Volatility ETFs (UVXY, VXX, VIXY) behave inversely to equities. ML models trained on equities
         produce misleading signals. Use a dedicated VIX analysis approach instead.
       </p>
@@ -1005,7 +1005,7 @@ function AssetTypeBadge({ assetType, weightLabel }: { assetType: string | null; 
                                          "text-td-text  bg-td-line/10  border-td-line/30";
   const short = assetType.replace("EQUITY_", "").replace("ETF_", "ETF·");
   return (
-    <span className={clsx("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide", colour)}
+    <span className={clsx("inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide", colour)}
           title={weightLabel}>
       <Tag size={9} />
       {short}
@@ -1023,7 +1023,7 @@ function PreFlightFlags({ flags }: { flags: PreFlightFlag[] }) {
         const isWarn = f.type === "warn";
         return (
           <div key={i} className={clsx(
-            "flex items-start gap-2 rounded-lg px-3 py-2 border text-xs",
+            "flex items-start gap-2 rounded-lg px-3 py-2 border text-[13px]",
             isErr  ? "bg-td-crit/10 border-td-crit/30 text-td-crit" :
             isWarn ? "bg-td-warn/10 border-td-warn/30 text-td-warn" :
                      "bg-td-surface2/30 border-td-line/30 text-td-muted"
@@ -1047,7 +1047,7 @@ function CoherenceBadge({ coherence }: { coherence: CoherenceData }) {
     coherence.level === "LOW"        ? { colour: "text-td-warn  bg-td-warn/10  border-td-warn/30",  dot: "bg-td-warn"  } :
                                        { colour: "text-td-crit     bg-td-crit/10     border-td-crit/30",     dot: "bg-td-crit"     };
   return (
-    <span className={clsx("inline-flex items-center gap-1.5 text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide", cfg.colour)}
+    <span className={clsx("inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wide", cfg.colour)}
           title={coherence.message}>
       <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", cfg.dot)} />
       {coherence.level}
@@ -1063,13 +1063,13 @@ function TransitionBonusBanner({ bonus }: { bonus: TransitionBonusData }) {
     <div className="flex items-start gap-2 bg-td-warn/10 border border-td-warn/35 rounded-lg px-3 py-2.5">
       <Zap size={14} className="text-td-warn mt-0.5 shrink-0" />
       <div className="space-y-0.5">
-        <p className="text-xs font-semibold text-td-warn">
+        <p className="text-[13px] font-semibold text-td-warn">
           ⚡ Transition Bonus Active
           {bonus.upgrade && <span className="ml-1.5 font-normal text-td-warn/80">→ {bonus.upgrade}</span>}
         </p>
-        {bonus.rationale && <p className="text-[11px] text-td-warn/70">{bonus.rationale}</p>}
+        {bonus.rationale && <p className="text-[13px] text-td-warn/70">{bonus.rationale}</p>}
         {bonus.days_to_confirm && (
-          <p className="text-[11px] text-td-muted">Estimated ~{bonus.days_to_confirm} days to bull confirmation</p>
+          <p className="text-[13px] text-td-muted">Estimated ~{bonus.days_to_confirm} days to bull confirmation</p>
         )}
       </div>
     </div>
@@ -1096,10 +1096,10 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <ArrowRight size={12} className={watch ? "text-td-warn" : "text-td-muted"} />
-          <span className="text-xs font-semibold text-td-text">Regime change score</span>
-          {watch && <span className="text-[10px] text-td-warn font-semibold uppercase tracking-wide">Watch Closely</span>}
+          <span className="text-[13px] font-semibold text-td-text">Regime change score</span>
+          {watch && <span className="text-[11px] text-td-warn font-semibold uppercase tracking-wide">Watch Closely</span>}
         </div>
-        <span className={clsx("text-xs font-mono font-bold", pct >= 40 ? "text-td-warn" : "text-td-muted")}>
+        <span className={clsx("text-[13px] font-mono font-bold", pct >= 40 ? "text-td-warn" : "text-td-muted")}>
           {pct.toFixed(0)}%
         </span>
       </div>
@@ -1107,12 +1107,12 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
         <div className={clsx("h-full rounded-full", pct >= 40 ? "bg-td-warn" : "bg-td-line")}
              style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
-      <p className="text-[11px] text-td-muted">
+      <p className="text-[13px] text-td-muted">
         {pct.toFixed(0)}% blended composite score. Low score can reflect uncertain direction, not low probability of movement.
       </p>
       {hsd?.interpretation && dir && (
         <div className="rounded-md bg-td-surface/60 border border-td-accent/20 px-2.5 py-2 space-y-1">
-          <p className="text-[10px] font-semibold text-td-muted uppercase tracking-wide">
+          <p className="text-[11px] font-semibold text-td-muted uppercase tracking-wide">
             HMM shift projection ({hsd.horizon_days ?? 10}d)
             {spPct != null && (
               <span className="text-td-muted font-normal normal-case">
@@ -1122,7 +1122,7 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
           </p>
           {dir.label && (
             <p className={clsx(
-              "text-xs font-semibold",
+              "text-[13px] font-semibold",
               dir.color === "green" && "text-td-accent",
               dir.color === "red" && "text-td-crit",
               dir.color === "amber" && "text-td-warn",
@@ -1130,16 +1130,16 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
               {dir.label}
             </p>
           )}
-          <p className="text-[11px] text-td-text leading-snug">
+          <p className="text-[13px] text-td-text leading-snug">
             {hsd.interpretation}
           </p>
           {spPct != null && (
-            <p className="text-[10px] text-td-muted leading-snug">
+            <p className="text-[11px] text-td-muted leading-relaxed">
               Plain English: HMM sees about {spPct.toFixed(0)}% chance the current regime shifts within{" "}
               {hsd.horizon_days ?? 10} days; uncertainty in direction is why blended regime change score is {pct.toFixed(0)}%.
             </p>
           )}
-          <p className="text-[10px] text-td-muted">
+          <p className="text-[11px] text-td-muted">
             Mass after horizon (excl. sticky bucket): Bull {(dir.bull * 100).toFixed(0)}% · Bear {(dir.bear * 100).toFixed(0)}%
             {dir.transition_cycle != null && dir.transition_cycle > 0.02 && (
               <> · Transition cycle {(dir.transition_cycle * 100).toFixed(0)}%</>
@@ -1149,8 +1149,8 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
       )}
       {hm && exitB != null && exitBr != null && (
         <div className="rounded-md bg-td-surface/50 border border-td-line/40 px-2.5 py-2 space-y-1">
-          <p className="text-[10px] font-semibold text-td-muted uppercase tracking-wide">HMM one-step (from transition state)</p>
-          <p className="text-[11px] text-td-text leading-snug">
+          <p className="text-[11px] font-semibold text-td-muted uppercase tracking-wide">HMM one-step (from transition state)</p>
+          <p className="text-[13px] text-td-text leading-snug">
             If latent state were transition: next bar → Bull{" "}
             <span className="font-mono text-td-accent/90">{(hm.p_next_bull * 100).toFixed(0)}%</span>
             {" · "}Bear{" "}
@@ -1162,7 +1162,7 @@ function RegimeTransitionRow({ rt }: { rt: RegimeTransitionData }) {
               </>
             )}
           </p>
-          <p className="text-[10px] text-td-muted leading-snug">
+          <p className="text-[11px] text-td-muted leading-relaxed">
             Conditional on exiting transition (Bull vs Bear only):{" "}
             <span className="text-td-accent/85 font-mono">{exitB.toFixed(0)}%</span>
             {" / "}
@@ -1186,12 +1186,12 @@ function DivergenceRow({ div: d }: { div: DivergenceData }) {
     ? "Options bullish, ML bearish — possible contrarian setup"
     : "ML bullish, Options bearish — model vs smart money conflict";
   return (
-    <div className={clsx("flex items-start gap-2 rounded-lg px-3 py-2 border text-xs", cfg.colour)}>
+    <div className={clsx("flex items-start gap-2 rounded-lg px-3 py-2 border text-[13px]", cfg.colour)}>
       <Layers size={12} className="mt-0.5 shrink-0" />
       <div>
         <span className="font-semibold">Signal Conflict: {d.label}</span>
-        <span className="text-[11px] opacity-75 ml-1.5">({d.score.toFixed(0)}pt gap)</span>
-        <p className="text-[11px] opacity-75 mt-0.5">{dirLabel}</p>
+        <span className="text-[13px] opacity-75 ml-1.5">({d.score.toFixed(0)}pt gap)</span>
+        <p className="text-[13px] opacity-75 mt-0.5">{dirLabel}</p>
       </div>
     </div>
   );
@@ -1208,7 +1208,7 @@ function RSIDirectionPill({ rsi }: { rsi: RSIDirectionData }) {
   const bonusLabel = rsi.pattern_bonus > 0 ? `+${rsi.pattern_bonus}pt` : rsi.pattern_bonus < 0 ? `${rsi.pattern_bonus}pt` : null;
   return (
     <div className="flex items-center gap-2 pl-4 mt-1">
-      <span className={clsx("inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border", colour)}>
+      <span className={clsx("inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border", colour)}>
         RSI {rsi.rsi_current.toFixed(0)} · {rsi.label.split(" — ")[0]}
         {bonusLabel && <span className="ml-1 opacity-70">{bonusLabel}</span>}
       </span>
@@ -1226,17 +1226,17 @@ function PlaybookSection({ playbook }: { playbook: PlaybookScenario[] }) {
     <div className="border-t border-td-line/40 pt-3">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 text-xs text-td-muted hover:text-td-text transition-colors w-full font-medium"
+        className="flex items-center gap-1.5 text-[13px] text-td-muted hover:text-td-text transition-colors w-full font-medium"
       >
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         <span>Conditional Playbook</span>
         {active && (
-          <span className="ml-1.5 text-[10px] text-td-warn bg-td-warn/15 border border-td-warn/30 px-1.5 py-0.5 rounded font-semibold">
+          <span className="ml-1.5 text-[11px] text-td-warn bg-td-warn/15 border border-td-warn/30 px-1.5 py-0.5 rounded font-semibold">
             ACTIVE: {active.name}
           </span>
         )}
         {!active && (
-          <span className="ml-1.5 text-[10px] text-td-muted">
+          <span className="ml-1.5 text-[11px] text-td-muted">
             {playbook.length} scenarios — none triggered
           </span>
         )}
@@ -1256,20 +1256,20 @@ function PlaybookSection({ playbook }: { playbook: PlaybookScenario[] }) {
                   {s.condition_met
                     ? <CheckCircle size={13} className="text-td-warn shrink-0" />
                     : <div className="w-3 h-3 rounded-full border border-td-line shrink-0" />}
-                  <span className={clsx("text-xs font-semibold", s.condition_met ? "text-td-warn" : "text-td-muted")}>
+                  <span className={clsx("text-[13px] font-semibold", s.condition_met ? "text-td-warn" : "text-td-muted")}>
                     {s.scenario_id}. {s.name}
                   </span>
                 </div>
-                <span className="text-[10px] text-td-muted shrink-0">{s.mode.replace(/_/g, " ")}</span>
+                <span className="text-[11px] text-td-muted shrink-0">{s.mode.replace(/_/g, " ")}</span>
               </div>
-              <p className="text-[11px] text-td-muted pl-5">{s.condition_desc}</p>
-              <p className={clsx("text-xs font-medium pl-5", s.condition_met ? "text-td-warn" : "text-td-muted")}>
+              <p className="text-[13px] text-td-muted pl-5">{s.condition_desc}</p>
+              <p className={clsx("text-[13px] font-medium pl-5", s.condition_met ? "text-td-warn" : "text-td-muted")}>
                 → {s.action}
               </p>
               {s.condition_met && Object.entries(s.details).length > 0 && (
                 <div className="pl-5 space-y-1">
                   {Object.entries(s.details).map(([k, v]) => (
-                    <div key={k} className="flex items-baseline gap-1.5 text-[11px]">
+                    <div key={k} className="flex items-baseline gap-1.5 text-[13px]">
                       <span className="text-td-muted capitalize">{k.replace(/_/g, " ")}:</span>
                       <span className="text-td-text">{v}</span>
                     </div>
@@ -1344,7 +1344,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             <RegimePill regime={data.market_regime ?? "UNKNOWN"} action={data.action} />
             {breakdown.regime_hmm?.label && (
               <span
-                className="text-[10px] text-td-muted max-w-[14rem] leading-snug"
+                className="text-[11px] text-td-muted max-w-[14rem] leading-relaxed"
                 title="Same HMM label as the Regime (HMM) layer below"
               >
                 {breakdown.regime_hmm.label}
@@ -1356,7 +1356,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             {coherence && <CoherenceBadge coherence={coherence} />}
           </div>
           <ActionBadge action={data.action ?? "WATCH"} confidence={confidence} />
-          <p className="text-[11px] text-td-muted leading-snug max-w-[68ch] border-l-2 border-td-line/60 pl-2.5 py-1">
+          <p className="text-[13px] text-td-muted leading-relaxed max-w-[68ch] border-l-2 border-td-line/60 pl-2.5 py-1">
             <span className="text-td-muted font-medium">Model confidence vs roadmap:</span> the gauge is the 7-layer fused
             score (regime, technical setup layer, short-horizon ML, options, fundamentals, etc.). It is not the same number
             as the rule-based “technical composite” on the price card. The roadmap is a <span className="text-td-muted">conditional staged plan</span> (MA tiers, targets). Low model confidence means today’s fused read is cautious — not that a future add at a lower tier is impossible.
@@ -1370,19 +1370,19 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
                 {actionSummary}
               </p>
               {showRiskOffHint && (
-                <p className="text-[10px] text-td-muted leading-snug max-w-[68ch] pl-0.5">
+                <p className="text-[11px] text-td-muted leading-relaxed max-w-[68ch] pl-0.5">
                   {RISK_OFF_ACTION_HINT}
                 </p>
               )}
             </div>
           )}
           {pf?.reassess_guidance?.display && (
-            <p className="text-[11px] text-td-muted leading-snug max-w-[68ch] border-l border-td-warn/30 pl-2.5">
+            <p className="text-[13px] text-td-muted leading-relaxed max-w-[68ch] border-l border-td-warn/30 pl-2.5">
               <span className="text-td-warn/90 font-medium">Re-evaluate: </span>
               {pf.reassess_guidance.display}
             </p>
           )}
-          <p className="text-[11px] text-td-muted">
+          <p className="text-[13px] text-td-muted">
             {data.n_layers_active ?? 0}/7 layers active
             {pf?.weight_label && <span className="ml-1.5 opacity-60">· {pf.weight_label}</span>}
           </p>
@@ -1398,8 +1398,8 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         <div className="flex items-start gap-2 bg-td-crit/10 border border-td-crit/30 rounded-lg px-3 py-2.5">
           <AlertTriangle size={13} className="text-td-crit mt-0.5 shrink-0" />
           <div>
-            <p className="text-xs font-semibold text-td-crit">Incoherent signals — do not trade on this</p>
-            <p className="text-[11px] text-td-crit/70 mt-0.5">{coherence?.message}</p>
+            <p className="text-[13px] font-semibold text-td-crit">Incoherent signals — do not trade on this</p>
+            <p className="text-[13px] text-td-crit/70 mt-0.5">{coherence?.message}</p>
           </div>
         </div>
       )}
@@ -1408,7 +1408,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       {pf?.regime_tension_note && (
         <div className="flex items-start gap-2 bg-td-warn/10 border border-td-warn/30 rounded-lg px-3 py-2.5">
           <AlertTriangle size={13} className="text-td-warn mt-0.5 shrink-0" />
-          <p className="text-xs text-td-warn">{pf.regime_tension_note}</p>
+          <p className="text-[13px] text-td-warn">{pf.regime_tension_note}</p>
         </div>
       )}
 
@@ -1419,7 +1419,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       {isStrongSignal && !hasDisqualifiers && !incoherent && (
         <div className="flex items-start gap-2 bg-td-accent/10 border border-td-accent/30 rounded-lg px-3 py-2.5">
           <Zap size={13} className="text-td-accent mt-0.5 shrink-0" />
-          <span className="text-xs text-td-accent">
+          <span className="text-[13px] text-td-accent">
             High-conviction setup across multiple independent signal layers
           </span>
         </div>
@@ -1431,7 +1431,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
           {disqualifiers.map((d, i) => (
             <div key={i} className="flex items-start gap-2 bg-td-crit/10 border border-td-crit/30 rounded-lg px-3 py-2">
               <AlertTriangle size={12} className="text-td-crit mt-0.5 shrink-0" />
-              <span className="text-xs text-td-crit">{d}</span>
+              <span className="text-[13px] text-td-crit">{d}</span>
             </div>
           ))}
         </div>
@@ -1448,7 +1448,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
             {key === "nlp_sentiment" &&
               (layer as BreakdownLayer).weight != null &&
               Number((layer as BreakdownLayer).weight) > 0 && (
-                <p className="text-[10px] text-td-info/85 pl-4 -mt-0.5 leading-snug">
+                <p className="text-[11px] text-td-info/85 pl-4 -mt-0.5 leading-snug">
                   Headlines feed in as a <span className="font-semibold">weighted</span> input (
                   {Math.round(Number((layer as BreakdownLayer).weight) * 100)}% of the fuse) — not a standalone
                   buy/sell vote; keep this row visible when judging tone vs price action.
@@ -1489,9 +1489,9 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
       {/* Risk factors */}
       {riskFactors.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-td-text uppercase tracking-wide">Key Risks</p>
+          <p className="text-[13px] font-semibold text-td-text uppercase tracking-wide">Key Risks</p>
           {riskFactors.map((r, i) => (
-            <div key={i} className="flex items-start gap-1.5 text-xs text-td-text">
+            <div key={i} className="flex items-start gap-1.5 text-[13px] text-td-text">
               <AlertTriangle size={12} className="text-td-warn mt-0.5 shrink-0" />
               {r}
             </div>
@@ -1504,7 +1504,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
         <div className="border-t border-td-line/40 pt-3">
           <button
             onClick={() => setShowWatchLevels(v => !v)}
-            className="flex items-center gap-1.5 text-[11px] text-td-muted hover:text-td-text transition-colors w-full"
+            className="flex items-center gap-1.5 text-[13px] text-td-muted hover:text-td-text transition-colors w-full"
           >
             {showWatchLevels ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             <span>Watch levels & thesis invalidation</span>
@@ -1515,7 +1515,7 @@ export function ConfidenceBreakdown({ data }: { data: ConfidenceData }) {
               <WatchRow label="Support (MA50)"     value={`$${data.watch_levels.key_support_ma50.toFixed(2)}`}   highlight="amber" />
               <WatchRow label="Support (MA200)"    value={`$${data.watch_levels.key_support_ma200.toFixed(2)}`}  highlight="amber" />
               <WatchRow label="Current price"      value={`$${data.watch_levels.current_price.toFixed(2)}`}      highlight="green" />
-              <p className="text-[11px] text-td-muted leading-snug pt-1">{data.watch_levels.note}</p>
+              <p className="text-[13px] text-td-muted leading-relaxed pt-1">{data.watch_levels.note}</p>
             </div>
           )}
         </div>
@@ -1538,10 +1538,10 @@ function WatchRow({
   return (
     <div className="flex items-center justify-between gap-2">
       <div>
-        <span className="text-[11px] text-td-muted">{label}</span>
-        {note && <span className="text-[10px] text-td-muted ml-1.5">— {note}</span>}
+        <span className="text-[13px] text-td-muted">{label}</span>
+        {note && <span className="text-[11px] text-td-muted ml-1.5">— {note}</span>}
       </div>
-      <span className={clsx("text-xs font-mono font-semibold", textColour)}>{value}</span>
+      <span className={clsx("text-[13px] font-mono font-semibold", textColour)}>{value}</span>
     </div>
   );
 }

@@ -106,9 +106,9 @@ interface Props {
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-2.5">
-      <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-0.5">{label}</p>
+      <p className="text-[11px] uppercase tracking-wider text-slate-500 mb-0.5">{label}</p>
       <p className={`text-lg font-semibold ${color || "text-slate-100"}`}>{value}</p>
-      {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+      {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
     </div>
   );
 }
@@ -119,10 +119,10 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
 
   return (
     <div className="mt-3">
-      <p className="text-[11px] text-slate-400 mb-2 font-medium">Reliability Diagram</p>
+      <p className="text-[13px] text-slate-400 mb-2 font-medium">Reliability Diagram</p>
       <div className="space-y-1.5">
         {buckets.map((b) => (
-          <div key={b.label} className="flex items-center gap-2 text-[10px]">
+          <div key={b.label} className="flex items-center gap-2 text-[11px]">
             <span className="w-14 text-slate-400 text-right shrink-0">{b.label}</span>
             <div className="flex-1 flex flex-col gap-0.5">
               <div className="flex items-center gap-1">
@@ -195,7 +195,7 @@ export default function TrackRecordPanel({
         <p className="text-sm text-slate-400">
           No track record data yet. Run the model daily and log paper trades to build history.
         </p>
-        <p className="text-xs text-slate-500 mt-1">
+        <p className="text-[13px] text-slate-500 mt-1">
           Forward tracking, paper trades, and EOD snapshots all contribute to the reliability diagram.
         </p>
       </div>
@@ -250,7 +250,7 @@ export default function TrackRecordPanel({
       {/* Gate-mode strip — shows if accumulate track has enough completed trades per mode */}
       {byGateMode && Object.keys(byGateMode).length > 0 && (
         <div className="rounded-lg border border-slate-700/50 bg-slate-900/30 px-3 py-2">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
             Accumulate track — by gate mode
             <span className="ml-1 font-normal text-slate-600">(full_go = 4/4 gates · starter_only = value but stormy · hard_lock = no MOS)</span>
           </p>
@@ -261,15 +261,15 @@ export default function TrackRecordPanel({
               const wr = s.win_rate_pct;
               const ar = s.avg_return_pct;
               return (
-                <div key={gm} className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+                <div key={gm} className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] ${
                   gm === "full_go" ? "border-emerald-500/35 bg-emerald-950/20"
                     : gm === "starter_only" ? "border-amber-500/35 bg-amber-950/20"
                     : "border-slate-600/50 bg-slate-800/40"
                 }`}>
-                  <span className={`font-bold text-[10px] uppercase tracking-wider ${
+                  <span className={`font-bold text-[11px] uppercase tracking-wider ${
                     gm === "full_go" ? "text-emerald-300" : gm === "starter_only" ? "text-amber-300" : "text-slate-400"
                   }`}>{gm.replace("_", " ")}</span>
-                  <span className="text-slate-500 text-[10px]">n={s.n}</span>
+                  <span className="text-slate-500 text-[11px]">n={s.n}</span>
                   {wr != null && <span className={wr >= 55 ? "text-emerald-300" : wr >= 45 ? "text-yellow-300" : "text-red-300"}>Win {wr.toFixed(0)}%</span>}
                   {ar != null && <span className={ar >= 0 ? "text-emerald-400" : "text-red-400"}>{ar >= 0 ? "+" : ""}{ar.toFixed(2)}%</span>}
                 </div>
@@ -287,8 +287,8 @@ export default function TrackRecordPanel({
 
       {summaryByLens && Object.keys(summaryByLens).length > 0 && (
         <div className="rounded-lg border border-violet-500/20 bg-violet-950/10 px-3 py-2">
-          <p className="text-[11px] text-violet-300/90 font-medium mb-1.5">Calibration by lens (forward EOD pairs)</p>
-          <div className="grid gap-1.5 sm:grid-cols-3 text-[10px]">
+          <p className="text-[13px] text-violet-300/90 font-medium mb-1.5">Calibration by lens (forward EOD pairs)</p>
+          <div className="grid gap-1.5 sm:grid-cols-3 text-[11px]">
             {(["scout", "swing", "owner"] as const).map((lens) => {
               const row = summaryByLens[lens];
               const active = lens === activeLens;
@@ -311,8 +311,8 @@ export default function TrackRecordPanel({
       {/* Running average completed paper-trade return (trades overlap, so no compounding) */}
       {hasEquity && (
         <div>
-          <p className="text-[11px] text-slate-400 mb-1 font-medium">Average paper trade return (running)</p>
-          <p className="text-[10px] text-slate-500 mb-2">
+          <p className="text-[13px] text-slate-400 mb-1 font-medium">Average paper trade return (running)</p>
+          <p className="text-[11px] text-slate-500 mb-2">
             Index = 100 + average return of all completed trades so far, by exit date. Trades overlap, so
             returns are averaged, not compounded.
           </p>
@@ -347,9 +347,9 @@ export default function TrackRecordPanel({
       {/* Signal breakdown from forward tracking */}
       {hasForward && (
         <div>
-          <p className="text-[11px] text-slate-400 mb-1.5 font-medium">Signal performance (20-day forward)</p>
+          <p className="text-[13px] text-slate-400 mb-1.5 font-medium">Signal performance (20-day forward)</p>
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px] text-left border-collapse">
+            <table className="w-full text-[13px] text-left border-collapse">
               <thead>
                 <tr className="text-slate-500 border-b border-slate-700">
                   <th className="py-1.5 pr-3 font-medium">Signal</th>
@@ -378,7 +378,7 @@ export default function TrackRecordPanel({
       {/* Paper trading breakdown — accumulate-track detail */}
       {hasPaper && (
         <div>
-          <p className="text-[11px] text-slate-400 mb-1.5 font-medium">Paper trade breakdown</p>
+          <p className="text-[13px] text-slate-400 mb-1.5 font-medium">Paper trade breakdown</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <StatCard label="Avg win" value={paperTrading!.avg_win_pct != null ? `+${paperTrading!.avg_win_pct.toFixed(2)}%` : "---"} color="text-emerald-400" />
             <StatCard label="Avg loss" value={paperTrading!.avg_loss_pct != null ? `${paperTrading!.avg_loss_pct.toFixed(2)}%` : "---"} color="text-red-400" />
@@ -394,7 +394,7 @@ export default function TrackRecordPanel({
       {hasCalibration && (
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-[11px] text-slate-400 font-medium">Confidence calibration</p>
+            <p className="text-[13px] text-slate-400 font-medium">Confidence calibration</p>
             {calibration!.is_well_calibrated ? (
               <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">CALIBRATED</span>
             ) : (
@@ -402,10 +402,10 @@ export default function TrackRecordPanel({
             )}
           </div>
           {calibration!.note && (
-            <p className="text-[10px] text-slate-500 mb-1">{calibration!.note}</p>
+            <p className="text-[11px] text-slate-500 mb-1">{calibration!.note}</p>
           )}
           {calibration!.calibration_error != null && (
-            <p className="text-[10px] text-slate-500">
+            <p className="text-[11px] text-slate-500">
               Mean calibration error: {calibration!.calibration_error}pp
               {calibration!.monotonic ? " · Monotonic ✓" : " · Non-monotonic ✗"}
               {` · ${calibration!.total_observations} observations`}

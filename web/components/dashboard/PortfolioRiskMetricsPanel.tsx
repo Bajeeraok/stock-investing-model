@@ -64,12 +64,12 @@ function BetaGauge({ beta, benchmark = "SPY" }: { beta: number; benchmark?: stri
           style={{ left: `calc(${pct}% - 6px)` }}
         />
       </div>
-      <div className="flex justify-between text-[10px] text-slate-500 tabular-nums">
+      <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
         <span>0×</span>
         <span>{benchmark} 1.0×</span>
         <span>2.0×</span>
       </div>
-      <p className={`text-xs font-medium ${BAND_TONE[tone] ?? "text-slate-300"}`}>
+      <p className={`text-[13px] font-medium ${BAND_TONE[tone] ?? "text-slate-300"}`}>
         {beta.toFixed(2)}× vs {benchmark}
       </p>
     </div>
@@ -81,7 +81,7 @@ function RiskMeter({ label, valuePct, sublabel }: { label: string; valuePct: num
   const isLoss = valuePct < 0;
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 px-4 py-3">
-      <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`text-2xl font-bold tabular-nums mt-1 ${isLoss ? "text-rose-300" : "text-slate-200"}`}>
         {valuePct}%
       </p>
@@ -91,7 +91,7 @@ function RiskMeter({ label, valuePct, sublabel }: { label: string; valuePct: num
           style={{ width: `${magnitude}%` }}
         />
       </div>
-      {sublabel && <p className="text-[11px] text-slate-500 mt-1.5">{sublabel}</p>}
+      {sublabel && <p className="text-[13px] text-slate-500 mt-1.5">{sublabel}</p>}
     </div>
   );
 }
@@ -129,12 +129,12 @@ function BetaHero({ beta }: { beta: NonNullable<PortfolioRiskMetrics["beta"]> })
               {beta.headline ?? `Your portfolio moves ${pb.toFixed(1)}× the market.`}
             </p>
             {beta.band && (
-              <span className="inline-flex mt-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-slate-700/60 text-slate-300">
+              <span className="inline-flex mt-2 px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wide bg-slate-700/60 text-slate-300">
                 {beta.band}
               </span>
             )}
             {beta.coverage_pct != null && beta.coverage_pct < 100 && (
-              <p className="text-[11px] text-amber-400/90 mt-2">
+              <p className="text-[13px] text-amber-400/90 mt-2">
                 Beta known for {beta.coverage_pct.toFixed(0)}% of portfolio weight
               </p>
             )}
@@ -193,17 +193,17 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
   return (
     <div className="space-y-5 text-sm">
       {metrics.note && (
-        <p className="text-xs text-slate-500 border border-slate-700/60 rounded-lg px-3 py-2 bg-slate-800/40">{metrics.note}</p>
+        <p className="text-[13px] text-slate-500 border border-slate-700/60 rounded-lg px-3 py-2 bg-slate-800/40">{metrics.note}</p>
       )}
 
       {beta?.portfolio_beta != null && <BetaHero beta={beta} />}
       {beta?.error && !beta.portfolio_beta && (
-        <p className="text-xs text-amber-400/90">Beta: {beta.error}</p>
+        <p className="text-[13px] text-amber-400/90">Beta: {beta.error}</p>
       )}
 
       {(varPct != null || cvarPct != null) && (
         <div>
-          <p className="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Tail risk (10-day, historical)</p>
+          <p className="text-[13px] font-medium text-slate-400 mb-2 uppercase tracking-wide">Tail risk (10-day, historical)</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {varPct != null && (
               <RiskMeter label="95% VaR" valuePct={varPct} sublabel="Illustrative equal-weight book; negative = loss tail." />
@@ -217,14 +217,14 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
 
       {sectors.length > 0 && sectors.some((s) => s.beta != null) && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-4">
-          <p className="text-xs font-medium text-slate-400 mb-3">Sector beta vs {beta?.benchmark ?? "SPY"}</p>
+          <p className="text-[13px] font-medium text-slate-400 mb-3">Sector beta vs {beta?.benchmark ?? "SPY"}</p>
           <div className="space-y-2.5">
             {sectors
               .filter((s) => s.beta != null)
               .slice(0, 6)
               .map((s) => (
                 <div key={s.sector} className="flex items-center gap-3">
-                  <span className="w-28 sm:w-36 text-xs text-slate-400 truncate" title={s.sector}>
+                  <span className="w-28 sm:w-36 text-[13px] text-slate-400 truncate" title={s.sector}>
                     {s.sector}
                   </span>
                   <div className="flex-1 h-2 rounded-full bg-slate-700/50 overflow-hidden relative">
@@ -236,10 +236,10 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
                     />
                     <div className="absolute top-0 bottom-0 w-px bg-slate-400/50" style={{ left: "50%" }} />
                   </div>
-                  <span className="w-14 text-right text-xs font-mono tabular-nums text-slate-200">
+                  <span className="w-14 text-right text-[13px] font-mono tabular-nums text-slate-200">
                     {(s.beta ?? 0).toFixed(2)}×
                   </span>
-                  <span className="w-12 text-right text-[10px] text-slate-500 tabular-nums">{s.weight_pct}%</span>
+                  <span className="w-12 text-right text-[11px] text-slate-500 tabular-nums">{s.weight_pct}%</span>
                 </div>
               ))}
           </div>
@@ -248,7 +248,7 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
 
       {topHoldings.length > 0 && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-4">
-          <p className="text-xs font-medium text-slate-400 mb-3">Largest beta contributors</p>
+          <p className="text-[13px] font-medium text-slate-400 mb-3">Largest beta contributors</p>
           <div className="grid gap-2 sm:grid-cols-2">
             {topHoldings.map((h) => (
               <div
@@ -257,7 +257,7 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
               >
                 <div className="min-w-0">
                   <span className="font-mono text-sm text-emerald-400/90">{h.ticker}</span>
-                  <span className="text-[10px] text-slate-500 ml-2">{h.weight_pct}%</span>
+                  <span className="text-[11px] text-slate-500 ml-2">{h.weight_pct}%</span>
                 </div>
                 <span
                   className={`text-sm font-semibold tabular-nums ${
@@ -272,15 +272,15 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
         </div>
       )}
 
-      {err && <p className="text-xs text-amber-400/90">Correlation: {err}</p>}
-      {vcErr && <p className="text-xs text-amber-400/90">VaR/CVaR: {vcErr}</p>}
+      {err && <p className="text-[13px] text-amber-400/90">Correlation: {err}</p>}
+      {vcErr && <p className="text-[13px] text-amber-400/90">VaR/CVaR: {vcErr}</p>}
 
       {pairs.length > 0 && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-4">
-          <p className="text-xs font-medium text-slate-400 mb-2">Largest pairwise correlations</p>
+          <p className="text-[13px] font-medium text-slate-400 mb-2">Largest pairwise correlations</p>
           <ul className="space-y-1.5">
             {pairs.map(({ a, b, rho }) => (
-              <li key={`${a}-${b}`} className="flex items-center gap-2 text-xs">
+              <li key={`${a}-${b}`} className="flex items-center gap-2 text-[13px]">
                 <span className="font-mono text-slate-300 shrink-0">
                   {a} ↔ {b}
                 </span>
@@ -301,12 +301,12 @@ export function PortfolioRiskMetricsPanel({ metrics }: { metrics: PortfolioRiskM
 
       {sizes && Object.keys(sizes).length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-400 mb-2">Correlation-adjusted size weights (illustrative)</p>
-          <p className="text-[11px] text-slate-500 mb-2">
+          <p className="text-[13px] font-medium text-slate-400 mb-2">Correlation-adjusted size weights (illustrative)</p>
+          <p className="text-[13px] text-slate-500 mb-2">
             Base Kelly fractions scaled down when names move together.
           </p>
           <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-700/50">
-            <table className="w-full text-xs">
+            <table className="w-full text-[13px]">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-700/60">
                   <th className="px-2 py-1.5 font-medium">Ticker</th>

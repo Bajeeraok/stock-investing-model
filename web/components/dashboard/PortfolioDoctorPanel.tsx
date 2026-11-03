@@ -235,7 +235,7 @@ function HealthRing({
         </span>
       </div>
       {showBandLabel && (
-        <span className={`mt-1 text-[10px] font-semibold uppercase tracking-wide transition-colors duration-500 ${vis.labelText}`}>
+        <span className={`mt-1 text-[11px] font-semibold uppercase tracking-wide transition-colors duration-500 ${vis.labelText}`}>
           {vis.label}
         </span>
       )}
@@ -256,7 +256,7 @@ function Tag({ label, variant }: { label: string; variant?: string }) {
             ? "bg-sky-500/20 text-sky-300 border-sky-500/30"
             : "bg-slate-700/60 text-slate-300 border-slate-600/40";
   return (
-    <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border ${cls}`}>
+    <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full border ${cls}`}>
       {label}
     </span>
   );
@@ -299,7 +299,7 @@ function SignalBadge({ signal }: { signal: string }) {
   else if (s.includes("WATCH") || s.includes("HOLD")) cls = "bg-amber-500/20 text-amber-300";
   const label = s.includes("STRONG BUY") ? "Strong Buy" : s.includes("BUY") ? "Buy" : s.includes("ADD") ? "Hold/Add" : s.includes("AVOID") ? "Avoid" : s.includes("REDUCE") ? "Reduce" : s.includes("WATCH") ? "Watch" : s.includes("HOLD") ? "Hold" : signal;
   return (
-    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${cls}`}>{label}</span>
+    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${cls}`}>{label}</span>
   );
 }
 
@@ -342,7 +342,7 @@ function CorrelationAlerts({ matrix }: { matrix?: Record<string, Record<string, 
   pairs.sort((a, b) => b.corr - a.corr);
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Correlation Alerts</h4>
+      <h4 className="text-[13px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Correlation Alerts</h4>
       <div className="space-y-3">
         {pairs.slice(0, 6).map((p) => {
           const color = p.corr > 0.9 ? "text-rose-400" : p.corr > 0.82 ? "text-fuchsia-400/90" : "text-amber-400";
@@ -353,7 +353,7 @@ function CorrelationAlerts({ matrix }: { matrix?: Record<string, Record<string, 
               </span>
               <div className="flex flex-col items-end gap-0.5 min-w-0 text-right">
                 <span className={`font-semibold tabular-nums ${color}`}>{(p.corr * 100).toFixed(0)}% corr</span>
-                <span className="text-slate-500 text-xs leading-snug max-w-md">{p.note}</span>
+                <span className="text-slate-500 text-[13px] leading-snug max-w-md">{p.note}</span>
               </div>
             </div>
           );
@@ -379,7 +379,7 @@ function AttributionTable({ periods, onTickerClick }: {
           <button
             key={p}
             onClick={() => setActivePeriod(p)}
-            className={`px-2.5 py-1 rounded text-[10px] font-semibold transition-colors ${
+            className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors ${
               p === activePeriod
                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
                 : "text-slate-400 hover:text-slate-200 border border-transparent"
@@ -390,13 +390,13 @@ function AttributionTable({ periods, onTickerClick }: {
         ))}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-xs">
+        <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-slate-700/40">
-              <th className="text-left py-1.5 pr-2 text-[10px] text-slate-500 uppercase">Ticker</th>
-              <th className="text-right py-1.5 pr-2 text-[10px] text-slate-500 uppercase">Weight</th>
-              <th className="text-right py-1.5 pr-2 text-[10px] text-slate-500 uppercase">Return</th>
-              <th className="text-right py-1.5 text-[10px] text-slate-500 uppercase">Contribution</th>
+              <th className="text-left py-1.5 pr-2 text-[11px] text-slate-500 uppercase">Ticker</th>
+              <th className="text-right py-1.5 pr-2 text-[11px] text-slate-500 uppercase">Weight</th>
+              <th className="text-right py-1.5 pr-2 text-[11px] text-slate-500 uppercase">Return</th>
+              <th className="text-right py-1.5 text-[11px] text-slate-500 uppercase">Contribution</th>
             </tr>
           </thead>
           <tbody>
@@ -515,13 +515,13 @@ function TaxOptimizationSection({
 
   return (
     <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">Tax optimization</h4>
-      <p className="text-[11px] text-slate-500 mb-4">Order of operations for trims and losses — not tax advice.</p>
+      <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-1">Tax optimization</h4>
+      <p className="text-[13px] text-slate-500 mb-4">Order of operations for trims and losses — not tax advice.</p>
       <ul className="space-y-4">
         {rows.map((r) => (
           <li key={r.key} className="flex gap-3">
             <span
-              className={`flex-shrink-0 h-7 min-w-[2.25rem] px-1.5 rounded-md text-[10px] font-bold flex items-center justify-center border ${r.badgeCls}`}
+              className={`flex-shrink-0 h-7 min-w-[2.25rem] px-1.5 rounded-md text-[11px] font-bold flex items-center justify-center border ${r.badgeCls}`}
             >
               {r.badge}
             </span>
@@ -593,7 +593,7 @@ export default function PortfolioDoctorPanel({
             </h3>
             {whatIf.isDirty && (
               <span
-                className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border transition-colors duration-500 ${
+                className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border transition-colors duration-500 ${
                   healthBand(activeHealth.score) === "good"
                     ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                     : healthBand(activeHealth.score) === "warn"
@@ -610,18 +610,18 @@ export default function PortfolioDoctorPanel({
               {whatIf.isDirty && health ? (
                 <>
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-[10px] uppercase tracking-wide text-slate-500">Was</span>
+                    <span className="text-[11px] uppercase tracking-wide text-slate-500">Was</span>
                     <HealthRing score={health.score} size={76} muted showBandLabel />
                   </div>
                   <div className="hidden sm:flex flex-col items-center justify-center text-slate-500 pb-6">
                     <span className="text-lg">→</span>
                   </div>
                   <div className="flex flex-col items-center gap-1">
-                    <span className="text-[10px] uppercase tracking-wide text-emerald-500/80">Now</span>
+                    <span className="text-[11px] uppercase tracking-wide text-emerald-500/80">Now</span>
                     <HealthRing score={activeHealth.score} size={104} showBandLabel />
                     {health && activeHealth.score !== health.score && (
                       <span
-                        className={`text-xs font-semibold tabular-nums ${
+                        className={`text-[13px] font-semibold tabular-nums ${
                           activeHealth.score > health.score ? "text-emerald-400" : "text-rose-400"
                         }`}
                       >
@@ -634,12 +634,12 @@ export default function PortfolioDoctorPanel({
               ) : (
                 <div className="flex flex-col items-center gap-1 mx-auto sm:mx-0">
                   <HealthRing score={activeHealth.score} size={104} showBandLabel />
-                  <span className="text-xs text-slate-500">/100 composite</span>
+                  <span className="text-[13px] text-slate-500">/100 composite</span>
                 </div>
               )}
               {whatIf.isDirty && health && activeHealth.score !== health.score && (
                 <span
-                  className={`sm:hidden text-xs font-semibold ${
+                  className={`sm:hidden text-[13px] font-semibold ${
                     activeHealth.score > health.score ? "text-emerald-400" : "text-rose-400"
                   }`}
                 >
@@ -656,14 +656,14 @@ export default function PortfolioDoctorPanel({
                 const color = SUB_COLORS[key] || "bg-slate-500";
                 return (
                   <div key={key} className="flex items-center gap-3">
-                    <span className="w-32 text-xs text-slate-400">{SUB_LABELS[key]}</span>
+                    <span className="w-32 text-[13px] text-slate-400">{SUB_LABELS[key]}</span>
                     <div className="flex-1 h-2 rounded-full bg-slate-700/40 overflow-hidden relative">
                       {changed && (
                         <div className="absolute h-full rounded-full bg-slate-600/50" style={{ width: `${origVal}%` }} />
                       )}
                       <div className={`h-full rounded-full ${color} relative z-10 transition-all duration-300`} style={{ width: `${val}%` }} />
                     </div>
-                    <span className={`w-12 text-right text-xs font-semibold tabular-nums ${val >= 75 ? "text-emerald-400" : val >= 50 ? "text-amber-400" : "text-rose-400"}`}>
+                    <span className={`w-12 text-right text-[13px] font-semibold tabular-nums ${val >= 75 ? "text-emerald-400" : val >= 50 ? "text-amber-400" : "text-rose-400"}`}>
                       {val}
                       {changed && (
                         <span className={`ml-0.5 text-[9px] ${val > origVal ? "text-emerald-400" : "text-rose-400"}`}>
@@ -677,12 +677,12 @@ export default function PortfolioDoctorPanel({
             </div>
           </div>
           {!whatIf.isDirty && health?.biggest_drag && (
-            <p className="mt-3 text-xs text-slate-400 leading-relaxed">
+            <p className="mt-3 text-[13px] text-slate-400 leading-relaxed">
               <strong className="text-slate-300">Biggest drag:</strong> {health.biggest_drag}
             </p>
           )}
           {!whatIf.isDirty && health?.improvement_note && (
-            <p className="mt-1 text-xs text-emerald-400/80">{health.improvement_note}</p>
+            <p className="mt-1 text-[13px] text-emerald-400/80">{health.improvement_note}</p>
           )}
         </div>
       )}
@@ -692,29 +692,29 @@ export default function PortfolioDoctorPanel({
         {portfolioBeta != null && (
           <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-3 text-center">
             <p className="text-lg font-bold text-slate-100 tabular-nums">{portfolioBeta.toFixed(2)}</p>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5">Portfolio beta</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{portfolioBeta.toFixed(1)}x market moves</p>
+            <p className="text-[11px] text-slate-500 uppercase tracking-wide mt-0.5">Portfolio beta</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">{portfolioBeta.toFixed(1)}x market moves</p>
           </div>
         )}
         {dailyVaRDollars != null && (
           <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-3 text-center">
             <p className="text-lg font-bold text-slate-100 tabular-nums">${dailyVaRDollars.toLocaleString()}</p>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5">95% daily VaR</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">max expected loss/day</p>
+            <p className="text-[11px] text-slate-500 uppercase tracking-wide mt-0.5">95% daily VaR</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">max expected loss/day</p>
           </div>
         )}
         <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-3 text-center">
           <p className="text-lg font-bold text-slate-100 tabular-nums">{activeEffPositions.toFixed(1)}</p>
-          <p className="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5">Effective positions</p>
-          <p className="text-[10px] text-slate-500 mt-0.5">of {holdingCount ?? "–"} holdings</p>
+          <p className="text-[11px] text-slate-500 uppercase tracking-wide mt-0.5">Effective positions</p>
+          <p className="text-[11px] text-slate-500 mt-0.5">of {holdingCount ?? "–"} holdings</p>
         </div>
         {topSector && (
           <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 p-3 text-center">
             <p className={`text-lg font-bold tabular-nums ${topSector.pct > 40 ? "text-amber-400" : "text-slate-100"}`}>
               {topSector.pct.toFixed(1)}%
             </p>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5">{topSector.sector}</p>
-            {topSector.pct > 35 && <p className="text-[10px] text-amber-400 mt-0.5">target &lt; 35%</p>}
+            <p className="text-[11px] text-slate-500 uppercase tracking-wide mt-0.5">{topSector.sector}</p>
+            {topSector.pct > 35 && <p className="text-[11px] text-amber-400 mt-0.5">target &lt; 35%</p>}
           </div>
         )}
       </div>
@@ -725,7 +725,7 @@ export default function PortfolioDoctorPanel({
           <div className="flex items-center justify-between mb-4">
             <button
               onClick={() => setInteractiveOpen(!interactiveOpen)}
-              className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider hover:text-emerald-400 transition-colors"
+              className="flex items-center gap-2 text-[13px] font-bold text-slate-300 uppercase tracking-wider hover:text-emerald-400 transition-colors"
             >
               <Sliders className="w-3.5 h-3.5" />
               Adjust Allocations — See Health Update Live
@@ -734,7 +734,7 @@ export default function PortfolioDoctorPanel({
               {whatIf.isDirty && (
                 <button
                   onClick={whatIf.reset}
-                  className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-emerald-400 transition-colors border border-slate-600 rounded px-2 py-1"
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-emerald-400 transition-colors border border-slate-600 rounded px-2 py-1"
                 >
                   <RotateCcw className="w-3 h-3" />
                   Reset
@@ -742,7 +742,7 @@ export default function PortfolioDoctorPanel({
               )}
               <button
                 onClick={() => setInteractiveOpen(!interactiveOpen)}
-                className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+                className="text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
               >
                 {interactiveOpen ? "Collapse" : "Expand"}
               </button>
@@ -754,12 +754,12 @@ export default function PortfolioDoctorPanel({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-700/40">
-                    <th className="text-left text-[10px] text-slate-500 uppercase tracking-wider py-2 pr-3">Ticker</th>
-                    <th className="text-left text-[10px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-32">Allocation</th>
-                    <th className="text-right text-[10px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-16">%</th>
-                    <th className="text-center text-[10px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-20">Signal</th>
-                    <th className="text-center text-[10px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-28">Adjust %</th>
-                    <th className="text-right text-[10px] text-slate-500 uppercase tracking-wider py-2 w-16">MCTR</th>
+                    <th className="text-left text-[11px] text-slate-500 uppercase tracking-wider py-2 pr-3">Ticker</th>
+                    <th className="text-left text-[11px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-32">Allocation</th>
+                    <th className="text-right text-[11px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-16">%</th>
+                    <th className="text-center text-[11px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-20">Signal</th>
+                    <th className="text-center text-[11px] text-slate-500 uppercase tracking-wider py-2 pr-3 w-28">Adjust %</th>
+                    <th className="text-right text-[11px] text-slate-500 uppercase tracking-wider py-2 w-16">MCTR</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -772,7 +772,7 @@ export default function PortfolioDoctorPanel({
                       <tr key={row.ticker} className={`border-b border-slate-700/20 ${changed ? "bg-emerald-950/20" : ""}`}>
                         <td className="py-2 pr-3">
                           <button
-                            className="text-xs font-semibold text-slate-200 hover:text-emerald-400 transition-colors"
+                            className="text-[13px] font-semibold text-slate-200 hover:text-emerald-400 transition-colors"
                             onClick={() => onTickerClick?.(row.ticker)}
                           >
                             {row.ticker}
@@ -787,7 +787,7 @@ export default function PortfolioDoctorPanel({
                           </div>
                         </td>
                         <td className="py-2 pr-3 text-right">
-                          <span className={`text-xs tabular-nums font-medium ${changed ? "text-emerald-300" : "text-slate-300"}`}>
+                          <span className={`text-[13px] tabular-nums font-medium ${changed ? "text-emerald-300" : "text-slate-300"}`}>
                             {row.adjustedPct.toFixed(1)}%
                           </span>
                         </td>
@@ -810,7 +810,7 @@ export default function PortfolioDoctorPanel({
                           />
                         </td>
                         <td className="py-2 text-right">
-                          <span className={`text-xs tabular-nums font-semibold ${row.mctrPct >= 20 ? "text-rose-400" : row.mctrPct >= 12 ? "text-amber-400" : "text-slate-300"}`}>
+                          <span className={`text-[13px] tabular-nums font-semibold ${row.mctrPct >= 20 ? "text-rose-400" : row.mctrPct >= 12 ? "text-amber-400" : "text-slate-300"}`}>
                             {row.mctrPct.toFixed(0)}%
                           </span>
                         </td>
@@ -829,13 +829,13 @@ export default function PortfolioDoctorPanel({
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
           {priority_actions.this_week.length > 0 && (
             <>
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
+              <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-3">
                 This Week — {priority_actions.this_week.length} Priority Actions
               </h4>
               <ol className="space-y-4 mb-6">
                 {priority_actions.this_week.map((a, i) => (
                   <li key={i} className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center justify-center border border-rose-500/30">
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-rose-500/20 text-rose-300 text-[13px] font-bold flex items-center justify-center border border-rose-500/30">
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
@@ -844,7 +844,7 @@ export default function PortfolioDoctorPanel({
                           {a.action}
                         </button>
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{a.reason}</p>
+                      <p className="text-[13px] text-slate-400 mt-0.5 leading-relaxed">{a.reason}</p>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {a.tags?.map((t) => <Tag key={t} label={t} variant={tagVariant(t)} />)}
                       </div>
@@ -856,13 +856,13 @@ export default function PortfolioDoctorPanel({
           )}
           {priority_actions.this_month.length > 0 && (
             <>
-              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
+              <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-3">
                 This Month — If Conditions Met
               </h4>
               <ol className="space-y-4" start={priority_actions.this_week.length + 1}>
                 {priority_actions.this_month.map((a, i) => (
                   <li key={i} className="flex gap-3">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-sky-500/20 text-sky-300 text-xs font-bold flex items-center justify-center border border-sky-500/30">
+                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-sky-500/20 text-sky-300 text-[13px] font-bold flex items-center justify-center border border-sky-500/30">
                       {priority_actions.this_week.length + i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
@@ -871,7 +871,7 @@ export default function PortfolioDoctorPanel({
                           {a.action}
                         </button>
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{a.reason}</p>
+                      <p className="text-[13px] text-slate-400 mt-0.5 leading-relaxed">{a.reason}</p>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {a.tags?.map((t) => <Tag key={t} label={t} variant={tagVariant(t)} />)}
                       </div>
@@ -887,51 +887,51 @@ export default function PortfolioDoctorPanel({
       {/* ── MCTR ── */}
       {mctr && mctr.positions.length > 0 && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">
+          <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-1">
             Marginal Contribution to Risk (MCTR)
           </h4>
-          <p className="text-[11px] text-slate-500 mb-4">
+          <p className="text-[13px] text-slate-500 mb-4">
             Each position&apos;s share of total portfolio risk — not just its % of value
           </p>
           <div className="space-y-2.5">
             {mctr.positions.slice(0, 6).map((p) => (
               <div key={p.ticker} className="flex items-center gap-3">
-                <button className="w-14 text-xs font-semibold text-slate-200 text-left hover:text-emerald-400 transition-colors" onClick={() => onTickerClick?.(p.ticker)}>
+                <button className="w-14 text-[13px] font-semibold text-slate-200 text-left hover:text-emerald-400 transition-colors" onClick={() => onTickerClick?.(p.ticker)}>
                   {p.ticker}
                 </button>
                 <div className="flex-1 h-3 rounded-full bg-slate-700/40 overflow-hidden">
                   <div className={`h-full rounded-full ${mctrBarColor(p.risk_pct)}`} style={{ width: `${Math.min(100, p.risk_pct * 2)}%` }} />
                 </div>
-                <span className="w-10 text-right text-xs font-semibold text-slate-300 tabular-nums">{p.risk_pct.toFixed(0)}%</span>
+                <span className="w-10 text-right text-[13px] font-semibold text-slate-300 tabular-nums">{p.risk_pct.toFixed(0)}%</span>
               </div>
             ))}
             {mctr.positions.length > 6 && (
               <div className="flex items-center gap-3">
-                <span className="w-14 text-xs text-slate-400">Other {mctr.positions.length - 6}</span>
+                <span className="w-14 text-[13px] text-slate-400">Other {mctr.positions.length - 6}</span>
                 <div className="flex-1 h-3 rounded-full bg-slate-700/40 overflow-hidden">
                   <div className="h-full rounded-full bg-slate-500" style={{ width: `${Math.min(100, mctr.positions.slice(6).reduce((s, p) => s + p.risk_pct, 0) * 2)}%` }} />
                 </div>
-                <span className="w-10 text-right text-xs font-semibold text-slate-400 tabular-nums">
+                <span className="w-10 text-right text-[13px] font-semibold text-slate-400 tabular-nums">
                   {mctr.positions.slice(6).reduce((s, p) => s + p.risk_pct, 0).toFixed(0)}%
                 </span>
               </div>
             )}
           </div>
-          {mctr.note && <p className="mt-3 text-xs text-slate-400 italic">{mctr.note}</p>}
+          {mctr.note && <p className="mt-3 text-[13px] text-slate-400 italic">{mctr.note}</p>}
         </div>
       )}
 
       {/* ── PERFORMANCE ATTRIBUTION ── */}
       {attribution?.periods && Object.keys(attribution.periods).length > 0 && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">
+          <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-1">
             Performance Attribution
           </h4>
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-[13px] text-slate-500 mb-3">
             How much each position contributed to your portfolio return
           </p>
           {attribution.top_contributor && (
-            <div className="flex flex-wrap gap-4 mb-4 text-xs">
+            <div className="flex flex-wrap gap-4 mb-4 text-[13px]">
               <span className="text-emerald-400">
                 Top contributor: <strong>{attribution.top_contributor.ticker}</strong> +{attribution.top_contributor.contribution_pct.toFixed(2)}% ({attribution.top_contributor.period})
               </span>
@@ -949,10 +949,10 @@ export default function PortfolioDoctorPanel({
       {/* ── FACTOR EXPOSURE ── */}
       {factor_exposure?.portfolio_factors && Object.keys(factor_exposure.portfolio_factors).length > 0 && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">
+          <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-1">
             Factor Exposure
           </h4>
-          <p className="text-[11px] text-slate-500 mb-4">
+          <p className="text-[13px] text-slate-500 mb-4">
             Hidden portfolio tilts beyond sector — each bar shows 0 (underweight) to 100 (overweight)
           </p>
           <div className="space-y-2.5">
@@ -961,12 +961,12 @@ export default function PortfolioDoctorPanel({
               const color = score >= 65 ? "bg-emerald-500" : score >= 40 ? "bg-sky-500" : "bg-slate-500";
               return (
                 <div key={factor} className="flex items-center gap-3">
-                  <span className="w-20 text-xs text-slate-400">{label}</span>
+                  <span className="w-20 text-[13px] text-slate-400">{label}</span>
                   <div className="flex-1 h-2.5 rounded-full bg-slate-700/40 overflow-hidden relative">
                     <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-600" />
                     <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
                   </div>
-                  <span className={`w-8 text-right text-xs font-semibold tabular-nums ${score >= 65 ? "text-emerald-400" : score <= 35 ? "text-rose-400" : "text-slate-300"}`}>
+                  <span className={`w-8 text-right text-[13px] font-semibold tabular-nums ${score >= 65 ? "text-emerald-400" : score <= 35 ? "text-rose-400" : "text-slate-300"}`}>
                     {score}
                   </span>
                 </div>
@@ -974,7 +974,7 @@ export default function PortfolioDoctorPanel({
             })}
           </div>
           {factor_exposure.note && (
-            <p className="mt-3 text-xs text-slate-400 italic">{factor_exposure.note}</p>
+            <p className="mt-3 text-[13px] text-slate-400 italic">{factor_exposure.note}</p>
           )}
         </div>
       )}
@@ -982,10 +982,10 @@ export default function PortfolioDoctorPanel({
       {/* ── LIQUIDITY ── */}
       {liquidity?.items && liquidity.items.length > 0 && liquidity.items.some(i => i.days_to_exit != null) && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-          <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">
+          <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-1">
             Liquidity
           </h4>
-          <p className="text-[11px] text-slate-500 mb-3">
+          <p className="text-[13px] text-slate-500 mb-3">
             Days to exit each position at 20% of average daily volume
           </p>
           <div className="space-y-2">
@@ -996,13 +996,13 @@ export default function PortfolioDoctorPanel({
               const barColor = days > 5 ? "bg-rose-500" : days > 2 ? "bg-amber-500" : "bg-emerald-500";
               return (
                 <div key={item.ticker} className="flex items-center gap-3">
-                  <button className="w-14 text-xs font-semibold text-slate-200 text-left hover:text-emerald-400 transition-colors" onClick={() => onTickerClick?.(item.ticker)}>
+                  <button className="w-14 text-[13px] font-semibold text-slate-200 text-left hover:text-emerald-400 transition-colors" onClick={() => onTickerClick?.(item.ticker)}>
                     {item.ticker}
                   </button>
                   <div className="flex-1 h-2 rounded-full bg-slate-700/40 overflow-hidden">
                     <div className={`h-full rounded-full ${barColor}`} style={{ width: `${barW}%` }} />
                   </div>
-                  <span className={`w-16 text-right text-xs font-semibold tabular-nums ${cls}`}>
+                  <span className={`w-16 text-right text-[13px] font-semibold tabular-nums ${cls}`}>
                     {days.toFixed(1)}d
                   </span>
                 </div>
@@ -1010,7 +1010,7 @@ export default function PortfolioDoctorPanel({
             })}
           </div>
           {liquidity.note && (
-            <p className="mt-3 text-xs text-amber-400/80">{liquidity.note}</p>
+            <p className="mt-3 text-[13px] text-amber-400/80">{liquidity.note}</p>
           )}
         </div>
       )}
@@ -1019,13 +1019,13 @@ export default function PortfolioDoctorPanel({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {activeStress && activeStress.length > 0 && (
           <div className={`rounded-xl border ${whatIf.isDirty ? "border-emerald-500/20" : "border-slate-700/60"} bg-slate-800/40 p-5 transition-colors`}>
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
+            <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-3">
               Historical Stress Test{whatIf.isDirty ? " — adjusted" : ""}
             </h4>
             <div className="space-y-3">
               {activeStress.map((s) => (
                 <div key={s.name} className="flex items-center gap-3">
-                  <span className="w-24 text-xs text-slate-400 flex-shrink-0">{s.name}</span>
+                  <span className="w-24 text-[13px] text-slate-400 flex-shrink-0">{s.name}</span>
                   <StressBar pct={s.portfolio_impact_pct} />
                 </div>
               ))}
@@ -1034,25 +1034,25 @@ export default function PortfolioDoctorPanel({
         )}
         {earnings_calendar && earnings_calendar.items.length > 0 && (
           <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">Earnings Calendar</h4>
-            <p className="text-[11px] text-slate-500 mb-3">Next 30 days</p>
+            <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-3">Earnings Calendar</h4>
+            <p className="text-[13px] text-slate-500 mb-3">Next 30 days</p>
             <div className="space-y-2">
               {earnings_calendar.items.map((e) => (
                 <div key={e.ticker} className="flex items-center justify-between text-sm gap-2">
                   <button className="font-semibold text-slate-200 hover:text-emerald-400 transition-colors shrink-0" onClick={() => onTickerClick?.(e.ticker)}>
                     {e.ticker}
                   </button>
-                  <span className="text-slate-400 text-xs truncate text-right">
+                  <span className="text-slate-400 text-[13px] truncate text-right">
                     {e.earnings_date ? `~${e.earnings_date}` : `~${e.days_until}d`}
                   </span>
-                  <span className={`text-xs font-semibold tabular-nums shrink-0 ${earningsWeightTone(e.portfolio_pct)}`}>
+                  <span className={`text-[13px] font-semibold tabular-nums shrink-0 ${earningsWeightTone(e.portfolio_pct)}`}>
                     {e.portfolio_pct.toFixed(1)}% of port
                   </span>
                 </div>
               ))}
             </div>
             {earnings_calendar.note && (
-              <p className="mt-3 text-xs text-slate-400 border-t border-slate-700/40 pt-2">{earnings_calendar.note}</p>
+              <p className="mt-3 text-[13px] text-slate-400 border-t border-slate-700/40 pt-2">{earnings_calendar.note}</p>
             )}
           </div>
         )}

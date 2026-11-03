@@ -125,7 +125,7 @@ export function RegimeGauge({
       {/* Center labels */}
       <div className="-mt-3 flex flex-col items-center gap-0.5">
         <span className={clsx(
-          "text-[11px] font-black uppercase tracking-wider",
+          "text-[13px] font-black uppercase tracking-wider",
           dominant === "bull" ? "text-[#00C896]" : dominant === "bear" ? "text-[#FF6B6B]" : "text-amber-400",
         )}>
           {dominant === "bull" ? (labels?.bull ?? "Bull") : dominant === "bear" ? (labels?.bear ?? "Bear") : (labels?.trans ?? "Trans")}
@@ -140,7 +140,7 @@ export function RegimeGauge({
           { label: labels?.bull ?? "Bull", pct: bullPct, color: "text-[#00C896]" },
         ].map(item => (
           <div key={item.label} className="flex flex-col items-center gap-0">
-            <span className={clsx("text-[11px] font-mono font-bold tabular-nums", item.color)}>
+            <span className={clsx("text-[13px] font-mono font-bold tabular-nums", item.color)}>
               {item.pct.toFixed(0)}%
             </span>
             <span className="text-[8px] uppercase text-slate-500">{item.label}</span>

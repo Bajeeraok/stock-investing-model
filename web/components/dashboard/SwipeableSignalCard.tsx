@@ -126,7 +126,7 @@ export function SwipeableSignalCard({
             type="button"
             onClick={() => runAction(action)}
             className={clsx(
-              "flex flex-col items-center justify-center px-3 text-xs font-semibold uppercase tracking-wide min-w-[76px] touch-manipulation",
+              "flex flex-col items-center justify-center px-3 text-[13px] font-semibold uppercase tracking-wide min-w-[76px] touch-manipulation",
               TONE_CLASS[action.tone ?? "emerald"],
             )}
           >

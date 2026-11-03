@@ -19,7 +19,7 @@ export function TablePager({ page, pageSize, total, onPageChange, className }: T
   const end = Math.min(total, (safePage + 1) * pageSize);
 
   return (
-    <div className={clsx("flex flex-wrap items-center justify-between gap-2 mt-3 text-xs text-slate-400", className)}>
+    <div className={clsx("flex flex-wrap items-center justify-between gap-2 mt-3 text-[13px] text-slate-400", className)}>
       <span className="tabular-nums">
         Rows {start}–{end} of {total}
       </span>

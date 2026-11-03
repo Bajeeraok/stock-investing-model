@@ -57,25 +57,25 @@ export function LevelsPageHeader({
 
         {/* Action */}
         {action && (
-          <span className="text-[10px] font-semibold text-td-text truncate max-w-[140px]">
+          <span className="text-[11px] font-semibold text-td-text truncate max-w-[140px]">
             {action}
           </span>
         )}
 
-        <span className="text-td-muted text-[10px] select-none">·</span>
+        <span className="text-td-muted text-[11px] select-none">·</span>
 
         {/* Next Level */}
         {nextLevel != null && (
-          <span className="text-[10px] text-td-muted">
+          <span className="text-[11px] text-td-muted">
             Next <span className="font-mono font-semibold text-td-warn tabular-nums">{fmt(nextLevel)}</span>
           </span>
         )}
 
-        <span className="text-td-muted text-[10px] select-none">·</span>
+        <span className="text-td-muted text-[11px] select-none">·</span>
 
         {/* Fair Value */}
         {fairValue != null && (
-          <span className="text-[10px] text-td-muted">
+          <span className="text-[11px] text-td-muted">
             FV <span className="font-mono font-semibold text-td-info tabular-nums">{fmt(fairValue)}</span>
           </span>
         )}
@@ -83,7 +83,7 @@ export function LevelsPageHeader({
 
       {/* Unlock hint — single truncated line */}
       {unlockSequence && entryMode !== "full_go" && (
-        <p className="text-[9px] text-td-muted leading-snug truncate" title={unlockSequence}>
+        <p className="text-[9px] text-td-muted leading-relaxed truncate" title={unlockSequence}>
           {unlockSequence}
         </p>
       )}

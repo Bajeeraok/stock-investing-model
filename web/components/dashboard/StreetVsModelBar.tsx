@@ -45,8 +45,8 @@ export function StreetVsModelBar({
   return (
     <div className="rounded-xl border border-sky-500/25 bg-sky-950/20 px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-sky-300/90">Model vs street</h4>
-        <span className="text-[11px] text-slate-400">
+        <h4 className="text-[13px] font-semibold uppercase tracking-wide text-sky-300/90">Model vs street</h4>
+        <span className="text-[13px] text-slate-400">
           Model FV {gapModelVsStreet >= 0 ? "+" : ""}
           {gapModelVsStreet.toFixed(1)}% vs {streetLabel.toLowerCase()}
         </span>
@@ -72,7 +72,7 @@ export function StreetVsModelBar({
           style={{ width: "100%" }}
         />
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
         <div>
           <p className="text-slate-500">Now</p>
           <p className="text-slate-200 font-medium">{fmt(currentPrice)}</p>
@@ -87,7 +87,7 @@ export function StreetVsModelBar({
         </div>
       </div>
       {external.note && (
-        <p className="text-[10px] text-slate-500 mt-2 leading-snug">{external.note}</p>
+        <p className="text-[11px] text-slate-500 mt-2 leading-snug">{external.note}</p>
       )}
     </div>
   );

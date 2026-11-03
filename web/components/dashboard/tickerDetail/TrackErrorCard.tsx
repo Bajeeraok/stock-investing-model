@@ -10,7 +10,7 @@ function pp(n: number | null | undefined): string {
 
 function CalTable({ cal, actualLabel }: { cal: Calibration; actualLabel: string }) {
   return (
-    <table className="mt-1 w-full text-[11px]">
+    <table className="mt-1 w-full text-[13px]">
       <thead className="text-slate-500">
         <tr className="text-left">
           <th className="pr-2 font-normal">We said</th>
@@ -58,7 +58,7 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
   if (!err && !prob && !lvlPick && !lvl?.pending) return null;
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-xs text-slate-300">
+    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 text-[13px] text-slate-300">
       <div className="mb-2 text-sm font-semibold text-slate-200">How far off were we?</div>
 
       <div className="mb-3">
@@ -89,13 +89,13 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
                 </div>
               </div>
             </div>
-            <div className="mt-1 text-[11px] text-slate-500">
+            <div className="mt-1 text-[13px] text-slate-500">
               Avg target {fmtPct(err.avg_expected_pct)} vs avg actual {fmtPct(err.avg_actual_pct)} over {err.n} calls
               {err.n < 30 ? " — too few to judge yet" : ""}.
             </div>
           </>
         ) : (
-          <div className="mt-1 text-[11px] text-slate-500">Fills in once calls with a target reach 20 days.</div>
+          <div className="mt-1 text-[13px] text-slate-500">Fills in once calls with a target reach 20 days.</div>
         )}
       </div>
 
@@ -107,7 +107,7 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
         {prob ? (
           <CalTable cal={prob.cal} actualLabel="Actually rose" />
         ) : (
-          <div className="mt-1 text-[11px] text-slate-500">No resolved calls with an ML probability yet.</div>
+          <div className="mt-1 text-[13px] text-slate-500">No resolved calls with an ML probability yet.</div>
         )}
       </div>
 
@@ -119,14 +119,14 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
         {lvlPick ? (
           <CalTable cal={lvlPick.cal} actualLabel="Actually hit" />
         ) : (
-          <div className="mt-1 text-[11px] text-slate-500">
+          <div className="mt-1 text-[13px] text-slate-500">
             Logging daily odds for levels 2%, 5% and 10% below the close
             {lvl?.pending ? ` (${lvl.pending} waiting for their window)` : ""}. Results appear after 20 trading days.
           </div>
         )}
       </div>
 
-      <div className="mt-2 text-[11px] text-slate-600">
+      <div className="mt-2 text-[13px] text-slate-600">
         Gap within ±10 pts is green. Under 30 calls is grey: too few to trust. Education only, not advice.
       </div>
     </div>

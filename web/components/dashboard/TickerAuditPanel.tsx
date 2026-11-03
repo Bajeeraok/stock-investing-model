@@ -58,7 +58,7 @@ export function TickerAuditPanel() {
 
   return (
     <div className="space-y-2 text-sm">
-      <p className="text-xs text-slate-500 leading-relaxed">
+      <p className="text-[13px] text-slate-500 leading-relaxed">
         Rule checks on every ticker page (all 3 modes): numbers that should match across sections, stops below
         price, bands at or below spot, fresh data. Run {report.generated_at.replace("T", " ").slice(0, 16)} UTC on{" "}
         {report.n_tickers} tickers.
@@ -77,8 +77,8 @@ export function TickerAuditPanel() {
               onClick={() => setOpen(open === r.rule ? null : r.rule)}
               className="w-full text-left flex flex-wrap items-baseline gap-x-2"
             >
-              <span className={`font-mono text-xs ${SEV_CLASS[r.severity]}`}>{r.rule}</span>
-              <span className="text-xs text-slate-400">
+              <span className={`font-mono text-[13px] ${SEV_CLASS[r.severity]}`}>{r.rule}</span>
+              <span className="text-[13px] text-slate-400">
                 {r.count}× · {r.tickers.slice(0, 8).join(", ")}
                 {r.tickers.length > 8 ? ` +${r.tickers.length - 8}` : ""}
               </span>
@@ -88,7 +88,7 @@ export function TickerAuditPanel() {
                 {report.findings
                   .filter((f) => f.rule === r.rule)
                   .map((f, i) => (
-                    <li key={i} className="text-xs text-slate-400">
+                    <li key={i} className="text-[13px] text-slate-400">
                       <span className="font-mono text-slate-200">{f.ticker}</span> — {f.message}
                     </li>
                   ))}

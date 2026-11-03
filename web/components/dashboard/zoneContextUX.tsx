@@ -65,15 +65,15 @@ export function CatchLevelsRow({
       )}
     >
       {sharedLabel && (
-        <p className="text-[10px] uppercase tracking-wider text-slate-500">{sharedLabel}</p>
+        <p className="text-[11px] uppercase tracking-wider text-slate-500">{sharedLabel}</p>
       )}
       {bridgeLow != null && bridgeHigh != null && (
         <div className="space-y-0.5">
-          <p className="text-[10px] font-mono text-cyan-300/90">
+          <p className="text-[11px] font-mono text-cyan-300/90">
             Bridge ${bridgeLow.toFixed(2)}–${bridgeHigh.toFixed(2)}
           </p>
           {bridgeRationale && (
-            <p className="text-[10px] text-slate-400 leading-snug">{bridgeRationale}</p>
+            <p className="text-[11px] text-slate-400 leading-snug">{bridgeRationale}</p>
           )}
         </div>
       )}
@@ -83,7 +83,7 @@ export function CatchLevelsRow({
             <span
               key={lv.id}
               className={clsx(
-                "inline-flex flex-col items-center rounded-md border px-2 py-0.5 text-[10px] font-mono tabular-nums",
+                "inline-flex flex-col items-center rounded-md border px-2 py-0.5 text-[11px] font-mono tabular-nums",
                 lv.role === "anchor"
                   ? "border-cyan-500/40 bg-cyan-950/40 text-cyan-200"
                   : "border-emerald-500/35 bg-emerald-950/30 text-emerald-200",
@@ -119,7 +119,7 @@ export function RegimeGateProgress({
   const dots = Array.from({ length: 6 }, (_, i) => i < filled);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[10px]">
+    <div className="flex flex-wrap items-center gap-2 text-[11px]">
       <span className="text-slate-500 uppercase tracking-wider shrink-0">{label}</span>
       <span className="flex items-center gap-0.5" aria-hidden>
         {dots.map((on, i) => (
@@ -161,12 +161,12 @@ export function WatchZoneCallout({
         {bridgeFmt && zone.in_bridge_band ? (
           <span className="text-cyan-300 font-normal">· Bridge {bridgeFmt} active</span>
         ) : bridgeFmt ? (
-          <span className="text-slate-400 font-normal text-xs">· Bridge {bridgeFmt} available</span>
+          <span className="text-slate-400 font-normal text-[13px]">· Bridge {bridgeFmt} available</span>
         ) : null}
       </p>
       {regimeBullPct != null && regimeBullPct < REGIME_GATE && (
         <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-2 py-1.5">
-          <p className="text-[10px] text-slate-500 mb-1">Regime gate</p>
+          <p className="text-[11px] text-slate-500 mb-1">Regime gate</p>
           <RegimeGateProgress bullPct={regimeBullPct} />
         </div>
       )}
@@ -187,7 +187,7 @@ export function UnlockWhenStrip({ text }: { text: string | null | undefined }) {
   if (!text?.trim()) return null;
   return (
     <div className="sticky bottom-0 z-10 -mx-1 px-3 py-2.5 rounded-xl border border-emerald-500/35 bg-emerald-950/90 backdrop-blur-sm shadow-lg shadow-black/30">
-      <p className="text-xs text-emerald-100 leading-snug">
+      <p className="text-[13px] text-emerald-100 leading-snug">
         <span className="mr-1" aria-hidden>
           🔓
         </span>
@@ -214,10 +214,10 @@ export function HorizonReconcileStrip({
         : "border-amber-500/35 bg-amber-950/30 text-amber-100";
   return (
     <div className={clsx("rounded-xl border px-3 py-2.5", tone)} role="note">
-      <p className="text-[10px] uppercase tracking-wider font-semibold opacity-80 mb-1">
+      <p className="text-[11px] uppercase tracking-wider font-semibold opacity-80 mb-1">
         Two horizons — read together
       </p>
-      <p className="text-xs leading-snug">{text}</p>
+      <p className="text-[13px] leading-snug">{text}</p>
     </div>
   );
 }

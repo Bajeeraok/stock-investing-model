@@ -33,7 +33,7 @@ function GapBadge({ badge }: { badge?: string | null }) {
   return (
     <span
       className={clsx(
-        "text-[10px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide",
+        "text-[11px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide",
         BADGE_STYLE[badge] ?? BADGE_STYLE.review,
       )}
     >
@@ -44,7 +44,7 @@ function GapBadge({ badge }: { badge?: string | null }) {
 
 function StreetColumn({ deck }: { deck: ValuationDeckPayload }) {
   const s = deck.street;
-  if (!s) return <p className="text-xs text-slate-500">No street data (ETF or thin coverage).</p>;
+  if (!s) return <p className="text-[13px] text-slate-500">No street data (ETF or thin coverage).</p>;
 
   return (
     <div className="space-y-2">
@@ -54,7 +54,7 @@ function StreetColumn({ deck }: { deck: ValuationDeckPayload }) {
         </p>
       )}
       {s.primary_usd != null && (
-        <p className="text-xs text-slate-400">
+        <p className="text-[13px] text-slate-400">
           Primary ({s.primary_label || "Street"}):{" "}
           <span className="text-violet-200 font-medium tabular-nums">{fmtUsd(s.primary_usd)}</span>
           {s.yahoo_mean_usd != null && s.primary_usd !== s.yahoo_mean_usd && (
@@ -64,7 +64,7 @@ function StreetColumn({ deck }: { deck: ValuationDeckPayload }) {
       )}
       {s.ratings && <AnalystRatingBar ratings={s.ratings} />}
       {s.eps_fwd != null && (
-        <p className="text-xs text-slate-400">
+        <p className="text-[13px] text-slate-400">
           Fwd EPS consensus ~{s.eps_fwd.toFixed(2)}
           {s.eps_dispersion != null && s.eps_dispersion > 0.2
             ? ` · high dispersion (${(s.eps_dispersion * 100).toFixed(0)}%)`
@@ -84,16 +84,16 @@ function ModelColumn({ deck }: { deck: ValuationDeckPayload }) {
     <div className="space-y-2">
       <p className="text-sm text-emerald-200 font-semibold tabular-nums">Model FV {fmtUsd(m.fair_value_usd)}</p>
       {pct != null && (
-        <p className="text-xs text-slate-400">
+        <p className="text-[13px] text-slate-400">
           {pct >= 0 ? "+" : ""}
           {pct.toFixed(1)}% vs street primary
         </p>
       )}
       <GapBadge badge={m.gap_badge} />
       {m.relative_valuation_line && (
-        <p className="text-[11px] text-slate-400 leading-snug">{m.relative_valuation_line}</p>
+        <p className="text-[13px] text-slate-400 leading-snug">{m.relative_valuation_line}</p>
       )}
-      {m.method_used && <p className="text-xs text-slate-400">Method: {m.method_used}</p>}
+      {m.method_used && <p className="text-[13px] text-slate-400">Method: {m.method_used}</p>}
       {m.methodology_summary && (
         <p className="text-sm text-slate-300 leading-relaxed">{m.methodology_summary}</p>
       )}
@@ -110,7 +110,7 @@ function HouseColumn({
 }) {
   const h = deck.house;
   if (!h?.tiers_summary?.length) {
-    return <p className="text-xs text-slate-500">No long-term tiers on this name.</p>;
+    return <p className="text-[13px] text-slate-500">No long-term tiers on this name.</p>;
   }
 
   const fullMos = h.min_price_to_buy;
@@ -123,7 +123,7 @@ function HouseColumn({
     <div className="space-y-2">
       {h.assessment_label && <p className="text-sm text-slate-200">{h.assessment_label}</p>}
       {fullMos != null && fullMos > 0 && (
-        <p className="text-xs text-emerald-200/90">
+        <p className="text-[13px] text-emerald-200/90">
           Full-size ceiling{" "}
           <span className="font-semibold tabular-nums">{fmtLevel(fullMos)}</span>
           {h.above_full_mos_ceiling
@@ -137,7 +137,7 @@ function HouseColumn({
           </span>
         </p>
       )}
-      <ul className="space-y-1 text-[11px] text-slate-400">
+      <ul className="space-y-1 text-[13px] text-slate-400">
         {h.tiers_summary.map((t) => (
           <li
             key={t.id}
@@ -157,12 +157,12 @@ function HouseColumn({
         ))}
       </ul>
       {currentPrice > 0 && fullMos != null && withinCeiling && h.full_size_eligible_at_spot && (
-        <p className="text-[10px] text-emerald-200/90">
+        <p className="text-[11px] text-emerald-200/90">
           Now {fmtLevel(currentPrice)} — at/below ceiling; tier bands are scale-in guides, not a higher min price.
         </p>
       )}
       {currentPrice > 0 && fullMos != null && currentPrice > fullMos && (
-        <p className="text-[10px] text-amber-200/90">Now {fmtLevel(currentPrice)} — starter tiers only, not full book.</p>
+        <p className="text-[11px] text-amber-200/90">Now {fmtLevel(currentPrice)} — starter tiers only, not full book.</p>
       )}
     </div>
   );
@@ -195,7 +195,7 @@ export function ValuationDeck({
     return (
       <div className="rounded-xl border border-violet-500/25 bg-violet-950/20 px-4 py-3 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-violet-300/90">
+          <h4 className="text-[13px] font-semibold uppercase tracking-wide text-violet-300/90">
             Street context
           </h4>
           <GapBadge badge={m?.gap_badge} />
@@ -204,7 +204,7 @@ export function ValuationDeck({
           <p className="text-sm text-slate-200">
             {s.primary_label || "Street"} {fmtUsd(s.primary_usd)}
             {m?.pct_vs_street_primary != null && (
-              <span className="text-slate-400 text-xs ml-2">
+              <span className="text-slate-400 text-[13px] ml-2">
                 Model {m.pct_vs_street_primary >= 0 ? "+" : ""}
                 {m.pct_vs_street_primary.toFixed(1)}%
               </span>
@@ -213,11 +213,11 @@ export function ValuationDeck({
         )}
         {s?.ratings && <AnalystRatingBar ratings={s.ratings} compact />}
         {showHouse && deck.house?.min_price_to_buy != null && (
-          <p className="text-[11px] text-emerald-200/80">
+          <p className="text-[13px] text-emerald-200/80">
             Full size ≤ {fmtLevel(deck.house.min_price_to_buy)} · see Owner for tiers
           </p>
         )}
-        {deck.disclaimer && <p className="text-xs text-slate-500 leading-snug">{deck.disclaimer}</p>}
+        {deck.disclaimer && <p className="text-[13px] text-slate-500 leading-snug">{deck.disclaimer}</p>}
       </div>
     );
   }
@@ -225,10 +225,10 @@ export function ValuationDeck({
   return (
     <div className="rounded-xl border border-sky-500/25 bg-sky-950/15 overflow-hidden">
       <div className="px-4 py-2.5 border-b border-sky-500/20 flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-sky-300/90">
+        <h4 className="text-[13px] font-semibold uppercase tracking-wide text-sky-300/90">
           Valuation deck
         </h4>
-        <span className="text-xs text-slate-400">Street · Model · House</span>
+        <span className="text-[13px] text-slate-400">Street · Model · House</span>
       </div>
       <div
         className={clsx(
@@ -237,14 +237,14 @@ export function ValuationDeck({
         )}
       >
         <div>
-          <p className="text-xs uppercase tracking-wide text-violet-300/90 font-semibold mb-2">
+          <p className="text-[13px] uppercase tracking-wide text-violet-300/90 font-semibold mb-2">
             Street (ANR / EE)
           </p>
           <StreetColumn deck={deck} />
         </div>
         {showModelFull && (
           <div>
-            <p className="text-xs uppercase tracking-wide text-emerald-300/90 font-semibold mb-2">
+            <p className="text-[13px] uppercase tracking-wide text-emerald-300/90 font-semibold mb-2">
               Model (RV / FA)
             </p>
             <ModelColumn deck={deck} />
@@ -252,7 +252,7 @@ export function ValuationDeck({
         )}
         {showHouse && (
           <div>
-            <p className="text-xs uppercase tracking-wide text-emerald-300/90 font-semibold mb-2">
+            <p className="text-[13px] uppercase tracking-wide text-emerald-300/90 font-semibold mb-2">
               House (what we do)
             </p>
             <HouseColumn deck={deck} currentPrice={currentPrice} />
@@ -269,7 +269,7 @@ export function ValuationDeck({
         </div>
       )}
       {deck.disclaimer && (
-        <p className="px-4 pb-3 text-xs text-slate-500 leading-snug border-t border-slate-700/50 pt-2">
+        <p className="px-4 pb-3 text-[13px] text-slate-500 leading-snug border-t border-slate-700/50 pt-2">
           {deck.disclaimer}
         </p>
       )}

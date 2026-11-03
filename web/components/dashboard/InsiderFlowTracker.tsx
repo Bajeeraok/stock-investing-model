@@ -56,12 +56,12 @@ export function InsiderFlowTracker({ data }: InsiderFlowTrackerProps) {
 
   return (
     <div className="rounded-lg border border-slate-600 bg-slate-800/30 p-4 space-y-4">
-      <p className="text-xs text-slate-500">
+      <p className="text-[13px] text-slate-500">
         Form 4 filings (insider buys/sells) from SEC EDGAR. Multiple insiders buying in the same quarter is a strong medium/long-term signal. Updated once daily after the close
         {asOf ? <> · as of <span className="font-mono text-slate-400">{asOf}</span></> : null}.
       </p>
       {message && (
-        <p className="text-xs text-amber-400">{message}</p>
+        <p className="text-[13px] text-amber-400">{message}</p>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -69,19 +69,19 @@ export function InsiderFlowTracker({ data }: InsiderFlowTrackerProps) {
         <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="h-4 w-4 text-emerald-400 shrink-0" />
-            <span className="text-xs font-semibold text-emerald-500 uppercase tracking-wider">
+            <span className="text-[13px] font-semibold text-emerald-500 uppercase tracking-wider">
               Recent insider buys ({buys.length})
             </span>
           </div>
           {buys.length === 0 ? (
-            <p className="text-xs text-slate-500">No insider buys in the last 90 days for watched tickers.</p>
+            <p className="text-[13px] text-slate-500">No insider buys in the last 90 days for watched tickers.</p>
           ) : (
             <ul className="space-y-1.5">
               {buys.slice(0, 15).map((b, i) => (
                 <li key={`${b.ticker}-${b.filing_date}-${i}`} className="flex items-center justify-between gap-2 text-sm">
                   <span className="font-medium text-slate-200">{b.ticker}</span>
-                  <span className="text-slate-400 text-xs">{b.filing_date}</span>
-                  <span className="text-emerald-400 font-mono text-xs">{formatShares(b.shares)}</span>
+                  <span className="text-slate-400 text-[13px]">{b.filing_date}</span>
+                  <span className="text-emerald-400 font-mono text-[13px]">{formatShares(b.shares)}</span>
                   {b.edgar_url ? (
                     <a
                       href={b.edgar_url}
@@ -103,19 +103,19 @@ export function InsiderFlowTracker({ data }: InsiderFlowTrackerProps) {
         <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
           <div className="flex items-center gap-2 mb-2">
             <TrendingDown className="h-4 w-4 text-red-400 shrink-0" />
-            <span className="text-xs font-semibold text-red-500 uppercase tracking-wider">
+            <span className="text-[13px] font-semibold text-red-500 uppercase tracking-wider">
               Recent insider sells ({sells.length})
             </span>
           </div>
           {sells.length === 0 ? (
-            <p className="text-xs text-slate-500">No insider sells in the last 90 days for watched tickers.</p>
+            <p className="text-[13px] text-slate-500">No insider sells in the last 90 days for watched tickers.</p>
           ) : (
             <ul className="space-y-1.5">
               {sells.slice(0, 15).map((s, i) => (
                 <li key={`${s.ticker}-${s.filing_date}-${i}`} className="flex items-center justify-between gap-2 text-sm">
                   <span className="font-medium text-slate-200">{s.ticker}</span>
-                  <span className="text-slate-400 text-xs">{s.filing_date}</span>
-                  <span className="text-red-400 font-mono text-xs">{formatShares(s.shares)}</span>
+                  <span className="text-slate-400 text-[13px]">{s.filing_date}</span>
+                  <span className="text-red-400 font-mono text-[13px]">{formatShares(s.shares)}</span>
                   {s.edgar_url ? (
                     <a
                       href={s.edgar_url}

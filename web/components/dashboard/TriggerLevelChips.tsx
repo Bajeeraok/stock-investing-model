@@ -67,12 +67,12 @@ export function TriggerLevelChips({
     <div className="rounded-lg border border-sky-500/25 bg-sky-950/15 px-3 py-2.5 space-y-2">
       <div className="flex items-center gap-2">
         <Target className="h-3.5 w-3.5 text-sky-400" />
-        <span className="text-xs font-semibold text-sky-200">Trigger levels</span>
-        <span className="text-[10px] text-slate-500">distance to support</span>
+        <span className="text-[13px] font-semibold text-sky-200">Trigger levels</span>
+        <span className="text-[11px] text-slate-500">distance to support</span>
       </div>
       {rows.map((row) => (
         <div key={row.ticker}>
-          <p className="text-[10px] text-slate-500 mb-1">
+          <p className="text-[11px] text-slate-500 mb-1">
             {row.ticker}{" "}
             <span className="font-mono text-slate-300">${row.last.toFixed(2)}</span>
           </p>
@@ -82,7 +82,7 @@ export function TriggerLevelChips({
                 key={`${row.ticker}-${c.label}`}
                 title={`${c.label} $${c.price.toFixed(2)} · ${formatDist(c.distance_pct)}`}
                 className={clsx(
-                  "text-[10px] font-mono px-2 py-0.5 rounded border",
+                  "text-[11px] font-mono px-2 py-0.5 rounded border",
                   chipTone(c.distance_pct),
                 )}
               >
@@ -93,7 +93,7 @@ export function TriggerLevelChips({
         </div>
       ))}
       {triggerLevels?.headline && (
-        <p className="text-[10px] text-slate-500 leading-snug">{triggerLevels.headline}</p>
+        <p className="text-[11px] text-slate-500 leading-snug">{triggerLevels.headline}</p>
       )}
     </div>
   );

@@ -153,7 +153,7 @@ function SectionToggle({
           <ChevronRight className="h-4 w-4 text-td-muted shrink-0" />
         )}
         <span className="text-td-muted shrink-0">{icon}</span>
-        <span className="text-xs font-semibold uppercase tracking-wide text-td-text">{title}</span>
+        <span className="text-[13px] font-semibold uppercase tracking-wide text-td-text">{title}</span>
       </button>
       {open && <div className="px-4 pb-3 space-y-2">{children}</div>}
     </div>
@@ -240,7 +240,7 @@ export function HorizonPlaybookCard({
             {swingScore?.score != null && (
               <span
                 className={clsx(
-                  "text-xs font-black tabular-nums px-2 py-0.5 rounded border",
+                  "text-[13px] font-black tabular-nums px-2 py-0.5 rounded border",
                   isSwingSignal
                     ? "border-td-accent/50 text-td-accent bg-td-accent/10"
                     : "border-td-warn/40 text-td-warn bg-td-warn/10",
@@ -250,10 +250,10 @@ export function HorizonPlaybookCard({
               </span>
             )}
           </div>
-          <p className="text-xs uppercase tracking-wider text-td-muted mb-1">Setup</p>
+          <p className="text-[13px] uppercase tracking-wider text-td-muted mb-1">Setup</p>
           <p className="text-base font-semibold text-td-text">{swingCls.setup_label}</p>
           {swingScore?.verdict && (
-            <p className="text-[11px] text-td-muted mt-1">
+            <p className="text-[13px] text-td-muted mt-1">
               {swingScore.verdict.replace(/_/g, " ")}
               {swingScore.technical_component != null
                 ? ` · Tech ${swingScore.technical_component.toFixed(0)} + Pattern ${(swingScore.pattern_component ?? 0).toFixed(0)}`
@@ -261,12 +261,12 @@ export function HorizonPlaybookCard({
             </p>
           )}
           {swingCls.divergence_note && (
-            <p className="mt-2 text-xs text-td-warn/90 leading-snug border-l-2 border-td-warn/50 pl-2">
+            <p className="mt-2 text-[13px] text-td-warn/90 leading-snug border-l-2 border-td-warn/50 pl-2">
               {swingCls.divergence_note}
             </p>
           )}
           {exitPlan && (
-            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[13px]">
               <div>
                 <p className="text-td-muted">Entry</p>
                 <p className="font-mono text-td-text tabular-nums">
@@ -294,29 +294,29 @@ export function HorizonPlaybookCard({
             </div>
           )}
           {(swingCls.setup_reasons?.length ?? 0) > 0 && (
-            <p className="mt-2 text-[11px] text-td-muted leading-snug">
+            <p className="mt-2 text-[13px] text-td-muted leading-relaxed">
               <span className="text-td-muted">Why: </span>
               {swingCls.setup_reasons!.slice(0, 2).join(" · ")}
             </p>
           )}
           {swingScore?.ml_confirmation_note && (
-            <p className="mt-1.5 text-[10px] text-td-muted">{swingScore.ml_confirmation_note}</p>
+            <p className="mt-1.5 text-[11px] text-td-muted">{swingScore.ml_confirmation_note}</p>
           )}
         </div>
       )}
 
       <div className="px-4 sm:px-6 py-3 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-td-muted mb-1">{data.title}</p>
+          <p className="text-[13px] font-bold uppercase tracking-[0.18em] text-td-muted mb-1">{data.title}</p>
           <p className="text-base sm:text-lg font-semibold text-td-text leading-snug">{data.headline}</p>
           {data.setup_quality && !isThesis && (
-            <p className="text-xs text-td-muted mt-1">
+            <p className="text-[13px] text-td-muted mt-1">
               {data.horizon === "short" ? "Short horizon" : "Medium horizon"} · {data.setup_quality.passed} of{" "}
               {data.setup_quality.total} gates · {data.setup_quality.label}
             </p>
           )}
           {isThesis && data.fair_value != null && (
-            <p className="text-xs text-td-muted mt-1">
+            <p className="text-[13px] text-td-muted mt-1">
               Model FV ${data.fair_value.toFixed(2)}
               {data.margin_of_safety_pct != null ? ` · MOS ~${data.margin_of_safety_pct}%` : ""}
             </p>
@@ -325,7 +325,7 @@ export function HorizonPlaybookCard({
         {!isThesis ? (
           <span
             className={clsx(
-              "inline-flex items-center gap-1.5 text-xs font-bold uppercase px-2.5 py-1 rounded border tracking-wide shrink-0",
+              "inline-flex items-center gap-1.5 text-[13px] font-bold uppercase px-2.5 py-1 rounded border tracking-wide shrink-0",
               isGo
                 ? "border-td-accent/50 bg-td-accent/15 text-td-accent"
                 : "border-td-warn/45 bg-td-warn/10 text-td-warn"
@@ -337,7 +337,7 @@ export function HorizonPlaybookCard({
         ) : (
           <span
             className={clsx(
-              "inline-flex items-center gap-1.5 text-xs font-bold uppercase px-2.5 py-1 rounded border tracking-wide shrink-0",
+              "inline-flex items-center gap-1.5 text-[13px] font-bold uppercase px-2.5 py-1 rounded border tracking-wide shrink-0",
               data.stance === "accumulate" && "border-td-owner/50 bg-td-owner/15 text-td-owner",
               data.stance === "watch" && "border-td-info/45 bg-td-info/10 text-td-info",
               data.stance === "wait" && "border-td-line/45 bg-td-line/10 text-td-text"
@@ -380,27 +380,27 @@ export function HorizonPlaybookCard({
             {isGo && !isThesis ? (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                 <div className="rounded-lg bg-td-surface/80 px-2.5 py-2 border border-td-line/60">
-                  <p className="text-[10px] uppercase tracking-wider text-td-muted">Entry</p>
+                  <p className="text-[11px] uppercase tracking-wider text-td-muted">Entry</p>
                   <p className="font-mono text-td-accent tabular-nums">
                     ${t.entry_low.toFixed(2)}–${t.entry_high.toFixed(2)}
                   </p>
                 </div>
                 <div className="rounded-lg bg-td-surface/80 px-2.5 py-2 border border-td-line/60">
-                  <p className="text-[10px] uppercase tracking-wider text-td-muted">
+                  <p className="text-[11px] uppercase tracking-wider text-td-muted">
                     {data.kind === "position_build" ? "Build stop" : "Swing stop"}
                   </p>
                   <p className="font-mono text-td-crit tabular-nums">${t.stop.toFixed(2)}</p>
-                  <p className="text-[10px] text-td-muted mt-0.5">
+                  <p className="text-[11px] text-td-muted mt-0.5">
                     {data.kind === "position_build" ? "pause tranches" : "5% risk band"}
                   </p>
                 </div>
                 <div className="rounded-lg bg-td-surface/80 px-2.5 py-2 border border-td-line/60">
-                  <p className="text-[10px] uppercase tracking-wider text-td-muted">Target</p>
+                  <p className="text-[11px] uppercase tracking-wider text-td-muted">Target</p>
                   <p className="font-mono text-td-accent-ink tabular-nums">${t.target_1.toFixed(2)}</p>
                 </div>
                 {t.target_2 != null && t.target_2 > 0 && (
                   <div className="rounded-lg bg-td-surface/80 px-2.5 py-2 border border-td-line/60">
-                    <p className="text-[10px] uppercase tracking-wider text-td-muted">Target 2</p>
+                    <p className="text-[11px] uppercase tracking-wider text-td-muted">Target 2</p>
                     <p className="font-mono text-td-accent-ink tabular-nums">${t.target_2.toFixed(2)}</p>
                   </div>
                 )}
@@ -408,7 +408,7 @@ export function HorizonPlaybookCard({
             ) : (
               <BulletList items={data.triggers.wait} tone="wait" />
             )}
-            <p className="text-xs text-td-muted mt-2">
+            <p className="text-[13px] text-td-muted mt-2">
               Spot ${t.current_price.toFixed(2)}
               {data.inside_entry_band != null &&
                 (data.inside_entry_band ? " · inside entry band" : " · outside entry band")}
@@ -445,19 +445,19 @@ export function HorizonPlaybookCard({
         <SectionToggle title="Triggers" icon={<Zap className="h-3.5 w-3.5" />}>
           {data.triggers.add.length > 0 && (
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-td-accent/80 mb-1">Add</p>
+              <p className="text-[11px] uppercase tracking-wider text-td-accent/80 mb-1">Add</p>
               <BulletList items={data.triggers.add} />
             </div>
           )}
           {data.triggers.exit.length > 0 && (
             <div className="mt-2">
-              <p className="text-[10px] uppercase tracking-wider text-td-crit/80 mb-1">Exit</p>
+              <p className="text-[11px] uppercase tracking-wider text-td-crit/80 mb-1">Exit</p>
               <BulletList items={data.triggers.exit} tone="exit" />
             </div>
           )}
           {data.triggers.reduce.length > 0 && (
             <div className="mt-2">
-              <p className="text-[10px] uppercase tracking-wider text-td-warn/80 mb-1">Reduce</p>
+              <p className="text-[11px] uppercase tracking-wider text-td-warn/80 mb-1">Reduce</p>
               <BulletList items={data.triggers.reduce} tone="wait" />
             </div>
           )}
@@ -494,7 +494,7 @@ export function HorizonPlaybookCard({
         </SectionToggle>
       </div>
 
-      <p className="px-4 sm:px-6 pb-3 text-[11px] text-td-muted leading-snug">{data.disclaimer}</p>
+      <p className="px-4 sm:px-6 pb-3 text-[13px] text-td-muted leading-relaxed">{data.disclaimer}</p>
     </section>
   );
 }

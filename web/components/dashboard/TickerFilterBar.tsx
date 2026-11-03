@@ -50,7 +50,7 @@ export function TickerFilterBar({
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-        <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">Source</span>
+        <span className="text-[11px] text-slate-500 uppercase tracking-wide shrink-0">Source</span>
         {TICKER_SOURCE_FILTERS.map((f) => (
           <button
             key={f.id}
@@ -58,7 +58,7 @@ export function TickerFilterBar({
             title={f.hint}
             onClick={() => onSourceChange(f.id)}
             className={clsx(
-              "text-[11px] px-2 py-1 rounded-full border shrink-0",
+              "text-[13px] px-2 py-1 rounded-full border shrink-0",
               source === f.id
                 ? "border-sky-500/45 bg-sky-500/15 text-sky-200"
                 : "border-slate-600 text-slate-400 hover:text-slate-200",
@@ -73,7 +73,7 @@ export function TickerFilterBar({
       </div>
       {showPresets && (
         <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-          <span className="text-[10px] text-slate-500 uppercase tracking-wide shrink-0">View</span>
+          <span className="text-[11px] text-slate-500 uppercase tracking-wide shrink-0">View</span>
           {presetList.map((p) => (
             <button
               key={p.id}
@@ -81,7 +81,7 @@ export function TickerFilterBar({
               title={p.hint}
               onClick={() => onPresetChange(p.id)}
               className={clsx(
-                "text-[11px] px-2 py-1 rounded-full border shrink-0",
+                "text-[13px] px-2 py-1 rounded-full border shrink-0",
                 preset === p.id
                   ? "border-emerald-500/45 bg-emerald-500/15 text-emerald-200"
                   : "border-slate-600 text-slate-400 hover:text-slate-200",
@@ -92,7 +92,7 @@ export function TickerFilterBar({
           ))}
         </div>
       )}
-      <span className="text-[10px] text-slate-600 shrink-0">
+      <span className="text-[11px] text-slate-600 shrink-0">
         {shownCount}/{totalCount} shown
       </span>
     </div>

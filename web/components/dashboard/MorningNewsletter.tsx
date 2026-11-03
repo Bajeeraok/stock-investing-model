@@ -56,7 +56,7 @@ export function MorningNewsletter({ data }: Props) {
             {data.master_context.explanation && (
               <p className="text-sm text-slate-300 leading-snug">{data.master_context.explanation}</p>
             )}
-            <div className="flex flex-wrap gap-2 text-[11px]">
+            <div className="flex flex-wrap gap-2 text-[13px]">
               {data.master_context.temperature_label && (
                 <span className="px-2 py-0.5 rounded border border-sky-500/30 text-sky-300">
                   Short-term: {data.master_context.temperature_label}
@@ -71,13 +71,13 @@ export function MorningNewsletter({ data }: Props) {
               )}
             </div>
             {data.master_context.coexistence_note && (
-              <p className="text-xs text-slate-400">{data.master_context.coexistence_note}</p>
+              <p className="text-[13px] text-slate-400">{data.master_context.coexistence_note}</p>
             )}
           </section>
         )}
         {data.three_line_brief && data.three_line_brief.length > 0 && (
           <section className="rounded-lg border border-amber-500/20 bg-amber-950/15 px-3 py-2.5 space-y-1.5">
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-amber-500/90">Today in 3 lines</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-amber-500/90">Today in 3 lines</h3>
             <ol className="list-decimal list-inside text-sm text-slate-200 space-y-1">
               {data.three_line_brief.map((line, i) => (
                 <li key={i} className="leading-snug pl-1">
@@ -89,7 +89,7 @@ export function MorningNewsletter({ data }: Props) {
         )}
         {(data.hold_vs_trade_teaser || data.hold_vs_trade_more) && (
           <section className="rounded-lg border border-sky-500/25 bg-sky-950/20 px-3 py-2.5 space-y-1">
-            <h3 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-sky-400/90">
+            <h3 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-sky-400/90">
               <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
               Hold or trim?
             </h3>
@@ -97,13 +97,13 @@ export function MorningNewsletter({ data }: Props) {
               <p className="text-sm text-slate-300 leading-snug whitespace-pre-line">{data.hold_vs_trade_teaser}</p>
             )}
             {data.hold_vs_trade_more && (
-              <p className="text-xs text-slate-500 leading-snug whitespace-pre-line">{data.hold_vs_trade_more}</p>
+              <p className="text-[13px] text-slate-500 leading-snug whitespace-pre-line">{data.hold_vs_trade_more}</p>
             )}
           </section>
         )}
         {data.sections.map((sec, i) => (
           <section key={i}>
-            <h3 className="text-xs font-medium uppercase tracking-wider text-slate-500 mb-1.5">{sec.title}</h3>
+            <h3 className="text-[13px] font-medium uppercase tracking-wider text-slate-500 mb-1.5">{sec.title}</h3>
             <ul className="space-y-1 text-sm text-slate-300">
               {sec.items.map((item, j) => (
                 <li key={j} className="leading-snug">
@@ -115,7 +115,7 @@ export function MorningNewsletter({ data }: Props) {
         ))}
         {data.action_items && data.action_items.length > 0 && (
           <section>
-            <h3 className="text-xs font-medium uppercase tracking-wider text-amber-500/90 mb-1.5">Action items</h3>
+            <h3 className="text-[13px] font-medium uppercase tracking-wider text-amber-500/90 mb-1.5">Action items</h3>
             <ul className="space-y-1.5 text-sm">
               {data.action_items.map((item, j) => (
                 <li key={j} className="flex items-start gap-2 text-slate-200">

@@ -36,7 +36,7 @@ export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; 
               )}>
                 {o.composite_buy.toFixed(0)} conf
               </span>
-              <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400">
+              <span className="px-2 py-0.5 rounded text-[13px] font-medium bg-emerald-500/20 text-emerald-400">
                 {o.regime}
               </span>
               <span className="text-slate-500 text-sm">RSI {o.rsi.toFixed(0)}</span>
@@ -84,7 +84,7 @@ export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; 
                 </td>
                 <td className="px-3 py-2.5 text-slate-400">{o.rsi.toFixed(1)}</td>
                 <td className="px-3 py-2.5">
-                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/20 text-emerald-400">
+                  <span className="px-2 py-0.5 rounded text-[13px] font-medium bg-emerald-500/20 text-emerald-400">
                     {o.regime}
                   </span>
                 </td>
@@ -94,7 +94,7 @@ export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; 
           </tbody>
         </table>
       </div>
-      <p className="px-3 sm:px-4 py-2 text-xs text-slate-500 border-t border-slate-700">
+      <p className="px-3 sm:px-4 py-2 text-[13px] text-slate-500 border-t border-slate-700">
         Candidates to research - not buy recommendations. Use your judgment.
       </p>
     </div>

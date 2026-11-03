@@ -20,7 +20,7 @@ export function LensTrackRecordStrip({ activeLens, summaryByLens, loading }: Pro
 
   if (loading) {
     return (
-      <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-3 py-2 text-xs text-slate-500">
+      <div className="rounded-lg border border-slate-600 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-500">
         Loading track record…
       </div>
     );
@@ -34,12 +34,12 @@ export function LensTrackRecordStrip({ activeLens, summaryByLens, loading }: Pro
       title="Forward returns from EOD snapshot pairs — not paper trades"
     >
       <BarChart3 className="h-4 w-4 text-violet-400 shrink-0" />
-      <span className="text-xs text-slate-400 font-medium">
+      <span className="text-[13px] text-slate-400 font-medium">
         Track record · {tradingLensLabel(activeLens)}
       </span>
-      {line && <span className="text-xs text-slate-200">{line}</span>}
+      {line && <span className="text-[13px] text-slate-200">{line}</span>}
       {(scout || swing || owner) && (
-        <span className="text-[10px] text-slate-600 hidden lg:inline">
+        <span className="text-[11px] text-slate-600 hidden lg:inline">
           Scout: {scout || "—"} · Swing: {swing || "—"} · Owner: {owner || "—"}
         </span>
       )}

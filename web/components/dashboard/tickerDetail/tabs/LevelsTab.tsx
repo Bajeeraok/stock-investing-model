@@ -54,7 +54,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
     <>
     {/* Top bar: at-a-glance + density toggle */}
     <div className="flex items-center justify-between gap-2 -mt-2 mb-3">
-      <p className="text-xs text-slate-400 leading-snug">
+      <p className="text-[13px] text-slate-400 leading-snug">
         Staged entries · playbooks · anchors · roadmaps
       </p>
       <DensityToggle />
@@ -87,7 +87,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
           <p className="text-sm font-semibold text-amber-100">
             Special playbook step is active
           </p>
-          <p className="text-xs text-amber-200/90 leading-snug">
+          <p className="text-[13px] text-amber-200/90 leading-snug">
             <span className="font-medium text-amber-100">{playbookStage3.name}</span>
             {" — "}
             {playbookStage3.action}
@@ -173,7 +173,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
           </div>
           <Comfort>
             {priceTargets.technical_levels.note && (
-              <p className="text-[10px] text-slate-500 leading-snug mt-1 px-0.5">
+              <p className="text-[11px] text-slate-500 leading-snug mt-1 px-0.5">
                 {priceTargets.technical_levels.note}
               </p>
             )}
@@ -192,7 +192,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
         aria-expanded={gridOpen}
       >
         <span className="text-sm font-semibold text-td-text">Levels detail &amp; sizing read</span>
-        <span className="flex items-center gap-1 text-[11px] text-td-muted">
+        <span className="flex items-center gap-1 text-[13px] text-td-muted">
           Charts · near-bottom · portfolio impact
           {gridOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </span>

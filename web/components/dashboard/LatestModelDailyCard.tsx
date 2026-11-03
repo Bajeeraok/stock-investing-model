@@ -36,7 +36,7 @@ export default function LatestModelDailyCard({
   const skipped = data?.skipped_days ?? [];
 
   return (
-    <div className="rounded-lg border border-sky-800/50 bg-sky-950/20 px-3 py-2 text-xs space-y-2">
+    <div className="rounded-lg border border-sky-800/50 bg-sky-950/20 px-3 py-2 text-[13px] space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-medium text-sky-300/90">
           Latest model (<span className="font-mono">{v}</span>) · daily read
@@ -45,7 +45,7 @@ export default function LatestModelDailyCard({
           </span>
         </p>
         {data?.first_date && (
-          <span className="text-[11px] text-slate-500">
+          <span className="text-[13px] text-slate-500">
             {data.first_date} → {data.last_date}
           </span>
         )}
@@ -66,7 +66,7 @@ export default function LatestModelDailyCard({
               { label: "SPY", val: data?.spy_cum_pct },
             ].map((s) => (
               <div key={s.label} className="rounded border border-slate-700/60 bg-slate-900/40 px-2 py-1.5">
-                <p className="text-[11px] text-slate-500">{s.label}</p>
+                <p className="text-[13px] text-slate-500">{s.label}</p>
                 <p className={`font-mono tabular-nums text-sm ${tone(s.val)}`}>{pct(s.val)}</p>
               </div>
             ))}
@@ -111,7 +111,7 @@ export default function LatestModelDailyCard({
           </div>
         </>
       )}
-      <p className="text-[11px] text-slate-600 leading-snug">
+      <p className="text-[13px] text-slate-600 leading-snug">
         Early read, updated after every EOD run. One-day moves are mostly noise, so the 20-day result stays the
         main verdict. HOLD counts as a full position (same as holding), and TRIM/REDUCE as half, so the model
         only differs from holding on days it acts.

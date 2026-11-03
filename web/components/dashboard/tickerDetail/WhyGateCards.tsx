@@ -58,9 +58,9 @@ export function WhyGateCards({
               <span>
                 {g.pass ? "✓" : "✕"} {g.label}
               </span>
-              <span className="font-mono text-[10px] font-semibold opacity-80">{g.pass ? "PASSING" : "BLOCKING"}</span>
+              <span className="font-mono text-[11px] font-semibold opacity-80">{g.pass ? "PASSING" : "BLOCKING"}</span>
             </div>
-            {g.detail && <p className="mt-1.5 text-[12px] text-td-text/85 leading-snug">{g.detail}</p>}
+            {g.detail && <p className="mt-1.5 text-sm text-td-text/85 leading-snug">{g.detail}</p>}
             {nowNeeds(g).length > 0 && (
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px] text-td-muted">
                 {nowNeeds(g).map(([k, v]) => (

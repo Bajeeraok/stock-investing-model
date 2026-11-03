@@ -46,7 +46,7 @@ function ChartLegendItem({
   dashed?: boolean;
 }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-[10px] text-td-muted">
+    <span className="inline-flex items-center gap-1.5 text-[11px] text-td-muted">
       <span
         className="inline-block h-0 w-5 border-t-2"
         style={{
@@ -283,7 +283,7 @@ function CustomTooltip({
   const day = typeof label === "number" ? label : row.day;
 
   return (
-    <div className="rounded-lg border border-td-line bg-td-surface/95 px-3 py-2 text-xs shadow-xl max-w-[220px]">
+    <div className="rounded-lg border border-td-line bg-td-surface/95 px-3 py-2 text-[13px] shadow-xl max-w-[220px]">
       <p className="text-td-muted mb-1">
         {day < 0 ? `${Math.abs(day)}d ago` : day === 0 ? "Today" : `+${day}d`}
         {row.dateLabel && day <= 0 ? ` · ${row.dateLabel}` : row.calendarLabel && day > 0 ? ` · ${row.calendarLabel}` : ""}
@@ -360,7 +360,7 @@ function PriceSparkline({
 
   if (sparkData.length < 3) {
     return (
-      <div className="rounded-lg border border-td-line/60 bg-td-surface/40 px-3 py-2 text-xs text-td-muted">
+      <div className="rounded-lg border border-td-line/60 bg-td-surface/40 px-3 py-2 text-[13px] text-td-muted">
         Price history too short for sparkline.
       </div>
     );
@@ -370,14 +370,14 @@ function PriceSparkline({
     <div className="rounded-lg border border-td-line/60 bg-td-surface/40 px-3 py-2">
       <div className="flex items-center justify-between gap-2 mb-1">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[10px] uppercase tracking-wider text-td-muted shrink-0">90d path</span>
+          <span className="text-[11px] uppercase tracking-wider text-td-muted shrink-0">90d path</span>
           {periodPct != null && (
-            <span className={`text-xs font-mono tabular-nums ${trendUp ? "text-td-accent" : "text-td-crit"}`}>
+            <span className={`text-[13px] font-mono tabular-nums ${trendUp ? "text-td-accent" : "text-td-crit"}`}>
               {fmtPct(periodPct)}
             </span>
           )}
           {fairValue != null && fairValue > 0 && currentPrice > 0 && (
-            <span className="text-[10px] text-td-muted truncate hidden sm:inline">
+            <span className="text-[11px] text-td-muted truncate hidden sm:inline">
               FV {fmtPrice(fairValue)}
             </span>
           )}
@@ -386,7 +386,7 @@ function PriceSparkline({
           <button
             type="button"
             onClick={onExpand}
-            className="text-[10px] text-td-info/90 hover:text-td-info shrink-0"
+            className="text-[11px] text-td-info/90 hover:text-td-info shrink-0"
           >
             Target bands →
           </button>
@@ -533,7 +533,7 @@ export function HorizonProjectionChart({
                 <span className="text-td-muted font-normal ml-1.5">· {ticker}</span>
               ) : null}
             </h3>
-            <p className="text-sm text-td-muted mt-1 leading-snug">
+            <p className="text-sm text-td-muted mt-1 leading-relaxed">
               Trailing price (left) → today → forward ST / MT / LT channels.
               Pullback plans project from the entry band (not a crash-from-spot path).
               {hasFairValue ? " Emerald dashed line = model fair value." : null}
@@ -545,7 +545,7 @@ export function HorizonProjectionChart({
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
-                className="text-xs px-2 py-1 rounded-full border border-td-line text-td-muted hover:text-td-text"
+                className="text-[13px] px-2 py-1 rounded-full border border-td-line text-td-muted hover:text-td-text"
               >
                 Collapse
               </button>
@@ -554,7 +554,7 @@ export function HorizonProjectionChart({
               <button
                 type="button"
                 onClick={() => setShowFairValue((v) => !v)}
-                className={`text-xs px-2 py-1 rounded-full border transition-opacity ${
+                className={`text-[13px] px-2 py-1 rounded-full border transition-opacity ${
                   showFairValue ? "opacity-100" : "opacity-40"
                 }`}
                 style={{
@@ -571,7 +571,7 @@ export function HorizonProjectionChart({
                 key={key}
                 type="button"
                 onClick={() => setVisible((v) => ({ ...v, [key]: !v[key] }))}
-                className={`text-xs px-2 py-1 rounded-full border transition-opacity ${
+                className={`text-[13px] px-2 py-1 rounded-full border transition-opacity ${
                   visible[key] ? "opacity-100" : "opacity-40"
                 }`}
                 style={{
@@ -590,10 +590,10 @@ export function HorizonProjectionChart({
       <div className="p-3 sm:p-4">
         {(chaseBanner || planMode === "pullback_conditional") && (
           <div className="mb-3 rounded-lg border border-td-crit/40 bg-td-crit-weak/30 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-td-crit">
+            <p className="text-[13px] font-semibold uppercase tracking-wide text-td-crit">
               {chaseBanner || "ABOVE FAIR VALUE"}
             </p>
-            <p className="text-[11px] text-td-crit/80 mt-0.5 leading-snug">
+            <p className="text-[13px] text-td-crit/80 mt-0.5 leading-snug">
               {chaseDetail ||
                 "Spot is above model FV — forward channels start from the entry band as optional cheaper-fill plans, not a forecast of a drop from today's print."}
             </p>
@@ -775,7 +775,7 @@ export function HorizonProjectionChart({
         </div>
 
         <div
-          className={`mt-3 grid grid-cols-1 gap-2 text-xs ${
+          className={`mt-3 grid grid-cols-1 gap-2 text-[13px] ${
             hasFairValue && showFairValue
               ? "sm:grid-cols-2 lg:grid-cols-4"
               : "sm:grid-cols-3"

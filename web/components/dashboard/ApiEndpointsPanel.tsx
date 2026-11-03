@@ -213,7 +213,7 @@ export function ApiEndpointsPanel() {
         <Terminal className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
         <div>
           <p className="text-sm font-semibold text-slate-300">API endpoints (ad-hoc runner)</p>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-[13px] text-slate-500 mt-0.5">
             {catalog.length} routes · Run executes in-browser · POST/DELETE may change data (confirm shown)
           </p>
         </div>
@@ -252,14 +252,14 @@ export function ApiEndpointsPanel() {
           return (
             <div key={id} className="rounded-lg border border-slate-700/80 bg-slate-900/50 overflow-hidden">
               <div className="flex flex-wrap items-start gap-2 p-2.5">
-                <span className={clsx("text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0", methodColor(e.method))}>
+                <span className={clsx("text-[11px] font-bold px-1.5 py-0.5 rounded border shrink-0", methodColor(e.method))}>
                   {e.method}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <code className="text-xs text-emerald-300/90 break-all">{buildUrl(e, getPathParams(e, id), getQuery(e, id))}</code>
-                  <p className="text-xs text-slate-500 mt-0.5">{e.description}</p>
+                  <code className="text-[13px] text-emerald-300/90 break-all">{buildUrl(e, getPathParams(e, id), getQuery(e, id))}</code>
+                  <p className="text-[13px] text-slate-500 mt-0.5">{e.description}</p>
                   {e.confirm && (
-                    <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 mt-1">
+                    <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 mt-1">
                       <AlertTriangle className="h-3 w-3" /> mutates data
                     </span>
                   )}
@@ -286,7 +286,7 @@ export function ApiEndpointsPanel() {
                     type="button"
                     disabled={runningId === id}
                     onClick={() => runEndpoint(e, id)}
-                    className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-emerald-600/80 text-white hover:bg-emerald-500 disabled:opacity-50"
+                    className="flex items-center gap-1 px-2 py-1 rounded text-[13px] font-medium bg-emerald-600/80 text-white hover:bg-emerald-500 disabled:opacity-50"
                   >
                     <Play className="h-3 w-3" />
                     {e.external ? "Open" : runningId === id ? "…" : "Run"}
@@ -297,10 +297,10 @@ export function ApiEndpointsPanel() {
               {hasParams && (
                 <div className="px-2.5 pb-2 flex flex-wrap gap-3 border-t border-slate-800/80 pt-2">
                   {Object.keys(pathParams).map((key) => (
-                    <label key={key} className="text-[10px] text-slate-500">
+                    <label key={key} className="text-[11px] text-slate-500">
                       {key}
                       <input
-                        className="block mt-0.5 w-20 rounded bg-slate-800 border border-slate-600 px-1.5 py-0.5 text-xs text-slate-200 font-mono"
+                        className="block mt-0.5 w-20 rounded bg-slate-800 border border-slate-600 px-1.5 py-0.5 text-[13px] text-slate-200 font-mono"
                         value={getPathParams(e, id)[key] ?? ""}
                         onChange={(ev) =>
                           setPathEdits((prev) => ({
@@ -312,10 +312,10 @@ export function ApiEndpointsPanel() {
                     </label>
                   ))}
                   {Object.entries(getQuery(e, id)).map(([key, val]) => (
-                    <label key={key} className="text-[10px] text-slate-500">
+                    <label key={key} className="text-[11px] text-slate-500">
                       ?{key}
                       <input
-                        className="block mt-0.5 min-w-[5rem] rounded bg-slate-800 border border-slate-600 px-1.5 py-0.5 text-xs text-slate-200 font-mono"
+                        className="block mt-0.5 min-w-[5rem] rounded bg-slate-800 border border-slate-600 px-1.5 py-0.5 text-[13px] text-slate-200 font-mono"
                         value={val}
                         onChange={(ev) =>
                           setQueryEdits((prev) => ({
@@ -331,7 +331,7 @@ export function ApiEndpointsPanel() {
 
               {expandedId === id && result && (
                 <div className="border-t border-slate-800 bg-slate-950/80 px-2.5 py-2">
-                  <div className="flex items-center gap-3 text-[10px] mb-1">
+                  <div className="flex items-center gap-3 text-[11px] mb-1">
                     <span className={result.ok ? "text-emerald-400" : "text-red-400"}>HTTP {result.status || "ERR"}</span>
                     <span className="text-slate-500">{result.ms} ms</span>
                     {result.fullText && (
@@ -344,7 +344,7 @@ export function ApiEndpointsPanel() {
                       </button>
                     )}
                   </div>
-                  <pre className="text-[10px] text-slate-400 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{result.preview}</pre>
+                  <pre className="text-[11px] text-slate-400 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{result.preview}</pre>
                 </div>
               )}
             </div>

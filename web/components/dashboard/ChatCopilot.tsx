@@ -118,7 +118,7 @@ export function ChatCopilot({ data }: Props) {
                 >
                   {m.content}
                   {m.sources && m.sources.length > 0 && (
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-[13px] text-slate-500">
                       Based on: {m.sources.join(", ")}
                     </p>
                   )}

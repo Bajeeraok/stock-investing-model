@@ -28,7 +28,7 @@ export function PortfolioValueCard({ report, limitPct }: { report: PortfolioRepo
         <span className="font-mono text-3xl font-bold text-td-text tabular-nums">{usd(report.total_value)}</span>
         <span
           className={clsx(
-            "font-mono text-[11px] font-bold px-2.5 py-1 rounded-full",
+            "font-mono text-[13px] font-bold px-2.5 py-1 rounded-full",
             concentrated ? "bg-td-crit-weak text-td-crit" : "bg-td-accent-weak text-td-accent",
           )}
         >
@@ -128,17 +128,17 @@ export function RiskManagementCard({
       </div>
       <div className="grid grid-cols-2 gap-2.5">
         <div className="rounded-xl border border-td-line bg-td-surface2/50 px-3 py-2.5">
-          <p className="text-[11px] text-td-muted">95% VaR / CVaR</p>
+          <p className="text-[13px] text-td-muted">95% VaR / CVaR</p>
           <p className="mt-0.5 font-mono text-[15px] font-bold text-td-text tabular-nums">
             {usd(varUsd)} / {usd(cvarUsd)}
           </p>
         </div>
         <div className="rounded-xl border border-td-line bg-td-surface2/50 px-3 py-2.5">
-          <p className="text-[11px] text-td-muted">{shock ? `${shock.shock_pct > 0 ? "+" : ""}${shock.shock_pct}% SPY shock` : "SPY shock"}</p>
+          <p className="text-[13px] text-td-muted">{shock ? `${shock.shock_pct > 0 ? "+" : ""}${shock.shock_pct}% SPY shock` : "SPY shock"}</p>
           <p className="mt-0.5 font-mono text-[15px] font-bold text-td-crit tabular-nums">{shock ? usd(-Math.abs(shock.loss_dollars)) : "—"}</p>
         </div>
       </div>
-      {vc?.interpretation && <p className="mt-2 text-[11.5px] text-td-muted leading-snug">{vc.interpretation}</p>}
+      {vc?.interpretation && <p className="mt-2 text-[11.5px] text-td-muted leading-relaxed">{vc.interpretation}</p>}
       {onOpenFull && (
         <button type="button" onClick={onOpenFull} className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-td-accent">
           Full risk report <ChevronRight className="h-3.5 w-3.5" />

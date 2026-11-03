@@ -281,15 +281,15 @@ function MacroContextBar({ ctx }: { ctx: MacroContext }) {
     <div className="bg-td-surface2/40 rounded-xl border border-td-line/30 px-3.5 py-2.5">
       <div className="flex items-center gap-2 mb-2">
         <Activity size={11} className="text-td-info" />
-        <span className="text-[10px] font-semibold text-td-info uppercase tracking-widest">
+        <span className="text-[11px] font-semibold text-td-info uppercase tracking-widest">
           Live Macro — scenario probabilities gated on these
         </span>
       </div>
       <div className="flex items-center gap-4 flex-wrap">
         {items.map(it => (
           <div key={it.label} className="flex items-baseline gap-1.5">
-            <span className="text-[10px] text-td-muted">{it.label}</span>
-            <span className={clsx("text-xs font-mono font-bold", it.color)}>{it.value}</span>
+            <span className="text-[11px] text-td-muted">{it.label}</span>
+            <span className={clsx("text-[13px] font-mono font-bold", it.color)}>{it.value}</span>
           </div>
         ))}
       </div>
@@ -308,7 +308,7 @@ function AnalystConsensusStrip({ at, price }: { at: AnalystTargets; price: numbe
     <div className="bg-td-owner/5 border border-td-owner/20 rounded-xl px-3.5 py-2.5 space-y-2">
       <div className="flex items-center gap-2">
         <Target size={11} className="text-td-owner" />
-        <span className="text-[10px] font-semibold text-td-owner uppercase tracking-widest">
+        <span className="text-[11px] font-semibold text-td-owner uppercase tracking-widest">
           Wall Street Analyst Consensus
           {at.analyst_count ? ` · ${at.analyst_count} analysts` : ""}
           <span className="font-normal text-td-muted ml-1">(FMP · used to anchor Bull/Base scenario targets)</span>
@@ -317,31 +317,31 @@ function AnalystConsensusStrip({ at, price }: { at: AnalystTargets; price: numbe
       <div className="flex items-center gap-5 flex-wrap">
         {at.high != null && (
           <div className="text-center">
-            <p className="text-[10px] text-td-muted">Analyst High</p>
+            <p className="text-[11px] text-td-muted">Analyst High</p>
             <p className={clsx("text-sm font-mono font-bold", returnColor(at.high_return ?? 0))}>{fmt(at.high)}</p>
-            <p className={clsx("text-[10px]", returnColor(at.high_return ?? 0))}>{fmtPct(at.high_return)}</p>
+            <p className={clsx("text-[11px]", returnColor(at.high_return ?? 0))}>{fmtPct(at.high_return)}</p>
           </div>
         )}
         {at.median != null && (
           <div className="text-center">
-            <p className="text-[10px] text-td-muted">Consensus Target</p>
+            <p className="text-[11px] text-td-muted">Consensus Target</p>
             <p className={clsx("text-sm font-mono font-bold", returnColor(at.median_return ?? 0))}>{fmt(at.median)}</p>
-            <p className={clsx("text-[10px]", returnColor(at.median_return ?? 0))}>{fmtPct(at.median_return)}</p>
+            <p className={clsx("text-[11px]", returnColor(at.median_return ?? 0))}>{fmtPct(at.median_return)}</p>
           </div>
         )}
         {at.low != null && (
           <div className="text-center">
-            <p className="text-[10px] text-td-muted">Analyst Low</p>
+            <p className="text-[11px] text-td-muted">Analyst Low</p>
             <p className={clsx("text-sm font-mono font-bold", returnColor(at.low_return ?? 0))}>{fmt(at.low)}</p>
-            <p className={clsx("text-[10px]", returnColor(at.low_return ?? 0))}>{fmtPct(at.low_return)}</p>
+            <p className={clsx("text-[11px]", returnColor(at.low_return ?? 0))}>{fmtPct(at.low_return)}</p>
           </div>
         )}
         <div className="text-center">
-          <p className="text-[10px] text-td-muted">Current</p>
+          <p className="text-[11px] text-td-muted">Current</p>
           <p className="text-sm font-mono font-bold text-td-text">{fmt(price)}</p>
         </div>
       </div>
-      {at.note && <p className="text-[10px] text-td-muted leading-snug">{at.note}</p>}
+      {at.note && <p className="text-[11px] text-td-muted leading-relaxed">{at.note}</p>}
     </div>
   );
 }
@@ -368,12 +368,12 @@ function EarningsBanner({ info }: { info: EarningsInfo }) {
         urgent ? "text-td-crit" : soon ? "text-td-warn" : "text-td-muted"
       )} />
       <p className={clsx(
-        "text-xs leading-relaxed",
+        "text-[13px] leading-relaxed",
         urgent ? "text-td-crit" : soon ? "text-td-warn" : "text-td-muted"
       )}>
         {info.earnings_note}
         {soon && (
-          <span className="block text-[10px] mt-0.5 text-td-muted">
+          <span className="block text-[11px] mt-0.5 text-td-muted">
             Earnings scenarios adjusted for event probability
           </span>
         )}
@@ -395,36 +395,36 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
     <div className="bg-td-info/5 border border-td-info/20 rounded-xl px-3.5 py-3 space-y-2.5">
       <div className="flex items-center gap-2">
         <Target size={11} className="text-td-info" />
-        <span className="text-[10px] font-semibold text-td-info uppercase tracking-widest">
+        <span className="text-[11px] font-semibold text-td-info uppercase tracking-widest">
           Earnings Event Target (1-Day Reaction)
         </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div>
-          <p className="text-[10px] text-td-muted">Expected Move</p>
+          <p className="text-[11px] text-td-muted">Expected Move</p>
           <p className="text-sm font-mono font-bold text-td-info">{fmtPct(et.expected_move_pct)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-td-muted">Upside</p>
+          <p className="text-[11px] text-td-muted">Upside</p>
           <p className="text-sm font-mono font-bold text-td-accent">{fmt(et.upside_target)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-td-muted">Downside</p>
+          <p className="text-[11px] text-td-muted">Downside</p>
           <p className="text-sm font-mono font-bold text-td-crit">{fmt(et.downside_target)}</p>
         </div>
         <div>
-          <p className="text-[10px] text-td-muted">Bias</p>
-          <p className={clsx("text-xs font-semibold", biasTone)}>
+          <p className="text-[11px] text-td-muted">Bias</p>
+          <p className={clsx("text-[13px] font-semibold", biasTone)}>
             {biasLabel === "Unavailable" ? "Neutral" : biasLabel}
             {et.bias_prob_pct != null ? ` (${Math.round(et.bias_prob_pct)}%)` : ""}
           </p>
         </div>
         <div>
-          <p className="text-[10px] text-td-muted">Directional</p>
+          <p className="text-[11px] text-td-muted">Directional</p>
           <p className="text-sm font-mono font-bold text-td-text">{fmt(et.directional_target)}</p>
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]">
         <div>
           <span className="text-td-muted">Current</span>{" "}
           <span className="font-mono text-td-text">{fmt(price)}</span>
@@ -442,7 +442,7 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
           <span className="font-mono text-td-text">{et.confidence_pct != null ? `${et.confidence_pct}%` : "—"}</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[13px]">
         <div>
           <span className="text-td-muted">Backtest Events</span>{" "}
           <span className="font-mono text-td-text">{et.backtest_events ?? 0}</span>
@@ -458,10 +458,10 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
       </div>
       {!!(et.recent_events && et.recent_events.length) && (
         <div className="rounded-lg border border-td-line/40 bg-td-surface/30 px-2.5 py-2">
-          <p className="text-[10px] text-td-muted mb-1 uppercase tracking-widest">Recent Earnings Outcomes</p>
+          <p className="text-[11px] text-td-muted mb-1 uppercase tracking-widest">Recent Earnings Outcomes</p>
           <div className="space-y-1">
             {et.recent_events!.slice().reverse().map((ev) => (
-              <div key={ev.event_date} className="flex items-center justify-between gap-2 text-[10px]">
+              <div key={ev.event_date} className="flex items-center justify-between gap-2 text-[11px]">
                 <span className="text-td-muted">{ev.event_date}</span>
                 <span className={clsx("font-mono", ev.realized_move_pct >= 0 ? "text-td-accent" : "text-td-crit")}>
                   {ev.realized_move_pct >= 0 ? "+" : ""}{ev.realized_move_pct.toFixed(2)}%
@@ -472,10 +472,10 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
         </div>
       )}
       {et.method_note && (
-        <p className="text-[10px] text-td-muted leading-snug">{et.method_note}</p>
+        <p className="text-[11px] text-td-muted leading-relaxed">{et.method_note}</p>
       )}
       {et.valuation_context && (
-        <p className="text-[10px] text-td-warn/90 leading-snug border border-td-warn/25 rounded-lg px-2.5 py-2 bg-td-warn-weak/20">
+        <p className="text-[11px] text-td-warn/90 leading-snug border border-td-warn/25 rounded-lg px-2.5 py-2 bg-td-warn-weak/20">
           {et.valuation_context}
         </p>
       )}
@@ -511,24 +511,24 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={clsx("text-sm font-bold", meta.color)}>{meta.label}</span>
-            <span className="text-xs text-td-muted">{h.label}</span>
+            <span className="text-[13px] text-td-muted">{h.label}</span>
             {hasML && (
-              <span className={clsx("text-[10px] font-semibold px-1.5 py-0.5 rounded border", interpBadge(h.interpretation))}>
+              <span className={clsx("text-[11px] font-semibold px-1.5 py-0.5 rounded border", interpBadge(h.interpretation))}>
                 {toneLabel === "Unavailable" ? h.interpretation : toneLabel}
               </span>
             )}
           </div>
           {/* Quick summary line */}
           <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-            <span className="text-[11px] text-td-muted">
+            <span className="text-[13px] text-td-muted">
               Entry <span className="text-td-text font-mono">{fmt(h.entry_zone.low)}–{fmt(h.entry_zone.high)}</span>
             </span>
-            <span className="text-[11px] text-td-muted">
+            <span className="text-[13px] text-td-muted">
               Target <span className={clsx("font-mono font-semibold", returnColor(h.returns.base))}>{fmt(h.targets.base)}</span>
               <span className={clsx("ml-1", returnColor(h.returns.base))}>(+{h.returns.base.toFixed(1)}%)</span>
             </span>
             {h.ml_prob_pct !== null && (
-              <span className="text-[11px] text-td-muted">
+              <span className="text-[13px] text-td-muted">
                 ML <span className={clsx("font-mono font-semibold", probColor(h.ml_prob_pct))}>{fmtProb(h.ml_prob_pct)}</span>
               </span>
             )}
@@ -548,21 +548,21 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
             <div className="bg-td-surface2/60 rounded-xl p-3.5 space-y-2 border border-td-accent/15">
               <div className="flex items-center gap-1.5">
                 <DollarSign size={12} className="text-td-accent" />
-                <span className="text-[10px] font-semibold text-td-accent uppercase tracking-widest">Buy Zone</span>
+                <span className="text-[11px] font-semibold text-td-accent uppercase tracking-widest">Buy Zone</span>
               </div>
               <div className="space-y-1">
                 <DataRow label="Low"    value={fmt(h.entry_zone.low)}  color="text-td-accent" mono />
                 <DataRow label="High"   value={fmt(h.entry_zone.high)} color="text-td-accent" mono />
                 <DataRow label="Anchor" value={h.entry_zone.anchor}    color="text-td-text"   />
               </div>
-              <p className="text-[10px] text-td-muted leading-snug">{h.entry_zone.note}</p>
+              <p className="text-[11px] text-td-muted leading-relaxed">{h.entry_zone.note}</p>
             </div>
 
             {/* Price targets */}
             <div className="bg-td-surface2/60 rounded-xl p-3.5 space-y-2 border border-td-line/30">
               <div className="flex items-center gap-1.5">
                 <Target size={12} className="text-td-info" />
-                <span className="text-[10px] font-semibold text-td-info uppercase tracking-widest">Price Targets</span>
+                <span className="text-[11px] font-semibold text-td-info uppercase tracking-widest">Price Targets</span>
               </div>
               <div className="space-y-1">
                 <DataRow label="🐂 Bull"   value={`${fmt(h.targets.bull)} (${fmtPct(h.returns.bull)})`}  color={returnColor(h.returns.bull)} mono />
@@ -578,7 +578,7 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
                     mono
                     bold
                   />
-                  <p className="text-[10px] text-td-muted mt-0.5">Probability-weighted return</p>
+                  <p className="text-[11px] text-td-muted mt-0.5">Probability-weighted return</p>
                 </div>
               )}
             </div>
@@ -587,7 +587,7 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
             <div className="bg-td-surface2/60 rounded-xl p-3.5 space-y-2 border border-td-crit/10">
               <div className="flex items-center gap-1.5">
                 <Shield size={12} className="text-td-crit" />
-                <span className="text-[10px] font-semibold text-td-crit uppercase tracking-widest">Risk</span>
+                <span className="text-[11px] font-semibold text-td-crit uppercase tracking-widest">Risk</span>
               </div>
               <div className="space-y-1">
                 <DataRow
@@ -599,7 +599,7 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
                 <DataRow label="Risk/Reward"  value={h.risk_reward != null ? `${h.risk_reward}×` : "—"} color={rrColor(h.risk_reward)} mono />
                 <DataRow label="ML Prob"      value={fmtProb(h.ml_prob_pct)} color={probColor(h.ml_prob_pct)} mono />
               </div>
-              <p className="text-[10px] text-td-muted leading-snug">
+              <p className="text-[11px] text-td-muted leading-relaxed">
                 {h.horizon_key === "long"
                   ? "~5% below 52-week low — structural invalidation / tail-stress floor, not a tight trailing stop"
                   : `Stop below ${h.horizon_key === "short" ? "MA50" : "MA200"} (×0.97)`}
@@ -610,7 +610,7 @@ function HorizonCard({ h }: { h: HorizonTargets }) {
           {/* Action hint */}
           <div className="flex items-start gap-2 bg-td-surface2/40 rounded-lg px-3 py-2.5 border border-td-line/30">
             <Info size={12} className="text-td-info mt-0.5 shrink-0" />
-            <p className="text-xs text-td-text leading-relaxed">{h.action_hint}</p>
+            <p className="text-[13px] text-td-text leading-relaxed">{h.action_hint}</p>
           </div>
         </div>
       )}
@@ -623,8 +623,8 @@ function DataRow({ label, value, color = "text-td-text", mono = false, bold = fa
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2">
-      <span className="text-[10px] text-td-muted shrink-0">{label}</span>
-      <span className={clsx("text-xs truncate text-right", color, mono && "font-mono", bold && "font-bold")}>
+      <span className="text-[11px] text-td-muted shrink-0">{label}</span>
+      <span className={clsx("text-[13px] truncate text-right", color, mono && "font-mono", bold && "font-bold")}>
         {value}
       </span>
     </div>
@@ -647,19 +647,19 @@ export function TechnicalLevelsBar({ lv, price }: { lv: TechnicalLevels; price: 
 
   return (
     <div className="bg-td-surface2/30 rounded-xl border border-td-line/30 p-3.5 space-y-3">
-      <p className="text-[10px] font-semibold text-td-muted uppercase tracking-widest">
+      <p className="text-[11px] font-semibold text-td-muted uppercase tracking-widest">
         Technical Level Anchors — Entry Zone Logic
       </p>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         {levels.map(l => (
-          <div key={l.label} className="flex items-center gap-1.5 text-xs">
+          <div key={l.label} className="flex items-center gap-1.5 text-[13px]">
             <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", l.dot)} />
             <span className="text-td-muted">{l.label}</span>
             <span className={clsx("font-mono font-semibold", l.color)}>{fmt(l.value)}</span>
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-td-muted leading-snug">{lv.note}</p>
+      <p className="text-[11px] text-td-muted leading-relaxed">{lv.note}</p>
     </div>
   );
 }
@@ -707,24 +707,24 @@ function ScenarioRow({ s, price }: { s: Scenario; price: number }) {
               <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-warn bg-td-warn/10 border-td-warn/30">TACTICAL CAP</span>
             )}
           </div>
-          <p className="text-[11px] text-td-muted truncate mt-0.5">{s.trigger}</p>
+          <p className="text-[13px] text-td-muted truncate mt-0.5">{s.trigger}</p>
         </div>
 
         {/* Key numbers */}
         <div className="flex items-center gap-4 shrink-0">
           <div className="text-right hidden sm:block">
-            <p className="text-[10px] text-td-muted">Target</p>
-            <p className="text-xs font-mono font-semibold text-td-text">{fmt(s.price_target)}</p>
+            <p className="text-[11px] text-td-muted">Target</p>
+            <p className="text-[13px] font-mono font-semibold text-td-text">{fmt(s.price_target)}</p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] text-td-muted">Return</p>
+            <p className="text-[11px] text-td-muted">Return</p>
             <p className={clsx("text-sm font-mono font-bold", returnColor(s.return_pct))}>
               {fmtPct(s.return_pct)}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-[10px] text-td-muted">Prob</p>
-            <p className={clsx("text-xs font-mono font-semibold", probColor(s.probability * 100))}>
+            <p className="text-[11px] text-td-muted">Prob</p>
+            <p className={clsx("text-[13px] font-mono font-semibold", probColor(s.probability * 100))}>
               {Math.round(s.probability * 100)}%
             </p>
           </div>
@@ -737,37 +737,37 @@ function ScenarioRow({ s, price }: { s: Scenario; price: number }) {
         <div className="border-t border-td-line/30 px-4 py-3 space-y-2.5">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <p className="text-[10px] text-td-muted mb-0.5">Price Target</p>
+              <p className="text-[11px] text-td-muted mb-0.5">Price Target</p>
               <p className="text-sm font-mono font-bold text-td-text">{fmt(s.price_target)}</p>
-              <p className={clsx("text-xs font-mono", returnColor(s.return_pct))}>{fmtPct(s.return_pct)} vs current</p>
+              <p className={clsx("text-[13px] font-mono", returnColor(s.return_pct))}>{fmtPct(s.return_pct)} vs current</p>
             </div>
             <div>
-              <p className="text-[10px] text-td-muted mb-0.5">Scenario Probability</p>
+              <p className="text-[11px] text-td-muted mb-0.5">Scenario Probability</p>
               <p className={clsx("text-sm font-mono font-bold", probColor(s.probability * 100))}>
                 {Math.round(s.probability * 100)}%
               </p>
-              <p className="text-[10px] text-td-muted">ML-adjusted estimate</p>
+              <p className="text-[11px] text-td-muted">ML-adjusted estimate</p>
             </div>
             <div>
-              <p className="text-[10px] text-td-muted mb-0.5">Expected Value</p>
+              <p className="text-[11px] text-td-muted mb-0.5">Expected Value</p>
               <p className={clsx("text-sm font-mono font-bold", returnColor(s.return_pct * s.probability))}>
                 {fmtPct(s.return_pct * s.probability)}
               </p>
-              <p className="text-[10px] text-td-muted">Return × Probability</p>
+              <p className="text-[11px] text-td-muted">Return × Probability</p>
             </div>
             <div>
-              <p className="text-[10px] text-td-muted mb-0.5">Timeframe</p>
-              <p className="text-xs font-semibold text-td-text">{s.timeframe}</p>
+              <p className="text-[11px] text-td-muted mb-0.5">Timeframe</p>
+              <p className="text-[13px] font-semibold text-td-text">{s.timeframe}</p>
             </div>
           </div>
           <div className="bg-td-surface2/50 rounded-lg px-3 py-2.5">
-            <p className="text-[10px] text-td-muted uppercase tracking-widest mb-1">Rationale</p>
-            <p className="text-xs text-td-text leading-relaxed">{s.rationale}</p>
+            <p className="text-[11px] text-td-muted uppercase tracking-widest mb-1">Rationale</p>
+            <p className="text-[13px] text-td-text leading-relaxed">{s.rationale}</p>
           </div>
           {s.macro_note && (
             <div className="flex items-start gap-1.5 bg-td-info/5 border border-td-info/20 rounded-lg px-3 py-2">
               <Activity size={10} className="text-td-info mt-0.5 shrink-0" />
-              <p className="text-[11px] text-td-info leading-snug">{s.macro_note}</p>
+              <p className="text-[13px] text-td-info leading-snug">{s.macro_note}</p>
             </div>
           )}
         </div>
@@ -807,7 +807,7 @@ export function PriceTargetsPanel({
     return (
       <div className="flex items-center gap-2 bg-td-crit/10 border border-td-crit/30 rounded-xl px-4 py-3">
         <AlertTriangle size={14} className="text-td-crit shrink-0" />
-        <p className="text-xs text-td-crit">{data.error}</p>
+        <p className="text-[13px] text-td-crit">{data.error}</p>
       </div>
     );
   }
@@ -825,7 +825,7 @@ export function PriceTargetsPanel({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h3 className="text-sm font-bold text-td-text">Price Targets & Scenario Analysis</h3>
-          <p className="text-[11px] text-td-muted mt-0.5">
+          <p className="text-[13px] text-td-muted mt-0.5">
             {hideHorizonZones ? "Entry logic in Investor Decision Summary above · " : "Entry zones anchored to MA50 / MA200 / 52w-low · "}
             {scenarios.length} scenarios ·
             <span className="text-td-accent ml-1">{bullScenarios} bullish</span>
@@ -834,7 +834,7 @@ export function PriceTargetsPanel({
             <span className="ml-2 text-td-muted">as of {data.analysis_date}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs text-td-muted">
+        <div className="flex items-center gap-2 text-[13px] text-td-muted">
           <span className="font-mono font-bold text-td-text">{fmt(data.current_price)}</span>
           <span className="text-td-muted">current</span>
         </div>
@@ -864,11 +864,11 @@ export function PriceTargetsPanel({
         <div className="flex items-start gap-2 rounded-xl border border-td-warn/35 bg-td-warn-weak/25 px-3.5 py-2.5">
           <AlertTriangle size={12} className="text-td-warn mt-0.5 shrink-0" />
           <div className="min-w-0 space-y-1">
-            <p className="text-[10px] font-semibold text-td-warn uppercase tracking-wider">
+            <p className="text-[11px] font-semibold text-td-warn uppercase tracking-wider">
               Valuation vs tactical scenarios
             </p>
-            <p className="text-xs text-td-warn/90 leading-relaxed">{data.valuation_guard.valuation_note}</p>
-            <p className="text-[10px] text-td-muted leading-snug">
+            <p className="text-[13px] text-td-warn/90 leading-relaxed">{data.valuation_guard.valuation_note}</p>
+            <p className="text-[11px] text-td-muted leading-relaxed">
               Model FV is a long-term fundamentals anchor. Earnings scenarios show short-term reaction ranges —
               they are capped when spot is already above street targets.
             </p>
@@ -884,7 +884,7 @@ export function PriceTargetsPanel({
       {/* ── Horizon cards (hidden when Investor Decision Summary is shown to avoid conflicting entry logic) ── */}
       {!hideHorizonZones && hasHorizons && (
         <div className="space-y-2">
-          <p className="text-[10px] font-semibold text-td-muted uppercase tracking-widest">
+          <p className="text-[11px] font-semibold text-td-muted uppercase tracking-widest">
             Buy / Sell Zones by Horizon
           </p>
           {horizonOrder.map(k => {
@@ -898,13 +898,13 @@ export function PriceTargetsPanel({
       {/* ── Scenario analysis ── */}
       {scenarios.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] font-semibold text-td-owner/90 uppercase tracking-widest">
+          <p className="text-[11px] font-semibold text-td-owner/90 uppercase tracking-widest">
             Scenario analysis ({scenarios.length} scenarios)
           </p>
           <button
             type="button"
             onClick={() => setShowScenarios((v) => !v)}
-            className="flex items-center gap-2 text-[10px] text-td-muted w-full hover:text-td-text transition-colors"
+            className="flex items-center gap-2 text-[11px] text-td-muted w-full hover:text-td-text transition-colors"
           >
             {showScenarios ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             {showScenarios ? "Collapse list" : "Expand list"}
@@ -918,7 +918,7 @@ export function PriceTargetsPanel({
 
               {/* Expected value footer — exclusive probs only (sum ≈ 100%) */}
               <div className="bg-td-surface2/40 rounded-xl border border-td-line/30 px-4 py-3">
-                <p className="text-[10px] text-td-muted uppercase tracking-widest mb-2">
+                <p className="text-[11px] text-td-muted uppercase tracking-widest mb-2">
                   Portfolio-Weighted Expected Value
                 </p>
                 <div className="flex items-center gap-4 flex-wrap">
@@ -947,11 +947,11 @@ export function PriceTargetsPanel({
                           <p className={clsx("text-xl font-mono font-bold", returnColor(evPct))}>
                             {evPct != null ? fmtPct(evPct) : "—"}
                           </p>
-                          <p className="text-[10px] text-td-muted">
+                          <p className="text-[11px] text-td-muted">
                             Exclusive probs (sum {sumPct}%) · Σ(p × return)
                           </p>
                         </div>
-                        <div className="text-xs text-td-muted leading-relaxed max-w-sm">
+                        <div className="text-[13px] text-td-muted leading-relaxed max-w-sm">
                           {evPct == null &&
                             "Scenario weights are not exclusive yet — EV withheld until probabilities sum to 100%."}
                           {evPct != null && evPct >= 3 && "Positive expected value — the odds favor entry with proper position sizing and a defined stop."}
@@ -964,7 +964,7 @@ export function PriceTargetsPanel({
                 </div>
               </div>
 
-              <p className="text-[10px] text-td-muted text-center leading-relaxed">
+              <p className="text-[11px] text-td-muted text-center leading-relaxed">
                 Scenarios are model-generated estimates based on historical patterns, asset type, and ML signal strength.
                 Not financial advice. Always verify with current macro conditions.
               </p>

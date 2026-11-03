@@ -62,18 +62,18 @@ export function PortfolioHeatMap({
       <div className="px-4 py-3 border-b border-slate-700/80 bg-slate-900/60 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-200">Portfolio heat map</h3>
-          <p className="text-[11px] text-slate-400 mt-1 md:hidden">Sorted by weight · tap a row for detail</p>
-          <p className="text-[11px] text-slate-400 mt-1 hidden md:block">
+          <p className="text-[13px] text-slate-400 mt-1 md:hidden">Sorted by weight · tap a row for detail</p>
+          <p className="text-[13px] text-slate-400 mt-1 hidden md:block">
             Size = weight · fill = composite score · ring = model confidence · dot = regime
           </p>
           {mismatchCount > 0 && (
-            <p className="text-[10px] text-amber-300/90 mt-1">
+            <p className="text-[11px] text-amber-300/90 mt-1">
               {mismatchCount} holding{mismatchCount === 1 ? "" : "s"}: score vs confidence disagree (⚠)
             </p>
           )}
         </div>
         {regimeCounts && (
-          <div className="flex flex-wrap gap-1.5 text-[10px] font-medium">
+          <div className="flex flex-wrap gap-1.5 text-[11px] font-medium">
             <span className="px-2 py-0.5 rounded border border-emerald-500/35 bg-emerald-950/30 text-emerald-200">
               UP {regimeCounts.UP ?? 0}
             </span>
@@ -102,9 +102,9 @@ export function PortfolioHeatMap({
               <>
                 {mismatch && <MismatchBadge />}
                 <span className="font-mono text-sm font-semibold w-12 shrink-0 truncate">{h.ticker}</span>
-                <span className="text-xs tabular-nums w-10 shrink-0 opacity-80">{pct.toFixed(1)}%</span>
-                <span className="text-xs font-medium tabular-nums w-7 shrink-0">{fmtScore(h.score)}</span>
-                <span className={clsx("text-[10px] tabular-nums w-10 shrink-0", confidenceTextClass(h.confidence))}>
+                <span className="text-[13px] tabular-nums w-10 shrink-0 opacity-80">{pct.toFixed(1)}%</span>
+                <span className="text-[13px] font-medium tabular-nums w-7 shrink-0">{fmtScore(h.score)}</span>
+                <span className={clsx("text-[11px] tabular-nums w-10 shrink-0", confidenceTextClass(h.confidence))}>
                   {fmtConfidence(h.confidence)}
                 </span>
                 <span
@@ -141,11 +141,11 @@ export function PortfolioHeatMap({
               const inner = (
                 <>
                   {mismatch && <MismatchBadge />}
-                  <span className="font-mono text-xs sm:text-sm font-semibold truncate">{h.ticker}</span>
-                  <span className="text-[10px] opacity-80">{pct.toFixed(1)}%</span>
+                  <span className="font-mono text-[13px] sm:text-sm font-semibold truncate">{h.ticker}</span>
+                  <span className="text-[11px] opacity-80">{pct.toFixed(1)}%</span>
                   <div className="flex items-baseline gap-1.5 flex-wrap">
                     {h.score != null && (
-                      <span className="text-[10px] font-semibold opacity-95">{fmtScore(h.score)}</span>
+                      <span className="text-[11px] font-semibold opacity-95">{fmtScore(h.score)}</span>
                     )}
                     <span className={clsx("text-[9px] font-mono tabular-nums", confidenceTextClass(h.confidence))}>
                       {fmtConfidence(h.confidence)}
@@ -182,7 +182,7 @@ export function PortfolioHeatMap({
             })}
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[10px] text-slate-500">
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-slate-500">
           <span className="inline-flex items-center gap-1">
             <span className="h-2.5 w-4 rounded bg-emerald-600/40 border border-emerald-500/40" /> Score ≥65
           </span>
