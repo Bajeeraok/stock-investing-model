@@ -593,7 +593,8 @@ def _target_pct(r: dict[str, Any]) -> float | None:
         c, t = float(r.get("close_at_signal") or 0), float(r.get("st_target_at_signal") or 0)
     except (TypeError, ValueError):
         return None
-    return round((t / c - 1.0) * 100.0, 2) if c > 0 and t > 0 else None
+    # Price already at/above the band top: no upside target to measure a miss against.
+    return round((t / c - 1.0) * 100.0, 2) if c > 0 and t > c else None
 
 
 def build_error_summary(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
