@@ -166,15 +166,15 @@ function LevelStatChips({ lvl, hit, horizon }: { lvl: LevelStats; hit: boolean; 
     chips.push({
       text: `${lvl.after_touch_up_pct}% higher ${lvl.after_touch_days ?? 20}d after`,
       title: `Past touches of a level this far below price (${lvl.after_touch_n}): how often the close ${lvl.after_touch_days ?? 20} trading days later was above the fill${r != null ? ` (median ${r > 0 ? "+" : ""}${r}%)` : ""}.`,
-      cls: lvl.after_touch_up_pct >= 60 ? "bg-td-accent/15 text-td-accent" : lvl.after_touch_up_pct >= 45 ? "bg-td-warn/15 text-td-warn" : "bg-td-danger/15 text-td-danger",
+      cls: lvl.after_touch_up_pct >= 60 ? "bg-td-accent/15 text-td-accent" : lvl.after_touch_up_pct >= 45 ? "bg-td-warn/15 text-td-warn" : "bg-td-crit/15 text-td-crit",
     });
   }
   if (lvl.stop_first_pct != null && lvl.target_first_pct != null && lvl.outcome_n) {
     const neither = Math.max(0, 100 - lvl.stop_first_pct - lvl.target_first_pct);
     chips.push({
-      text: `stop first ${lvl.stop_first_pct}% · target first ${lvl.target_first_pct}%`,
-      title: `Entering at this level in past touches (${lvl.outcome_n}): which came first within ${lvl.outcome_window ?? ""} trading days, this plan's stop or its target. Neither: ${neither}%.`,
-      cls: lvl.target_first_pct > lvl.stop_first_pct ? "bg-td-accent/15 text-td-accent" : "bg-td-danger/15 text-td-danger",
+      text: `stop first ${lvl.stop_first_pct}% · target ${lvl.target_first_pct}% · neither ${neither}%`,
+      title: `Entering at this level in past touches (${lvl.outcome_n}): which came first within ${lvl.outcome_window ?? ""} trading days, this plan's stop or its target. Neither = still between them at the end.`,
+      cls: lvl.target_first_pct > lvl.stop_first_pct ? "bg-td-accent/15 text-td-accent" : "bg-td-crit/15 text-td-crit",
     });
   }
   if (!chips.length) return null;
