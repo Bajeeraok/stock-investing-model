@@ -61,7 +61,7 @@ export function SignalsHeatmap({
     <div className="rounded-xl border border-slate-700 overflow-hidden">
       <div className="px-3 sm:px-4 py-2 bg-slate-800 border-b border-slate-700">
         <p className="text-[11px] text-slate-500">
-          Score tier × market regime — {signals.length} tickers. Tap a ticker to open it.
+          Score tier × market regime — {signals.length} {signals.length === 1 ? "ticker" : "tickers"}. Tap a ticker to open it.
         </p>
       </div>
       <div className="p-3 sm:p-4 overflow-x-auto">

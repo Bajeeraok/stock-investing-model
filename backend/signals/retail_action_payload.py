@@ -1686,12 +1686,20 @@ def enrich_dashboard_signal_row(
         low_52w=row.get("low_52w"),
     )
     # List view uses LT band proxy — override valuation detail when no FV.
-    # tranche_idx defaults to 0 (T1, first-dollar rung) — this path has no entry-tier
-    # context, so it must not be implicitly held to the T3/deepest-tranche 25% bar.
+    # No entry-tier context here, so approximate the ticker page's tranche: T1 (MA200 zone,
+    # ±5% of MA200) while price is inside it, the next rung once price is above it. Otherwise
+    # the list shows "all gates clear" for names the ticker page holds to the T2 bar.
+    list_tranche = 0
+    try:
+        ma200 = float(row.get("ma200") or 0)
+        if cp is not None and ma200 > 0 and float(cp) > ma200 * 1.05:
+            list_tranche = 1
+    except (TypeError, ValueError):
+        pass
     if assessment != 0:
         for g in payload["gates"]:
             if g["id"] == "valuation":
-                ok, detail = _valuation_gate_detail(assessment, regime_bull_pct=rb)
+                ok, detail = _valuation_gate_detail(assessment, tranche_idx=list_tranche, regime_bull_pct=rb)
                 g["pass"] = ok
                 g["gate_cleared"] = ok
                 g["visual_status"] = "cleared" if ok else "blocked"

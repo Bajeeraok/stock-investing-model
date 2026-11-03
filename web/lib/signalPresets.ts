@@ -23,7 +23,7 @@ export const SIGNAL_PRESETS: { id: SignalsPresetId; label: string; hint: string;
   {
     id: "trim_candidates",
     label: "Core trim",
-    hint: "Score < 40 or REDUCE/AVOID — Owner / steward",
+    hint: "Model says REDUCE or SELL (genuine risk) — never on a low score alone",
     lens: "owner",
   },
   {
@@ -104,7 +104,8 @@ export function matchesSignalPreset(signal: SignalPresetRow, preset: SignalsPres
     return signal.regime === "UP" && (signal.rsi ?? 100) < 50 && score >= 55;
   }
   if (preset === "trim_candidates") {
-    return score < 40 || sig === "REDUCE" || sig === "AVOID" || sig === "SELL";
+    // AVOID = don't open/add, not a trim; a low score alone never triggers a sell.
+    return sig === "REDUCE" || sig === "SELL";
   }
   if (preset === "earnings_week") {
     return Boolean(signal.earnings_caution) || (signal.earnings_days_until != null && signal.earnings_days_until <= 7);

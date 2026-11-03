@@ -95,3 +95,23 @@ def test_full_go_row_still_reports_four_of_four():
     assert row["gates_passed"] == 4
     assert row["gates_total"] == 4
     assert row["gate_cleared"] is True
+
+
+def test_list_row_uses_next_tranche_when_price_above_ma200_zone():
+    """List rows have no tier context; once price is above the T1 MA200 zone (MA200 +5%)
+    the valuation gate must use the T2 bar like the ticker page (BLK: list said full_go,
+    ticker page said no new entries)."""
+    inside = _amzn_like_row()
+    above = _amzn_like_row()
+    for row in (inside, above):
+        row["lt_band"] = {"low": 240.0, "high": 340.0}
+    inside["ma200"] = 250.0
+    above["ma200"] = 200.0
+    enrich_dashboard_signal_row(inside, regime_bull_pct=70.0)
+    enrich_dashboard_signal_row(above, regime_bull_pct=70.0)
+
+    def _val(row):
+        return next(g for g in row["retail_status"]["gates"] if g["id"] == "valuation")["detail"]
+
+    assert "T1" in _val(inside)
+    assert "T2" in _val(above)
