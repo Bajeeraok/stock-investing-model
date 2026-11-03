@@ -12,6 +12,7 @@ import { LevelsPageHeader } from "../../levels/LevelsPageHeader";
 import { AnchorBentoGrid, anchorsFromTechnicalLevels } from "../../levels/AnchorBentoGrid";
 import { IntradayChart } from "../../IntradayChart";
 import { EntryBandsChart, bandsFromHorizons } from "../EntryBandsChart";
+import { HorizonProjectionChart } from "../../HorizonProjectionChart";
 import { ReferenceDetailGrid } from "../ReferenceDetailGrid";
 import { RoadmapSummaries } from "../../RoadmapSummaries";
 import { HorizonPlaybooksPanel } from "../../HorizonPlaybooksPanel";
@@ -62,7 +63,27 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
       <DensityToggle />
     </div>
 
-    {/* Chart-first: all entry bands painted vs spot on one price axis */}
+    {/* Chart-first: price history with the selected mode's band, stop, target and alert */}
+    {detail.investor_summary && (detail.price_history?.length ?? 0) >= 5 && (effectivePrice ?? 0) > 0 ? (
+      <div className="mb-1">
+        <HorizonProjectionChart
+          key={allBands ? "all" : modeHorizon}
+          ticker={detail.ticker}
+          currentPrice={effectivePrice ?? 0}
+          priceHistory={detail.price_history}
+          short={detail.investor_summary.horizons.short}
+          medium={detail.investor_summary.horizons.medium}
+          long={detail.investor_summary.horizons.long}
+          fairValue={detail.investor_summary.fair_value}
+          ma20={detail.ma20}
+          ma50={detail.ma50}
+          planMode={detail.investor_summary.plan_mode}
+          focus={allBands ? null : modeHorizon}
+          focusLabel={decisionMode === "scout" ? "Scout" : decisionMode === "owner" ? "Owner" : "Swing"}
+          alertLevel={detail.investor_summary.retail_action?.display_by_mode?.[decisionMode]?.alert_level ?? null}
+        />
+      </div>
+    ) : (
     <EntryBandsChart
       currentPrice={effectivePrice}
       bands={bandsFromHorizons(
@@ -76,6 +97,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
       )}
       className="mb-1"
     />
+    )}
     <button
       type="button"
       onClick={() => setAllBands((v) => !v)}

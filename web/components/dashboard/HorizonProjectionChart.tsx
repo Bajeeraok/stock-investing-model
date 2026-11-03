@@ -11,6 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   ReferenceLine,
+  ReferenceArea,
 } from "recharts";
 import type { HorizonSignalPayload } from "./InvestorDecisionSummary";
 
@@ -432,6 +433,9 @@ export function HorizonProjectionChart({
   planMode,
   chaseBanner,
   chaseDetail,
+  focus = null,
+  focusLabel,
+  alertLevel,
 }: {
   ticker?: string;
   currentPrice: number;
@@ -447,6 +451,10 @@ export function HorizonProjectionChart({
   planMode?: string | null;
   chaseBanner?: string | null;
   chaseDetail?: string | null;
+  /** Show only this horizon, with its entry band, stop and target drawn as levels. */
+  focus?: HorizonKey | null;
+  focusLabel?: string;
+  alertLevel?: number | null;
 }) {
   const [expanded, setExpanded] = useState(variant === "full");
   const [visible, setVisible] = useState<Record<HorizonKey, boolean>>({
@@ -455,6 +463,16 @@ export function HorizonProjectionChart({
     long: true,
   });
   const [showFairValue, setShowFairValue] = useState(true);
+  const vis: Record<HorizonKey, boolean> = focus
+    ? { short: focus === "short", medium: focus === "medium", long: focus === "long" }
+    : visible;
+  const focusH = focus === "short" ? short : focus === "medium" ? medium : focus === "long" ? long : null;
+  const fBandLo = focusH?.entry_zone?.low ?? null;
+  const fBandHi = focusH?.entry_zone?.high ?? null;
+  const fStop = focusH?.stop_loss ?? null;
+  const fTarget = focusH?.target ?? null;
+  const fAlert = alertLevel != null && alertLevel > 0 ? alertLevel : null;
+  const fLabel = focusLabel ?? (focus ? HORIZON_STYLE[focus].label : "");
 
   const horizonMeta = (
     [
@@ -462,7 +480,7 @@ export function HorizonProjectionChart({
       { key: "medium" as HorizonKey, h: medium },
       { key: "long" as HorizonKey, h: long },
     ] as const
-  ).filter((x) => x.h?.target);
+  ).filter((x) => x.h?.target && (!focus || x.key === focus));
 
   const horizonDaySet = useMemo(
     () => new Set(horizonMeta.map(({ h, key }) => parseHorizonDays(h!.duration, key))),
@@ -493,9 +511,15 @@ export function HorizonProjectionChart({
       lo = Math.min(lo, fairValue);
       hi = Math.max(hi, fairValue);
     }
+    for (const v of [fBandLo, fBandHi, fStop, fTarget, fAlert]) {
+      if (v != null && v > 0) {
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+    }
     const pad = (hi - lo) * 0.08 || currentPrice * 0.05;
     return [lo - pad, hi + pad] as [number, number];
-  }, [rows, currentPrice, fairValue]);
+  }, [rows, currentPrice, fairValue, fBandLo, fBandHi, fStop, fTarget, fAlert]);
 
   const hasHistory = priceHistory.length >= 5;
   const hasHorizons = short?.target || medium?.target || long?.target;
@@ -657,7 +681,7 @@ export function HorizonProjectionChart({
                 />
               )}
 
-              {visible.long && (
+              {vis.long && (
                 <>
                   <Area
                     type="monotone"
@@ -678,7 +702,7 @@ export function HorizonProjectionChart({
                   />
                 </>
               )}
-              {visible.medium && (
+              {vis.medium && (
                 <>
                   <Area
                     type="monotone"
@@ -699,7 +723,7 @@ export function HorizonProjectionChart({
                   />
                 </>
               )}
-              {visible.short && (
+              {vis.short && (
                 <>
                   <Area
                     type="monotone"
@@ -729,6 +753,46 @@ export function HorizonProjectionChart({
                 connectNulls={false}
                 isAnimationActive={false}
               />
+
+              {focus && fBandLo != null && fBandHi != null && fBandLo > 0 && fBandHi > 0 && (
+                <ReferenceArea
+                  y1={fBandLo}
+                  y2={fBandHi}
+                  fill={HORIZON_STYLE[focus].fill}
+                  fillOpacity={0.18}
+                  stroke={HORIZON_STYLE[focus].stroke}
+                  strokeOpacity={0.5}
+                  ifOverflow="extendDomain"
+                  label={{ value: `${fLabel} band`, fill: HORIZON_STYLE[focus].stroke, fontSize: 11, position: "insideBottomLeft" }}
+                />
+              )}
+              {focus && fStop != null && fStop > 0 && (
+                <ReferenceLine
+                  y={fStop}
+                  stroke="#FF6B6B"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  label={{ value: `Stop ${fmtPrice(fStop)}`, fill: "#FF6B6B", fontSize: 11, position: "insideBottomRight" }}
+                />
+              )}
+              {focus && fTarget != null && fTarget > 0 && (
+                <ReferenceLine
+                  y={fTarget}
+                  stroke="#00C896"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                  label={{ value: `Target ${fmtPrice(fTarget)}`, fill: "#00C896", fontSize: 11, position: "insideTopRight" }}
+                />
+              )}
+              {focus && fAlert != null && (
+                <ReferenceLine
+                  y={fAlert}
+                  stroke="#60A5FA"
+                  strokeWidth={1.25}
+                  strokeDasharray="2 3"
+                  label={{ value: `${fLabel} alert ${fmtPrice(fAlert)}`, fill: "#60A5FA", fontSize: 11, position: "insideBottomRight" }}
+                />
+              )}
 
               {hasFairValue && showFairValue && (
                 <ReferenceLine
@@ -763,15 +827,21 @@ export function HorizonProjectionChart({
           {(showMa50 || rows.some((r) => r.ma50 != null)) && (
             <ChartLegendItem color="#8690a6" label="MA50" dashed />
           )}
-          {visible.short && short?.target && short?.setup_status !== "no_setup" && (
+          {vis.short && short?.target && short?.setup_status !== "no_setup" && (
             <ChartLegendItem color={HORIZON_STYLE.short.stroke} label="Short projection" />
           )}
-          {visible.medium && medium?.target && medium?.setup_status !== "no_setup" && (
+          {vis.medium && medium?.target && medium?.setup_status !== "no_setup" && (
             <ChartLegendItem color={HORIZON_STYLE.medium.stroke} label="Medium projection" />
           )}
-          {visible.long && long?.target && long?.setup_status !== "no_setup" && (
+          {vis.long && long?.target && long?.setup_status !== "no_setup" && (
             <ChartLegendItem color={HORIZON_STYLE.long.stroke} label="Long projection" />
           )}
+          {focus && fBandLo != null && fBandHi != null && (
+            <ChartLegendItem color={HORIZON_STYLE[focus].stroke} label={`${fLabel} band ${fmtPrice(fBandLo)}–${fmtPrice(fBandHi)}`} />
+          )}
+          {focus && fStop != null && fStop > 0 && <ChartLegendItem color="#FF6B6B" label="Stop" dashed />}
+          {focus && fTarget != null && fTarget > 0 && <ChartLegendItem color="#00C896" label="Target" dashed />}
+          {focus && fAlert != null && <ChartLegendItem color="#60A5FA" label={`${fLabel} alert`} dashed />}
         </div>
 
         <div
