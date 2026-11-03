@@ -296,7 +296,7 @@ export interface HorizonSignalPayload {
           low?: number;
           high?: number;
           label?: string;
-          levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number }>;
+          levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number; touch_history_years?: number }>;
         };
       };
       in_bridge_band?: boolean;
@@ -304,7 +304,7 @@ export interface HorizonSignalPayload {
         low?: number;
         high?: number;
         label?: string;
-        levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number }>;
+        levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number; touch_history_years?: number }>;
       };
     };
     levels?: Array<{
@@ -315,6 +315,7 @@ export interface HorizonSignalPayload {
       touch_pct?: number;
       median_days?: number;
       window_sessions?: number;
+      touch_history_years?: number;
     }>;
   };
   /** Next support / resistance for this horizon (omitted when none sits nearby). */
@@ -378,7 +379,7 @@ export interface HorizonSignalPayload {
         label?: string;
         max_allocation_pct?: number;
         detail?: string;
-        levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number }>;
+        levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number; touch_history_years?: number }>;
       };
     };
     current_assessment: {
@@ -411,7 +412,7 @@ export interface HorizonSignalPayload {
       color: string;
       reachable: boolean;
       drop_needed_pct: number | null;
-      levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number }>;
+      levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number; touch_history_years?: number }>;
     }[];
     position_sizing?: { tier: string; allocation_pct: number; note: string }[];
     structural_invalidation?: {

@@ -1325,7 +1325,7 @@ def _build_investor_summary(
         from signals.fetcher import fetch_ohlcv_dataframe
         from signals.level_touch_odds import attach_level_touch_odds
 
-        attach_level_touch_odds(payload, fetch_ohlcv_dataframe(ticker, "2y"), float(current_price))
+        attach_level_touch_odds(payload, fetch_ohlcv_dataframe(ticker, "10y"), float(current_price))
     except Exception:
         pass
 

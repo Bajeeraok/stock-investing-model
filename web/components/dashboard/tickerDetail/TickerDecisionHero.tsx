@@ -213,7 +213,7 @@ function LevelRows({
           Entry band {fmt(ez?.low)} – {fmt(ez?.high)}
           {ezWidthPct > 0 ? ` (${ezWidthPct.toFixed(1)}% wide)` : ""} — scale in across these levels, not one price
           {picked.some((l) => l.touch_pct != null) &&
-            ` · hit % = how often this stock reached the level within ${picked.find((l) => l.window_sessions)?.window_sessions ?? ""} trading days (2y history)`}
+            ` · hit % = how often this stock reached the level within ${picked.find((l) => l.window_sessions)?.window_sessions ?? ""} trading days (${Math.round(picked.find((l) => l.touch_history_years)?.touch_history_years ?? 10)}y history)`}
         </p>
         {picked.map((lvl) => (
           <div
@@ -229,7 +229,7 @@ function LevelRows({
               {lvl.touch_pct != null && lvl.median_days != null && lvl.median_days > 0 && (
                 <span
                   className="block"
-                  title={`How often this stock reached this level within ${lvl.window_sessions ?? ""} trading days over the last 2 years (median days when it did). History, not a forecast.`}
+                  title={`How often this stock reached this level within ${lvl.window_sessions ?? ""} trading days over the last ${Math.round(lvl.touch_history_years ?? 10)} years (median days when it did). History, not a forecast.`}
                 >
                   {lvl.touch_pct}% hit · ~{lvl.median_days}d
                 </span>

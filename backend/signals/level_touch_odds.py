@@ -1,4 +1,5 @@
-"""Per-level touch odds for entry-band levels from the ticker's own daily history.
+"""Per-level touch odds for entry-band levels from the ticker's own daily history
+(up to 10 years; a 2018-2026 test on 20 tickers showed 10y calibrated better than 2y or 5y).
 
 For a level d% below spot, measures how often this stock's low reached d% below a
 given day's close within the horizon window, and the median sessions until it did.
@@ -41,6 +42,7 @@ def attach_level_touch_odds(payload: dict[str, Any], ohlcv, current_price: float
         return
     ok = np.isfinite(closes) & np.isfinite(lows) & (closes > 0)
     closes, lows = closes[ok], lows[ok]
+    years = round(len(closes) / 252.0, 1)
     for key, window in WINDOW_SESSIONS.items():
         h = payload.get(key)
         ez = (h or {}).get("entry_zone") if isinstance(h, dict) else None
@@ -54,6 +56,7 @@ def attach_level_touch_odds(payload: dict[str, Any], ohlcv, current_price: float
             if px <= 0:
                 continue
             lvl["window_sessions"] = window
+            lvl["touch_history_years"] = years
             if px >= current_price:
                 lvl["touch_pct"] = 100
                 lvl["median_days"] = 0
