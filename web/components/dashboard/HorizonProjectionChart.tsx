@@ -763,7 +763,6 @@ export function HorizonProjectionChart({
                   stroke={HORIZON_STYLE[focus].stroke}
                   strokeOpacity={0.5}
                   ifOverflow="extendDomain"
-                  label={{ value: `${fLabel} band`, fill: HORIZON_STYLE[focus].stroke, fontSize: 11, position: "insideBottomLeft" }}
                 />
               )}
               {focus && fStop != null && fStop > 0 && (
@@ -790,7 +789,7 @@ export function HorizonProjectionChart({
                   stroke="#60A5FA"
                   strokeWidth={1.25}
                   strokeDasharray="2 3"
-                  label={{ value: `${fLabel} alert ${fmtPrice(fAlert)}`, fill: "#60A5FA", fontSize: 11, position: "insideBottomRight" }}
+                  label={{ value: `${fLabel} alert ${fmtPrice(fAlert)}`, fill: "#60A5FA", fontSize: 11, position: "insideBottom" }}
                 />
               )}
 
