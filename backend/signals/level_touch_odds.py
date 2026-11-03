@@ -34,9 +34,10 @@ def attach_level_touch_odds(payload: dict[str, Any], ohlcv, current_price: float
     if ohlcv is None or not (current_price and current_price > 0):
         return
     try:
-        closes = np.asarray(ohlcv["Close"], dtype=float)
-        lows = np.asarray(ohlcv["Low"], dtype=float)
-    except (KeyError, TypeError, ValueError):
+        cols = {str(c).lower(): c for c in ohlcv.columns}
+        closes = np.asarray(ohlcv[cols["close"]], dtype=float)
+        lows = np.asarray(ohlcv[cols["low"]], dtype=float)
+    except (KeyError, TypeError, ValueError, AttributeError):
         return
     ok = np.isfinite(closes) & np.isfinite(lows) & (closes > 0)
     closes, lows = closes[ok], lows[ok]
