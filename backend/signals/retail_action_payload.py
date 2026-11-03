@@ -13,6 +13,55 @@ from typing import Any, Literal
 PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
 
 
+_MODE_HORIZON = {"scout": "short", "swing": "medium", "owner": "long"}
+_REQ_RE = __import__("re").compile(r"(?:need|vs)\s+(\d+(?:\.\d+)?)%")
+
+
+def display_alert_level(horizon: dict | None, gates: list[dict] | None, price: float | None,
+                        assessment_pct: float | None) -> dict:
+    """Next price that would change the plan for one mode: the entry-band edge (or the stop when there
+    is no band); while valuation blocks, the price where it clears instead (capped at the band top)."""
+    out: dict = {"alert_level": None, "alert_at_valuation": False}
+    if not price or price <= 0:
+        return out
+    ez = (horizon or {}).get("entry_zone") or {}
+    lo, hi = ez.get("low"), ez.get("high")
+    has_band = bool(lo and hi and lo > 0 and hi > 0)
+    level = None
+    if has_band:
+        level = hi if price > hi else lo
+    elif (horizon or {}).get("stop_loss"):
+        level = horizon["stop_loss"]
+    val = next((g for g in (gates or []) if isinstance(g, dict) and g.get("id") == "valuation"), None)
+    m = _REQ_RE.search(str((val or {}).get("detail") or ""))
+    if val and not val.get("pass") and m and assessment_pct is not None and assessment_pct > -100:
+        clear = price * (1 + assessment_pct / 100) * (1 - float(m.group(1)) / 100)
+        if clear < price:
+            level = min(hi, clear) if has_band and price > hi else clear
+            out["alert_at_valuation"] = True
+    out["alert_level"] = round(float(level), 2) if level else None
+    return out
+
+
+def attach_display_alerts(detail: dict) -> None:
+    """Add alert_level per mode to retail_action.display_by_mode using the detail's current price."""
+    inv = (detail or {}).get("investor_summary") or {}
+    ra = inv.get("retail_action") or {}
+    by_mode = ra.get("gates_by_mode") or {}
+    if not by_mode:
+        return
+    try:
+        price = float(detail.get("current_price") or 0)
+    except (TypeError, ValueError):
+        return
+    disp = ra.setdefault("display_by_mode", {})
+    horizons = inv.get("horizons") or {}
+    for mode, gates in by_mode.items():
+        row = disp.setdefault(mode, display_gate_counts(gates))
+        row.update(display_alert_level(horizons.get(_MODE_HORIZON.get(mode, "short")), gates, price,
+                                       ra.get("assessment_pct")))
+
+
 def display_gate_counts(gates: list[dict] | None) -> dict:
     """Canonical gate progress shown on the ticker page (primary gates only; falls back to all)."""
     gates = [g for g in (gates or []) if isinstance(g, dict)]

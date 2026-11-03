@@ -92,7 +92,7 @@ export type RetailActionPayload = {
    * negative for Swing/Owner. Prefer this over `gates` when the viewer's mode is known. */
   gates_by_mode?: Record<"scout" | "swing" | "owner", NonNullable<RetailActionPayload["gates"]>>;
   /** Backend-canonical gate progress per mode (what the nightly audit checks). */
-  display_by_mode?: Partial<Record<"scout" | "swing" | "owner", { gates_passed: number; gates_total: number }>>;
+  display_by_mode?: Partial<Record<"scout" | "swing" | "owner", { gates_passed: number; gates_total: number; alert_level?: number | null; alert_at_valuation?: boolean }>>;
   primary_gate_ids?: string[];
   unlock_summary?: string | null;
   unlock_sequence?: string | null;

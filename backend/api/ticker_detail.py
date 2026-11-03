@@ -160,6 +160,13 @@ def get_ticker_detail(ticker: str, config: dict, *, allow_stale: bool = True) ->
             overlay_detail_current_price(out, live, source=src)
     except Exception:
         pass
+    try:
+        from signals.retail_action_payload import attach_display_alerts
+
+        if isinstance(out, dict):
+            attach_display_alerts(out)
+    except Exception:
+        pass
     return out
 
 

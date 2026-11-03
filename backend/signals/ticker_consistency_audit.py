@@ -534,11 +534,40 @@ def audit_track_record(tr: dict, ticker: str, today: date | None = None) -> list
     return c.findings
 
 
+
+def rule_display_by_mode(d: dict, c: _Collector, row: dict | None) -> None:
+    """Backend display fields the page shows: gate counts match the gates, alert sits at/below price."""
+    ra = _retail(d)
+    p = _price(d)
+    horizons = _horizons(d)
+    for mode, disp in (ra.get("display_by_mode") or {}).items():
+        if not isinstance(disp, dict):
+            continue
+        gates = (ra.get("gates_by_mode") or {}).get(mode) or []
+        primary = [g for g in gates if isinstance(g, dict) and g.get("id") in ("valuation", "regime", "momentum", "ml")] or gates
+        if gates and (disp.get("gates_passed"), disp.get("gates_total")) != (
+                sum(1 for g in primary if g.get("pass")), len(primary)):
+            c.add("display_gate_count_mismatch", "error",
+                  f"{mode} shows {disp.get('gates_passed')}/{disp.get('gates_total')} gates but gates list differs", mode=mode)
+        a = _f(disp.get("alert_level"))
+        if a is None:
+            continue
+        if a <= 0:
+            c.add("display_alert_invalid", "error", f"{mode} alert ${a} is not a price", mode=mode)
+        elif p is not None and a > p * 1.01:
+            c.add("display_alert_above_price", "error", f"{mode} alert ${a:.2f} is above price ${p:.2f}", mode=mode, alert=a, price=p)
+        max_add = _f(((horizons.get("long") or {}).get("entry_zone") or {}).get("max_add"))
+        if mode == "owner" and max_add is not None and a > max_add + 0.02:
+            c.add("display_alert_above_max_add", "error", f"Owner alert ${a:.2f} is above max add ${max_add:.2f}",
+                  alert=a, max_add=max_add)
+
+
 RULES: list[Callable[[dict, _Collector, dict | None], None]] = [
     rule_price_consistency,
     rule_gate_consistency,
     rule_verdict_vs_entry,
     rule_bands,
+    rule_display_by_mode,
     rule_stops_targets,
     rule_valuation,
     rule_confidence,

@@ -111,6 +111,8 @@ const GATE_SHORT: Record<string, string> = {
   confidence: "Confidence",
 };
 
+const MODE_LABEL: Record<string, string> = { scout: "Scout", swing: "Swing", owner: "Owner" };
+
 function lockedGateNames(gates: TradingGateRow[]): string[] {
   return gates.filter((g) => !g.pass).map((g) => GATE_SHORT[g.id] ?? g.label.replace(/\s*\(.*\)$/, ""));
 }
@@ -121,8 +123,10 @@ function VerdictActionBar({
   currentPrice,
   extra,
   lockedGates = [],
+  modeLabel,
 }: {
   ticker: string;
+  modeLabel?: string;
   alertLevel: number | null;
   currentPrice: number | null | undefined;
   extra?: ReactNode;
@@ -182,7 +186,7 @@ function VerdictActionBar({
             title="Fires while Thrive Alpha is open (checked against live prices every minute)"
           >
             <Bell className="h-4 w-4" />
-            Alert me at {usd(alertLevel)}
+            {modeLabel ? `${modeLabel} alert` : "Alert me"} at {usd(alertLevel)}
           </button>
         ) : null}
         <button
@@ -363,9 +367,15 @@ export function VerdictPanel({
   else if (horizon?.stop_loss) alertLevel = horizon.stop_loss;
   // Valuation still locked: ping where it clears (and the band, if price is above it), not at a
   // band edge where entries would stay locked anyway.
-  const alertAtValuation = valClearPrice != null && price != null && valClearPrice < price;
+  let alertAtValuation = valClearPrice != null && price != null && valClearPrice < price;
   if (alertAtValuation) {
     alertLevel = hasBand && price! > ez!.high ? Math.min(ez!.high, valClearPrice!) : valClearPrice;
+  }
+  // Prefer the backend's canonical alert (same rule, checked by the nightly audit).
+  const apiDisplay = ra?.display_by_mode?.[mode];
+  if (apiDisplay?.alert_level != null && apiDisplay.alert_level > 0) {
+    alertLevel = apiDisplay.alert_level;
+    alertAtValuation = !!apiDisplay.alert_at_valuation;
   }
   const alertLockedGates = lockedGateNames(gates).filter((n) => !(alertAtValuation && n === "Valuation"));
 
@@ -509,6 +519,7 @@ export function VerdictPanel({
       <VerdictActionBar
         ticker={ticker}
         alertLevel={alertLevel}
+        modeLabel={MODE_LABEL[mode]}
         currentPrice={price}
         extra={actionExtra}
         lockedGates={alertLockedGates}
