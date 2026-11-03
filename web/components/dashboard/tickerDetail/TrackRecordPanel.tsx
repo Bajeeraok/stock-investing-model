@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { History } from "lucide-react";
-import { earliestAvailableHorizon, useTickerTrackRecord } from "@/lib/useTickerTrackRecord";
+import { earliestAvailableHorizon, useTickerTrackRecord, type TrackRecordHorizonStats } from "@/lib/useTickerTrackRecord";
 import { fmtPct } from "./ReferenceDetailGrid";
 import LatestModelDailyCard from "../LatestModelDailyCard";
 import TrackErrorCard from "./TrackErrorCard";
@@ -62,11 +62,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
 
       {current && (current.n_observations ?? 0) > 0 ? (
         <p className="text-sm text-slate-300 leading-relaxed">
-          Since <span className="font-mono text-slate-200">{version}</span>: right{" "}
-          <span className={(current.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
-            {current.win_rate_pct != null ? `${current.win_rate_pct.toFixed(0)}%` : "—"}
-          </span>{" "}
-          of the time <span className="text-slate-600">(n={current.n_observations})</span>
+          Since <span className="font-mono text-slate-200">{version}</span>: <CallsRight stats={current} />
           {current.avg_return_pct != null && (
             <>
               {" · avg return "}
@@ -80,11 +76,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
       ) : earlyRead ? (
         <p className="text-sm text-slate-400 leading-relaxed">
           Too early for a 20d read on {ticker} under <span className="font-mono text-slate-300">{version}</span> —
-          early {earlyRead.horizon}d look: right{" "}
-          <span className={(earlyRead.stats.win_rate_pct ?? 0) >= 50 ? "text-emerald-400" : "text-amber-300"}>
-            {earlyRead.stats.win_rate_pct != null ? `${earlyRead.stats.win_rate_pct.toFixed(0)}%` : "—"}
-          </span>{" "}
-          <span className="text-slate-600">(n={earlyRead.stats.n_observations}, small sample — noisy)</span>.
+          early {earlyRead.horizon}d look: <CallsRight stats={earlyRead.stats} />{" "}
+          <span className="text-slate-600">(small sample — noisy)</span>.
         </p>
       ) : (
         <p className="text-sm text-slate-500 leading-relaxed">
@@ -216,8 +209,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
 
       {legacy && (legacy.n_observations ?? 0) > 0 && (
         <p className="text-xs text-slate-600 leading-relaxed">
-          Pre-{version || "current"} history: {legacy.win_rate_pct != null ? `${legacy.win_rate_pct.toFixed(0)}%` : "—"}{" "}
-          (n={legacy.n_observations}) — kept separate, not blended into the number above.
+          Pre-{version || "current"} history: <CallsRight stats={legacy} /> — kept separate, not blended
+          into the number above.
         </p>
       )}
 
@@ -320,5 +313,25 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+function CallsRight({ stats }: { stats: TrackRecordHorizonStats }) {
+  const n = stats.calls_n ?? 0;
+  const obs = stats.n_observations ?? 0;
+  if (n === 0 || stats.calls_right_pct == null) {
+    return (
+      <span>
+        no ADD/TRIM calls yet{obs > 0 ? ` — all ${obs} were HOLD, which isn't scored right or wrong` : ""}
+      </span>
+    );
+  }
+  const pct = stats.calls_right_pct;
+  return (
+    <span>
+      right on{" "}
+      <span className={pct >= 50 ? "text-emerald-400" : "text-amber-300"}>{pct.toFixed(0)}%</span> of ADD/TRIM
+      calls <span className="text-slate-600">(n={n}; HOLD not scored)</span>
+    </span>
   );
 }

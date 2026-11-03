@@ -402,6 +402,20 @@ def aggregate_horizon_stats(
         "st_target_hit_rate_pct": round(100.0 * len(st_hits) / n, 1) if n else None,
         "st_stop_hit_rate_pct": round(100.0 * len(stop_hits) / n, 1) if n else None,
     }
+    # "Right" only for calls that act: ADD right if price rose, TRIM/REDUCE/SELL right if it
+    # fell. HOLD is unscored (win_rate_pct above is just how often price rose).
+    calls: list[bool] = []
+    for r in rows:
+        if r.get("actual_return_pct") is None:
+            continue
+        sig = str(r.get("our_signal") or r.get("signal") or "").upper()
+        ret = float(r["actual_return_pct"])
+        if "ADD" in sig:
+            calls.append(ret > 0)
+        elif "TRIM" in sig or sig in TRIM_SIGNALS:
+            calls.append(ret < 0)
+    out["calls_n"] = len(calls)
+    out["calls_right_pct"] = round(100.0 * sum(calls) / len(calls), 1) if calls else None
     excess = [float(r["excess_return_pct"]) for r in rows if r.get("excess_return_pct") is not None]
     if excess:
         out["avg_excess_return_pct"] = round(sum(excess) / len(excess), 2)

@@ -16,6 +16,8 @@ export interface TrackRecordHorizonStats {
   n_observations?: number;
   win_rate_pct?: number;
   avg_return_pct?: number;
+  calls_n?: number;
+  calls_right_pct?: number | null;
 }
 
 export interface DailyTradeRow {
