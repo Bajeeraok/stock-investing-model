@@ -91,6 +91,8 @@ export type RetailActionPayload = {
    * in the flat `gates` array above always scores the short horizon, which reads as a false
    * negative for Swing/Owner. Prefer this over `gates` when the viewer's mode is known. */
   gates_by_mode?: Record<"scout" | "swing" | "owner", NonNullable<RetailActionPayload["gates"]>>;
+  /** Backend-canonical gate progress per mode (what the nightly audit checks). */
+  display_by_mode?: Partial<Record<"scout" | "swing" | "owner", { gates_passed: number; gates_total: number }>>;
   primary_gate_ids?: string[];
   unlock_summary?: string | null;
   unlock_sequence?: string | null;

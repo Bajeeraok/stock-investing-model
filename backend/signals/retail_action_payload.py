@@ -10,6 +10,17 @@ from __future__ import annotations
 from typing import Any, Literal
 
 
+PRIMARY_GATE_IDS = ("valuation", "regime", "momentum", "ml")
+
+
+def display_gate_counts(gates: list[dict] | None) -> dict:
+    """Canonical gate progress shown on the ticker page (primary gates only; falls back to all)."""
+    gates = [g for g in (gates or []) if isinstance(g, dict)]
+    primary = [g for g in gates if g.get("id") in PRIMARY_GATE_IDS] or gates
+    total = len(primary) or len(PRIMARY_GATE_IDS)
+    return {"gates_passed": sum(1 for g in primary if g.get("pass")), "gates_total": total}
+
+
 def _retail_gates_config() -> dict[str, Any]:
     """config.yaml `retail_gates` section — loaded once, with hardcoded fallbacks below.
 
@@ -1504,6 +1515,7 @@ def enrich_investor_summary_retail_action(
         "swing": _gates_with_ml(medium_ml_prob),
         "owner": _gates_with_ml(long_ml_prob),
     }
+    ra["display_by_mode"] = {m: display_gate_counts(gs) for m, gs in ra["gates_by_mode"].items()}
     if zone_ctx:
         ra["zone_context"] = zone_ctx
         title, light = derive_zone_aware_action_title(

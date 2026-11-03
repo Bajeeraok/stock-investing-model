@@ -725,10 +725,11 @@ export function TickerDetailModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail, effectivePrice, decisionMode]);
 
-  const { passed: gatesPassedCount, total: gatesTotal } = useMemo(
-    () => resolvePrimaryGatesCount(tradingGates),
-    [tradingGates],
-  );
+  const { passed: gatesPassedCount, total: gatesTotal } = useMemo(() => {
+    const d = detail?.investor_summary?.retail_action?.display_by_mode?.[decisionMode];
+    if (d && tradingGates.length) return { passed: d.gates_passed, total: d.gates_total };
+    return resolvePrimaryGatesCount(tradingGates);
+  }, [tradingGates, detail, decisionMode]);
 
   const headlineScore = useMemo(() => {
     const inv = detail?.investor_summary as
