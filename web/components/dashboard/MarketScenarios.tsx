@@ -44,7 +44,7 @@ export function MarketScenarios({ scenarios }: { scenarios: EventScenario[] }) {
           <tbody>
             {scenarios.map((s, i) => (
               <tr key={`${s.date}-${i}`} className="group border-t border-slate-700/50 hover:bg-slate-800/30">
-                <td className="sticky left-0 z-[10] min-w-[5rem] w-24 px-3 py-2.5 text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{s.date}</td>
+                <td className="sticky left-0 z-[10] min-w-[5rem] w-24 px-3 py-2.5 text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{s.date}</td>
                 <td className="px-3 py-2.5 text-slate-300 max-w-[200px] truncate" title={s.name}>{s.name}</td>
                 <td className="px-3 py-2.5 text-slate-400">{s.event_type}</td>
                 {s.scenario ? (

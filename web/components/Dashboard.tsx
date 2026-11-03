@@ -1861,7 +1861,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                         <tbody>
                           {indicatorComparisons.map((c) => (
                             <tr key={c.ticker} className="group border-b border-slate-700/50 hover:bg-slate-800/30">
-                              <td className="sticky left-0 z-[10] min-w-[4.5rem] w-24 py-2 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{c.ticker}</td>
+                              <td className="sticky left-0 z-[10] min-w-[4.5rem] w-24 py-2 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{c.ticker}</td>
                               <td className="py-2 pr-2 text-slate-400">{c.close.comparisons.length > 0 ? `${c.close.comparisons.map((x) => `${x.source}: ${x.margin_pct != null ? `${x.margin_pct.toFixed(2)}%` : "—"}`).join("; ")}` : "—"}</td>
                               <td className="py-2 pr-2 text-slate-400">{c.rsi.comparisons.length > 0 ? c.rsi.comparisons.map((x) => `${x.source}: ±${x.margin_abs ?? "—"}`).join("; ") : "—"}</td>
                               <td className="py-2 pr-2 text-slate-400">{c.ma?.comparisons?.length ? c.ma.comparisons.map((m) => `${m.series}: ${m.margin_pct != null ? `${m.margin_pct.toFixed(2)}%` : "—"}`).join("; ") : "—"}</td>

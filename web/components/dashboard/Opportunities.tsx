@@ -62,7 +62,7 @@ export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; 
           <tbody>
             {items.map((o) => (
               <tr key={o.ticker} className="group border-t border-slate-700/50 hover:bg-slate-800/30">
-                <td className="sticky left-0 z-[10] min-w-[4.5rem] w-24 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">
+                <td className="sticky left-0 z-[10] min-w-[4.5rem] w-24 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">
                   {onTickerClick ? (
                     <button type="button" onClick={() => onTickerClick(o.ticker)} className="font-mono font-medium text-emerald-400 hover:underline cursor-pointer">
                       {o.ticker}
@@ -71,7 +71,7 @@ export function Opportunities({ items, onTickerClick }: { items: Opportunity[]; 
                     <span className="font-mono font-medium">{o.ticker}</span>
                   )}
                 </td>
-                <td className="sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">${o.close.toFixed(2)}</td>
+                <td className="sticky left-24 z-[10] min-w-[5rem] w-20 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">${o.close.toFixed(2)}</td>
                 <td className="px-3 py-2.5">
                   <span className={clsx(
                     "font-medium",

@@ -33,14 +33,14 @@ export function PortfolioHoldings({
           <thead>
             <tr className="text-left text-slate-400">
               {hasAccounts && (
-                <th className="sticky top-0 left-0 z-[30] min-w-[5rem] w-28 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
+                <th className="sticky top-0 sm:left-0 z-[20] sm:z-[30] min-w-[5rem] w-28 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-r border-slate-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
                   Account
                 </th>
               )}
               <th
                 className={clsx(
-                  "sticky top-0 z-[20] min-w-[4.5rem] w-24 px-3 py-2.5 font-medium bg-slate-800/95 backdrop-blur-sm border-b border-slate-700",
-                  hasAccounts && "left-28 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] border-r border-slate-700"
+                  "sticky top-0 left-0 z-[30] min-w-[4.5rem] w-24 px-3 py-2.5 font-medium bg-slate-800 border-b border-slate-700",
+                  hasAccounts && "sm:left-28 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] border-r border-slate-700"
                 )}
               >
                 Ticker
@@ -76,14 +76,14 @@ export function PortfolioHoldings({
             {sorted.map((h, i) => (
               <tr key={h.account ? `${h.account}-${h.ticker}-${i}` : h.ticker} className="group border-t border-slate-700/50 hover:bg-slate-800/30">
                 {hasAccounts && (
-                  <td className="sticky left-0 z-[10] min-w-[5rem] w-28 px-3 py-2.5 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">
+                  <td className="sm:sticky sm:left-0 z-[10] min-w-[5rem] w-28 px-3 py-2.5 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">
                     {h.account ?? "-"}
                   </td>
                 )}
                 <td
                   className={clsx(
-                    "sticky z-[10] min-w-[4.5rem] w-24 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30",
-                    hasAccounts ? "left-28" : "left-0"
+                    "sticky z-[10] min-w-[4.5rem] w-24 px-3 py-2.5 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800",
+                    hasAccounts ? "left-0 sm:left-28" : "left-0"
                   )}
                 >
                   {onTickerClick ? (

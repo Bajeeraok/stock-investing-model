@@ -751,8 +751,8 @@ export function ForwardTracking({
           <tbody>
             {pagedRecords.map((r, i) => (
               <tr key={`${r.as_of_date}-${r.ticker}-${r.horizon_days}-${i}`} className="group border-b border-slate-700/50 hover:bg-slate-800/30">
-                <td className="sticky left-0 z-[10] min-w-[5rem] w-24 py-1.5 pr-2 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.as_of_date}</td>
-                <td className="sticky left-24 z-[10] min-w-[4rem] w-16 py-1.5 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800/30">{r.ticker}</td>
+                <td className="sticky left-0 z-[10] min-w-[5rem] w-24 py-1.5 pr-2 text-slate-400 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{r.as_of_date}</td>
+                <td className="sticky left-24 z-[10] min-w-[4rem] w-16 py-1.5 pr-2 font-medium text-slate-300 border-r border-slate-700/70 bg-slate-900 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.2)] group-hover:bg-slate-800">{r.ticker}</td>
                 <td className="py-1.5 pr-2 text-slate-400">{r.horizon_days}d</td>
                 <td className="py-1.5 pr-2 text-slate-400">{r.our_signal}</td>
                 <td className="py-1.5 pr-2 text-slate-400 text-[13px]">
