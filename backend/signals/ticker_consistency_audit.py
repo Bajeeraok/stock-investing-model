@@ -193,8 +193,14 @@ def rule_stops_targets(d: dict, c: _Collector, row: dict | None) -> None:
         if sl is not None and sl >= p:
             c.add("stop_above_price", "info", f"{mode} stop ${sl:.2f} is at/above price ${p:.2f}",
                   horizon=h, stop=sl, price=p)
-        if tg is not None and tg <= p:
-            c.add("target_below_price", "warn", f"{mode} target ${tg:.2f} is at/below price ${p:.2f}",
+        ez_hi = _f((hv.get("entry_zone") or {}).get("high"))
+        fill = min(p, ez_hi) if ez_hi else p  # pullback plans are measured from the band fill
+        if tg is not None and tg <= fill:
+            c.add("target_below_price", "warn", f"{mode} target ${tg:.2f} is at/below entry ${fill:.2f}",
+                  horizon=h, target=tg, price=p)
+        elif tg is not None and tg <= p:
+            c.add("target_below_spot", "info",
+                  f"{mode} target ${tg:.2f} is below price ${p:.2f}; only reachable from a pullback fill",
                   horizon=h, target=tg, price=p)
         if sl is not None and tg is not None and sl >= tg:
             c.add("stop_above_target", "error", f"{mode} stop ${sl:.2f} ≥ target ${tg:.2f}", horizon=h)

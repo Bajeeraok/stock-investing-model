@@ -1811,6 +1811,8 @@ def _build_investor_summary(
     except Exception:
         pass
 
+    cap_buy_verdicts_when_locked(out)
+
     try:
         from signals.actionable_score import attach_actionable_score
 
@@ -1819,6 +1821,27 @@ def _build_investor_summary(
         pass
 
     return out
+
+
+def cap_buy_verdicts_when_locked(investor_out: dict) -> None:
+    """No BUY label while entry gates lock new entries: show WATCH, keep the model call in model_verdict."""
+    ra = investor_out.get("retail_action") or {}
+    if ra.get("entry_mode") != "hard_lock":
+        return
+
+    def _capped(v: object) -> bool:
+        u = str(v or "").upper()
+        return u in ("BUY", "STRONG BUY", "ADD", "ACCUMULATE")
+
+    for h in ("short", "medium", "long"):
+        hv = (investor_out.get("horizons") or {}).get(h)
+        if isinstance(hv, dict) and _capped(hv.get("verdict")):
+            hv["model_verdict"] = hv["verdict"]
+            hv["verdict"] = "WATCH"
+            hv["verdict_capped_reason"] = "Entry gates locked — no new entries"
+    if _capped(investor_out.get("overall_verdict")):
+        investor_out["model_overall_verdict"] = investor_out["overall_verdict"]
+        investor_out["overall_verdict"] = "WATCH"
 
 
 # VIX thresholds shared across roadmap helpers (change here to affect all three uses)
