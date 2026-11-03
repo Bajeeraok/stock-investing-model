@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 HORIZONS = ("short", "medium", "long")
 HORIZON_MODE = {"short": "Scout", "medium": "Swing", "long": "Owner"}
-MAX_BAND_WIDTH_PCT = {"short": 8.0, "medium": 12.0}
+MAX_BAND_WIDTH_PCT = {"short": 12.0, "medium": 12.0}
 BUY_WORDS = ("BUY", "ADD", "ACCUMULATE")
 
 
@@ -161,10 +161,10 @@ def rule_bands(d: dict, c: _Collector, row: dict | None) -> None:
         if h != "long" and hi > p * 1.005:
             c.add("band_above_price", "error", f"{mode} band top ${hi:.2f} is above price ${p:.2f} (chasing)",
                   horizon=h, high=hi, price=p)
-        width = _pct(hi, lo)
+        width = 100.0 * (hi - lo) / p  # same basis as the band-width cap in horizon_entry_calculator
         cap = MAX_BAND_WIDTH_PCT.get(h)
         if cap and width > cap + 0.1:
-            c.add("band_too_wide", "warn", f"{mode} band is {width:.1f}% wide (cap {cap:.0f}%)",
+            c.add("band_too_wide", "warn", f"{mode} band is {width:.1f}% of price wide (cap {cap:.0f}%)",
                   horizon=h, width_pct=round(width, 1))
         levels = ez.get("levels") or []
         entry_levels = [lv for lv in levels if lv.get("role") == "entry"]
