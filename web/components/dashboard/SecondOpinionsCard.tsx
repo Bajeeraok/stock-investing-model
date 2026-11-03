@@ -41,6 +41,12 @@ const biasClass: Record<Bias, string> = {
   bearish: "text-td-crit",
 };
 
+const biasPill: Record<string, string> = {
+  bullish: "bg-td-accent/15 text-td-accent",
+  neutral: "bg-td-surface2 text-td-muted",
+  bearish: "bg-td-crit/15 text-td-crit",
+};
+
 /** Outside-style ratings shown next to our call. Informational only — never changes our action. */
 export function SecondOpinionsCard({
   data,
@@ -56,11 +62,15 @@ export function SecondOpinionsCard({
   const rows = ops.filter((o) => o.available || !(o.key === "finnhub" && !data?.finnhub_configured));
   const hasTally = rows.some((o) => o.available && o.ma && o.osc);
   return (
-    <div className="rounded-lg border border-td-line/60 bg-td-line/10 px-3 py-2">
+    <div className="rounded-lg border border-td-owner/25 bg-td-owner/5 px-3 py-2">
       <div className="flex items-center gap-2">
-        <Users className="h-4 w-4 shrink-0 text-td-muted" aria-hidden />
+        <Users className="h-4 w-4 shrink-0 text-td-owner" aria-hidden />
         <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text">Second opinions</p>
-        {actionStatus && <span className="ml-auto text-[13px] text-td-muted">Ours: {actionStatus.title}</span>}
+        {actionStatus && (
+          <span className="ml-auto rounded-full bg-td-surface2 border border-td-line px-2 py-0.5 text-[12px] text-td-text/85">
+            Ours: <span className="font-semibold">{actionStatus.title}</span>
+          </span>
+        )}
       </div>
       <table className="mt-1 w-full text-sm tabular-nums">
         <tbody>
@@ -86,15 +96,17 @@ export function SecondOpinionsCard({
                   {o.source}
                   <span className="block text-[11px] text-td-muted">{o.horizon}</span>
                 </td>
-                <td className={clsx("py-1 pr-2 font-semibold whitespace-nowrap", o.bias ? biasClass[o.bias] : "text-td-muted")}>
-                  {o.available ? o.label : "—"}
+                <td className="py-1.5 pr-2 whitespace-nowrap">
+                  <span className={clsx("inline-block rounded-full px-2 py-0.5 text-[12px] font-semibold", o.bias ? biasPill[o.bias] : "bg-td-surface2 text-td-muted")}>
+                    {o.available ? o.label : "—"}
+                  </span>
                 </td>
                 <td className="py-1 pr-2 text-[13px] text-td-muted">{detail}</td>
                 <td className="py-1 text-right text-[13px] whitespace-nowrap">
                   {agrees == null ? "" : agrees ? (
-                    <span className="text-td-accent">agrees</span>
+                    <span className="rounded-full bg-td-accent/15 px-2 py-0.5 text-td-accent">agrees</span>
                   ) : (
-                    <span className="text-td-warn">differs</span>
+                    <span className="rounded-full bg-td-warn/15 px-2 py-0.5 text-td-warn">differs</span>
                   )}
                 </td>
               </tr>
@@ -103,13 +115,13 @@ export function SecondOpinionsCard({
         </tbody>
       </table>
       {hasTally && (
-        <p className="text-[13px] text-td-muted mt-1 leading-relaxed">
-          <span className="text-td-text/80">MAs</span> = moving averages (price above the average votes buy ↑,
-          below votes sell ↓). <span className="text-td-text/80">Osc</span> = oscillators such as RSI, MACD and
+        <p className="mt-2 rounded-md bg-td-surface2/60 px-2.5 py-1.5 text-[12px] text-td-muted leading-relaxed">
+          <span className="font-semibold text-td-info">MAs</span> = moving averages (price above the average votes buy ↑,
+          below votes sell ↓). <span className="font-semibold text-td-info">Osc</span> = oscillators such as RSI, MACD and
           Stochastic: ↑ buy · – neutral · ↓ sell. The rating is the balance of these votes.
         </p>
       )}
-      {data?.note && <p className="text-[13px] text-td-muted mt-1 leading-relaxed">{data.note}</p>}
+      {data?.note && <p className="text-[12px] text-td-muted mt-1.5 leading-relaxed">{data.note}</p>}
     </div>
   );
 }

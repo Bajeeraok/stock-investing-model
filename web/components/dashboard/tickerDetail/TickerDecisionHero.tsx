@@ -209,7 +209,7 @@ function LevelRows({
     const picked = stagedLevels;
     return (
       <div className="flex flex-col gap-1.5">
-        <p className="text-[11px] text-td-muted leading-relaxed -mt-0.5 mb-0.5">
+        <p className="text-[12px] text-td-muted leading-relaxed -mt-0.5 mb-0.5 rounded-md border-l-2 border-td-info/60 bg-td-info/5 px-2.5 py-1.5">
           Entry band {fmt(ez?.low)} – {fmt(ez?.high)}
           {ezWidthPct > 0 ? ` (${ezWidthPct.toFixed(1)}% wide)` : ""} — scale in across these levels, not one price
           {picked.some((l) => l.touch_pct != null) &&
@@ -218,9 +218,9 @@ function LevelRows({
         {picked.map((lvl) => (
           <div
             key={lvl.id}
-            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
+            className="grid grid-cols-[4.6rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
           >
-            <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted truncate">
+            <span className={clsx("justify-self-start rounded-full px-1.5 py-0.5 text-[11px] font-mono font-bold uppercase tracking-wide truncate max-w-full", tagPill(tag(lvl)))}>
               {tag(lvl)}
             </span>
             <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(lvl.price)}</span>
@@ -231,7 +231,7 @@ function LevelRows({
                   className="block"
                   title={`How often this stock reached this level within ${lvl.window_sessions ?? ""} trading days over the last ${Math.round(lvl.touch_history_years ?? 10)} years (median days when it did). History, not a forecast.`}
                 >
-                  {lvl.touch_pct}% hit · ~{lvl.median_days}d
+                  <span className={clsx("rounded px-1", hitPill(lvl.touch_pct))}>{lvl.touch_pct}% hit</span> · ~{lvl.median_days}d
                 </span>
               )}
             </span>
@@ -257,6 +257,19 @@ function LevelRows({
       <NearbySrRows horizon={horizon} />
     </div>
   );
+}
+
+function tagPill(tag: string): string {
+  if (tag === "1st add") return "bg-td-accent/15 text-td-accent";
+  if (tag === "Last add") return "bg-td-accent/10 text-td-accent/80";
+  if (tag === "Scale") return "bg-td-info/10 text-td-info";
+  return "bg-td-owner/15 text-td-owner";
+}
+
+function hitPill(pct: number): string {
+  if (pct >= 50) return "bg-td-accent/15 text-td-accent";
+  if (pct >= 25) return "bg-td-warn/15 text-td-warn";
+  return "bg-td-surface text-td-muted";
 }
 
 export function TickerDecisionHero({
@@ -342,7 +355,7 @@ export function TickerDecisionHero({
             <p className="text-[15px] text-td-text leading-snug text-balance">{reason.headline}</p>
           )}
           {reason?.wait_plain && (
-            <p className="text-[12.5px] text-td-muted mt-1.5 leading-relaxed">{reason.wait_plain}</p>
+            <p className="text-[13px] text-td-text/75 mt-2 leading-relaxed rounded-md border-l-2 border-td-warn/60 bg-td-warn/5 px-2.5 py-1.5">{reason.wait_plain}</p>
           )}
           {!reason?.headline && actionStatus.subtitle && (
             <p className="text-[13.5px] text-td-text/90 leading-snug">{actionStatus.subtitle}</p>
@@ -367,14 +380,14 @@ export function TickerDecisionHero({
             <button
               type="button"
               onClick={onOpenWhy}
-              className="inline-flex items-center gap-1 text-[11.5px] text-td-muted hover:text-td-accent mt-3"
+              className="inline-flex items-center gap-1 text-[13px] font-medium text-td-info hover:text-td-accent mt-3"
             >
               Full breakdown <ChevronRight className="h-3 w-3" />
             </button>
           )}
         </div>
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-wider text-td-muted mb-1.5">
+          <p className="text-[12px] font-mono font-semibold uppercase tracking-wider text-td-info mb-1.5">
             {horizonLabel(horizonKey)} levels
           </p>
           <LevelRows mode={mode} horizon={horizon} currentPrice={currentPrice} />

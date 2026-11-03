@@ -1,5 +1,6 @@
 "use client";
 
+import { clsx } from "clsx";
 import React from "react";
 import { Scale } from "lucide-react";
 
@@ -39,13 +40,17 @@ export function PositionAdviceCard({ data }: { data?: PositionAdvicePayload | nu
   if (!data) return null;
   const { buy, sell } = data;
   return (
-    <div className="rounded-lg border border-td-line/60 bg-td-line/10 px-3 py-2 space-y-2">
+    <div className="rounded-lg border border-td-info/25 bg-td-info/5 px-3 py-2 space-y-2">
       <div className="flex items-center gap-2">
-        <Scale className="h-4 w-4 shrink-0 text-td-muted" aria-hidden />
+        <Scale className="h-4 w-4 shrink-0 text-td-info" aria-hidden />
         <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text">Your position sizing</p>
-        <span className="ml-auto text-[13px] text-td-muted">
-          {data.risk_profile} · cap {data.cap_pct}% · book {usd(data.portfolio_value)}
-        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {[data.risk_profile, `cap ${data.cap_pct}%`, `book ${usd(data.portfolio_value)}`].map((t) => (
+          <span key={t} className="rounded-full bg-td-surface2 border border-td-line px-2 py-0.5 text-[12px] text-td-text/85 capitalize tabular-nums">
+            {t}
+          </span>
+        ))}
       </div>
       <p className="text-sm text-td-text/90 tabular-nums">
         {data.held ? (
@@ -59,8 +64,13 @@ export function PositionAdviceCard({ data }: { data?: PositionAdvicePayload | nu
         )}
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className="rounded-md border border-td-line/50 px-2.5 py-1.5">
-          <p className="text-[13px] font-semibold text-td-text">Buy side</p>
+        <div className={clsx("rounded-md border px-2.5 py-1.5", buy.allowed ? "border-td-accent/35 bg-td-accent/5" : "border-td-crit/30 bg-td-crit/5")}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] font-semibold text-td-text">Buy side</p>
+            <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide", buy.allowed ? "bg-td-accent/15 text-td-accent" : "bg-td-crit/15 text-td-crit")}>
+              {buy.allowed ? "Can add" : "Locked"}
+            </span>
+          </div>
           {buy.allowed ? (
             <p className="text-sm text-td-text tabular-nums">
               Up to <span className="font-mono">{buy.shares}</span> shares ({usd(buy.dollars)}) → {buy.new_weight_pct.toFixed(1)}% of book
@@ -75,8 +85,13 @@ export function PositionAdviceCard({ data }: { data?: PositionAdvicePayload | nu
           )}
           <p className="text-[13px] text-td-muted leading-relaxed">{buy.note}</p>
         </div>
-        <div className="rounded-md border border-td-line/50 px-2.5 py-1.5">
-          <p className="text-[13px] font-semibold text-td-text">Sell side</p>
+        <div className={clsx("rounded-md border px-2.5 py-1.5", sell.options.length ? "border-td-warn/35 bg-td-warn/5" : "border-td-line/60 bg-td-surface2/40")}>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[13px] font-semibold text-td-text">Sell side</p>
+            <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide", sell.options.length ? "bg-td-warn/15 text-td-warn" : "bg-td-surface2 text-td-muted")}>
+              {sell.options.length ? "Options" : data.held ? "Hold" : "Not held"}
+            </span>
+          </div>
           {sell.default && <p className="text-sm text-td-text">Default: {sell.default}</p>}
           {sell.options.map((o) => (
             <div key={o.reason} className="text-sm text-td-text tabular-nums">
