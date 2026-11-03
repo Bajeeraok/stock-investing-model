@@ -574,6 +574,7 @@ def summarize(findings: Iterable[dict[str, Any]], tickers: list[str]) -> dict[st
 # ── runner (in-process, Railway) ─────────────────────────────────────────────
 
 _RUN_LOCK = threading.Lock()
+PROGRESS: dict[str, Any] = {"done": 0, "total": 0, "started_at": None}
 REPORT_NAME = "ticker_consistency_latest.json"
 
 
@@ -614,7 +615,9 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
             tickers = sorted(t for t in rows if not t.endswith("-USD"))
         findings: list[dict[str, Any]] = []
         t0 = time.time()
+        PROGRESS.update(done=0, total=len(tickers), started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
         for t in tickers:
+            PROGRESS["done"] += 1
             try:
                 detail = get_ticker_detail(t, config)
             except Exception as exc:
