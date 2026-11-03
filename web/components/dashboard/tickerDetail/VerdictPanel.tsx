@@ -69,6 +69,16 @@ export function plainVerdictSentence(light: Light, title: string, entryMode: str
   return held ? "Hold. Don't add today." : "Wait. Don't buy today.";
 }
 
+function GateBar({ passed, total }: { passed: number; total: number }) {
+  return (
+    <span className="inline-flex gap-0.5" aria-hidden>
+      {Array.from({ length: total }, (_, i) => (
+        <span key={i} className={clsx("h-1.5 w-3 rounded-full", i < passed ? "bg-td-accent" : "bg-td-crit/50")} />
+      ))}
+    </span>
+  );
+}
+
 type UnlockRow = { key: string; ok: boolean; label: string; value: string; title?: string };
 
 function gateUnlockLabel(g: TradingGateRow): string {
@@ -370,6 +380,19 @@ export function VerdictPanel({
         <h3 className="mt-2 text-xl sm:text-2xl font-semibold text-td-text leading-tight text-balance">
           {plainVerdictSentence(actionStatus.light, actionStatus.title, ra?.entry_mode, held)}
         </h3>
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          {alertLevel != null && price != null && (
+            <span className="rounded-full border border-td-info/40 bg-td-info/10 px-2.5 py-0.5 font-mono text-[12px] text-td-info tabular-nums">
+              Next level {usd(alertLevel)} · {pct(price, alertLevel)}
+            </span>
+          )}
+          {shownTotal > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-td-line bg-td-surface2/60 px-2.5 py-0.5 text-[12px] text-td-text/85">
+              <GateBar passed={shownPassed} total={shownTotal} />
+              {shownPassed}/{shownTotal} gates
+            </span>
+          )}
+        </div>
         {whyLine && <p className="mt-1.5 text-[13.5px] text-td-text/85 leading-snug">{whyLine}.</p>}
         {actionStatus.subtitle && actionStatus.subtitle !== whyLine && (
           <p className="mt-1 text-[12.5px] text-td-muted leading-relaxed">{actionStatus.subtitle}</p>
@@ -387,8 +410,9 @@ export function VerdictPanel({
             <h4 className="text-[13px] font-semibold uppercase tracking-wider text-td-muted">
               {blocked === 0 && rows.every((r) => r.ok) ? "All clear" : "Unlocks when"}
             </h4>
-            <span className="font-mono text-[11px] text-td-muted tabular-nums">
-              {shownPassed}/{shownTotal} gates
+            <span className="inline-flex items-center gap-1.5 font-mono text-[12px] text-td-muted tabular-nums">
+              <GateBar passed={shownPassed} total={shownTotal} />
+              {shownPassed}/{shownTotal}
             </span>
           </div>
           <ul className="divide-y divide-td-line">

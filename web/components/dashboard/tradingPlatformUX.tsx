@@ -386,6 +386,7 @@ export function NewsSentimentRail({
 }) {
   const [saved, setSaved] = React.useState<Record<string, "idle" | "saving" | "ok" | "err">>({});
   const [wraps, setWraps] = React.useState<Record<string, CatalystNoteCard>>({});
+  const [moreNews, setMoreNews] = React.useState(false);
   const [wrapStatus, setWrapStatus] = React.useState<"idle" | "loading" | "ok" | "cached" | "skipped" | "fallback">("idle");
   const cards = (catalystCards ?? []).slice(0, 4);
   const cardsKey = cards.map((c) => c.event_type || c.name).join("|");
@@ -527,8 +528,8 @@ export function NewsSentimentRail({
           })}
         </div>
       )}
-      <ul className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-        {(headlines ?? []).slice(0, 8).map((h, i) => (
+      <ul className="space-y-1.5">
+        {(headlines ?? []).slice(0, moreNews ? 8 : 3).map((h, i) => (
           <li key={i} className="text-[13px] text-td-muted leading-relaxed line-clamp-2">
             {h.url ? (
               <a href={h.url} target="_blank" rel="noopener noreferrer" className="hover:text-td-info" title="Open full article">
@@ -540,6 +541,11 @@ export function NewsSentimentRail({
           </li>
         ))}
       </ul>
+      {(headlines?.length ?? 0) > 3 && (
+        <button type="button" onClick={() => setMoreNews((v) => !v)} className="text-[12px] text-td-info hover:text-td-accent">
+          {moreNews ? "Show fewer" : `Show ${Math.min(headlines!.length, 8) - 3} more headlines`}
+        </button>
+      )}
     </div>
   );
 }

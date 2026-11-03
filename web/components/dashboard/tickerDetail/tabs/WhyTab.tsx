@@ -35,23 +35,14 @@ function BlockingGateStrip({ ctx }: { ctx: TabCtx }) {
   const { tradingGates, detail } = ctx;
   const failing = tradingGates.find((g) => !g.pass);
   const unlock = detail.investor_summary?.retail_action?.unlock_sequence;
-  if (!failing) return null;
+  if (!failing || !unlock) return null;
   return (
     <section className="rounded-xl border border-amber-500/35 bg-amber-950/20 px-4 py-3">
       <div className="flex items-start gap-2.5">
         <Ban className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-amber-200">
-            Blocking now: {failing.label}
-          </p>
-          {failing.detail && (
-            <p className="text-[13px] text-amber-100/80 leading-snug mt-0.5">{failing.detail}</p>
-          )}
-          {unlock && (
-            <p className="text-[13px] text-slate-400 leading-snug mt-1.5 pt-1.5 border-t border-amber-500/15">
-              {unlock}
-            </p>
-          )}
+          <p className="text-sm font-semibold text-amber-200">Unlock path</p>
+          <p className="text-[13px] text-amber-100/80 leading-snug mt-0.5">{unlock}</p>
         </div>
       </div>
     </section>

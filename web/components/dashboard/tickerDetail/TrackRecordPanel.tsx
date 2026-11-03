@@ -29,6 +29,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
   const { data, loading } = useTickerTrackRecord(ticker);
   const [showLegacyRows, setShowLegacyRows] = useState(false);
   const [showOlderCalls, setShowOlderCalls] = useState(false);
+  const [showCalls, setShowCalls] = useState(false);
 
   const current = data?.current;
   const legacy = data?.legacy;
@@ -64,7 +65,6 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
         forward-tracking data behind the Analysis tab.
       </p>
 
-      <LatestModelDailyCard data={data?.latest_model_daily} version={version} scope="ticker" />
 
       {current && (current.n_observations ?? 0) > 0 ? (
         <p className="text-sm text-slate-300 leading-relaxed">
@@ -91,6 +91,10 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           this fills in as new EOD snapshots accumulate.
         </p>
       )}
+
+      {data && <TrackErrorCard data={data} />}
+
+      <LatestModelDailyCard data={data?.latest_model_daily} version={version} scope="ticker" />
 
       {allCalls.length > 0 && (
         <div className="space-y-1.5">
@@ -120,6 +124,14 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           </div>
           {dailyCalls.length === 0 ? (
             <p className="text-[13px] text-slate-600">No daily calls under {version} for {ticker} yet.</p>
+          ) : !showCalls ? (
+            <button
+              type="button"
+              onClick={() => setShowCalls(true)}
+              className="rounded-full border border-td-line px-2.5 py-0.5 text-[12px] text-td-info hover:border-td-info/50"
+            >
+              Show {Math.min(dailyCalls.length, 15)} daily calls
+            </button>
           ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] min-w-[680px]">
@@ -211,7 +223,6 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
         </div>
       )}
 
-      {data && <TrackErrorCard data={data} />}
 
       {legacy && (legacy.n_observations ?? 0) > 0 && (
         <p className="text-[13px] text-slate-600 leading-relaxed">

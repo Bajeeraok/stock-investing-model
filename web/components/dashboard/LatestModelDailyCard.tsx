@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { LatestModelDaily } from "@/lib/useTickerTrackRecord";
 
 function shortDay(iso: string | null | undefined): string {
@@ -34,6 +35,8 @@ export default function LatestModelDailyCard({
   scope: "ticker" | "all";
   maxRows?: number;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const shownRows = expanded ? maxRows : 3;
   const v = data?.model_version || version;
   if (!v) return null;
   const days = data?.days ?? 0;
@@ -100,7 +103,7 @@ export default function LatestModelDailyCard({
                 </tr>
               </thead>
               <tbody>
-                {(data?.rows ?? []).slice(0, maxRows).map((r) => (
+                {(data?.rows ?? []).slice(0, shownRows).map((r) => (
                   <tr key={r.date} className="border-b border-slate-800 text-slate-300">
                     <td className="py-1 pr-2 font-mono whitespace-nowrap">
                       {shortDay(r.date)} → {shortDay(r.next_date)}
@@ -115,6 +118,15 @@ export default function LatestModelDailyCard({
               </tbody>
             </table>
           </div>
+          {(data?.rows?.length ?? 0) > 3 && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1 text-[12px] text-td-info hover:text-td-accent"
+            >
+              {expanded ? "Show fewer days" : `Show ${Math.min(data!.rows.length, maxRows)} days`}
+            </button>
+          )}
         </>
       )}
       <p className="text-[13px] text-slate-600 leading-snug">
