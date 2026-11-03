@@ -32,6 +32,7 @@ import { LevelsTab } from "./tickerDetail/tabs/LevelsTab";
 import { WhyTab } from "./tickerDetail/tabs/WhyTab";
 import { ContextTab } from "./tickerDetail/tabs/ContextTab";
 import type { TabCtx } from "./tickerDetail/tabs/tabCtx";
+import type { DayLow } from "./tickerDetail/TickerDecisionHero";
 import { apiUrl, fetchJsonWithRetry, formatFetchError, isMobileLikeBrowser } from "@/lib/apiBase";
 import { pctPriceVsFairValue } from "@/lib/valuationPct";
 import { computeActionableScore } from "@/lib/actionableScore";
@@ -428,6 +429,8 @@ export function TickerDetailModal({
   /** Live price lifted from IntradayChart (1-min cadence on 1D view) */
   const [livePrice, setLivePrice]          = useState<number | null>(null);
   const [liveChangePct, setLiveChangePct]  = useState<number | null>(null);
+  /** Session low from 1D intraday bars — marks entry levels already filled today. */
+  const [dayLow, setDayLow] = useState<DayLow | null>(null);
   const [quickRefOpen, setQuickRefOpen]    = useState(false);
   const [ltEntryTiersOpen, setLtEntryTiersOpen] = useState(true);
   const [metricsGuideOpen, setMetricsGuideOpen] = useState(false);
@@ -756,6 +759,38 @@ export function TickerDetailModal({
     };
   }, [detail, tradingGates.length, gatesPassedCount, gatesTotal]);
 
+  useEffect(() => {
+    setDayLow(null);
+    if (!ticker) return;
+    const ac = new AbortController();
+    const load = async () => {
+      try {
+        const res = await fetch(apiUrl(`/api/ticker/${encodeURIComponent(ticker)}/intraday?period=1d`), {
+          signal: ac.signal,
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json: { bars?: { t: string; l: number }[] } = await res.json();
+        const bars = (json.bars ?? []).filter((b) => b.l > 0);
+        if (!bars.length) return;
+        setDayLow({
+          low: Math.min(...bars.map((b) => b.l)),
+          date: String(bars[bars.length - 1].t).slice(0, 10),
+        });
+      } catch {
+        /* intraday optional */
+      }
+    };
+    load();
+    const id = setInterval(() => {
+      if (isUsEquityRth()) load();
+    }, 5 * 60_000);
+    return () => {
+      ac.abort();
+      clearInterval(id);
+    };
+  }, [ticker]);
+
   const quoteDailyMovePct = useMemo(() => {
     // Prefer live intraday change pct (1D chart, from open) when available
     if (liveChangePct != null) return liveChangePct;
@@ -875,6 +910,7 @@ export function TickerDetailModal({
     openWhyValuation,
     setLivePrice,
     setLiveChangePct,
+    dayLow,
     setPositionIntentLocal,
     setDecisionModeLocal,
   };

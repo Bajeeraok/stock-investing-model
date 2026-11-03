@@ -25,6 +25,7 @@ export interface TabCtx {
   positionIntent: PositionIntent | null;
   effectivePrice: number | null;
   quoteDailyMovePct: number | null;
+  dayLow: import("../TickerDecisionHero").DayLow | null;
   headerActionStatus: RetailActionStatus;
   tradingGates: TradingGateRow[];
   gatesPassedCount: number;

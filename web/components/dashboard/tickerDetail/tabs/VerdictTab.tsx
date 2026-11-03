@@ -27,6 +27,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
     decisionMode,
     effectivePrice,
     quoteDailyMovePct,
+    dayLow,
     headerActionStatus,
     tradingGates,
     gatesPassedCount,
@@ -115,6 +116,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
       sector={detail.sector}
       currentPrice={effectivePrice}
       dailyMovePct={quoteDailyMovePct}
+      dayLow={dayLow}
       summary={detail.investor_summary}
       mode={decisionMode}
       actionStatus={headerActionStatus}

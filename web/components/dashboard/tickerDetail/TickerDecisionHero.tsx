@@ -134,14 +134,29 @@ function StopTargetRows({
   );
 }
 
+export interface DayLow {
+  low: number;
+  /** Session date (YYYY-MM-DD, ET) the low belongs to. */
+  date: string;
+}
+
+function hitLabel(dayLow: DayLow): string {
+  const todayEt = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  if (dayLow.date === todayEt) return "hit today";
+  const d = new Date(`${dayLow.date}T12:00:00`);
+  return `hit ${d.toLocaleDateString("en-US", { weekday: "short" })}`;
+}
+
 function LevelRows({
   mode,
   horizon,
   currentPrice,
+  dayLow,
 }: {
   mode: DecisionMode;
   horizon: HorizonSignalPayload;
   currentPrice: number | null | undefined;
+  dayLow?: DayLow | null;
 }) {
   const tiers = mode === "owner" ? horizon.entry_tiers?.tiers : undefined;
   if (tiers && tiers.length > 0) {
@@ -194,8 +209,13 @@ function LevelRows({
     ez?.low != null && ez?.high != null && currentPrice ? ((ez.high - ez.low) / currentPrice) * 100 : 0;
   // Every scale-in price inside the band (server-side build_entry_band_levels), nearest spot first —
   // a falling price fills the top of a buy-below band first.
+  const isHit = (l: { price: number; role?: string | null }) =>
+    dayLow != null && l.role !== "anchor" && l.price >= dayLow.low;
+  const inBand =
+    currentPrice != null && ez?.low != null && ez?.high != null && currentPrice >= ez.low && currentPrice <= ez.high * 1.005;
+  // Levels filled earlier in the session stay listed (marked hit) even after price bounced above them.
   const stagedLevels = (ez?.levels ?? [])
-    .filter((l) => !currentPrice || l.price <= currentPrice * 1.005)
+    .filter((l) => !currentPrice || l.price <= currentPrice * 1.005 || (isHit(l) && ez?.high != null && l.price <= ez.high))
     .sort((x, y) => y.price - x.price);
   if (stagedLevels.length >= 2) {
     const entries = stagedLevels.filter((l) => l.role !== "anchor");
@@ -215,10 +235,19 @@ function LevelRows({
           {picked.some((l) => l.touch_pct != null) &&
             ` · hit % = how often this stock reached the level within ${picked.find((l) => l.window_sessions)?.window_sessions ?? ""} trading days (${Math.round(picked.find((l) => l.touch_history_years)?.touch_history_years ?? 10)}y history)`}
         </p>
+        {inBand && (
+          <p className="text-[12px] leading-relaxed rounded-md border-l-2 border-td-accent/60 bg-td-accent/5 px-2.5 py-1.5 text-td-text/80">
+            <span className="font-semibold text-td-accent">In band now</span> — the upper adds fill on normal
+            daily swings, so high hit % is expected; it is not a prediction of a drop.
+          </p>
+        )}
         {picked.map((lvl) => (
           <div
             key={lvl.id}
-            className="grid grid-cols-[4.6rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
+            className={clsx(
+              "grid grid-cols-[4.6rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg border",
+              isHit(lvl) ? "bg-td-accent/5 border-td-accent/40" : "bg-td-surface2/70 border-td-line"
+            )}
           >
             <span className={clsx("justify-self-start rounded-full px-1.5 py-0.5 text-[11px] font-mono font-bold uppercase tracking-wide truncate max-w-full", tagPill(tag(lvl)))}>
               {tag(lvl)}
@@ -226,7 +255,14 @@ function LevelRows({
             <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(lvl.price)}</span>
             <span className="text-[11px] font-mono text-td-muted tabular-nums text-right leading-tight">
               {pctFromSpot(lvl.price, currentPrice)}
-              {lvl.touch_pct != null && lvl.median_days != null && lvl.median_days > 0 && (
+              {isHit(lvl) ? (
+                <span
+                  className="block"
+                  title={`Session low ${fmt(dayLow!.low)} reached this level`}
+                >
+                  <span className="rounded bg-td-accent/15 px-1 font-semibold text-td-accent">✓ {hitLabel(dayLow!)}</span>
+                </span>
+              ) : lvl.touch_pct != null && lvl.median_days != null && lvl.median_days > 0 && (
                 <span
                   className="block"
                   title={`How often this stock reached this level within ${lvl.window_sessions ?? ""} trading days over the last ${Math.round(lvl.touch_history_years ?? 10)} years (median days when it did). History, not a forecast.`}
@@ -278,6 +314,7 @@ export function TickerDecisionHero({
   sector,
   currentPrice,
   dailyMovePct,
+  dayLow,
   summary,
   mode,
   actionStatus,
@@ -292,6 +329,7 @@ export function TickerDecisionHero({
   sector?: string | null;
   currentPrice: number | null | undefined;
   dailyMovePct?: number | null;
+  dayLow?: DayLow | null;
   summary: InvestorDecisionSummary;
   mode: DecisionMode;
   actionStatus: RetailActionStatus;
@@ -390,7 +428,7 @@ export function TickerDecisionHero({
           <p className="text-[12px] font-mono font-semibold uppercase tracking-wider text-td-info mb-1.5">
             {horizonLabel(horizonKey)} levels
           </p>
-          <LevelRows mode={mode} horizon={horizon} currentPrice={currentPrice} />
+          <LevelRows mode={mode} horizon={horizon} currentPrice={currentPrice} dayLow={dayLow} />
         </div>
       </div>
 
