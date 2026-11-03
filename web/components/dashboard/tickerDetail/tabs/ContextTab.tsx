@@ -616,7 +616,7 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
   )}
 
   {/* Sanity errors badge */}
-  {(detail.listing_profile?.warnings?.length || (detail.sanity_errors && detail.sanity_errors.length > 0)) && (
+  {(detail.listing_profile?.warnings?.length || (detail.sanity_errors ?? []).some((e) => e !== "yield")) && (
     <section className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
       <h3 className="flex items-center gap-2 text-base font-semibold text-amber-400 mb-2">Data quality</h3>
       {detail.listing_profile?.warnings?.length ? (
@@ -626,9 +626,9 @@ export function ContextTab({ ctx }: { ctx: TabCtx }) {
           ))}
         </ul>
       ) : null}
-      {detail.sanity_errors && detail.sanity_errors.length > 0 && (
+      {(detail.sanity_errors ?? []).some((e) => e !== "yield" && !detail.listing_profile?.warnings?.includes(e)) && (
         <p className="text-sm text-slate-300 mt-2">
-          Additional flags: {detail.sanity_errors.filter((e) => !detail.listing_profile?.warnings?.includes(e)).join(", ") || detail.sanity_errors.join(", ")}
+          Additional flags: {(detail.sanity_errors ?? []).filter((e) => e !== "yield" && !detail.listing_profile?.warnings?.includes(e)).join(", ")}
         </p>
       )}
       <p className="text-xs text-slate-500 mt-2">

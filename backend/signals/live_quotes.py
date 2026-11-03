@@ -115,6 +115,14 @@ def overlay_detail_current_price(detail: dict[str, Any], live: float, *, source:
     detail["current_price"] = live
     detail["live_price"] = live
     detail["live_price_source"] = source
+    hist = detail.get("price_history") or []
+    if prior is not None and len(hist) >= 2:
+        try:
+            last_c = float(hist[-1].get("close") or 0)
+            if last_c > 0 and abs(last_c - float(prior)) / last_c < 1e-4:
+                prior = float(hist[-2].get("close") or 0) or prior
+        except (TypeError, ValueError, AttributeError):
+            pass
     if prior is not None:
         try:
             p0 = float(prior)

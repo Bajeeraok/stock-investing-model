@@ -1170,8 +1170,8 @@ def _apply_horizon_plan_invariants(
                 "spot": _r(px),
                 "fair_value": _r(fv),
                 "note": (
-                    f"Price is {sigma:.1f}σ(ATR) from model FV ${fv:.2f} — "
-                    "recompute or flag when consensus revises; FV may lag a fast tape."
+                    f"Price is far from model fair value ${fv:.2f} ({sigma:.1f}× its daily range) — "
+                    "fair value may lag fast moves; treat it as a rough anchor."
                 ),
             }
             warns = list(long_h.get("warnings") or [])
@@ -1297,12 +1297,14 @@ def _compress_entry_zone_for_display(
     width_pct = (high - low) / current_price
     max_pct_by_band = {
         "short": 0.12,  # tightened from 0.14 for better tactical precision
-        "medium": 0.35,  # loosened from 0.30 for swing flexibility
+        "medium": 0.12,  # loosened from 0.30 for swing flexibility
         "long": 0.50,   # loosened from 0.45 for owner accumulation
     }
     max_pct = max_pct_by_band.get(str(band_key).lower(), 0.30)
     if width_pct <= max_pct:
         return low, high, False
+    if str(band_key).lower() == "medium" and high <= current_price * 1.005:
+        return _r(max(low, high - current_price * max_pct)), _r(high), True
     new_high = low + current_price * max_pct
     min_pad = max(0.01, current_price * 0.002)
     new_high = max(min(new_high, high), low + min_pad)
@@ -1750,7 +1752,7 @@ def _medium_term_signal_from_zone(
 
     if el <= p <= eh:
         trigger = (
-            "Price is already in the MA50 zone (${el}–${eh}) — waiting on "
+            "Price is already in the swing band (${el}–${eh}) — waiting on "
             "ML prob >= {ml:.0f}% and regime Bull >= 45%, not a further pullback"
             "{earn}"
         ).format(
@@ -2201,7 +2203,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     # ── Rationale & trigger ──────────────────────────────────────────────
     parts = []
     if assess_verdict == "WAIT":
-        parts.append("Only {:.1f}% MOS — need {:.0f}%.".format(mos_pct, LT_REQUIRED_MOS_PCT))
+        parts.append("Only {:.1f}% margin of safety — a full long-term add needs {:.0f}%.".format(mos_pct, LT_REQUIRED_MOS_PCT))
         if inp.ml_prob >= 60:
             parts.append("ML {:.0f}% supports entry; MOS requirement ({:.0f}%) overrides for long-term.".format(inp.ml_prob, LT_REQUIRED_MOS_PCT))
     if pct_above_ma200 > LT_MAX_ABOVE_MA200_PCT:

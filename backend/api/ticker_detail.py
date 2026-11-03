@@ -2963,7 +2963,7 @@ def _build_trade_roadmap(
                     else "n/a"
                 )
                 reconciliation_notes.append(
-                    f"HMM shows high transition probability ({float(shift_p) * 100:.0f}%) with uncertain direction "
+                    f"Regime-change odds are high ({float(shift_p) * 100:.0f}%) with uncertain direction "
                     f"(Bull {bull_str} vs Bear {bear_str} of shift mass) — treat regime gate as lower-confidence during transition."
                 )
             if (
@@ -3276,9 +3276,14 @@ def _build_trade_roadmap(
         execution_plan_lines.append(
             f"Keep dry powder for lower adds {deduped[0][0]}."
         )
-    execution_plan_lines.append(
-        f"If price loses ${key_inv:.2f} with momentum, reassess instead of averaging blindly."
-    )
+    if float(key_inv) < float(current_price):
+        execution_plan_lines.append(
+            f"If price loses ${key_inv:.2f} with momentum, reassess instead of averaging blindly."
+        )
+    else:
+        execution_plan_lines.append(
+            f"Price is already below the MA200 invalidation (${key_inv:.2f}) — keep adds small and respect the swing stop."
+        )
 
     structural_label = (
         "STRONG BULL"
@@ -3892,8 +3897,6 @@ def _build_one_answer_roadmaps(
         bottom_line = "Bottom line: hold/watch for now - setup is not clean enough for a new add at current price."
 
     why_this_call: list[str] = []
-    if structural or tactical:
-        why_this_call.append(f"Structural vs tactical: {structural or 'N/A'} / {tactical or 'N/A'}.")
     if bridge_note:
         why_this_call.append(bridge_note)
     if conf_band:
@@ -4874,9 +4877,6 @@ def _get_extra_info(ticker: str, config: dict | None = None) -> dict:
                             yield_pct = dy_f * 100 if dy_f <= 1 else dy_f
                             if 0 <= yield_pct <= 15:
                                 out["dividend_yield"] = round(yield_pct, 2)
-                            else:
-                                out["dividend_yield_error"] = "yield_out_of_range"
-                                out["dividend_yield"] = None
                     except (TypeError, ValueError):
                         pass
         except Exception:
@@ -4902,7 +4902,16 @@ def _get_extra_info(ticker: str, config: dict | None = None) -> dict:
                 try:
                     dy_f = float(dy)
                     if dy_f > 0:
-                        yield_pct = dy_f * 100 if dy_f <= 1 else dy_f
+                        # yfinance now reports dividendYield in percent; prefer annual rate / price.
+                        _rate = info.get("dividendRate") or info.get("trailingAnnualDividendRate")
+                        _px = info.get("currentPrice") or info.get("regularMarketPrice")
+                        _tady = info.get("trailingAnnualDividendYield")
+                        if _rate and _px and float(_px) > 0:
+                            yield_pct = float(_rate) / float(_px) * 100
+                        elif _tady and float(_tady) > 0:
+                            yield_pct = float(_tady) * 100
+                        else:
+                            yield_pct = dy_f
                         if yield_pct < 0 or yield_pct > 15:
                             out["dividend_yield_error"] = "yield_out_of_range"
                             out["dividend_yield"] = None

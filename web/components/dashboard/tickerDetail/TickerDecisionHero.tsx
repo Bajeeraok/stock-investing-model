@@ -149,37 +149,42 @@ function LevelRows({
       <div className="flex flex-col gap-1.5">
         {/* Nearest add first (highest ceiling) — tier ids are anchors (T1 MA200, T2 MOS,
             T3 stress), not an order, so listing by id read as "T2 sits above T1". */}
-        {[...tiers]
-          .sort((a, b) => b.high - a.high)
-          .slice(0, 3)
-          .map((t) => (
-          <div
-            key={t.id}
-            className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
-          >
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{t.id}</span>
-            <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
-              {currentPrice && t.high > currentPrice ? (
-                <>
-                  at spot {fmt(currentPrice)}
-                  <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
-                    {TIER_ANCHOR[t.id] ?? "zone"} ({fmt(t.high)}) is above price
+        {(() => {
+          const above = tiers.filter((t) => currentPrice && t.high > currentPrice);
+          const below = tiers.filter((t) => !(currentPrice && t.high > currentPrice)).sort((a, b) => b.high - a.high);
+          const rowCls =
+            "grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line";
+          return (
+            <>
+              {above.length > 0 && (
+                <div className={rowCls}>
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">
+                    {above.map((t) => t.id).join("·")}
                   </span>
-                </>
-              ) : (
-                <>
-                  &le; {fmt(t.high)}
-                  <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
-                    {TIER_ANCHOR[t.id] ?? ""}
+                  <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
+                    at spot {fmt(currentPrice)}
+                    <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
+                      price is already under {above.map((t) => TIER_ANCHOR[t.id] ?? t.id).join(", ")}
+                    </span>
                   </span>
-                </>
+                  <span className="text-[10px] font-mono text-td-muted tabular-nums">now</span>
+                </div>
               )}
-            </span>
-            <span className="text-[10px] font-mono text-td-muted tabular-nums">
-              {currentPrice && t.high > currentPrice ? "now" : pctFromSpot(t.high, currentPrice)}
-            </span>
-          </div>
-        ))}
+              {below.map((t) => (
+                <div key={t.id} className={rowCls}>
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted">{t.id}</span>
+                  <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
+                    {fmt(t.low)} – {fmt(t.high)}
+                    <span className="ml-1.5 text-[10px] font-td-sans font-medium text-td-muted normal-case">
+                      {TIER_ANCHOR[t.id] ?? ""}
+                    </span>
+                  </span>
+                  <span className="text-[10px] font-mono text-td-muted tabular-nums">{pctFromSpot(t.high, currentPrice)}</span>
+                </div>
+              ))}
+            </>
+          );
+        })()}
         <NearbySrRows horizon={horizon} />
       </div>
     );
