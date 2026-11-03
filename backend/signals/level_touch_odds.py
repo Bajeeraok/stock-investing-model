@@ -96,6 +96,7 @@ def touch_outcomes(
         out["after_touch_days"] = after
         out["after_touch_up_pct"] = round(float((ret > 0).mean() * 100.0))
         out["after_touch_median_ret_pct"] = round(float(np.median(ret) * 100.0), 1)
+        out["after_touch_p25_ret_pct"] = round(float(np.percentile(ret, 25) * 100.0), 1)
         out["after_touch_n"] = int(ok.sum())
     if stop_pct and target_pct and stop_pct > 0 and target_pct > 0:
         stop_first = target_first = neither = 0

@@ -163,9 +163,11 @@ function LevelStatChips({ lvl, hit, horizon }: { lvl: LevelStats; hit: boolean; 
   }
   if (lvl.after_touch_up_pct != null && lvl.after_touch_n) {
     const r = lvl.after_touch_median_ret_pct;
+    const bad = lvl.after_touch_p25_ret_pct;
+    const sg = (x: number) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x).toFixed(1)}%`;
     chips.push({
-      text: `${lvl.after_touch_up_pct}% higher ${lvl.after_touch_days ?? 20}d after`,
-      title: `Past touches of a level this far below price (${lvl.after_touch_n}): how often the close ${lvl.after_touch_days ?? 20} trading days later was above the fill${r != null ? ` (median ${r > 0 ? "+" : ""}${r}%)` : ""}.`,
+      text: `${lvl.after_touch_up_pct}% higher ${lvl.after_touch_days ?? 20}d after${r != null ? ` · median ${sg(r)}` : ""}${bad != null ? ` · bad case ${sg(bad)}` : ""}`,
+      title: `Past touches of a level this far below price (${lvl.after_touch_n}): how often the close ${lvl.after_touch_days ?? 20} trading days later was above the fill (any gain counts). Median = typical return from the fill; bad case = 1 in 4 did worse than this.`,
       cls: lvl.after_touch_up_pct >= 60 ? "bg-td-accent/15 text-td-accent" : lvl.after_touch_up_pct >= 45 ? "bg-td-warn/15 text-td-warn" : "bg-td-crit/15 text-td-crit",
     });
   }

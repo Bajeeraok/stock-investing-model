@@ -57,6 +57,7 @@ def test_touch_outcomes_shares_are_valid():
     c, h, l = _ohlc()
     o = touch_outcomes(c, h, l, 5, 63, stop_pct=5, target_pct=10)
     assert 0 <= o["after_touch_up_pct"] <= 100 and o["after_touch_n"] >= 20
+    assert o["after_touch_p25_ret_pct"] <= o["after_touch_median_ret_pct"]
     assert 0 <= o["stop_first_pct"] + o["target_first_pct"] <= 100 and o["outcome_n"] >= 20
 
 

@@ -330,6 +330,7 @@ export interface HorizonSignalPayload {
       after_touch_days?: number;
       after_touch_up_pct?: number;
       after_touch_median_ret_pct?: number;
+      after_touch_p25_ret_pct?: number;
       after_touch_n?: number;
       stop_first_pct?: number;
       target_first_pct?: number;
