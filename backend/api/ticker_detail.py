@@ -1340,6 +1340,13 @@ def _build_investor_summary(
     for _h in ("short", "medium", "long"):
         if isinstance(payload.get(_h), dict):
             payload[_h]["ml_scored"] = bool(ml_scored.get(_h))
+            try:
+                from signals.ml_models import HORIZONS as _MLH, get_target_gain
+
+                payload[_h]["ml_target_gain_pct"] = round(get_target_gain(ticker, _h) * 100.0, 1)
+                payload[_h]["ml_horizon_days"] = int(_MLH[_h]["days"])
+            except Exception:
+                pass
 
     verdicts = [payload["short"].get("verdict"), payload["medium"].get("verdict"), payload["long"].get("verdict")]
     overall = "STRONG BUY" if "STRONG BUY" in verdicts else "BUY" if "BUY" in verdicts else "WATCH" if "WATCH" in verdicts else "WAIT"

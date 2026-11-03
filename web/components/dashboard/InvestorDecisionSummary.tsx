@@ -268,6 +268,11 @@ export interface HorizonSignalPayload {
   signal: string;
   conviction: string;
   ml_prob: number;
+  /** False when ml_prob is a placeholder, not a model output. */
+  ml_scored?: boolean;
+  /** ml_prob = chance of gaining at least this % within ml_horizon_days sessions. */
+  ml_target_gain_pct?: number;
+  ml_horizon_days?: number;
   entry_zone: {
     low: number;
     high: number;
@@ -319,7 +324,20 @@ export interface HorizonSignalPayload {
       median_days?: number;
       window_sessions?: number;
       touch_history_years?: number;
+      touch_sample_n?: number;
+      similar_touch_pct?: number;
+      similar_n?: number;
+      after_touch_days?: number;
+      after_touch_up_pct?: number;
+      after_touch_median_ret_pct?: number;
+      after_touch_n?: number;
+      stop_first_pct?: number;
+      target_first_pct?: number;
+      outcome_window?: number;
+      outcome_n?: number;
     }>;
+    /** Past days like today (stretch vs MA50 ±3 pts, same side of MA200) used for similar_touch_pct. */
+    similar_setup?: { stretch_vs_ma50_pct: number; above_ma200: boolean; n: number };
   };
   /** Next support / resistance for this horizon (omitted when none sits nearby). */
   nearby_sr?: {

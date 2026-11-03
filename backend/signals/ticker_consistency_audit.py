@@ -185,6 +185,14 @@ def rule_bands(d: dict, c: _Collector, row: dict | None) -> None:
                 c.add("touch_odds_invalid", "error", f"{mode} level touch odds {tp}", horizon=h, touch_pct=tp)
             if md is not None and (_f(md) is None or _f(md) < 0):
                 c.add("touch_odds_invalid", "error", f"{mode} level median days {md}", horizon=h, median_days=md)
+            for k in ("similar_touch_pct", "after_touch_up_pct", "stop_first_pct", "target_first_pct"):
+                v = lv.get(k)
+                if v is not None and (_f(v) is None or not (0 <= _f(v) <= 100)):
+                    c.add("level_stat_invalid", "error", f"{mode} level {k} {v}", horizon=h, field=k, value=v)
+            sf, tf = _f(lv.get("stop_first_pct")), _f(lv.get("target_first_pct"))
+            if sf is not None and tf is not None and sf + tf > 100:
+                c.add("level_stat_invalid", "error", f"{mode} level stop-first {sf}% + target-first {tf}% > 100%",
+                      horizon=h, stop_first_pct=sf, target_first_pct=tf)
 
 
 def rule_stops_targets(d: dict, c: _Collector, row: dict | None) -> None:

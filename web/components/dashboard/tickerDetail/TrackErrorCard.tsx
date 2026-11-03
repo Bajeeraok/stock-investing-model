@@ -39,7 +39,7 @@ function CalTable({ cal, actualLabel }: { cal: Calibration; actualLabel: string 
   );
 }
 
-function pickCal(own?: Record<string, Calibration | null> | null, pooled?: Record<string, Calibration | null> | null, h = "20") {
+export function pickCal(own?: Record<string, Calibration | null> | null, pooled?: Record<string, Calibration | null> | null, h = "20") {
   const mine = own?.[h];
   if (mine && mine.n >= 30) return { cal: mine, scope: "this stock" };
   const all = pooled?.[h];

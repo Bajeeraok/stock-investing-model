@@ -15,6 +15,8 @@ import { horizonLabel, primaryHorizonFromMode } from "@/lib/decisionMode";
 import type { InvestorDecisionSummary, HorizonSignalPayload } from "../InvestorDecisionSummary";
 import type { TradingGateRow } from "../retailActionUX";
 import type { SignalReasonPayload } from "./SignalReasonCard";
+import { useTickerTrackRecord } from "@/lib/useTickerTrackRecord";
+import { pickCal } from "./TrackErrorCard";
 
 /** Matches RetailActionLight / RetailActionStatus in TickerDetailModal.tsx — kept local
  * (not imported) to avoid a circular import between the modal and this component. */
@@ -147,6 +149,73 @@ function hitLabel(dayLow: DayLow): string {
   return `hit ${d.toLocaleDateString("en-US", { weekday: "short" })}`;
 }
 
+type LevelStats = NonNullable<HorizonSignalPayload["entry_zone"]["levels"]>[number];
+
+function LevelStatChips({ lvl, hit, horizon }: { lvl: LevelStats; hit: boolean; horizon: HorizonSignalPayload }) {
+  const chips: { text: string; title: string; cls: string }[] = [];
+  const ss = horizon.entry_zone?.similar_setup;
+  if (!hit && lvl.similar_touch_pct != null && lvl.similar_n) {
+    chips.push({
+      text: `${lvl.similar_touch_pct}% in similar setups`,
+      title: `Hit rate only on past days like today (price ${ss ? `${ss.stretch_vs_ma50_pct > 0 ? "+" : ""}${ss.stretch_vs_ma50_pct}% vs MA50 ±3 pts, ${ss.above_ma200 ? "above" : "below"} MA200` : "similar trend and stretch"}), ${lvl.similar_n} days.`,
+      cls: hitPill(lvl.similar_touch_pct),
+    });
+  }
+  if (lvl.after_touch_up_pct != null && lvl.after_touch_n) {
+    const r = lvl.after_touch_median_ret_pct;
+    chips.push({
+      text: `${lvl.after_touch_up_pct}% higher ${lvl.after_touch_days ?? 20}d after`,
+      title: `Past touches of a level this far below price (${lvl.after_touch_n}): how often the close ${lvl.after_touch_days ?? 20} trading days later was above the fill${r != null ? ` (median ${r > 0 ? "+" : ""}${r}%)` : ""}.`,
+      cls: lvl.after_touch_up_pct >= 60 ? "bg-td-accent/15 text-td-accent" : lvl.after_touch_up_pct >= 45 ? "bg-td-warn/15 text-td-warn" : "bg-td-danger/15 text-td-danger",
+    });
+  }
+  if (lvl.stop_first_pct != null && lvl.target_first_pct != null && lvl.outcome_n) {
+    const neither = Math.max(0, 100 - lvl.stop_first_pct - lvl.target_first_pct);
+    chips.push({
+      text: `stop first ${lvl.stop_first_pct}% · target first ${lvl.target_first_pct}%`,
+      title: `Entering at this level in past touches (${lvl.outcome_n}): which came first within ${lvl.outcome_window ?? ""} trading days, this plan's stop or its target. Neither: ${neither}%.`,
+      cls: lvl.target_first_pct > lvl.stop_first_pct ? "bg-td-accent/15 text-td-accent" : "bg-td-danger/15 text-td-danger",
+    });
+  }
+  if (!chips.length) return null;
+  return (
+    <div className="col-span-3 flex flex-wrap gap-1 pt-0.5">
+      {chips.map((c) => (
+        <span key={c.text} title={c.title} className={clsx("rounded-full px-1.5 py-0.5 text-[11px] font-mono tabular-nums", c.cls)}>
+          {c.text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ModelOddsLine({ ticker, horizon, horizonKey }: { ticker: string; horizon: HorizonSignalPayload; horizonKey: string }) {
+  const { data } = useTickerTrackRecord(ticker);
+  const lvl = data?.level_odds_check;
+  const pick = pickCal(lvl?.ticker, lvl?.pooled, horizonKey === "short" ? "20" : "63");
+  const scored = horizon.ml_scored !== false && horizon.ml_prob != null;
+  const gain = horizon.ml_target_gain_pct;
+  return (
+    <div className="mb-1.5 flex flex-col gap-1">
+      <p className="text-[12px] leading-relaxed rounded-md border-l-2 border-td-info/60 bg-td-info/5 px-2.5 py-1.5 text-td-text/80">
+        <span className="font-semibold text-td-info">Model</span>{" "}
+        {scored
+          ? `${Math.round(horizon.ml_prob)}% chance of ${gain != null ? `+${gain}% or more` : "rising"} within ${horizon.duration}. Applies to the stock, not to a level.`
+          : "no model score for this horizon yet."}
+      </p>
+      {pick?.cal && pick.cal.actual_hit_pct != null && (
+        <p
+          className="text-[12px] leading-relaxed rounded-md border-l-2 border-td-accent/40 bg-td-surface2/60 px-2.5 py-1.5 text-td-text/80"
+          title="Daily saved hit % predictions, checked against what price actually did."
+        >
+          <span className="font-semibold text-td-text">Hit % accuracy</span>: said {Math.round(pick.cal.avg_predicted_pct)}%, happened{" "}
+          {Math.round(pick.cal.actual_hit_pct)}% ({pick.cal.n} checks, {pick.scope})
+        </p>
+      )}
+    </div>
+  );
+}
+
 function LevelRows({
   mode,
   horizon,
@@ -271,6 +340,7 @@ function LevelRows({
                 </span>
               )}
             </span>
+            <LevelStatChips lvl={lvl} hit={!!isHit(lvl)} horizon={horizon} />
           </div>
         ))}
         <StopTargetRows horizon={horizon} currentPrice={currentPrice} />
@@ -428,6 +498,7 @@ export function TickerDecisionHero({
           <p className="text-[12px] font-mono font-semibold uppercase tracking-wider text-td-info mb-1.5">
             {horizonLabel(horizonKey)} levels
           </p>
+          <ModelOddsLine ticker={ticker} horizon={horizon} horizonKey={horizonKey} />
           <LevelRows mode={mode} horizon={horizon} currentPrice={currentPrice} dayLow={dayLow} />
         </div>
       </div>
