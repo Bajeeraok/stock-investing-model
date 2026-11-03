@@ -771,7 +771,6 @@ export function HorizonProjectionChart({
                   stroke="#FF6B6B"
                   strokeWidth={1.5}
                   strokeDasharray="4 3"
-                  label={{ value: `Stop ${fmtPrice(fStop)}`, fill: "#FF6B6B", fontSize: 11, position: "insideBottomRight" }}
                 />
               )}
               {focus && fTarget != null && fTarget > 0 && (
@@ -780,7 +779,6 @@ export function HorizonProjectionChart({
                   stroke="#00C896"
                   strokeWidth={1.5}
                   strokeDasharray="4 3"
-                  label={{ value: `Target ${fmtPrice(fTarget)}`, fill: "#00C896", fontSize: 11, position: "insideTopRight" }}
                 />
               )}
               {focus && fAlert != null && (
@@ -789,7 +787,6 @@ export function HorizonProjectionChart({
                   stroke="#60A5FA"
                   strokeWidth={1.25}
                   strokeDasharray="2 3"
-                  label={{ value: `${fLabel} alert ${fmtPrice(fAlert)}`, fill: "#60A5FA", fontSize: 11, position: "insideBottom" }}
                 />
               )}
 
@@ -838,9 +835,9 @@ export function HorizonProjectionChart({
           {focus && fBandLo != null && fBandHi != null && (
             <ChartLegendItem color={HORIZON_STYLE[focus].stroke} label={`${fLabel} band ${fmtPrice(fBandLo)}–${fmtPrice(fBandHi)}`} />
           )}
-          {focus && fStop != null && fStop > 0 && <ChartLegendItem color="#FF6B6B" label="Stop" dashed />}
-          {focus && fTarget != null && fTarget > 0 && <ChartLegendItem color="#00C896" label="Target" dashed />}
-          {focus && fAlert != null && <ChartLegendItem color="#60A5FA" label={`${fLabel} alert`} dashed />}
+          {focus && fStop != null && fStop > 0 && <ChartLegendItem color="#FF6B6B" label={`Stop ${fmtPrice(fStop)}`} dashed />}
+          {focus && fTarget != null && fTarget > 0 && <ChartLegendItem color="#00C896" label={`Target ${fmtPrice(fTarget)}`} dashed />}
+          {focus && fAlert != null && <ChartLegendItem color="#60A5FA" label={`${fLabel} alert ${fmtPrice(fAlert)}`} dashed />}
         </div>
 
         <div
