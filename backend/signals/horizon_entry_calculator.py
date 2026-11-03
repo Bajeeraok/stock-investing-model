@@ -931,6 +931,22 @@ def _forward_fair_value(fv: float, earnings_growth_pct: float | None, years: flo
     return _r(fv * ((1.0 + g / 100.0) ** y))
 
 
+def _rr_no_setup_reason(rr_entry: float, min_rr: float) -> str:
+    return (
+        f"No setup at this horizon — R:R from entry mid is {rr_entry:.2f}x (need ≥{min_rr:.1f}x); "
+        "the target is not stretched to reach it."
+    )
+
+
+def enforce_medium_min_rr(h: dict[str, Any]) -> None:
+    """Re-check the Swing 2:1 floor after a later target mutation (e.g. scenario sync lowered it)."""
+    if not isinstance(h, dict) or h.get("setup_viable") is False:
+        return
+    rr = h.get("risk_reward_from_entry")
+    if rr is not None and float(rr) < MT_MIN_RR:
+        _mark_horizon_no_setup(h, _rr_no_setup_reason(float(rr), MT_MIN_RR))
+
+
 def _mark_horizon_no_setup(h: dict[str, Any], reason: str) -> None:
     """Force WAIT and surface an explicit no-setup state (levels kept for context)."""
     warns = list(h.get("warnings") or [])
@@ -1141,12 +1157,8 @@ def _apply_horizon_plan_invariants(
                 f"No setup at this horizon — target ${target:.2f} lacks ≥{PLAN_MIN_EDGE_PCT:.0f}% "
                 f"edge above entry high ${eh:.2f}.",
             )
-        elif rr_entry < PLAN_MIN_RR_FROM_ENTRY:
-            _mark_horizon_no_setup(
-                h,
-                f"No setup at this horizon — R:R from entry mid is {rr_entry:.2f}x "
-                f"(need ≥{PLAN_MIN_RR_FROM_ENTRY:.1f}x).",
-            )
+        elif rr_entry < (min_rr := MT_MIN_RR if key == "medium" else PLAN_MIN_RR_FROM_ENTRY):
+            _mark_horizon_no_setup(h, _rr_no_setup_reason(rr_entry, min_rr))
 
         # Soft suppress: deep pullback + low historical touch odds
         fc = h.get("entry_touch_forecast") if isinstance(h.get("entry_touch_forecast"), dict) else {}
@@ -1684,25 +1696,8 @@ def _medium_term_signal_from_zone(
     risk       = max(p - stop_loss, eh - stop_loss)
     rr         = _rr_from_displayed_levels(p, stop_loss, target)
 
-    # Enforce minimum 2:1 R/R — but do not mechanical-bump above fair value (else 3m target looks like 40%+ upside)
-    if rr < MT_MIN_RR and risk > 0:
-        target_rr = _r(p + risk * MT_MIN_RR)
-        if inp.fair_value and inp.fair_value > 0:
-            fv_cap = _r(max(inp.fair_value * 1.12, eh * 1.05))
-            if target_rr > fv_cap:
-                target = _r(min(target_rr, fv_cap))
-                warnings.append(
-                    "Swing target capped vs fair value (${:.2f}) — R/R from displayed levels without implying a huge 3m upside"
-                    .format(inp.fair_value)
-                )
-            else:
-                target = target_rr
-                warnings.append(
-                    "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
-        else:
-            target = target_rr
-            warnings.append(
-                "Target adjusted upward to enforce minimum {:.1f}x R/R".format(MT_MIN_RR))
+    # No mechanical bump to reach MT_MIN_RR: a Swing plan under 2:1 becomes "No setup" in the
+    # per-horizon edge pass instead of advertising an unrealistic 3-month target.
 
     # Final guard: medium horizon target should not sit far above FV when FV is known
     if inp.fair_value and inp.fair_value > 0 and target > inp.fair_value * 1.15 + 1e-6:

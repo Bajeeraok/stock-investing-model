@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from signals.horizon_entry_calculator import refresh_horizon_rr_from_levels
+from signals.horizon_entry_calculator import enforce_medium_min_rr, refresh_horizon_rr_from_levels
 
 
 def _sf(v: Any) -> float | None:
@@ -58,3 +58,4 @@ def sync_medium_horizon_target(
         return
     med["target"] = round(scenario, 2)
     refresh_horizon_rr_from_levels(med, spot)
+    enforce_medium_min_rr(med)

@@ -49,3 +49,33 @@ def test_refresh_rr_also_rederives_rr_from_entry_after_target_move():
     # spot-based field refreshed too
     refresh_horizon_rr_from_levels(h, 33.50)
     assert h["risk_reward"] > h["risk_reward_from_entry"]
+
+
+def test_swing_under_2to1_after_sync_is_no_setup():
+    from signals.scenario_target import sync_medium_horizon_target
+
+    h = {
+        "medium": {
+            "entry_zone": {"low": 95.0, "high": 100.0},
+            "stop_loss": 90.0,
+            "target": 130.0,
+            "risk_reward_from_entry": 4.0,
+            "setup_viable": True,
+            "setup_status": "ok",
+            "verdict": "BUY",
+            "conviction": "High",
+        }
+    }
+    sync_medium_horizon_target(h, 105.0, spot=100.0)
+    med = h["medium"]
+    assert med["target"] == 105.0
+    assert med["setup_status"] == "no_setup" and med["verdict"] == "WAIT"
+    assert any("need ≥2.0x" in w for w in med["warnings"])
+
+
+def test_swing_at_or_above_2to1_keeps_setup():
+    from signals.horizon_entry_calculator import enforce_medium_min_rr
+
+    med = {"risk_reward_from_entry": 2.4, "setup_viable": True, "setup_status": "ok"}
+    enforce_medium_min_rr(med)
+    assert med["setup_status"] == "ok"
