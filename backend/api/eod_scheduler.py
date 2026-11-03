@@ -174,6 +174,12 @@ def _run_eod_job() -> None:
                 )
         except Exception:
             logger.exception("[eod-scheduler] post-EOD dashboard cache sync failed to queue")
+        try:
+            from signals.ticker_consistency_audit import start_background_audit
+
+            logger.info("[eod-scheduler] ticker consistency audit queued=%s", start_background_audit())
+        except Exception:
+            logger.exception("[eod-scheduler] ticker consistency audit failed to queue")
 
 
 def start() -> None:

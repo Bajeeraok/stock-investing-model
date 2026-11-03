@@ -4241,6 +4241,24 @@ async def get_roadmaps(tickers: str = ""):
     return {"roadmaps": out}
 
 
+@router.get("/audit/ticker-consistency")
+async def get_ticker_consistency_audit():
+    """Latest rule-checker report for ticker pages (runs after each EOD job)."""
+    from signals.ticker_consistency_audit import _RUN_LOCK, load_latest_report
+
+    report = load_latest_report()
+    return {"available": report is not None, "running": _RUN_LOCK.locked(), "report": report}
+
+
+@router.post("/audit/ticker-consistency/run")
+async def run_ticker_consistency_audit_now(tickers: str | None = None):
+    """Start the ticker-page rule checker in the background (optional comma-separated tickers)."""
+    from signals.ticker_consistency_audit import start_background_audit
+
+    tl = [t.strip().upper() for t in tickers.split(",") if t.strip()] if tickers else None
+    return {"started": start_background_audit(tl)}
+
+
 @router.get("/ticker/{ticker}/track-record")
 async def get_ticker_track_record(ticker: str):
     """
