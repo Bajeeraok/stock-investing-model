@@ -195,6 +195,12 @@ def _global_regime_bull_pct(global_market_regime: str | None) -> float | None:
     return None
 
 
+def mos_pct_from_upside(upside_pct: float) -> float:
+    """Upside to fair value, (FV − P) / P, → standard margin of safety, (FV − P) / FV.
+    Gates compare upside internally; everything shown to users uses this one measure."""
+    return 100.0 * upside_pct / (100.0 + upside_pct) if upside_pct > -100.0 else -100.0
+
+
 def _assessment_pct(current_price: float | None, fair_value: float | None) -> float:
     if current_price is None or fair_value is None or current_price <= 0 or fair_value <= 0:
         return 0.0
@@ -448,12 +454,13 @@ def build_coherent_setup_story(
     sym = ticker or "This name"
     parts: list[str] = []
 
+    mos = mos_pct_from_upside(assessment_pct)
     if assessment_pct >= 5:
-        parts.append(f"{sym} is cheap (~{abs(assessment_pct):.0f}% below model fair value)")
+        parts.append(f"{sym} is cheap (~{mos:.0f}% below model fair value)")
     elif assessment_pct >= 0:
-        parts.append(f"{sym} has modest valuation support (+{assessment_pct:.0f}% vs fair value)")
+        parts.append(f"{sym} has modest valuation support ({mos:.0f}% below fair value)")
     else:
-        parts.append(f"{sym} is rich vs model fair value ({assessment_pct:.0f}%)")
+        parts.append(f"{sym} is rich vs model fair value ({abs(mos):.0f}% above)")
 
     if market_bull_pct is not None and market_bull_pct >= REGIME_GATE:
         parts.append("the broader market tape is bullish")
@@ -582,17 +589,14 @@ def _valuation_gate_detail(
     full_req = required_mos_pct(tranche_idx, regime_bull_pct)
     partial_req = max(0.0, full_req - 10.0)
     tier_note = f"T{tranche_idx + 1}"
+    mos, req = mos_pct_from_upside(assessment_pct), mos_pct_from_upside(full_req)
     if assessment_pct >= full_req:
-        return True, f"Sufficient MOS (+{assessment_pct:.1f}% vs required {full_req:.0f}%, {tier_note})"
+        return True, f"Sufficient MOS ({mos:.1f}% below fair value vs {req:.1f}% required, {tier_note})"
     if assessment_pct >= partial_req:
-        return False, (
-            f"Partial MOS (+{assessment_pct:.1f}% — need {full_req:.0f}% for full entry, {tier_note})"
-        )
+        return False, f"Partial MOS ({mos:.1f}% below fair value — need {req:.1f}% for full entry, {tier_note})"
     if assessment_pct >= 0:
-        return False, (
-            f"Modest discount (+{assessment_pct:.1f}% — need {full_req:.0f}% MOS, {tier_note})"
-        )
-    return False, f"Rich vs fair value ({assessment_pct:.1f}%)"
+        return False, f"Modest discount ({mos:.1f}% below fair value — need {req:.1f}%, {tier_note})"
+    return False, f"Rich vs fair value (price {abs(mos):.1f}% above it)"
 
 
 def build_trading_gates(

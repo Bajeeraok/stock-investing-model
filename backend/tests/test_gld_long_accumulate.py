@@ -70,6 +70,6 @@ def test_valuation_gate_blocks_at_8pct_mos():
     )
     val = next(g for g in gates if g["id"] == "valuation")
     assert val["pass"] is False
-    # T1 (first-tranche) rung in a bull regime is 10% MOS — still blocks at 8.8%
-    assert "10" in val["detail"]
+    # T1 rung in a bull regime is 10% upside, shown as 9.1% margin of safety — still blocks
+    assert "9.1%" in val["detail"]
     assert "Deeply" not in val["detail"]

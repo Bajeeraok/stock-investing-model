@@ -276,14 +276,14 @@ export function VerdictPanel({
   const shownTotal = gates.length || gatesTotal;
   const shownPassed = gates.length ? gates.filter((g) => g.pass).length : gatesPassed;
 
-  // Valuation gate measures upside to fair value, (FV − price) / price, against a required %;
-  // solve for the price at which it clears: FV / (1 + required).
+  // Gate detail states the required margin of safety, (FV − price) / FV; ra.assessment_pct is
+  // upside (FV − price) / price, so FV = price × (1 + upside) and the gate clears at FV × (1 − required).
   const valGate = gates.find((g) => g.id === "valuation");
-  const reqMatch = valGate?.detail?.match(/(?:need|required)\s+(\d+(?:\.\d+)?)%/);
+  const reqMatch = valGate?.detail?.match(/(?:need|vs)\s+(\d+(?:\.\d+)?)%/);
   const asmt = ra?.assessment_pct;
   const valClearPrice =
     valGate && !valGate.pass && reqMatch && price != null && asmt != null && asmt > -100
-      ? (price * (1 + asmt / 100)) / (1 + parseFloat(reqMatch[1]) / 100)
+      ? price * (1 + asmt / 100) * (1 - parseFloat(reqMatch[1]) / 100)
       : null;
 
   // ── why-in-one-line ─────────────────────────────────────────────

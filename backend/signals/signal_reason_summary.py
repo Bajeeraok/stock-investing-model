@@ -130,12 +130,17 @@ def _factors_from_gates(
         weight = 25.0 if passed else max(15.0, bw if bw > 0 else 20.0)
         detail = str(g.get("detail") or "").strip()
         if gid == "valuation" and assessment_pct != 0:
+            from signals.retail_action_payload import mos_pct_from_upside
+
+            mos = mos_pct_from_upside(assessment_pct)
             if assessment_pct >= VALUATION_GATE_PASS_PCT:
-                detail = f"{assessment_pct:.0f}% margin of safety vs model fair value — full entry zone."
+                detail = f"{mos:.0f}% margin of safety vs model fair value — full entry zone."
             elif assessment_pct >= 0:
-                detail = f"+{assessment_pct:.0f}% vs fair value — need ~{VALUATION_GATE_PASS_PCT:.0f}% MOS for full size."
+                detail = (
+                    f"{mos:.0f}% below fair value — need ~{mos_pct_from_upside(VALUATION_GATE_PASS_PCT):.0f}% MOS for full size."
+                )
             else:
-                detail = f"{assessment_pct:.0f}% vs fair value — price is rich relative to the model anchor."
+                detail = f"Price {abs(mos):.0f}% above fair value — rich relative to the model anchor."
         factors.append({
             "id": gid,
             "label": meta[0],

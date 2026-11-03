@@ -2198,7 +2198,9 @@ export function buildPlainEnglishTake(summary: InvestorDecisionSummary, currentP
 
   if (ra?.dynamic_subtitle) {
     const pct =
-      ra.assessment_pct ??
+      (ra.assessment_pct != null && ra.assessment_pct > -100
+        ? (100 * ra.assessment_pct) / (100 + ra.assessment_pct)
+        : null) ??
       (currentPrice > 0 && summary.fair_value > 0
         ? ((summary.fair_value - currentPrice) / summary.fair_value) * 100
         : 0);
