@@ -271,3 +271,16 @@ def test_build_all_horizons_payload_accepts_earnings_growth():
     )
     assert "short" in out and "medium" in out and "long" in out
     assert float(out["long"]["target"]) >= float(out["medium"]["target"]) - 1e-6
+
+
+def test_medium_stop_never_above_spot_when_price_just_under_ma50():
+    from signals.horizon_entry_calculator import MediumTermInputs, compute_medium_term_entry
+
+    sig = compute_medium_term_entry(MediumTermInputs(
+        current_price=206.65, ml_prob=45, ma50=221.4, ma200=180.0, atr=6.0,
+        regime_bull_pct=55, pattern_score=50, days_to_earnings=14,
+        options_sentiment_score=50, insider_activity_score=50, fundamentals_score=60,
+        fair_value=200.0,
+    ))
+    assert sig.stop_loss < sig.entry_zone.low
+    assert sig.stop_loss < 206.65

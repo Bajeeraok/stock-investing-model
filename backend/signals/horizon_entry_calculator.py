@@ -1678,8 +1678,9 @@ def _medium_term_signal_from_zone(
 
     # ── Stop: below MA50 invalidates — but if price is below MA50, structural MA50 stop can sit *above* spot
     structural_stop = _r(inp.ma50 * (1 - MT_STOP_BELOW_MA50_PCT / 100))
-    if p < inp.ma50 and structural_stop > p * 1.02:
-        entry_floor = min(el, p) if el > 0 else p
+    entry_floor = min(el, p) if el > 0 else p
+    if structural_stop >= entry_floor:
+        # MA50 stop would sit inside the band or above spot (price under MA50): anchor below the band.
         stop_loss = _r(entry_floor * (1 - MT_STOP_BELOW_MA50_PCT / 100))
     else:
         stop_loss = structural_stop
