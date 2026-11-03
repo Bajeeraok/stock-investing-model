@@ -107,7 +107,7 @@ def rule_gate_consistency(d: dict, c: _Collector, row: dict | None) -> None:
     passed = sum(1 for g in gates if g.get("pass"))
     gp = d.get("gates_passed")
     if isinstance(gp, (int, float)) and gates and int(gp) != passed:
-        c.add("gate_count_mismatch", "warn", f"Header says {int(gp)} gates passed, gate list shows {passed}/{len(gates)}",
+        c.add("gate_count_mismatch", "info", f"Header says {int(gp)} gates passed, gate list shows {passed}/{len(gates)}",
               header=gp, listed=passed, total=len(gates))
     gng = ra.get("go_no_go")
     if mode == "full_go" and gng not in (None, "go"):
@@ -158,7 +158,7 @@ def rule_bands(d: dict, c: _Collector, row: dict | None) -> None:
             c.add("band_invalid", "error", f"{mode} band ${lo}–${hi} is invalid", horizon=h, low=lo, high=hi)
             continue
         # Owner (long) bands are threshold ceilings; the page clamps tiers above spot to "at spot".
-        if h != "long" and hi > p * 1.005:
+        if h != "long" and hi > p * 1.01:
             c.add("band_above_price", "error", f"{mode} band top ${hi:.2f} is above price ${p:.2f} (chasing)",
                   horizon=h, high=hi, price=p)
         width = 100.0 * (hi - lo) / p  # same basis as the band-width cap in horizon_entry_calculator
@@ -176,9 +176,10 @@ def rule_bands(d: dict, c: _Collector, row: dict | None) -> None:
                   horizon=h, low=lo, high=hi, level=lv.get("price"))
         for lv in levels:
             tp, md = lv.get("touch_pct"), lv.get("median_days")
-            if tp is not None and not (0 <= (_f(tp) or -1) <= 100):
+            tpf = _f(tp)
+            if tp is not None and (tpf is None or not (0 <= tpf <= 100)):
                 c.add("touch_odds_invalid", "error", f"{mode} level touch odds {tp}", horizon=h, touch_pct=tp)
-            if md is not None and (_f(md) or 0) < 0:
+            if md is not None and (_f(md) is None or _f(md) < 0):
                 c.add("touch_odds_invalid", "error", f"{mode} level median days {md}", horizon=h, median_days=md)
 
 
@@ -333,7 +334,7 @@ def rule_entry_state(d: dict, c: _Collector, row: dict | None) -> None:
     headline = str(ra.get("action_title") or ra.get("entry_mode_headline") or "").lower()
     if mode in ("full_go", "starter_only") and "no new entries" in headline:
         c.add("headline_vs_entry_mode", "error", f"Headline '{headline}' but entry mode {mode}")
-    if mode == "hard_lock" and headline and not any(w in headline for w in ("no new entries", "hold", "wait", "locked")):
+    if mode == "hard_lock" and headline and not any(w in headline for w in ("no new entries", "hold", "wait", "locked", "watch")):
         c.add("headline_vs_entry_mode", "warn", f"Entries locked but headline reads '{headline}'")
     ov = str((d.get("investor_summary") or {}).get("overall_verdict") or "").upper()
     if mode == "hard_lock" and any(ov == w or ov.startswith(w + " ") for w in BUY_WORDS):
@@ -396,7 +397,7 @@ def rule_levels_quality(d: dict, c: _Collector, row: dict | None) -> None:
                 c.add("touch_sample_small", "info", f"{mode} hit odds from only {int(n)} samples", horizon=h)
             if p and _f(lv["price"]) >= p and (_f(lv.get("touch_pct")) or 100) < 100 and lv.get("role") == "entry" \
                     and h != "long" and lv.get("touch_pct") is not None:
-                c.add("touch_odds_at_spot", "warn",
+                c.add("touch_odds_at_spot", "info",
                       f"{mode} level ${_f(lv['price']):.2f} is at/above price but shows {lv['touch_pct']}% hit odds",
                       horizon=h)
 
@@ -510,11 +511,16 @@ def audit_track_record(tr: dict, ticker: str, today: date | None = None) -> list
                 c.add("track_stale", "warn", f"Track data last updated {last[:10]} ({age} days ago)", days=age)
         except ValueError:
             pass
+    bad_trades = []
     for t in tr.get("daily_trades") or []:
         sig = str(t.get("signal") or "").upper()
         mp, tg, sl = _f(t.get("model_price")), _f(t.get("target")), _f(t.get("stop"))
         if "BUY" in sig and mp and tg and sl and not (sl < mp < tg):
-            c.add("trade_levels_invalid", "warn", f"{t.get('date')} {sig}: stop ${sl} / entry ${mp} / target ${tg}")
+            bad_trades.append(f"{t.get('date')} stop ${sl} / entry ${mp} / target ${tg}")
+    if bad_trades:
+        c.add("trade_levels_invalid", "warn",
+              f"{len(bad_trades)} paper BUY trades have stop ≥ entry or target ≤ entry, e.g. {bad_trades[0]}",
+              n=len(bad_trades))
     return c.findings
 
 

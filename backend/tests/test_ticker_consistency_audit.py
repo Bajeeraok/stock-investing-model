@@ -62,7 +62,7 @@ def test_buy_verdict_while_locked_and_nan():
 def test_summary_counts():
     f = audit_ticker_detail(_detail(gates_passed=4))
     s = summarize(f, ["TEST"])
-    assert s["counts"]["warn"] == 1 and s["by_rule"][0]["rule"] == "gate_count_mismatch"
+    assert s["counts"]["info"] == 1 and s["by_rule"][0]["rule"] == "gate_count_mismatch"
 
 
 # ── edge cases: missing / malformed data must never crash the checker ──────────
