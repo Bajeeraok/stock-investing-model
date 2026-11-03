@@ -221,7 +221,7 @@ def _get_most_recent_earnings_impl(ticker: str, config: dict) -> dict | None:
         past = idx[idx <= now]
         if len(past) == 0:
             return None
-        last_d = past[-1]
+        last_d = past.max()  # earnings_dates is newest-first; past[-1] was the oldest (2008–2021)
         days_since = int((now.normalize() - last_d.normalize()).days)
         return {"date": last_d.strftime("%Y-%m-%d"), "days_since": days_since}
     except Exception:
