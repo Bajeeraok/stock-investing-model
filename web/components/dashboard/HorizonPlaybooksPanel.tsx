@@ -150,7 +150,7 @@ export function HorizonPlaybooksPanel({
             >
               {TAB_META[h].label}
               {h === intentHorizon && (
-                <span className="ml-1 text-[9px] opacity-70">★</span>
+                <span className="ml-1 text-[11px] opacity-70">★</span>
               )}
             </button>
           ))}

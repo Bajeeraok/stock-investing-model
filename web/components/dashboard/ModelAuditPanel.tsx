@@ -65,9 +65,9 @@ const ENTRY_MODE_CFG = {
 
 function EntryModePill({ mode }: { mode?: string | null }) {
   const cfg = ENTRY_MODE_CFG[mode as keyof typeof ENTRY_MODE_CFG];
-  if (!cfg) return <span className="text-slate-600 text-[9px]">—</span>;
+  if (!cfg) return <span className="text-slate-600 text-[11px]">—</span>;
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[11px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
       {cfg.label}
     </span>
   );
@@ -640,12 +640,12 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   <span className="text-[13px] font-mono tabular-nums text-slate-200">
                     {b.pct_of_events != null ? `${b.pct_of_events.toFixed(1)}%` : ""}
                   </span>
-                  <span className="text-[9px] text-slate-500">n={b.n}</span>
+                  <span className="text-[11px] text-slate-500">n={b.n}</span>
                 </div>
               );
             })}
           </div>
-          <p className="text-[9px] text-slate-600 mt-2 leading-snug">
+          <p className="text-[11px] text-slate-600 mt-2 leading-snug">
             If <span className="text-sky-400/70">regime</span> dominates: gates are filtering macro risk, not stock fundamentals — consider whether stormy-tape blocks are too aggressive for accumulation setups.
             If <span className="text-amber-400/70">valuation</span> dominates: most names are richly priced relative to model FV — correct behavior in an elevated market.
           </p>
@@ -668,7 +668,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                 <span className="text-[13px] font-mono tabular-nums text-emerald-300/90">
                   {g.pass_pct != null ? `${g.pass_pct.toFixed(1)}% pass` : "—"}
                 </span>
-                <span className="text-[9px] text-slate-600">n={g.pass_n ?? "—"}</span>
+                <span className="text-[11px] text-slate-600">n={g.pass_n ?? "—"}</span>
               </div>
             ))}
           </div>
@@ -684,7 +684,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
             <p key={i} className="text-[13px] text-slate-400 leading-snug">{note}</p>
           ))}
           {audit.gate_calibration?.thresholds && (
-            <p className="text-[9px] text-slate-600 pt-1">
+            <p className="text-[11px] text-slate-600 pt-1">
               Current: regime ≥{audit.gate_calibration.thresholds.regime_bull_pct_min}% · full MOS ≥
               {audit.gate_calibration.thresholds.valuation_full_mos_pct}% · starter MOS ≥
               {audit.gate_calibration.thresholds.valuation_partial_mos_pct}% · ML ≥
@@ -729,7 +729,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                   (n={audit.outcome_summary.headline_actionable_n ?? 0} resolved)
                 </span>
               </p>
-              <p className="text-[9px] text-slate-500 mt-0.5">
+              <p className="text-[11px] text-slate-500 mt-0.5">
                 {audit.outcome_summary.headline_actionable_slice === "gates_3plus" ||
                 audit.outcome_summary.headline_actionable_slice === "all_go"
                   ? "Too few 4/4 GO rows have resolved yet — showing a looser fallback slice instead (see label above). Not the broad accumulate headline (HOLD-heavy) either way."
@@ -1084,7 +1084,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                     >
                       {r.gates_passed ?? "—"}/{r.gates_total ?? 4}
                       {r.gates_failed ? (
-                        <span className="block text-[9px] text-amber-400/80 truncate max-w-[5rem]">
+                        <span className="block text-[11px] text-amber-400/80 truncate max-w-[5rem]">
                           {r.gates_failed}
                         </span>
                       ) : null}
@@ -1112,7 +1112,7 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
                       ) : (
                         /* fallback to legacy go_no_go for old rows that predate entry_mode */
                         <span className={clsx(
-                          "px-1.5 py-0.5 rounded text-[9px] uppercase",
+                          "px-1.5 py-0.5 rounded text-[11px] uppercase",
                           r.go_no_go === "go" ? "bg-emerald-500/15 text-emerald-300"
                             : r.go_no_go === "no_go" ? "bg-slate-700/50 text-slate-500"
                             : "bg-slate-700 text-slate-400",

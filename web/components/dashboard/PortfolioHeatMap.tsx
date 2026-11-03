@@ -34,7 +34,7 @@ function tileTooltip(h: PortfolioHolding, pct: number): string {
 function MismatchBadge() {
   return (
     <span
-      className="absolute top-1 left-1 z-10 text-[8px] font-black uppercase px-1 py-0.5 rounded bg-amber-500/90 text-amber-950 leading-none"
+      className="absolute top-1 left-1 z-10 text-[11px] font-black uppercase px-1 py-0.5 rounded bg-amber-500/90 text-amber-950 leading-none"
       title="Chart score and model confidence disagree"
     >
       ⚠
@@ -147,7 +147,7 @@ export function PortfolioHeatMap({
                     {h.score != null && (
                       <span className="text-[11px] font-semibold opacity-95">{fmtScore(h.score)}</span>
                     )}
-                    <span className={clsx("text-[9px] font-mono tabular-nums", confidenceTextClass(h.confidence))}>
+                    <span className={clsx("text-[11px] font-mono tabular-nums", confidenceTextClass(h.confidence))}>
                       {fmtConfidence(h.confidence)}
                     </span>
                   </div>

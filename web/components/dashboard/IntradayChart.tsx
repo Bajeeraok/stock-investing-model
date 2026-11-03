@@ -300,13 +300,13 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
               dataKey="t"
               ticks={tickValues}
               tickFormatter={(v) => tickFormatter(v, period)}
-              tick={{ fontSize: 9, fill: "#8690a6" }}
+              tick={{ fontSize: 11, fill: "#8690a6" }}
               axisLine={false}
               tickLine={false}
             />
             <YAxis
               domain={[yMin, yMax]}
-              tick={{ fontSize: 9, fill: "#8690a6" }}
+              tick={{ fontSize: 11, fill: "#8690a6" }}
               axisLine={false}
               tickLine={false}
               tickFormatter={(v) => `$${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)}`}
@@ -328,7 +328,7 @@ export function IntradayChart({ ticker, levelLines = [], className, onLivePrice 
                   label={{
                     value: ll.label,
                     position: "insideTopRight",
-                    fontSize: 8,
+                    fontSize: 11,
                     fill: ll.color ?? "#8690a6",
                   }}
                 />

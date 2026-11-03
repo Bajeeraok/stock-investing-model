@@ -72,7 +72,7 @@ export function DashboardTabs({ active, onChange, badges, variant = "rail", comp
               aria-label={label}
               onClick={() => onChange(id)}
               className={clsx(
-                "flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[10.5px] font-medium transition-colors",
+                "flex flex-1 flex-col items-center justify-center gap-0.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40",
                 isActive ? "text-td-accent" : "text-td-muted hover:text-td-text",
               )}
@@ -80,7 +80,7 @@ export function DashboardTabs({ active, onChange, badges, variant = "rail", comp
               <span className="relative inline-flex">
                 <Icon className="h-5 w-5" strokeWidth={2} />
                 {badge != null && badge > 0 && (
-                  <span className="absolute -top-1 -right-2 min-w-[0.95rem] h-3.5 px-0.5 rounded bg-td-surface2 text-[9px] font-bold text-td-text flex items-center justify-center leading-none">
+                  <span className="absolute -top-1 -right-2 min-w-[0.95rem] h-3.5 px-0.5 rounded bg-td-surface2 text-[11px] font-bold text-td-text flex items-center justify-center leading-none">
                     {badge > 99 ? "99+" : badge}
                   </span>
                 )}
@@ -123,7 +123,7 @@ export function DashboardTabs({ active, onChange, badges, variant = "rail", comp
                 {badge > 99 ? "99+" : badge}
               </span>
             )}
-            <span className={clsx("hidden text-[10.5px] text-td-muted/70 font-mono", !compact && "xl:inline")} aria-hidden>
+            <span className={clsx("hidden text-[11px] text-td-muted/70 font-mono", !compact && "xl:inline")} aria-hidden>
               {shortcut}
             </span>
           </button>

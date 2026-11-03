@@ -62,7 +62,7 @@ function EntryModePill({ mode }: { mode?: string | null }) {
   const cfg = ENTRY_MODE_CONFIG[mode as keyof typeof ENTRY_MODE_CONFIG];
   if (!cfg) return <span className="text-slate-600 text-[11px]">—</span>;
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[11px] font-black uppercase tracking-wider whitespace-nowrap ${cfg.cls}`}>
       {cfg.label}
     </span>
   );
@@ -470,7 +470,7 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
                   );
                 })}
               </div>
-              <p className="text-[9px] text-slate-600 mt-1">
+              <p className="text-[11px] text-slate-600 mt-1">
                 Gates required for accumulate track. Tactical track uses return &gt; 0 as win (no gate requirement).
               </p>
             </div>

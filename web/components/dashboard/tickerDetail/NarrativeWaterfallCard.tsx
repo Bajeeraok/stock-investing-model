@@ -385,7 +385,7 @@ function ModelChecksPanel({
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-[13px] font-medium leading-snug">{c.summary || c.name}</span>
                         {!c.clears_gate ? (
-                          <span className="text-[9px] uppercase tracking-wide opacity-70">
+                          <span className="text-[11px] uppercase tracking-wide opacity-70">
                             context only
                           </span>
                         ) : null}

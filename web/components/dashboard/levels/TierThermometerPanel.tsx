@@ -104,10 +104,10 @@ export function TierThermometerPanel({
         onClick={() => setThermOpen(o => !o)}
         className="w-full flex items-center justify-between gap-2 px-4 py-2 text-left hover:bg-td-surface2/30 transition-colors border-b border-td-owner/10"
       >
-        <span className="text-[9px] uppercase tracking-wider text-td-muted font-semibold">
+        <span className="text-[11px] uppercase tracking-wider text-td-muted font-semibold">
           Price thermometer
         </span>
-        <span className="flex items-center gap-1 text-[9px] text-td-muted">
+        <span className="flex items-center gap-1 text-[11px] text-td-muted">
           {thermOpen ? (
             <><ChevronDown className="h-3 w-3" />Hide</>
           ) : (
@@ -135,9 +135,9 @@ export function TierThermometerPanel({
                 return (
                   <div key={tier.id} className="flex flex-col gap-0.5">
                     <div className="flex items-center justify-end gap-1.5">
-                      <span className="text-[9px] text-td-muted uppercase">{tier.id}</span>
-                      {inside && <span className="text-[8px] font-black text-td-accent bg-td-accent/20 px-1 rounded">IN</span>}
-                      {!inside && above && <span className="text-[8px] text-td-muted">↑</span>}
+                      <span className="text-[11px] text-td-muted uppercase">{tier.id}</span>
+                      {inside && <span className="text-[11px] font-black text-td-accent bg-td-accent/20 px-1 rounded">IN</span>}
+                      {!inside && above && <span className="text-[11px] text-td-muted">↑</span>}
                     </div>
                     <span className={clsx(
                       "text-[11px] font-mono tabular-nums",
@@ -150,13 +150,13 @@ export function TierThermometerPanel({
               })}
               {minBuy != null && (
                 <div className="flex flex-col gap-0.5 border-t border-td-line/50 pt-2 mt-1">
-                  <span className="text-[9px] text-td-info/70 uppercase">Full MOS</span>
+                  <span className="text-[11px] text-td-info/70 uppercase">Full MOS</span>
                   <span className="text-[11px] font-mono text-td-info/80 tabular-nums">≤${minBuy.toFixed(0)}</span>
                 </div>
               )}
             </div>
           </div>
-          <p className="text-[9px] text-td-muted text-center font-mono">
+          <p className="text-[11px] text-td-muted text-center font-mono">
             Hover a zone to isolate · white line = current price
           </p>
         </div>

@@ -79,7 +79,7 @@ export function ChatCopilot({ data }: Props) {
       {/* Floating button */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-500 transition"
+        className="fixed bottom-24 right-4 md:bottom-6 md:right-6 z-50 flex h-12 w-12 md:h-14 md:w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg hover:bg-emerald-500 transition"
         title="Ask about your model"
       >
         <MessageCircle className="h-6 w-6" />
@@ -87,7 +87,7 @@ export function ChatCopilot({ data }: Props) {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-[420px] max-w-[calc(100vw-3rem)] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed bottom-40 right-4 md:bottom-24 md:right-6 z-50 w-[420px] max-w-[calc(100vw-3rem)] rounded-xl border border-slate-700 bg-slate-900 shadow-2xl flex flex-col overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 bg-slate-800/80">
             <h3 className="font-semibold text-slate-100">Model Copilot</h3>
             <button

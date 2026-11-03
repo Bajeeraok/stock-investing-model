@@ -146,7 +146,7 @@ export function PriceThermometer({
           style={{ bottom: `${nowPct}%` }}
         >
           <span className="text-[13px] font-mono font-bold text-td-text tabular-nums">${currentPrice.toFixed(2)}</span>
-          <span className="text-[9px] uppercase tracking-wider text-td-muted font-semibold">Now</span>
+          <span className="text-[11px] uppercase tracking-wider text-td-muted font-semibold">Now</span>
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-50" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-white/80" />
@@ -178,12 +178,12 @@ export function PriceThermometer({
                   ${l.value.toFixed(2)}
                 </span>
               )}
-              <span className={clsx("text-[9px] text-td-muted font-medium", isHovered && "text-td-text")}>
+              <span className={clsx("text-[11px] text-td-muted font-medium", isHovered && "text-td-text")}>
                 {l.label}
               </span>
               {l.badge && (
                 <span className={clsx(
-                  "text-[8px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded-full border",
+                  "text-[11px] uppercase font-black tracking-wider px-1.5 py-0.5 rounded-full border",
                   l.active
                     ? "border-td-accent/50 bg-td-accent/15 text-td-accent"
                     : l.target
@@ -202,8 +202,8 @@ export function PriceThermometer({
             className="absolute left-0 flex items-center gap-1.5 -translate-y-1/2 opacity-50"
             style={{ bottom: `${pct(structuralStop, min, span)}%` }}
           >
-            <span className="text-[9px] font-mono text-td-crit/70 tabular-nums">${structuralStop.toFixed(2)}</span>
-            <span className="text-[8px] text-td-crit/50">Structural stop</span>
+            <span className="text-[11px] font-mono text-td-crit/70 tabular-nums">${structuralStop.toFixed(2)}</span>
+            <span className="text-[11px] text-td-crit/50">Structural stop</span>
           </div>
         )}
       </div>

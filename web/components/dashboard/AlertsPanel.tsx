@@ -429,7 +429,7 @@ function AlertCard({
           <button
             type="button"
             onClick={() => snoozeAlert(a.id)}
-            className="px-2 py-1 rounded-md text-[10.5px] font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800 touch-manipulation"
+            className="px-2 py-1 rounded-md text-[11px] font-semibold text-slate-400 hover:text-slate-100 hover:bg-slate-800 touch-manipulation"
             title={`Hide for ${SNOOZE_HOURS}h (this browser only)`}
           >
             Snooze

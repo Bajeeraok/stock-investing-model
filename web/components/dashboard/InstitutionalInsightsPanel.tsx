@@ -221,14 +221,14 @@ export function InstitutionalInsightsPanel({
               {Math.round(io.major_holders.institutions_count).toLocaleString()} institutions
             </span>
           )}
-          <span className="text-[9px] text-slate-700">Yahoo 13F · quarterly lag</span>
+          <span className="text-[11px] text-slate-700">Yahoo 13F · quarterly lag</span>
         </div>
       </div>
 
       {/* ── Top 5 holders — primary data point ── */}
       {topHolders.length > 0 ? (
         <div>
-          <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-1.5 font-semibold">
+          <p className="text-[11px] uppercase tracking-widest text-slate-600 mb-1.5 font-semibold">
             Top holders · % of shares outstanding · Q/Q change
           </p>
           <div className="space-y-1">
@@ -239,7 +239,7 @@ export function InstitutionalInsightsPanel({
               return (
                 <div key={`${h.holder}-${i}`} className="flex items-center gap-2">
                   {/* Rank */}
-                  <span className="text-[9px] text-slate-700 w-3 shrink-0 text-right">{i + 1}</span>
+                  <span className="text-[11px] text-slate-700 w-3 shrink-0 text-right">{i + 1}</span>
                   {/* Name */}
                   <span className="text-[13px] text-slate-300 truncate flex-1">{h.holder ?? "—"}</span>
                   {/* % held */}
@@ -272,7 +272,7 @@ export function InstitutionalInsightsPanel({
             })}
           </div>
           {io?.as_of && (
-            <p className="text-[9px] text-slate-700 mt-1.5">As of {io.as_of} · 13F quarterly</p>
+            <p className="text-[11px] text-slate-700 mt-1.5">As of {io.as_of} · 13F quarterly</p>
           )}
         </div>
       ) : (

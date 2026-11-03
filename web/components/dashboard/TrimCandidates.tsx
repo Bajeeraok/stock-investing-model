@@ -27,7 +27,7 @@ function TrimGatePills({ holding }: { holding: PortfolioHolding }) {
     <div className="flex flex-wrap items-center gap-1 mt-1">
       <span
         className={clsx(
-          "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
+          "text-[11px] font-bold uppercase px-1.5 py-0.5 rounded border",
           cleared ? "border-emerald-500/40 text-emerald-300 bg-emerald-950/30" : "border-amber-500/40 text-amber-300 bg-amber-950/20"
         )}
         title={`Trim gates ${passed}/${total} · ${cleared ? "cleared for trim list" : "score trigger but gates pending"}`}
@@ -39,7 +39,7 @@ function TrimGatePills({ holding }: { holding: PortfolioHolding }) {
           key={g.id}
           title={`${g.label}: ${g.detail}`}
           className={clsx(
-            "inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tabular-nums",
+            "inline-flex items-center gap-0.5 text-[11px] font-bold uppercase px-1.5 py-0.5 rounded border tabular-nums",
             retailStatusClasses(g.pass ? "cleared" : "blocked")
           )}
         >

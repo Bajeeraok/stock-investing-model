@@ -930,7 +930,7 @@ export function TickerDetailModal({
                 </div>
               )}
               {detail && !loading && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px] font-mono">
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
                   {headlineScore.actionable != null && (
                     <span
                       className="px-1.5 py-0.5 rounded border border-td-line bg-td-surface2 text-td-text"
@@ -1093,7 +1093,7 @@ export function TickerDetailModal({
                     <Icon className={clsx("h-4 w-4 shrink-0", modalTab === id ? "text-td-accent" : "")} />
                     {label}
                   </span>
-                  <span className="block pl-6 text-[10.5px] text-td-muted leading-tight">{hint}</span>
+                  <span className="block pl-6 text-[11px] text-td-muted leading-tight">{hint}</span>
                 </button>
               ))}
             </div>

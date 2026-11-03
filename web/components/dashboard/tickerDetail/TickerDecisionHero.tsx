@@ -392,15 +392,15 @@ export function TickerDecisionHero({
             >
               <span
                 className={clsx(
-                  "w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0",
+                  "w-4 h-4 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0",
                   g.pass ? "bg-td-accent-weak text-td-accent" : "bg-td-crit-weak text-td-crit",
                 )}
               >
                 {g.pass ? "✓" : "✕"}
               </span>
               <div className="min-w-0">
-                <p className="text-[10.5px] font-semibold text-td-text truncate">{g.label}</p>
-                <p className="text-[9.5px] text-td-muted truncate">{g.detail}</p>
+                <p className="text-[11px] font-semibold text-td-text truncate">{g.label}</p>
+                <p className="text-[11px] text-td-muted truncate">{g.detail}</p>
               </div>
             </div>
           ))}

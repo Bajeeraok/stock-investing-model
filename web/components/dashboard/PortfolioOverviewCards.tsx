@@ -124,7 +124,7 @@ export function RiskManagementCard({
     <section className="rounded-2xl border border-td-owner/40 bg-td-surface px-4 sm:px-5 py-4">
       <div className="flex items-baseline justify-between gap-2 mb-2.5">
         <h3 className="text-[11.5px] font-semibold uppercase tracking-wider text-td-owner">Risk management</h3>
-        {vc?.horizon_days && <span className="text-[10.5px] text-td-muted">{vc.horizon_days}-day horizon</span>}
+        {vc?.horizon_days && <span className="text-[11px] text-td-muted">{vc.horizon_days}-day horizon</span>}
       </div>
       <div className="grid grid-cols-2 gap-2.5">
         <div className="rounded-xl border border-td-line bg-td-surface2/50 px-3 py-2.5">

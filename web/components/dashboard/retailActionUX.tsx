@@ -936,7 +936,7 @@ export function TradingGateMiniPills({ gates, className }: { gates: TradingGateR
           key={g.id}
           title={`${g.label}: ${g.detail} · ${passLabel}`}
           className={clsx(
-            "inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border tabular-nums",
+            "inline-flex items-center gap-0.5 text-[11px] font-bold uppercase px-1.5 py-0.5 rounded border tabular-nums",
             retailStatusClasses(visual)
           )}
         >
@@ -947,7 +947,7 @@ export function TradingGateMiniPills({ gates, className }: { gates: TradingGateR
       })}
       <span
         className={clsx(
-          "text-[9px] font-semibold uppercase",
+          "text-[11px] font-semibold uppercase",
           allGo ? (marginal.length > 0 ? "text-amber-300" : "text-emerald-400") : "text-amber-300"
         )}
         title={summaryTitle}
@@ -1661,7 +1661,7 @@ export function LongTermAccumulationScale({
                 {width >= 10 && (
                   <span
                     className={clsx(
-                      "text-[9px] font-mono font-semibold truncate px-0.5",
+                      "text-[11px] font-mono font-semibold truncate px-0.5",
                       isPrimary ? "text-emerald-100" : "text-slate-400",
                     )}
                   >
@@ -1771,7 +1771,7 @@ export function LongTermAccumulationScale({
                   title={lv.label}
                 >
                   <span>${lv.price.toFixed(2)}</span>
-                  {dist && <span className="text-[9px] text-slate-500">{dist}</span>}
+                  {dist && <span className="text-[11px] text-slate-500">{dist}</span>}
                 </span>
               );
             })}
@@ -2118,7 +2118,7 @@ export function LongTermTierLadder({
                     <span className="text-sm font-bold text-slate-200">{tier.label}</span>
                     <span className="text-[13px] font-semibold text-emerald-300/90">{copy.zone}</span>
                     {isHighlighted && (
-                      <span className="text-[9px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
+                      <span className="text-[11px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
                         {isInside
                           ? tier.id === "T2" || tier.id === "tier2"
                             ? "Partial position only"

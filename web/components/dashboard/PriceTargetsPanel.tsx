@@ -698,13 +698,13 @@ function ScenarioRow({ s, price }: { s: Scenario; price: number }) {
             <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-td-text">{s.name}</span>
             {isBase && (
-              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-info bg-td-info/10 border-td-info/30">BASE</span>
+              <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-info bg-td-info/10 border-td-info/30">BASE</span>
             )}
             {s.analyst_anchored && (
-              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-owner bg-td-owner/10 border-td-owner/30">ANALYST TARGET</span>
+              <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-owner bg-td-owner/10 border-td-owner/30">ANALYST TARGET</span>
             )}
             {(s as Scenario & { valuation_capped?: boolean }).valuation_capped && (
-              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-warn bg-td-warn/10 border-td-warn/30">TACTICAL CAP</span>
+              <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded border text-td-warn bg-td-warn/10 border-td-warn/30">TACTICAL CAP</span>
             )}
           </div>
           <p className="text-[13px] text-td-muted truncate mt-0.5">{s.trigger}</p>

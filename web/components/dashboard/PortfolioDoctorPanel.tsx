@@ -666,7 +666,7 @@ export default function PortfolioDoctorPanel({
                     <span className={`w-12 text-right text-[13px] font-semibold tabular-nums ${val >= 75 ? "text-emerald-400" : val >= 50 ? "text-amber-400" : "text-rose-400"}`}>
                       {val}
                       {changed && (
-                        <span className={`ml-0.5 text-[9px] ${val > origVal ? "text-emerald-400" : "text-rose-400"}`}>
+                        <span className={`ml-0.5 text-[11px] ${val > origVal ? "text-emerald-400" : "text-rose-400"}`}>
                           {val > origVal ? "↑" : "↓"}
                         </span>
                       )}

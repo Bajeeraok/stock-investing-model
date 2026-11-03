@@ -121,7 +121,7 @@ function BetaHero({ beta }: { beta: NonNullable<PortfolioRiskMetrics["beta"]> })
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-xl font-bold text-slate-100 tabular-nums">{pb.toFixed(1)}×</span>
-              <span className="text-[9px] uppercase text-slate-500 tracking-wide">beta</span>
+              <span className="text-[11px] uppercase text-slate-500 tracking-wide">beta</span>
             </div>
           </div>
           <div className="min-w-0">

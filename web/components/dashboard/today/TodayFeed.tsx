@@ -194,7 +194,7 @@ export function SinceYesterdayCard({
                   <span className="min-w-0">
                     <span className="flex items-center gap-1.5">
                       <span className="font-mono text-[13px] font-bold text-td-text">{r.ticker}</span>
-                      {r.held && <span className="text-[9.5px] font-mono uppercase text-td-owner">held</span>}
+                      {r.held && <span className="text-[11px] font-mono uppercase text-td-owner">held</span>}
                     </span>
                     <span className="block text-[11.5px] text-td-muted truncate">{r.reason}</span>
                   </span>
@@ -274,7 +274,7 @@ export function MyBookCard({
               title={h.action_today ?? h.suggestion}
             >
               <span className="block font-mono text-sm font-bold text-td-text">{h.ticker}</span>
-              <span className={clsx("block text-[10.5px] mt-0.5", trim ? "text-td-warn" : "text-td-muted")}>
+              <span className={clsx("block text-[11px] mt-0.5", trim ? "text-td-warn" : "text-td-muted")}>
                 {d != null && d !== 0 && (
                   <span className={d > 0 ? "text-td-accent" : "text-td-crit"}>{d > 0 ? "▲ " : "▼ "}</span>
                 )}
@@ -342,7 +342,7 @@ export function MarketMapCard() {
           {sectors.map((s) => (
             <div key={s.ticker} className="rounded-lg px-2 py-1.5 font-mono" style={{ background: heatBg(s.change_pct) }} title={s.name}>
               <span className="block text-[13px] font-bold text-td-text">{s.ticker}</span>
-              <span className="block text-[10.5px] text-td-text/85">
+              <span className="block text-[11px] text-td-text/85">
                 {(s.change_pct ?? 0) >= 0 ? "+" : ""}
                 {(s.change_pct ?? 0).toFixed(1)}%
               </span>

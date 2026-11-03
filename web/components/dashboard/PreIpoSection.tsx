@@ -98,7 +98,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
         {news.sentiment_label && (
           <span
             className={clsx(
-              "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
+              "text-[11px] font-bold uppercase px-1.5 py-0.5 rounded border",
               sentimentClasses(news.sentiment_label)
             )}
           >
@@ -111,7 +111,7 @@ function NewsBlock({ news }: { news: PreIpoNewsBlock }) {
         {(news.themes ?? []).map((t) => (
           <span
             key={t}
-            className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20"
+            className="text-[11px] font-medium px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20"
           >
             {t}
           </span>
@@ -242,7 +242,7 @@ export function PreIpoSection({
                       {p.regime && (
                         <span
                           className={clsx(
-                            "text-[9px] font-bold uppercase",
+                            "text-[11px] font-bold uppercase",
                             p.regime === "UP" && "text-emerald-400",
                             p.regime === "DOWN" && "text-red-400",
                             p.regime === "NEUTRAL" && "text-slate-500"

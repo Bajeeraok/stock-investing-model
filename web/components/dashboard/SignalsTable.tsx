@@ -318,7 +318,7 @@ function ConfluenceCell({ signal: r }: { signal: Signal }) {
         <SignalDot type="trend" dir={trend} />
         <SignalDot type="rsi"   dir={rsi}   />
         <SignalDot type="macd"  dir={macd}  />
-        <span className="text-[9px] text-slate-600 ml-0.5">T·R·M</span>
+        <span className="text-[11px] text-slate-600 ml-0.5">T·R·M</span>
       </div>
     </div>
   );

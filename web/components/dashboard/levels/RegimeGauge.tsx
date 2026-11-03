@@ -143,7 +143,7 @@ export function RegimeGauge({
             <span className={clsx("text-[13px] font-mono font-bold tabular-nums", item.color)}>
               {item.pct.toFixed(0)}%
             </span>
-            <span className="text-[8px] uppercase text-slate-500">{item.label}</span>
+            <span className="text-[11px] uppercase text-slate-500">{item.label}</span>
           </div>
         ))}
       </div>

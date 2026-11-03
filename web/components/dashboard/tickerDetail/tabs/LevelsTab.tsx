@@ -166,7 +166,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
       return (
         <div>
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
-            <span className="text-[9px] font-semibold text-slate-600 uppercase tracking-widest shrink-0">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest shrink-0">
               Anchors
             </span>
             <AnchorBentoGrid anchors={anchors} />

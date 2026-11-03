@@ -551,7 +551,7 @@ function ConfidenceGauge({ value }: { value: number }) {
               fill={colour} dominantBaseline="auto">{pct}%</text>
       </svg>
       <span className="text-[11px] text-td-muted -mt-1">Model confidence</span>
-      <span className="text-[9px] text-td-muted -mt-0.5 max-w-[9rem] text-center leading-tight">7-layer fused (primary)</span>
+      <span className="text-[11px] text-td-muted -mt-0.5 max-w-[9rem] text-center leading-tight">7-layer fused (primary)</span>
     </div>
   );
 }

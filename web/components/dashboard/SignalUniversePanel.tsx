@@ -421,7 +421,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                       <td className="px-2 py-1.5 text-left">
                         <span className="font-mono font-semibold text-slate-200">{row.ticker}</span>
                         {row.sector && (
-                          <span className="block text-[9px] text-slate-600 leading-none mt-0.5 truncate max-w-[80px]">
+                          <span className="block text-[11px] text-slate-600 leading-none mt-0.5 truncate max-w-[80px]">
                             {row.sector}
                           </span>
                         )}
@@ -457,7 +457,7 @@ export function SignalUniversePanel({ onTickerClick }: Props) {
                       </td>
                       {/* Entry mode */}
                       <td className="px-2 py-1.5 text-center">
-                        <span className={clsx("px-1.5 py-0.5 rounded text-[9px] font-medium border", emCls)}>
+                        <span className={clsx("px-1.5 py-0.5 rounded text-[11px] font-medium border", emCls)}>
                           {emLabel}
                         </span>
                       </td>

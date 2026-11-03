@@ -92,7 +92,7 @@ export function CatchLevelsRow({
             >
               <span>${lv.price.toFixed(2)}</span>
               {currentPrice != null && currentPrice > 0 && (
-                <span className="text-[9px] text-slate-500">{pctFromPrice(currentPrice, lv.price)}</span>
+                <span className="text-[11px] text-slate-500">{pctFromPrice(currentPrice, lv.price)}</span>
               )}
             </span>
           ))}

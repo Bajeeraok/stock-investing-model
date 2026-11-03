@@ -25,7 +25,7 @@ function ActionBadge({ text }: { text: string }) {
   const cls = ACTION_BADGE[key] ?? "border-slate-600 bg-slate-800 text-slate-300";
   return (
     <span className={clsx(
-      "inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-widest",
+      "inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-black uppercase tracking-widest",
       cls,
     )}>
       {text.replace(/_/g, " ")}
@@ -79,20 +79,20 @@ export function RoadmapSummaries({
               {traderRoadmap.short.entry_zone && (
                 <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2.5 grid grid-cols-3 gap-2">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase text-slate-500 font-semibold">Short entry</span>
+                    <span className="text-[11px] uppercase text-slate-500 font-semibold">Short entry</span>
                     <span className="text-[13px] font-mono text-slate-200 tabular-nums">
                       ${traderRoadmap.short.entry_zone.low?.toFixed(2)}–${traderRoadmap.short.entry_zone.high?.toFixed(2)}
                     </span>
                   </div>
                   {traderRoadmap.short.target != null && (
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase text-slate-500 font-semibold">Target</span>
+                      <span className="text-[11px] uppercase text-slate-500 font-semibold">Target</span>
                       <MonoPrice v={traderRoadmap.short.target} />
                     </div>
                   )}
                   {traderRoadmap.short.stop != null && (
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase text-slate-500 font-semibold">Stop</span>
+                      <span className="text-[11px] uppercase text-slate-500 font-semibold">Stop</span>
                       <span className="font-mono tabular-nums text-red-300 text-[13px]">
                         ${traderRoadmap.short.stop.toFixed(2)}
                       </span>
@@ -106,20 +106,20 @@ export function RoadmapSummaries({
               {traderRoadmap.medium.entry_zone && (
                 <div className="rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2.5 grid grid-cols-3 gap-2">
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-[9px] uppercase text-slate-500 font-semibold">Med entry</span>
+                    <span className="text-[11px] uppercase text-slate-500 font-semibold">Med entry</span>
                     <span className="text-[13px] font-mono text-slate-200 tabular-nums">
                       ${traderRoadmap.medium.entry_zone.low?.toFixed(2)}–${traderRoadmap.medium.entry_zone.high?.toFixed(2)}
                     </span>
                   </div>
                   {traderRoadmap.medium.target != null && (
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase text-slate-500 font-semibold">Target</span>
+                      <span className="text-[11px] uppercase text-slate-500 font-semibold">Target</span>
                       <MonoPrice v={traderRoadmap.medium.target} />
                     </div>
                   )}
                   {traderRoadmap.medium.stop != null && (
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-[9px] uppercase text-slate-500 font-semibold">Stop</span>
+                      <span className="text-[11px] uppercase text-slate-500 font-semibold">Stop</span>
                       <span className="font-mono tabular-nums text-red-300 text-[13px]">
                         ${traderRoadmap.medium.stop.toFixed(2)}
                       </span>
@@ -158,7 +158,7 @@ export function RoadmapSummaries({
             <div className="px-4 pb-4 pt-1 space-y-3 border-t border-slate-700/40">
               {investorRoadmap.add_tiers.length > 0 && (
                 <div className="space-y-1.5">
-                  <p className="text-[9px] uppercase font-semibold text-slate-500 tracking-wider">Add tiers</p>
+                  <p className="text-[11px] uppercase font-semibold text-slate-500 tracking-wider">Add tiers</p>
                   <div className="grid grid-cols-1 gap-1.5">
                     {investorRoadmap.add_tiers
                       .filter(t => t.low != null && t.high != null)
@@ -169,7 +169,7 @@ export function RoadmapSummaries({
                             ${(t.low as number).toFixed(2)}–${(t.high as number).toFixed(2)}
                           </span>
                           {(t.allocation_pct ?? 0) > 0 && (
-                            <span className="text-[9px] text-slate-500 font-mono">{t.allocation_pct}%</span>
+                            <span className="text-[11px] text-slate-500 font-mono">{t.allocation_pct}%</span>
                           )}
                         </div>
                       ))}
@@ -177,7 +177,7 @@ export function RoadmapSummaries({
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <span className="text-[9px] uppercase text-slate-500 font-semibold shrink-0">Trim near</span>
+                <span className="text-[11px] uppercase text-slate-500 font-semibold shrink-0">Trim near</span>
                 <span className="text-[13px] font-mono font-semibold text-amber-300 tabular-nums">
                   ${investorRoadmap.trim_near.toFixed(2)}
                 </span>

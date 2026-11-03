@@ -89,7 +89,7 @@ function EventRiskCard({
               {(row.event_tags ?? []).slice(0, 3).map((t) => (
                 <span
                   key={t}
-                  className="text-[9px] font-bold uppercase px-1 py-0.5 rounded border border-slate-600 text-slate-400"
+                  className="text-[11px] font-bold uppercase px-1 py-0.5 rounded border border-slate-600 text-slate-400"
                 >
                   {tagLabel(t)}
                 </span>

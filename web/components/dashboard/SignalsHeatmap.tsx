@@ -107,7 +107,7 @@ export function SignalsHeatmap({
                             type="button"
                             title={`${s.ticker} · score ${fmtScore(canonicalScore(s))}`}
                             onClick={() => onTickerClick?.(s.ticker!)}
-                            className="text-[10.5px] font-mono font-semibold px-1.5 py-0.5 rounded bg-black/20 hover:bg-black/35 transition-colors"
+                            className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded bg-black/20 hover:bg-black/35 transition-colors"
                           >
                             {s.ticker}
                           </button>

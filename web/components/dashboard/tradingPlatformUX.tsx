@@ -34,7 +34,7 @@ export function GateProgressBar({
   const ok = passed >= minPass;
   return (
     <div className={clsx("space-y-0.5", className)} title={`${passed}/${total} gates pass`}>
-      <div className="flex items-center justify-between gap-2 text-[9px] uppercase tracking-wider text-slate-500">
+      <div className="flex items-center justify-between gap-2 text-[11px] uppercase tracking-wider text-slate-500">
         <span>{variant === "trim" ? "Trim gates" : "Buy gates"}</span>
         <span className={clsx("font-bold tabular-nums", ok ? "text-emerald-400" : "text-amber-400")}>
           {passed}/{total}
@@ -488,7 +488,7 @@ export function NewsSentimentRail({
             return (
               <div key={key} className="rounded-md border border-td-line/70 bg-td-bg/40 p-2 space-y-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className={clsx("text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border", tone)}>
+                  <span className={clsx("text-[11px] font-bold uppercase px-1.5 py-0.5 rounded border", tone)}>
                     {c.direction}
                   </span>
                   <span className="text-[11px] font-semibold text-td-text">{c.name}</span>
@@ -597,9 +597,9 @@ export function TrustMetricsStrip({
                 : "border-slate-600/50 bg-slate-800/40"
           )}
         >
-          <p className="text-[9px] uppercase text-slate-500">{it.label}</p>
+          <p className="text-[11px] uppercase text-slate-500">{it.label}</p>
           <p className="text-sm font-bold tabular-nums text-slate-100">{it.value}</p>
-          {it.sub && <p className="text-[9px] text-slate-500">{it.sub}</p>}
+          {it.sub && <p className="text-[11px] text-slate-500">{it.sub}</p>}
         </div>
       ))}
     </div>

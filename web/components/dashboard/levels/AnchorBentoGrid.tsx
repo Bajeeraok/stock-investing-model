@@ -85,14 +85,14 @@ export function AnchorBentoGrid({
           </span>
           {a.distPct != null && a.role !== "current" && (
             <span className={clsx(
-              "text-[9px] font-mono tabular-nums",
+              "text-[11px] font-mono tabular-nums",
               a.distPct > 0 ? "text-td-accent/60" : "text-td-crit/60",
             )}>
               {fmtPct(a.distPct)}
             </span>
           )}
           {a.role === "current" && (
-            <span className="text-[9px] text-td-muted italic">live</span>
+            <span className="text-[11px] text-td-muted italic">live</span>
           )}
         </div>
       ))}

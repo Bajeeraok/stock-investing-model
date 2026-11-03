@@ -306,7 +306,7 @@ function BuyRoadmapMobileCard({
         <div>
           <p className="font-semibold text-td-text">{row.label}</p>
           {youAreHereKey === row.timeline_key && withinZone && (
-            <span className="mt-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-td-warn bg-td-warn/15 px-1 py-0.5 rounded">
+            <span className="mt-1 inline-block text-[11px] font-semibold uppercase tracking-wide text-td-warn bg-td-warn/15 px-1 py-0.5 rounded">
               You are here
             </span>
           )}
@@ -1133,7 +1133,7 @@ export function TradeRoadmapCard({
                           <td className="py-2 pr-2 text-td-text">
                             {row.label}
                             {data.you_are_here?.timeline_key === row.timeline_key && data.you_are_here?.within_zone && (
-                              <span className="ml-1 inline-block text-[9px] font-semibold uppercase tracking-wide text-td-warn bg-td-warn/15 px-1 py-0.5 rounded">
+                              <span className="ml-1 inline-block text-[11px] font-semibold uppercase tracking-wide text-td-warn bg-td-warn/15 px-1 py-0.5 rounded">
                                 You are here
                               </span>
                             )}
@@ -1156,7 +1156,7 @@ export function TradeRoadmapCard({
                               <div>
                                 {formatZone(row.price_zone_low, row.price_zone_high)}
                                 {sameBandAsPrior && (
-                                  <span className="block text-[9px] text-td-muted font-td-sans mt-0.5 leading-tight">
+                                  <span className="block text-[11px] text-td-muted font-td-sans mt-0.5 leading-tight">
                                     Same accumulation band — conviction / horizon role steps up over time.
                                   </span>
                                 )}

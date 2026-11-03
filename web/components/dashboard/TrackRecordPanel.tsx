@@ -150,7 +150,7 @@ function CalibrationChart({ buckets }: { buckets: CalibrationBucket[] }) {
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-4 mt-2 text-[9px] text-slate-500">
+      <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-500">
         <span className="flex items-center gap-1">
           <span className="inline-block w-3 h-2 rounded-sm bg-slate-600/80" /> Predicted
         </span>
@@ -278,7 +278,7 @@ export default function TrackRecordPanel({
           </div>
           {byGateMode.full_go && byGateMode.hard_lock &&
            (byGateMode.full_go.win_rate_pct ?? 0) > (byGateMode.hard_lock.win_rate_pct ?? 0) + 10 && (
-            <p className="text-[9px] text-emerald-600/80 mt-1">
+            <p className="text-[11px] text-emerald-600/80 mt-1">
               Gates are predictive — full_go wins meaningfully more than hard_lock. Keep thresholds.
             </p>
           )}
@@ -322,13 +322,13 @@ export default function TrackRecordPanel({
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                  tick={{ fontSize: 11, fill: "#94a3b8" }}
                   tickFormatter={(v) => (typeof v === "string" && v.length >= 10 ? v.slice(5) : String(v))}
                   interval="preserveStartEnd"
                 />
                 <YAxis
                   dataKey="equity_index"
-                  tick={{ fontSize: 9, fill: "#94a3b8" }}
+                  tick={{ fontSize: 11, fill: "#94a3b8" }}
                   domain={["auto", "auto"]}
                   width={42}
                 />
@@ -396,9 +396,9 @@ export default function TrackRecordPanel({
           <div className="flex items-center gap-2 mb-1">
             <p className="text-[13px] text-slate-400 font-medium">Confidence calibration</p>
             {calibration!.is_well_calibrated ? (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">CALIBRATED</span>
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30">CALIBRATED</span>
             ) : (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30">NEEDS REVIEW</span>
+              <span className="text-[11px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30">NEEDS REVIEW</span>
             )}
           </div>
           {calibration!.note && (

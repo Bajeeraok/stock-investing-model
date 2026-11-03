@@ -47,7 +47,7 @@ export function LevelsPageHeader({
         {/* Entry mode pill */}
         {entryMode && (
           <span className={clsx(
-            "inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border",
+            "inline-flex items-center gap-1 text-[11px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border",
             MODE_BADGE[mode] ?? MODE_BADGE.starter_only,
           )}>
             <span className={clsx("w-1 h-1 rounded-full", MODE_DOT[mode] ?? "bg-td-line")} />
@@ -83,7 +83,7 @@ export function LevelsPageHeader({
 
       {/* Unlock hint — single truncated line */}
       {unlockSequence && entryMode !== "full_go" && (
-        <p className="text-[9px] text-td-muted leading-relaxed truncate" title={unlockSequence}>
+        <p className="text-[11px] text-td-muted leading-relaxed truncate" title={unlockSequence}>
           {unlockSequence}
         </p>
       )}

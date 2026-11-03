@@ -1129,7 +1129,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
           )}
           <DashboardTabs active={activeTab} onChange={handleTabChange} badges={tabBadges} variant="rail" compact={showPane} />
           {!showPane && (
-            <div className="mt-auto px-1 text-[10.5px] text-td-muted leading-relaxed">
+            <div className="mt-auto px-1 text-[11px] text-td-muted leading-relaxed">
               <ModelDisclaimer className="text-[11px] text-td-muted/80 leading-relaxed flex items-start gap-1.5" />
             </div>
           )}

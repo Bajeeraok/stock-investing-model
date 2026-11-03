@@ -125,14 +125,14 @@ export function EntryBandsChart({ currentPrice, bands, className }: Props) {
         {/* Pinned out-of-window levels — edge tags, not scale stretchers */}
         {pinnedAbove.map((b, i) => (
           <span key={`a${i}`}
-            className={clsx("absolute right-1 text-[9px] font-mono leading-none opacity-80", KIND_STYLE[b.kind].text)}
+            className={clsx("absolute right-1 text-[11px] font-mono leading-none opacity-80", KIND_STYLE[b.kind].text)}
             style={{ top: `${1 + i * 5}%` }}>
             ▲ {b.label} {bandPriceText(b)}
           </span>
         ))}
         {pinnedBelow.map((b, i) => (
           <span key={`b${i}`}
-            className={clsx("absolute right-1 text-[9px] font-mono leading-none opacity-80", KIND_STYLE[b.kind].text)}
+            className={clsx("absolute right-1 text-[11px] font-mono leading-none opacity-80", KIND_STYLE[b.kind].text)}
             style={{ bottom: `${1 + i * 5}%` }}>
             ▼ {b.label} {bandPriceText(b)}
           </span>

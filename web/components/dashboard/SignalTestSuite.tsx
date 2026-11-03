@@ -212,8 +212,8 @@ function SignalBar({ label, score, weight }: { label: string; score: number | nu
         <span className="text-[11px] text-slate-400 font-medium">
           {label}
           {isZero
-            ? <span className="ml-1.5 text-red-400/70 text-[9px] font-bold">DISABLED</span>
-            : <span className="ml-1 text-slate-600 text-[9px]">({wPct}%)</span>}
+            ? <span className="ml-1.5 text-red-400/70 text-[11px] font-bold">DISABLED</span>
+            : <span className="ml-1 text-slate-600 text-[11px]">({wPct}%)</span>}
         </span>
         <span className={clsx("font-mono text-[13px] font-bold", hasData ? scoreColor(sPct) : "text-slate-600")}>
           {isZero ? "—" : sPct !== null ? `${sPct}%` : "N/A"}
@@ -246,7 +246,7 @@ function WeightGrid({ wp, label }: { wp: WeightProfile; label: string }) {
           const isZero = v === 0;
           return (
             <div key={k} className="bg-slate-800/60 rounded-md p-2 text-center">
-              <div className="text-[9px] text-slate-500 uppercase tracking-wide">{names[k]}</div>
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide">{names[k]}</div>
               <div className={clsx("font-mono text-sm font-bold mt-0.5",
                 isZero     ? "text-slate-700" :
                 v >= 0.25  ? "text-emerald-400" :
@@ -363,7 +363,7 @@ function TickerCard({ result, onRunAnalysis }: {
             <span className="text-[11px] font-mono text-slate-600">{result.elapsed_ms}ms</span>
           )}
           {headerBadge && (
-            <span className={clsx("text-[9px] font-mono font-bold px-2 py-1 rounded border uppercase tracking-wider", headerBadge.cls)}>
+            <span className={clsx("text-[11px] font-mono font-bold px-2 py-1 rounded border uppercase tracking-wider", headerBadge.cls)}>
               {headerBadge.label}
             </span>
           )}

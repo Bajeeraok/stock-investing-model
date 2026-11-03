@@ -608,7 +608,7 @@ export function HorizonProjectionChart({
                 type="number"
                 domain={["dataMin", "dataMax"]}
                 ticks={tickDays}
-                tick={{ fill: "#8690a6", fontSize: 10 }}
+                tick={{ fill: "#8690a6", fontSize: 11 }}
                 tickFormatter={(d: number) => {
                   const row = rows.find((r) => r.day === d);
                   if (d === 0) return row?.calendarLabel ? `Today` : "Today";
@@ -621,7 +621,7 @@ export function HorizonProjectionChart({
               />
               <YAxis
                 domain={yDomain}
-                tick={{ fill: "#8690a6", fontSize: 10 }}
+                tick={{ fill: "#8690a6", fontSize: 11 }}
                 tickFormatter={(v: number) => `$${v.toFixed(0)}`}
                 width={52}
               />
@@ -739,7 +739,7 @@ export function HorizonProjectionChart({
                   label={{
                     value: `${FAIR_VALUE_STYLE.label} ${fmtPrice(fairValue)}`,
                     fill: FAIR_VALUE_STYLE.stroke,
-                    fontSize: 10,
+                    fontSize: 11,
                     position: "insideTopLeft",
                   }}
                 />

@@ -190,7 +190,7 @@ function VerdictActionBar({
         {extra}
       </div>
       {lockedGates.length > 0 && (alert || alertLevel != null) && (
-        <p className="text-[10.5px] text-td-warn leading-snug">
+        <p className="text-[11px] text-td-warn leading-snug">
           Price ping only: entries stay locked until {lockedGates.join(", ")}{" "}
           {lockedGates.length === 1 ? "clears" : "clear"}. Recheck this card when it fires.
         </p>
@@ -387,7 +387,7 @@ export function VerdictPanel({
             <h4 className="text-[13px] font-semibold uppercase tracking-wider text-td-muted">
               {blocked === 0 && rows.every((r) => r.ok) ? "All clear" : "Unlocks when"}
             </h4>
-            <span className="font-mono text-[10.5px] text-td-muted tabular-nums">
+            <span className="font-mono text-[11px] text-td-muted tabular-nums">
               {shownPassed}/{shownTotal} gates
             </span>
           </div>
@@ -431,7 +431,7 @@ export function VerdictPanel({
         <div className="rounded-xl border border-td-line bg-td-surface px-3.5 py-3">
           <p className="text-[13px] text-td-muted">Risk : Reward</p>
           <p className="mt-1 font-mono text-lg font-bold text-td-text tabular-nums">{`1 : ${rr.toFixed(1)}`}</p>
-          <p className="text-[10.5px] text-td-muted">
+          <p className="text-[11px] text-td-muted">
             {rrSub}
             {horizon?.target ? ` · ${usd(horizon.target, 0)}` : ""}
           </p>
@@ -447,7 +447,7 @@ export function VerdictPanel({
           <p className={clsx("mt-1 font-mono text-[15px] font-bold tabular-nums truncate", earningsSoon ? "text-td-warn" : "text-td-text")}>
             {catalystValue}
           </p>
-          <p className="text-[10.5px] text-td-muted truncate">
+          <p className="text-[11px] text-td-muted truncate">
             {catalystSub}
             {earningsSoon ? " · size down into the print" : ""}
           </p>
@@ -474,7 +474,7 @@ export function VerdictPanel({
           </p>
         )}
         {!useCurrent && hitStats === leg && track?.current_model_version && (
-          <p className="mt-1 text-[10.5px] text-td-warn leading-snug">
+          <p className="mt-1 text-[11px] text-td-warn leading-snug">
             Current model {track.current_model_version} is too new for its own read (n={curN}) — this is prior-version history. See Track tab ›
           </p>
         )}

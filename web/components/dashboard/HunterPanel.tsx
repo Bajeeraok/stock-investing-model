@@ -130,7 +130,7 @@ function HunterCard({ r, onTickerClick }: { r: HunterCandidate; onTickerClick?: 
           {r.composite_buy != null && (
             <span className="font-mono text-[13px] text-td-muted tabular-nums">Score {r.composite_buy.toFixed(0)}</span>
           )}
-          <span className={clsx("font-mono text-[10.5px] font-bold px-2 py-0.5 rounded-full", badge.cls)}>{badge.label}</span>
+          <span className={clsx("font-mono text-[11px] font-bold px-2 py-0.5 rounded-full", badge.cls)}>{badge.label}</span>
         </span>
       </div>
       <div className="mt-2">
@@ -327,7 +327,7 @@ export function HunterPanel({
               }}
             />
           </details>
-          <p className="text-[10.5px] text-td-muted leading-relaxed">
+          <p className="text-[11px] text-td-muted leading-relaxed">
             {panel?.methodology ??
               "Your book (watchlist + portfolio) — tactical velocity or readiness tiers. Updates on Dashboard Refresh."}
           </p>
