@@ -187,34 +187,34 @@ function LevelRows({
   const ez = horizon.entry_zone;
   const ezWidthPct =
     ez?.low != null && ez?.high != null && currentPrice ? ((ez.high - ez.low) / currentPrice) * 100 : 0;
-  // Wide bands (e.g. medium-term "bridge to MA50" during a real pullback) read as imprecise
-  // when flattened into one range — show the staged scale-in rungs instead (data already
-  // computed server-side via build_entry_band_levels, just unused in this compact card until now).
-  const stagedLevels =
-    ezWidthPct >= 8
-      ? (ez?.levels ?? []).filter(
-          (l) => l.role !== "anchor" && (!currentPrice || l.price <= currentPrice * 1.005),
-        )
-      : [];
-  if (stagedLevels.length > 0) {
-    const picked = [
-      stagedLevels[0],
-      stagedLevels[Math.floor((stagedLevels.length - 1) / 2)],
-      stagedLevels[stagedLevels.length - 1],
-    ].filter((l, i, arr) => arr.findIndex((x) => x.id === l.id) === i);
-    const RUNG_TAG = ["1st add", "Scale", "Last add"];
+  // Every scale-in price inside the band (server-side build_entry_band_levels), nearest spot first —
+  // a falling price fills the top of a buy-below band first.
+  const stagedLevels = (ez?.levels ?? [])
+    .filter((l) => !currentPrice || l.price <= currentPrice * 1.005)
+    .sort((x, y) => y.price - x.price);
+  if (stagedLevels.length >= 2) {
+    const entries = stagedLevels.filter((l) => l.role !== "anchor");
+    const tag = (lvl: (typeof stagedLevels)[number]) => {
+      if (lvl.role === "anchor") return lvl.label;
+      const i = entries.indexOf(lvl);
+      if (i === 0) return "1st add";
+      if (i === entries.length - 1) return "Last add";
+      return "Scale";
+    };
+    const picked = stagedLevels;
     return (
       <div className="flex flex-col gap-1.5">
         <p className="text-[10px] text-td-muted leading-snug -mt-0.5 mb-0.5">
-          Wide zone — scale in across these levels, not one price
+          Entry band {fmt(ez?.low)} – {fmt(ez?.high)}
+          {ezWidthPct > 0 ? ` (${ezWidthPct.toFixed(1)}% wide)` : ""} — scale in across these levels, not one price
         </p>
-        {picked.map((lvl, i) => (
+        {picked.map((lvl) => (
           <div
             key={lvl.id}
             className="grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line"
           >
             <span className="text-[10px] font-mono font-bold uppercase tracking-wide text-td-muted truncate">
-              {RUNG_TAG[i] ?? lvl.label}
+              {tag(lvl)}
             </span>
             <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">{fmt(lvl.price)}</span>
             <span className="text-[10px] font-mono text-td-muted tabular-nums">

@@ -2398,6 +2398,21 @@ def estimate_fair_value(
 #   response["horizons"] = build_all_horizons_payload(**signal_data)
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _clamp_medium_zone_to_spot(medium: dict, current_price: float, ma50: float) -> None:
+    """Displayed swing band is buy-below: when spot already trades under the ceiling (e.g. far
+    below MA50), scale in from spot down to the band low instead of listing adds up to MA50.
+    Runs after owner tiers are built so tier caps keep their existing medium-zone reference."""
+    ez = medium.get("entry_zone") or {}
+    lo, hi, p = ez.get("low"), ez.get("high"), current_price
+    if not (lo and hi and p and lo < p and hi > p * 1.005):
+        return
+    ez["high"] = _r(p)
+    ez["anchor"] = (
+        "Scale in from current price down to ${:.2f}; MA50 (${:.2f}) is the recovery target, not an add level"
+    ).format(lo, ma50)
+    medium["entry_zone"] = ez
+
+
 def build_all_horizons_payload(
     # Price & technical inputs
     current_price: float,
@@ -2504,6 +2519,7 @@ def build_all_horizons_payload(
         "medium": asdict(medium),
         "long":   asdict(long_term),
     }
+    _clamp_medium_zone_to_spot(payload["medium"], current_price, ma50)
     _harmonize_horizon_stop_framing(
         payload,
         current_price=current_price,
