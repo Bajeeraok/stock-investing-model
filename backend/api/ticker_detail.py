@@ -1321,6 +1321,14 @@ def _build_investor_summary(
     except Exception:
         return None
 
+    try:
+        from signals.fetcher import fetch_ohlcv_dataframe
+        from signals.level_touch_odds import attach_level_touch_odds
+
+        attach_level_touch_odds(payload, fetch_ohlcv_dataframe(ticker, "2y"), float(current_price))
+    except Exception:
+        pass
+
     for _h in ("short", "medium", "long"):
         if isinstance(payload.get(_h), dict):
             payload[_h]["ml_scored"] = bool(ml_scored.get(_h))
