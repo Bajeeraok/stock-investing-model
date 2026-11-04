@@ -113,7 +113,9 @@ def setup_row(detail: dict, mode: str) -> dict | None:
         hist_basis = "all" if hp is not None else None
     # Chance = the lower of model and this stock's own history for the same +N% question.
     chance = min(x for x in (p, hp) if x is not None) if (p is not None or hp is not None) else None
-    if chance is None or chance < MIN_CHANCE:
+    if p is None:
+        blockers.append("no model odds")
+    elif chance is None or chance < MIN_CHANCE:
         blockers.append(f"chance under {MIN_CHANCE:.0f}%")
     return {
         "ticker": str(detail.get("ticker") or "").upper(),

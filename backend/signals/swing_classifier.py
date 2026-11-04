@@ -102,6 +102,8 @@ def extract_swing_inputs(
         "ema8": ema8,
         "regime_bull_pct": _sf(investor_out.get("regime_bull_pct")),
         "ml_short_prob": _sf((investor_out.get("horizons") or {}).get("short", {}).get("ml_prob")),
+        "ml_medium_prob": _sf((investor_out.get("horizons") or {}).get("medium", {}).get("ml_prob")),
+        "ml_long_prob": _sf((investor_out.get("horizons") or {}).get("long", {}).get("ml_prob")),
         "overall_verdict": str(investor_out.get("overall_verdict") or ""),
     }
 
