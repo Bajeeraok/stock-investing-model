@@ -37,7 +37,7 @@ interface ModeTrack {
   avg_return_pct: number | null;
 }
 
-interface BestSetupsResponse {
+export interface BestSetupsResponse {
   available: boolean;
   report: { as_of: string; scanned: number; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[] }> } | null;
   track: Record<Mode, ModeTrack> | null;
@@ -106,11 +106,9 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
   );
 }
 
-export function BestSetupsPanel({ onTickerClick }: { onTickerClick?: (t: string) => void }) {
+export function useBestSetups() {
   const [data, setData] = useState<BestSetupsResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [mode, setMode] = useState<Mode>("swing");
-
   useEffect(() => {
     let alive = true;
     fetch(`${API_BASE}/api/best-setups`)
@@ -121,6 +119,33 @@ export function BestSetupsPanel({ onTickerClick }: { onTickerClick?: (t: string)
       alive = false;
     };
   }, []);
+  return { data, err };
+}
+
+/** Best edge per ticker across Swing/Owner picks and next-up rows. */
+export function bestSetupEdges(data: BestSetupsResponse | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  const modes = data?.report?.modes;
+  if (!modes) return out;
+  for (const m of Object.values(modes)) {
+    for (const r of [...(m?.picks || []), ...(m?.next_up || [])]) {
+      if (r.edge_pct == null) continue;
+      out[r.ticker] = Math.max(out[r.ticker] ?? -Infinity, r.edge_pct);
+    }
+  }
+  return out;
+}
+
+export function BestSetupsPanel({
+  onTickerClick,
+  data,
+  err,
+}: {
+  onTickerClick?: (t: string) => void;
+  data: BestSetupsResponse | null;
+  err: string | null;
+}) {
+  const [mode, setMode] = useState<Mode>("swing");
 
   if (err) return <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">Best setups unavailable: {err}</div>;
   if (!data) return <div className="rounded-lg border border-slate-700 bg-slate-900/40 px-4 py-3 text-slate-400 text-sm">Loading best setups…</div>;

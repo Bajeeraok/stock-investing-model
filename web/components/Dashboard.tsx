@@ -1,6 +1,6 @@
 "use client";
 
-import { BestSetupsPanel } from "./dashboard/BestSetupsPanel";
+import { BestSetupsPanel, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
@@ -212,7 +212,7 @@ function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "
   else window.history.replaceState(state, "", url);
 }
 
-type PlanSub = "income" | "opportunities" | "setups";
+type PlanSub = "income" | "opportunities";
 type MoreSub = "markets" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
 const MORE_SUB_KEY = "thrive-more-sub";
@@ -295,6 +295,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const [activeTab, setActiveTabState] = useState<TabId>("today");
   const [planSub, setPlanSub] = useState<PlanSub>("income");
+  const [oppSort, setOppSort] = useState<"confidence" | "setup">("confidence");
+  const bestSetups = useBestSetups();
   const [moreSub, setMoreSub] = useState<MoreSub>("markets");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -371,7 +373,8 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       saved = localStorage.getItem("thrive-tab");
       urlTab = new URLSearchParams(window.location.search).get("tab");
       const ps = localStorage.getItem(PLAN_SUB_KEY);
-      if (ps === "income" || ps === "opportunities" || ps === "setups") setPlanSub(ps);
+      if (ps === "income" || ps === "opportunities") setPlanSub(ps);
+      else if (ps === "setups") setPlanSub("opportunities");
       const ms = localStorage.getItem(MORE_SUB_KEY);
       if (ms === "markets" || ms === "admin") setMoreSub(ms);
     } catch {
@@ -707,6 +710,13 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const oppBundleEnabled = data.opportunities_bundle_enabled !== false;
   const mergedOpportunities = oppBundleEnabled ? (oppBundle?.opportunities ?? data.opportunities ?? []) : [];
+  const setupEdges = bestSetupEdges(bestSetups.data);
+  const sortedOpportunities =
+    oppSort === "setup"
+      ? [...mergedOpportunities].sort(
+          (a, b) => (setupEdges[b.ticker] ?? -Infinity) - (setupEdges[a.ticker] ?? -Infinity) || b.composite_buy - a.composite_buy,
+        )
+      : mergedOpportunities;
   const mergedDoctorRec = oppBundle?.portfolio_doctor_recommendations ?? data.portfolio_doctor_recommendations;
 
   const insiderFlow = analysisBundle?.insider_flow ?? data.insider_flow;
@@ -1301,12 +1311,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 value={planSub}
                 onChange={setPlanSubPersist}
                 options={[
-                  { id: "setups", label: "Best setups" },
                   { id: "income", label: "Income sleeve" },
                   { id: "opportunities", label: "Opportunities", badge: oppCountForBadge },
                 ]}
               />
-              {planSub === "setups" && <BestSetupsPanel onTickerClick={openTickerDetail} />}
               {planSub === "income" && (
                 <div className="space-y-4">
                   <IncomeBookPanel onTickerClick={openTickerDetail} />
@@ -1323,10 +1331,33 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   {oppBundleEnabled && data.opportunities_deferred === true && oppFetchErr && (
                     <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-amber-200 text-sm">{oppFetchErr}</div>
                   )}
+                  <ToggleSection id="opps-best" title="Best setups" icon={<Target />} defaultOpen>
+                    <BestSetupsPanel onTickerClick={openTickerDetail} data={bestSetups.data} err={bestSetups.err} />
+                  </ToggleSection>
                   {oppBundleEnabled ? (
                     <ToggleSection id="opps-daily" title="Daily Opportunities" icon={<Sparkles />} badge={mergedOpportunities.length} defaultOpen>
                       {mergedOpportunities.length ? (
-                        <Opportunities items={mergedOpportunities} onTickerClick={openTickerDetail} />
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                            <span className="text-slate-400">Sort by</span>
+                            {(["confidence", "setup"] as const).map((k) => (
+                              <button
+                                key={k}
+                                type="button"
+                                onClick={() => setOppSort(k)}
+                                className={clsx(
+                                  "rounded-full px-3 py-1 font-medium border",
+                                  oppSort === k
+                                    ? "bg-violet-500/20 text-violet-200 border-violet-400/50"
+                                    : "bg-slate-800/40 text-slate-300 border-slate-700",
+                                )}
+                              >
+                                {k === "confidence" ? "Confidence" : "Best setup"}
+                              </button>
+                            ))}
+                          </div>
+                          <Opportunities items={sortedOpportunities} onTickerClick={openTickerDetail} />
+                        </div>
                       ) : (
                         <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-8 text-center">
                           <Sparkles className="h-10 w-10 text-slate-500 mx-auto mb-2 opacity-60" />
