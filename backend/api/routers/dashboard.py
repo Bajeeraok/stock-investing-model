@@ -4305,9 +4305,9 @@ async def get_model_check():
         short = build_model_check_short(ft["records"])
     mc = load_model_check() or {}
     hz = mc.get("horizons") or {}
-    out = {"short": short, "medium": hz.get("medium"), "long": hz.get("long"),
+    out = {"short": short, "short_audit": hz.get("short"), "medium": hz.get("medium"), "long": hz.get("long"),
            "eod_date_last": ((ft or {}).get("meta") or {}).get("eod_date_last") if isinstance(ft, dict) else None}
-    for k in ("medium", "long"):
+    for k in ("short_audit", "medium", "long"):
         if out[k] is not None:
             out[k] = {**out[k], "verdict": verdict(out[k])}
     return out

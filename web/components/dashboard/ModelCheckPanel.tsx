@@ -18,6 +18,7 @@ interface TargetSummary {
 
 interface ModelCheckResponse {
   short: { odds: Calibration | null; odds_current?: Calibration | null; target: TargetSummary | null; current_model_version?: string } | null;
+  short_audit?: Calibration | null;
   medium: Calibration | null;
   long: Calibration | null;
   eod_date_last?: string | null;
@@ -119,7 +120,7 @@ export function ModelCheckPanel() {
       <HorizonCard
         title="1 month"
         question={`${gains} within 20 trading days (threshold depends on the stock)`}
-        cal={s?.odds}
+        cal={s?.odds ?? data.short_audit}
         pending="No finished 1-month calls yet."
       />
       <HorizonCard

@@ -13,7 +13,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 BUCKETS = ((0, 20), (20, 40), (40, 60), (60, 80), (80, 101))
-_COLS = {"medium": "ml_medium_prob", "long": "ml_long_prob"}
+_COLS = {"short": "ml_short_prob", "medium": "ml_medium_prob", "long": "ml_long_prob"}
 
 
 def _pct(v: Any) -> float | None:
@@ -103,12 +103,12 @@ def build_model_check(fetch=None) -> dict[str, Any]:
         return res
     with sqlite3.connect(db, timeout=30) as conn:
         rows = conn.execute(
-            "SELECT DISTINCT ticker, signal_date, ml_medium_prob, ml_long_prob FROM signal_events "
+            "SELECT DISTINCT ticker, signal_date, ml_short_prob, ml_medium_prob, ml_long_prob FROM signal_events "
             "WHERE source = 'live' ORDER BY ticker, signal_date"
         ).fetchall()
     by_ticker: dict[str, list[tuple]] = {}
-    for t, d, m, lg in rows:
-        by_ticker.setdefault(str(t).upper(), []).append((d, m, lg))
+    for t, d, sh, m, lg in rows:
+        by_ticker.setdefault(str(t).upper(), []).append((d, sh, m, lg))
     calls: dict[str, list[tuple[float, bool]]] = {k: [] for k in _COLS}
     for t, items in by_ticker.items():
         if t.endswith("-USD"):
@@ -117,7 +117,7 @@ def build_model_check(fetch=None) -> dict[str, Any]:
             bars = fetch(t, "2y")
         except Exception:
             bars = None
-        for k, col_i in (("medium", 1), ("long", 2)):
+        for k, col_i in (("short", 1), ("medium", 2), ("long", 3)):
             seen: dict[str, float] = {}
             for it in items:
                 p = _pct(it[col_i])
