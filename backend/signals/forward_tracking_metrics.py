@@ -648,31 +648,31 @@ _PROB_BUCKETS = ((0, 40), (40, 50), (50, 60), (60, 70), (70, 101))
 
 
 def build_prob_calibration(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Predicted ML up-probability vs how often price actually rose over the horizon."""
-    obs = []
+    """1-month model odds vs the model's own question: did the close 20 sessions later
+    reach this ticker's +N% threshold? (Not merely "did it rise" — that is a different event.)"""
+    from signals.ml_models import get_target_gain
+    from signals.model_odds_check import score_calls
+
+    calls, rose, gains = [], [], set()
     for r in rows:
         if r.get("ml_short_prob") is None or r.get("actual_return_pct") is None:
             continue
         p = float(r["ml_short_prob"])
         p = p * 100.0 if p <= 1.0 else p
-        obs.append((p, float(r["actual_return_pct"]) > 0))
-    if not obs:
+        try:
+            g = float(get_target_gain(str(r.get("ticker") or ""), "short")) * 100.0
+        except Exception:
+            continue
+        a = float(r["actual_return_pct"])
+        calls.append((p, a >= g))
+        rose.append(a > 0)
+        gains.add(round(g, 1))
+    out = score_calls(calls, _PROB_BUCKETS)
+    if out is None:
         return None
-    n = len(obs)
-    buckets = []
-    for lo, hi in _PROB_BUCKETS:
-        g = [(p, y) for p, y in obs if lo <= p < hi]
-        if g:
-            buckets.append({
-                "range": f"{lo}–{min(hi, 100)}%",
-                "n": len(g),
-                "avg_predicted_pct": round(sum(p for p, _ in g) / len(g), 1),
-                "actual_up_pct": round(100.0 * sum(1 for _, y in g if y) / len(g), 1),
-            })
-    return {
-        "n": n,
-        "avg_predicted_pct": round(sum(p for p, _ in obs) / n, 1),
-        "actual_up_pct": round(100.0 * sum(1 for _, y in obs if y) / n, 1),
-        "brier": round(sum((p / 100.0 - (1.0 if y else 0.0)) ** 2 for p, y in obs) / n, 4),
-        "buckets": buckets,
-    }
+    out["rose_pct"] = round(100.0 * sum(rose) / len(rose), 1)
+    out["gain_pcts"] = sorted(gains)
+    out["horizon_days"] = 20
+    return out
+
+

@@ -613,6 +613,11 @@ def get_forward_tracking(
     except Exception as e:
         logger.debug("level odds check: %s", e)
     by_ticker = _build_by_ticker_index(records, level_check)
+    try:
+        model_check_short = build_model_check_short(records)
+    except Exception as e:
+        logger.debug("model check short: %s", e)
+        model_check_short = None
     latest_model_daily = build_latest_model_daily(records)
     capped = _cap_records_recent(records, record_cap)
     as_of_dates = [str(r.get("as_of_date") or "") for r in records if r.get("as_of_date")]
@@ -653,6 +658,7 @@ def get_forward_tracking(
         # the newest N watchlist-wide, which silently truncated single-ticker history).
         # Server-side only — stripped from HTTP responses (see _strip_forward_tracking_heavy).
         "by_ticker": by_ticker,
+        "model_check_short": model_check_short,
         "latest_model_daily": latest_model_daily,
         "report_card": _report_card(records),
         "meta": meta,
@@ -855,6 +861,22 @@ def _call_error_fields(r1: dict[str, Any], r20: dict[str, Any] | None, target_pc
     return out
 
 
+def build_model_check_short(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """All tracked stocks: 1-month model odds vs its exact +N% question, and the short-term
+    target vs the 20-day path (current model version and all versions)."""
+    from signals.forward_tracking_metrics import build_error_summary, build_prob_calibration
+
+    done = [r for r in records if r.get("horizon_days") == 20 and r.get("forward_status") == "complete"]
+    cur = [r for r in done if str(r.get("model_version") or "legacy") == MODEL_VERSION]
+    return {
+        "odds": build_prob_calibration(done),
+        "odds_current": build_prob_calibration(cur),
+        "target": build_error_summary(done),
+        "target_current": build_error_summary(cur),
+        "current_model_version": MODEL_VERSION,
+    }
+
+
 def _build_by_ticker_index(
     records: list[dict[str, Any]], level_check: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -869,7 +891,7 @@ def _build_by_ticker_index(
     def _complete(rows: list[dict[str, Any]], h: int) -> list[dict[str, Any]]:
         return [r for r in rows if r.get("horizon_days") == h and r.get("forward_status") == "complete"]
 
-    pooled_cal = {str(h): build_prob_calibration(_complete(records, h)) for h in (5, 20)}
+    pooled_cal = {"20": build_prob_calibration(_complete(records, 20))}
     level_pooled = (level_check or {}).get("pooled")
 
     grouped: dict[str, list[dict[str, Any]]] = {}
@@ -919,7 +941,7 @@ def _build_by_ticker_index(
             "current": build_error_summary(_complete(cur, 20)),
             "all": build_error_summary(_complete(rows, 20)),
         }
-        track["prob_calibration"] = {str(h): build_prob_calibration(_complete(rows, h)) for h in (5, 20)}
+        track["prob_calibration"] = {"20": build_prob_calibration(_complete(rows, 20))}
         track["prob_calibration_pooled"] = pooled_cal
         track["level_odds_check"] = {
             "ticker": ((level_check or {}).get("by_ticker") or {}).get(tk),

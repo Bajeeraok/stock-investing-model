@@ -15,6 +15,7 @@ def _rec(ret, target=110.0, stop=95.0, fwd=None, prob=None):
         "hit_st_target": ret >= 10,
         "hit_st_stop": ret <= -5,
         "ml_short_prob": prob,
+        "ticker": "AAA",
     }
 
 
@@ -27,13 +28,17 @@ def test_error_summary_bias_and_range():
     assert s["within_range_pct"] == round(100 / 3, 1)
 
 
-def test_prob_calibration_normalizes_0_1():
-    rows = [_rec(1.0, prob=0.65), _rec(-1.0, prob=65), _rec(2.0, prob=0.3)]
+def test_prob_calibration_scores_exact_threshold_not_any_gain():
+    from signals.ml_models import get_target_gain
+
+    g = get_target_gain("AAA", "short") * 100.0
+    rows = [_rec(g + 1, prob=0.65), _rec(1.0, prob=65), _rec(g, prob=0.3), _rec(-1.0, prob=0.3)]
     c = build_prob_calibration(rows)
-    assert c["n"] == 3
+    assert c["n"] == 4 and c["rose_pct"] == 75.0
     b = {x["range"]: x for x in c["buckets"]}
-    assert b["60–70%"]["actual_up_pct"] == 50.0
-    assert b["0–40%"]["actual_up_pct"] == 100.0
+    assert b["60–70%"]["actual_hit_pct"] == 50.0  # +1% rose but missed the +N% question
+    assert b["0–40%"]["actual_hit_pct"] == 50.0
+    assert c["verdict"] == "unproven"
 
 
 def test_level_odds_log_and_score():

@@ -8,7 +8,7 @@ function pp(n: number | null | undefined): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(1)} pts`;
 }
 
-function CalTable({ cal, actualLabel }: { cal: Calibration; actualLabel: string }) {
+export function CalTable({ cal, actualLabel }: { cal: Calibration; actualLabel: string }) {
   return (
     <table className="mt-1 w-full text-[13px]">
       <thead className="text-slate-500">
@@ -22,7 +22,7 @@ function CalTable({ cal, actualLabel }: { cal: Calibration; actualLabel: string 
       </thead>
       <tbody className="font-mono text-slate-300">
         {cal.buckets.map((b) => {
-          const act = b.actual_up_pct ?? b.actual_hit_pct ?? 0;
+          const act = b.actual_hit_pct ?? b.came_true_pct ?? b.actual_up_pct ?? 0;
           const gap = act - b.avg_predicted_pct;
           return (
             <tr key={b.range}>
@@ -51,10 +51,12 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
   const es = data.error_summary;
   const err = es?.current ?? es?.all ?? null;
   const errScope = es?.current ? "current model" : "all versions";
-  const prob = pickCal(data.prob_calibration, data.prob_calibration_pooled, "20") ??
-    pickCal(data.prob_calibration, data.prob_calibration_pooled, "5");
+  const own = data.prob_calibration?.["20"];
+  const prob = own ? { cal: own, scope: "this stock" } : null;
   const lvl = data.level_odds_check;
-  const lvlPick = pickCal(lvl?.ticker, lvl?.pooled, "20") ?? pickCal(lvl?.ticker, lvl?.pooled, "63");
+  const lvlOwn = lvl?.ticker?.["20"] ?? lvl?.ticker?.["63"];
+  const lvlPick = lvlOwn ? { cal: lvlOwn, scope: "this stock" } : null;
+  const gains = own?.gain_pcts?.length ? own.gain_pcts.map((g) => `+${g}%`).join("/") : "+N%";
   if (!err && !prob && !lvlPick && !lvl?.pending) return null;
 
   return (
@@ -63,7 +65,7 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
 
       <div className="mb-3">
         <div className="font-medium text-slate-200">
-          Target vs 20-day result <span className="font-normal text-slate-500">({errScope})</span>
+          Short-term target vs 20-day result <span className="font-normal text-slate-500">({errScope})</span>
         </div>
         {err ? (
           <>
@@ -101,13 +103,16 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
 
       <div className="mb-3">
         <div className="font-medium text-slate-200">
-          Up-probability check{" "}
+          Model odds check · {gains} within 1 month{" "}
           {prob && <span className="font-normal text-slate-500">({prob.scope}, {prob.cal.n} calls)</span>}
         </div>
         {prob ? (
-          <CalTable cal={prob.cal} actualLabel="Actually rose" />
+          <>
+            <CalTable cal={prob.cal} actualLabel="Came true" />
+            {prob.cal.n < 30 && <div className="mt-1 text-[13px] text-slate-500">Too few calls on this stock to judge.</div>}
+          </>
         ) : (
-          <div className="mt-1 text-[13px] text-slate-500">No resolved calls with an ML probability yet.</div>
+          <div className="mt-1 text-[13px] text-slate-500">No resolved 1-month model calls on this stock yet.</div>
         )}
       </div>
 
@@ -127,7 +132,7 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
       </div>
 
       <div className="mt-2 text-[13px] text-slate-600">
-        Gap within ±10 pts is green. Under 30 calls is grey: too few to trust. Education only, not advice.
+        Gap within ±10 pts is green. Under 30 calls is grey: too few to trust. All stocks: More → Model check. Education only, not advice.
       </div>
     </div>
   );

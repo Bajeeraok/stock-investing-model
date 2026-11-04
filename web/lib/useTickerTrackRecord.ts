@@ -81,6 +81,7 @@ export interface CalibrationBucket {
   avg_predicted_pct: number;
   actual_up_pct?: number;
   actual_hit_pct?: number;
+  came_true_pct?: number;
 }
 
 export interface Calibration {
@@ -89,6 +90,12 @@ export interface Calibration {
   actual_up_pct?: number;
   actual_hit_pct?: number;
   brier: number;
+  came_true_pct?: number;
+  brier_base?: number;
+  skill_pct?: number | null;
+  verdict?: "unproven" | "no_edge" | "miscalibrated" | "proven";
+  rose_pct?: number;
+  gain_pcts?: number[];
   buckets: CalibrationBucket[];
 }
 

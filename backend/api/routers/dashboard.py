@@ -4278,6 +4278,39 @@ async def get_best_setups():
     return {"available": report is not None, "report": report, "track": hit, "model_check": load_model_check()}
 
 
+@router.get("/model-check")
+async def get_model_check():
+    """All tracked stocks: did the model's odds come true for its exact +N% question, per horizon?"""
+    from signals.model_odds_check import load_model_check, verdict
+
+    ft = None
+    try:
+        from signals.cache import get_analysis_slice
+
+        ft = get_analysis_slice("forward_tracking")
+    except Exception:
+        ft = None
+    if not isinstance(ft, dict):
+        try:
+            bundle = compute_analysis_bundle(allow_heavy=False)
+        except Exception:
+            bundle = None
+        ft = bundle.get("forward_tracking") if isinstance(bundle, dict) else None
+    short = (ft or {}).get("model_check_short") if isinstance(ft, dict) else None
+    if short is None and isinstance(ft, dict) and ft.get("records"):
+        from signals.forward_tracking import build_model_check_short
+
+        short = build_model_check_short(ft["records"])
+    mc = load_model_check() or {}
+    hz = mc.get("horizons") or {}
+    out = {"short": short, "medium": hz.get("medium"), "long": hz.get("long"),
+           "eod_date_last": ((ft or {}).get("meta") or {}).get("eod_date_last") if isinstance(ft, dict) else None}
+    for k in ("medium", "long"):
+        if out[k] is not None:
+            out[k] = {**out[k], "verdict": verdict(out[k])}
+    return out
+
+
 @router.post("/audit/ticker-consistency/run")
 async def run_ticker_consistency_audit_now(tickers: str | None = None):
     """Start the ticker-page rule checker in the background (optional comma-separated tickers)."""

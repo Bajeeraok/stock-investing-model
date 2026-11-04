@@ -26,18 +26,53 @@ def _pct(v: Any) -> float | None:
     return x * 100.0 if x <= 1.0 else x
 
 
-def score_calls(calls: list[tuple[float, bool]]) -> dict[str, Any] | None:
+MIN_PROVEN_N = 200
+CAL_TOL_PTS = 10.0
+CAL_MIN_BUCKET_N = 30
+
+
+def score_calls(calls: list[tuple[float, bool]], buckets=BUCKETS) -> dict[str, Any] | None:
+    """Said vs came true per bucket, plus Brier skill vs always guessing the base rate."""
     if not calls:
         return None
+    n = len(calls)
     out = []
-    for lo, hi in BUCKETS:
-        g = [y for p, y in calls if lo <= p < hi]
+    for lo, hi in buckets:
+        g = [(p, y) for p, y in calls if lo <= p < hi]
         if g:
+            ct = round(100.0 * sum(1 for _, y in g if y) / len(g), 1)
             out.append({"range": f"{lo}–{min(hi, 100)}%", "n": len(g),
-                        "avg_predicted_pct": round(sum(p for p, _ in calls if lo <= p < hi) / len(g), 1),
-                        "came_true_pct": round(100.0 * sum(g) / len(g), 1)})
-    return {"n": len(calls), "avg_predicted_pct": round(sum(p for p, _ in calls) / len(calls), 1),
-            "came_true_pct": round(100.0 * sum(1 for _, y in calls if y) / len(calls), 1), "buckets": out}
+                        "avg_predicted_pct": round(sum(p for p, _ in g) / len(g), 1),
+                        "came_true_pct": ct, "actual_hit_pct": ct})
+    base = sum(1 for _, y in calls if y) / n
+    brier = sum((p / 100.0 - (1.0 if y else 0.0)) ** 2 for p, y in calls) / n
+    brier_base = base * (1.0 - base)
+    skill = None if brier_base <= 0 else round(100.0 * (1.0 - brier / brier_base), 1)
+    res = {"n": n, "avg_predicted_pct": round(sum(p for p, _ in calls) / n, 1),
+           "came_true_pct": round(100.0 * base, 1), "actual_hit_pct": round(100.0 * base, 1),
+           "brier": round(brier, 4), "brier_base": round(brier_base, 4), "skill_pct": skill,
+           "buckets": out}
+    res["verdict"] = verdict(res)
+    return res
+
+
+def verdict(sc: dict[str, Any] | None) -> str:
+    """unproven (too few) · no_edge (worse than guessing the base rate) · miscalibrated · proven."""
+    if not sc or sc.get("n", 0) < MIN_PROVEN_N or sc.get("skill_pct") is None:
+        return "unproven"
+    if sc["skill_pct"] <= 0:
+        return "no_edge"
+    for b in sc.get("buckets") or []:
+        if b["n"] >= CAL_MIN_BUCKET_N and abs(b["came_true_pct"] - b["avg_predicted_pct"]) > CAL_TOL_PTS:
+            return "miscalibrated"
+    return "proven"
+
+
+def model_trusted(horizon_key: str, report: dict | None = None) -> bool:
+    """Model odds may drive ranking only once its own horizon's check says proven."""
+    rep = report if report is not None else load_model_check()
+    sc = ((rep or {}).get("horizons") or {}).get(horizon_key)
+    return verdict(sc) == "proven"
 
 
 def outcomes_for_ticker(rows: list[tuple[str, float]], bars, days: int, gain_pct: float) -> list[tuple[float, bool]]:

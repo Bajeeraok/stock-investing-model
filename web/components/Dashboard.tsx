@@ -1,5 +1,6 @@
 "use client";
 
+import { ModelCheckPanel } from "./dashboard/ModelCheckPanel";
 import { BestSetupsPanel, BestSetupsTodayCard, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -213,7 +214,7 @@ function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "
 }
 
 type PlanSub = "income" | "opportunities";
-type MoreSub = "markets" | "admin";
+type MoreSub = "markets" | "model" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
 const MORE_SUB_KEY = "thrive-more-sub";
 
@@ -376,7 +377,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       if (ps === "income" || ps === "opportunities") setPlanSub(ps);
       else if (ps === "setups") setPlanSub("opportunities");
       const ms = localStorage.getItem(MORE_SUB_KEY);
-      if (ms === "markets" || ms === "admin") setMoreSub(ms);
+      if (ms === "markets" || ms === "model" || ms === "admin") setMoreSub(ms);
     } catch {
       /* ignore */
     }
@@ -1566,6 +1567,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 onChange={setMoreSubPersist}
                 options={[
                   { id: "markets", label: "Markets" },
+                  { id: "model", label: "Model check" },
                   { id: "admin", label: "Admin" },
                 ]}
               />
@@ -1742,6 +1744,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </div>
                 </div>
               )}
+              {moreSub === "model" && <ModelCheckPanel />}
               {moreSub === "admin" && (
                 <div className="space-y-4 sm:space-y-6">
                   <p className="text-[13px] text-td-muted">

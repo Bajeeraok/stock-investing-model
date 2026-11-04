@@ -22,6 +22,7 @@ interface SetupRow {
   stop_pct: number;
   rr: number | null;
   model_prob: number | null;
+  model_proven?: boolean;
   model_gain_pct: number | null;
   hist_prob?: number | null;
   hist_basis?: "similar" | "all" | null;
@@ -53,7 +54,7 @@ interface ModeTrack {
 export interface BestSetupsResponse {
   available: boolean;
   model_check?: { horizons?: Partial<Record<"medium" | "long", ModelCheck | null>> } | null;
-  report: { as_of: string; scanned: number; new_count?: number; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[] }> } | null;
+  report: { as_of: string; scanned: number; new_count?: number; model_proven?: Partial<Record<Mode, boolean>>; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[] }> } | null;
   track: Record<Mode, ModeTrack> | null;
 }
 
@@ -71,6 +72,27 @@ function Pill({ children, tone }: { children: React.ReactNode; tone: "green" | "
     slate: "bg-slate-700/40 text-slate-300 border-slate-600/50",
   }[tone];
   return <span className={clsx("inline-flex items-center rounded-full border px-2 py-0.5 text-[12px] font-medium tabular-nums", cls)}>{children}</span>;
+}
+
+function blockerLabel(r: SetupRow, b: string) {
+  return b === "entry gates" && r.gates_total ? `entry gates ${r.gates_passed ?? 0}/${r.gates_total}` : b;
+}
+
+function NearMissLine({ r, onTickerClick }: { r: SetupRow; onTickerClick?: (t: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onTickerClick?.(r.ticker)}
+      className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-slate-700/50 bg-slate-800/30 px-3 py-2 text-left hover:bg-slate-800/60"
+    >
+      <span className="font-mono font-semibold text-slate-100">{r.ticker}</span>
+      {r.edge_pct != null && <Pill tone="blue">edge +{r.edge_pct.toFixed(1)}%</Pill>}
+      {r.blockers[0] && <Pill tone="red">{blockerLabel(r, r.blockers[0])}</Pill>}
+      {r.blockers[0] === "entry gates" && r.gates_failing?.length ? (
+        <span className="text-[12px] text-slate-400">{r.gates_failing.join(", ")}</span>
+      ) : null}
+    </button>
+  );
 }
 
 function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: string) => void; nextUp?: boolean }) {
@@ -100,7 +122,7 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
         {nextUp &&
           r.blockers.map((b) => (
             <Pill key={b} tone="red">
-              {b === "entry gates" && r.gates_total ? `entry gates ${r.gates_passed ?? 0}/${r.gates_total}` : b}
+              {blockerLabel(r, b)}
             </Pill>
           ))}
       </div>
@@ -117,6 +139,7 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
         <span className="col-span-2 sm:col-span-4">
           {r.model_gain_pct != null ? `+${r.model_gain_pct}% within ${r.duration ?? "horizon"}: ` : ""}
           Model <b className="text-slate-100">{r.model_prob ?? "–"}%</b>
+          {!r.model_proven && r.model_prob != null && <span className="text-slate-500"> (unproven)</span>}
           <span className="text-slate-400"> · </span>
           History <b className="text-slate-100">{r.hist_prob ?? "–"}%</b>
           {r.hist_basis === "similar" && <span className="text-slate-400"> (similar setups)</span>}
@@ -201,7 +224,7 @@ export function BestSetupsPanel({
 
   const m = data.report.modes[mode] || { picks: [], next_up: [] };
   const tr = data.track?.[mode];
-  const mc = data.model_check?.horizons?.[mode === "swing" ? "medium" : "long"];
+  const modelProven = !!data.report.model_proven?.[mode];
 
   return (
     <div className="space-y-3">
@@ -224,7 +247,8 @@ export function BestSetupsPanel({
 
       <p className="text-[13px] leading-relaxed rounded-md border-l-2 border-sky-400/60 bg-sky-500/5 px-3 py-2 text-slate-300">
         Ranked by <b className="text-sky-300">edge</b> = past target-first % × room to target − past stop-first % × room to stop, from the band middle.
-        Listed only when entry is allowed, the lower of model and history chance is ≥ 40%, R:R ≥ {MIN_RR[mode]}, and price is in or within 3% of the band.
+        Listed only when entry is allowed, chance ≥ 40%, R:R ≥ {MIN_RR[mode]}, and price is in or within 3% of the band. Chance = this stock&apos;s past odds of the model&apos;s +N% move
+        {modelProven ? ", capped by the model's %." : ". The model % is shown but not used until it proves itself (More → Model check)."}
       </p>
 
       <div className="rounded-md border border-slate-700/60 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
@@ -259,28 +283,17 @@ export function BestSetupsPanel({
       )}
 
       {m.next_up.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-[13px] font-semibold text-amber-200">Next up · blocked by one rule</h4>
-          <p className="text-[12px] text-slate-400 leading-snug">
-            These pass every Best-setup rule except one (shown in red). They join the list above once it clears, e.g. when the
-            ticker page&apos;s entry gates pass and it says Can add or Starter only.
+        <details className="group rounded-xl border border-slate-700/60 bg-slate-800/20 px-3 py-2">
+          <summary className="cursor-pointer list-none text-[13px] font-semibold text-amber-200">
+            Near misses ({Math.min(m.next_up.length, 3)}) · blocked by one rule <span className="text-slate-400 group-open:hidden">› show</span>
+          </summary>
+          <p className="mt-1 mb-2 text-[12px] text-slate-400 leading-snug">
+            These pass every rule except the red one. Tap for the ticker page.
           </p>
-          {m.next_up.map((r) => <Row key={r.ticker} r={r} onTickerClick={onTickerClick} nextUp />)}
-        </div>
-      )}
-
-      {mc && (
-        <div className="rounded-md border border-slate-700/60 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-300 space-y-1">
-          <div className="font-semibold text-slate-200">Model check · past {mode === "swing" ? "3-month" : "6-month"} calls</div>
-          <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {mc.buckets.map((b) => (
-              <span key={b.range}>
-                said {b.range}: <b className={clsx(b.came_true_pct + 15 < b.avg_predicted_pct ? "text-amber-200" : "text-slate-100")}>{b.came_true_pct}%</b>
-                <span className="text-slate-400"> came true (n {b.n})</span>
-              </span>
-            ))}
+          <div className="space-y-1.5">
+            {m.next_up.slice(0, 3).map((r) => <NearMissLine key={r.ticker} r={r} onTickerClick={onTickerClick} />)}
           </div>
-        </div>
+        </details>
       )}
 
       <p className="text-[12px] text-slate-500 leading-snug">

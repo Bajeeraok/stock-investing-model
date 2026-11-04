@@ -68,7 +68,7 @@ def _ref_level(h: dict, price: float) -> dict | None:
     return max(pool, key=lambda x: _f(x["price"])) if at_or_below else min(pool, key=lambda x: _f(x["price"]))
 
 
-def setup_row(detail: dict, mode: str) -> dict | None:
+def setup_row(detail: dict, mode: str, model_ok: bool = False) -> dict | None:
     """One ranked row for a ticker in a mode, or None when the plan has no usable levels."""
     cfg = MODES[mode]
     inv = (detail or {}).get("investor_summary") or {}
@@ -111,11 +111,15 @@ def setup_row(detail: dict, mode: str) -> dict | None:
     if hp is None:
         hp = _f(h.get("hist_prob"))
         hist_basis = "all" if hp is not None else None
-    # Chance = the lower of model and this stock's own history for the same +N% question.
-    chance = min(x for x in (p, hp) if x is not None) if (p is not None or hp is not None) else None
-    if p is None:
+    # Chance = this stock's own history for the model's +N% question; the model's odds count
+    # (as the lower of the two) only once its horizon's model check says proven.
+    pr = p if model_ok else None
+    chance = min(x for x in (pr, hp) if x is not None) if (pr is not None or hp is not None) else None
+    if model_ok and p is None:
         blockers.append("no model odds")
-    elif chance is None or chance < MIN_CHANCE:
+    elif chance is None:
+        blockers.append("no history odds")
+    elif chance < MIN_CHANCE:
         blockers.append(f"chance under {MIN_CHANCE:.0f}%")
     return {
         "ticker": str(detail.get("ticker") or "").upper(),
@@ -134,6 +138,7 @@ def setup_row(detail: dict, mode: str) -> dict | None:
         "stop_pct": round(stop_pct, 1),
         "rr": None if rr is None else round(rr, 2),
         "model_prob": None if p is None else round(p),
+        "model_proven": model_ok,
         "model_gain_pct": _f(h.get("ml_target_gain_pct")),
         "hist_prob": None if hp is None else round(hp),
         "hist_basis": hist_basis,
@@ -162,6 +167,13 @@ def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]
 
 def build_report(details: list[dict], as_of: date | None = None, previous: dict | None = None) -> dict:
     rows: dict[str, list[dict]] = {m: [] for m in MODES}
+    try:
+        from signals.model_odds_check import load_model_check, model_trusted
+
+        mc = load_model_check()
+        trusted = {m: model_trusted(MODES[m]["horizon"], mc) for m in MODES}
+    except Exception:
+        trusted = {m: False for m in MODES}
     for d in details:
         if not isinstance(d, dict) or d.get("error") or not d.get("ticker"):
             continue
@@ -169,7 +181,7 @@ def build_report(details: list[dict], as_of: date | None = None, previous: dict 
             continue
         for m in MODES:
             try:
-                r = setup_row(d, m)
+                r = setup_row(d, m, trusted[m])
             except Exception:
                 logger.exception("best-setups row failed %s/%s", d.get("ticker"), m)
                 r = None
@@ -190,6 +202,7 @@ def build_report(details: list[dict], as_of: date | None = None, previous: dict 
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "scanned": len(details),
         "new_count": new_count,
+        "model_proven": trusted,
         "modes": modes,
     }
 
