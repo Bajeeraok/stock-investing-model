@@ -4273,7 +4273,9 @@ async def get_best_setups():
         except Exception:
             hit = None
         _BEST_SETUPS_TRACK.update(v=hit, ts=_time.time(), as_of=(report or {}).get("as_of"))
-    return {"available": report is not None, "report": report, "track": hit}
+    from signals.model_odds_check import load_model_check
+
+    return {"available": report is not None, "report": report, "track": hit, "model_check": load_model_check()}
 
 
 @router.post("/audit/ticker-consistency/run")

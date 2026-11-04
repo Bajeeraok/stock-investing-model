@@ -41,13 +41,24 @@ def test_blockers_hard_lock_low_rr_and_far_band():
     assert "price above band" in owner["blockers"]
 
 
-def test_low_model_chance_blocks():
-    r = setup_row(_detail(prob=40), "swing")
-    assert r["blockers"] == ["model under 50%"]
+def test_low_chance_blocks_and_history_caps_model():
+    r = setup_row(_detail(prob=30), "swing")
+    assert r["blockers"] == ["chance under 40%"]
+    d = _detail(prob=95)
+    d["investor_summary"]["horizons"]["medium"].update(hist_prob=45, hist_prob_similar=42)
+    r = setup_row(d, "swing")
+    assert r["chance"] == 42 and r["hist_basis"] == "similar" and r["odds_gap"] and r["qualified"]
+
+
+def test_new_flag_vs_previous_day():
+    prev = {"as_of": "2026-01-01", "modes": {"swing": {"picks": [{"ticker": "AAA"}]}}}
+    rep = build_report([_detail("AAA"), _detail("BBB")], previous=prev)
+    flags = {r["ticker"]: r["new"] for r in rep["modes"]["swing"]["picks"]}
+    assert flags == {"AAA": False, "BBB": True} and rep["new_count"] >= 1
 
 
 def test_ranking_and_next_up():
-    rep = build_report([
+    rep = build_report(previous={}, details=[
         _detail("AAA", prob=70),
         _detail("BBB", prob=55),
         _detail("CCC", prob=70, entry_mode="hard_lock"),
@@ -67,3 +78,21 @@ def test_pick_outcome_target_first():
     assert oc["result"] == "target" and oc["return_pct"] == 20.0
     oc2 = pick_outcome({"price": 100.0, "target": 130.0, "stop": 103.0}, "2026-01-02", bars, 63)
     assert oc2["result"] == "stop"
+
+
+def test_forward_gain_odds_and_model_check():
+    import numpy as np
+
+    from signals.level_touch_odds import forward_gain_odds
+    from signals.model_odds_check import outcomes_for_ticker, score_calls
+
+    closes = np.array([100.0 * (1.001 ** i) for i in range(400)])
+    pct, n = forward_gain_odds(closes, 5.0, 60)
+    assert pct == 100 and n == 340
+    assert forward_gain_odds(closes, 10.0, 60)[0] == 0
+    idx = pd.bdate_range("2026-01-01", periods=80)
+    bars = pd.DataFrame({"close": [100.0] * 70 + [120.0] * 10}, index=idx)
+    oc = outcomes_for_ticker([(idx[0].date().isoformat(), 90.0), (idx[30].date().isoformat(), 85.0)], bars, 60, 10.0)
+    assert oc == [(90.0, False)]
+    sc = score_calls(oc + [(85.0, True)])
+    assert sc["buckets"][0]["came_true_pct"] == 50.0

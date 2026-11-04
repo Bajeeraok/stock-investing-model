@@ -696,11 +696,19 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
         (p.parent / f"ticker_consistency_{date.today().isoformat()}.json").write_text(json.dumps(report, default=str))
         logger.info("[ticker-audit] %d tickers, %s in %.0fs", len(tickers), report["counts"], report["duration_s"])
         try:
-            from signals.best_setups import build_report, save_report
+            from signals.best_setups import build_report, publish_new_picks, save_report
 
-            save_report(build_report(details))
+            bs = build_report(details)
+            save_report(bs)
+            publish_new_picks(bs)
         except Exception:
             logger.exception("[ticker-audit] best setups build failed")
+        try:
+            from signals.model_odds_check import build_model_check, save_model_check
+
+            save_model_check(build_model_check())
+        except Exception:
+            logger.exception("[ticker-audit] model odds check failed")
         return report
     finally:
         _RUN_LOCK.release()

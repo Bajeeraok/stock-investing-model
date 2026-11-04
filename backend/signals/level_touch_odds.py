@@ -175,6 +175,49 @@ def attach_level_touch_odds(payload: dict[str, Any], ohlcv, current_price: float
             lvl["touch_pct"], lvl["median_days"], lvl["touch_sample_n"] = st
 
 
+def forward_gain_odds(
+    closes: np.ndarray, gain_pct: float, days: int, mask: np.ndarray | None = None
+) -> tuple[int, int] | None:
+    """How often this stock's close `days` sessions later was >= +gain_pct% — the model's own question."""
+    n = len(closes) - days
+    if n < MIN_SAMPLES:
+        return None
+    hit = closes[days:days + n] / closes[:n] - 1.0 >= gain_pct / 100.0
+    if mask is not None:
+        sel = np.asarray(mask[:n], dtype=bool)
+        if int(sel.sum()) < SIMILAR_MIN_N:
+            return None
+        hit = hit[sel]
+    return round(float(hit.mean() * 100.0)), int(hit.size)
+
+
+def attach_history_odds(payload: dict[str, Any], ohlcv) -> None:
+    """Per horizon: past odds of the model's +N% within its horizon (all days and similar setups)."""
+    if ohlcv is None:
+        return
+    try:
+        cols = {str(c).lower(): c for c in ohlcv.columns}
+        closes = np.asarray(ohlcv[cols["close"]], dtype=float)
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return
+    closes = closes[np.isfinite(closes) & (closes > 0)]
+    sim = similar_setup_mask(closes)
+    for h in payload.values():
+        if not isinstance(h, dict):
+            continue
+        gain, days = h.get("ml_target_gain_pct"), h.get("ml_horizon_days")
+        if gain is None or not days:
+            continue
+        allh = forward_gain_odds(closes, float(gain), int(days))
+        if allh is None:
+            continue
+        h["hist_prob"], h["hist_n"] = allh
+        h["hist_years"] = round(len(closes) / 252.0, 1)
+        ss = forward_gain_odds(closes, float(gain), int(days), mask=sim[0]) if sim else None
+        if ss is not None:
+            h["hist_prob_similar"], h["hist_similar_n"] = ss
+
+
 LOG_DROPS_PCT = (2.0, 5.0, 10.0)
 LOG_WINDOWS = (20, 63)
 _CAL_BUCKETS = ((0, 20), (20, 40), (40, 60), (60, 80), (80, 101))

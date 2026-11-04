@@ -19,7 +19,8 @@ MODES: dict[str, dict[str, Any]] = {
     "owner": {"horizon": "long", "min_rr": 1.5, "window": 252},
 }
 NEAR_BAND_PCT = 3.0
-MIN_MODEL_PROB = 50.0
+MIN_CHANCE = 40.0
+ODDS_GAP_PTS = 30.0
 TOP_N = 10
 NEXT_UP_N = 8
 TRACK_DAYS = 180
@@ -93,6 +94,10 @@ def setup_row(detail: dict, mode: str) -> dict | None:
     status, gp, gt = _entry_status(inv.get("retail_action") or {}, mode)
     gap = _band_gap_pct(h, price)
     blockers: list[str] = []
+    _labels = {"valuation": "Valuation", "regime": "Market weather", "momentum": "Momentum", "ml": "Model odds"}
+    _gates = ((inv.get("retail_action") or {}).get("gates_by_mode") or {}).get(mode) or []
+    gates_failing = [_labels[g["id"]] for g in _gates
+                     if isinstance(g, dict) and g.get("id") in _labels and not g.get("pass")]
     if status is None:
         blockers.append("entry gates")
     if h.get("setup_status") == "no_setup" or rr is None or rr < cfg["min_rr"]:
@@ -101,8 +106,15 @@ def setup_row(detail: dict, mode: str) -> dict | None:
         blockers.append("price above band")
     if edge is None:
         blockers.append("no past odds")
-    if p is None or p < MIN_MODEL_PROB:
-        blockers.append(f"model under {MIN_MODEL_PROB:.0f}%")
+    hp = _f(h.get("hist_prob_similar"))
+    hist_basis = "similar" if hp is not None else None
+    if hp is None:
+        hp = _f(h.get("hist_prob"))
+        hist_basis = "all" if hp is not None else None
+    # Chance = the lower of model and this stock's own history for the same +N% question.
+    chance = min(x for x in (p, hp) if x is not None) if (p is not None or hp is not None) else None
+    if chance is None or chance < MIN_CHANCE:
+        blockers.append(f"chance under {MIN_CHANCE:.0f}%")
     return {
         "ticker": str(detail.get("ticker") or "").upper(),
         "name": detail.get("company_name") or detail.get("name"),
@@ -110,6 +122,7 @@ def setup_row(detail: dict, mode: str) -> dict | None:
         "status": status,
         "gates_passed": gp,
         "gates_total": gt,
+        "gates_failing": gates_failing,
         "band_low": round(lo, 2),
         "band_high": round(hi, 2),
         "band_gap_pct": gap,
@@ -120,6 +133,10 @@ def setup_row(detail: dict, mode: str) -> dict | None:
         "rr": None if rr is None else round(rr, 2),
         "model_prob": None if p is None else round(p),
         "model_gain_pct": _f(h.get("ml_target_gain_pct")),
+        "hist_prob": None if hp is None else round(hp),
+        "hist_basis": hist_basis,
+        "chance": None if chance is None else round(chance),
+        "odds_gap": bool(p is not None and hp is not None and p - hp >= ODDS_GAP_PTS),
         "edge_pct": None if edge is None else round(edge, 2),
         "target_first_pct": lvl.get("target_first_pct"),
         "stop_first_pct": lvl.get("stop_first_pct"),
@@ -133,7 +150,7 @@ def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]
     out: dict[str, dict[str, list[dict]]] = {}
     for mode, rows in rows_by_mode.items():
         scored = [r for r in rows if r.get("edge_pct") is not None]
-        scored.sort(key=lambda r: (r["edge_pct"], r.get("model_prob") or 0), reverse=True)
+        scored.sort(key=lambda r: (r["edge_pct"], r.get("chance") or 0), reverse=True)
         picks = [r for r in scored if r["qualified"]][:TOP_N]
         # Next up: positive edge, one blocker away (not the model score itself).
         nxt = [r for r in scored if not r["qualified"] and r["edge_pct"] > 0 and len(r["blockers"]) == 1]
@@ -141,7 +158,7 @@ def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]
     return out
 
 
-def build_report(details: list[dict], as_of: date | None = None) -> dict:
+def build_report(details: list[dict], as_of: date | None = None, previous: dict | None = None) -> dict:
     rows: dict[str, list[dict]] = {m: [] for m in MODES}
     for d in details:
         if not isinstance(d, dict) or d.get("error") or not d.get("ticker"):
@@ -156,12 +173,53 @@ def build_report(details: list[dict], as_of: date | None = None) -> dict:
                 r = None
             if r:
                 rows[m].append(r)
+    day = (as_of or _market_today()).isoformat()
+    modes = rank(rows)
+    prev = previous if previous is not None else load_latest()
+    prev_modes = (prev or {}).get("modes") or {} if (prev or {}).get("as_of") != day else {}
+    new_count = 0
+    for m, v in modes.items():
+        before = {r.get("ticker") for r in ((prev_modes.get(m) or {}).get("picks") or [])}
+        for r in v["picks"]:
+            r["new"] = r["ticker"] not in before
+            new_count += int(r["new"])
     return {
-        "as_of": (as_of or _market_today()).isoformat(),
+        "as_of": day,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "scanned": len(details),
-        "modes": rank(rows),
+        "new_count": new_count,
+        "modes": modes,
     }
+
+
+def publish_new_picks(report: dict) -> int:
+    """Bell alert + web push for tickers that newly qualify today."""
+    new = [(m, r) for m, v in (report.get("modes") or {}).items() for r in v.get("picks") or [] if r.get("new")]
+    if not new:
+        return 0
+    try:
+        from alerts.events import AlertEvent, AlertEventStore
+        from config_loader import get_data_root
+
+        AlertEventStore(get_data_root()).append_events([
+            AlertEvent.create(
+                ticker=r["ticker"], alert_type="best_setup", severity="info",
+                title=f"{r['ticker']} is now a {m.title()} best setup",
+                message=f"Band ${r['band_low']:,.2f}–${r['band_high']:,.2f} · target +{r['target_pct']}% · "
+                        f"stop −{r['stop_pct']}% · chance {r.get('chance')}%",
+                payload={"mode": m, **r}, dedupe_key=f"{r['ticker']}:best_setup:{m}:{report['as_of']}",
+            ) for m, r in new
+        ])
+    except Exception:
+        logger.exception("best-setups alert events failed")
+    try:
+        from api.routers.push import broadcast_web_push
+
+        names = ", ".join(f"{r['ticker']} ({m.title()})" for m, r in new[:4])
+        broadcast_web_push("New best setups", names + (" …" if len(new) > 4 else ""), "/")
+    except Exception:
+        logger.exception("best-setups push failed")
+    return len(new)
 
 
 def _dir() -> Path:

@@ -1333,9 +1333,10 @@ def _build_investor_summary(
         from signals.fetcher import fetch_ohlcv_dataframe
         from signals.level_touch_odds import attach_level_touch_odds
 
-        attach_level_touch_odds(payload, fetch_ohlcv_dataframe(ticker, "10y"), float(current_price))
+        _ohlcv_10y = fetch_ohlcv_dataframe(ticker, "10y")
+        attach_level_touch_odds(payload, _ohlcv_10y, float(current_price))
     except Exception:
-        pass
+        _ohlcv_10y = None
 
     for _h in ("short", "medium", "long"):
         if isinstance(payload.get(_h), dict):
@@ -1347,6 +1348,12 @@ def _build_investor_summary(
                 payload[_h]["ml_horizon_days"] = int(_MLH[_h]["days"])
             except Exception:
                 pass
+    try:
+        from signals.level_touch_odds import attach_history_odds
+
+        attach_history_odds(payload, _ohlcv_10y)
+    except Exception:
+        pass
 
     verdicts = [payload["short"].get("verdict"), payload["medium"].get("verdict"), payload["long"].get("verdict")]
     overall = "STRONG BUY" if "STRONG BUY" in verdicts else "BUY" if "BUY" in verdicts else "WATCH" if "WATCH" in verdicts else "WAIT"

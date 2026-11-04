@@ -1,6 +1,6 @@
 "use client";
 
-import { BestSetupsPanel, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
+import { BestSetupsPanel, BestSetupsTodayCard, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
@@ -897,7 +897,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const tabBadges: Partial<Record<TabId, number>> = {
     signals: signalCountForBadge,
     portfolio: selectedReport?.per_holding?.length ?? 0,
-    plan: oppCountForBadge,
+    plan: (bestSetups.data?.report?.new_count ?? 0) || oppCountForBadge,
   };
   const bellCount =
     overviewAlertCount != null && overviewAlertCount > 0
@@ -1177,6 +1177,14 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               {degradedMode && <DegradedDataBanner degradedMode={degradedMode} sources={degradedSources} compact />}
               <div className="grid gap-4 xl:grid-cols-2 items-start">
                 <div className="space-y-4 min-w-0">
+                  <BestSetupsTodayCard
+                    data={bestSetups.data}
+                    onTickerClick={openTickerDetail}
+                    onOpen={() => {
+                      setPlanSubPersist("opportunities");
+                      setActiveTab("plan");
+                    }}
+                  />
                   <SinceYesterdayCard
                     items={data.what_changed ?? []}
                     lens={tradingLens}
