@@ -92,8 +92,8 @@ export function ReportCardPanel({ data }: { data?: ReportCard | null }) {
               <th className="py-1 pr-2 font-medium">Date</th>
               <th className="py-1 pr-2 font-medium">Ticker</th>
               <th className="py-1 pr-2 font-medium">Call</th>
-              <th className="py-1 pr-2 font-medium">Price at call</th>
-              <th className="py-1 pr-2 font-medium">Next close</th>
+              <th className="py-1 pr-2 font-medium">Close that day</th>
+              <th className="py-1 pr-2 font-medium">Next day close</th>
               <th className="py-1 pr-2 font-medium">1 day</th>
               <th className="py-1 pr-2 font-medium">20 days</th>
               <th className="py-1 pr-2 font-medium">SPY 20d</th>

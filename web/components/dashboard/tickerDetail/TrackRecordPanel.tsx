@@ -137,14 +137,13 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
             <table className="w-full text-[13px] min-w-[680px]">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-700">
-                  <th className="py-1 pr-2 font-medium">Date</th>
-                  <th className="py-1 pr-2 font-medium">Call</th>
+                  <th className="sticky left-0 z-[10] bg-td-bg border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] py-1 pr-2 font-medium">Date · call</th>
                   <th className="py-1 pr-2 font-medium">Gates</th>
-                  <th className="py-1 pr-2 font-medium" title="Price when the call was made (that day's close)">Price at call</th>
-                  <th className="py-1 pr-2 font-medium">Next close</th>
+                  <th className="py-1 pr-2 font-medium" title="Closing price on the day the call was saved — a reference price, not a buy price">Close that day</th>
+                  <th className="py-1 pr-2 font-medium" title="Close on the next trading day">Next day close</th>
                   <th className="py-1 pr-2 font-medium">What happened</th>
                   <th className="py-1 pr-2 font-medium">Right?</th>
-                  <th className="py-1 pr-2 font-medium" title="Short-term target vs price at call">Target</th>
+                  <th className="py-1 pr-2 font-medium" title="1-month target vs that day's close">1-mo target</th>
                   <th className="py-1 pr-2 font-medium" title="20-day result, and actual minus target in points">20d · missed by</th>
                   {showOlderCalls && <th className="py-1 font-medium">Ver.</th>}
                 </tr>
@@ -152,8 +151,10 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
               <tbody>
                 {dailyCalls.slice(0, 15).map((c) => (
                   <tr key={`${c.date}-${c.next_date}`} className="border-b border-slate-800 text-slate-300">
-                    <td className="py-1 pr-2 font-mono whitespace-nowrap">{shortDay(c.date)}</td>
-                    <td className="py-1 pr-2">{c.signal ?? "—"}</td>
+                    <td className="sticky left-0 z-[10] bg-td-bg border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] py-1 pr-2 whitespace-nowrap">
+                      <span className="block font-mono">{shortDay(c.date)}</span>
+                      <span className="block text-[12px] text-slate-400">{c.signal ?? "—"}</span>
+                    </td>
                     <td className="py-1 pr-2 font-mono text-slate-500">
                       {c.gates_passed != null ? `${c.gates_passed}/${c.gates_total ?? 4}` : "—"}
                     </td>
@@ -216,9 +217,9 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           </div>
           )}
           <p className="text-[13px] text-slate-600 leading-snug">
-            What we said vs what happened: each EOD call with its price, then the next session&apos;s close — no waiting for a 5d/20d
-            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored. Target is the
-            short-term target at the call; &quot;missed by&quot; is the 20-day result minus that target (negative = fell short).
+            What we said vs what happened: each EOD call with that day&apos;s close (a reference, not a buy price), then the next trading day&apos;s close — no waiting for a 5d/20d
+            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored. 1-mo target is the
+            1-month target at the call; &quot;missed by&quot; is the 20-day result minus that target (negative = fell short).
           </p>
         </div>
       )}
