@@ -95,7 +95,8 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
           </span>
         </span>
         <span>
-          Past target first <b className="text-slate-100">{r.target_first_pct != null ? `${r.target_first_pct}%` : "–"}</b>
+          Past first: <b className="text-emerald-300">target {r.target_first_pct != null ? `${r.target_first_pct}%` : "–"}</b>
+          <span className="text-slate-400"> · stop {r.stop_first_pct != null ? `${r.stop_first_pct}%` : "–"}</span>
         </span>
       </div>
       <div className="mt-1 text-[12px] text-slate-400 font-mono tabular-nums">
@@ -153,8 +154,8 @@ export function BestSetupsPanel({ onTickerClick }: { onTickerClick?: (t: string)
       </div>
 
       <p className="text-[13px] leading-relaxed rounded-md border-l-2 border-sky-400/60 bg-sky-500/5 px-3 py-2 text-slate-300">
-        Ranked by <b className="text-sky-300">edge</b> = model chance × room to target − the rest × room to stop, from the band middle.
-        Listed only when entry is allowed, R:R ≥ {MIN_RR[mode]}, and price is in or within 3% of the band.
+        Ranked by <b className="text-sky-300">edge</b> = past target-first % × room to target − past stop-first % × room to stop, from the band middle.
+        Listed only when entry is allowed, model chance ≥ 50%, R:R ≥ {MIN_RR[mode]}, and price is in or within 3% of the band.
       </p>
 
       <div className="rounded-md border border-slate-700/60 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-300 flex flex-wrap gap-x-4 gap-y-1">

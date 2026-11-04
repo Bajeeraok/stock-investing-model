@@ -10,6 +10,7 @@ import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,15 @@ MODES: dict[str, dict[str, Any]] = {
     "owner": {"horizon": "long", "min_rr": 1.5, "window": 252},
 }
 NEAR_BAND_PCT = 3.0
+MIN_MODEL_PROB = 50.0
 TOP_N = 10
 NEXT_UP_N = 8
 TRACK_DAYS = 180
 _DIR = "best_setups"
+
+
+def _market_today() -> date:
+    return datetime.now(ZoneInfo("America/New_York")).date()
 
 
 def _f(v: Any) -> float | None:
@@ -78,11 +84,14 @@ def setup_row(detail: dict, mode: str) -> dict | None:
     if tgt_pct <= 0:
         return None
     p = _f(h.get("ml_prob")) if h.get("ml_scored") is not False else None
-    edge = None if p is None else (p / 100.0) * tgt_pct - (1 - p / 100.0) * stop_pct
+    lvl = _ref_level(h, price) or {}
+    # Edge uses this plan's past first-touch odds (target vs stop) — the model's chance is for a
+    # smaller +N% move, so applying it to the full target would overstate the payoff.
+    tf, sf = _f(lvl.get("target_first_pct")), _f(lvl.get("stop_first_pct"))
+    edge = None if tf is None or sf is None else (tf / 100.0) * tgt_pct - (sf / 100.0) * stop_pct
     rr = _f(h.get("risk_reward_from_entry"))
     status, gp, gt = _entry_status(inv.get("retail_action") or {}, mode)
     gap = _band_gap_pct(h, price)
-    lvl = _ref_level(h, price) or {}
     blockers: list[str] = []
     if status is None:
         blockers.append("entry gates")
@@ -91,7 +100,9 @@ def setup_row(detail: dict, mode: str) -> dict | None:
     if gap is None or gap > NEAR_BAND_PCT:
         blockers.append("price above band")
     if edge is None:
-        blockers.append("no model score")
+        blockers.append("no past odds")
+    if p is None or p < MIN_MODEL_PROB:
+        blockers.append(f"model under {MIN_MODEL_PROB:.0f}%")
     return {
         "ticker": str(detail.get("ticker") or "").upper(),
         "name": detail.get("company_name") or detail.get("name"),
@@ -122,7 +133,7 @@ def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]
     out: dict[str, dict[str, list[dict]]] = {}
     for mode, rows in rows_by_mode.items():
         scored = [r for r in rows if r.get("edge_pct") is not None]
-        scored.sort(key=lambda r: r["edge_pct"], reverse=True)
+        scored.sort(key=lambda r: (r["edge_pct"], r.get("model_prob") or 0), reverse=True)
         picks = [r for r in scored if r["qualified"]][:TOP_N]
         # Next up: positive edge, one blocker away (not the model score itself).
         nxt = [r for r in scored if not r["qualified"] and r["edge_pct"] > 0 and len(r["blockers"]) == 1]
@@ -146,7 +157,7 @@ def build_report(details: list[dict], as_of: date | None = None) -> dict:
             if r:
                 rows[m].append(r)
     return {
-        "as_of": (as_of or date.today()).isoformat(),
+        "as_of": (as_of or _market_today()).isoformat(),
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "scanned": len(details),
         "modes": rank(rows),
@@ -180,7 +191,7 @@ def _history(days: int = TRACK_DAYS) -> list[dict]:
     d = _dir()
     if not d.exists():
         return []
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    cutoff = (_market_today() - timedelta(days=days)).isoformat()
     out = []
     for p in sorted(d.glob("best_setups_*.json")):
         day = p.stem.replace("best_setups_", "")
@@ -241,7 +252,7 @@ def track_record(fetch=None) -> dict:
             cur = {pk.get("ticker") for pk in todays}
             for pk in todays:
                 t = pk.get("ticker")
-                if not t or t in prev or day >= date.today().isoformat():
+                if not t or t in prev or day >= _market_today().isoformat():
                     continue
                 if t not in bars_cache:
                     try:

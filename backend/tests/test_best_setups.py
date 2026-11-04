@@ -29,7 +29,7 @@ def test_qualified_swing_row_and_edge():
     assert r["qualified"] and r["status"] == "Can add"
     mid = 97.5
     tgt, stp = (120 - mid) / mid * 100, (mid - 90) / mid * 100
-    assert abs(r["edge_pct"] - round(0.6 * tgt - 0.4 * stp, 2)) < 0.01
+    assert abs(r["edge_pct"] - round(0.40 * tgt - 0.45 * stp, 2)) < 0.01
     assert r["target_first_pct"] == 40
 
 
@@ -39,6 +39,11 @@ def test_blockers_hard_lock_low_rr_and_far_band():
     assert "entry gates" in r["blockers"] and "R:R under 2.0" in r["blockers"]
     owner = setup_row(_detail(), "owner")  # price 100 vs band top 85 → far above band
     assert "price above band" in owner["blockers"]
+
+
+def test_low_model_chance_blocks():
+    r = setup_row(_detail(prob=40), "swing")
+    assert r["blockers"] == ["model under 50%"]
 
 
 def test_ranking_and_next_up():
