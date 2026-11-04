@@ -4252,6 +4252,30 @@ async def get_ticker_consistency_audit():
             "report": report}
 
 
+_BEST_SETUPS_TRACK: dict[str, Any] = {}
+
+
+@router.get("/best-setups")
+async def get_best_setups():
+    """Ranked Swing/Owner setups from the last post-EOD build, plus forward results of past picks."""
+    import time as _time
+
+    from fastapi.concurrency import run_in_threadpool
+
+    from signals.best_setups import load_latest, track_record
+
+    report = load_latest()
+    hit = _BEST_SETUPS_TRACK.get("v")
+    if hit is None or _time.time() - _BEST_SETUPS_TRACK.get("ts", 0) > 3600 or \
+            _BEST_SETUPS_TRACK.get("as_of") != (report or {}).get("as_of"):
+        try:
+            hit = await run_in_threadpool(track_record)
+        except Exception:
+            hit = None
+        _BEST_SETUPS_TRACK.update(v=hit, ts=_time.time(), as_of=(report or {}).get("as_of"))
+    return {"available": report is not None, "report": report, "track": hit}
+
+
 @router.post("/audit/ticker-consistency/run")
 async def run_ticker_consistency_audit_now(tickers: str | None = None):
     """Start the ticker-page rule checker in the background (optional comma-separated tickers)."""

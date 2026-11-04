@@ -1,5 +1,6 @@
 "use client";
 
+import { BestSetupsPanel } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
@@ -211,7 +212,7 @@ function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "
   else window.history.replaceState(state, "", url);
 }
 
-type PlanSub = "income" | "opportunities";
+type PlanSub = "income" | "opportunities" | "setups";
 type MoreSub = "markets" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
 const MORE_SUB_KEY = "thrive-more-sub";
@@ -370,7 +371,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       saved = localStorage.getItem("thrive-tab");
       urlTab = new URLSearchParams(window.location.search).get("tab");
       const ps = localStorage.getItem(PLAN_SUB_KEY);
-      if (ps === "income" || ps === "opportunities") setPlanSub(ps);
+      if (ps === "income" || ps === "opportunities" || ps === "setups") setPlanSub(ps);
       const ms = localStorage.getItem(MORE_SUB_KEY);
       if (ms === "markets" || ms === "admin") setMoreSub(ms);
     } catch {
@@ -1300,10 +1301,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 value={planSub}
                 onChange={setPlanSubPersist}
                 options={[
+                  { id: "setups", label: "Best setups" },
                   { id: "income", label: "Income sleeve" },
                   { id: "opportunities", label: "Opportunities", badge: oppCountForBadge },
                 ]}
               />
+              {planSub === "setups" && <BestSetupsPanel onTickerClick={openTickerDetail} />}
               {planSub === "income" && (
                 <div className="space-y-4">
                   <IncomeBookPanel onTickerClick={openTickerDetail} />

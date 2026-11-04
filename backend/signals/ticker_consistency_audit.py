@@ -667,6 +667,7 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
                     break
             tickers = sorted(t for t in rows if not t.endswith("-USD"))
         findings: list[dict[str, Any]] = []
+        details: list[dict] = []
         t0 = time.time()
         PROGRESS.update(done=0, total=len(tickers), started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
         for t in tickers:
@@ -677,6 +678,7 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
                 detail = {"ticker": t, "error": str(exc)[:200]}
             row = rows.get(t) or _signal_row_from_dashboard_cache(t)
             findings.extend(audit_ticker_detail(detail, row))
+            details.append(detail)
             try:
                 import asyncio
 
@@ -693,6 +695,12 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
         p.write_text(json.dumps(report, default=str))
         (p.parent / f"ticker_consistency_{date.today().isoformat()}.json").write_text(json.dumps(report, default=str))
         logger.info("[ticker-audit] %d tickers, %s in %.0fs", len(tickers), report["counts"], report["duration_s"])
+        try:
+            from signals.best_setups import build_report, save_report
+
+            save_report(build_report(details))
+        except Exception:
+            logger.exception("[ticker-audit] best setups build failed")
         return report
     finally:
         _RUN_LOCK.release()
