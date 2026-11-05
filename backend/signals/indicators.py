@@ -609,9 +609,10 @@ def multi_horizon_scores(
                 parts.append(f"price {pct_above:.1f}% above MA200")
             else:
                 parts.append("price below MA200")
-            if ma50 > ma200:
-                # Bullish structure: pullback in uptrend -> reason supports HOLD/ADD, not trim
+            if ma50 > ma200 and c > ma200:
                 parts.append("MA50 > MA200 (uptrend intact; add on dip or hold)")
+            elif ma50 > ma200:
+                parts.append("MA50 still > MA200 (pullback below the 200-day; hold, no adds until it recovers)")
             else:
                 parts.append("MA50 < MA200 (weaker structure)")
         return "; ".join(parts) if parts else "insufficient data"
