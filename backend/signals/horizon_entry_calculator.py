@@ -221,6 +221,7 @@ def tier2_human_class_label(class_key: str) -> str:
     }.get(class_key, class_key)
 LT_TIER3_LOW_MULT      = 1.05   # Tier 3: 52w_low * 1.05
 LT_TIER3_HIGH_MULT     = 1.15   # Tier 3: 52w_low * 1.15
+LT_TIER3_MAX_DRAWDOWN_PCT = 50.0  # Tier 3 stress band never sits deeper than a 50% drop from spot
 LT_MAX_ABOVE_MA200_PCT = 15.0   # flag if price > MA200 by more than this
 
 
@@ -2081,6 +2082,15 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             "Currently only {:.1f}% discount.".format(
                 min_price_to_buy, LT_REQUIRED_MOS_PCT, mos_pct))
 
+    fv_consensus_only = fv_anchor_label != "fair value"
+    if fv_consensus_only and assess_verdict == "BUY":
+        assess_verdict = "PARTIAL"
+        assess_label = (
+            "{:.1f}% below {} — partial size max; the model can't value this stock itself".format(
+                mos_pct, fv_anchor_label)
+        )
+        assess_color = "#f5a623"
+
     if pct_above_ma200 > LT_MAX_ABOVE_MA200_PCT:
         warnings.append(
             "Price is {:.1f}% above MA200 (${:.2f}). "
@@ -2166,6 +2176,15 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         _r(inp.week52_low * LT_TIER3_HIGH_MULT),
         "~5x+", "Stress", "#64748b")
 
+    t3_floor_hi = _r(p * (1 - LT_TIER3_MAX_DRAWDOWN_PCT / 100))
+    if p > 0 and tier3.high < t3_floor_hi:
+        warnings.append(
+            "52w low ${:.2f} is more than {:.0f}% below spot — Tier 3 stress band anchored at a {:.0f}% drop.".format(
+                inp.week52_low, LT_TIER3_MAX_DRAWDOWN_PCT, LT_TIER3_MAX_DRAWDOWN_PCT)
+        )
+        tier3 = _refresh_tier_fv_metrics(
+            replace(tier3, low=_r(t3_floor_hi * LT_TIER3_LOW_MULT / LT_TIER3_HIGH_MULT), high=t3_floor_hi), fv, p
+        )
     tier1, tier2, tier3 = _enforce_strict_tier_ladder(tier1, tier2, tier3, fv, p, float(inp.week52_low or 0))
 
     # ── Entry zone for HorizonSignal — sync with active / target tier ───────
@@ -2415,6 +2434,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
                 "margin_of_safety_pct": mos_pct,
                 "pct_above_ma200":     pct_above_ma200,
                 "min_price_to_buy":    min_price_to_buy,
+                "fv_consensus_only":   fv_consensus_only,
                 **mos_ceiling_flags,
             },
             "tier2_profile": {

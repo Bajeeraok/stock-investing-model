@@ -31,6 +31,10 @@ from signals.fv_router import FvRoute
 from signals.providers import MAJOR_INDEX_ETFS
 
 
+# Analyst high/low target ratio above which a consensus-only fair value uses the low target.
+STREET_WIDE_RANGE_RATIO = 1.5
+
+
 def _safe_float(v: Any) -> float | None:
     """Return float or None; handles NaN/None/strings gracefully."""
     try:
@@ -347,6 +351,15 @@ def compute_fair_value(
         if _fv_route and _fv_route.fv_suppressed and fv_result is None:
             _suppressed_fv = float(analyst_target) if analyst_target and analyst_target > 0 else 0.0
             _street_anchored = _suppressed_fv > 0
+            _cl, _ch = _safe_float(cons_low), _safe_float(cons_high)
+            _wide_note = None
+            if _street_anchored and _cl and _ch and _cl > 0 and _ch / _cl > STREET_WIDE_RANGE_RATIO and _cl < _suppressed_fv:
+                _wide_note = (
+                    f"Analyst targets are wide (${_cl:.0f}–${_ch:.0f}) — fair value uses the low target "
+                    f"${_cl:.2f}, not the ${_suppressed_fv:.2f} consensus."
+                )
+                _suppressed_fv = float(_cl)
+                _street_anchor_source = f"{_street_anchor_source or 'street'}_low"
             fv_result = FairValueResult(
                 fair_value=_suppressed_fv,
                 stock_type="suppressed",
@@ -357,7 +370,7 @@ def compute_fair_value(
                     if _suppressed_fv > 0 and current_price else 0.0
                 ),
                 analyst_target=analyst_target,
-                notes=list(_fv_route.notes or []),
+                notes=list(_fv_route.notes or []) + ([_wide_note] if _wide_note else []),
                 bear_case=round(_suppressed_fv * 0.75, 2) if _suppressed_fv > 0 else None,
                 methodology_summary=_fv_route.fv_suppressed_reason,
                 fv_suppressed=True,

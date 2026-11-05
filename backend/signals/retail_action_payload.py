@@ -153,6 +153,8 @@ BRIDGE_MAX_SIZING_PCT = 10
 # (t -2.3), -1.7% at 10d (t -2.3). Off by default: those setups become WAIT (hard_lock).
 STARTER_ONLY_ENABLED = bool(_RG_CFG.get("starter_only_enabled", False))
 STARTER_MAX_SIZING_PCT = 25
+# Full go on a consensus-only fair value (model can't value the stock) is capped at partial size.
+CONSENSUS_ONLY_MAX_SIZING_PCT = 50
 
 
 def rsi_status(rsi: float | None) -> RsiStatus:
@@ -901,6 +903,7 @@ def derive_entry_mode(
     macro_regime_label: str | None = None,
     commodity_vol_regime: str | None = None,
     iv_rank: float | None = None,
+    fv_consensus_only: bool = False,
 ) -> dict[str, Any]:
     """
     Conditional sizing from gate matrix (valuation × tech × zone).
@@ -1038,6 +1041,11 @@ def derive_entry_mode(
                 "hold what you own; optional limit lower for a better MOS."
             )
         light = "red"
+
+    if mode == "full_go" and fv_consensus_only:
+        max_pct = min(max_pct, CONSENSUS_ONLY_MAX_SIZING_PCT)
+        headline = f"Partial size max (~{max_pct}%) — fair value is analyst consensus only"
+        detail = "The model can't value this stock itself; " + detail[:1].lower() + detail[1:]
 
     inst = institutional_conviction or {}
     inst_verdict = str(inst.get("verdict") or "unknown")
@@ -1622,6 +1630,9 @@ def enrich_investor_summary_retail_action(
         macro_regime_label=macro_label,
         commodity_vol_regime=(commodity_vol or {}).get("regime"),
         iv_rank=_iv_rank_from_investor(investor_out),
+        fv_consensus_only=bool(
+            ((long_h.get("entry_tiers") or {}).get("current_assessment") or {}).get("fv_consensus_only")
+        ),
     )
     ra.update(entry)
     if entry["entry_mode"] == "full_go":
