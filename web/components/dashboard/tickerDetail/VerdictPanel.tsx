@@ -380,6 +380,15 @@ export function VerdictPanel({
     alertAtValuation = !!apiDisplay.alert_at_valuation;
   }
   const alertLockedGates = lockedGateNames(gates).filter((n) => !(alertAtValuation && n === "Valuation"));
+  const near = (a: number, b: number | null | undefined) => b != null && Math.abs(a - b) < 0.01;
+  const alertKind =
+    alertLevel == null ? null
+      : hasBand && near(alertLevel, ez!.high) ? "band top"
+      : hasBand && near(alertLevel, ez!.low) ? "band low"
+      : near(alertLevel, stop) ? "stop"
+      : alertAtValuation ? "valuation clears"
+      : null;
+  const inEntryBand = hasBand && price != null && price >= ez!.low && price <= ez!.high;
 
   return (
     <div className="space-y-3">
@@ -395,7 +404,9 @@ export function VerdictPanel({
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           {alertLevel != null && price != null && (
             <span className="rounded-full border border-td-info/40 bg-td-info/10 px-2.5 py-0.5 font-mono text-[12px] text-td-info tabular-nums">
-              Next level {usd(alertLevel)} · {pct(price, alertLevel)}
+              {inEntryBand && alertKind === "band low"
+                ? <>In entry band · next add {usd(alertLevel)} (band low) · {pct(price, alertLevel)}</>
+                : <>Next level {usd(alertLevel)}{alertKind ? ` (${alertKind})` : ""} · {pct(price, alertLevel)}</>}
             </span>
           )}
           {shownTotal > 0 && (
