@@ -151,7 +151,9 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
       const nextAddTierId = long?.entry_tiers?.spot_position?.next_add_tier_id;
       const nextTier = nextAddTierId
         ? long?.entry_tiers?.tiers?.find((t: { id?: string }) => t.id === nextAddTierId)
-        : long?.entry_tiers?.tiers?.find((t: { high: number }) => detail.current_price! > t.high);
+        : long?.entry_zone?.max_add
+          ? undefined
+          : long?.entry_tiers?.tiers?.find((t: { high: number }) => detail.current_price! > t.high);
       const nextLevel = nextTier?.low ?? long?.entry_zone?.low ?? null;
       return (
         <LevelsPageHeader

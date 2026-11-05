@@ -434,6 +434,8 @@ export interface HorizonSignalPayload {
       color: string;
       reachable: boolean;
       drop_needed_pct: number | null;
+      above_max_add?: boolean;
+      status_label?: string;
       levels?: Array<{ id: string; label: string; price: number; role?: string; touch_pct?: number; median_days?: number; window_sessions?: number; touch_history_years?: number }>;
     }[];
     position_sizing?: { tier: string; allocation_pct: number; note: string }[];

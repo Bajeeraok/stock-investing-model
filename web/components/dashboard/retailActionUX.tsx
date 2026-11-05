@@ -2087,7 +2087,7 @@ export function LongTermTierLadder({
           const isInside = state === "active";
           const isAbove = state === "above";
           const isTarget = tier.id === targetTierId;
-          const isHighlighted = isInside || (isTarget && isAbove);
+          const isHighlighted = !tier.above_max_add && (isInside || (isTarget && isAbove));
           const copy = TIER_RETAIL_COPY[tier.id] ?? {
             zone: tier.label,
             sizing: tier.description,
@@ -2119,6 +2119,11 @@ export function LongTermTierLadder({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-bold text-slate-200">{tier.label}</span>
                     <span className="text-[13px] font-semibold text-emerald-300/90">{copy.zone}</span>
+                    {tier.above_max_add && (
+                      <span className="text-[11px] uppercase font-black text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded border border-amber-500/40">
+                        {tier.status_label ?? "Above max add — wait"}
+                      </span>
+                    )}
                     {isHighlighted && (
                       <span className="text-[11px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
                         {isInside

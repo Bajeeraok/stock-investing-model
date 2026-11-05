@@ -38,3 +38,22 @@ def test_band_straddling_max_add_keeps_low():
 def test_band_below_max_add_unchanged():
     ez = _run(_payload(200.0, 220.0, 400.0, 40.0))
     assert ez["low"] == 200.0 and ez["high"] == 220.0 and "max_add" not in ez
+
+
+def test_tiers_above_max_add_flagged_or_cut():
+    p = _payload(276.28, 311.9, 260.0, -14.0)
+    p["long"]["entry_tiers"].update({
+        "active_tier_id": "T2",
+        "spot_position": {"state": "in_tier", "active_tier_id": "T2", "next_add_tier_id": "T2"},
+        "tiers": [
+            {"id": "T1", "low": 280.0, "high": 320.0},
+            {"id": "T2", "low": 200.0, "high": 300.0},
+            {"id": "T3", "low": 150.0, "high": 190.0},
+        ],
+    })
+    ez = _run(p)
+    cap = ez["max_add"]
+    t1, t2, t3 = p["long"]["entry_tiers"]["tiers"]
+    assert t1["above_max_add"] is True and "wait" in t1["status_label"]
+    assert t2["high"] == cap and t2["low"] == 200.0 and "above_max_add" not in t2
+    assert t3 == {"id": "T3", "low": 150.0, "high": 190.0}

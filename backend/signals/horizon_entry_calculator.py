@@ -774,6 +774,37 @@ def _attach_bridge_to_spot_position(
     return spot_position
 
 
+def _cap_long_tiers_at_max_add(long_h: dict, max_add: float) -> None:
+    """T1/T2 add tiers never sit above the margin-of-safety max add (same rule as the Owner band).
+    A tier straddling the cap is cut at it; a tier wholly above it is flagged "wait", not a buy zone."""
+    et = long_h.get("entry_tiers") or {}
+    flagged: set[str] = set()
+    for t in et.get("tiers") or []:
+        if t.get("id") not in ("T1", "T2"):
+            continue
+        lo, hi = float(t.get("low") or 0), float(t.get("high") or 0)
+        if lo >= max_add - 0.01:
+            t["above_max_add"] = True
+            t["status_label"] = f"Above max add ${max_add:.2f} — wait"
+            t["reachable"] = False
+            flagged.add(t["id"])
+        elif hi > max_add + 0.01:
+            t["high"] = _r(max_add)
+    if not flagged:
+        return
+    if et.get("active_tier_id") in flagged:
+        et["active_tier_id"] = None
+    if et.get("target_tier_id") in flagged:
+        et["target_tier_id"] = None
+    sp = et.get("spot_position")
+    if isinstance(sp, dict):
+        for k in ("active_tier_id", "next_add_tier_id"):
+            if sp.get(k) in flagged:
+                sp[k] = None
+        if sp.get("state") == "in_tier":
+            sp["state"] = "above_max_add"
+
+
 def _enrich_horizon_entry_zone_extras(
     payload: dict[str, Any],
     *,
@@ -891,6 +922,7 @@ def _enrich_horizon_entry_zone_extras(
             long_ez["anchor"] = (
                 f"Capped at max add ${lt_hi:.2f} (margin of safety); chart band ${chart_lo:.2f}–${chart_hi:.2f}"
             )
+            _cap_long_tiers_at_max_add(long_h, lt_hi)
         levels = build_entry_band_levels(lt_lo, lt_hi)
         long_ez["levels"] = levels or [
             {"id": "mos_cap", "label": f"MOS cap · max add ${cap:.2f}", "price": round(cap, 2), "role": "entry", "sort": 1}

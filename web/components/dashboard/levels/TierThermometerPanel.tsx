@@ -39,6 +39,7 @@ export function TierThermometerPanel({
     const out: ThermometerLevel[] = [];
 
     for (const tier of entryTiers.tiers ?? []) {
+      if (tier.above_max_add) continue;
       const isActive = tier.id === activeTierId;
       const isTarget = tier.id === targetTierId && !isActive;
       const inside = currentPrice >= tier.low && currentPrice <= tier.high;
@@ -130,7 +131,7 @@ export function TierThermometerPanel({
             {/* Tier legend */}
             <div className="flex flex-col justify-center gap-2 text-right min-w-[80px]">
               {(entryTiers.tiers ?? []).map(tier => {
-                const inside = currentPrice >= tier.low && currentPrice <= tier.high;
+                const inside = !tier.above_max_add && currentPrice >= tier.low && currentPrice <= tier.high;
                 const above = currentPrice > tier.high;
                 return (
                   <div key={tier.id} className="flex flex-col gap-0.5">
@@ -139,12 +140,16 @@ export function TierThermometerPanel({
                       {inside && <span className="text-[11px] font-black text-td-accent bg-td-accent/20 px-1 rounded">IN</span>}
                       {!inside && above && <span className="text-[11px] text-td-muted">↑</span>}
                     </div>
-                    <span className={clsx(
-                      "text-[11px] font-mono tabular-nums",
-                      inside ? "text-td-accent" : "text-td-muted",
-                    )}>
-                      ${tier.low.toFixed(0)}–${tier.high.toFixed(0)}
-                    </span>
+                    {tier.above_max_add ? (
+                      <span className="text-[11px] text-amber-300/90">Above max add — wait</span>
+                    ) : (
+                      <span className={clsx(
+                        "text-[11px] font-mono tabular-nums",
+                        inside ? "text-td-accent" : "text-td-muted",
+                      )}>
+                        ${tier.low.toFixed(0)}–${tier.high.toFixed(0)}
+                      </span>
+                    )}
                   </div>
                 );
               })}

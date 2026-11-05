@@ -182,6 +182,7 @@ export function bandsFromHorizons(
   const lt = H.long || {};
   if (show("long")) push(only ? "Owner band" : "T1 MA200", lt.entry_zone, only ? "entry" : "tier");
   for (const t of show("long") ? lt.entry_tiers?.tiers || [] : []) {
+    if (t.above_max_add) continue;
     push(t.id || "tier", { low: t.low, high: t.high }, t.id === "T2" ? "entry" : "tier");
   }
   for (const [k, h, hz] of [["ST stop", H.short, "short"], ["MT stop", H.medium, "medium"]] as const) {
