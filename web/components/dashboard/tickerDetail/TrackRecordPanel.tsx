@@ -137,7 +137,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
             <table className="w-full text-[13px] min-w-[680px]">
               <thead>
                 <tr className="text-left text-slate-500 border-b border-slate-700">
-                  <th className="sticky left-0 z-[10] bg-td-bg border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] py-1 pr-2 font-medium">Date · call</th>
+                  <th className="sticky left-0 z-[10] bg-td-surface border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] py-1 pr-2 font-medium">Date · call</th>
                   <th className="py-1 pr-2 font-medium">Gates</th>
                   <th className="py-1 pr-2 font-medium" title="Closing price on the day the call was saved — a reference price, not a buy price">Close that day</th>
                   <th className="py-1 pr-2 font-medium" title="Close on the next trading day">Next day close</th>
@@ -151,7 +151,7 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
               <tbody>
                 {dailyCalls.slice(0, 15).map((c) => (
                   <tr key={`${c.date}-${c.next_date}`} className="border-b border-slate-800 text-slate-300">
-                    <td className="sticky left-0 z-[10] bg-td-bg border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] py-1 pr-2 whitespace-nowrap">
+                    <td className="sticky left-0 z-[10] bg-td-surface border-r border-slate-700/70 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)] py-1 pr-2 whitespace-nowrap">
                       <span className="block font-mono">{shortDay(c.date)}</span>
                       <span className="block text-[12px] text-slate-400">{c.signal ?? "—"}</span>
                     </td>
