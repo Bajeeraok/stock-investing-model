@@ -80,5 +80,15 @@ def test_ticker_market_context_earnings():
     )
     assert ctx["headline"]
     assert ctx["earnings_rule"]["urgency"] == "high"
-    assert ctx["horizon_overlay"]["short"]["action"] in ("BUY", "HOLD", "REDUCE")
+    assert ctx["horizon_overlay"]["short"]["action"] in ("BUY", "HOLD")
     assert ctx.get("personal_question")
+
+
+def test_ticker_market_context_never_reduces_on_score_or_regime():
+    md = {"strategy_matrix": {"grid": {"short": "REDUCE", "medium": "REDUCE", "long": "REDUCE"}},
+          "market_temperature": {"label": "COOL", "buy_zone": True}}
+    ctx = build_ticker_market_context("SPY", sector=None, score=19.5, regime="DOWN",
+                                      is_holding=True, market_decisions=md)
+    assert {h["action"] for h in ctx["horizon_overlay"].values()} == {"HOLD"}
+    assert "REDUCE" not in ctx["headline"]
+    assert "trim" not in ctx["personal_question"]["answer"].lower().split("—")[0]

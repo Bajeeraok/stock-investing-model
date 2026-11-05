@@ -39,19 +39,14 @@ def _ticker_horizon_overlay(
     s = score if score is not None else 50.0
     r = (regime or "").upper()
 
+    # Score, regime and the market grid never produce REDUCE on their own: HOLD is the default
+    # and trims come only from plan stops/targets or optional protect mode.
     def _nudge(action: str, down: bool = False) -> str:
-        order = ["REDUCE", "HOLD", "BUY"]
-        try:
-            i = order.index(action)
-        except ValueError:
-            i = 1
-        if down:
-            return order[max(0, i - 1)]
+        if down or s <= 32 or r == "DOWN":
+            return "HOLD"
         if s >= 68 and r in ("UP", "RISK-ON") and action == "HOLD":
             return "BUY"
-        if s <= 32 or r == "DOWN":
-            return "REDUCE" if action != "REDUCE" else "REDUCE"
-        return action
+        return action if action == "BUY" else "HOLD"
 
     st = _nudge(base_st, down=_is_tech(sector) and (rotation or {}).get("tech_leadership") == "Falling")
     mt = _nudge(base_mt)
@@ -61,7 +56,7 @@ def _ticker_horizon_overlay(
     if s >= 65:
         bullets["short"] = "Score supports tactical adds on pullbacks if market matrix allows."
     elif s <= 35:
-        bullets["short"] = "Weak score — align with REDUCE/HOLD; don't fight tape on this name."
+        bullets["short"] = "Weak score — hold, no new adds; don't fight the tape on this name."
     else:
         bullets["short"] = "Mixed score — wait for entry zone or catalyst before sizing up."
 
@@ -252,7 +247,7 @@ def build_ticker_market_context(
     elif is_holding and (score or 50) <= 35:
         personal_q = {
             "question": f"Should I trim {ticker}?",
-            "answer": "Score weak — consider trim aligned with portfolio REDUCE stance.",
+            "answer": "Not on a weak score alone — default is HOLD. Trim only at your plan's stop, or use protect mode as optional insurance.",
         }
     elif not is_holding and (score or 0) >= 65 and (horizon.get("short") or {}).get("action") == "BUY":
         personal_q = {
