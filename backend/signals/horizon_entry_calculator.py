@@ -780,9 +780,11 @@ def _cap_long_tiers_at_max_add(long_h: dict, max_add: float) -> None:
     et = long_h.get("entry_tiers") or {}
     flagged: set[str] = set()
     for t in et.get("tiers") or []:
-        if t.get("id") not in ("T1", "T2"):
-            continue
         lo, hi = float(t.get("low") or 0), float(t.get("high") or 0)
+        if t.get("id") not in ("T1", "T2"):
+            if hi > max_add + 0.01 and lo < max_add:
+                t["high"] = _r(max_add)
+            continue
         if lo >= max_add - 0.01:
             t["above_max_add"] = True
             t["status_label"] = f"Above max add ${max_add:.2f} — wait"

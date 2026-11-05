@@ -73,3 +73,10 @@ def test_active_tier_above_max_add_clears_active_and_partial_warning():
     assert et["active_tier_id"] is None
     assert et["spot_position"] == {"state": "above_max_add", "active_tier_id": None, "next_add_tier_id": None}
     assert not any(w.startswith("Inside Tier 2 band") for w in p["long"]["warnings"])
+
+
+def test_tier3_straddling_max_add_is_cut():
+    p = _payload(276.28, 311.9, 260.0, -14.0)
+    p["long"]["entry_tiers"]["tiers"] = [{"id": "T3", "low": 150.0, "high": 300.0}]
+    ez = _run(p)
+    assert p["long"]["entry_tiers"]["tiers"][0]["high"] == ez["max_add"]
