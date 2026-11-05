@@ -4,7 +4,9 @@ One model trained across ~570 S&P 500 stocks replaces the small per-ticker model
 the "+N% within H trading days" question. The displayed probability is
     w * pooled_model + (1 - w) * this stock's historical hit rate for the same question,
 with w chosen per horizon by walk-forward validation (scripts/train_pooled_odds.py).
-Crypto, gold/commodity and bond/defensive tickers keep the per-ticker path.
+Gold/commodity and bond/defensive ETFs show their own since-2000 history odds only: in
+2019-2026 walk-forward tests their per-ticker models were worse than history at every
+horizon (gaps up to 79 pts). Crypto keeps the per-ticker path.
 """
 from __future__ import annotations
 
@@ -129,6 +131,28 @@ def _long_close(ticker: str, close: pd.Series) -> pd.Series:
 def _spy_df() -> pd.DataFrame | None:
     from signals.fetcher import fetch_ohlcv_dataframe
     return fetch_ohlcv_dataframe("SPY", "2y")
+
+
+def history_only_eligible(ticker: str) -> bool:
+    t = (ticker or "").upper()
+    return t in _GOLD_COMMODITY or t in _BOND_DEFENSIVE
+
+
+def predict_history_only(ticker: str, df: pd.DataFrame, horizon_key: str) -> dict[str, Any] | None:
+    """Since-2000 hit rate of the same "+N% within H days" question, or None."""
+    if not history_only_eligible(ticker) or df is None or df.empty or "close" not in df.columns:
+        return None
+    p_hist = history_rate(_long_close(ticker, df["close"]), HORIZONS[horizon_key]["days"],
+                          get_target_gain(ticker, horizon_key))
+    if p_hist is None:
+        return None
+    return {
+        "prob": round(min(max(p_hist, PROB_FLOOR), PROB_CAP), 3),
+        "prob_model": None,
+        "prob_hist": round(p_hist, 3),
+        "model_weight": 0.0,
+        "method": "history_only",
+    }
 
 
 def predict_pooled(

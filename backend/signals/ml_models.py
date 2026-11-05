@@ -266,8 +266,8 @@ def predict_all_horizons(
 
 def _pooled_prediction(ticker: str, df: pd.DataFrame, horizon_key: str) -> dict | None:
     try:
-        from signals.pooled_odds import predict_pooled
-        return predict_pooled(ticker, df, horizon_key)
+        from signals.pooled_odds import predict_history_only, predict_pooled
+        return predict_pooled(ticker, df, horizon_key) or predict_history_only(ticker, df, horizon_key)
     except Exception as exc:  # noqa: BLE001
         logger.warning("pooled odds failed for %s [%s]: %s", ticker, horizon_key, exc)
         return None

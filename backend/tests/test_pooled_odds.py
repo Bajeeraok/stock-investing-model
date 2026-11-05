@@ -106,3 +106,24 @@ def test_platt_calibration_skips_pooled_blend(monkeypatch):
     out = apply_calibration_to_ml_horizons({"short": {"prob": 0.4, "method": "pooled_blend"},
                                             "medium": {"prob": 0.4, "method": "per_ticker"}}, cfg)
     assert out["short"]["prob"] == 0.4 and out["medium"]["prob"] == 0.01
+
+
+def test_commodity_and_bond_etfs_show_history_only_odds():
+    df = _ohlcv(seed=7)
+    out = predict_all_horizons("GLD", df, inference_only=True)
+    for k, h in out.items():
+        assert h["method"] == "history_only" and h["model_weight"] == 0.0 and h["prob_model"] is None
+        days = po.HORIZONS[k]["days"]
+        assert h["prob"] == round(min(max(po.history_rate(df["close"], days, po.get_target_gain("GLD", k)), 0.02), 0.98), 3)
+    assert po.predict_history_only("TLT", df, "short")["method"] == "history_only"
+    assert po.predict_history_only("BTC-USD", df, "short") is None
+    assert po.predict_history_only("GLD", df.iloc[:50], "short") is None
+
+
+def test_platt_calibration_skips_history_only(monkeypatch):
+    import signals.probability_calibration as pc
+    monkeypatch.setattr(pc, "load_calibration_artifact", lambda p: {"short": {"a": 1, "b": -5}})
+    monkeypatch.setattr(pc, "calibrate_probability", lambda p, k, a: 0.01)
+    cfg = {"confidence": {"calibration": {"enabled": True, "path": "x"}}}
+    out = apply_calibration_to_ml_horizons({"short": {"prob": 0.4, "method": "history_only"}}, cfg)
+    assert out["short"]["prob"] == 0.4

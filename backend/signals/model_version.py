@@ -72,8 +72,12 @@ History:
   50% for 3- and 6-month; signals/pooled_odds.py), replacing per-ticker
   models for stocks; crypto, gold/commodity and bond/defensive keep per-ticker models.
   Entry thresholds unchanged. Model-check calls before this boundary are per-ticker odds.
+- 2026.11.2 — gold/commodity and bond/defensive ETFs (GLD, SLV, USO, TLT, ...) show their
+  own since-2000 history odds instead of per-ticker LightGBM, which was worse than history
+  at every horizon in 2019-2026 walk-forward tests and said 97-98% for GLD/SLV 6-month.
+  Crypto keeps per-ticker models.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.11.1"
+MODEL_VERSION = "2026.11.2"

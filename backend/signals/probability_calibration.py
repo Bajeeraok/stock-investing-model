@@ -117,7 +117,7 @@ def apply_calibration_to_ml_horizons(
             continue
         h = dict(out[key] or {})
         raw = h.get("prob")
-        if raw is not None and h.get("method") != "pooled_blend":
+        if raw is not None and h.get("method") not in ("pooled_blend", "history_only"):
             h["prob_raw"] = raw
             h["prob"] = calibrate_probability(float(raw), key, art)
         out[key] = h
