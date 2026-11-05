@@ -331,7 +331,10 @@ def run_signals(
             _df = _pd.DataFrame({"close": close})
             if volume is not None:
                 _df["volume"] = volume
-            ml_short_prob = _ml_predict(
+            from signals.fetcher import fetch_ohlcv_dataframe as _fetch_df
+            from signals.pooled_odds import predict_pooled as _pooled
+            _pooled_out = _pooled(ticker, _fetch_df(ticker, period), "short")
+            ml_short_prob = _pooled_out["prob"] if _pooled_out else _ml_predict(
                 ticker, _df,
                 force_retrain=False,
                 horizon_key="short",

@@ -243,9 +243,14 @@ def predict_all_horizons(
     Use this for the UI breakdown panel. Use predict_probability() for a single
     horizon when you only need one value (e.g. the lgbm_probability layer score).
     """
+    use_pooled = ((config or {}).get("ml_models") or {}).get("pooled_enabled", True)
     result: dict[str, dict] = {}
     for h_key, meta in HORIZONS.items():
-        prob      = predict_probability(ticker, df, force_retrain, config, h_key, inference_only)
+        pooled = _pooled_prediction(ticker, df, h_key) if use_pooled else None
+        if pooled is not None:
+            prob = pooled["prob"]
+        else:
+            prob = predict_probability(ticker, df, force_retrain, config, h_key, inference_only)
         threshold = get_target_gain(ticker, h_key)
         result[h_key] = {
             "prob":           prob,
@@ -254,8 +259,18 @@ def predict_all_horizons(
             "label":          meta["label"],
             "description":    meta["description"],
             "interpretation": _interpret_prob(prob),
+            **({k: v for k, v in pooled.items() if k != "prob"} if pooled else {"method": "per_ticker"}),
         }
     return result
+
+
+def _pooled_prediction(ticker: str, df: pd.DataFrame, horizon_key: str) -> dict | None:
+    try:
+        from signals.pooled_odds import predict_pooled
+        return predict_pooled(ticker, df, horizon_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pooled odds failed for %s [%s]: %s", ticker, horizon_key, exc)
+        return None
 
 
 VAL_SHARE_OF_TRAIN = 0.20

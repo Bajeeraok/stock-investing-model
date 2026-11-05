@@ -66,8 +66,13 @@ History:
   replaced by "above zone, trend intact"; EOD falls back to yfinance when FMP's last
   bar is stale (the 2026-10-26 snapshot carried Friday's closes). Daily latest-model
   scorecard starts here.
+- 2026.11.1 — ML horizon odds (1/3/6-month "+N% within H days") come from one pooled
+  LightGBM model trained across ~570 S&P 500 stocks, blended 30/70 with the stock's own
+  history odds for the same question (signals/pooled_odds.py), replacing per-ticker
+  models for stocks; crypto, gold/commodity and bond/defensive keep per-ticker models.
+  Entry thresholds unchanged. Model-check calls before this boundary are per-ticker odds.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.10.2"
+MODEL_VERSION = "2026.11.1"
