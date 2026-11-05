@@ -794,6 +794,9 @@ def _cap_long_tiers_at_max_add(long_h: dict, max_add: float) -> None:
         return
     if et.get("active_tier_id") in flagged:
         et["active_tier_id"] = None
+        long_h["warnings"] = [
+            w for w in long_h.get("warnings") or [] if not str(w).startswith("Inside Tier 2 band")
+        ]
     if et.get("target_tier_id") in flagged:
         et["target_tier_id"] = None
     sp = et.get("spot_position")

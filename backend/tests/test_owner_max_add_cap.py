@@ -51,9 +51,25 @@ def test_tiers_above_max_add_flagged_or_cut():
             {"id": "T3", "low": 150.0, "high": 190.0},
         ],
     })
+    p["long"]["warnings"] = ["Inside Tier 2 band but above full-size ceiling $200.00 — partial position only"]
     ez = _run(p)
     cap = ez["max_add"]
     t1, t2, t3 = p["long"]["entry_tiers"]["tiers"]
     assert t1["above_max_add"] is True and "wait" in t1["status_label"]
     assert t2["high"] == cap and t2["low"] == 200.0 and "above_max_add" not in t2
     assert t3 == {"id": "T3", "low": 150.0, "high": 190.0}
+
+
+def test_active_tier_above_max_add_clears_active_and_partial_warning():
+    p = _payload(276.28, 311.9, 260.0, -14.0)
+    p["long"]["warnings"] = ["Inside Tier 2 band but above full-size ceiling $200.00 — partial position only"]
+    p["long"]["entry_tiers"].update({
+        "active_tier_id": "T2",
+        "spot_position": {"state": "in_tier", "active_tier_id": "T2", "next_add_tier_id": "T2"},
+        "tiers": [{"id": "T2", "low": 270.0, "high": 300.0}],
+    })
+    _run(p)
+    et = p["long"]["entry_tiers"]
+    assert et["active_tier_id"] is None
+    assert et["spot_position"] == {"state": "above_max_add", "active_tier_id": None, "next_add_tier_id": None}
+    assert not any(w.startswith("Inside Tier 2 band") for w in p["long"]["warnings"])
