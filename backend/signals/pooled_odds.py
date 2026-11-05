@@ -4,9 +4,9 @@ One model trained across ~570 S&P 500 stocks replaces the small per-ticker model
 the "+N% within H trading days" question. The displayed probability is
     w * pooled_model + (1 - w) * this stock's historical hit rate for the same question,
 with w chosen per horizon by walk-forward validation (scripts/train_pooled_odds.py).
-Gold/commodity and bond/defensive ETFs show their own since-2000 history odds only: in
-2019-2026 walk-forward tests their per-ticker models were worse than history at every
-horizon (gaps up to 79 pts). Crypto keeps the per-ticker path.
+Crypto, gold/commodity and bond/defensive tickers show their own since-2000 history odds
+only: in 2019-2026 walk-forward tests their per-ticker models were worse than history
+(gaps up to 79 pts).
 """
 from __future__ import annotations
 
@@ -135,7 +135,7 @@ def _spy_df() -> pd.DataFrame | None:
 
 def history_only_eligible(ticker: str) -> bool:
     t = (ticker or "").upper()
-    return t in _GOLD_COMMODITY or t in _BOND_DEFENSIVE
+    return t.endswith("-USD") or t in _GOLD_COMMODITY or t in _BOND_DEFENSIVE
 
 
 def predict_history_only(ticker: str, df: pd.DataFrame, horizon_key: str) -> dict[str, Any] | None:

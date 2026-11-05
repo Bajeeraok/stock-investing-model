@@ -116,7 +116,8 @@ def test_commodity_and_bond_etfs_show_history_only_odds():
         days = po.HORIZONS[k]["days"]
         assert h["prob"] == round(min(max(po.history_rate(df["close"], days, po.get_target_gain("GLD", k)), 0.02), 0.98), 3)
     assert po.predict_history_only("TLT", df, "short")["method"] == "history_only"
-    assert po.predict_history_only("BTC-USD", df, "short") is None
+    assert po.predict_history_only("BTC-USD", df, "short")["method"] == "history_only"
+    assert po.predict_history_only("AAPL", df, "short") is None
     assert po.predict_history_only("GLD", df.iloc[:50], "short") is None
 
 

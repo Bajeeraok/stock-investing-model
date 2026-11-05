@@ -76,8 +76,11 @@ History:
   own since-2000 history odds instead of per-ticker LightGBM, which was worse than history
   at every horizon in 2019-2026 walk-forward tests and said 97-98% for GLD/SLV 6-month.
   Crypto keeps per-ticker models.
+- 2026.11.3 — crypto (BTC-USD, ETH-USD) odds also switch to since-inception history odds;
+  their per-ticker models lost to history at 3 and 6 months in 2019-2026 tests. Per-ticker
+  LightGBM no longer drives any displayed horizon odds unless history is unavailable.
 """
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.11.2"
+MODEL_VERSION = "2026.11.3"
