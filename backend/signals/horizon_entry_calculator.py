@@ -594,20 +594,23 @@ def _enrich_mos_ceiling_context(
         # reaching this state already implies spot is below every tier's low in practice.
         # Enrich both alike so a deep crash still gets "full MOS met at spot" framing
         # instead of only the generic T1-window copy.
-        ceiling_tier = next(
-            (t for t in sorted(all_tiers, key=lambda x: x.low) if price < t.low),
-            all_tiers[0] if all_tiers else None,
-        )
+        # Same tier the displayed long entry zone uses, so the copy never names a different band.
+        target_id = resolve_target_tier_id(all_tiers, price)
+        ceiling_tier = next((t for t in all_tiers if t.id == target_id), all_tiers[0] if all_tiers else None)
+        full = assess_verdict == "BUY"
         sp["below_all_within_mos"] = True
-        sp["label"] = "Below tier bands — full MOS met at spot"
+        sp["label"] = (
+            "Below tier bands — full MOS met at spot" if full
+            else "Below tier bands — MOS met at spot, partial size max"
+        )
         tid = ceiling_tier.id if ceiling_tier else "T2"
         tlo = ceiling_tier.low if ceiling_tier else 0.0
         thi = ceiling_tier.high if ceiling_tier else 0.0
         sp["detail"] = (
             "Spot ${:.2f} is below structural tier bands but at/below the full-size ceiling "
-            "${:.2f}. Full allocation is valuation-justified; tiers (MA200 / FV MOS / 52w stress) "
-            "are scale-in guides — not a higher minimum price. Nearest band: {} (${:.2f}–${:.2f})."
-        ).format(price, min_price_to_buy, tid, tlo, thi)
+            "${:.2f}. {} allocation is valuation-justified; tiers (MA200 / FV MOS / 52w stress) "
+            "are scale-in guides — not a higher minimum price. Next scale-in band: {} (${:.2f}–${:.2f})."
+        ).format(price, min_price_to_buy, "Full" if full else "Partial", tid, tlo, thi)
         sp["next_add_tier_id"] = tid
     elif within and sp.get("state") == "in_tier":
         sp.setdefault(

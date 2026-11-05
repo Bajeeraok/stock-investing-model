@@ -38,3 +38,13 @@ def test_full_go_on_consensus_only_fv_is_partial_size():
     entry = derive_entry_mode(gates=gates, assessment_pct=30.0, gate_cleared=True, fv_consensus_only=True)
     assert entry["entry_mode"] == "full_go" and entry["max_sizing_pct"] == 50
     assert "consensus" in entry["entry_mode_headline"]
+
+
+def test_below_tiers_copy_matches_displayed_band_and_partial_cap():
+    """SNDK-like: spot between T2 (far above) and T3 — copy names the displayed tier, not 'full allocation'."""
+    sig = _lt(current_price=800.0, fair_value=1550.0, ma200=1585.0, week52_low=180.0,
+              fv_model_suppressed=True, fv_street_anchor_usd=1550.0)
+    sp = sig.entry_tiers["spot_position"]
+    if sp.get("below_all_within_mos"):
+        assert "Full allocation" not in sp["detail"]
+        assert f"${sig.entry_zone.high:.2f})" in sp["detail"]
