@@ -824,6 +824,19 @@ def _fetch_index_etf_ohlcv_dataframe(ticker: str, period: str, min_bars: int = 6
         return None
 
 
+def _fill_blank_last_close(close: "pd.Series", sym: str) -> "pd.Series":
+    """Yahoo sometimes leaves the latest daily close blank; fill it from the live quote
+    instead of silently dropping that session."""
+    if close is None or len(close) == 0 or not pd.isna(close.iloc[-1]):
+        return close
+    fp = _fast_last_price(sym)
+    if fp is None:
+        return close
+    close = close.copy()
+    close.iloc[-1] = fp
+    return close
+
+
 def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
     """
     Download adjusted close for ticker. Returns None if insufficient data or error.
@@ -859,7 +872,7 @@ def fetch_ohlcv(ticker: str, period: str = "5y") -> pd.Series | None:
     if close is None:
         return None
 
-    close = pd.Series(close, name="close").dropna()
+    close = _fill_blank_last_close(pd.Series(close, name="close"), ticker).dropna()
     if len(close) < min_bars:
         return None
     return close
@@ -966,7 +979,7 @@ def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series 
     if close is None:
         _cache_set(key, (None, None))
         return None, None
-    close = pd.Series(close, name="close").dropna()
+    close = _fill_blank_last_close(pd.Series(close, name="close"), ticker).dropna()
     if len(close) < 20:
         _cache_set(key, (None, None))
         return None, None
@@ -1149,6 +1162,12 @@ def fetch_ohlcv_dataframe(ticker: str, period: str = "2y") -> pd.DataFrame | Non
     if high   is not None: out["high"]   = high
     if low    is not None: out["low"]    = low
     if volume is not None: out["volume"] = volume
+    filled = _fill_blank_last_close(out["close"], ticker)
+    if len(out) and pd.isna(out["close"].iloc[-1]) and not pd.isna(filled.iloc[-1]):
+        out["close"] = filled
+        for col in ("high", "low"):
+            if col in out.columns and pd.isna(out[col].iloc[-1]):
+                out.iloc[-1, out.columns.get_loc(col)] = filled.iloc[-1]
     out = out.dropna(subset=["close"])
     result_df = out if len(out) >= 60 else None
     _cache_set(key, result_df)
