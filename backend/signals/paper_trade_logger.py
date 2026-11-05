@@ -498,6 +498,11 @@ def _build_limit_paper_row(
     row["effective_entry_price"] = eff
     row["effective_entry_source"] = "limit_touch"
     row["execution_mode"] = "close_to_close"
+    # Levels were validated against spot; re-check them against the actual limit fill.
+    if (_safe_float(row.get("target_1")) or 0) and float(row["target_1"]) <= limit_px:
+        row["target_1"] = None
+    if (_safe_float(row.get("hard_stop")) or 0) and float(row["hard_stop"]) >= limit_px:
+        row["hard_stop"] = None
     return row
 
 
@@ -2392,6 +2397,13 @@ def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             win = outcome == "HIT"
 
         stop_touched = str(r.get("hit_stop") or "").strip() == "1"
+        # Older limit-fill rows kept levels checked against spot; hide ones inverted vs the fill.
+        entry_px = _safe_float(r.get("entry_price"))
+        target, stop = _safe_float(r.get("target_1")), _safe_float(r.get("hard_stop"))
+        if entry_px is not None and target is not None and target <= entry_px:
+            target = None
+        if entry_px is not None and stop is not None and stop >= entry_px:
+            stop = None
         volatile_note = (
             "stop also touched intraday that day" if (win and stop_touched) else None
         )
@@ -2402,8 +2414,8 @@ def build_ticker_trade_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
             "signal": r.get("signal"),
             "model_price": _safe_float(r.get("entry_price")),
             "fill_price": _safe_float(r.get("effective_entry_price")) or _safe_float(r.get("entry_price")),
-            "target": _safe_float(r.get("target_1")),
-            "stop": _safe_float(r.get("hard_stop")),
+            "target": target,
+            "stop": stop,
             "next_date": r.get("next_date") or None,
             # Resolved: the horizon-date close. Pending: the latest marked EOD close (mtm_price)
             # so the column isn't blank while the trade is open; mark_date says which close.

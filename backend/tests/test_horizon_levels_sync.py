@@ -79,3 +79,15 @@ def test_swing_at_or_above_2to1_keeps_setup():
     med = {"risk_reward_from_entry": 2.4, "setup_viable": True, "setup_status": "ok"}
     enforce_medium_min_rr(med)
     assert med["setup_status"] == "ok"
+
+
+def test_target_at_or_below_stop_is_dropped_as_no_setup():
+    from signals.horizon_entry_calculator import drop_target_at_or_below_stop
+
+    h = {"stop_loss": 330.26, "target": 313.26, "target_pct": -25.0, "risk_reward": 0.0, "verdict": "BUY"}
+    drop_target_at_or_below_stop(h)
+    assert h["target"] is None and h["target_pct"] is None
+    assert h["setup_status"] == "no_setup" and h["verdict"] == "WAIT"
+    ok = {"stop_loss": 90.0, "target": 120.0}
+    drop_target_at_or_below_stop(ok)
+    assert ok["target"] == 120.0 and "setup_status" not in ok

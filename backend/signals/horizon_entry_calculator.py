@@ -960,6 +960,26 @@ def _mark_horizon_no_setup(h: dict[str, Any], reason: str) -> None:
         h["conviction"] = "Low"
 
 
+def drop_target_at_or_below_stop(h: dict[str, Any]) -> None:
+    """A target at/below the stop has no reward: show No setup without a target."""
+    if not isinstance(h, dict):
+        return
+    try:
+        stop = float(h.get("stop_loss") or 0)
+        target = float(h.get("target") or 0)
+    except (TypeError, ValueError):
+        return
+    if stop > 0 and target > 0 and target <= stop:
+        _mark_horizon_no_setup(
+            h, f"No setup at this horizon — target ${target:.2f} is at or below the stop ${stop:.2f}."
+        )
+        h["target"] = None
+        h["target_pct"] = None
+        h["risk_reward"] = 0.0
+        if "risk_reward_from_entry" in h:
+            h["risk_reward_from_entry"] = 0.0
+
+
 # Plausibility cap constants for medium/long targets (see _plausibility_cap): a target must
 # be reachable within a bounded, roughly-2-sigma move from spot AND not run far past what
 # analysts already publish as their high estimate — guards against a target compounding past
@@ -2585,6 +2605,7 @@ def build_all_horizons_payload(
         analyst_target_median=analyst_target_median,
     )
     for key in ("short", "medium", "long"):
+        drop_target_at_or_below_stop(payload.get(key) or {})
         refresh_horizon_rr_from_levels(payload.get(key) or {}, current_price)
     return payload
 

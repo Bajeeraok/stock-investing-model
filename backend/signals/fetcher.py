@@ -976,6 +976,14 @@ def fetch_ohlcv_with_volume(ticker: str, period: str = "5y") -> tuple[pd.Series 
     return result
 
 
+def _fast_last_price(sym: str) -> float | None:
+    try:
+        v = float(yf.Ticker(sym).fast_info.get("lastPrice"))
+        return v if v > 0 and not pd.isna(v) else None
+    except Exception:
+        return None
+
+
 def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
     """
     Fetch latest (delayed) quote from Yahoo for multiple symbols via a single batch download.
@@ -1045,6 +1053,12 @@ def fetch_yfinance_latest_prices(symbols: list[str]) -> dict[str, float]:
                     if close_col is None or (hasattr(close_col, "empty") and close_col.empty):
                         logger.warning("[yfinance] Skipping %s: no Close column in batch", sym)
                         continue
+                    if len(close_col) and pd.isna(close_col.iloc[-1]):
+                        # Yahoo sometimes leaves today's daily bar empty; don't fall back a session.
+                        fp = _fast_last_price(sym)
+                        if fp:
+                            out[sym] = fp
+                            continue
                     last = close_col.dropna()
                     if len(last) == 0:
                         logger.warning("[yfinance] Skipping %s: empty close in batch", sym)
