@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Outside data/ so it ships in the Docker image (.dockerignore excludes data/).
 ARTIFACT_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "pooled_odds.json"
 HIST_MIN_SAMPLES = 100
+HIST_START = pd.Timestamp("2000-01-01")
 PROB_FLOOR, PROB_CAP = 0.02, 0.98
 
 
@@ -112,6 +113,19 @@ def load_artifact(path: Path | None = None) -> dict[str, Any] | None:
     return _load_artifact(str(p), p.stat().st_mtime)
 
 
+def _long_close(ticker: str, close: pd.Series) -> pd.Series:
+    """History odds are trained on closes since HIST_START; a 2y/5y frame would skew them."""
+    try:
+        from signals.fetcher import fetch_ohlcv_safe
+        full = fetch_ohlcv_safe(ticker, "max")
+    except Exception:  # noqa: BLE001
+        full = None
+    if full is None or len(full) <= len(close):
+        return close
+    full = full[full.index <= close.index[-1]]
+    return full[full.index >= HIST_START]
+
+
 def _spy_df() -> pd.DataFrame | None:
     from signals.fetcher import fetch_ohlcv_dataframe
     return fetch_ohlcv_dataframe("SPY", "2y")
@@ -144,7 +158,7 @@ def predict_pooled(
     if any(c not in row.columns for c in cols) or row[cols].isna().any(axis=None):
         return None
     p_model = float(art["models"][horizon_key].predict(row[cols].to_numpy(float))[0])
-    p_hist = history_rate(df["close"], days, gain)
+    p_hist = history_rate(_long_close(ticker, df["close"]), days, gain)
     w = float(art["weights"][horizon_key])
     prob = w * p_model + (1 - w) * (p_hist if p_hist is not None else float(art["base_rate"][horizon_key]))
     return {

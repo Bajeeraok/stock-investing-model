@@ -67,8 +67,9 @@ History:
   bar is stale (the 2026-10-26 snapshot carried Friday's closes). Daily latest-model
   scorecard starts here.
 - 2026.11.1 — ML horizon odds (1/3/6-month "+N% within H days") come from one pooled
-  LightGBM model trained across ~570 S&P 500 stocks, blended 30/70 with the stock's own
-  history odds for the same question (signals/pooled_odds.py), replacing per-ticker
+  LightGBM model trained across ~570 S&P 500 stocks on 2000+ history, blended with the
+  stock's own since-2000 history odds for the same question (model share 30% for 1-month,
+  50% for 3- and 6-month; signals/pooled_odds.py), replacing per-ticker
   models for stocks; crypto, gold/commodity and bond/defensive keep per-ticker models.
   Entry thresholds unchanged. Model-check calls before this boundary are per-ticker odds.
 """

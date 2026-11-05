@@ -18,6 +18,24 @@ def _ohlcv(n=800, seed=0, drift=0.0005):
     return pd.DataFrame({"close": c, "high": c * 1.01, "low": c * 0.99, "volume": 1e6}, index=idx)
 
 
+@pytest.fixture(autouse=True)
+def _no_network_history(monkeypatch, request):
+    if request.node.name != "test_long_close_uses_history_since_2000_up_to_the_frame_end":
+        monkeypatch.setattr(po, "_long_close", lambda ticker, close: close)
+
+
+def test_long_close_uses_history_since_2000_up_to_the_frame_end(monkeypatch):
+    full = pd.Series(1.0, index=pd.bdate_range("1995-01-02", "2026-10-23"))
+    frame = full.loc["2024-10-01":"2026-06-30"]
+    import signals.fetcher as fetcher
+    monkeypatch.setattr(fetcher, "fetch_ohlcv_safe", lambda t, period: full)
+    out = po._long_close("AAPL", frame)
+    assert out.index[0] >= po.HIST_START and out.index[0] < pd.Timestamp("2000-01-10")
+    assert out.index[-1] == frame.index[-1]
+    monkeypatch.setattr(fetcher, "fetch_ohlcv_safe", lambda t, period: None)
+    assert po._long_close("AAPL", frame) is frame
+
+
 def test_eligibility_keeps_crypto_and_defensive_on_per_ticker_path():
     assert po.pooled_eligible("COIN") and po.pooled_eligible("MSTR") and po.pooled_eligible("AAPL")
     for t in ("BTC-USD", "ETH-USD", "GLD", "TLT", ""):

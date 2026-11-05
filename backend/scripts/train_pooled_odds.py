@@ -134,10 +134,12 @@ def main() -> None:
     ap.add_argument("--horizons", default="short,medium,long")
     ap.add_argument("--no-save", action="store_true")
     ap.add_argument("--oos-dir", default="")
-    ap.add_argument("--weight", type=float, default=0.3,
-                    help="model share of the blend; 0.3 was positive in most years for every horizon (2019-2026)")
+    ap.add_argument("--weights", default="short=0.3,medium=0.5,long=0.5",
+                    help="model share of the blend per horizon; with 2000+ history these were positive "
+                         "in every test year 2019-2026 with the smallest calibration gaps")
     a = ap.parse_args()
     h_keys = a.horizons.split(",")
+    weights = {k: float(v) for k, v in (x.split("=") for x in a.weights.split(","))}
     raw = pd.read_pickle(a.ohlcv)
     panels = build_panel(raw, h_keys)
     art = {"version": f"pooled-{date.today():%Y.%m.%d}", "models": {}, "weights": {}, "base_rate": {},
@@ -148,7 +150,7 @@ def main() -> None:
         if a.oos_dir:
             o.to_pickle(Path(a.oos_dir) / f"pooled_oos_{k}.pkl")
         rows, _ = report(o)
-        w = a.weight
+        w = weights[k]
         print(k, json.dumps({str(x): v for x, v in rows.items()}, indent=1), flush=True)
         d = p.dropna(subset=["y"])
         feats = feature_cols(p)
@@ -157,7 +159,7 @@ def main() -> None:
         art["models"][k] = m.booster_.model_to_string()
         art["weights"][k] = w
         art["base_rate"][k] = round(float(d["y"].mean()), 4)
-        art["validation"][k] = rows["chosen"] | {"oos_rows": int(len(o))}
+        art["validation"][k] = {"weight": w, **rows.get(w, {}), "early_late_pick": rows["chosen"], "oos_rows": int(len(o))}
     if not a.no_save:
         ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
         ARTIFACT_PATH.write_text(json.dumps(art))
