@@ -58,7 +58,8 @@ def sync_medium_horizon_target(
     if not isinstance(med, dict):
         return
     cur = _sf(med.get("target"))
-    if cur is not None and scenario >= cur:
+    # No target means it was dropped (e.g. at/below the stop); don't refill it from fair value.
+    if cur is None or scenario >= cur:
         return
     med["target"] = round(scenario, 2)
     refresh_horizon_rr_from_levels(med, spot)

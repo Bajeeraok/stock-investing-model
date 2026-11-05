@@ -91,3 +91,11 @@ def test_target_at_or_below_stop_is_dropped_as_no_setup():
     ok = {"stop_loss": 90.0, "target": 120.0}
     drop_target_at_or_below_stop(ok)
     assert ok["target"] == 120.0 and "setup_status" not in ok
+
+
+def test_scenario_sync_does_not_refill_dropped_swing_target():
+    from signals.scenario_target import sync_medium_horizon_target
+
+    hz = {"medium": {"stop_loss": 330.26, "target": None, "setup_status": "no_setup"}}
+    sync_medium_horizon_target(hz, 463.86, spot=417.42)
+    assert hz["medium"]["target"] is None
