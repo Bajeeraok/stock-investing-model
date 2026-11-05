@@ -30,3 +30,10 @@ def test_no_price_and_attach_per_mode():
     attach_display_alerts(d)
     row = d["investor_summary"]["retail_action"]["display_by_mode"]["swing"]
     assert row["alert_level"] == 95 and row["gates_passed"] == 1
+
+
+def test_below_band_alerts_at_stop_not_band_edge_above_price():
+    h = {"entry_zone": {"low": 904.43, "high": 918.2}, "stop_loss": 820}
+    assert display_alert_level(h, [], 832.78, 0)["alert_level"] == 820
+    h["stop_loss"] = 840
+    assert display_alert_level(h, [], 832.78, 0)["alert_level"] is None

@@ -20,7 +20,7 @@ _REQ_RE = __import__("re").compile(r"(?:need|vs)\s+(\d+(?:\.\d+)?)%")
 def display_alert_level(horizon: dict | None, gates: list[dict] | None, price: float | None,
                         assessment_pct: float | None) -> dict:
     """Next price that would change the plan for one mode: the entry-band edge (or the stop when there
-    is no band); while valuation blocks, the price where it clears instead (capped at the band top)."""
+    is no band or price is already below the band); while valuation blocks, the price where it clears instead (capped at the band top)."""
     out: dict = {"alert_level": None, "alert_at_valuation": False}
     if not price or price <= 0:
         return out
@@ -28,10 +28,12 @@ def display_alert_level(horizon: dict | None, gates: list[dict] | None, price: f
     lo, hi = ez.get("low"), ez.get("high")
     has_band = bool(lo and hi and lo > 0 and hi > 0)
     level = None
-    if has_band:
+    stop = (horizon or {}).get("stop_loss")
+    if has_band and price >= lo:
         level = hi if price > hi else lo
-    elif (horizon or {}).get("stop_loss"):
-        level = horizon["stop_loss"]
+    elif stop and stop < price:
+        # Below the band (or no band): the band edge sits above price, so the next level is the stop.
+        level = stop
     val = next((g for g in (gates or []) if isinstance(g, dict) and g.get("id") == "valuation"), None)
     m = _REQ_RE.search(str((val or {}).get("detail") or ""))
     if val and not val.get("pass") and m and assessment_pct is not None and assessment_pct > -100:

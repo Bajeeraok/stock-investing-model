@@ -309,7 +309,7 @@ export function VerdictPanel({
       price > ez!.high
         ? `Price is above the ${band} entry band`
         : price < ez!.low
-          ? `Price is below the ${band} entry band`
+          ? `Price has dropped below the ${band} entry band (set at the last model close; refreshes after tonight's run)`
           : `Price is inside the ${band} entry band`;
   }
   const gateClause =
@@ -363,8 +363,9 @@ export function VerdictPanel({
 
   // ── alert level: the next price that would change the plan ───────
   let alertLevel: number | null = null;
-  if (hasBand && price != null) alertLevel = price > ez!.high ? ez!.high : ez!.low;
-  else if (horizon?.stop_loss) alertLevel = horizon.stop_loss;
+  const stop = horizon?.stop_loss;
+  if (hasBand && price != null && price >= ez!.low) alertLevel = price > ez!.high ? ez!.high : ez!.low;
+  else if (stop && (price == null || stop < price)) alertLevel = stop;
   // Valuation still locked: ping where it clears (and the band, if price is above it), not at a
   // band edge where entries would stay locked anyway.
   let alertAtValuation = valClearPrice != null && price != null && valClearPrice < price;
@@ -373,7 +374,8 @@ export function VerdictPanel({
   }
   // Prefer the backend's canonical alert (same rule, checked by the nightly audit).
   const apiDisplay = ra?.display_by_mode?.[mode];
-  if (apiDisplay?.alert_level != null && apiDisplay.alert_level > 0) {
+  // Its level uses the model-run close; skip it if the live price has since dropped below it.
+  if (apiDisplay?.alert_level != null && apiDisplay.alert_level > 0 && (price == null || apiDisplay.alert_level <= price * 1.01)) {
     alertLevel = apiDisplay.alert_level;
     alertAtValuation = !!apiDisplay.alert_at_valuation;
   }

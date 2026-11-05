@@ -80,7 +80,7 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
           planMode={detail.investor_summary.plan_mode}
           focus={allBands ? null : modeHorizon}
           focusLabel={decisionMode === "scout" ? "Scout" : decisionMode === "owner" ? "Owner" : "Swing"}
-          alertLevel={detail.investor_summary.retail_action?.display_by_mode?.[decisionMode]?.alert_level ?? null}
+          alertLevel={liveAlertLevel(detail.investor_summary.retail_action?.display_by_mode?.[decisionMode]?.alert_level, effectivePrice)}
         />
       </div>
     ) : (
@@ -315,4 +315,10 @@ export function LevelsTab({ ctx }: { ctx: TabCtx }) {
     </>
     </DensityProvider>
   );
+}
+
+/** Backend alert uses the model-run close; drop it once the live price has fallen below it. */
+function liveAlertLevel(level: number | null | undefined, price: number | null | undefined): number | null {
+  if (level == null || level <= 0) return null;
+  return price != null && price > 0 && level > price * 1.01 ? null : level;
 }
