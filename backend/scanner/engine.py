@@ -166,7 +166,8 @@ def alert_track_for_type(alert_type: AlertType | str) -> str:
         return "accumulate"
     if t in TACTICAL_ALERT_TYPES:
         return "tactical"
-    if t in (AlertType.MACRO_RISK_OFF, AlertType.MACRO_RISK_ON, AlertType.REGIME_CHANGE, AlertType.KELLY_REDUCTION):
+    if t in (AlertType.MACRO_RISK_OFF, AlertType.MACRO_RISK_ON, AlertType.REGIME_CHANGE, AlertType.KELLY_REDUCTION,
+             AlertType.RISK_OFF_WARNING):
         return "macro"
     return "accumulate"
 

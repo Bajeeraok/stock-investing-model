@@ -40,3 +40,34 @@ def test_timing_vs_hold_edge():
     assert by["ADD"]["edge_vs_hold_pct"] == round(6 - 10 / 3, 2)
     assert by["WATCH"]["edge_vs_hold_pct"] == 0.0
     assert by["ADD"]["avg_excess_vs_spy_pct"] == 1.0
+
+
+def test_risk_off_alert_fires_on_entry_only(tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    from scanner.dashboard_alerts import evaluate_risk_off_alerts
+
+    idx = pd.bdate_range("2026-01-01", periods=80)
+    up = pd.Series(np.linspace(100, 120, 80), index=idx)
+    drop = up.copy()
+    drop.iloc[-5:] = [118, 116, 114, 112, 110]
+    assert evaluate_risk_off_alerts({}, tmp_path, closes={"SPY": up, "QQQ": up}) == []
+    out = evaluate_risk_off_alerts({}, tmp_path, closes={"SPY": up, "QQQ": drop})
+    assert [a.ticker for a in out] == ["QQQ"] and out[0].type == AlertType.RISK_OFF_WARNING
+    assert "Not a sell signal" in out[0].body and "protect mode" in out[0].body
+    assert evaluate_risk_off_alerts({}, tmp_path, closes={"SPY": up, "QQQ": drop}) == []
+
+
+def test_risk_off_alert_fires_when_first_seen_risk_off(tmp_path):
+    import numpy as np
+    import pandas as pd
+
+    from scanner.dashboard_alerts import evaluate_risk_off_alerts
+
+    idx = pd.bdate_range("2026-01-01", periods=80)
+    drop = pd.Series(np.linspace(100, 120, 80), index=idx)
+    drop.iloc[-5:] = [118, 116, 114, 112, 110]
+    out = evaluate_risk_off_alerts({}, tmp_path, closes={"SPY": drop, "QQQ": drop})
+    assert sorted(a.ticker for a in out) == ["QQQ", "SPY"]
+    assert evaluate_risk_off_alerts({}, tmp_path, closes={"SPY": drop, "QQQ": drop}) == []

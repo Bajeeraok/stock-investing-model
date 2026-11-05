@@ -353,6 +353,81 @@ def evaluate_protect_mode_alerts(
     return alerts
 
 
+RISK_OFF_TICKERS = ("SPY", "QQQ")
+
+
+def _risk_off_state(close) -> tuple[bool, float, float] | None:
+    """(risk_off, 5-day return %, gap vs MA50 %): below the 50-day average after a >=3% 5-day drop."""
+    try:
+        c = close.dropna().astype(float)
+    except AttributeError:
+        return None
+    if len(c) < 56:
+        return None
+    last, ma50 = float(c.iloc[-1]), float(c.rolling(50).mean().iloc[-1])
+    ret5 = (last / float(c.iloc[-6]) - 1.0) * 100.0
+    return (last < ma50 and ret5 <= -3.0), round(ret5, 1), round((last / ma50 - 1.0) * 100.0, 1)
+
+
+def evaluate_risk_off_alerts(rows_by_ticker: dict[str, dict], data_root: Path, *, closes: dict | None = None) -> list:
+    """RISK_OFF_WARNING when SPY/QQQ newly enter the risk-off state (flip only; state in
+    alerts/risk_off_state.json; a first observation already risk-off fires once).
+
+    QQQ 1999–2026: days below MA50 after a >=3% 5-day drop were followed by a >=5% one-day fall
+    ~2.5% of the time vs ~0.3% normally since 2010 — too rare to time, so this only suggests
+    optional protect mode; the default stays HOLD.
+    """
+    import pandas as pd
+
+    from scanner.engine import _build_retail_alert
+    from signals.time_et import today_est
+
+    path = Path(data_root) / "alerts" / "risk_off_state.json"
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        state = {}
+    today = today_est()
+    alerts = []
+    for t in RISK_OFF_TICKERS:
+        close = (closes or {}).get(t)
+        if close is None:
+            from signals.fetcher import fetch_ohlcv_safe
+
+            close = fetch_ohlcv_safe(t, "1y")
+            live = (rows_by_ticker.get(t) or {}).get("close")
+            if close is not None and len(close) and live and str(close.index[-1])[:10] < str(today):
+                close = pd.concat([close, pd.Series([float(live)], index=[pd.Timestamp(str(today))])])
+        st = _risk_off_state(close)
+        if st is None:
+            continue
+        on, ret5, gap = st
+        prev = state.get(t)
+        state[t] = on
+        if not on or prev is True:
+            continue
+        head = f"{t} risk-off: below its 50-day average after a {ret5:+.1f}% week"
+        body = (
+            f"{t} is {gap:+.1f}% vs its 50-day average after a {ret5:+.1f}% 5-day move. Since 1999, QQQ days "
+            "like this were followed by a 5%+ one-day drop about 2.5% of the time (vs about 0.3% normally). "
+            "Not a sell signal — default is HOLD; consider protect mode if you want drawdown insurance."
+        )
+        alerts.append(
+            _build_retail_alert(
+                t, AlertType.RISK_OFF_WARNING, head, body, ScanTier.TIER1_CORE,
+                {"price": float(close.iloc[-1]), "ret_5d_pct": ret5, "gap_vs_ma50_pct": gap},
+                one_liner=head,
+                dedupe_extra=str(today),
+            )
+        )
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state), encoding="utf-8")
+    except Exception as e:
+        logger.debug("risk_off_state save failed: %s", e)
+    return alerts
+
+
 def run_retail_alerts_from_dashboard_refresh(
     results: list[dict],
     config: dict,
@@ -477,6 +552,11 @@ def run_retail_alerts_from_dashboard_refresh(
 
     for a in protect_alerts:
         on_alert(a)
+    try:
+        for a in evaluate_risk_off_alerts(rows_by_ticker, data_root):
+            on_alert(a)
+    except Exception as e:
+        logger.debug("risk-off alerts failed: %s", e)
 
     from signals.time_et import now_iso_et
 

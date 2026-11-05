@@ -40,6 +40,8 @@ class AlertType(str, Enum):
     # Optional protect mode flipped (stock vs own MA200 or SPY risk-off) — sizing insurance, not a sell call
     PROTECT_MODE_ON = "PROTECT_MODE_ON"
     PROTECT_MODE_OFF = "PROTECT_MODE_OFF"
+    # SPY/QQQ newly below MA50 after a >=3% 5-day drop — "consider protect mode", not a sell call
+    RISK_OFF_WARNING = "RISK_OFF_WARNING"
 
 
 class ScanTier(str, Enum):
