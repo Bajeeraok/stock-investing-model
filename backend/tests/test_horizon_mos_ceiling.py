@@ -63,3 +63,24 @@ def test_spot_above_ceiling_not_eligible():
     assert ca["min_price_to_buy"] == 150.0
     assert ca.get("within_full_mos_ceiling") is not True
     assert ca.get("full_size_eligible_at_spot") is not True
+
+
+def test_mos_is_discount_to_fair_value_not_upside():
+    """GS-like: 26% upside to FV is only a 21% discount — not the 25% MOS that min_price_to_buy requires."""
+    sig = compute_long_term_entry(
+        _long_inputs(current_price=868.0, fair_value=1097.5, ma200=950.67, week52_low=700.0, medium_entry_high=945.07)
+    )
+    ca = sig.entry_tiers["current_assessment"]
+    assert ca["min_price_to_buy"] == 823.12
+    assert ca["verdict"] != "BUY"
+    assert ca["margin_of_safety_pct"] == 20.9
+
+
+def test_tier2_stacks_under_tier1_when_both_capped_at_swing_top():
+    sig = compute_long_term_entry(
+        _long_inputs(current_price=868.0, fair_value=1097.5, ma200=950.67, week52_low=700.0, medium_entry_high=945.07)
+    )
+    t1, t2, t3 = sig.entry_tiers["tiers"]
+    assert t1["high"] == 945.07
+    assert t2["high"] <= t1["low"] + 0.01
+    assert t3["high"] < t2["low"]

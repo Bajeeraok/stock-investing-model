@@ -2036,7 +2036,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     t2_profile_note = tier2_human_class_label(mos_class)
 
     # ── Current price MOS assessment ─────────────────────────────────────
-    mos_pct          = _r((fv - p) / p * 100, 1)
+    mos_pct          = _r((fv - p) / fv * 100, 1) if fv > 0 else 0.0
     pct_above_ma200  = _r((p - inp.ma200) / inp.ma200 * 100, 1)
     min_price_to_buy = _r(fv * (1 - LT_REQUIRED_MOS_PCT / 100))
 
@@ -2130,6 +2130,11 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             "Tier 2 MOS ceiling capped to swing zone high (${:.2f}) — valuation alone would allow "
             "adds up to ${:.2f}, but owner adds never sit above the swing top.".format(mh, uncapped_hi)
         )
+        # T1 is capped at the same swing top — stack T2 under T1 instead of duplicating it
+        if tier1.high >= new_hi - 0.01 and tier2.low < tier1.high and tier1.low > tier2.low:
+            t2_hi = _r(tier1.low)
+            t2_lo = _r(t2_hi * (1 - 2 * LT_TIER2_BAND_PCT / 100))
+            tier2 = _refresh_tier_fv_metrics(replace(tier2, low=t2_lo, high=t2_hi), fv, p)
 
     tier3 = make_tier(
         "T3", "Tier 3 — Tail risk / 52w stress",

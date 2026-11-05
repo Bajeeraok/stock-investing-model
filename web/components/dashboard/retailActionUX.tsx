@@ -2177,7 +2177,7 @@ export function LongTermTierLadder({
                         🔒 Price is above zone — needs ~{Math.abs(tier.drop_needed_pct).toFixed(0)}% pullback
                       </span>
                     ) : state === "below" ? (
-                      <span className="text-slate-500">🔒 Price is below zone (not actionable yet)</span>
+                      <span className="text-slate-500">Price is below this band (cheaper); entry still needs the gates and max add.</span>
                     ) : null}
                   </p>
                 </div>
