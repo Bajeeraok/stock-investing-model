@@ -20,6 +20,7 @@ Run standalone test:
 import math
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 _BACKEND = Path(__file__).resolve().parent.parent
 if str(_BACKEND) not in sys.path:
@@ -810,6 +811,24 @@ def _cap_long_tiers_at_max_add(long_h: dict, max_add: float) -> None:
             sp["state"] = "above_max_add"
 
 
+def _reset_long_stop_under_band(long_h: dict, current_price: float, band_low: float, atr: float | None) -> None:
+    """The Owner stop always sits below the Owner band (the max-add cap or floor moves can push the band under it)."""
+    stop = long_h.get("stop_loss")
+    if stop is None or float(stop) < band_low - 0.01:
+        return
+    inv = (long_h.get("entry_tiers") or {}).get("structural_invalidation") or {}
+    new_stop, framing = _compute_long_tactical_stop(
+        current_price=current_price,
+        tier_ref=SimpleNamespace(id="Owner band", low=band_low),
+        atr=atr,
+        structural_stop=float(inv.get("price") or 0.0),
+        entry_floor=band_low,
+    )
+    long_h["stop_loss"] = new_stop
+    long_h["stop_loss_pct"] = _r((new_stop - current_price) / current_price * 100, 1)
+    long_h["stop_loss_framing"] = framing
+
+
 def _enrich_horizon_entry_zone_extras(
     payload: dict[str, Any],
     *,
@@ -817,6 +836,7 @@ def _enrich_horizon_entry_zone_extras(
     vwap: float,
     support_level: float,
     ma50: float,
+    atr: float | None = None,
 ) -> None:
     """Attach spot_position + catch levels to short/medium entry zones; cross-horizon gap detection."""
     short_ez = payload.get("short", {}).get("entry_zone") or {}
@@ -928,6 +948,7 @@ def _enrich_horizon_entry_zone_extras(
                 f"Capped at max add ${lt_hi:.2f} (margin of safety); chart band ${chart_lo:.2f}–${chart_hi:.2f}"
             )
             _cap_long_tiers_at_max_add(long_h, lt_hi)
+        _reset_long_stop_under_band(long_h, current_price, lt_lo, atr)
         levels = build_entry_band_levels(lt_lo, lt_hi)
         long_ez["levels"] = levels or [
             {"id": "mos_cap", "label": f"MOS cap · max add ${cap:.2f}", "price": round(cap, 2), "role": "entry", "sort": 1}
@@ -2615,6 +2636,7 @@ def build_all_horizons_payload(
         vwap=vwap,
         support_level=support_level,
         ma50=ma50,
+        atr=atr,
     )
     _flag_cross_horizon_invariants(payload)
     for key in ("short", "medium", "long"):

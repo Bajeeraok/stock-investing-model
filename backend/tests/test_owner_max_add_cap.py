@@ -80,3 +80,23 @@ def test_tier3_straddling_max_add_is_cut():
     p["long"]["entry_tiers"]["tiers"] = [{"id": "T3", "low": 150.0, "high": 300.0}]
     ez = _run(p)
     assert p["long"]["entry_tiers"]["tiers"][0]["high"] == ez["max_add"]
+
+
+def test_stop_moves_below_capped_band():
+    """GS-like: band capped down to $782–823 but the tactical stop ($806) was set under the old T2."""
+    p = {
+        "short": {"entry_zone": {"low": 860.0, "high": 870.0}},
+        "medium": {"entry_zone": {"low": 856.0, "high": 869.0}},
+        "long": {
+            "fair_value": 1097.5,
+            "stop_loss": 805.92,
+            "entry_zone": {"low": 848.95, "high": 945.05},
+            "entry_tiers": {"current_assessment": {"margin_of_safety_pct": 20.8},
+                            "structural_invalidation": {"price": 716.3}},
+        },
+    }
+    _enrich_horizon_entry_zone_extras(p, current_price=869.0, vwap=868.0, support_level=850.0, ma50=900.0, atr=25.0)
+    lh = p["long"]
+    assert lh["entry_zone"]["high"] == 823.12
+    assert lh["stop_loss"] < lh["entry_zone"]["low"]
+    assert lh["stop_loss_pct"] < 0 and "Owner band" in lh["stop_loss_framing"]
