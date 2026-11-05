@@ -1,7 +1,7 @@
 """Live quote overlay — batch FMP or yfinance; keeps ohlcv_close for indicators."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 
@@ -106,29 +106,55 @@ def overlay_detail_current_price(detail: dict[str, Any], live: float, *, source:
     """Refresh header price on cached ticker detail without full recompute."""
     if live <= 0 or not isinstance(detail, dict):
         return
-    prior = detail.get("ohlcv_close") or detail.get("current_price")
     if detail.get("current_price") is not None and detail.get("ohlcv_close") is None:
         try:
             detail["ohlcv_close"] = float(detail["current_price"])
-            prior = detail["ohlcv_close"]
         except (TypeError, ValueError):
             pass
     detail["current_price"] = live
     detail["live_price"] = live
     detail["live_price_source"] = source
     detail["live_price_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    detail["daily_move_pct"] = _daily_move_vs_prior_session(detail, live)
+
+
+def _prior_session_close(detail: dict[str, Any], now: datetime | None = None) -> float | None:
+    """Close of the session before the one the live quote belongs to, taken from the build's price
+    history. None when the build is too old to contain it (a stale page), so today's move is never
+    measured from a close several days back."""
+    from zoneinfo import ZoneInfo
+
+    from signals.market_calendar import is_nyse_holiday
+
     hist = detail.get("price_history") or []
-    if prior is not None and len(hist) >= 2:
-        try:
-            last_c = float(hist[-1].get("close") or 0)
-            if last_c > 0 and abs(last_c - float(prior)) / last_c < 1e-4:
-                prior = float(hist[-2].get("close") or 0) or prior
-        except (TypeError, ValueError, AttributeError):
-            pass
-    if prior is not None:
-        try:
-            p0 = float(prior)
-            if p0 > 0:
-                detail["daily_move_pct"] = round((live - p0) / p0 * 100.0, 2)
-        except (TypeError, ValueError):
-            pass
+    if len(hist) < 2:
+        return None
+    try:
+        last_d = date.fromisoformat(str(hist[-1]["date"])[:10])
+        last_c, prev_c = float(hist[-1]["close"]), float(hist[-2]["close"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    now = now or datetime.now(ZoneInfo("America/New_York"))
+    if str(detail.get("ticker") or "").upper().endswith("-USD"):
+        session, before = now.date(), now.date() - timedelta(days=1)
+    else:
+        def _back(d: date) -> date:
+            d -= timedelta(days=1)
+            while d.weekday() >= 5 or is_nyse_holiday(d):
+                d -= timedelta(days=1)
+            return d
+
+        session = now.date()
+        if session.weekday() >= 5 or is_nyse_holiday(session) or (now.hour, now.minute) < (9, 30):
+            session = _back(session)
+        before = _back(session)
+    if last_d == session:
+        return prev_c if prev_c > 0 else None
+    if last_d == before:
+        return last_c if last_c > 0 else None
+    return None
+
+
+def _daily_move_vs_prior_session(detail: dict[str, Any], live: float, now: datetime | None = None) -> float | None:
+    p0 = _prior_session_close(detail, now)
+    return round((live - p0) / p0 * 100.0, 2) if p0 else None

@@ -835,6 +835,9 @@ def set_cached_bands(ticker: str, bands: dict, ttl_seconds: int | None = None) -
 TTL_TICKER_DETAIL_LAST = 36 * 3600  # last good build — served instantly while a fresh one builds
 _DETAIL_REFRESHING: set[str] = set()
 _DETAIL_REFRESH_LOCK = threading.Lock()
+# Each rebuild is a full ticker-page compute; unbounded parallel rebuilds (e.g. many stale pages
+# opened at once) exhaust the Railway container. Over the cap we keep serving the last good build.
+_DETAIL_REFRESH_SLOTS = threading.BoundedSemaphore(2)
 
 
 def _store_ticker_detail(key: str, last_key: str, out: Any) -> None:
@@ -847,6 +850,8 @@ def _refresh_ticker_detail_bg(key: str, last_key: str, fetch_fn) -> None:
     with _DETAIL_REFRESH_LOCK:
         if key in _DETAIL_REFRESHING:
             return
+        if not _DETAIL_REFRESH_SLOTS.acquire(blocking=False):
+            return
         _DETAIL_REFRESHING.add(key)
 
     def _run() -> None:
@@ -857,6 +862,7 @@ def _refresh_ticker_detail_bg(key: str, last_key: str, fetch_fn) -> None:
         finally:
             with _DETAIL_REFRESH_LOCK:
                 _DETAIL_REFRESHING.discard(key)
+            _DETAIL_REFRESH_SLOTS.release()
 
     threading.Thread(target=_run, daemon=True, name=f"detail-refresh-{key[-24:]}").start()
 

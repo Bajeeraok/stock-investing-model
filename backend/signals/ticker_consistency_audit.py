@@ -656,6 +656,7 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
 
         config = config or load_config()
         rows: dict[str, dict] = {}
+        full_universe = tickers is None
         if tickers is None:
             from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
 
@@ -695,14 +696,15 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
         p.write_text(json.dumps(report, default=str))
         (p.parent / f"ticker_consistency_{date.today().isoformat()}.json").write_text(json.dumps(report, default=str))
         logger.info("[ticker-audit] %d tickers, %s in %.0fs", len(tickers), report["counts"], report["duration_s"])
-        try:
-            from signals.best_setups import build_report, publish_new_picks, save_report
+        if full_universe:  # a spot-check of a few tickers must not replace the full Best setups list
+            try:
+                from signals.best_setups import build_report, publish_new_picks, save_report
 
-            bs = build_report(details)
-            save_report(bs)
-            publish_new_picks(bs)
-        except Exception:
-            logger.exception("[ticker-audit] best setups build failed")
+                bs = build_report(details)
+                save_report(bs)
+                publish_new_picks(bs)
+            except Exception:
+                logger.exception("[ticker-audit] best setups build failed")
         try:
             from signals.model_odds_check import build_model_check, save_model_check
 
