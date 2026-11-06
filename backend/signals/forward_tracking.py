@@ -866,11 +866,17 @@ def build_model_check_short(records: list[dict[str, Any]]) -> dict[str, Any]:
     target vs the 20-day path (current model version and all versions)."""
     from signals.forward_tracking_metrics import build_error_summary, build_prob_calibration
 
+    from signals.model_version import ODDS_MODEL_SINCE, odds_model_is_current
+
     done = [r for r in records if r.get("horizon_days") == 20 and r.get("forward_status") == "complete"]
     cur = [r for r in done if str(r.get("model_version") or "legacy") == MODEL_VERSION]
+    odds_new = [r for r in done if odds_model_is_current(r.get("model_version"))]
+    odds_old = [r for r in done if not odds_model_is_current(r.get("model_version"))]
     return {
         "odds": build_prob_calibration(done),
         "odds_current": build_prob_calibration(cur),
+        "odds_by_model": {"current": build_prob_calibration(odds_new), "previous": build_prob_calibration(odds_old)},
+        "odds_model_since": ODDS_MODEL_SINCE,
         "target": build_error_summary(done),
         "target_current": build_error_summary(cur),
         "current_model_version": MODEL_VERSION,

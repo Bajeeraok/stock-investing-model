@@ -111,3 +111,55 @@ def test_model_verdict_and_trust_gate():
     assert sc["skill_pct"] > 0 and verdict(sc) == "proven"
     assert model_trusted("medium", {"horizons": {"medium": sc}})
     assert not model_trusted("long", {"horizons": {"medium": sc}})
+
+
+def test_odds_model_version_boundary():
+    from signals.model_version import odds_model_is_current
+
+    assert odds_model_is_current("2026.11.1") and odds_model_is_current("2026.11.10")
+    assert odds_model_is_current("2027.1.1")
+    assert not odds_model_is_current("2026.10.2")
+    assert not odds_model_is_current("legacy") and not odds_model_is_current(None)
+
+
+def test_model_check_splits_calls_by_odds_model(tmp_path, monkeypatch):
+    import sqlite3
+
+    from signals.model_odds_check import build_model_check, model_trusted, score_calls
+
+    monkeypatch.setenv("DATA_ROOT", str(tmp_path))
+    idx = pd.bdate_range("2026-01-01", periods=80)
+    bars = pd.DataFrame({"close": [100.0] * 40 + [120.0] * 40}, index=idx)
+    with sqlite3.connect(tmp_path / "signal_audit.db") as conn:
+        conn.execute("CREATE TABLE signal_events (ticker TEXT, signal_date TEXT, ml_short_prob REAL, "
+                     "ml_medium_prob REAL, ml_long_prob REAL, model_version TEXT, source TEXT)")
+        rows = [("AAA", idx[0].date().isoformat(), 0.6, None, None, "2026.10.2", "live"),
+                ("AAA", idx[1].date().isoformat(), 0.7, None, None, None, "live"),
+                ("AAA", idx[30].date().isoformat(), 0.4, None, None, "2026.11.1", "live"),
+                ("AAA", idx[75].date().isoformat(), 0.3, 0.5, None, "2026.11.3", "live")]
+        conn.executemany("INSERT INTO signal_events VALUES (?,?,?,?,?,?,?)", rows)
+    rep = build_model_check(fetch=lambda t, period: bars)
+    sm = rep["by_model"]["short"]
+    assert sm["previous"]["n"] == 2 and sm["current"]["n"] == 1
+    assert sm["current_logged"] == 2 and sm["current_first_date"] == idx[30].date().isoformat()
+    assert rep["horizons"]["short"]["n"] == 3
+    md = rep["by_model"]["medium"]
+    assert md["current"] is None and md["previous"] is None and md["current_logged"] == 1
+
+    good = [(80.0, i % 5 != 0) for i in range(200)] + [(20.0, i % 5 == 0) for i in range(200)]
+    proven = score_calls(good)
+    assert model_trusted("short", {"horizons": {"short": proven}, "by_model": {"short": {"current": None, "previous": proven}}}) is False
+    assert model_trusted("short", {"horizons": {"short": None}, "by_model": {"short": {"current": proven}}})
+
+
+def test_model_check_short_splits_forward_records_by_odds_model():
+    from signals.forward_tracking import build_model_check_short
+
+    def rec(v, p, ret):
+        return {"ticker": "AAA", "horizon_days": 20, "forward_status": "complete", "model_version": v,
+                "ml_short_prob": p, "actual_return_pct": ret}
+
+    out = build_model_check_short([rec("2026.10.2", 0.6, 1.0), rec(None, 0.7, 6.0), rec("2026.11.2", 0.3, 7.0)])
+    assert out["odds"]["n"] == 3
+    assert out["odds_by_model"]["previous"]["n"] == 2 and out["odds_by_model"]["current"]["n"] == 1
+    assert out["odds_model_since"] == "2026.11.1"

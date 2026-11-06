@@ -84,3 +84,20 @@ History:
 from __future__ import annotations
 
 MODEL_VERSION = "2026.11.3"
+
+# First version whose horizon odds come from the pooled model + history blend (signals/pooled_odds.py).
+# Model check splits calls at this boundary; later versions changed only non-stock odds.
+ODDS_MODEL_SINCE = "2026.11.1"
+
+
+def _version_key(v: str) -> tuple[int, ...] | None:
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except ValueError:
+        return None
+
+
+def odds_model_is_current(version: str | None) -> bool:
+    """True if a call was made by the current horizon-odds model (version >= ODDS_MODEL_SINCE)."""
+    k = _version_key(version) if version else None
+    return k is not None and k >= _version_key(ODDS_MODEL_SINCE)

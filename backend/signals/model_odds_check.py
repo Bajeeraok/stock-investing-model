@@ -71,6 +71,9 @@ def verdict(sc: dict[str, Any] | None) -> str:
 def model_trusted(horizon_key: str, report: dict | None = None) -> bool:
     """Model odds may drive ranking only once its own horizon's check says proven."""
     rep = report if report is not None else load_model_check()
+    by_model = ((rep or {}).get("by_model") or {}).get(horizon_key)
+    if isinstance(by_model, dict):
+        return verdict(by_model.get("current")) == "proven"
     sc = ((rep or {}).get("horizons") or {}).get(horizon_key)
     return verdict(sc) == "proven"
 
@@ -94,22 +97,24 @@ def outcomes_for_ticker(rows: list[tuple[str, float]], bars, days: int, gain_pct
 def build_model_check(fetch=None) -> dict[str, Any]:
     from config_loader import get_data_root
     from signals.ml_models import HORIZONS, get_target_gain
+    from signals.model_version import ODDS_MODEL_SINCE, odds_model_is_current
 
     if fetch is None:
         from signals.fetcher import fetch_ohlcv_dataframe as fetch
     db = get_data_root() / "signal_audit.db"
-    res: dict[str, Any] = {"horizons": {}}
+    res: dict[str, Any] = {"horizons": {}, "by_model": {}, "odds_model_since": ODDS_MODEL_SINCE}
     if not db.exists():
         return res
     with sqlite3.connect(db, timeout=30) as conn:
         rows = conn.execute(
-            "SELECT DISTINCT ticker, signal_date, ml_short_prob, ml_medium_prob, ml_long_prob FROM signal_events "
-            "WHERE source = 'live' ORDER BY ticker, signal_date"
+            "SELECT DISTINCT ticker, signal_date, ml_short_prob, ml_medium_prob, ml_long_prob, model_version "
+            "FROM signal_events WHERE source = 'live' ORDER BY ticker, signal_date"
         ).fetchall()
     by_ticker: dict[str, list[tuple]] = {}
-    for t, d, sh, m, lg in rows:
-        by_ticker.setdefault(str(t).upper(), []).append((d, sh, m, lg))
-    calls: dict[str, list[tuple[float, bool]]] = {k: [] for k in _COLS}
+    for t, d, sh, m, lg, mv in rows:
+        by_ticker.setdefault(str(t).upper(), []).append((d, sh, m, lg, mv))
+    calls: dict[str, dict[str, list[tuple[float, bool]]]] = {k: {"current": [], "previous": []} for k in _COLS}
+    logged: dict[str, list[str]] = {k: [] for k in _COLS}
     for t, items in by_ticker.items():
         if t.endswith("-USD"):
             continue
@@ -118,15 +123,25 @@ def build_model_check(fetch=None) -> dict[str, Any]:
         except Exception:
             bars = None
         for k, col_i in (("short", 1), ("medium", 2), ("long", 3)):
-            seen: dict[str, float] = {}
+            seen: dict[str, dict[str, float]] = {"current": {}, "previous": {}}
             for it in items:
                 p = _pct(it[col_i])
                 if p is not None:
-                    seen[it[0]] = p
+                    era = "current" if odds_model_is_current(it[4]) else "previous"
+                    seen[era][it[0]] = p
+            logged[k].extend(seen["current"])
             days = int(HORIZONS[k]["days"])
-            calls[k].extend(outcomes_for_ticker(sorted(seen.items()), bars, days, get_target_gain(t, k) * 100.0))
+            gain = get_target_gain(t, k) * 100.0
+            for era, by_day in seen.items():
+                calls[k][era].extend(outcomes_for_ticker(sorted(by_day.items()), bars, days, gain))
     for k, c in calls.items():
-        res["horizons"][k] = score_calls(c)
+        res["horizons"][k] = score_calls(c["current"] + c["previous"])
+        res["by_model"][k] = {
+            "current": score_calls(c["current"]),
+            "previous": score_calls(c["previous"]),
+            "current_logged": len(logged[k]),
+            "current_first_date": min(logged[k]) if logged[k] else None,
+        }
     return res
 
 
