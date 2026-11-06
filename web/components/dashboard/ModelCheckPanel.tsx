@@ -197,6 +197,7 @@ export function ModelCheckPanel() {
   const t = s?.target;
   const bm = data.by_model ?? null;
   const sbm = s?.odds_by_model ?? null;
+  const shortSplit = sbm && (sbm.current || sbm.previous) ? sbm : (bm?.short ?? null);
   return (
     <div className="space-y-3">
       <div>
@@ -209,8 +210,8 @@ export function ModelCheckPanel() {
       <HorizonCard
         title="1 month"
         question={`${gains} within 20 trading days (threshold depends on the stock)`}
-        cal={sbm ? sbm.current : (s?.odds ?? data.short_audit)}
-        previous={sbm ? sbm.previous : undefined}
+        cal={shortSplit ? shortSplit.current : (s?.odds ?? data.short_audit)}
+        previous={shortSplit ? (shortSplit.previous ?? null) : undefined}
         logged={bm?.short?.current_logged}
         since={bm?.short?.current_first_date}
         days={20}
