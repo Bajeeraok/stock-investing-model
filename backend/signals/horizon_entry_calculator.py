@@ -2213,6 +2213,36 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
     # numbers: entry_zone.low (harmonized) vs tiers[T1].low (raw MA200 anchor).
     if display_tier is tier1 and entry_zone.low < tier1.low - 1e-6:
         tier1.low = entry_zone.low
+    # Price fell through the higher tiers but is still under the full-size ceiling: the owner
+    # band sits at spot (down to the swing floor); the lower tier stays a stress level only.
+    spot_band = (
+        active_tier is None
+        and bool(spot_position.get("below_all_within_mos"))
+        and display_tier.high < p
+        and min_price_to_buy >= p
+    )
+    if spot_band:
+        nearer = [v for v in (inp.medium_entry_low, inp.short_entry_low) if v is not None and 0 < v < p]
+        el = _r(nearer[0]) if nearer else _r(p * (1 - LT_MOS_CAPPED_BAND_PCT / 100))
+        entry_zone = EntryZone(
+            el,
+            _r(p),
+            anchor="At spot — under the full-size ceiling ${:.2f}; {} ${:.2f}–${:.2f} is a stress level only".format(
+                min_price_to_buy, display_tier.id, display_tier.low, display_tier.high
+            ),
+            quality="In Zone",
+            quality_color=assess_color,
+        )
+        spot_position = dict(spot_position)
+        spot_position["spot_band"] = {"low": entry_zone.low, "high": entry_zone.high}
+        spot_position["detail"] = (
+            "Spot ${:.2f} is below the higher tier bands but at/below the full-size ceiling ${:.2f}. "
+            "{} allocation is valuation-justified at spot; owner band ${:.2f}–${:.2f}. "
+            "{} (${:.2f}–${:.2f}) is a stress level only."
+        ).format(
+            p, min_price_to_buy, "Full" if assess_verdict == "BUY" else "Partial",
+            entry_zone.low, entry_zone.high, display_tier.id, display_tier.low, display_tier.high,
+        )
     if spot_position.get("state") == "between_tiers":
         detail = spot_position.get("detail")
         if detail:
@@ -2273,7 +2303,10 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         )
         inv_kind = "52w_stress_floor"
 
-    tier_ref = active_tier or display_tier or tier1
+    tier_ref = (
+        SimpleNamespace(id="Owner band", low=entry_zone.low) if spot_band
+        else (active_tier or display_tier or tier1)
+    )
     stop_loss, tactical_framing = _compute_long_tactical_stop(
         current_price=p,
         tier_ref=tier_ref,
@@ -2360,8 +2393,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             p,
             min_price_to_buy,
             "full size justified" if assess_verdict == "BUY" else "partial size OK",
-            display_tier.id,
-            display_tier.high,
+            "owner band" if spot_band else display_tier.id,
+            entry_zone.high if spot_band else display_tier.high,
         )
     elif spot_position.get("state") == "at_or_below_ceiling":
         trigger = (

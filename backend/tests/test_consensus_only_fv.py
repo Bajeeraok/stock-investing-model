@@ -40,11 +40,13 @@ def test_full_go_on_consensus_only_fv_is_partial_size():
     assert "consensus" in entry["entry_mode_headline"]
 
 
-def test_below_tiers_copy_matches_displayed_band_and_partial_cap():
-    """SNDK-like: spot between T2 (far above) and T3 — copy names the displayed tier, not 'full allocation'."""
+
+def test_fell_through_higher_tiers_owner_band_sits_at_spot():
+    """SNDK-like: spot under full-size ceiling, T1/T2 far above, T3 at a 50% drop — owner band is at spot."""
     sig = _lt(current_price=800.0, fair_value=1550.0, ma200=1585.0, week52_low=180.0,
-              fv_model_suppressed=True, fv_street_anchor_usd=1550.0)
-    sp = sig.entry_tiers["spot_position"]
-    if sp.get("below_all_within_mos"):
-        assert "Full allocation" not in sp["detail"]
-        assert f"${sig.entry_zone.high:.2f})" in sp["detail"]
+              fv_model_suppressed=True, fv_street_anchor_usd=1550.0, medium_entry_low=785.0)
+    ez, sp = sig.entry_zone, sig.entry_tiers["spot_position"]
+    assert (ez.low, ez.high) == (785.0, 800.0)
+    assert sig.stop_loss < ez.low
+    assert "Full allocation" not in sp["detail"] and "stress level only" in sp["detail"]
+    assert _tier(sig, "T3")["high"] < ez.low
