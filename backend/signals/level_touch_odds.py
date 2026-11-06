@@ -289,11 +289,13 @@ def score_level_odds(dates: list[str], rows_by_date: dict[str, dict[str, dict[st
                     pred = (lvl.get(f"w{w}") or {}).get("p")
                     if pred is None or not price:
                         continue
-                    bars = bars_from_index(dates, i, w, tk, rows_by_date)
-                    touched = any((b.get("low") or b.get("close") or 1e18) <= float(price) for b in bars)
-                    if not touched and i + w >= len(dates):
+                    # Score only once the whole window has passed: resolving early touches while
+                    # misses wait would count only hits (a "100% happened" survivorship bias).
+                    if i + w >= len(dates):
                         pending += 1
                         continue
+                    bars = bars_from_index(dates, i, w, tk, rows_by_date)
+                    touched = any((b.get("low") or b.get("close") or 1e18) <= float(price) for b in bars)
                     pooled.setdefault(w, []).append((float(pred), touched))
                     by_tk.setdefault(tk, {}).setdefault(w, []).append((float(pred), touched))
     return {

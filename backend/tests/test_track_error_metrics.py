@@ -50,7 +50,10 @@ def test_level_odds_log_and_score():
     rows = {d: {"AAA": {"close": 100.0, "low": 99.0}} for d in dates}
     rows["d00"]["AAA"]["level_odds"] = {"levels": [{"price": 98.0, "w20": {"p": 70}, "w63": {"p": 90}}]}
     rows["d05"]["AAA"]["low"] = 97.5
+    rows["d01"]["AAA"]["level_odds"] = {"levels": [{"price": 90.0, "w20": {"p": 40}}]}
+    rows["d20"]["AAA"]["level_odds"] = {"levels": [{"price": 98.0, "w20": {"p": 70}}]}
     out = score_level_odds(dates, rows)
-    assert out["pooled"]["20"]["actual_hit_pct"] == 100.0
-    assert out["pooled"]["63"]["actual_hit_pct"] == 100.0
-    assert out["pending"] == 0
+    # d00 touched, d01 missed; d00's 63d window and d20's 20d window haven't finished — even touched ones wait.
+    assert out["pooled"]["20"]["n"] == 2 and out["pooled"]["20"]["actual_hit_pct"] == 50.0
+    assert "63" not in out["pooled"]
+    assert out["pending"] == 2
