@@ -343,6 +343,23 @@ def run_signals(
         except Exception:
             pass  # graceful — ML column simply shows N/A
 
+        # 3-/6-month odds (same pooled/history path as ticker pages), logged for Model check.
+        ml_medium_prob: float | None = None
+        ml_long_prob: float | None = None
+        try:
+            from signals.fetcher import fetch_ohlcv_dataframe as _fetch_df
+            from signals.pooled_odds import predict_history_only as _hist_only
+            from signals.pooled_odds import predict_pooled as _pooled
+
+            _hz_df = _fetch_df(ticker, period)
+            _hz = {}
+            for _hk in ("medium", "long"):
+                _o = _pooled(ticker, _hz_df, _hk) or _hist_only(ticker, _hz_df, _hk)
+                _hz[_hk] = _o["prob"] if _o else None
+            ml_medium_prob, ml_long_prob = _hz["medium"], _hz["long"]
+        except Exception:
+            pass
+
         # ── Per-ticker HMM regime (bull probability) — feeds the retail-gate "Market
         # Weather" gate. Without this, gates fall back to the single market-wide
         # regime bucket shared by every ticker (see retail_action_payload._global_regime_bull_pct),
@@ -599,6 +616,8 @@ def run_signals(
             # ML short-term probability — LightGBM inference from cached model (0-1)
             # None when no model trained yet; never triggers training during dashboard load
             "ml_short_prob": ml_short_prob,
+            "ml_medium_prob": ml_medium_prob,
+            "ml_long_prob": ml_long_prob,
             "regime": regime,
             "regime_bull_pct": regime_bull_pct,
             "signal": signal,

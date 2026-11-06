@@ -225,7 +225,7 @@ export function ModelCheckPanel() {
         logged={bm?.medium?.current_logged}
         since={bm?.medium?.current_first_date}
         days={60}
-        pending="Saving daily 3-month odds since Nov 4. First results after 60 trading days."
+        pending="No 3-month calls saved yet. First results 60 trading days after the first saved call."
       />
       <HorizonCard
         title="6 months · used by Owner"
@@ -235,7 +235,7 @@ export function ModelCheckPanel() {
         logged={bm?.long?.current_logged}
         since={bm?.long?.current_first_date}
         days={120}
-        pending="Saving daily 6-month odds since Nov 4. First results after 120 trading days."
+        pending="No 6-month calls saved yet. First results 120 trading days after the first saved call."
       />
       {t && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-3 text-[13px] text-slate-300">
