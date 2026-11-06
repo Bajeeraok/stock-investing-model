@@ -4299,7 +4299,7 @@ async def get_model_check():
     short = (ft or {}).get("model_check_short") if isinstance(ft, dict) else None
     if short is None:
         _ensure_forward_tracking_refresh()
-    if short is None and isinstance(ft, dict) and ft.get("records"):
+    if (short is None or "odds_by_model" not in short) and isinstance(ft, dict) and ft.get("records"):
         from signals.forward_tracking import build_model_check_short
 
         short = build_model_check_short(ft["records"])
