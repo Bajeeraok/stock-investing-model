@@ -52,6 +52,7 @@ def pre_open_outlook(
     vix_level: float | None = None,
     vix_pct: float | None = None,
     engine_bias: str | None = None,
+    ref_label: str = "yesterday",
 ) -> dict[str, Any] | None:
     """Expected open gap ≈ S&P futures move since yesterday's close → full-day odds from GAP_TABLE."""
     if es_pct is None:
@@ -83,7 +84,7 @@ def pre_open_outlook(
         "engine_bias": engine_bias,
         "note": (
             f"On {n} past days with a similar open, SPY closed red {p_red * 100:.0f}% of the time; "
-            f"80% closed between {q10:+.2f}% and {q90:+.2f}% vs yesterday."
+            f"80% closed between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
         ),
     }
 
@@ -92,6 +93,7 @@ def intraday_close_range(
     move_so_far_pct: float,
     minutes_since_open: float,
     vix_prev: float | None,
+    ref_label: str = "yesterday",
 ) -> dict[str, Any] | None:
     if vix_prev is None or vix_prev <= 0:
         return None
@@ -112,7 +114,7 @@ def intraday_close_range(
         "p_close_green": round(p_green, 2),
         "note": (
             f"With {max(0, SESSION_MIN - int(minutes_since_open))} min left, 80% of similar days "
-            f"closed between {lo:+.2f}% and {hi:+.2f}% vs yesterday."
+            f"closed between {lo:+.2f}% and {hi:+.2f}% vs {ref_label}."
         ),
     }
 
@@ -160,6 +162,38 @@ def _spy_today(now) -> tuple[float | None, float | None, float | None]:
     return float(prev["Close"].iloc[-1]), float(today["Close"].iloc[-1]), float(today["Open"].iloc[0])
 
 
+def _prev_session(d: date) -> date:
+    from signals.market_calendar import is_nyse_holiday
+
+    d -= timedelta(days=1)
+    while d.weekday() >= 5 or is_nyse_holiday(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def _ref_close_date(now) -> date:
+    """Session whose close the pulse is measured against (the latest close before the next open)."""
+    from signals.market_calendar import is_nyse_holiday
+
+    d = now.date()
+    if d.weekday() < 5 and not is_nyse_holiday(d) and now.hour * 60 + now.minute >= 960:
+        return d
+    return _prev_session(d)
+
+
+def _close_label(d: date) -> str:
+    return f"{d:%b} {d.day} close"
+
+
+def _pre_open_scorable(c: dict) -> bool:
+    """Only calls saved before the 9:30 ET open count; earlier builds saved them after the open."""
+    try:
+        t = datetime.fromisoformat(str(c.get("as_of")))
+    except (TypeError, ValueError):
+        return False
+    return t.tzinfo is not None and (t.hour, t.minute) < (9, 30)
+
+
 def _phase(now) -> str:
     if now.weekday() >= 5:
         return "closed"
@@ -193,7 +227,9 @@ def log_call(day: str, slot: str, payload: dict, *, overwrite: bool = False) -> 
     data = _load_day(day)
     if slot in data and not overwrite:
         return False
-    data[slot] = {**payload, "logged_at": datetime.now().isoformat(timespec="seconds")}
+    from signals.time_et import now_et
+
+    data[slot] = {**payload, "logged_at": now_et().isoformat(timespec="seconds")}
     p = _calls_dir() / f"{day}.json"
     tmp = p.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, default=str))
@@ -217,6 +253,10 @@ def score_days(calls: dict[str, dict], realized: dict[str, dict]) -> dict[str, A
                 continue
             a = agg[slot]
             a["n"] += 1
+            if slot == "pre_open" and not _pre_open_scorable(c):
+                a["n"] -= 1
+                row["pre_open"] = {"lean": c.get("lean"), "hit": None, "in_range": None, "late": True}
+                continue
             if slot == "pre_open":
                 p_red = c.get("p_close_red")
                 rng = c.get("eod_range_pct") or {}
@@ -229,7 +269,8 @@ def score_days(calls: dict[str, dict], realized: dict[str, dict]) -> dict[str, A
                 row["pre_open"] = {"lean": called, "p_close_red": p_red, "range": [lo, hi], "hit": hit, "in_range": inr}
             else:
                 lo, hi = (c.get("range80_pct") or [None, None])[:2]
-                called = "GREEN" if (c.get("p_close_green") or 0.5) >= 0.5 else "RED"
+                pg = c.get("p_close_green")
+                called = "GREEN" if (0.5 if pg is None else pg) >= 0.5 else "RED"
                 hit = (full > 0) if called == "GREEN" else (full < 0)
                 inr = lo is not None and hi is not None and lo <= full <= hi
                 row[slot] = {"call": called, "likely_close_pct": c.get("likely_close_pct"), "range": [lo, hi], "hit": hit, "in_range": inr}
@@ -319,6 +360,11 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
         logger.debug("market_pulse VIX failed: %s", e)
     vix_pct = round((vix_last / vix_prev - 1) * 100, 1) if vix_prev and vix_last else None
 
+    ref_day = _ref_close_date(now)
+    ref_label = _close_label(ref_day)
+    out["ref_close_date"] = ref_day.isoformat()
+    stamp = {"as_of": out["as_of"], "ref_close_date": ref_day.isoformat()}
+
     stored = _load_day(day)
     pre = stored.get("pre_open")
     if phase == "pre_open" or pre is None:
@@ -329,9 +375,13 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                 es_pct = (es_last / es_prev - 1) * 100
         except Exception as e:
             logger.debug("market_pulse ES failed: %s", e)
-        live_pre = pre_open_outlook(es_pct, vix_last, vix_pct, _engine_bias_today(day))
+        live_pre = pre_open_outlook(es_pct, vix_last, vix_pct, _engine_bias_today(day), ref_label)
+        if live_pre:
+            live_pre.update(stamp)
         if phase == "pre_open" and live_pre:
             pre = live_pre
+            if log and now.weekday() < 5:
+                log_call(day, "pre_open", live_pre, overwrite=True)
         elif pre is None and live_pre:
             # Evenings/weekends: show the next-session preview only once futures have traded
             # past the last SPY session (else ES "change" is just the last day's move).
@@ -341,8 +391,8 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                     pre = {**live_pre, "preview": True}
             except Exception:
                 pass
-            if log and now.weekday() < 5:
-                log_call(day, "pre_open", live_pre, overwrite=True)
+    if pre and not pre.get("ref_close_date"):
+        pre = {**pre, "ref_close_date": _prev_session(now.date()).isoformat()}
     out["pre_open"] = pre
 
     intraday = None
@@ -353,7 +403,12 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                 mins = (now.hour * 60 + now.minute) - 570
                 # prior-session VIX close sets the day's volatility scale
                 vix_ref = vix_prev if phase == "intraday" else vix_prev
-                intraday = intraday_close_range((last / prev_close - 1) * 100, min(mins, SESSION_MIN), vix_ref)
+                sess_ref = _prev_session(now.date())
+                intraday = intraday_close_range(
+                    (last / prev_close - 1) * 100, min(mins, SESSION_MIN), vix_ref, _close_label(sess_ref)
+                )
+                if intraday:
+                    intraday.update(as_of=out["as_of"], ref_close_date=sess_ref.isoformat())
                 if intraday and open_px:
                     intraday["actual_gap_pct"] = round((open_px / prev_close - 1) * 100, 2)
                 if intraday and log and phase == "intraday":

@@ -25,13 +25,16 @@ def test_intraday_range_narrows_through_the_day():
     assert mp.intraday_close_range(0.1, 30, vix_prev=None) is None
 
 
+PRE = "2026-10-30T09:20:01-04:00"
+
+
 def test_score_days():
     calls = {
         "2026-10-30": {
-            "pre_open": {"lean": "BEARISH", "p_close_red": 0.86, "eod_range_pct": {"q10": -2.15, "q90": 0.12}},
+            "pre_open": {"lean": "BEARISH", "p_close_red": 0.86, "eod_range_pct": {"q10": -2.15, "q90": 0.12}, "as_of": PRE},
             "10:30": {"p_close_green": 0.1, "likely_close_pct": -1.3, "range80_pct": [-2.2, -0.4]},
         },
-        "2026-10-29": {"pre_open": {"lean": "MIXED", "p_close_red": 0.47, "eod_range_pct": {"q10": -0.67, "q90": 0.71}}},
+        "2026-10-29": {"pre_open": {"lean": "MIXED", "p_close_red": 0.47, "eod_range_pct": {"q10": -0.67, "q90": 0.71}, "as_of": PRE}},
     }
     realized = {"2026-10-30": {"gap_pct": -1.04, "full_pct": -1.77}, "2026-10-29": {"gap_pct": 0.1, "full_pct": -0.38}}
     sc = mp.score_days(calls, realized)
@@ -47,3 +50,54 @@ def test_log_call_roundtrip(tmp_path, monkeypatch):
     assert mp.log_call("2026-11-02", "pre_open", {"lean": "MIXED"})
     assert not mp.log_call("2026-11-02", "pre_open", {"lean": "BEARISH"})
     assert mp._load_day("2026-11-02")["pre_open"]["lean"] == "MIXED"
+
+
+def test_pre_open_saved_after_open_is_not_scored():
+    calls = {
+        "2026-11-05": {
+            "pre_open": {"lean": "BEARISH", "p_close_red": 0.88, "eod_range_pct": {"q10": -5.13, "q90": 0.19}},
+            "10:30": {"p_close_green": 0.0, "likely_close_pct": -2.51, "range80_pct": [-3.0, -2.02]},
+        },
+        "2026-11-04": {"pre_open": {"lean": "BULLISH", "p_close_red": 0.05, "as_of": "2026-11-04T10:31:00-05:00"}},
+    }
+    realized = {"2026-11-05": {"gap_pct": -0.17, "full_pct": -4.41}, "2026-11-04": {"gap_pct": 1.15, "full_pct": 1.65}}
+    sc = mp.score_days(calls, realized)
+    assert sc["summary"]["pre_open"]["days"] == 0 and sc["summary"]["pre_open"]["direction_calls"] == 0
+    assert sc["days"][0]["pre_open"]["late"] and sc["days"][0]["pre_open"]["hit"] is None
+    # p_close_green == 0.0 is a RED call, not "missing"
+    assert sc["days"][0]["10:30"]["call"] == "RED" and sc["days"][0]["10:30"]["hit"] is True
+
+
+def test_ref_close_date_skips_weekends_and_holidays():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    d = lambda *a: mp._ref_close_date(datetime(*a, tzinfo=et)).isoformat()
+    assert d(2026, 11, 6, 8, 15) == "2026-11-05"   # Fri pre-open → Thu close
+    assert d(2026, 11, 9, 8, 15) == "2026-11-06"   # Mon pre-open → Fri close
+    assert d(2026, 11, 6, 17, 0) == "2026-11-06"   # Fri evening → today's close
+    assert d(2026, 11, 7, 12, 0) == "2026-11-06"   # Saturday → Fri close
+    assert d(2026, 11, 27, 8, 0) == "2026-11-25"   # Fri after Thanksgiving → Wed close
+    assert mp._close_label(mp._prev_session(datetime(2026, 11, 6).date())) == "Nov 5 close"
+
+
+def test_pre_open_logged_only_before_open(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    et = ZoneInfo("America/New_York")
+    monkeypatch.setattr(mp, "_calls_dir", lambda: tmp_path)
+    monkeypatch.setattr(mp, "_daily_last_two", lambda sym: (100.0, 98.0))
+    monkeypatch.setattr(mp, "_spy_today", lambda now: (None, None, None))
+    monkeypatch.setattr(mp, "_engine_bias_today", lambda day: None)
+    monkeypatch.setattr(mp, "_last_bar_date", lambda sym: None)
+
+    mp.build_market_pulse(log=True, now=datetime(2026, 11, 5, 10, 31, tzinfo=et))
+    assert "pre_open" not in mp._load_day("2026-11-05")
+
+    out = mp.build_market_pulse(log=True, now=datetime(2026, 11, 6, 9, 20, tzinfo=et))
+    saved = mp._load_day("2026-11-06")["pre_open"]
+    assert saved["as_of"].startswith("2026-11-06T09:20") and mp._pre_open_scorable(saved)
+    assert saved["ref_close_date"] == "2026-11-05" and "vs Nov 5 close" in saved["note"]
+    assert out["pre_open"]["ref_close_date"] == "2026-11-05"

@@ -17,6 +17,8 @@ interface PreOpen {
   engine_bias?: string | null;
   note: string;
   preview?: boolean;
+  as_of?: string;
+  ref_close_date?: string;
 }
 interface Intraday {
   move_so_far_pct: number;
@@ -25,6 +27,8 @@ interface Intraday {
   p_close_green: number;
   actual_gap_pct?: number;
   note: string;
+  as_of?: string;
+  ref_close_date?: string;
 }
 interface SlotSummary {
   days: number;
@@ -36,12 +40,13 @@ interface ScoredDay {
   date: string;
   actual_gap_pct?: number | null;
   actual_close_pct: number;
-  pre_open?: { lean: string; hit: boolean | null; in_range: boolean };
+  pre_open?: { lean: string; hit: boolean | null; in_range: boolean | null; late?: boolean };
   "10:30"?: { call: string; hit: boolean; in_range: boolean };
   "12:30"?: { call: string; hit: boolean; in_range: boolean };
 }
 export interface MarketPulse {
   as_of: string;
+  ref_close_date?: string;
   phase: "pre_open" | "intraday" | "closed";
   pre_open: PreOpen | null;
   intraday: Intraday | null;
@@ -55,6 +60,21 @@ const tone = (lean?: string) =>
   lean === "BEARISH" ? "text-red-400" : lean === "BULLISH" ? "text-emerald-400" : "text-slate-300";
 const mark = (v: boolean | null | undefined) =>
   v == null ? <span className="text-slate-600">—</span> : v ? <span className="text-emerald-400">✓</span> : <span className="text-red-400">✗</span>;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "2026-11-05" → "Nov 5 close"; falls back to "yesterday" when the date is unknown. */
+const closeLabel = (d?: string | null) => {
+  const m = d && /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])} close` : "yesterday";
+};
+/** ISO timestamp → "Nov 6, 8:18 AM ET". */
+const asOfEt = (iso?: string | null) => {
+  if (!iso) return null;
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return null;
+  return `${t.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`;
+};
+const withDate = (note: string, label: string) => note.replace(/vs yesterday/g, `vs ${label}`);
 
 /** SPY pre-open odds + intraday likely-close range + how past calls held up. */
 export function MarketPulseCard() {
@@ -82,6 +102,9 @@ export function MarketPulseCard() {
   const intra = data.intraday;
   const sum = data.scorecard?.summary;
   const days = data.scorecard?.days ?? [];
+  const preRef = closeLabel(pre?.ref_close_date ?? data.ref_close_date);
+  const intraRef = closeLabel(intra?.ref_close_date);
+  const hasLate = days.some((d) => d.pre_open?.late);
 
   return (
     <div className="space-y-3 text-sm">
@@ -98,12 +121,15 @@ export function MarketPulseCard() {
               </span>
             )}
           </div>
+          <p className="text-[13px] text-slate-500 mt-0.5">
+            As of {asOfEt(pre.as_of ?? data.as_of) ?? "—"} · compared with SPY&apos;s {preRef}
+          </p>
           <p className="text-[13px] text-slate-400 mt-1 tabular-nums">
-            Likely close {pct(pre.eod_range_pct.q10)} to {pct(pre.eod_range_pct.q90)} vs yesterday (median {pct(pre.eod_range_pct.q50)}).
+            Likely close {pct(pre.eod_range_pct.q10)} to {pct(pre.eod_range_pct.q90)} vs {preRef} (median {pct(pre.eod_range_pct.q50)}).
             {pre.risk_reasons.length > 0 && ` ${pre.risk_reasons.join(" · ")}.`}
             {pre.engine_bias && ` Engine: ${pre.engine_bias}.`}
           </p>
-          <p className="text-[13px] text-slate-500 mt-0.5">{pre.note}</p>
+          <p className="text-[13px] text-slate-500 mt-0.5">{withDate(pre.note, preRef)}</p>
         </div>
       )}
       {intra && (
@@ -124,7 +150,10 @@ export function MarketPulseCard() {
               </>
             )}
           </div>
-          {data.phase === "intraday" && <p className="text-[13px] text-slate-500 mt-0.5">{intra.note}</p>}
+          <p className="text-[13px] text-slate-500 mt-0.5">
+            As of {asOfEt(intra.as_of ?? data.as_of) ?? "—"} · % vs SPY&apos;s {intraRef}
+          </p>
+          {data.phase === "intraday" && <p className="text-[13px] text-slate-500 mt-0.5">{withDate(intra.note, intraRef)}</p>}
         </div>
       )}
       {!pre && !intra && <p className="text-[13px] text-slate-500">No pulse yet — pre-open read starts ~4 AM ET on trading days.</p>}
@@ -162,7 +191,10 @@ export function MarketPulseCard() {
                   {days.slice(0, 10).map((d) => (
                     <tr key={d.date} className="border-b border-slate-800 text-slate-300">
                       <td className="py-1 pr-2 font-mono">{d.date}</td>
-                      <td className={clsx("py-1 pr-2", tone(d.pre_open?.lean))}>{d.pre_open?.lean ?? "—"}</td>
+                      <td className={clsx("py-1 pr-2", d.pre_open?.late ? "text-slate-500" : tone(d.pre_open?.lean))}>
+                        {d.pre_open?.lean ?? "—"}
+                        {d.pre_open?.late && "*"}
+                      </td>
                       <td className="py-1 pr-2">{pct(d.actual_gap_pct)}</td>
                       <td className={clsx("py-1 pr-2", d.actual_close_pct >= 0 ? "text-emerald-400" : "text-red-400")}>{pct(d.actual_close_pct)}</td>
                       <td className="py-1 pr-2">{mark(d.pre_open?.hit)}</td>
@@ -178,6 +210,11 @@ export function MarketPulseCard() {
           <p className="text-[13px] text-slate-500">Scoring starts after the first logged trading day (calls saved at 9:20, 10:31 and 12:31 ET).</p>
         )}
       </div>
+      {hasLate && (
+        <p className="text-[13px] text-slate-500">
+          * Saved after the open by an earlier version (it already saw the first hour), so not scored. Pre-open calls are now saved at 9:20 ET.
+        </p>
+      )}
       <p className="text-[13px] text-slate-500">{data.disclaimer} MIXED pre-open calls aren&apos;t scored for direction.</p>
     </div>
   );
