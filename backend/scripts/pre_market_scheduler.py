@@ -154,9 +154,11 @@ def report_to_dict(report: PreMarketReport) -> dict:
                 "direction": s.direction,
                 "confidence": s.confidence,
                 "note": s.note or "",
+                "as_of": s.as_of,
+                "stale": s.stale,
             }
             for s in report.signals
-            if s.confidence > 0
+            if s.confidence > 0 or s.stale
         ],
     }
 

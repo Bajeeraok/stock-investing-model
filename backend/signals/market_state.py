@@ -102,10 +102,9 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
 
     next_day_summary = None
     if next_day:
-        notes = [r.get("display_note") for r in next_day if r.get("display_note")]
         weak = sum(1 for r in next_day if r.get("edge_strength") == "none")
         if weak >= max(2, len(next_day) // 2):
-            next_day_summary = notes[0] if notes else "Next-day edge is minimal across benchmarks — tape-driven session."
+            next_day_summary = "Next-day edge is minimal across benchmarks — follow levels, not predictions."
         elif all((r.get("bias") or "Neutral") == "Neutral" for r in next_day):
             next_day_summary = "All benchmarks neutral — coin-flip setup; use trigger levels instead of directional bets."
 

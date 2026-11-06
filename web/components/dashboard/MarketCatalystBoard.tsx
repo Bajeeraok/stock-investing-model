@@ -63,7 +63,16 @@ export interface MarketCatalystBoard {
   as_of_et?: string;
   summary_line?: string;
   scheduled_today?: MarketCatalystScheduled[];
-  live_tape?: { name: string; raw_value: string; direction: string; score: number; category?: string }[];
+  live_tape?: {
+    name: string;
+    raw_value: string;
+    direction: string;
+    score: number;
+    category?: string;
+    stale?: boolean;
+    as_of?: string | null;
+  }[];
+  live_tape_as_of?: string | null;
   tensions?: MarketCatalystTension[];
   flip_narratives?: MarketCatalystFlip[];
   intraday?: MarketCatalystIntraday | null;
@@ -113,6 +122,11 @@ export function MarketCatalystBoardPanel({
 
   const scheduled = board.scheduled_today ?? [];
   const live = board.live_tape ?? [];
+  const tapeAsOf = (() => {
+    const t = board.live_tape_as_of ? new Date(board.live_tape_as_of) : null;
+    if (!t || Number.isNaN(t.getTime())) return null;
+    return `${t.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`;
+  })();
   const tensions = board.tensions ?? [];
   const flips = compact ? [] : board.flip_narratives ?? [];
 
@@ -187,7 +201,8 @@ export function MarketCatalystBoardPanel({
       {live.length > 0 && (
         <div>
           <p className="text-[13px] font-medium text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-            <Zap className="h-3 w-3" /> Live tape (moving now)
+            <Zap className="h-3 w-3" /> Pre-market movers
+            {tapeAsOf && <span className="normal-case tracking-normal font-normal">· as of {tapeAsOf}</span>}
           </p>
           <div className="flex flex-wrap gap-2">
             {live.map((d) => (
@@ -198,12 +213,19 @@ export function MarketCatalystBoardPanel({
                   d.direction === "Bullish" && "border-emerald-500/30 text-emerald-400 bg-emerald-500/5",
                   d.direction === "Bearish" && "border-red-500/30 text-red-400 bg-red-500/5",
                   d.direction === "Neutral" && "border-slate-600 text-slate-400",
+                  d.stale && "border-dashed text-slate-500",
                 )}
+                title={d.stale ? "Last session's move, not today's; left out of the pre-market score" : undefined}
               >
                 {d.name.split("(")[0].trim()}: {d.raw_value}
               </span>
             ))}
           </div>
+          <p className="text-[12px] text-slate-500 mt-1.5">
+            Green/red = good/bad for stocks, not the move&apos;s direction (e.g. falling gold reads green). Not refreshed
+            after the open.
+            {live.some((d) => d.stale) && " Grey dashed = no trading yet today; last session's move, not scored."}
+          </p>
         </div>
       )}
 

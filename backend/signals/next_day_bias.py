@@ -4,18 +4,27 @@ State = trend (above/below 20/50 MA), RSI zone, vol regime.
 """
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from .fetcher import fetch_ohlcv_safe
 from .indicators import compute_indicators
 
 
-def _state(row: pd.Series, vol_20d: float | None) -> tuple[str, str, str]:
+VOL_HIGH_RATIO = 1.25
+VOL_LOW_RATIO = 0.8
+MIN_STATE_N = 60
+MIN_EDGE_PTS = 3.0
+MIN_EDGE_Z = 2.0
+
+
+def _state(row: pd.Series, vol_20d: float | None, vol_60d: float | None = None) -> tuple[str, str, str]:
     """
     (trend, rsi_zone, vol_regime).
     trend: above_both | above_20 | below_20 | below_both
     rsi_zone: oversold | neutral | overbought
-    vol_regime: low | normal | high (from vol_20d vs 60d if available; else normal)
+    vol_regime: low | normal | high — 20-day vs 60-day daily-return volatility (normal if either is missing)
     """
     c = row.get("close")
     ma20 = row.get("MA20")
@@ -46,10 +55,12 @@ def _state(row: pd.Series, vol_20d: float | None) -> tuple[str, str, str]:
         rsi_zone = "neutral"
 
     vol_regime = "normal"
-    if vol_20d is not None and vol_20d > 0.25:
-        vol_regime = "high"
-    elif vol_20d is not None and vol_20d < 0.12:
-        vol_regime = "low"
+    if vol_20d and vol_60d and vol_60d > 0:
+        ratio = vol_20d / vol_60d
+        if ratio > VOL_HIGH_RATIO:
+            vol_regime = "high"
+        elif ratio < VOL_LOW_RATIO:
+            vol_regime = "low"
 
     return trend, rsi_zone, vol_regime
 
@@ -86,7 +97,8 @@ def run_next_day_backtest(
     for i in range(min_history, len(df) - 1):
         row = df.iloc[i]
         v20 = float(vol_20d.iloc[i]) if i < len(vol_20d) and pd.notna(vol_20d.iloc[i]) else None
-        trend, rsi_zone, vol_regime = _state(row, v20)
+        v60 = float(vol_60d.iloc[i]) if i < len(vol_60d) and pd.notna(vol_60d.iloc[i]) else None
+        trend, rsi_zone, vol_regime = _state(row, v20, v60)
         key = _build_state_key(trend, rsi_zone, vol_regime)
 
         next_ret = returns.iloc[i + 1]
@@ -139,58 +151,68 @@ def get_next_day_bias(
     row = df.iloc[-1]
     ret = close.pct_change().dropna()
     vol_20 = float(ret.iloc[-20:].std()) if len(ret) >= 20 else None
-    trend, rsi_zone, vol_regime = _state(row, vol_20)
+    vol_60 = float(ret.iloc[-60:].std()) if len(ret) >= 60 else None
+    trend, rsi_zone, vol_regime = _state(row, vol_20, vol_60)
     state_key = _build_state_key(trend, rsi_zone, vol_regime)
 
     if backtest_stats is None:
         bt = run_next_day_backtest(ticker, period="5y")
         backtest_stats = bt.get("state_stats") or {}
 
-    stats = backtest_stats.get(state_key)
-    if not stats:
-        # Fallback: use closest state or overall average
-        for k, v in backtest_stats.items():
-            stats = v
-            break
+    return _bias_from_stats(state_key, backtest_stats)
 
-    if not stats:
-        return {"bias": "Neutral", "pct_green": None, "avg_return_pct": None, "typical_range_pct": None, "state_key": state_key}
+
+def _bias_from_stats(state_key: str, backtest_stats: dict) -> dict:
+    """Compare the state's green rate with the ticker's overall green rate (same 5y sample)."""
+    empty = {
+        "bias": "Neutral", "pct_green": None, "avg_return_pct": None, "typical_range_pct": None,
+        "state_key": state_key, "edge_strength": "none", "n": 0, "base_pct_green": None, "edge_pts": None,
+    }
+    tot = sum(int(v.get("n") or 0) for v in backtest_stats.values())
+    if tot <= 0:
+        return {**empty, "display_note": "No history for this ticker."}
+    base = sum(int(v.get("n") or 0) * float(v.get("pct_green") or 0) for v in backtest_stats.values()) / tot
+    base = round(base, 1)
+    stats = backtest_stats.get(state_key)
+    n = int((stats or {}).get("n") or 0)
+    if not stats or n < MIN_STATE_N:
+        return {
+            **empty, "n": n, "base_pct_green": base,
+            "display_note": f"Only {n} past days in this setup — too few to say anything.",
+        }
 
     pct_green = stats.get("pct_green")
     avg_ret = stats.get("avg_return_pct")
     std_ret = stats.get("std_return_pct") or 0.5
+    edge = round(float(pct_green) - base, 1)
+    b = min(max(base / 100.0, 0.01), 0.99)
+    se = 100.0 * math.sqrt(b * (1 - b) / n)
+    z = edge / se if se > 0 else 0.0
 
-    if pct_green is not None:
-        if pct_green >= 55:
-            bias = "Bullish"
-        elif pct_green <= 45:
-            bias = "Bearish"
-        else:
-            bias = "Neutral"
+    if abs(edge) < MIN_EDGE_PTS or abs(z) < MIN_EDGE_Z:
+        bias, edge_strength = "Neutral", "none"
+        display_note = (
+            f"{pct_green}% green on {n} similar days vs {base}% on all days — within noise, no edge."
+        )
     else:
-        bias = "Neutral"
-
-    typical_range = round(1.3 * std_ret, 2) if std_ret else None  # ~80% band
-
-    edge_strength = "none"
-    display_note = None
-    if pct_green is not None:
-        if 47 <= pct_green <= 53:
-            edge_strength = "none"
-            display_note = "Next-day edge is minimal — no strong directional signal. Follow levels, not predictions."
-        elif pct_green >= 58 or pct_green <= 42:
-            edge_strength = "moderate"
-        else:
-            edge_strength = "weak"
+        bias = "Bullish" if edge > 0 else "Bearish"
+        edge_strength = "moderate" if abs(edge) >= 6 and abs(z) >= 2.5 else "weak"
+        display_note = (
+            f"{pct_green}% green on {n} similar days vs {base}% on all days ({edge:+.1f} pts). "
+            "In-sample history, not tested on future days."
+        )
 
     return {
         "bias": bias,
         "pct_green": pct_green,
         "avg_return_pct": avg_ret,
-        "typical_range_pct": typical_range,
+        "typical_range_pct": round(1.3 * std_ret, 2) if std_ret else None,  # ~80% band
         "state_key": state_key,
         "edge_strength": edge_strength,
         "display_note": display_note,
+        "n": n,
+        "base_pct_green": base,
+        "edge_pts": edge,
     }
 
 

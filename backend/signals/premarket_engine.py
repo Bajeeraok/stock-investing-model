@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from enum import Enum
 from typing import Optional
 import time
@@ -43,6 +44,8 @@ class PreMarketSignal:
     direction: str  # "Bullish" | "Bearish" | "Neutral"
     confidence: float  # 0.0 to 1.0
     note: Optional[str] = None
+    as_of: Optional[str] = None  # date of the latest bar behind raw_value
+    stale: bool = False  # latest bar is from a prior session → excluded from the composite
 
 
 @dataclass
@@ -73,6 +76,64 @@ def _prior_and_last(close) -> tuple[Optional[float], Optional[float]]:
     return prev, last
 
 
+def _session_ref_date() -> date:
+    """Most recent weekday (ET): bars older than this are a prior session's move."""
+    from signals.time_et import now_et
+
+    d = now_et().date()
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def _last_bar_date(close) -> Optional[date]:
+    try:
+        return close.index[-1].date()
+    except Exception:
+        return None
+
+
+def _mark_stale(sig: "PreMarketSignal", bar_date: Optional[date]) -> "PreMarketSignal":
+    """Tag with its bar date; a prior-session move is labelled and dropped from the composite."""
+    if bar_date is None or sig.confidence <= 0:
+        return sig
+    sig.as_of = bar_date.isoformat()
+    if bar_date < _session_ref_date():
+        sig.stale = True
+        sig.confidence = 0
+        sig.score = 0.0
+        sig.direction = "Neutral"
+        sig.raw_value = f"{sig.raw_value} ({bar_date:%b} {bar_date.day})"
+        sig.note = "Last session's move, not today's — left out of the score."
+    return sig
+
+
+def _us_listed_move(sym: str) -> tuple[Optional[float], Optional[date]]:
+    """US stock/ETF % move: today's session if it has opened, else pre-market price vs prior close."""
+    close = fetch_ohlcv_safe(sym, "5d")
+    prev, last = _prior_and_last(close)
+    d = _last_bar_date(close)
+    if prev is None or last is None or d is None:
+        return None, None
+    today = _session_ref_date()
+    if d >= today:
+        return _pct(prev, last), d
+    try:
+        bars = yf.download(sym, period="1d", interval="5m", prepost=True, progress=False, threads=False)
+        if bars is not None and not bars.empty:
+            if hasattr(bars.columns, "levels"):
+                bars.columns = [c[0] if isinstance(c, tuple) else c for c in bars.columns]
+            px = bars["Close"].dropna()
+            if px.index.tz is not None:
+                px.index = px.index.tz_convert("America/New_York")
+            px = px[px.index.date == today]
+            if len(px):
+                return _pct(last, float(px.iloc[-1])), today
+    except Exception:
+        pass
+    return _pct(prev, last), d
+
+
 def _score_to_direction(score: float) -> str:
     if score > 0.15:
         return "Bullish"
@@ -93,10 +154,10 @@ def _fetch_futures() -> list[PreMarketSignal]:
             out.append(PreMarketSignal(name=name, score=0, weight=weight, raw_value="N/A", direction="Neutral", confidence=0, note="No data"))
             continue
         score = max(-1, min(1, pct / 1.5))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name=name, score=score, weight=weight, raw_value=f"{pct:+.2f}% ({sym})",
             direction=_score_to_direction(score), confidence=1.0
-        ))
+        ), _last_bar_date(close)))
         time.sleep(0.2)
     return out
 
@@ -104,8 +165,9 @@ def _fetch_futures() -> list[PreMarketSignal]:
 # ─── International (20%: Europe live + Asia close) ──────────────────────────
 def _fetch_international() -> list[PreMarketSignal]:
     out = []
-    # Proxies: EWG (Germany), EWJ (Japan) — Asia close from prior day
-    for name, sym, w in [("Europe (EWG proxy)", "EWG", 0.10), ("Asia close (EWJ proxy)", "EWJ", 0.10)]:
+    # Local indexes: DAX trades during US pre-market; Nikkei closes ~1:30 AM ET the same date.
+    # (US-listed EWG/EWJ have no bar for today before 9:30, so they showed yesterday's move.)
+    for name, sym, w in [("Europe (DAX)", "^GDAXI", 0.10), ("Asia close (Nikkei 225)", "^N225", 0.10)]:
         close = fetch_ohlcv_safe(sym, "5d")
         prev, last = _prior_and_last(close)
         pct = _pct(prev, last) if (prev and last) else None
@@ -113,10 +175,10 @@ def _fetch_international() -> list[PreMarketSignal]:
             out.append(PreMarketSignal(name=name, score=0, weight=w, raw_value="N/A", direction="Neutral", confidence=0))
             continue
         score = max(-1, min(1, pct / 2.0))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name=name, score=score, weight=w, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0
-        ))
+        ), _last_bar_date(close)))
         time.sleep(0.2)
     return out
 
@@ -148,11 +210,11 @@ def _fetch_volatility() -> list[PreMarketSignal]:
     combined = (level_score * 0.6 + dir_score * 0.4)
     combined = max(-1, min(1, combined))
     raw = f"VIX {level:.1f} ({change:+.1f})"
-    out.append(PreMarketSignal(
+    out.append(_mark_stale(PreMarketSignal(
         name="VIX level + direction", score=combined, weight=0.10, raw_value=raw,
         direction=_score_to_direction(combined), confidence=1.0,
         note="Level and intraday direction scored separately then combined."
-    ))
+    ), _last_bar_date(close)))
     return out
 
 
@@ -167,10 +229,10 @@ def _fetch_rates() -> list[PreMarketSignal]:
     pct = _pct(prev, last)
     # Yield up = bearish for equities (rate up = discount rate up)
     score = -max(-1, min(1, (pct or 0) / 5.0))
-    out.append(PreMarketSignal(
+    out.append(_mark_stale(PreMarketSignal(
         name="10Y Treasury yield", score=score, weight=0.12,
         raw_value=f"{last:.2f}% ({pct:+.2f}% chg)", direction=_score_to_direction(score), confidence=1.0
-    ))
+    ), _last_bar_date(tnx)))
     return out
 
 
@@ -183,10 +245,10 @@ def _fetch_currencies() -> list[PreMarketSignal]:
     pct = _pct(prev, last) if (prev and last) else None
     if pct is not None:
         score = -max(-1, min(1, pct / 1.0))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name="DXY", score=score, weight=0.04, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0
-        ))
+        ), _last_bar_date(dxy)))
     else:
         out.append(PreMarketSignal(name="DXY", score=0, weight=0.04, raw_value="N/A", direction="Neutral", confidence=0))
     time.sleep(0.2)
@@ -196,11 +258,11 @@ def _fetch_currencies() -> list[PreMarketSignal]:
     pct = _pct(prev, last) if (prev and last) else None
     if pct is not None:
         score = max(-1, min(1, pct / 1.0))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name="USD/JPY (Yen inverted)", score=score, weight=0.04, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0,
             note="USD/JPY up = yen weakening = risk-on = bullish."
-        ))
+        ), _last_bar_date(jpy)))
     else:
         out.append(PreMarketSignal(name="USD/JPY", score=0, weight=0.04, raw_value="N/A", direction="Neutral", confidence=0))
     return out
@@ -215,10 +277,10 @@ def _fetch_commodities() -> list[PreMarketSignal]:
     pct = _pct(prev, last) if (prev and last) else None
     if pct is not None:
         score = max(-1, min(1, pct / 2.0))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name="Copper", score=score, weight=0.033, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0
-        ))
+        ), _last_bar_date(cp)))
     else:
         out.append(PreMarketSignal(name="Copper", score=0, weight=0.033, raw_value="N/A", direction="Neutral", confidence=0))
     time.sleep(0.2)
@@ -228,10 +290,10 @@ def _fetch_commodities() -> list[PreMarketSignal]:
     pct = _pct(prev, last) if (prev and last) else None
     if pct is not None:
         score = -max(-1, min(1, pct / 1.5))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name="Gold", score=score, weight=0.033, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0
-        ))
+        ), _last_bar_date(gld)))
     else:
         out.append(PreMarketSignal(name="Gold", score=0, weight=0.033, raw_value="N/A", direction="Neutral", confidence=0))
     time.sleep(0.2)
@@ -256,10 +318,10 @@ def _fetch_commodities() -> list[PreMarketSignal]:
             score = -0.2
             note = "Sharp drop = demand concern."
         score = max(-1, min(1, score))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name="Crude Oil (non-linear)", score=score, weight=0.034, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0, note=note
-        ))
+        ), _last_bar_date(crude)))
     else:
         out.append(PreMarketSignal(name="Crude Oil", score=0, weight=0.034, raw_value="N/A", direction="Neutral", confidence=0))
     return out
@@ -270,17 +332,21 @@ def _fetch_crypto_megacap() -> list[PreMarketSignal]:
     out = []
     tickers = [("BTC-USD", "Bitcoin", 0.015), ("ETH-USD", "Ethereum", 0.01), ("AAPL", "AAPL", 0.008), ("MSFT", "MSFT", 0.007), ("NVDA", "NVDA", 0.01)]
     for sym, label, w in tickers:
-        close = fetch_ohlcv_safe(sym, "5d")
-        prev, last = _prior_and_last(close)
-        pct = _pct(prev, last) if (prev and last) else None
+        if sym.endswith("-USD"):
+            close = fetch_ohlcv_safe(sym, "5d")
+            prev, last = _prior_and_last(close)
+            pct = _pct(prev, last) if (prev and last) else None
+            bar_d = _last_bar_date(close)
+        else:
+            pct, bar_d = _us_listed_move(sym)
         if pct is None:
             out.append(PreMarketSignal(name=label, score=0, weight=w, raw_value="N/A", direction="Neutral", confidence=0))
             continue
         score = max(-1, min(1, pct / 2.0))
-        out.append(PreMarketSignal(
+        out.append(_mark_stale(PreMarketSignal(
             name=label, score=score, weight=w, raw_value=f"{pct:+.2f}%",
             direction=_score_to_direction(score), confidence=1.0
-        ))
+        ), bar_d))
         time.sleep(0.2)
     return out
 

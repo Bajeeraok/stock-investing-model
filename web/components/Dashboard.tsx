@@ -1663,9 +1663,15 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       <span key={o.ticker}>
                         <span className="text-slate-300">{o.ticker}</span>{" "}
                         <span className={o.bias === "Bullish" ? "text-emerald-400" : o.bias === "Bearish" ? "text-red-400" : "text-slate-400"}>
-                          {o.bias}
+                          {o.edge_strength === "none" ? "No edge" : o.bias}
                         </span>
-                        {o.pct_green != null && <span className="text-slate-500 text-sm"> ({o.pct_green}% green)</span>}
+                        {o.pct_green != null && (
+                          <span className="text-slate-500 text-sm">
+                            {" "}
+                            ({o.pct_green}% green{o.base_pct_green != null && <> vs {o.base_pct_green}% usual</>}
+                            {o.n ? <>, n={o.n}</> : null})
+                          </span>
+                        )}
                         {o.typical_range_pct != null && <span className="text-slate-500 text-sm"> ±{o.typical_range_pct}%</span>}
                       </span>
                     ))}

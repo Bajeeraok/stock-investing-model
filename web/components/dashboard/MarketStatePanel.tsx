@@ -13,6 +13,10 @@ type OutlookRow = {
   bias?: string;
   pct_green?: number | null;
   typical_range_pct?: number | null;
+  edge_strength?: string;
+  n?: number;
+  base_pct_green?: number | null;
+  display_note?: string | null;
 };
 
 type TypicalRow = {
@@ -198,9 +202,9 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
             )}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               {state.next_day_outlook!.map((o) => (
-                <span key={o.ticker}>
+                <span key={o.ticker} title={o.display_note ?? undefined}>
                   <span className="text-slate-300">{o.ticker}</span>{" "}
-                  {(o as { edge_strength?: string }).edge_strength === "none" ? (
+                  {o.edge_strength === "none" ? (
                     <span className="text-slate-500">No edge</span>
                   ) : (
                     <span
@@ -211,12 +215,22 @@ export function MarketStatePanel({ compactHeader = false }: { compactHeader?: bo
                       {o.bias}
                     </span>
                   )}
-                  {o.pct_green != null && (o as { edge_strength?: string }).edge_strength !== "none" && (
-                    <span className="text-slate-500 text-[13px]"> ({o.pct_green}% green)</span>
+                  {o.pct_green != null && (
+                    <span className="text-slate-500 text-[13px]">
+                      {" "}
+                      ({o.pct_green}% green
+                      {o.base_pct_green != null && <> vs {o.base_pct_green}% usual</>}
+                      {o.n ? <>, n={o.n}</> : null})
+                    </span>
                   )}
                 </span>
               ))}
             </div>
+            <p className="text-[12px] text-slate-500 mt-1.5">
+              Share of next days that closed green after a similar setup (trend vs 20/50-day averages, RSI, volatility),
+              last 5 years, compared with all days. Called Bullish/Bearish only if at least 3 points from usual and
+              outside chance for that sample size. Past data only, not tested forward.
+            </p>
           </div>
         )}
 

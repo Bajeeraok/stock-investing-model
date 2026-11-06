@@ -244,11 +244,24 @@ def _events_for_today(
 
 
 def _live_tape_drivers(premarket: dict | None, min_abs_score: float = 0.2) -> list[dict]:
+    """Biggest pre-market movers; prior-session (stale) readings are appended, flagged, after live ones."""
     if not premarket:
         return []
     drivers: list[dict] = []
+    stale: list[dict] = []
     for sig in premarket.get("signals") or []:
         if not isinstance(sig, dict):
+            continue
+        if sig.get("stale"):
+            stale.append({
+                "name": sig.get("name") or "Signal",
+                "raw_value": sig.get("raw_value") or "",
+                "direction": "Neutral",
+                "score": 0.0,
+                "category": sig.get("category") or "",
+                "stale": True,
+                "as_of": sig.get("as_of"),
+            })
             continue
         score = sig.get("score")
         if score is None:
@@ -265,9 +278,10 @@ def _live_tape_drivers(premarket: dict | None, min_abs_score: float = 0.2) -> li
             "direction": sig.get("direction") or "Neutral",
             "score": round(score, 3),
             "category": sig.get("category") or "",
+            "as_of": sig.get("as_of"),
         })
     drivers.sort(key=lambda x: -abs(x["score"]))
-    return drivers[:6]
+    return drivers[:6] + stale[:3]
 
 
 def _tension_flags(
@@ -448,6 +462,7 @@ def build_market_catalysts(
         "macro_regime": macro_regime,
         "scheduled_today": scheduled,
         "live_tape": live,
+        "live_tape_as_of": (premarket or {}).get("timestamp"),
         "tensions": tensions,
         "flip_narratives": flips,
         "intraday": intraday,

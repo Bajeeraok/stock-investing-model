@@ -21,6 +21,8 @@ export interface PreMarketSignal {
   direction: string;
   confidence: number;
   note?: string;
+  as_of?: string | null;
+  stale?: boolean;
 }
 
 export interface PreMarketMoverDetail {
@@ -115,7 +117,7 @@ function SignalRow({ signal }: { signal: PreMarketSignal }) {
           <ScoreBar score={signal.score} size="sm" />
         </div>
         <span className="text-[13px] text-slate-600 font-mono w-8 text-right shrink-0 hidden sm:block">
-          {(signal.confidence * 100).toFixed(0)}%
+          {signal.stale ? "—" : `${(signal.confidence * 100).toFixed(0)}%`}
         </span>
         {signal.note && (expanded ? <ChevronDown className="h-3 w-3 text-slate-600 shrink-0" /> : <ChevronRight className="h-3 w-3 text-slate-600 shrink-0" />)}
       </button>

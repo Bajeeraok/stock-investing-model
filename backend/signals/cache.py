@@ -900,7 +900,8 @@ def cached_run_confidence(ticker: str, config_hash: str, fetch_fn):
 
 def cached_next_day_backtest(ticker: str, fetch_fn):
     """Cache next-day bias backtest (state_stats). TTL 24h."""
-    key = cache_key("next_day_backtest", ticker)
+    # v2: vol regime = 20d vs 60d volatility (v1 compared daily vol to annual thresholds → always "low").
+    key = cache_key("next_day_backtest", "v2", ticker)
     hit = get_cached(key)
     if hit is not None:
         return hit
