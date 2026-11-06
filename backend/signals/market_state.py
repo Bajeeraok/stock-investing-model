@@ -82,12 +82,16 @@ def build_market_state(config: dict | None = None) -> dict[str, Any]:
     except Exception as e:
         logger.debug("market_state dashboard cache: %s", e)
 
-    if not next_day:
+    # Rows cached before the base-rate comparison existed lack "base_pct_green": recompute.
+    if not next_day or any("base_pct_green" not in r for r in next_day if isinstance(r, dict)):
         try:
             from signals.cache import cached_next_day_backtest
             from signals.next_day_bias import next_day_outlook_for_symbols, run_next_day_backtest
 
-            cache = {"SPY": cached_next_day_backtest("SPY", lambda: run_next_day_backtest("SPY", period="5y"))}
+            cache = {
+                s: cached_next_day_backtest(s, lambda s=s: run_next_day_backtest(s, period="5y"))
+                for s in ("SPY", "QQQ", "GLD", "SLV")
+            }
             next_day = next_day_outlook_for_symbols(["SPY", "QQQ", "GLD", "SLV"], cache)
         except Exception as e:
             logger.debug("market_state next_day: %s", e)
