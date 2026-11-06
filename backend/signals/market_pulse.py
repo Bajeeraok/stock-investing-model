@@ -5,6 +5,7 @@ Calibration (SPY, see docstrings of each function):
   • Pre-open: 10y of SPY daily bars (2016–2026). Full-day return (prior close → close)
     grouped by opening gap. A gap mostly tells you which side of yesterday's close the day
     ends on; whether the market keeps falling/rising after the open is close to a coin flip.
+    The 80% range is widened/narrowed by VIX (GAP_VIX_RESID) since daily swings scale with it.
   • Intraday: final ≈ move so far + N(0, k·σ_VIX·√(time left)), σ_VIX = prior VIX/√252.
     k=0.40 gave ~85–90% coverage of the nominal 80% band on the last 60 sessions (k=0.30
     ≈ 80%); we keep the slightly wider band and track real coverage in the scorecard.
@@ -29,6 +30,19 @@ GAP_TABLE: list[tuple[float, float, int, float, float, float, float]] = [
     (0.25, 0.75, 608, 0.22, -0.45, 0.49, 1.28),
     (0.75, 1.5, 165, 0.13, -0.41, 1.21, 2.21),
     (1.5, 99.0, 41, 0.05, 0.76, 2.22, 5.40),
+]
+# Per gap bucket (same rows): median of (close − gap) and 10th/90th pct of the remainder in units of
+# (VIX/√252)^1.5. Walk-forward 2019–2026: 79–84% of closes inside the band in every VIX regime,
+# vs 39% (VIX>30) to 88% (VIX<15) for the fixed GAP_TABLE range.
+VIX_RANGE_POW = 1.5
+GAP_VIX_RESID: list[tuple[float, float, float]] = [
+    (-0.064, -0.996, 0.942),
+    (0.112, -0.746, 0.715),
+    (0.065, -0.820, 0.658),
+    (0.019, -0.641, 0.625),
+    (0.076, -0.776, 0.576),
+    (0.293, -0.708, 0.415),
+    (0.293, -0.749, 0.467),
 ]
 INTRADAY_K = 0.40
 Z80 = 1.2816
@@ -57,7 +71,14 @@ def pre_open_outlook(
     """Expected open gap ≈ S&P futures move since yesterday's close → full-day odds from GAP_TABLE."""
     if es_pct is None:
         return None
-    lo, hi, n, p_red, q10, q50, q90 = _bucket(float(es_pct))
+    row = _bucket(float(es_pct))
+    lo, hi, n, p_red, q10, q50, q90 = row
+    vix_scaled = vix_level is not None and vix_level > 0
+    if vix_scaled:
+        r50, z10, z90 = GAP_VIX_RESID[GAP_TABLE.index(row)]
+        s = (vix_level / math.sqrt(252)) ** VIX_RANGE_POW
+        mid = float(es_pct) + r50
+        q10, q50, q90 = round(mid + z10 * s, 2), round(mid, 2), round(mid + z90 * s, 2)
     risk_reasons = []
     if abs(es_pct) >= 1.0:
         risk_reasons.append(f"S&P futures {es_pct:+.2f}% overnight")
@@ -82,9 +103,14 @@ def pre_open_outlook(
         "high_risk": bool(risk_reasons),
         "risk_reasons": risk_reasons,
         "engine_bias": engine_bias,
+        "range_vix_scaled": vix_scaled,
         "note": (
-            f"On {n} past days with a similar open, SPY closed red {p_red * 100:.0f}% of the time; "
-            f"80% closed between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
+            f"On {n} past days with a similar open, SPY closed red {p_red * 100:.0f}% of the time. "
+            + (
+                f"Sized for VIX {vix_level:.1f}, 80% of closes should land between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
+                if vix_scaled
+                else f"80% closed between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
+            )
         ),
     }
 

@@ -101,3 +101,12 @@ def test_pre_open_logged_only_before_open(tmp_path, monkeypatch):
     assert saved["as_of"].startswith("2026-11-06T09:20") and mp._pre_open_scorable(saved)
     assert saved["ref_close_date"] == "2026-11-05" and "vs Nov 5 close" in saved["note"]
     assert out["pre_open"]["ref_close_date"] == "2026-11-05"
+
+
+def test_pre_open_range_scales_with_vix():
+    calm = mp.pre_open_outlook(0.07, vix_level=15)
+    stressed = mp.pre_open_outlook(0.07, vix_level=27)
+    w = lambda o: o["eod_range_pct"]["q90"] - o["eod_range_pct"]["q10"]
+    assert w(stressed) > 2 * w(calm) and stressed["range_vix_scaled"]
+    assert stressed["p_close_red"] == calm["p_close_red"] == 0.47
+    assert mp.pre_open_outlook(0.07)["eod_range_pct"] == {"q10": -0.67, "q50": 0.04, "q90": 0.71}
