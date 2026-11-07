@@ -110,3 +110,30 @@ def test_pre_open_range_scales_with_vix():
     assert w(stressed) > 2 * w(calm) and stressed["range_vix_scaled"]
     assert stressed["p_close_red"] == calm["p_close_red"] == 0.47
     assert mp.pre_open_outlook(0.07)["eod_range_pct"] == {"q10": -0.67, "q50": 0.04, "q90": 0.71}
+
+
+def test_due_slot_never_logs_late_job_under_earlier_slot():
+    from datetime import datetime
+
+    assert mp._due_intraday_slot(datetime(2026, 11, 6, 10, 31)) == "10:30"
+    assert mp._due_intraday_slot(datetime(2026, 11, 6, 12, 31)) == "12:30"
+    assert mp._due_intraday_slot(datetime(2026, 11, 6, 15, 31)) == "15:30"
+    assert mp._due_intraday_slot(datetime(2026, 11, 6, 11, 20)) is None
+
+
+def test_calibration_scores_hourly_slots_separately():
+    calls = {"2026-11-06": {
+        "10:30": {"p_close_green": 0.92, "range80_pct": [-0.1, 1.5]},
+        "14:30": {"p_close_green": 0.97, "range80_pct": [0.1, 0.6]},
+    }}
+    realized = {"2026-11-06": {"gap_pct": 0.25, "full_pct": 0.31}}
+    cal = mp.score_calibration(calls, realized)
+    assert set(cal["by_slot"]) == {"10:30", "14:30"}
+    assert cal["green_odds"][-1]["n"] == 2 and cal["green_odds"][-1]["closed_green_pct"] == 100.0
+    assert "14:30" not in mp.score_days(calls, realized)["summary"]
+
+
+def test_intraday_range_widens_faster_than_vix():
+    lo20, hi20 = mp.intraday_close_range(0.0, 60, 20.0)["range80_pct"]
+    lo40, hi40 = mp.intraday_close_range(0.0, 60, 40.0)["range80_pct"]
+    assert (hi40 - lo40) > 2 * (hi20 - lo20)

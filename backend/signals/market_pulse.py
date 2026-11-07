@@ -44,9 +44,17 @@ GAP_VIX_RESID: list[tuple[float, float, float]] = [
     (0.293, -0.708, 0.415),
     (0.293, -0.749, 0.467),
 ]
-INTRADAY_K = 0.40
+# Fitted on 2023-12..2026-11 hourly SPY (10:30-15:30 snapshots): 80% band held 81% of closes
+# at 10:30-14:30, leave-one-half-year-out 80%. Width grows as (VIX/20)^1.25.
+INTRADAY_K = 0.49
+INTRADAY_VIX_EXP = 1.25
 Z80 = 1.2816
 SLOTS = ("pre_open", "10:30", "12:30")
+# Extra hourly snapshots: scored only for calibration, never in the headline scorecard.
+CALIBRATION_SLOTS = ("11:30", "13:30", "14:30", "15:30")
+INTRADAY_SLOT_TIMES = {"10:30": (10, 30), "11:30": (11, 30), "12:30": (12, 30),
+                       "13:30": (13, 30), "14:30": (14, 30), "15:30": (15, 30)}
+SLOT_LATE_MIN = 45
 SESSION_MIN = 390
 
 
@@ -124,7 +132,7 @@ def intraday_close_range(
     if vix_prev is None or vix_prev <= 0:
         return None
     frac = min(max(minutes_since_open / SESSION_MIN, 0.0), 1.0)
-    sd = INTRADAY_K * (vix_prev / math.sqrt(252)) * math.sqrt(max(1.0 - frac, 0.0))
+    sd = INTRADAY_K * (vix_prev / math.sqrt(252)) * (vix_prev / 20.0) ** (INTRADAY_VIX_EXP - 1.0) * math.sqrt(max(1.0 - frac, 0.0))
     r = float(move_so_far_pct)
     if sd <= 1e-9:
         p_green = 1.0 if r > 0 else 0.0 if r < 0 else 0.5
@@ -263,6 +271,64 @@ def log_call(day: str, slot: str, payload: dict, *, overwrite: bool = False) -> 
     return True
 
 
+def _due_intraday_slot(now) -> str | None:
+    """The snapshot slot whose time just passed (within SLOT_LATE_MIN), so a late job never logs under an earlier slot."""
+    cur = now.hour * 60 + now.minute
+    for slot, (h, m) in sorted(INTRADAY_SLOT_TIMES.items(), key=lambda kv: kv[1], reverse=True):
+        if 0 <= cur - (h * 60 + m) <= SLOT_LATE_MIN:
+            return slot
+    return None
+
+
+def _score_intraday(c: dict, full: float) -> tuple[str, bool, bool, float | None, float | None]:
+    lo, hi = (c.get("range80_pct") or [None, None])[:2]
+    pg = c.get("p_close_green")
+    called = "GREEN" if (0.5 if pg is None else pg) >= 0.5 else "RED"
+    hit = (full > 0) if called == "GREEN" else (full < 0)
+    inr = lo is not None and hi is not None and lo <= full <= hi
+    return called, hit, inr, lo, hi
+
+
+def score_calibration(calls: dict[str, dict], realized: dict[str, dict]) -> dict[str, Any]:
+    """Hourly snapshots incl. headline intraday slots: green-odds buckets and range coverage by slot."""
+    by_slot: dict[str, dict[str, int]] = {}
+    buckets = [(0.0, 0.1), (0.1, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 0.9), (0.9, 1.01)]
+    bk = [{"lo": lo, "hi": min(hi, 1.0), "n": 0, "green": 0, "sum_p": 0.0} for lo, hi in buckets]
+    for day, slots in calls.items():
+        rz = realized.get(day)
+        if not rz:
+            continue
+        full = rz["full_pct"]
+        for slot in INTRADAY_SLOT_TIMES:
+            c = slots.get(slot)
+            if not c or c.get("p_close_green") is None:
+                continue
+            _, hit, inr, _, _ = _score_intraday(c, full)
+            a = by_slot.setdefault(slot, {"n": 0, "dir_hit": 0, "in_range": 0})
+            a["n"] += 1
+            a["dir_hit"] += int(hit)
+            a["in_range"] += int(inr)
+            pg = float(c["p_close_green"])
+            for b, (lo, hi) in zip(bk, buckets):
+                if lo <= pg < hi:
+                    b["n"] += 1
+                    b["green"] += int(full > 0)
+                    b["sum_p"] += pg
+                    break
+    return {
+        "by_slot": {
+            s: {"days": a["n"], "direction_hit_pct": round(100 * a["dir_hit"] / a["n"], 1),
+                "range_coverage_pct": round(100 * a["in_range"] / a["n"], 1)}
+            for s, a in sorted(by_slot.items()) if a["n"]
+        },
+        "green_odds": [
+            {"range": [b["lo"], b["hi"]], "n": b["n"], "avg_said_pct": round(100 * b["sum_p"] / b["n"], 1),
+             "closed_green_pct": round(100 * b["green"] / b["n"], 1)}
+            for b in bk if b["n"]
+        ],
+    }
+
+
 def score_days(calls: dict[str, dict], realized: dict[str, dict]) -> dict[str, Any]:
     """calls: {date: {slot: payload}}; realized: {date: {gap_pct, full_pct}}."""
     rows = []
@@ -294,11 +360,7 @@ def score_days(calls: dict[str, dict], realized: dict[str, dict]) -> dict[str, A
                 inr = lo is not None and hi is not None and lo <= full <= hi
                 row["pre_open"] = {"lean": called, "p_close_red": p_red, "range": [lo, hi], "hit": hit, "in_range": inr}
             else:
-                lo, hi = (c.get("range80_pct") or [None, None])[:2]
-                pg = c.get("p_close_green")
-                called = "GREEN" if (0.5 if pg is None else pg) >= 0.5 else "RED"
-                hit = (full > 0) if called == "GREEN" else (full < 0)
-                inr = lo is not None and hi is not None and lo <= full <= hi
+                called, hit, inr, lo, hi = _score_intraday(c, full)
                 row[slot] = {"call": called, "likely_close_pct": c.get("likely_close_pct"), "range": [lo, hi], "hit": hit, "in_range": inr}
             if hit is not None:
                 a["dir_n"] += 1
@@ -355,7 +417,9 @@ def scorecard(today: str | None = None) -> dict[str, Any]:
     except Exception as e:
         logger.debug("market_pulse realized fetch failed: %s", e)
         realized = {}
-    return score_days(calls, realized)
+    out = score_days(calls, realized)
+    out["calibration"] = score_calibration(calls, realized)
+    return out
 
 
 # ── main entry ──────────────────────────────────────────────────────────
@@ -438,10 +502,9 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                 if intraday and open_px:
                     intraday["actual_gap_pct"] = round((open_px / prev_close - 1) * 100, 2)
                 if intraday and log and phase == "intraday":
-                    for slot, (h, m) in (("10:30", (10, 30)), ("12:30", (12, 30))):
-                        if (now.hour, now.minute) >= (h, m) and slot not in stored:
-                            log_call(day, slot, intraday)
-                            break
+                    slot = _due_intraday_slot(now)
+                    if slot and slot not in stored:
+                        log_call(day, slot, intraday)
         except Exception as e:
             logger.debug("market_pulse intraday failed: %s", e)
     out["intraday"] = intraday

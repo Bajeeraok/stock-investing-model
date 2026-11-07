@@ -51,7 +51,14 @@ export interface MarketPulse {
   pre_open: PreOpen | null;
   intraday: Intraday | null;
   vix?: { last: number | null; pct: number | null };
-  scorecard?: { summary: Record<string, SlotSummary>; days: ScoredDay[] } | null;
+  scorecard?: {
+    summary: Record<string, SlotSummary>;
+    days: ScoredDay[];
+    calibration?: {
+      by_slot?: Record<string, { days: number; direction_hit_pct: number; range_coverage_pct: number }>;
+      green_odds?: { range: [number, number]; n: number; avg_said_pct: number; closed_green_pct: number }[];
+    };
+  } | null;
   disclaimer: string;
 }
 
@@ -205,6 +212,42 @@ export function MarketPulseCard() {
                 </tbody>
               </table>
             </div>
+            {(data.scorecard?.calibration?.green_odds?.length ?? 0) > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[13px] text-slate-400">
+                  Calibration check · hourly snapshots 10:30–3:30 (not in the scores above)
+                </summary>
+                <p className="text-[12px] text-slate-500 mt-1">
+                  When the card said X% green, how often SPY actually closed green. Later hours are easier, so they are kept out of the headline scores.
+                </p>
+                <table className="w-full text-[13px] tabular-nums mt-1">
+                  <thead>
+                    <tr className="text-left text-slate-500 border-b border-slate-700">
+                      <th className="py-1 pr-2 font-medium">Said green</th>
+                      <th className="py-1 pr-2 font-medium">Avg said</th>
+                      <th className="py-1 pr-2 font-medium">Closed green</th>
+                      <th className="py-1 font-medium">n</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.scorecard!.calibration!.green_odds!.map((b) => (
+                      <tr key={b.range[0]} className="border-b border-slate-800 text-slate-300">
+                        <td className="py-1 pr-2">{Math.round(b.range[0] * 100)}–{Math.round(b.range[1] * 100)}%</td>
+                        <td className="py-1 pr-2">{b.avg_said_pct}%</td>
+                        <td className="py-1 pr-2">{b.closed_green_pct}%</td>
+                        <td className="py-1">{b.n}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[12px] text-slate-500 mt-1">
+                  In range by hour:{" "}
+                  {Object.entries(data.scorecard!.calibration!.by_slot ?? {})
+                    .map(([k, v]) => `${k} ${v.range_coverage_pct}% (n=${v.days})`)
+                    .join(" · ")}
+                </p>
+              </details>
+            )}
           </>
         ) : (
           <p className="text-[13px] text-slate-500">Scoring starts after the first logged trading day (calls saved at 9:20, 10:31 and 12:31 ET).</p>

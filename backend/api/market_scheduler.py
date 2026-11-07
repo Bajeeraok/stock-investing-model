@@ -221,7 +221,7 @@ def start() -> None:
             misfire_grace_time=900,
         )
 
-    for hour, minute in ((9, 20), (10, 31), (12, 31)):
+    for hour, minute in ((9, 20), (10, 31), (11, 31), (12, 31), (13, 31), (14, 31), (15, 31)):
         _scheduler.add_job(
             _run_market_pulse_job,
             "cron",
