@@ -372,7 +372,7 @@ def compute_fair_value(
             if (_street_anchored and current_price and _suppressed_fv > STREET_STALE_RATIO * current_price
                     and _cl and _cl < _suppressed_fv):
                 _wide_note = (
-                    f"Analyst {_street_anchor_label(_street_anchor_source)} ${_suppressed_fv:.2f} is "
+                    f"The {_street_anchor_label(_street_anchor_source)} ${_suppressed_fv:.2f} is "
                     f"{_suppressed_fv / current_price:.1f}× the price — targets may lag the drop, so fair value "
                     f"uses the low target ${_cl:.2f}."
                 )
