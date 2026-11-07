@@ -733,7 +733,8 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
       <ul className="divide-y divide-slate-800/90 text-sm">
         {gates.map((g) => {
           const visual = g.visualStatus ?? (g.pass ? "cleared" : g.pass === false ? "blocked" : "neutral");
-          const isMarginal = visual === "marginal" && g.pass;
+          const isAdvisory = visual === "advisory" && !g.pass;
+          const isMarginal = (visual === "marginal" && g.pass) || isAdvisory;
           return (
           <li
             key={g.id}
@@ -765,12 +766,12 @@ export function TradingGateStatus({ gates, className }: { gates: TradingGateRow[
                         : retailStatusClasses(g.pass ? "cleared" : "blocked")
                     )}
                   >
-                    {isMarginal ? "Marginal" : g.pass ? "Pass" : "Fail"}
+                    {isAdvisory ? "Low" : isMarginal ? "Marginal" : g.pass ? "Pass" : "Fail"}
                   </span>
                 </div>
                 <p className="text-slate-300 leading-snug pl-0 sm:pl-0">{g.detail}</p>
                 {g.id === "confidence" ? (
-                  <p className="text-[11px] text-slate-500 mt-0.5">Sizing signal — not counted in the 4-of-4 go/no-go total.</p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">Advisory sizing signal — does not block entries and is not counted in the 4-of-4 go/no-go total.</p>
                 ) : null}
               </div>
             </div>

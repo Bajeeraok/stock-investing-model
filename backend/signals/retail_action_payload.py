@@ -45,6 +45,14 @@ def display_alert_level(horizon: dict | None, gates: list[dict] | None, price: f
     return out
 
 
+def sync_header_gate_counts(detail: dict) -> None:
+    """Header gates_passed comes from the cached EOD row; recount it from the live gate list shown on the page."""
+    ra = ((detail or {}).get("investor_summary") or {}).get("retail_action") or {}
+    gates = ra.get("gates")
+    if gates:
+        detail.update(display_gate_counts(gates))
+
+
 def attach_display_alerts(detail: dict) -> None:
     """Add alert_level per mode to retail_action.display_by_mode using the detail's current price."""
     inv = (detail or {}).get("investor_summary") or {}
@@ -813,7 +821,8 @@ def build_trading_gates(
                 ),
                 "pass": conf_ok,
                 "gate_cleared": conf_ok,
-                "visual_status": "cleared" if conf_ok else "blocked",
+                "visual_status": "cleared" if conf_ok else "advisory",
+                "advisory": True,
                 "icon": "🎯",
                 "blocker_weight": 0 if conf_ok else 15,
             }
@@ -1148,7 +1157,7 @@ def derive_zone_aware_action_title(
         return "IN BUY BAND · WAIT FOR GATES", "yellow"
 
     if in_bridge_band or (state in ("between_tiers", "between_horizon_bands") and spot.get("in_bridge_band")):
-        return "BRIDGE ONLY · PARTIAL", "yellow"
+        return ("BRIDGE ONLY · PARTIAL" if gate_cleared else "BRIDGE ZONE · WAIT FOR GATES"), "yellow"
 
     if state in ("between_tiers", "between_horizon_bands"):
         return "WATCH ZONE", "yellow"

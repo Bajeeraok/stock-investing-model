@@ -100,15 +100,24 @@ def rule_price_consistency(d: dict, c: _Collector, row: dict | None) -> None:
               price=p, low_52w=lo, high_52w=hi)
 
 
+def _blocking_gates(ra: dict) -> list[dict]:
+    """Gates that decide go/no-go: the primary set, never advisory ones like confidence."""
+    gates = [g for g in (ra.get("gates") or []) if isinstance(g, dict)]
+    primary = set(ra.get("primary_gate_ids") or [])
+    picked = [g for g in gates if g.get("id") in primary] if primary else gates
+    return [g for g in picked if not g.get("advisory")]
+
+
 def rule_gate_consistency(d: dict, c: _Collector, row: dict | None) -> None:
     ra = _retail(d)
     gates = ra.get("gates") or []
     mode = ra.get("entry_mode")
-    passed = sum(1 for g in gates if g.get("pass"))
+    primary = _blocking_gates(ra)
+    passed = sum(1 for g in primary if g.get("pass"))
     gp = d.get("gates_passed")
-    if isinstance(gp, (int, float)) and gates and int(gp) != passed:
-        c.add("gate_count_mismatch", "info", f"Header says {int(gp)} gates passed, gate list shows {passed}/{len(gates)}",
-              header=gp, listed=passed, total=len(gates))
+    if isinstance(gp, (int, float)) and primary and int(gp) != passed:
+        c.add("gate_count_mismatch", "info", f"Header says {int(gp)} gates passed, gate list shows {passed}/{len(primary)}",
+              header=gp, listed=passed, total=len(primary))
     gng = ra.get("go_no_go")
     if mode == "full_go" and gng not in (None, "go"):
         c.add("go_no_go_mismatch", "error", f"Entry mode full_go but go/no-go is {gng}", entry_mode=mode, go_no_go=gng)
@@ -334,9 +343,10 @@ def rule_entry_state(d: dict, c: _Collector, row: dict | None) -> None:
     if mode and mode not in KNOWN_ENTRY_MODES:
         c.add("entry_mode_unknown", "warn", f"Unknown entry mode {mode}", entry_mode=mode)
     failing = [g.get("id") for g in gates if not g.get("pass")]
-    if mode == "full_go" and failing:
-        c.add("full_go_with_failing_gate", "error", f"full_go but gates fail: {', '.join(map(str, failing))}",
-              failing=failing)
+    blocking_failing = [g.get("id") for g in _blocking_gates(ra) if not g.get("pass")]
+    if mode == "full_go" and blocking_failing:
+        c.add("full_go_with_failing_gate", "error", f"full_go but gates fail: {', '.join(map(str, blocking_failing))}",
+              failing=blocking_failing)
     if mode == "hard_lock" and gates and not failing:
         c.add("locked_with_all_gates_passing", "warn", "Entries locked but every listed gate passes")
     lc = ra.get("gates_locked_count")
@@ -439,8 +449,11 @@ def rule_stop_target_math(d: dict, c: _Collector, row: dict | None) -> None:
             implied = (tg - p) / (p - sl)
             if abs(implied - rr) > max(0.25, 0.15 * implied):
                 c.add("rr_mismatch", "warn", f"{mode} R:R {rr} but stop/target imply {implied:.2f}", horizon=h)
-        if sl and sl < p * 0.5:
-            c.add("stop_too_far", "warn", f"{mode} stop ${sl:.2f} is {_pct(sl, p):.0f}% below price", horizon=h)
+        ez_hi = _f((hv.get("entry_zone") or {}).get("high"))
+        fill = min(p, ez_hi) if ez_hi else p  # pullback plans are measured from the band fill
+        if sl and sl < fill * 0.5:
+            c.add("stop_too_far", "warn", f"{mode} stop ${sl:.2f} is {_pct(sl, fill):.0f}% below entry ${fill:.2f}",
+                  horizon=h)
         if tg and h == "short" and tg > p * 1.5:
             c.add("target_too_far", "warn", f"Scout target ${tg:.2f} is {_pct(tg, p):.0f}% above price", horizon=h)
 

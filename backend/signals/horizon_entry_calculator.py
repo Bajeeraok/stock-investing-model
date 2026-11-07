@@ -88,6 +88,7 @@ MT_MIN_ML_PROB         = 35.0   # minimum ML prob for medium-term signal
 MT_EARNINGS_WINDOW     = 60     # days — earnings within this = catalyst flag
 MT_STOP_BELOW_MA50_PCT = 6.0    # stop = MA50 * (1 - pct) — MA50 break invalidates
 MT_MIN_RR              = 2.0    # minimum R/R enforced for medium-term
+MT_MIN_GAIN_TO_TARGET_PCT = 5.0  # band top must sit at least this far under the target
 # P1 Fix: Relaxed regime threshold for swing from 45 to 40 to reduce false negatives
 MT_REGIME_BULL_MIN     = 40.0   # minimum regime bull % for swing signal
 
@@ -1762,6 +1763,24 @@ def _medium_term_signal_from_zone(
     p = inp.current_price
     pct_above_ma50 = (p - inp.ma50) / inp.ma50 * 100
 
+    # Target is capped near fair value below; a band reaching above that cap would buy above its own target.
+    no_swing_entry = False
+    if inp.fair_value and inp.fair_value > 0:
+        band_cap = _r(inp.fair_value * 1.12 / (1 + MT_MIN_GAIN_TO_TARGET_PCT / 100))
+        if eh > band_cap:
+            if el >= band_cap:
+                no_swing_entry = True
+                el = _r(band_cap * (1 - MT_MA50_BAND_PCT / 100))
+                quality, q_color = "Waiting", "#f5a623"
+                zone_anchor = (
+                    f"No swing entry near price: fair value (${inp.fair_value:.2f}) is below the MA50 pullback zone; "
+                    f"band moved under the target"
+                )
+                warnings.append("No swing entry: price is above fair value")
+            else:
+                zone_anchor = zone_anchor + f" | Top capped at ${band_cap:.2f} to stay under the fair-value target"
+            eh = band_cap
+
     # ── Stop: below MA50 invalidates — but if price is below MA50, structural MA50 stop can sit *above* spot
     structural_stop = _r(inp.ma50 * (1 - MT_STOP_BELOW_MA50_PCT / 100))
     entry_floor = min(el, p) if el > 0 else p
@@ -1832,6 +1851,8 @@ def _medium_term_signal_from_zone(
             verdict, conviction = "BUY", "Medium"
         elif verdict == "BUY" and hc >= 75:
             conviction = "High"
+    if no_swing_entry:
+        verdict, conviction = "WAIT", "Low"
 
     # ── Rationale & trigger ──────────────────────────────────────────────
     rationale = (

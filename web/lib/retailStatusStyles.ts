@@ -11,6 +11,7 @@ export type RetailVisualStatus =
   | "extended"
   | "hot"
   | "marginal"
+  | "advisory"
   | "neutral"
   | "balanced"
   | "tight"
@@ -95,6 +96,7 @@ export const RETAIL_STATUS_STYLES: Record<string, RetailStatusStyle> = {
     badge: "bg-amber-500/15 text-amber-200 border-amber-500/45",
   },
 };
+RETAIL_STATUS_STYLES.advisory = RETAIL_STATUS_STYLES.marginal;
 
 export function retailStatusClasses(
   status: string | null | undefined,

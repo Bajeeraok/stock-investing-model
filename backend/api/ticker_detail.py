@@ -161,10 +161,11 @@ def get_ticker_detail(ticker: str, config: dict, *, allow_stale: bool = True) ->
     except Exception:
         pass
     try:
-        from signals.retail_action_payload import attach_display_alerts
+        from signals.retail_action_payload import attach_display_alerts, sync_header_gate_counts
 
         if isinstance(out, dict):
             attach_display_alerts(out)
+            sync_header_gate_counts(out)
     except Exception:
         pass
     return out
