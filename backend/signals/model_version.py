@@ -79,6 +79,9 @@ History:
 - 2026.11.3 — crypto (BTC-USD, ETH-USD) odds also switch to since-inception history odds;
   their per-ticker models lost to history at 3 and 6 months in 2019-2026 tests. Per-ticker
   LightGBM no longer drives any displayed horizon odds unless history is unavailable.
+- 2026.11.6 — Street-anchored fair value falls back to the low analyst target when the median is
+  >2.5x the price (stale targets after a drop). SPY intraday 80% ranges refit on 2023-2026 hourly
+  data (K 0.40→0.49, width ∝ VIX^1.25); hourly 11:30-15:30 snapshots logged for calibration only.
 - 2026.11.5 — When model FV is suppressed and analyst targets are wide, fair value uses the
   analyst median (labelled) instead of the single lowest target.
 - 2026.11.4 — Swing (3-month) buy band is capped so its top sits at least 5% under the
@@ -88,7 +91,7 @@ History:
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.11.5"
+MODEL_VERSION = "2026.11.6"
 
 # First version whose horizon odds come from the pooled model + history blend (signals/pooled_odds.py).
 # Model check splits calls at this boundary; later versions changed only non-stock odds.

@@ -35,7 +35,13 @@ from signals.providers import MAJOR_INDEX_ETFS
 STREET_WIDE_RANGE_RATIO = 1.5
 
 
+# Analyst target this many times the price is treated as stale (targets lag a sharp drop).
+STREET_STALE_RATIO = 2.5
+
+
 def _street_anchor_label(src: str | None) -> str:
+    if src and src.endswith("_low_stale_guard"):
+        return "analyst low target"
     return {"fmp_median": "analyst median", "fmp_range_midpoint": "analyst range midpoint",
             "yahoo_12m_mean": "analyst mean"}.get(src or "", "analyst consensus")
 
@@ -363,6 +369,15 @@ def compute_fair_value(
                     f"Analyst targets are wide (${_cl:.0f}–${_ch:.0f}) — fair value uses the "
                     f"{_street_anchor_label(_street_anchor_source)} ${_suppressed_fv:.2f}, not a single outlier target."
                 )
+            if (_street_anchored and current_price and _suppressed_fv > STREET_STALE_RATIO * current_price
+                    and _cl and _cl < _suppressed_fv):
+                _wide_note = (
+                    f"Analyst {_street_anchor_label(_street_anchor_source)} ${_suppressed_fv:.2f} is "
+                    f"{_suppressed_fv / current_price:.1f}× the price — targets may lag the drop, so fair value "
+                    f"uses the low target ${_cl:.2f}."
+                )
+                _suppressed_fv = float(_cl)
+                _street_anchor_source = f"{_street_anchor_source or 'street'}_low_stale_guard"
             _reason = (_fv_route.fv_suppressed_reason or "suppressed").replace("FV UNAVAILABLE — ", "")
             if _reason.startswith("DATA (") and _reason.endswith(")"):
                 _reason = _reason[6:-1]

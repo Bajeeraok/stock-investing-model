@@ -279,6 +279,48 @@ def _gates_failed_from_json(gate_detail_json: str | None) -> str | None:
     return ",".join(failed) if failed else None
 
 
+SCORECARD_GATES = ("all_pass", "valuation", "regime", "momentum", "ml")
+
+
+def gate_outcome_scorecard_from_rows(rows: list[dict[str, Any]], *, months: int = 6) -> dict[str, Any]:
+    """rows: signal_date, ticker, gate_detail_json, return_30d_pct, benchmark_return_30d_pct (resolved only).
+    Cohorts: all four gates pass, or exactly one named gate failed. A ticker counts once per month per cohort
+    (its first call), so a name sitting blocked for weeks doesn't swamp the month."""
+    seen: set[tuple[str, str, str]] = set()
+    cells: dict[tuple[str, str], list[float]] = {}
+    for r in sorted(rows, key=lambda x: str(x.get("signal_date") or "")):
+        if r.get("gate_detail_json") is None:
+            continue
+        failed = _gates_failed_from_json(r.get("gate_detail_json"))
+        ids = [g for g in (failed or "").split(",") if g]
+        if len(ids) > 1:
+            continue
+        cohort = ids[0] if ids else "all_pass"
+        month = str(r.get("signal_date") or "")[:7]
+        key = (month, cohort, str(r.get("ticker") or ""))
+        if not month or key in seen:
+            continue
+        seen.add(key)
+        excess = float(r["return_30d_pct"]) - float(r["benchmark_return_30d_pct"])
+        cells.setdefault((month, cohort), []).append(excess)
+        cells.setdefault(("all", cohort), []).append(excess)
+
+    def _cell(xs: list[float] | None) -> dict[str, Any] | None:
+        if not xs:
+            return None
+        return {"n": len(xs), "avg_vs_spy_pts": round(sum(xs) / len(xs), 2),
+                "beat_spy_pct": round(100.0 * sum(1 for x in xs if x > 0) / len(xs), 1)}
+
+    month_keys = sorted({m for m, _ in cells if m != "all"}, reverse=True)[:months]
+    return {
+        "cohorts": list(SCORECARD_GATES),
+        "overall": {c: _cell(cells.get(("all", c))) for c in SCORECARD_GATES},
+        "months": [{"month": m, **{c: _cell(cells.get((m, c))) for c in SCORECARD_GATES}} for m in month_keys],
+        "note": ("30-day return minus SPY over the same 30 days. 'Only X failed' = every other gate passed, "
+                 "so it shows what that gate alone kept you out of. Each ticker counts once per month."),
+    }
+
+
 def _confidence_band(row: dict) -> tuple[float | None, float | None]:
     conf = _safe_float(row.get("plan_confidence"))
     if conf is None:
@@ -669,6 +711,18 @@ class SignalAuditStore:
                 "go_pct": round(100.0 * int(r["n_go"] or 0) / n, 1) if n else 0.0,
             })
         return out
+
+    def gate_outcome_scorecard(self, cohort_tag: str, *, months: int = 6) -> dict[str, Any]:
+        """Per month: how calls blocked by exactly one gate did over 30 days vs SPY, next to all-pass calls."""
+        q = """
+            SELECT e.signal_date, e.ticker, e.gate_detail_json, o.return_30d_pct, o.benchmark_return_30d_pct
+            FROM signal_events e JOIN signal_outcomes o ON o.signal_event_id = e.id
+            WHERE e.cohort_tag = ? AND e.source = 'live'
+              AND o.return_30d_pct IS NOT NULL AND o.benchmark_return_30d_pct IS NOT NULL
+        """
+        with self._connect() as conn:
+            rows = conn.execute(q, [cohort_tag]).fetchall()
+        return gate_outcome_scorecard_from_rows([dict(r) for r in rows], months=months)
 
     def gate_blocker_breakdown(self, cohort_tag: str, *, since_date: str | None = None) -> list[dict[str, Any]]:
         """Count how often each primary gate fails across cohort captures."""
@@ -1692,6 +1746,11 @@ def build_model_audit_payload(
 
     gate_pass_rates = store.gate_pass_rate_breakdown(cohort_tag)
     gate_blocker_breakdown = store.gate_blocker_breakdown(cohort_tag)
+    try:
+        gate_scorecard = store.gate_outcome_scorecard(cohort_tag)
+    except Exception as e:
+        logger.debug("gate scorecard: %s", e)
+        gate_scorecard = None
     gate_calibration = build_gate_calibration_guidance(
         gate_pass_rates=gate_pass_rates,
         gate_blockers=gate_blocker_breakdown,
@@ -1758,6 +1817,7 @@ def build_model_audit_payload(
         "gate_blocker_breakdown": gate_blocker_breakdown,
         "gate_pass_rates": gate_pass_rates,
         "gate_calibration": gate_calibration,
+        "gate_scorecard": gate_scorecard,
         "buy_win_gap": buy_win_gap,
         "batch_queues": store.batch_queue_summary(cohort_tag, last_date),
         "recent_records": store.list_records_with_outcomes(cohort_tag=cohort_tag, limit=80),

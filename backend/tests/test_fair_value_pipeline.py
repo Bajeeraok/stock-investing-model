@@ -97,6 +97,20 @@ def test_suppressed_route_with_wide_targets_uses_median_not_lowest():
     assert any("wide ($35–$113)" in n for n in fv.notes)
 
 
+def test_suppressed_route_stale_median_far_above_price_uses_low_target():
+    """IREN-style: median $80 vs $22 price looks stale — fall back to the low target, with a note."""
+    route = FvRoute(fv_suppressed=True, fv_suppressed_reason="CRYPTO-CORRELATED — earnings-based FV not applicable")
+    with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
+         patch("signals.fv_router.route_fair_value", return_value=route):
+        result = compute_fair_value(_CONFIG, "MINER", 22.0, consensus_median=80.0, cons_low=30.0, cons_high=110.0)
+
+    fv = result.fv_result
+    assert result.fair_value == 30.0 and fv.fv_street_anchor_source == "fmp_median_low_stale_guard"
+    assert fv.method_used.startswith("Analyst low target — model FV unavailable")
+    assert any("3.6× the price" in n for n in fv.notes)
+
+
 def test_suppressed_route_with_no_analyst_target_yields_no_fair_value():
     """Suppressed with no street anchor at all must not fabricate a $0 fair value as truth —
     fair_value stays None so callers apply their own last-resort fallback."""

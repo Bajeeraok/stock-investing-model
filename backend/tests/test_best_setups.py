@@ -177,3 +177,23 @@ def test_model_check_short_splits_forward_records_by_odds_model():
     assert out["odds"]["n"] == 3
     assert out["odds_by_model"]["previous"]["n"] == 2 and out["odds_by_model"]["current"]["n"] == 1
     assert out["odds_model_since"] == "2026.11.1"
+
+
+def test_dip_watch_record_vs_spy_first_day_only(monkeypatch):
+    import pandas as pd
+    from datetime import date
+    from signals import best_setups as bs
+
+    monkeypatch.setattr(bs, "_market_today", lambda: date(2026, 12, 31))
+    idx = pd.to_datetime([f"2026-11-{d:02d}" for d in range(2, 30)])
+    spy = pd.DataFrame({"close": [100.0 + i * 0.1 for i in range(len(idx))]}, index=idx)
+    stk = pd.DataFrame({"close": [50.0 + i for i in range(len(idx))]}, index=idx)
+    hist = [
+        {"as_of": "2026-11-02", "modes": {"swing": {"picks": [], "dip_watch": [{"ticker": "X"}]}}},
+        {"as_of": "2026-11-03", "modes": {"swing": {"picks": [{"ticker": "X"}], "dip_watch": [{"ticker": "X"}]}}},
+    ]
+    rec = bs.dip_watch_record(hist, lambda t, p: spy if t == "SPY" else stk, {}, "swing")
+    assert rec["names"] == 1 and rec["closed"] == 1
+    r = rec["recent"][0]
+    assert r["ticker"] == "X" and r["sessions"] == 21 and r["became_pick"] is True
+    assert r["vs_spy_pts"] == round(42.0 - 2.1, 2)

@@ -49,6 +49,13 @@ interface ModeTrack {
   closed: number;
   target_first_pct: number | null;
   avg_return_pct: number | null;
+  dip_watch?: {
+    names: number;
+    closed: number;
+    avg_vs_spy_pts: number | null;
+    beat_spy_pct: number | null;
+    recent: { date: string; ticker: string; vs_spy_pts: number; sessions: number; status: string; became_pick: boolean }[];
+  };
 }
 
 export interface BestSetupsResponse {
@@ -309,6 +316,26 @@ export function BestSetupsPanel({
             {m.dip_watch!.map((r) => <NearMissLine key={r.ticker} r={r} onTickerClick={onTickerClick} />)}
           </div>
         </details>
+      )}
+
+      {(tr?.dip_watch?.names ?? 0) > 0 && (
+        <p className="text-[12px] text-slate-400 leading-snug">
+          <span className="font-semibold text-sky-200">Dip watch track record</span> · {tr!.dip_watch!.names} names tracked
+          {tr!.dip_watch!.closed > 0 ? (
+            <>
+              {" "}· after ~30 days: {tr!.dip_watch!.avg_vs_spy_pts! >= 0 ? "+" : ""}
+              {tr!.dip_watch!.avg_vs_spy_pts!.toFixed(1)} pts vs SPY, beat SPY {tr!.dip_watch!.beat_spy_pct}% (n={tr!.dip_watch!.closed})
+            </>
+          ) : (
+            <> · first 30-day results land ~30 days after a name is listed</>
+          )}
+          {tr!.dip_watch!.recent.length > 0 && (
+            <span className="block text-slate-500">
+              So far:{" "}
+              {tr!.dip_watch!.recent.slice(0, 6).map((r) => `${r.ticker} ${r.vs_spy_pts >= 0 ? "+" : ""}${r.vs_spy_pts.toFixed(1)} (${r.sessions}d)`).join(" · ")}
+            </span>
+          )}
+        </p>
       )}
 
       <p className="text-[12px] text-slate-500 leading-snug">

@@ -318,6 +318,73 @@ def pick_outcome(pick: dict, pick_day: str, bars, window: int) -> dict | None:
             "sessions": int(len(after))}
 
 
+DIP_WATCH_SESSIONS = 21  # ~30 calendar days
+
+
+def _fwd_return(bars, day: str, sessions: int) -> tuple[float | None, int]:
+    """Close on `day` (or last before it) to close `sessions` later (or latest so far)."""
+    if bars is None or len(bars) == 0:
+        return None, 0
+    try:
+        keys = [ts.date().isoformat() for ts in bars.index]
+    except Exception:
+        return None, 0
+    base = [i for i, k in enumerate(keys) if k <= day]
+    if not base:
+        return None, 0
+    i0 = base[-1]
+    after = len(keys) - 1 - i0
+    if after <= 0:
+        return None, 0
+    i1 = i0 + min(sessions, after)
+    c0, c1 = float(bars["close"].iloc[i0]), float(bars["close"].iloc[i1])
+    return (round((c1 / c0 - 1) * 100.0, 2) if c0 else None), min(sessions, after)
+
+
+def dip_watch_record(hist: list[dict], fetch, bars_cache: dict, mode: str) -> dict:
+    """Forward result of each Dip watch name (first day on the list) vs SPY over ~30 days."""
+    today = _market_today().isoformat()
+    if "SPY" not in bars_cache:
+        try:
+            bars_cache["SPY"] = fetch("SPY", "2y")
+        except Exception:
+            bars_cache["SPY"] = None
+    rows, prev = [], set()
+    for k, rep in enumerate(hist):
+        day = rep.get("as_of")
+        todays = ((rep.get("modes") or {}).get(mode) or {}).get("dip_watch") or []
+        cur = {r.get("ticker") for r in todays}
+        for r in todays:
+            t = r.get("ticker")
+            if not t or t in prev or not day or day >= today:
+                continue
+            if t not in bars_cache:
+                try:
+                    bars_cache[t] = fetch(t, "2y")
+                except Exception:
+                    bars_cache[t] = None
+            ret, n = _fwd_return(bars_cache[t], day, DIP_WATCH_SESSIONS)
+            spy, _ = _fwd_return(bars_cache["SPY"], day, n) if n else (None, 0)
+            if ret is None or spy is None:
+                continue
+            became_pick = any(
+                t in {p.get("ticker") for p in ((later.get("modes") or {}).get(mode) or {}).get("picks") or []}
+                for later in hist[k + 1:]
+            )
+            rows.append({"date": day, "ticker": t, "return_pct": ret, "spy_pct": spy,
+                         "vs_spy_pts": round(ret - spy, 2), "sessions": n,
+                         "status": "closed" if n >= DIP_WATCH_SESSIONS else "open", "became_pick": became_pick})
+        prev = cur
+    closed = [r for r in rows if r["status"] == "closed"]
+    return {
+        "names": len(rows),
+        "closed": len(closed),
+        "avg_vs_spy_pts": round(sum(r["vs_spy_pts"] for r in closed) / len(closed), 2) if closed else None,
+        "beat_spy_pct": round(100.0 * sum(1 for r in closed if r["vs_spy_pts"] > 0) / len(closed)) if closed else None,
+        "recent": rows[-15:][::-1],
+    }
+
+
 def track_record(fetch=None) -> dict:
     """Forward results of every saved pick (one per ticker/mode/day)."""
     if fetch is None:
@@ -354,5 +421,6 @@ def track_record(fetch=None) -> dict:
             "target_first_pct": round(100.0 * len(wins) / len(closed)) if closed else None,
             "avg_return_pct": round(sum(r["return_pct"] for r in rows) / len(rows), 2) if rows else None,
             "recent": rows[-15:][::-1],
+            "dip_watch": dip_watch_record(hist, fetch, bars_cache, mode),
         }
     return out

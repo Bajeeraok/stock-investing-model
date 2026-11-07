@@ -6,6 +6,8 @@ import { ClipboardCheck } from "lucide-react";
 import { paginateRows, TablePager } from "./TablePager";
 
 const AUDIT_PAGE_SIZE = 25;
+type GateScoreCell = { n: number; avg_vs_spy_pts: number; beat_spy_pct: number };
+
 export type ModelAuditBreakdownRow = {
   bucket: string | number | null;
   n: number;
@@ -148,6 +150,12 @@ export type ModelAuditPayload = {
   breakdown_by_entry_mode?: ModelAuditBreakdownRow[];
   gate_blocker_breakdown?: { gate: string; n: number; pct_of_events?: number }[];
   gate_pass_rates?: { gate: string; pass_n?: number; pass_pct?: number; fail_pct?: number }[];
+  gate_scorecard?: {
+    cohorts: string[];
+    overall: Record<string, GateScoreCell | null>;
+    months: ({ month: string } & Record<string, GateScoreCell | null | string>)[];
+    note?: string;
+  } | null;
   gate_calibration?: {
     recommend_loosen_valuation?: boolean;
     recommend_loosen_regime?: boolean;
@@ -672,6 +680,53 @@ export function ModelAuditPanel({ audit }: { audit: ModelAuditPayload | null | u
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {audit.gate_scorecard && (audit.gate_scorecard.months?.length ?? 0) > 0 && (
+        <div className="rounded-lg border border-slate-700/50 bg-slate-900/40 p-3 overflow-x-auto">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+            Monthly gate scorecard — what blocked calls did next
+            <span className="ml-1 font-normal text-slate-600">(30-day return vs SPY · beat-SPY % · n)</span>
+          </p>
+          <table className="w-full text-[13px] tabular-nums min-w-[520px]">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-700">
+                <th className="py-1 pr-2 font-medium">Month</th>
+                {audit.gate_scorecard.cohorts.map((c) => (
+                  <th key={c} className="py-1 pr-2 font-medium">{c === "all_pass" ? "All pass" : `Only ${c} failed`}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[{ month: "All", ...audit.gate_scorecard.overall }, ...audit.gate_scorecard.months].map((row) => (
+                <tr key={String(row.month)} className={clsx("border-b border-slate-800 text-slate-300", row.month === "All" && "font-semibold")}>
+                  <td className="py-1 pr-2 font-mono">{String(row.month)}</td>
+                  {audit.gate_scorecard!.cohorts.map((c) => {
+                    const cell = (row as Record<string, unknown>)[c] as GateScoreCell | null | undefined;
+                    return (
+                      <td key={c} className="py-1 pr-2">
+                        {cell ? (
+                          <>
+                            <span className={cell.avg_vs_spy_pts >= 0 ? "text-emerald-400" : "text-red-400"}>
+                              {cell.avg_vs_spy_pts >= 0 ? "+" : ""}{cell.avg_vs_spy_pts.toFixed(1)}
+                            </span>
+                            <span className="text-slate-500"> · {Math.round(cell.beat_spy_pct)}% · {cell.n}</span>
+                          </>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {audit.gate_scorecard.note && <p className="text-[11px] text-slate-500 mt-2 leading-snug">{audit.gate_scorecard.note}</p>}
+          <p className="text-[11px] text-slate-500 leading-snug">
+            A gate earns its keep when its &quot;only failed&quot; column trails &quot;All pass&quot; month after month. Small n is noise.
+          </p>
         </div>
       )}
 
