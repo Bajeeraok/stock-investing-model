@@ -153,6 +153,13 @@ def setup_row(detail: dict, mode: str, model_ok: bool = False) -> dict | None:
     }
 
 
+def dip_watch(scored: list[dict]) -> list[dict]:
+    """Watch-only: would be a pick except Market weather fails (stock's trend not yet confirmed)."""
+    rows = [r for r in scored if r.get("gates_failing") == ["Market weather"]
+            and r["edge_pct"] > 0 and all(b == "entry gates" for b in r["blockers"])]
+    return rows[:NEXT_UP_N]
+
+
 def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]]:
     out: dict[str, dict[str, list[dict]]] = {}
     for mode, rows in rows_by_mode.items():
@@ -161,7 +168,10 @@ def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]
         picks = [r for r in scored if r["qualified"]][:TOP_N]
         # Next up: positive edge, one blocker away (not the model score itself).
         nxt = [r for r in scored if not r["qualified"] and r["edge_pct"] > 0 and len(r["blockers"]) == 1]
-        out[mode] = {"picks": picks, "next_up": nxt[:NEXT_UP_N]}
+        dips = dip_watch(scored)
+        dip_ids = {r["ticker"] for r in dips}
+        nxt = [r for r in nxt if r["ticker"] not in dip_ids]
+        out[mode] = {"picks": picks, "next_up": nxt[:NEXT_UP_N], "dip_watch": dips}
     return out
 
 

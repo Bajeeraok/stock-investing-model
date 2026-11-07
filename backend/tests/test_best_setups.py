@@ -71,6 +71,20 @@ def test_ranking_and_next_up():
     assert [r["ticker"] for r in sw["next_up"]] == ["CCC"]
 
 
+def test_dip_watch_is_weather_only_and_not_a_pick():
+    def locked(t, failing):
+        d = _detail(t, entry_mode="hard_lock")
+        d["investor_summary"]["retail_action"]["gates_by_mode"] = {"swing": [
+            {"id": g, "pass": g not in failing} for g in ("valuation", "regime", "momentum", "ml")]}
+        return d
+
+    rep = build_report(previous={}, details=[locked("DIP", {"regime"}), locked("VAL", {"valuation"}),
+                                             locked("TWO", {"regime", "ml"})])
+    sw = rep["modes"]["swing"]
+    assert [r["ticker"] for r in sw["dip_watch"]] == ["DIP"]
+    assert sw["picks"] == [] and "DIP" not in [r["ticker"] for r in sw["next_up"]]
+
+
 def test_pick_outcome_target_first():
     idx = pd.to_datetime(["2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07"])
     bars = pd.DataFrame({"close": [100, 104, 112, 121], "high": [101, 105, 113, 122],

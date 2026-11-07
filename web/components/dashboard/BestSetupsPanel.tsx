@@ -54,7 +54,7 @@ interface ModeTrack {
 export interface BestSetupsResponse {
   available: boolean;
   model_check?: { horizons?: Partial<Record<"medium" | "long", ModelCheck | null>> } | null;
-  report: { as_of: string; scanned: number; new_count?: number; model_proven?: Partial<Record<Mode, boolean>>; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[] }> } | null;
+  report: { as_of: string; scanned: number; new_count?: number; model_proven?: Partial<Record<Mode, boolean>>; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[]; dip_watch?: SetupRow[] }> } | null;
   track: Record<Mode, ModeTrack> | null;
 }
 
@@ -292,6 +292,21 @@ export function BestSetupsPanel({
           </p>
           <div className="space-y-1.5">
             {m.next_up.slice(0, 3).map((r) => <NearMissLine key={r.ticker} r={r} onTickerClick={onTickerClick} />)}
+          </div>
+        </details>
+      )}
+
+      {(m.dip_watch?.length ?? 0) > 0 && (
+        <details className="group rounded-xl border border-slate-700/60 bg-slate-800/20 px-3 py-2">
+          <summary className="cursor-pointer list-none text-[13px] font-semibold text-sky-200">
+            Dip watch ({m.dip_watch!.length}) · watch only, not a buy <span className="text-slate-400 group-open:hidden">› show</span>
+          </summary>
+          <p className="mt-1 mb-2 text-[12px] text-slate-400 leading-snug">
+            These pass every rule except Market weather: the stock&apos;s own trend hasn&apos;t confirmed a recovery yet.
+            In tracked history, stocks blocked only by weather lagged SPY until it cleared, so wait for the gate to turn green.
+          </p>
+          <div className="space-y-1.5">
+            {m.dip_watch!.map((r) => <NearMissLine key={r.ticker} r={r} onTickerClick={onTickerClick} />)}
           </div>
         </details>
       )}
