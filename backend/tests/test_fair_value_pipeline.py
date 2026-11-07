@@ -81,6 +81,22 @@ def test_suppressed_route_anchors_to_street_and_flags_reason():
     assert result.fv_result.fv_street_anchor_usd == 145.0
 
 
+def test_suppressed_route_with_wide_targets_uses_median_not_lowest():
+    """One outlier low target must not become fair value (SOLV: $35 low vs $95 median)."""
+    route = FvRoute(fv_suppressed=True,
+                    fv_suppressed_reason="FV UNAVAILABLE — DATA (spinoff — EPS history unverified)")
+    with patch("signals.fetcher.build_fundamentals_info", return_value=_fundamentals()), \
+         patch("signals.fv_eps_history.fetch_quarterly_income", return_value=_quarterly_rows(40, 40)), \
+         patch("signals.fv_router.route_fair_value", return_value=route):
+        result = compute_fair_value(_CONFIG, "SPINCO", 90.0, consensus_median=95.0, cons_low=35.0, cons_high=113.0)
+
+    fv = result.fv_result
+    assert result.fair_value == 95.0 and fv.fv_street_anchor_usd == 95.0
+    assert fv.fv_street_anchor_source == "fmp_median"
+    assert fv.method_used == "Analyst median — model FV unavailable (spinoff — EPS history unverified)"
+    assert any("wide ($35–$113)" in n for n in fv.notes)
+
+
 def test_suppressed_route_with_no_analyst_target_yields_no_fair_value():
     """Suppressed with no street anchor at all must not fabricate a $0 fair value as truth —
     fair_value stays None so callers apply their own last-resort fallback."""

@@ -31,8 +31,13 @@ from signals.fv_router import FvRoute
 from signals.providers import MAJOR_INDEX_ETFS
 
 
-# Analyst high/low target ratio above which a consensus-only fair value uses the low target.
+# Analyst high/low target ratio above which a consensus-only fair value gets a "wide targets" note.
 STREET_WIDE_RANGE_RATIO = 1.5
+
+
+def _street_anchor_label(src: str | None) -> str:
+    return {"fmp_median": "analyst median", "fmp_range_midpoint": "analyst range midpoint",
+            "yahoo_12m_mean": "analyst mean"}.get(src or "", "analyst consensus")
 
 
 def _safe_float(v: Any) -> float | None:
@@ -340,7 +345,7 @@ def compute_fair_value(
             pass
 
         _street_anchor_source = (
-            "fmp_consensus"
+            ("fmp_median" if _safe_float(consensus_median) else "fmp_range_midpoint")
             if analyst_target_fmp and analyst_target_fmp > 0
             else "yahoo_12m_mean"
             if analyst_target_yahoo and analyst_target_yahoo > 0
@@ -353,17 +358,22 @@ def compute_fair_value(
             _street_anchored = _suppressed_fv > 0
             _cl, _ch = _safe_float(cons_low), _safe_float(cons_high)
             _wide_note = None
-            if _street_anchored and _cl and _ch and _cl > 0 and _ch / _cl > STREET_WIDE_RANGE_RATIO and _cl < _suppressed_fv:
+            if _street_anchored and _cl and _ch and _cl > 0 and _ch / _cl > STREET_WIDE_RANGE_RATIO:
                 _wide_note = (
-                    f"Analyst targets are wide (${_cl:.0f}–${_ch:.0f}) — fair value uses the low target "
-                    f"${_cl:.2f}, not the ${_suppressed_fv:.2f} consensus."
+                    f"Analyst targets are wide (${_cl:.0f}–${_ch:.0f}) — fair value uses the "
+                    f"{_street_anchor_label(_street_anchor_source)} ${_suppressed_fv:.2f}, not a single outlier target."
                 )
-                _suppressed_fv = float(_cl)
-                _street_anchor_source = f"{_street_anchor_source or 'street'}_low"
+            _reason = (_fv_route.fv_suppressed_reason or "suppressed").replace("FV UNAVAILABLE — ", "")
+            if _reason.startswith("DATA (") and _reason.endswith(")"):
+                _reason = _reason[6:-1]
+            _method = (
+                f"{_street_anchor_label(_street_anchor_source).capitalize()} — model FV unavailable ({_reason})"
+                if _street_anchored else (_fv_route.fv_suppressed_reason or "suppressed")
+            )
             fv_result = FairValueResult(
                 fair_value=_suppressed_fv,
                 stock_type="suppressed",
-                method_used=_fv_route.fv_suppressed_reason or "suppressed",
+                method_used=_method,
                 confidence="Low",
                 discount_pct=(
                     round((_suppressed_fv - current_price) / current_price * 100, 1)
@@ -372,7 +382,7 @@ def compute_fair_value(
                 analyst_target=analyst_target,
                 notes=list(_fv_route.notes or []) + ([_wide_note] if _wide_note else []),
                 bear_case=round(_suppressed_fv * 0.75, 2) if _suppressed_fv > 0 else None,
-                methodology_summary=_fv_route.fv_suppressed_reason,
+                methodology_summary=_method,
                 fv_suppressed=True,
                 fv_suppressed_reason=_fv_route.fv_suppressed_reason,
                 fv_street_anchored=_street_anchored,
