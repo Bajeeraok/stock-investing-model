@@ -55,6 +55,30 @@ interface ScoredDay {
   "10:30"?: { call: string; hit: boolean; in_range: boolean };
   "12:30"?: { call: string; hit: boolean; in_range: boolean };
 }
+interface LogRow {
+  date: string;
+  symbol: string;
+  lean: string | null;
+  p_close_red: number | null;
+  open_pred: number | null;
+  open_actual: number;
+  close_mid: number | null;
+  close_actual: number;
+  close_actual_pct: number;
+  range: [number | null, number | null];
+  range_result: "inside" | "above" | "below" | null;
+  direction_right: boolean | null;
+}
+interface LogSummary {
+  days: number;
+  direction_calls: number;
+  direction_right_pct: number | null;
+  in_range_pct: number | null;
+  closed_above: number;
+  closed_below: number;
+  avg_abs_open_err_pct: number | null;
+  avg_close_err_pct: number | null;
+}
 export interface MarketPulse {
   as_of: string;
   ref_close_date?: string;
@@ -66,6 +90,7 @@ export interface MarketPulse {
   scorecard?: {
     summary: Record<string, SlotSummary>;
     days: ScoredDay[];
+    daily_log?: { summary: Record<string, LogSummary>; days: LogRow[] };
     calibration?: {
       by_slot?: Record<string, { days: number; direction_hit_pct: number; range_coverage_pct: number }>;
       green_odds?: { range: [number, number]; n: number; avg_said_pct: number; closed_green_pct: number }[];
@@ -161,6 +186,67 @@ function IntradayBlock({ sym, intra, phase, asOf }: { sym: string; intra: Intrad
         As of {asOfEt(intra.as_of ?? asOf) ?? "—"} · % vs {sym}&apos;s {refLabel}
       </p>
       {phase === "intraday" && <p className="text-[13px] text-slate-500 mt-0.5">{withDate(intra.note, refLabel)}</p>}
+    </div>
+  );
+}
+
+const RESULT_LABEL = { inside: "Inside", above: "Above top", below: "Below bottom" } as const;
+
+function DailyLog({ log }: { log: NonNullable<NonNullable<MarketPulse["scorecard"]>["daily_log"]> }) {
+  return (
+    <div>
+      <p className="text-[13px] text-slate-400 mb-1">Daily log · pre-open call vs actual</p>
+      {Object.entries(log.summary).map(([sym, s]) => (
+        <p key={sym} className="text-[12px] text-slate-500 tabular-nums">
+          <span className="text-slate-300 font-mono">{sym}</span> · {s.days} days · direction{" "}
+          {s.direction_right_pct != null ? `${s.direction_right_pct}% (n=${s.direction_calls})` : "—"} · in range{" "}
+          {s.in_range_pct != null ? `${s.in_range_pct}%` : "—"} ({s.closed_above} above, {s.closed_below} below) · open off by{" "}
+          {s.avg_abs_open_err_pct != null ? `${s.avg_abs_open_err_pct}%` : "—"} · close vs median {pct(s.avg_close_err_pct)}
+        </p>
+      ))}
+      <div className="overflow-x-auto mt-1">
+        <table className="w-full text-[13px] min-w-[560px] tabular-nums">
+          <thead>
+            <tr className="text-left text-slate-500 border-b border-slate-700">
+              <th className="py-1 pr-2 font-medium">Date</th>
+              <th className="py-1 pr-2 font-medium"></th>
+              <th className="py-1 pr-2 font-medium">Open pred → actual</th>
+              <th className="py-1 pr-2 font-medium">Close median → actual</th>
+              <th className="py-1 pr-2 font-medium">80% range</th>
+              <th className="py-1 pr-2 font-medium">In range?</th>
+              <th className="py-1 font-medium">Direction</th>
+            </tr>
+          </thead>
+          <tbody>
+            {log.days.slice(0, 20).map((r) => (
+              <tr key={`${r.date}-${r.symbol}`} className="border-b border-slate-800 text-slate-300">
+                <td className="py-1 pr-2 font-mono">{r.date.slice(5)}</td>
+                <td className="py-1 pr-2 font-mono">{r.symbol}</td>
+                <td className="py-1 pr-2">
+                  {usd(r.open_pred)} → {usd(r.open_actual)}
+                </td>
+                <td className="py-1 pr-2">
+                  {usd(r.close_mid)} →{" "}
+                  <span className={r.close_actual_pct >= 0 ? "text-emerald-400" : "text-red-400"}>
+                    {usd(r.close_actual)} ({pct(r.close_actual_pct)})
+                  </span>
+                </td>
+                <td className="py-1 pr-2">
+                  {usd(r.range[0])}–{usd(r.range[1])}
+                </td>
+                <td className={clsx("py-1 pr-2", r.range_result === "inside" ? "text-emerald-400" : "text-red-400")}>
+                  {r.range_result ? RESULT_LABEL[r.range_result] : "—"}
+                </td>
+                <td className="py-1">
+                  <span className={tone(r.lean ?? undefined)}>{r.lean ?? "—"}</span>
+                  {r.p_close_red != null && <span className="text-slate-500"> {Math.round(r.p_close_red * 100)}% red</span>}{" "}
+                  {mark(r.direction_right)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -292,6 +378,9 @@ export function MarketPulseCard() {
           <p className="text-[13px] text-slate-500">Scoring starts after the first logged trading day (calls saved at 9:20, 10:31 and 12:31 ET).</p>
         )}
       </div>
+      {(data.scorecard?.daily_log?.days.length ?? 0) > 0 && (
+        <DailyLog log={data.scorecard!.daily_log!} />
+      )}
       {hasLate && (
         <p className="text-[13px] text-slate-500">
           * Saved after the open by an earlier version (it already saw the first hour), so not scored. Pre-open calls are now saved at 9:20 ET.

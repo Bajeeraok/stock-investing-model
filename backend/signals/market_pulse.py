@@ -466,13 +466,74 @@ def score_days(calls: dict[str, dict], realized: dict[str, dict]) -> dict[str, A
     return {"summary": summary, "days": rows[:30]}
 
 
+PRE_OPEN_SLOT = {"SPY": "pre_open", "QQQ": "qqq_pre_open"}
+
+
+def _avg(xs: list[float]) -> float | None:
+    return round(sum(xs) / len(xs), 2) if xs else None
+
+
+def daily_log(calls: dict[str, dict], realized_by_sym: dict[str, dict[str, dict]]) -> dict[str, Any]:
+    """Pre-open call vs actual, in dollars, per day and symbol — the day-by-day model check."""
+    rows: list[dict[str, Any]] = []
+    for day in sorted(calls, reverse=True):
+        for sym, slot in PRE_OPEN_SLOT.items():
+            c = calls[day].get(slot)
+            rz = (realized_by_sym.get(sym) or {}).get(day)
+            if not c or not rz or not _pre_open_scorable(c) or not rz.get("prev_close"):
+                continue
+            lv = c.get("levels") or {}
+            prev = lv.get("prev_close") or rz["prev_close"]
+            rng = c.get("eod_range_pct") or {}
+            px = lambda v: None if v is None else round(prev * (1 + v / 100), 2)  # noqa: E731
+            exp_open = lv.get("expected_open") or px(c.get("expected_gap_pct"))
+            lo, mid, hi = (lv.get("close_low") or px(rng.get("q10")), lv.get("close_mid") or px(rng.get("q50")),
+                           lv.get("close_high") or px(rng.get("q90")))
+            close, opn = rz["close"], rz["open"]
+            result = None if lo is None or hi is None else "inside" if lo <= close <= hi else "above" if close > hi else "below"
+            lean = c.get("lean")
+            right = None if lean not in ("BULLISH", "BEARISH") else (close > rz["prev_close"]) == (lean == "BULLISH")
+            rows.append({
+                "date": day, "symbol": sym, "vol_index": c.get("vol_index"), "lean": lean,
+                "p_close_red": c.get("p_close_red"), "prev_close": round(prev, 2),
+                "open_pred": exp_open, "open_actual": opn,
+                "open_err_pct": round((opn / exp_open - 1) * 100, 2) if exp_open else None,
+                "close_mid": mid, "close_actual": close, "close_actual_pct": rz["full_pct"],
+                "close_err_pct": round((close / mid - 1) * 100, 2) if mid else None,
+                "range": [lo, hi], "range_result": result, "direction_right": right,
+            })
+    summary: dict[str, Any] = {}
+    for sym in PRE_OPEN_SLOT:
+        rs = [r for r in rows if r["symbol"] == sym]
+        if not rs:
+            continue
+        calls_n = [r for r in rs if r["direction_right"] is not None]
+        ranged = [r for r in rs if r["range_result"]]
+        summary[sym] = {
+            "days": len(rs),
+            "direction_calls": len(calls_n),
+            "direction_right_pct": round(100 * sum(r["direction_right"] for r in calls_n) / len(calls_n), 1) if calls_n else None,
+            "in_range_pct": round(100 * sum(r["range_result"] == "inside" for r in ranged) / len(ranged), 1) if ranged else None,
+            "closed_above": sum(r["range_result"] == "above" for r in ranged),
+            "closed_below": sum(r["range_result"] == "below" for r in ranged),
+            "avg_abs_open_err_pct": _avg([abs(r["open_err_pct"]) for r in rs if r["open_err_pct"] is not None]),
+            "avg_close_err_pct": _avg([r["close_err_pct"] for r in rs if r["close_err_pct"] is not None]),
+            "avg_abs_close_err_pct": _avg([abs(r["close_err_pct"]) for r in rs if r["close_err_pct"] is not None]),
+        }
+    return {"summary": summary, "days": rows[:60]}
+
+
 def _realized_spy(days: list[str]) -> dict[str, dict]:
+    return _realized_px("SPY", days)
+
+
+def _realized_px(sym: str, days: list[str]) -> dict[str, dict]:
     if not days:
         return {}
     from signals.fetcher import _download_with_crumb_retry
 
     start = (datetime.fromisoformat(min(days)) - timedelta(days=7)).date().isoformat()
-    df = _download_with_crumb_retry("SPY", start=start, interval="1d", threads=False)
+    df = _download_with_crumb_retry(sym, start=start, interval="1d", threads=False)
     if df is None or df.empty:
         return {}
     if hasattr(df.columns, "levels"):
@@ -483,6 +544,7 @@ def _realized_spy(days: list[str]) -> dict[str, dict]:
         d = ts.date().isoformat()
         if prev_close is not None and d in days:
             out[d] = {
+                "prev_close": round(prev_close, 2), "open": round(float(r["Open"]), 2), "close": round(float(r["Close"]), 2),
                 "gap_pct": round((float(r["Open"]) / prev_close - 1) * 100, 2),
                 "full_pct": round((float(r["Close"]) / prev_close - 1) * 100, 2),
             }
@@ -491,10 +553,14 @@ def _realized_spy(days: list[str]) -> dict[str, dict]:
 
 
 def scorecard(today: str | None = None) -> dict[str, Any]:
+    from signals.time_et import now_et
+
+    now = now_et()
+    closed_today = now.weekday() < 5 and (now.hour, now.minute) >= (16, 15)
     calls = {}
     for p in sorted(_calls_dir().glob("*.json")):
         d = p.stem
-        if today and d >= today:
+        if today and (d > today or (d == today and not closed_today)):
             continue
         data = _load_day(d)
         if data:
@@ -506,6 +572,16 @@ def scorecard(today: str | None = None) -> dict[str, Any]:
         realized = {}
     out = score_days(calls, realized)
     out["calibration"] = score_calibration(calls, realized)
+    try:
+        realized_q = _realized_px("QQQ", list(calls))
+    except Exception as e:
+        logger.debug("market_pulse QQQ realized fetch failed: %s", e)
+        realized_q = {}
+    out["daily_log"] = daily_log(calls, {"SPY": realized, "QQQ": realized_q})
+    # Keep the scored row with the day's calls (once the session is final) for later retuning.
+    for r in out["daily_log"]["days"]:
+        if r["date"] < now.date().isoformat():
+            log_call(r["date"], f"actual_{r['symbol'].lower()}", r)
     return out
 
 

@@ -193,3 +193,21 @@ def test_qqq_keyed_on_prior_vxn_not_vix(tmp_path, monkeypatch):
     assert "VXN at 34.0" in q["risk_reasons"]
     assert out["pre_open"]["vol_index"] == "VIX" and out["pre_open"]["vix_bucket"] == [25.0, 30.0]
     assert out["vxn"]["prev_close"] == 34.02
+
+
+def test_daily_log_predicted_vs_actual():
+    pre = {"as_of": "2026-11-09T09:20:00-05:00", "lean": "BULLISH", "p_close_red": 0.12, "vol_index": "VIX",
+           "expected_gap_pct": 0.81, "eod_range_pct": {"q10": -0.15, "q50": 1.1, "q90": 1.84},
+           "levels": {"prev_close": 735.29, "expected_open": 741.25, "close_low": 734.19, "close_mid": 743.38,
+                      "close_high": 748.82}}
+    late = {**pre, "as_of": "2026-11-06T09:45:00-05:00"}
+    calls = {"2026-11-09": {"pre_open": pre}, "2026-11-06": {"pre_open": late}}
+    realized = {"SPY": {"2026-11-09": {"prev_close": 735.29, "open": 741.95, "close": 752.64, "full_pct": 2.36},
+                        "2026-11-06": {"prev_close": 733.0, "open": 734.82, "close": 735.29, "full_pct": 0.31}}}
+    out = mp.daily_log(calls, realized)
+    assert len(out["days"]) == 1  # late call not scored
+    r = out["days"][0]
+    assert r["range_result"] == "above" and r["direction_right"] is True
+    assert r["open_err_pct"] == round((741.95 / 741.25 - 1) * 100, 2)
+    s = out["summary"]["SPY"]
+    assert s["in_range_pct"] == 0.0 and s["closed_above"] == 1 and s["direction_right_pct"] == 100.0
