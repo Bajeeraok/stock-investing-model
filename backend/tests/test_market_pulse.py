@@ -108,6 +108,21 @@ def test_pre_open_logged_only_before_open(tmp_path, monkeypatch):
     assert "qqq_pre_open" in mp._load_day("2026-11-06")
 
 
+def test_pre_open_uses_prior_vix_close_not_overnight_print(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    monkeypatch.setattr(mp, "_calls_dir", lambda: tmp_path)
+    monkeypatch.setattr(mp, "_daily_last_two",
+                        lambda sym: (25.64, 23.25) if sym == "^VIX" else (100.0, 100.81))
+    monkeypatch.setattr(mp, "_engine_bias_today", lambda day: None)
+    monkeypatch.setattr(mp, "_ref_close", lambda sym, d: 700.0)
+    out = mp.build_market_pulse(now=datetime(2026, 11, 9, 9, 20, tzinfo=ZoneInfo("America/New_York")))
+    assert out["pre_open"]["vix_bucket"] == [25.0, 30.0]
+    assert "Sized for VIX 25.6" in out["pre_open"]["note"]
+    assert out["vix"]["last"] == 23.25
+
+
 def test_pre_open_range_scales_with_vix():
     calm = mp.pre_open_outlook(0.07, vix_level=15)
     stressed = mp.pre_open_outlook(0.07, vix_level=27)

@@ -554,7 +554,8 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
             except Exception as e:
                 logger.debug("market_pulse %s failed: %s", fut, e)
             bias = _engine_bias_today(day) if sym == "SPY" else None
-            live_pre = pre_open_outlook(es_pct, vix_last, vix_pct, bias, ref_label, symbol=sym, ref_close=ref_px)
+            # Odds/range tables are keyed on the prior-session VIX close; overnight VIX prints don't match them.
+            live_pre = pre_open_outlook(es_pct, vix_prev, vix_pct, bias, ref_label, symbol=sym, ref_close=ref_px)
             if live_pre:
                 live_pre.update(stamp)
             if phase == "pre_open" and live_pre:
