@@ -8,10 +8,12 @@ Calibration (SPY, see docstrings of each function):
     The 80% range is widened/narrowed by VIX (GAP_VIX_RESID) since daily swings scale with it.
     Red-close odds use the gap × prior-VIX cell (market_pulse_tables, 2005–2026) when it has
     ≥ MIN_CELL_N days: a +0.25–0.75% gap closed red 15% with VIX<15 but 32–38% with VIX>25.
-    QQQ (Nasdaq futures) uses its own gap × VIX cells for odds and range.
+    QQQ (Nasdaq futures) uses its own gap × prior-VXN cells (Nasdaq-100 vol index) for odds and range;
+    2020–26 out-of-sample, VXN cells put 81% of closes in the 80% band vs 75% keyed on VIX.
   • Intraday: final ≈ move so far + N(0, k·σ_VIX·√(time left)), σ_VIX = prior VIX/√252.
     k=0.40 gave ~85–90% coverage of the nominal 80% band on the last 60 sessions (k=0.30
     ≈ 80%); we keep the slightly wider band and track real coverage in the scorecard.
+    QQQ uses prior VXN in place of VIX: 81% coverage on 2y of hourly QQQ bars (70% with VIX).
 Probabilities, not predictions. Never feeds stock buy/sell decisions.
 """
 from __future__ import annotations
@@ -63,6 +65,9 @@ SLOT_LATE_MIN = 45
 SESSION_MIN = 390
 MIN_CELL_N = 40
 FUTURES = {"SPY": ("ES=F", "S&P"), "QQQ": ("NQ=F", "Nasdaq")}
+VOL_INDEX = {"SPY": "VIX", "QQQ": "VXN"}
+# High-risk level per index: VXN runs ~1.18× VIX, so VXN 30 ≈ VIX 25.
+HIGH_VOL_LEVEL = {"VIX": 25.0, "VXN": 30.0}
 
 
 def _norm_cdf(x: float) -> float:
@@ -94,8 +99,8 @@ def _vix_cell(symbol: str, gap_pct: float, vix_level: float | None):
     return (*cell, [VIX_EDGES[vi], VIX_EDGES[vi + 1]])
 
 
-def _vix_label(b: list[float]) -> str:
-    return f"VIX under {b[1]:.0f}" if b[0] <= 0 else f"VIX over {b[0]:.0f}" if b[1] >= 999 else f"VIX {b[0]:.0f}–{b[1]:.0f}"
+def _vix_label(b: list[float], name: str = "VIX") -> str:
+    return f"{name} under {b[1]:.0f}" if b[0] <= 0 else f"{name} over {b[0]:.0f}" if b[1] >= 999 else f"{name} {b[0]:.0f}–{b[1]:.0f}"
 
 
 def price_levels(ref_close: float | None, gap_pct: float | None, lo_pct, mid_pct, hi_pct) -> dict | None:
@@ -140,13 +145,14 @@ def pre_open_outlook(
         mid = gap + r50
         q10, q50, q90 = round(mid + z10 * s, 2), round(mid, 2), round(mid + z90 * s, 2)
     fut_name = FUTURES.get(symbol, ("", "S&P"))[1]
+    vol = VOL_INDEX.get(symbol, "VIX")
     risk_reasons = []
     if abs(es_pct) >= 1.0:
         risk_reasons.append(f"{fut_name} futures {es_pct:+.2f}% overnight")
     if vix_pct is not None and vix_pct >= 10:
-        risk_reasons.append(f"VIX up {vix_pct:.0f}%")
-    if vix_level is not None and vix_level >= 25:
-        risk_reasons.append(f"VIX at {vix_level:.1f}")
+        risk_reasons.append(f"{vol} up {vix_pct:.0f}%")
+    if vix_level is not None and vix_level >= HIGH_VOL_LEVEL[vol]:
+        risk_reasons.append(f"{vol} at {vix_level:.1f}")
     if p_red >= 0.6:
         lean = "BEARISH"
     elif p_red <= 0.4:
@@ -167,17 +173,18 @@ def pre_open_outlook(
         "range_vix_scaled": vix_scaled,
         "symbol": symbol,
         "vix_bucket": vix_bucket,
+        "vol_index": vol,
         "p_close_red_all_vix": p_red_all if vix_bucket else None,
         "levels": price_levels(ref_close, gap, q10, q50, q90),
         "note": (
             (
-                f"On {n} past days with a similar open and {_vix_label(vix_bucket)}, {symbol} closed red "
+                f"On {n} past days with a similar open and {_vix_label(vix_bucket, vol)}, {symbol} closed red "
                 f"{p_red * 100:.0f}% of the time ({p_red_all * 100:.0f}% across all {n_all} similar opens). "
                 if vix_bucket
                 else f"On {n} past days with a similar open, {symbol} closed red {p_red * 100:.0f}% of the time. "
             )
             + (
-                f"Sized for VIX {vix_level:.1f}, 80% of closes should land between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
+                f"Sized for {vol} {vix_level:.1f}, 80% of closes should land between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
                 if vix_scaled
                 else f"80% closed between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
             )
@@ -523,12 +530,15 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
     phase = _phase(now)
     out: dict[str, Any] = {"as_of": now.isoformat(timespec="seconds"), "date": day, "phase": phase}
 
-    vix_prev = vix_last = None
-    try:
-        vix_prev, vix_last = _daily_last_two("^VIX")
-    except Exception as e:
-        logger.debug("market_pulse VIX failed: %s", e)
-    vix_pct = round((vix_last / vix_prev - 1) * 100, 1) if vix_prev and vix_last else None
+    vols: dict[str, dict[str, float | None]] = {}
+    for name in ("VIX", "VXN"):
+        prev = last = None
+        try:
+            prev, last = _daily_last_two(f"^{name}")
+        except Exception as e:
+            logger.debug("market_pulse %s failed: %s", name, e)
+        vols[name] = {"prev_close": prev, "last": last,
+                      "pct": round((last / prev - 1) * 100, 1) if prev and last else None}
 
     ref_day = _ref_close_date(now)
     ref_label = _close_label(ref_day)
@@ -538,6 +548,8 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
     stored = _load_day(day)
     for sym in ("SPY", "QQQ"):
         slot = "pre_open" if sym == "SPY" else "qqq_pre_open"
+        vol = vols[VOL_INDEX[sym]]
+        vol_prev = vol["prev_close"]
         pre = stored.get(slot)
         ref_px = None
         try:
@@ -554,8 +566,8 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
             except Exception as e:
                 logger.debug("market_pulse %s failed: %s", fut, e)
             bias = _engine_bias_today(day) if sym == "SPY" else None
-            # Odds/range tables are keyed on the prior-session VIX close; overnight VIX prints don't match them.
-            live_pre = pre_open_outlook(es_pct, vix_prev, vix_pct, bias, ref_label, symbol=sym, ref_close=ref_px)
+            # Odds/range tables are keyed on the prior-session vol-index close; overnight prints don't match them.
+            live_pre = pre_open_outlook(es_pct, vol_prev, vol["pct"], bias, ref_label, symbol=sym, ref_close=ref_px)
             if live_pre:
                 live_pre.update(stamp)
             if phase == "pre_open" and live_pre:
@@ -590,11 +602,10 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                 prev_close, last, open_px = _spy_today(now) if sym == "SPY" else _session_bars(sym, now)
                 if prev_close and last:
                     mins = (now.hour * 60 + now.minute) - 570
-                    # prior-session VIX close sets the day's volatility scale (VIX tracks the S&P;
-                    # QQQ's range uses the same scale, so it is a floor for the Nasdaq)
+                    # prior-session VIX (SPY) / VXN (QQQ) close sets the day's volatility scale
                     sess_ref = _prev_session(now.date())
                     intraday = intraday_close_range(
-                        (last / prev_close - 1) * 100, min(mins, SESSION_MIN), vix_prev, _close_label(sess_ref)
+                        (last / prev_close - 1) * 100, min(mins, SESSION_MIN), vol_prev, _close_label(sess_ref)
                     )
                     if intraday:
                         intraday.update(as_of=out["as_of"], ref_close_date=sess_ref.isoformat())
@@ -615,7 +626,7 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
             out["pre_open"], out["intraday"] = pre, intraday
         else:
             out["qqq"] = {"pre_open": pre, "intraday": intraday}
-    out["vix"] = {"prev_close": vix_prev, "last": vix_last, "pct": vix_pct}
+    out["vix"], out["vxn"] = vols["VIX"], vols["VXN"]
     out["logged_today"] = sorted(_load_day(day).keys())
     out["disclaimer"] = "Odds from past SPY/QQQ days, not a forecast of the exact close. Does not change stock signals."
     return out

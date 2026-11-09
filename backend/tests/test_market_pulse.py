@@ -175,3 +175,21 @@ def test_pre_open_levels_in_dollars_and_qqq_table():
     assert o["symbol"] == "QQQ" and "QQQ closed red" in o["note"]
     assert mp.pre_open_outlook(0.5)["levels"] is None
     assert mp.price_levels(None, 0.1, -1, 0, 1) is None
+
+
+def test_qqq_keyed_on_prior_vxn_not_vix(tmp_path, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    closes = {"^VIX": (25.64, 23.25), "^VXN": (34.02, 31.0)}
+    monkeypatch.setattr(mp, "_calls_dir", lambda: tmp_path)
+    monkeypatch.setattr(mp, "_daily_last_two", lambda sym: closes.get(sym, (100.0, 100.81)))
+    monkeypatch.setattr(mp, "_engine_bias_today", lambda day: None)
+    monkeypatch.setattr(mp, "_ref_close", lambda sym, d: 700.0)
+    out = mp.build_market_pulse(now=datetime(2026, 11, 9, 9, 20, tzinfo=ZoneInfo("America/New_York")))
+    q = out["qqq"]["pre_open"]
+    assert q["vol_index"] == "VXN" and q["vix_bucket"] == [30.0, 999.0]
+    assert "VXN over 30" in q["note"] and "Sized for VXN 34.0" in q["note"]
+    assert "VXN at 34.0" in q["risk_reasons"]
+    assert out["pre_open"]["vol_index"] == "VIX" and out["pre_open"]["vix_bucket"] == [25.0, 30.0]
+    assert out["vxn"]["prev_close"] == 34.02
