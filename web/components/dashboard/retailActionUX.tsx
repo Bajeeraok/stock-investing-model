@@ -2173,6 +2173,10 @@ export function LongTermTierLadder({
                       <span className="text-emerald-300/90">
                         Current price (${currentPrice.toFixed(2)}) is gravitating toward this structural floor.
                       </span>
+                    ) : isAbove && tier.id === "T3" ? (
+                      <span className="text-slate-500">
+                        Stress level only — {((1 - tier.high / currentPrice) * 100).toFixed(0)}% below today&apos;s price.
+                      </span>
                     ) : isAbove && tier.drop_needed_pct != null ? (
                       <span className="text-slate-500">
                         🔒 Price is above zone — needs ~{Math.abs(tier.drop_needed_pct).toFixed(0)}% pullback

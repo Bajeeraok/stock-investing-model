@@ -19,6 +19,8 @@ MODES: dict[str, dict[str, Any]] = {
     "owner": {"horizon": "long", "min_rr": 1.5, "window": 252},
 }
 NEAR_BAND_PCT = 3.0
+# Owner adds never sit above the max add (band top); only Swing gets the near-band allowance.
+NEAR_BAND_PCT_BY_MODE = {"swing": NEAR_BAND_PCT, "owner": 0.0}
 MIN_CHANCE = 40.0
 ODDS_GAP_PTS = 30.0
 TOP_N = 10
@@ -102,7 +104,7 @@ def setup_row(detail: dict, mode: str, model_ok: bool = False) -> dict | None:
         blockers.append("entry gates")
     if h.get("setup_status") == "no_setup" or rr is None or rr < cfg["min_rr"]:
         blockers.append(f"R:R under {cfg['min_rr']:.1f}")
-    if gap is None or gap > NEAR_BAND_PCT:
+    if gap is None or gap > NEAR_BAND_PCT_BY_MODE.get(mode, NEAR_BAND_PCT):
         blockers.append("price above band")
     if edge is None:
         blockers.append("no past odds")
@@ -268,6 +270,69 @@ def load_latest() -> dict | None:
     except Exception:
         logger.exception("best-setups read failed")
         return None
+
+
+def recheck_picks(report: dict, get_detail) -> dict:
+    """Re-run each saved pick against its current ticker page (intraday)."""
+    trusted = report.get("model_proven") or {}
+    picks: dict[str, dict] = {}
+    for m, v in (report.get("modes") or {}).items():
+        for r in v.get("picks") or []:
+            t = r.get("ticker")
+            try:
+                row = setup_row(get_detail(t), m, bool(trusted.get(m)))
+            except Exception:
+                logger.exception("best-setups recheck %s failed", t)
+                continue
+            if row is None:
+                picks[f"{m}:{t}"] = {"qualified": False, "price": None, "reasons": ["no usable levels"]}
+                continue
+            reasons = [
+                f"entry gates ({', '.join(row['gates_failing'])})" if b == "entry gates" and row.get("gates_failing") else b
+                for b in row["blockers"]
+            ]
+            picks[f"{m}:{t}"] = {"qualified": row["qualified"], "price": row["price"], "status": row["status"],
+                                 "band_low": row["band_low"], "band_high": row["band_high"], "reasons": reasons}
+    return {"as_of": report.get("as_of"),
+            "checked_at": datetime.now(ZoneInfo("America/New_York")).isoformat(timespec="minutes"),
+            "picks": picks}
+
+
+def save_live(live: dict) -> None:
+    d = _dir()
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "live.json").write_text(json.dumps(live, default=str))
+
+
+def load_live() -> dict | None:
+    p = _dir() / "live.json"
+    try:
+        return json.loads(p.read_text()) if p.exists() else None
+    except Exception:
+        return None
+
+
+def apply_live(report: dict | None, live: dict | None) -> dict | None:
+    """Attach the latest intraday re-check to each pick; the saved EOD list itself is not changed."""
+    if not report or not live or live.get("as_of") != report.get("as_of"):
+        return report
+    out = {**report, "live_checked_at": live.get("checked_at"), "modes": {}}
+    for m, v in (report.get("modes") or {}).items():
+        out["modes"][m] = {**v, "picks": [
+            {**r, "live": live["picks"].get(f"{m}:{r.get('ticker')}")} for r in v.get("picks") or []
+        ]}
+    return out
+
+
+def recheck_latest(config: dict) -> dict | None:
+    from api.ticker_detail import get_ticker_detail
+
+    report = load_latest()
+    if not report:
+        return None
+    live = recheck_picks(report, lambda t: get_ticker_detail(t, config, allow_stale=False))
+    save_live(live)
+    return live
 
 
 def _history(days: int = TRACK_DAYS) -> list[dict]:

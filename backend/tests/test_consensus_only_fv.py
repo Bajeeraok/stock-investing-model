@@ -50,3 +50,4 @@ def test_fell_through_higher_tiers_owner_band_sits_at_spot():
     assert sig.stop_loss < ez.low
     assert "Full allocation" not in sp["detail"] and "stress level only" in sp["detail"]
     assert _tier(sig, "T3")["high"] < ez.low
+    assert sig.entry_tiers["target_tier_id"] is None

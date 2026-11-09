@@ -767,6 +767,14 @@ def compute_signal_warm_sync(
     except Exception:
         pass
 
+    if warm_kind == "signal_warm":
+        try:
+            from signals.best_setups import recheck_latest
+
+            recheck_latest(config)
+        except Exception:
+            logger.exception("[dashboard-warm] best setups recheck failed")
+
     logger.info("[dashboard-warm] %s DONE (%.0f ms)", warm_kind, (time.perf_counter() - t0_all) * 1000)
     return merged
 

@@ -35,6 +35,7 @@ interface SetupRow {
   duration?: string | null;
   blockers: string[];
   gates_failing?: string[];
+  live?: { qualified: boolean; price: number | null; reasons: string[] } | null;
 }
 
 interface ModelCheck {
@@ -61,7 +62,7 @@ interface ModeTrack {
 export interface BestSetupsResponse {
   available: boolean;
   model_check?: { horizons?: Partial<Record<"medium" | "long", ModelCheck | null>> } | null;
-  report: { as_of: string; scanned: number; new_count?: number; model_proven?: Partial<Record<Mode, boolean>>; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[]; dip_watch?: SetupRow[] }> } | null;
+  report: { as_of: string; live_checked_at?: string | null; scanned: number; new_count?: number; model_proven?: Partial<Record<Mode, boolean>>; modes: Record<Mode, { picks: SetupRow[]; next_up: SetupRow[]; dip_watch?: SetupRow[] }> } | null;
   track: Record<Mode, ModeTrack> | null;
 }
 
@@ -119,7 +120,10 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
         <span className="font-mono font-semibold text-slate-100 text-[15px]">{r.ticker}</span>
         {r.new && <Pill tone="green">NEW</Pill>}
         <span className="font-mono text-slate-300 text-[14px] tabular-nums">{usd(r.price)}</span>
-        {r.status && <Pill tone={r.status === "Can add" ? "green" : "amber"}>{r.status}</Pill>}
+        {r.status && !(r.live && !r.live.qualified) && (
+          <Pill tone={r.status === "Can add" ? "green" : "amber"}>{r.status}</Pill>
+        )}
+        {r.live && !r.live.qualified && <Pill tone="red">No longer qualifies</Pill>}
         {r.edge_pct != null && (
           <Pill tone={r.edge_pct > 0 ? "blue" : "slate"}>
             edge {r.edge_pct > 0 ? "+" : ""}
@@ -133,6 +137,11 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
             </Pill>
           ))}
       </div>
+      {!nextUp && r.live && !r.live.qualified && (
+        <div className="mt-1 text-[13px] text-rose-200/90">
+          Now{r.live.price != null ? ` ${usd(r.live.price)}` : ""}: {r.live.reasons.join(" · ") || "no longer passes"}
+        </div>
+      )}
       {nextUp && (
         <div className="mt-1 text-[13px] text-rose-200/90">
           {r.blockers[0] === "entry gates"
@@ -249,7 +258,9 @@ export function BestSetupsPanel({
             {MODE_LABEL[k]}
           </button>
         ))}
-        <span className="text-[12px] text-slate-400">As of {data.report.as_of} close · {data.report.scanned} tickers</span>
+        <span className="text-[12px] text-slate-400">As of {data.report.as_of} close · {data.report.scanned} tickers
+          {data.report.live_checked_at ? ` · picks rechecked ${data.report.live_checked_at.slice(11, 16)} ET` : ""}
+        </span>
       </div>
 
       <p className="text-[13px] leading-relaxed rounded-md border-l-2 border-sky-400/60 bg-sky-500/5 px-3 py-2 text-slate-300">

@@ -2256,6 +2256,8 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         )
         spot_position = dict(spot_position)
         spot_position["spot_band"] = {"low": entry_zone.low, "high": entry_zone.high}
+        # The at-spot band is the plan; the lower tier is a stress reference, not a target.
+        target_tid = None
         spot_position["detail"] = (
             "Spot ${:.2f} is below the higher tier bands but at/below the full-size ceiling ${:.2f}. "
             "{} allocation is valuation-justified at spot; owner band ${:.2f}–${:.2f}. "

@@ -197,3 +197,28 @@ def test_dip_watch_record_vs_spy_first_day_only(monkeypatch):
     r = rec["recent"][0]
     assert r["ticker"] == "X" and r["sessions"] == 21 and r["became_pick"] is True
     assert r["vs_spy_pts"] == round(42.0 - 2.1, 2)
+
+
+def test_owner_pick_must_be_at_or_below_max_add():
+    from signals.best_setups import setup_row as sr
+
+    d = _detail(price=86.5)  # 1.8% above owner band top 85 — Swing allowance must not apply
+    assert "price above band" in sr(d, "owner")["blockers"]
+    assert "price above band" not in sr(_detail(price=84.0), "owner")["blockers"]
+
+
+def test_recheck_marks_dropped_pick_and_apply_live():
+    from signals.best_setups import apply_live, recheck_picks
+
+    report = build_report([_detail("AAA"), _detail("BBB")], as_of=pd.Timestamp("2026-11-07").date(), previous={})
+    assert {r["ticker"] for r in report["modes"]["swing"]["picks"]} >= {"AAA", "BBB"}
+    now = {"AAA": _detail("AAA"), "BBB": _detail("BBB", entry_mode="hard_lock", price=101.0)}
+    live = recheck_picks(report, lambda t: now[t])
+    assert live["picks"]["swing:AAA"]["qualified"]
+    b = live["picks"]["swing:BBB"]
+    assert not b["qualified"] and b["price"] == 101.0 and any(x.startswith("entry gates") for x in b["reasons"])
+    out = apply_live(report, live)
+    rows = {r["ticker"]: r for r in out["modes"]["swing"]["picks"]}
+    assert rows["BBB"]["live"]["qualified"] is False and out["live_checked_at"]
+    assert "live" not in report["modes"]["swing"]["picks"][0]
+    assert apply_live(report, {**live, "as_of": "2026-11-06"}) is report

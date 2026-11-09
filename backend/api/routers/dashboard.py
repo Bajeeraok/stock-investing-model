@@ -4262,9 +4262,9 @@ async def get_best_setups():
 
     from fastapi.concurrency import run_in_threadpool
 
-    from signals.best_setups import load_latest, track_record
+    from signals.best_setups import apply_live, load_latest, load_live, track_record
 
-    report = load_latest()
+    report = apply_live(load_latest(), load_live())
     hit = _BEST_SETUPS_TRACK.get("v")
     if hit is None or _time.time() - _BEST_SETUPS_TRACK.get("ts", 0) > 3600 or \
             _BEST_SETUPS_TRACK.get("as_of") != (report or {}).get("as_of"):
