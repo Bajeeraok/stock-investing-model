@@ -211,3 +211,18 @@ def test_daily_log_predicted_vs_actual():
     assert r["open_err_pct"] == round((741.95 / 741.25 - 1) * 100, 2)
     s = out["summary"]["SPY"]
     assert s["in_range_pct"] == 0.0 and s["closed_above"] == 1 and s["direction_right_pct"] == 100.0
+
+
+def test_key_levels_nearest_support_resistance():
+    bars = [{"date": f"2026-10-{d:02d}", "high": 100 + d, "low": 95 + d, "close": 98 + d} for d in range(1, 21)]
+    bars.append({"date": "2026-10-21", "high": 125.0, "low": 117.0, "close": 119.0})
+    kl = mp.key_levels(bars, "2026-10-20", 118.5)
+    assert kl["ref_close_date"] == "2026-10-20"
+    assert all(x["price"] < 118.5 for x in kl["support"]) and all(x["price"] > 118.5 for x in kl["resistance"])
+    assert kl["support"][0]["price"] > kl["support"][1]["price"]
+    assert kl["resistance"][0]["price"] < kl["resistance"][1]["price"]
+    assert "prev close" in kl["support"][0]["labels"]  # 118.0
+    assert any("prev high" in x["labels"] for x in kl["resistance"])  # 120 = prev high = 5/20-day high
+    live = mp.key_levels(bars, "2026-10-20", 122.0, today="2026-10-21")
+    assert any("today's high" in x["labels"] for x in live["resistance"])
+    assert mp.key_levels(bars[:1], "2026-10-01", 100.0) is None

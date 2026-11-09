@@ -14,6 +14,16 @@ interface Levels {
   close_mid?: number | null;
   close_high: number | null;
 }
+interface KeyLevel {
+  price: number;
+  labels: string[];
+  dist_pct: number;
+}
+interface KeyLevels {
+  anchor: number;
+  support: KeyLevel[];
+  resistance: KeyLevel[];
+}
 interface PreOpen {
   expected_gap_pct: number;
   lean: "BEARISH" | "BULLISH" | "MIXED";
@@ -29,6 +39,7 @@ interface PreOpen {
   as_of?: string;
   ref_close_date?: string;
   levels?: Levels | null;
+  key_levels?: KeyLevels | null;
 }
 interface Intraday {
   move_so_far_pct: number;
@@ -40,6 +51,7 @@ interface Intraday {
   as_of?: string;
   ref_close_date?: string;
   levels?: Levels | null;
+  key_levels?: KeyLevels | null;
 }
 interface SlotSummary {
   days: number;
@@ -122,6 +134,30 @@ const usd = (n: number | null | undefined) =>
   n == null ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const withDate = (note: string, label: string) => note.replace(/vs yesterday/g, `vs ${label}`);
 
+function KeyLevelsLine({ kl, anchorLabel }: { kl?: KeyLevels | null; anchorLabel: string }) {
+  if (!kl || (!kl.support.length && !kl.resistance.length)) return null;
+  const fmt = (x: KeyLevel) => (
+    <span key={x.price}>
+      {usd(x.price)} <span className="text-slate-500">({x.labels.join(" · ")}, {pct(x.dist_pct)})</span>
+    </span>
+  );
+  const join = (xs: KeyLevel[]) =>
+    xs.length ? xs.map((x, i) => <React.Fragment key={x.price}>{i > 0 && " · "}{fmt(x)}</React.Fragment>) : "—";
+  return (
+    <div className="text-[13px] text-slate-200 mt-1 tabular-nums space-y-0.5">
+      <p>
+        <span className="text-red-400">Resistance</span> {join(kl.resistance)}
+      </p>
+      <p>
+        <span className="text-emerald-400">Support</span> {join(kl.support)}
+      </p>
+      <p className="text-[12px] text-slate-500">
+        Nearest levels vs {anchorLabel} {usd(kl.anchor)}: prior-day high/low/close, floor pivots, 5/20-day swings. Reference levels, not predictions.
+      </p>
+    </div>
+  );
+}
+
 function PreOpenBlock({ sym, pre, refLabel, asOf }: { sym: string; pre: PreOpen; refLabel: string; asOf: string }) {
   const lv = pre.levels;
   return (
@@ -143,6 +179,7 @@ function PreOpenBlock({ sym, pre, refLabel, asOf }: { sym: string; pre: PreOpen;
           {lv.close_mid != null && <span className="text-slate-400"> (median {usd(lv.close_mid)})</span>}
         </p>
       )}
+      <KeyLevelsLine kl={pre.key_levels} anchorLabel={lv?.expected_open != null ? "expected open" : "prior close"} />
       <p className="text-[13px] text-slate-500 mt-0.5">
         As of {asOfEt(pre.as_of ?? asOf) ?? "—"} · compared with {sym}&apos;s {refLabel}
       </p>
@@ -182,6 +219,7 @@ function IntradayBlock({ sym, intra, phase, asOf }: { sym: string; intra: Intrad
           {phase === "intraday" && ` · likely close ${usd(lv.close_low)}–${usd(lv.close_high)}`}
         </p>
       )}
+      <KeyLevelsLine kl={intra.key_levels} anchorLabel={phase === "intraday" ? "price now" : "close"} />
       <p className="text-[13px] text-slate-500 mt-0.5">
         As of {asOfEt(intra.as_of ?? asOf) ?? "—"} · % vs {sym}&apos;s {refLabel}
       </p>

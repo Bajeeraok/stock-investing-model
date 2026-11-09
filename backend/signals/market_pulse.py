@@ -261,6 +261,59 @@ def _ref_close(sym: str, ref_day: date) -> float | None:
     return float(c.iloc[-1]) if len(c) else None
 
 
+SR_MERGE_PCT = 0.15
+
+
+def key_levels(bars: list[dict], ref_day: str, anchor: float | None, today: str | None = None, n: int = 2) -> dict | None:
+    """Nearest support/resistance around `anchor`: reference-day high/low/close, floor pivots,
+    5/20-day swing high/low, plus today's high/low once the session is trading."""
+    hist = [b for b in bars if b["date"] <= ref_day]
+    if not anchor or len(hist) < 2:
+        return None
+    h, lo, c = hist[-1]["high"], hist[-1]["low"], hist[-1]["close"]
+    p = (h + lo + c) / 3
+    cands = [(h, "prev high"), (lo, "prev low"), (c, "prev close"), (p, "pivot"),
+             (2 * p - lo, "R1"), (2 * p - h, "S1"), (p + (h - lo), "R2"), (p - (h - lo), "S2")]
+    for k in (5, 20):
+        w = hist[-k:]
+        cands += [(max(b["high"] for b in w), f"{k}-day high"), (min(b["low"] for b in w), f"{k}-day low")]
+    t = next((b for b in bars if today and b["date"] == today), None)
+    if t:
+        cands += [(t["high"], "today's high"), (t["low"], "today's low")]
+    groups: list[list[tuple[float, str]]] = []
+    for px, lab in sorted(cands):
+        if groups and px - groups[-1][0][0] <= groups[-1][0][0] * SR_MERGE_PCT / 100:
+            groups[-1].append((px, lab))
+        else:
+            groups.append([(px, lab)])
+
+    def lvl(g):
+        px = sum(x for x, _ in g) / len(g)
+        return {"price": round(px, 2), "labels": list(dict.fromkeys(lab for _, lab in g)),
+                "dist_pct": round((px / anchor - 1) * 100, 2)}
+
+    levels = [lvl(g) for g in groups]
+    return {
+        "anchor": round(anchor, 2),
+        "ref_close_date": hist[-1]["date"],
+        "support": sorted((x for x in levels if x["price"] < anchor), key=lambda x: -x["price"])[:n],
+        "resistance": sorted((x for x in levels if x["price"] > anchor), key=lambda x: x["price"])[:n],
+    }
+
+
+def _daily_bars(sym: str) -> list[dict]:
+    from signals.fetcher import _download_with_crumb_retry
+
+    df = _download_with_crumb_retry(sym, period="2mo", interval="1d", threads=False)
+    if df is None or df.empty:
+        return []
+    if hasattr(df.columns, "levels"):
+        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+    df = df.dropna(subset=["High", "Low", "Close"])
+    return [{"date": ts.date().isoformat(), "high": float(r["High"]), "low": float(r["Low"]), "close": float(r["Close"])}
+            for ts, r in df.iterrows()]
+
+
 def _spy_today(now) -> tuple[float | None, float | None, float | None]:
     return _session_bars("SPY", now)
 
@@ -627,6 +680,11 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
         vol = vols[VOL_INDEX[sym]]
         vol_prev = vol["prev_close"]
         pre = stored.get(slot)
+        bars: list[dict] = []
+        try:
+            bars = _daily_bars(sym)
+        except Exception as e:
+            logger.debug("market_pulse %s daily bars failed: %s", sym, e)
         ref_px = None
         try:
             ref_px = _ref_close(sym, ref_day)
@@ -671,6 +729,10 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                     pre_ref = None
             r = pre.get("eod_range_pct") or {}
             pre = {**pre, "levels": price_levels(pre_ref, pre.get("expected_gap_pct"), r.get("q10"), r.get("q50"), r.get("q90"))}
+        if pre and bars:
+            lv = pre.get("levels") or {}
+            pre = {**pre, "key_levels": key_levels(
+                bars, pre.get("ref_close_date") or ref_day.isoformat(), lv.get("expected_open") or lv.get("prev_close"))}
 
         intraday = None
         if phase in ("intraday", "closed") and now.weekday() < 5:
@@ -692,10 +754,12 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
                     if intraday and open_px:
                         intraday["actual_gap_pct"] = round((open_px / prev_close - 1) * 100, 2)
                         intraday["levels"]["open"] = round(open_px, 2)
+                    if intraday and bars:
+                        intraday["key_levels"] = key_levels(bars, sess_ref.isoformat(), last, today=now.date().isoformat())
                     if sym == "SPY" and intraday and log and phase == "intraday":
                         due = _due_intraday_slot(now)
                         if due and due not in stored:
-                            log_call(day, due, {k: v for k, v in intraday.items() if k != "levels"})
+                            log_call(day, due, {k: v for k, v in intraday.items() if k not in ("levels", "key_levels")})
             except Exception as e:
                 logger.debug("market_pulse %s intraday failed: %s", sym, e)
         if sym == "SPY":
