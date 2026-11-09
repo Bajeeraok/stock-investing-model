@@ -92,6 +92,8 @@ def test_pre_open_logged_only_before_open(tmp_path, monkeypatch):
     monkeypatch.setattr(mp, "_spy_today", lambda now: (None, None, None))
     monkeypatch.setattr(mp, "_engine_bias_today", lambda day: None)
     monkeypatch.setattr(mp, "_last_bar_date", lambda sym: None)
+    monkeypatch.setattr(mp, "_session_bars", lambda sym, now: (None, None, None))
+    monkeypatch.setattr(mp, "_ref_close", lambda sym, d: {"SPY": 680.0, "QQQ": 600.0}[sym])
 
     mp.build_market_pulse(log=True, now=datetime(2026, 11, 5, 10, 31, tzinfo=et))
     assert "pre_open" not in mp._load_day("2026-11-05")
@@ -101,6 +103,9 @@ def test_pre_open_logged_only_before_open(tmp_path, monkeypatch):
     assert saved["as_of"].startswith("2026-11-06T09:20") and mp._pre_open_scorable(saved)
     assert saved["ref_close_date"] == "2026-11-05" and "vs Nov 5 close" in saved["note"]
     assert out["pre_open"]["ref_close_date"] == "2026-11-05"
+    assert saved["levels"]["prev_close"] == 680.0 and saved["levels"]["expected_open"] == 666.4
+    assert out["qqq"]["pre_open"]["levels"]["prev_close"] == 600.0
+    assert "qqq_pre_open" in mp._load_day("2026-11-06")
 
 
 def test_pre_open_range_scales_with_vix():
@@ -108,7 +113,7 @@ def test_pre_open_range_scales_with_vix():
     stressed = mp.pre_open_outlook(0.07, vix_level=27)
     w = lambda o: o["eod_range_pct"]["q90"] - o["eod_range_pct"]["q10"]
     assert w(stressed) > 2 * w(calm) and stressed["range_vix_scaled"]
-    assert stressed["p_close_red"] == calm["p_close_red"] == 0.47
+    assert stressed["vix_bucket"] == [25.0, 30.0] and calm["vix_bucket"] == [0.0, 15.0]
     assert mp.pre_open_outlook(0.07)["eod_range_pct"] == {"q10": -0.67, "q50": 0.04, "q90": 0.71}
 
 
@@ -137,3 +142,21 @@ def test_intraday_range_widens_faster_than_vix():
     lo20, hi20 = mp.intraday_close_range(0.0, 60, 20.0)["range80_pct"]
     lo40, hi40 = mp.intraday_close_range(0.0, 60, 40.0)["range80_pct"]
     assert (hi40 - lo40) > 2 * (hi20 - lo20)
+
+
+def test_gap_up_red_odds_rise_with_vix():
+    calm = mp.pre_open_outlook(0.43, vix_level=14)
+    stressed = mp.pre_open_outlook(0.43, vix_level=25.6)
+    assert calm["p_close_red"] < 0.2 < 0.3 < stressed["p_close_red"]
+    assert stressed["p_close_red_all_vix"] == 0.22 and "VIX 25–30" in stressed["note"]
+    assert mp.pre_open_outlook(0.43)["p_close_red"] == 0.22 and mp.pre_open_outlook(0.43)["vix_bucket"] is None
+
+
+def test_pre_open_levels_in_dollars_and_qqq_table():
+    o = mp.pre_open_outlook(0.5, vix_level=18, symbol="QQQ", ref_close=600.0)
+    lv = o["levels"]
+    assert lv["prev_close"] == 600.0 and lv["expected_open"] == 603.0
+    assert lv["close_low"] < lv["close_mid"] < lv["close_high"]
+    assert o["symbol"] == "QQQ" and "QQQ closed red" in o["note"]
+    assert mp.pre_open_outlook(0.5)["levels"] is None
+    assert mp.price_levels(None, 0.1, -1, 0, 1) is None

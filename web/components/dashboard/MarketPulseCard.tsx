@@ -5,6 +5,15 @@ import { clsx } from "clsx";
 import { AlertTriangle } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 
+interface Levels {
+  prev_close: number;
+  expected_open?: number | null;
+  open?: number | null;
+  last?: number | null;
+  close_low: number | null;
+  close_mid?: number | null;
+  close_high: number | null;
+}
 interface PreOpen {
   expected_gap_pct: number;
   lean: "BEARISH" | "BULLISH" | "MIXED";
@@ -19,6 +28,7 @@ interface PreOpen {
   preview?: boolean;
   as_of?: string;
   ref_close_date?: string;
+  levels?: Levels | null;
 }
 interface Intraday {
   move_so_far_pct: number;
@@ -29,6 +39,7 @@ interface Intraday {
   note: string;
   as_of?: string;
   ref_close_date?: string;
+  levels?: Levels | null;
 }
 interface SlotSummary {
   days: number;
@@ -50,6 +61,7 @@ export interface MarketPulse {
   phase: "pre_open" | "intraday" | "closed";
   pre_open: PreOpen | null;
   intraday: Intraday | null;
+  qqq?: { pre_open: PreOpen | null; intraday: Intraday | null } | null;
   vix?: { last: number | null; pct: number | null };
   scorecard?: {
     summary: Record<string, SlotSummary>;
@@ -81,9 +93,79 @@ const asOfEt = (iso?: string | null) => {
   if (Number.isNaN(t.getTime())) return null;
   return `${t.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`;
 };
+const usd = (n: number | null | undefined) =>
+  n == null ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const withDate = (note: string, label: string) => note.replace(/vs yesterday/g, `vs ${label}`);
 
-/** SPY pre-open odds + intraday likely-close range + how past calls held up. */
+function PreOpenBlock({ sym, pre, refLabel, asOf }: { sym: string; pre: PreOpen; refLabel: string; asOf: string }) {
+  const lv = pre.levels;
+  return (
+    <div className={clsx("rounded-lg border px-3 py-2", pre.high_risk ? "border-red-500/50 bg-red-500/10" : "border-slate-700 bg-slate-800/40")}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-[13px] uppercase tracking-wide text-slate-400">{pre.preview ? `Next session preview (${sym})` : `Pre-open (${sym})`}</span>
+        <span className={clsx("font-semibold", tone(pre.lean))}>{pre.lean}</span>
+        <span className="text-slate-300 tabular-nums">Expected open {pct(pre.expected_gap_pct)}</span>
+        <span className="text-slate-300 tabular-nums">Close red {Math.round(pre.p_close_red * 100)}%</span>
+        {pre.high_risk && (
+          <span className="inline-flex items-center gap-1 text-red-300 font-semibold">
+            <AlertTriangle className="h-3.5 w-3.5" /> High-risk day
+          </span>
+        )}
+      </div>
+      {lv && (
+        <p className="text-[13px] text-slate-200 mt-1 tabular-nums">
+          {refLabel.replace(/ close$/, "")} close {usd(lv.prev_close)} → open ≈ {usd(lv.expected_open)} · likely close {usd(lv.close_low)}–{usd(lv.close_high)}
+          {lv.close_mid != null && <span className="text-slate-400"> (median {usd(lv.close_mid)})</span>}
+        </p>
+      )}
+      <p className="text-[13px] text-slate-500 mt-0.5">
+        As of {asOfEt(pre.as_of ?? asOf) ?? "—"} · compared with {sym}&apos;s {refLabel}
+      </p>
+      <p className="text-[13px] text-slate-400 mt-1 tabular-nums">
+        Likely close {pct(pre.eod_range_pct.q10)} to {pct(pre.eod_range_pct.q90)} vs {refLabel} (median {pct(pre.eod_range_pct.q50)}).
+        {pre.risk_reasons.length > 0 && ` ${pre.risk_reasons.join(" · ")}.`}
+        {pre.engine_bias && ` Engine: ${pre.engine_bias}.`}
+      </p>
+      <p className="text-[13px] text-slate-500 mt-0.5">{withDate(pre.note, refLabel)}</p>
+    </div>
+  );
+}
+
+function IntradayBlock({ sym, intra, phase, asOf }: { sym: string; intra: Intraday; phase: MarketPulse["phase"]; asOf: string }) {
+  const refLabel = closeLabel(intra.ref_close_date);
+  const lv = intra.levels;
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-[13px] uppercase tracking-wide text-slate-400">{phase === "intraday" ? `Intraday (${sym})` : `Today's close (${sym})`}</span>
+        <span className={clsx("font-semibold tabular-nums", intra.move_so_far_pct >= 0 ? "text-emerald-400" : "text-red-400")}>
+          {pct(intra.move_so_far_pct)} so far
+        </span>
+        {phase === "intraday" && (
+          <>
+            <span className="text-slate-300 tabular-nums">
+              Likely close {pct(intra.range80_pct[0])} to {pct(intra.range80_pct[1])}
+            </span>
+            <span className="text-slate-300 tabular-nums">Close green {Math.round(intra.p_close_green * 100)}%</span>
+          </>
+        )}
+      </div>
+      {lv && (
+        <p className="text-[13px] text-slate-200 mt-1 tabular-nums">
+          {refLabel.replace(/ close$/, "")} close {usd(lv.prev_close)}
+          {lv.open != null && ` · open ${usd(lv.open)}`} · {phase === "intraday" ? "now" : "close"} {usd(lv.last)}
+          {phase === "intraday" && ` · likely close ${usd(lv.close_low)}–${usd(lv.close_high)}`}
+        </p>
+      )}
+      <p className="text-[13px] text-slate-500 mt-0.5">
+        As of {asOfEt(intra.as_of ?? asOf) ?? "—"} · % vs {sym}&apos;s {refLabel}
+      </p>
+      {phase === "intraday" && <p className="text-[13px] text-slate-500 mt-0.5">{withDate(intra.note, refLabel)}</p>}
+    </div>
+  );
+}
+
+/** SPY + QQQ pre-open odds + intraday likely-close range + how past SPY calls held up. */
 export function MarketPulseCard() {
   const [data, setData] = useState<MarketPulse | null>(null);
   const [err, setErr] = useState(false);
@@ -107,62 +189,19 @@ export function MarketPulseCard() {
   if (!data) return <p className="text-[13px] text-slate-500">Loading market pulse…</p>;
   const pre = data.pre_open;
   const intra = data.intraday;
+  const qPre = data.qqq?.pre_open ?? null;
+  const qIntra = data.qqq?.intraday ?? null;
   const sum = data.scorecard?.summary;
   const days = data.scorecard?.days ?? [];
   const preRef = closeLabel(pre?.ref_close_date ?? data.ref_close_date);
-  const intraRef = closeLabel(intra?.ref_close_date);
   const hasLate = days.some((d) => d.pre_open?.late);
 
   return (
     <div className="space-y-3 text-sm">
-      {pre && (
-        <div className={clsx("rounded-lg border px-3 py-2", pre.high_risk ? "border-red-500/50 bg-red-500/10" : "border-slate-700 bg-slate-800/40")}>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-[13px] uppercase tracking-wide text-slate-400">{pre.preview ? "Next session preview (SPY)" : "Pre-open (SPY)"}</span>
-            <span className={clsx("font-semibold", tone(pre.lean))}>{pre.lean}</span>
-            <span className="text-slate-300 tabular-nums">Expected open {pct(pre.expected_gap_pct)}</span>
-            <span className="text-slate-300 tabular-nums">Close red {Math.round(pre.p_close_red * 100)}%</span>
-            {pre.high_risk && (
-              <span className="inline-flex items-center gap-1 text-red-300 font-semibold">
-                <AlertTriangle className="h-3.5 w-3.5" /> High-risk day
-              </span>
-            )}
-          </div>
-          <p className="text-[13px] text-slate-500 mt-0.5">
-            As of {asOfEt(pre.as_of ?? data.as_of) ?? "—"} · compared with SPY&apos;s {preRef}
-          </p>
-          <p className="text-[13px] text-slate-400 mt-1 tabular-nums">
-            Likely close {pct(pre.eod_range_pct.q10)} to {pct(pre.eod_range_pct.q90)} vs {preRef} (median {pct(pre.eod_range_pct.q50)}).
-            {pre.risk_reasons.length > 0 && ` ${pre.risk_reasons.join(" · ")}.`}
-            {pre.engine_bias && ` Engine: ${pre.engine_bias}.`}
-          </p>
-          <p className="text-[13px] text-slate-500 mt-0.5">{withDate(pre.note, preRef)}</p>
-        </div>
-      )}
-      {intra && (
-        <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-3 py-2">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-[13px] uppercase tracking-wide text-slate-400">
-              {data.phase === "intraday" ? "Intraday (SPY)" : "Today's close (SPY)"}
-            </span>
-            <span className={clsx("font-semibold tabular-nums", intra.move_so_far_pct >= 0 ? "text-emerald-400" : "text-red-400")}>
-              {pct(intra.move_so_far_pct)} so far
-            </span>
-            {data.phase === "intraday" && (
-              <>
-                <span className="text-slate-300 tabular-nums">
-                  Likely close {pct(intra.range80_pct[0])} to {pct(intra.range80_pct[1])}
-                </span>
-                <span className="text-slate-300 tabular-nums">Close green {Math.round(intra.p_close_green * 100)}%</span>
-              </>
-            )}
-          </div>
-          <p className="text-[13px] text-slate-500 mt-0.5">
-            As of {asOfEt(intra.as_of ?? data.as_of) ?? "—"} · % vs SPY&apos;s {intraRef}
-          </p>
-          {data.phase === "intraday" && <p className="text-[13px] text-slate-500 mt-0.5">{withDate(intra.note, intraRef)}</p>}
-        </div>
-      )}
+      {pre && <PreOpenBlock sym="SPY" pre={pre} refLabel={preRef} asOf={data.as_of} />}
+      {qPre && <PreOpenBlock sym="QQQ" pre={qPre} refLabel={closeLabel(qPre.ref_close_date ?? data.ref_close_date)} asOf={data.as_of} />}
+      {intra && <IntradayBlock sym="SPY" intra={intra} phase={data.phase} asOf={data.as_of} />}
+      {qIntra && <IntradayBlock sym="QQQ" intra={qIntra} phase={data.phase} asOf={data.as_of} />}
       {!pre && !intra && <p className="text-[13px] text-slate-500">No pulse yet — pre-open read starts ~4 AM ET on trading days.</p>}
 
       <div>

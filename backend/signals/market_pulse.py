@@ -1,11 +1,14 @@
 """
-Market pulse: pre-open outlook + intraday "likely close" range for SPY, with a daily scorecard.
+Market pulse: pre-open outlook + intraday "likely close" range for SPY and QQQ, with a daily scorecard (SPY).
 
 Calibration (SPY, see docstrings of each function):
   • Pre-open: 10y of SPY daily bars (2016–2026). Full-day return (prior close → close)
     grouped by opening gap. A gap mostly tells you which side of yesterday's close the day
     ends on; whether the market keeps falling/rising after the open is close to a coin flip.
     The 80% range is widened/narrowed by VIX (GAP_VIX_RESID) since daily swings scale with it.
+    Red-close odds use the gap × prior-VIX cell (market_pulse_tables, 2005–2026) when it has
+    ≥ MIN_CELL_N days: a +0.25–0.75% gap closed red 15% with VIX<15 but 32–38% with VIX>25.
+    QQQ (Nasdaq futures) uses its own gap × VIX cells for odds and range.
   • Intraday: final ≈ move so far + N(0, k·σ_VIX·√(time left)), σ_VIX = prior VIX/√252.
     k=0.40 gave ~85–90% coverage of the nominal 80% band on the last 60 sessions (k=0.30
     ≈ 80%); we keep the slightly wider band and track real coverage in the scorecard.
@@ -18,6 +21,8 @@ import logging
 import math
 from datetime import date, datetime, timedelta
 from typing import Any
+
+from signals.market_pulse_tables import GAP_EDGES, TABLES, VIX_EDGES
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +61,8 @@ INTRADAY_SLOT_TIMES = {"10:30": (10, 30), "11:30": (11, 30), "12:30": (12, 30),
                        "13:30": (13, 30), "14:30": (14, 30), "15:30": (15, 30)}
 SLOT_LATE_MIN = 45
 SESSION_MIN = 390
+MIN_CELL_N = 40
+FUTURES = {"SPY": ("ES=F", "S&P"), "QQQ": ("NQ=F", "Nasdaq")}
 
 
 def _norm_cdf(x: float) -> float:
@@ -69,27 +76,73 @@ def _bucket(gap_pct: float) -> tuple:
     return GAP_TABLE[3]
 
 
+def _gap_index(gap_pct: float) -> int:
+    for i in range(len(GAP_EDGES) - 1):
+        if GAP_EDGES[i] < gap_pct <= GAP_EDGES[i + 1]:
+            return i
+    return 3
+
+
+def _vix_cell(symbol: str, gap_pct: float, vix_level: float | None):
+    """(n, p_red, q10, q50, q90, [vix_lo, vix_hi]) for the gap × prior-VIX cell, or None if too thin."""
+    if vix_level is None or vix_level <= 0:
+        return None
+    vi = next((j for j in range(len(VIX_EDGES) - 1) if VIX_EDGES[j] < vix_level <= VIX_EDGES[j + 1]), None)
+    cell = TABLES[symbol]["cells"].get((_gap_index(gap_pct), vi)) if vi is not None else None
+    if not cell or cell[0] < MIN_CELL_N:
+        return None
+    return (*cell, [VIX_EDGES[vi], VIX_EDGES[vi + 1]])
+
+
+def _vix_label(b: list[float]) -> str:
+    return f"VIX under {b[1]:.0f}" if b[0] <= 0 else f"VIX over {b[0]:.0f}" if b[1] >= 999 else f"VIX {b[0]:.0f}–{b[1]:.0f}"
+
+
+def price_levels(ref_close: float | None, gap_pct: float | None, lo_pct, mid_pct, hi_pct) -> dict | None:
+    """% moves vs the reference close → dollar levels."""
+    if not ref_close or ref_close <= 0:
+        return None
+    px = lambda v: None if v is None else round(ref_close * (1 + v / 100), 2)
+    return {"prev_close": round(ref_close, 2), "expected_open": px(gap_pct),
+            "close_low": px(lo_pct), "close_mid": px(mid_pct), "close_high": px(hi_pct)}
+
+
 def pre_open_outlook(
     es_pct: float | None,
     vix_level: float | None = None,
     vix_pct: float | None = None,
     engine_bias: str | None = None,
     ref_label: str = "yesterday",
+    *,
+    symbol: str = "SPY",
+    ref_close: float | None = None,
 ) -> dict[str, Any] | None:
-    """Expected open gap ≈ S&P futures move since yesterday's close → full-day odds from GAP_TABLE."""
+    """Expected open gap ≈ futures move since the last close → full-day odds by gap (and VIX when the cell is deep)."""
     if es_pct is None:
         return None
-    row = _bucket(float(es_pct))
-    lo, hi, n, p_red, q10, q50, q90 = row
-    vix_scaled = vix_level is not None and vix_level > 0
-    if vix_scaled:
+    gap = float(es_pct)
+    if symbol == "SPY":
+        row = _bucket(gap)
+        lo, hi, n, p_red, q10, q50, q90 = row
+    else:
+        lo, hi, n, p_red, q10, q50, q90 = TABLES[symbol]["gap"][_gap_index(gap)]
+    p_red_all, n_all = p_red, n
+    cell = _vix_cell(symbol, gap, vix_level)
+    vix_bucket = None
+    if cell:
+        n, p_red, c10, c50, c90, vix_bucket = cell
+        if symbol != "SPY":
+            q10, q50, q90 = c10, c50, c90
+    vix_scaled = vix_level is not None and vix_level > 0 and (symbol == "SPY" or cell is not None)
+    if vix_scaled and symbol == "SPY":
         r50, z10, z90 = GAP_VIX_RESID[GAP_TABLE.index(row)]
         s = (vix_level / math.sqrt(252)) ** VIX_RANGE_POW
-        mid = float(es_pct) + r50
+        mid = gap + r50
         q10, q50, q90 = round(mid + z10 * s, 2), round(mid, 2), round(mid + z90 * s, 2)
+    fut_name = FUTURES.get(symbol, ("", "S&P"))[1]
     risk_reasons = []
     if abs(es_pct) >= 1.0:
-        risk_reasons.append(f"S&P futures {es_pct:+.2f}% overnight")
+        risk_reasons.append(f"{fut_name} futures {es_pct:+.2f}% overnight")
     if vix_pct is not None and vix_pct >= 10:
         risk_reasons.append(f"VIX up {vix_pct:.0f}%")
     if vix_level is not None and vix_level >= 25:
@@ -112,8 +165,17 @@ def pre_open_outlook(
         "risk_reasons": risk_reasons,
         "engine_bias": engine_bias,
         "range_vix_scaled": vix_scaled,
+        "symbol": symbol,
+        "vix_bucket": vix_bucket,
+        "p_close_red_all_vix": p_red_all if vix_bucket else None,
+        "levels": price_levels(ref_close, gap, q10, q50, q90),
         "note": (
-            f"On {n} past days with a similar open, SPY closed red {p_red * 100:.0f}% of the time. "
+            (
+                f"On {n} past days with a similar open and {_vix_label(vix_bucket)}, {symbol} closed red "
+                f"{p_red * 100:.0f}% of the time ({p_red_all * 100:.0f}% across all {n_all} similar opens). "
+                if vix_bucket
+                else f"On {n} past days with a similar open, {symbol} closed red {p_red * 100:.0f}% of the time. "
+            )
             + (
                 f"Sized for VIX {vix_level:.1f}, 80% of closes should land between {q10:+.2f}% and {q90:+.2f}% vs {ref_label}."
                 if vix_scaled
@@ -178,11 +240,29 @@ def _daily_last_two(sym: str) -> tuple[float | None, float | None]:
     return float(c.iloc[-2]), float(c.iloc[-1])
 
 
+def _ref_close(sym: str, ref_day: date) -> float | None:
+    """Daily close of `sym` on the reference session (latest close on/before ref_day)."""
+    from signals.fetcher import _download_with_crumb_retry
+
+    df = _download_with_crumb_retry(sym, period="10d", interval="1d", threads=False)
+    if df is None or df.empty:
+        return None
+    if hasattr(df.columns, "levels"):
+        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+    c = df["Close"].dropna()
+    c = c[[ts.date() <= ref_day for ts in c.index]]
+    return float(c.iloc[-1]) if len(c) else None
+
+
 def _spy_today(now) -> tuple[float | None, float | None, float | None]:
+    return _session_bars("SPY", now)
+
+
+def _session_bars(sym: str, now) -> tuple[float | None, float | None, float | None]:
     """(prior close, last price, today's open) from 5-min bars; None outside a session day."""
     from signals.fetcher import _download_with_crumb_retry
 
-    df = _download_with_crumb_retry("SPY", period="5d", interval="5m", threads=False)
+    df = _download_with_crumb_retry(sym, period="5d", interval="5m", threads=False)
     if df is None or df.empty:
         return None, None, None
     if hasattr(df.columns, "levels"):
@@ -456,59 +536,85 @@ def build_market_pulse(*, log: bool = False, now=None) -> dict[str, Any]:
     stamp = {"as_of": out["as_of"], "ref_close_date": ref_day.isoformat()}
 
     stored = _load_day(day)
-    pre = stored.get("pre_open")
-    if phase == "pre_open" or pre is None:
-        es_pct = None
+    for sym in ("SPY", "QQQ"):
+        slot = "pre_open" if sym == "SPY" else "qqq_pre_open"
+        pre = stored.get(slot)
+        ref_px = None
         try:
-            es_prev, es_last = _daily_last_two("ES=F")
-            if es_prev and es_last:
-                es_pct = (es_last / es_prev - 1) * 100
+            ref_px = _ref_close(sym, ref_day)
         except Exception as e:
-            logger.debug("market_pulse ES failed: %s", e)
-        live_pre = pre_open_outlook(es_pct, vix_last, vix_pct, _engine_bias_today(day), ref_label)
-        if live_pre:
-            live_pre.update(stamp)
-        if phase == "pre_open" and live_pre:
-            pre = live_pre
-            if log and now.weekday() < 5:
-                log_call(day, "pre_open", live_pre, overwrite=True)
-        elif pre is None and live_pre:
-            # Evenings/weekends: show the next-session preview only once futures have traded
-            # past the last SPY session (else ES "change" is just the last day's move).
+            logger.debug("market_pulse %s ref close failed: %s", sym, e)
+        if phase == "pre_open" or pre is None:
+            fut = FUTURES[sym][0]
+            es_pct = None
             try:
-                es_d, spy_d = _last_bar_date("ES=F"), _last_bar_date("SPY")
-                if es_d and spy_d and es_d > spy_d:
-                    pre = {**live_pre, "preview": True}
-            except Exception:
-                pass
-    if pre and not pre.get("ref_close_date"):
-        pre = {**pre, "ref_close_date": _prev_session(now.date()).isoformat()}
-    out["pre_open"] = pre
+                es_prev, es_last = _daily_last_two(fut)
+                if es_prev and es_last:
+                    es_pct = (es_last / es_prev - 1) * 100
+            except Exception as e:
+                logger.debug("market_pulse %s failed: %s", fut, e)
+            bias = _engine_bias_today(day) if sym == "SPY" else None
+            live_pre = pre_open_outlook(es_pct, vix_last, vix_pct, bias, ref_label, symbol=sym, ref_close=ref_px)
+            if live_pre:
+                live_pre.update(stamp)
+            if phase == "pre_open" and live_pre:
+                pre = live_pre
+                if log and now.weekday() < 5:
+                    log_call(day, slot, live_pre, overwrite=True)
+            elif pre is None and live_pre:
+                # Evenings/weekends: show the next-session preview only once futures have traded
+                # past the last session (else the futures "change" is just the last day's move).
+                try:
+                    es_d, sym_d = _last_bar_date(fut), _last_bar_date(sym)
+                    if es_d and sym_d and es_d > sym_d:
+                        pre = {**live_pre, "preview": True}
+                except Exception:
+                    pass
+        if pre and not pre.get("ref_close_date"):
+            pre = {**pre, "ref_close_date": _prev_session(now.date()).isoformat()}
+        if pre and not pre.get("levels"):
+            # Calls saved before levels existed: price them off their own reference close.
+            pre_ref = ref_px
+            if pre.get("ref_close_date") and pre["ref_close_date"] != ref_day.isoformat():
+                try:
+                    pre_ref = _ref_close(sym, date.fromisoformat(pre["ref_close_date"]))
+                except Exception:
+                    pre_ref = None
+            r = pre.get("eod_range_pct") or {}
+            pre = {**pre, "levels": price_levels(pre_ref, pre.get("expected_gap_pct"), r.get("q10"), r.get("q50"), r.get("q90"))}
 
-    intraday = None
-    if phase in ("intraday", "closed") and now.weekday() < 5:
-        try:
-            prev_close, last, open_px = _spy_today(now)
-            if prev_close and last:
-                mins = (now.hour * 60 + now.minute) - 570
-                # prior-session VIX close sets the day's volatility scale
-                vix_ref = vix_prev if phase == "intraday" else vix_prev
-                sess_ref = _prev_session(now.date())
-                intraday = intraday_close_range(
-                    (last / prev_close - 1) * 100, min(mins, SESSION_MIN), vix_ref, _close_label(sess_ref)
-                )
-                if intraday:
-                    intraday.update(as_of=out["as_of"], ref_close_date=sess_ref.isoformat())
-                if intraday and open_px:
-                    intraday["actual_gap_pct"] = round((open_px / prev_close - 1) * 100, 2)
-                if intraday and log and phase == "intraday":
-                    slot = _due_intraday_slot(now)
-                    if slot and slot not in stored:
-                        log_call(day, slot, intraday)
-        except Exception as e:
-            logger.debug("market_pulse intraday failed: %s", e)
-    out["intraday"] = intraday
+        intraday = None
+        if phase in ("intraday", "closed") and now.weekday() < 5:
+            try:
+                prev_close, last, open_px = _spy_today(now) if sym == "SPY" else _session_bars(sym, now)
+                if prev_close and last:
+                    mins = (now.hour * 60 + now.minute) - 570
+                    # prior-session VIX close sets the day's volatility scale (VIX tracks the S&P;
+                    # QQQ's range uses the same scale, so it is a floor for the Nasdaq)
+                    sess_ref = _prev_session(now.date())
+                    intraday = intraday_close_range(
+                        (last / prev_close - 1) * 100, min(mins, SESSION_MIN), vix_prev, _close_label(sess_ref)
+                    )
+                    if intraday:
+                        intraday.update(as_of=out["as_of"], ref_close_date=sess_ref.isoformat())
+                        lo, hi = intraday["range80_pct"]
+                        intraday["levels"] = {**price_levels(prev_close, None, lo, None, hi), "last": round(last, 2)}
+                        intraday["levels"].pop("expected_open", None)
+                        intraday["levels"].pop("close_mid", None)
+                    if intraday and open_px:
+                        intraday["actual_gap_pct"] = round((open_px / prev_close - 1) * 100, 2)
+                        intraday["levels"]["open"] = round(open_px, 2)
+                    if sym == "SPY" and intraday and log and phase == "intraday":
+                        due = _due_intraday_slot(now)
+                        if due and due not in stored:
+                            log_call(day, due, {k: v for k, v in intraday.items() if k != "levels"})
+            except Exception as e:
+                logger.debug("market_pulse %s intraday failed: %s", sym, e)
+        if sym == "SPY":
+            out["pre_open"], out["intraday"] = pre, intraday
+        else:
+            out["qqq"] = {"pre_open": pre, "intraday": intraday}
     out["vix"] = {"prev_close": vix_prev, "last": vix_last, "pct": vix_pct}
     out["logged_today"] = sorted(_load_day(day).keys())
-    out["disclaimer"] = "Odds from past SPY days, not a forecast of the exact close. Does not change stock signals."
+    out["disclaimer"] = "Odds from past SPY/QQQ days, not a forecast of the exact close. Does not change stock signals."
     return out
