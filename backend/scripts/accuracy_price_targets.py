@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config_loader import load_config
+from config_loader import get_data_root, load_config
 from scripts.run_daily import run_signals, load_eod_snapshot
 
 
@@ -143,7 +143,7 @@ def run_accuracy_and_save(results: list[dict], config: dict, out_dir: Path | Non
         per_ticker, summary = compute_accuracy(results)
         recs = recommend_tweaks(summary, config)
         amber_tickers, tweak_tickers = _amber_tweak_tickers(per_ticker, config)
-        out_dir = out_dir or ROOT / "data"
+        out_dir = out_dir or get_data_root()
         out_dir.mkdir(parents=True, exist_ok=True)
         report = {
             "as_of": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),
@@ -194,7 +194,7 @@ def recommend_tweaks(summary: dict, config: dict) -> list[str]:
 
 def _list_eod_dates() -> list[str]:
     """Return sorted list of EOD snapshot dates (YYYY-MM-DD)."""
-    eod_dir = ROOT / "data" / "eod"
+    eod_dir = get_data_root() / "eod"
     if not eod_dir.exists():
         return []
     dates = []
@@ -304,7 +304,7 @@ def main() -> None:
             if s.get("count", 0) == 0:
                 continue
             print(f"  {s['label']}: count={s['count']}, MAPE={s.get('mape')}%, within 1/2/5% = {s.get('within_1pct')}/{s.get('within_2pct')}/{s.get('within_5pct')}")
-        out_path = ROOT / "data" / "accuracy_forward.json"
+        out_path = get_data_root() / "accuracy_forward.json"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w") as f:
             json.dump({
@@ -391,7 +391,7 @@ def main() -> None:
         print("No strong tweak recommended; error bands are in a reasonable range.")
     print()
 
-    out_dir = ROOT / "data"
+    out_dir = get_data_root()
     out_dir.mkdir(parents=True, exist_ok=True)
     report = {
         "as_of": __import__("signals.time_et", fromlist=["now_iso_et"]).now_iso_et(),

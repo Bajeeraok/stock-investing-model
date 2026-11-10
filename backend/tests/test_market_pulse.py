@@ -226,3 +226,18 @@ def test_key_levels_nearest_support_resistance():
     live = mp.key_levels(bars, "2026-10-20", 122.0, today="2026-10-21")
     assert any("today's high" in x["labels"] for x in live["resistance"])
     assert mp.key_levels(bars[:1], "2026-10-01", 100.0) is None
+
+
+def test_attach_reach_odds():
+    kl = {"anchor": 100.0, "support": [{"price": 99.0, "labels": ["S1"], "dist_pct": -1.0},
+                                       {"price": 98.2, "labels": ["S2"], "dist_pct": -1.8}],
+          "resistance": [{"price": 100.2, "labels": ["R1"], "dist_pct": 0.2}]}
+    out = mp.attach_reach_odds(kl, "SPY", 20.0)
+    assert out["vol_index"] == "VIX"
+    s1, s2 = out["support"]
+    assert 0 < s2["p_reach"] < s1["p_reach"] < out["resistance"][0]["p_reach"] <= 0.99
+    late = mp.attach_reach_odds({**kl, "support": [dict(x) for x in kl["support"]], "resistance": []}, "SPY", 20.0, 0.1)
+    assert late["support"][0]["p_reach"] < s1["p_reach"]
+    assert mp.attach_reach_odds(kl, "QQQ", None) is kl
+    closed = {"anchor": 1, "support": [{"price": 0.9, "labels": [], "dist_pct": -10}], "resistance": []}
+    assert "p_reach" not in mp.attach_reach_odds(closed, "SPY", 20.0, 0.0)["support"][0]

@@ -18,11 +18,13 @@ interface KeyLevel {
   price: number;
   labels: string[];
   dist_pct: number;
+  p_reach?: number;
 }
 interface KeyLevels {
   anchor: number;
   support: KeyLevel[];
   resistance: KeyLevel[];
+  vol_index?: string;
 }
 interface PreOpen {
   expected_gap_pct: number;
@@ -139,6 +141,7 @@ function KeyLevelsLine({ kl, anchorLabel }: { kl?: KeyLevels | null; anchorLabel
   const fmt = (x: KeyLevel) => (
     <span key={x.price}>
       {usd(x.price)} <span className="text-slate-500">({x.labels.join(" · ")}, {pct(x.dist_pct)})</span>
+      {x.p_reach != null && <span className="text-slate-300"> {Math.round(x.p_reach * 100)}% reach</span>}
     </span>
   );
   const join = (xs: KeyLevel[]) =>
@@ -152,7 +155,10 @@ function KeyLevelsLine({ kl, anchorLabel }: { kl?: KeyLevels | null; anchorLabel
         <span className="text-emerald-400">Support</span> {join(kl.support)}
       </p>
       <p className="text-[12px] text-slate-500">
-        Nearest levels vs {anchorLabel} {usd(kl.anchor)}: prior-day high/low/close, floor pivots, 5/20-day swings. Reference levels, not predictions.
+        Nearest levels vs {anchorLabel} {usd(kl.anchor)}: prior-day high/low/close, floor pivots, 5/20-day swings.
+        {kl.vol_index
+          ? ` "Reach" = chance price touches it before today's close, from distance, ${kl.vol_index} and time left. Once touched, these levels have not held better than random prices.`
+          : " Reference levels, not predictions."}
       </p>
     </div>
   );

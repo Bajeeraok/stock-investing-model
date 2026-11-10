@@ -5444,7 +5444,9 @@ async def get_accuracy():
     config = _load_config()
     interpretation = _accuracy_interpretation(config)
 
-    path = ROOT / "data" / "accuracy_price_targets.json"
+    path = Path(get_data_root()) / "accuracy_price_targets.json"
+    if not path.exists():
+        path = ROOT / "data" / "accuracy_price_targets.json"
     if not path.exists():
         return {
             "ok": False,

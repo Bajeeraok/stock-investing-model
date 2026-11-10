@@ -1288,6 +1288,7 @@ def _build_investor_summary(
         _fv_suppressed = bool(fv_result and getattr(fv_result, "fv_suppressed", False))
         payload = build_all_horizons_payload(
             current_price=current_price,
+            vix=(conf_snapshot or {}).get("vix"),
             rsi=rsi,
             atr=atr,
             vwap=vwap,
