@@ -217,8 +217,9 @@ def align_tactical_entry_with_one_answer(
         oa = one_answer if isinstance(one_answer, dict) else {}
         tactical["action_today"] = str(oa.get("action_today") or "hold").strip().lower()
         tactical["one_answer_verdict"] = oa.get("verdict")
-        tactical["entry_stance"] = "breakout_context"
-        tactical["stance_headline"] = "Momentum breakout (context only)"
+        triggered = bool(tactical.get("active") or tactical.get("velocity_triggered"))
+        tactical["entry_stance"] = "breakout_context" if triggered else "velocity_watch"
+        tactical["stance_headline"] = "Momentum breakout (context only)" if triggered else "Velocity watch (context only)"
         tactical["stance_note"] = VELOCITY_CONTEXT_NOTE + " Follow One Answer for action today."
         return tactical
     oa = one_answer if isinstance(one_answer, dict) else {}
