@@ -421,7 +421,11 @@ export function VerdictPanel({
           <p className="mt-1 text-[12.5px] text-td-muted leading-relaxed">{actionStatus.subtitle}</p>
         )}
         <p className={clsx("mt-2 text-[13px]", tone.text)}>
-          {since ? `Signal ${since.signal} since ${shortDate(since.since)}` : trackLoading ? "Checking signal history…" : "No signal history yet"}
+          {since
+            ? `Signal ${since.signal} as of ${shortDate(since.latest)} close · unchanged since ${shortDate(since.since)}`
+            : trackLoading
+              ? "Checking signal history…"
+              : "No signal history yet"}
           {" · changes only when a new signal prints"}
         </p>
       </section>

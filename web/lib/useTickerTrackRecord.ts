@@ -252,7 +252,7 @@ export function earliestAvailableHorizon(
  */
 export function currentSignalSince(
   trades: Array<{ date: string | null; signal: string | null }> | null | undefined,
-): { signal: string; since: string } | null {
+): { signal: string; since: string; latest: string } | null {
   const rows = (trades ?? []).filter((t) => t.date && t.signal).slice();
   if (!rows.length) return null;
   rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
@@ -262,5 +262,5 @@ export function currentSignalSince(
     if (String(r.signal).toUpperCase() !== sig) break;
     since = r.date as string;
   }
-  return { signal: sig, since };
+  return { signal: sig, since, latest: rows[0].date as string };
 }

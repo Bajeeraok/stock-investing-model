@@ -612,7 +612,8 @@ def get_forward_tracking(
         level_check = score_level_odds([d for d in dates if d in rows_by_date], rows_by_date)
     except Exception as e:
         logger.debug("level odds check: %s", e)
-    by_ticker = _build_by_ticker_index(records, level_check)
+    latest_open = _latest_open_calls(dates, rows_by_date, buy_min=buy_min, sell_max=sell_max)
+    by_ticker = _build_by_ticker_index(records, level_check, latest_open)
     try:
         model_check_short = build_model_check_short(records)
     except Exception as e:
@@ -885,8 +886,54 @@ def build_model_check_short(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _latest_open_calls(
+    dates: list[str], rows_by_date: dict[str, dict[str, Any]], *, buy_min: float, sell_max: float
+) -> dict[str, dict[str, Any]]:
+    """Newest EOD snapshot's call per ticker. Records need a next session, so without this the
+    Track tab and "signal since" lag the latest 8 PM run by a day."""
+    if not dates or not rows_by_date.get(dates[-1]):
+        return {}
+    try:
+        from signals.retail_action_payload import align_ml_signal_with_retail_gates
+        from signals.tracking_gate import enrich_tracking_row
+    except Exception:
+        align_ml_signal_with_retail_gates = enrich_tracking_row = None  # type: ignore[assignment]
+    out: dict[str, dict[str, Any]] = {}
+    for tk, row in rows_by_date[dates[-1]].items():
+        if not isinstance(row, dict):
+            continue
+        work = dict(row)
+        try:
+            if enrich_tracking_row and not work.get("gates_frozen"):
+                enrich_tracking_row(work)
+            if align_ml_signal_with_retail_gates:
+                align_ml_signal_with_retail_gates(work)
+        except Exception:
+            pass
+        sig, _src = _signal_and_source_from_row(work, buy_min=buy_min, sell_max=sell_max)
+        close = work.get("close")
+        out[str(tk).upper()] = {
+            "date": dates[-1],
+            "next_date": None,
+            "signal": sig,
+            "close": round(float(close), 4) if isinstance(close, (int, float)) else None,
+            "next_close": None,
+            "return_pct": None,
+            "status": "pending",
+            "pending_reason": "Awaiting next session close",
+            "gates_passed": work.get("gates_passed"),
+            "gates_total": work.get("gates_total"),
+            "model_version": tracking_version(work.get("model_version")) or "legacy",
+            "data_quality": None,
+            "right": None,
+        }
+    return out
+
+
 def _build_by_ticker_index(
-    records: list[dict[str, Any]], level_check: dict[str, Any] | None = None
+    records: list[dict[str, Any]],
+    level_check: dict[str, Any] | None = None,
+    latest_open: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     from signals.forward_tracking_metrics import (
         _target_pct,
@@ -957,6 +1004,9 @@ def _build_by_ticker_index(
             "pooled": level_pooled,
             "pending": (level_check or {}).get("pending"),
         }
+        op = (latest_open or {}).get(tk)
+        if op and (not track["daily_calls"] or str(op["date"]) > str(track["daily_calls"][0]["date"] or "")):
+            track["daily_calls"] = [op] + track["daily_calls"][: _DAILY_CALLS_PER_TICKER - 1]
         track["latest_call_date"] = track["daily_calls"][0]["date"] if track["daily_calls"] else None
         track["latest_model_daily"] = build_latest_model_daily(rows)
         track["loss_scorecard"] = build_loss_scorecards(rows, MODEL_VERSION)

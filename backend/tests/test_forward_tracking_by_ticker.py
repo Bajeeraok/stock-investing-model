@@ -28,3 +28,16 @@ def test_by_ticker_daily_calls_newest_first_and_per_ticker():
     assert all(c["right"] is True for c in calls)
     assert idx["REGN"]["latest_call_date"] == "2026-10-15"
     assert idx["MSFT"]["daily_calls"][0]["right"] is True
+
+
+def test_latest_open_call_leads_daily_calls():
+    from signals.forward_tracking import _build_by_ticker_index, _latest_open_calls
+
+    rows = {"2026-11-09": {"NVDA": {"ticker": "NVDA", "signal": "HOLD", "close": 178.67, "gates_frozen": True}}}
+    op = _latest_open_calls(["2026-11-06", "2026-11-09"], rows, buy_min=70, sell_max=30)
+    rec = {"ticker": "NVDA", "horizon_days": 1, "as_of_date": "2026-11-06", "next_date": "2026-11-09",
+           "our_signal": "HOLD", "forward_status": "complete", "actual_return_pct": -4.27, "model_version": "2026.11.3"}
+    tr = _build_by_ticker_index([rec], None, op)["NVDA"]
+    assert tr["latest_call_date"] == "2026-11-09"
+    assert tr["daily_calls"][0]["status"] == "pending" and tr["daily_calls"][0]["right"] is None
+    assert tr["daily_calls"][1]["date"] == "2026-11-06"
