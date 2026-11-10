@@ -79,6 +79,8 @@ History:
 - 2026.11.3 — crypto (BTC-USD, ETH-USD) odds also switch to since-inception history odds;
   their per-ticker models lost to history at 3 and 6 months in 2019-2026 tests. Per-ticker
   LightGBM no longer drives any displayed horizon odds unless history is unavailable.
+- 2026.11.7 — Short-term BUY band: stop 2×ATR / ATR target 3×ATR at normal vol (was closer of
+  20d swing low and 1.5×ATR, hit first 54% of the time); velocity breakout track is context only.
 - 2026.11.6 — Street-anchored fair value falls back to the low analyst target when the median is
   >2.5x the price (stale targets after a drop). SPY intraday 80% ranges refit on 2023-2026 hourly
   data (K 0.40→0.49, width ∝ VIX^1.25); hourly 11:30-15:30 snapshots logged for calibration only.
@@ -91,7 +93,7 @@ History:
 
 from __future__ import annotations
 
-MODEL_VERSION = "2026.11.6"
+MODEL_VERSION = "2026.11.7"
 
 # First version whose horizon odds come from the pooled model + history blend (signals/pooled_odds.py).
 # Model check splits calls at this boundary; later versions changed only non-stock odds.

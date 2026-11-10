@@ -858,6 +858,8 @@ def _call_error_fields(r1: dict[str, Any], r20: dict[str, Any] | None, target_pc
         out["miss_pp"] = round(a - tp, 2) if tp is not None else None
         stop, tgt, fwd = r20.get("st_stop_at_signal"), r20.get("st_target_at_signal"), r20.get("close_at_forward")
         out["in_range"] = (float(stop) < float(fwd) < float(tgt)) if stop and tgt and fwd else None
+        out["hit_st_target"] = r20.get("hit_st_target")
+        out["hit_st_stop"] = r20.get("hit_st_stop")
     return out
 
 

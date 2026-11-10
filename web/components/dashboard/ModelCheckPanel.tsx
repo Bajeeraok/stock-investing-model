@@ -239,12 +239,12 @@ export function ModelCheckPanel() {
       />
       {t && (
         <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-3 text-[13px] text-slate-300">
-          <h4 className="text-[14px] font-semibold text-slate-100">Short-term target vs 20-day path</h4>
+          <h4 className="text-[14px] font-semibold text-slate-100">Short-term target: how often it was reached</h4>
           <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
-            <span>Avg target <b className="text-slate-100">{pct(t.avg_expected_pct, true)}</b></span>
+            <span>Target reached <b className="text-emerald-300">{t.target_hit_pct.toFixed(0)}%</b></span>
+            <span>Stop hit <b className="text-rose-300">{t.stop_hit_pct.toFixed(0)}%</b></span>
             <span>Avg 20-day result <b className="text-slate-100">{pct(t.avg_actual_pct, true)}</b></span>
-            <span>Target touched <b className="text-emerald-300">{t.target_hit_pct.toFixed(0)}%</b></span>
-            <span>Stop touched <b className="text-rose-300">{t.stop_hit_pct.toFixed(0)}%</b></span>
+            <span>Avg target (upside goal) <b className="text-slate-100">{pct(t.avg_expected_pct, true)}</b></span>
           </div>
           <div className="mt-1 text-slate-500">
             {t.n} calls. Swing and Owner targets are checked on their own 3- and 12-month horizons in Plan → Best setups track record.

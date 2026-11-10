@@ -146,8 +146,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                   <th className="py-1 pr-2 font-medium" title="Close on the next trading day">Next day close</th>
                   <th className="py-1 pr-2 font-medium">What happened</th>
                   <th className="py-1 pr-2 font-medium">Right?</th>
-                  <th className="py-1 pr-2 font-medium" title="1-month target vs that day's close">1-mo target</th>
-                  <th className="py-1 pr-2 font-medium" title="20-day result, and actual minus target in points">20d · missed by</th>
+                  <th className="py-1 pr-2 font-medium" title="Short-term upside goal vs that day's close — a goal, not the expected move">Target</th>
+                  <th className="py-1 pr-2 font-medium" title="20-day result, and whether the target or the stop was touched in those 20 days">20d · target?</th>
                   {showOlderCalls && <th className="py-1 font-medium">Ver.</th>}
                 </tr>
               </thead>
@@ -200,15 +200,13 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
                       ) : (
                         <>
                           {fmtPct(c.ret_20d_pct)}
-                          {c.miss_pp != null && (
-                            <span
-                              className={Math.abs(c.miss_pp) <= 3 ? "text-emerald-400" : "text-amber-400"}
-                              title={c.in_range ? "Closed between stop and target" : "Closed outside stop–target"}
-                            >
-                              {" "}· {c.miss_pp >= 0 ? "+" : ""}
-                              {c.miss_pp.toFixed(1)} pts
-                            </span>
-                          )}
+                          {c.hit_st_stop ? (
+                            <span className="text-red-400"> · stop hit</span>
+                          ) : c.hit_st_target ? (
+                            <span className="text-emerald-400"> · target hit</span>
+                          ) : c.hit_st_target != null || c.hit_st_stop != null ? (
+                            <span className="text-slate-500"> · neither</span>
+                          ) : null}
                         </>
                       )}
                     </td>
@@ -221,8 +219,9 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           )}
           <p className="text-[13px] text-slate-600 leading-snug">
             What we said vs what happened: each EOD call with that day&apos;s close (a reference, not a buy price), then the next trading day&apos;s close — no waiting for a 5d/20d
-            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored. 1-mo target is the
-            1-month target at the call; &quot;missed by&quot; is the 20-day result minus that target (negative = fell short).
+            window. ADD counts as right if the next close is higher, TRIM if lower; HOLD isn&apos;t scored. Target is the
+            short-term upside goal at the call, not the expected move; the last column shows whether price touched the target or the stop within 20 days
+            (if both, the stop is shown).
           </p>
         </div>
       )}

@@ -65,34 +65,30 @@ export default function TrackErrorCard({ data }: { data: TrackRecordResponse }) 
 
       <div className="mb-3">
         <div className="font-medium text-slate-200">
-          Short-term target vs 20-day result <span className="font-normal text-slate-500">({errScope})</span>
+          Short-term target: how often it was reached <span className="font-normal text-slate-500">({errScope})</span>
         </div>
         {err ? (
           <>
             <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
-              <div title="Average size of the miss, ignoring direction">
-                <div className="text-slate-500">Avg miss</div>
-                <div className="font-mono">{err.mae_pp.toFixed(1)} pts</div>
+              <div title="Price touched the short-term target within 20 days">
+                <div className="text-slate-500">Target reached</div>
+                <div className="font-mono text-emerald-400">{err.target_hit_pct.toFixed(0)}%</div>
               </div>
-              <div title="Average of (actual − target). Negative = targets were too optimistic">
-                <div className="text-slate-500">Bias</div>
-                <div className={err.bias_pp < 0 ? "font-mono text-amber-400" : "font-mono text-emerald-400"}>
-                  {pp(err.bias_pp)} {err.bias_pp < 0 ? "(too optimistic)" : "(too cautious)"}
-                </div>
+              <div title="Price touched the short-term stop within 20 days">
+                <div className="text-slate-500">Stop hit</div>
+                <div className="font-mono text-red-400">{err.stop_hit_pct.toFixed(0)}%</div>
               </div>
               <div title="Close after 20 days landed between the frozen stop and target">
-                <div className="text-slate-500">Inside stop–target</div>
+                <div className="text-slate-500">Ended between</div>
                 <div className="font-mono">{err.within_range_pct == null ? "—" : `${err.within_range_pct.toFixed(0)}%`}</div>
               </div>
-              <div>
-                <div className="text-slate-500">Target / stop touched</div>
-                <div className="font-mono">
-                  {err.target_hit_pct.toFixed(0)}% / {err.stop_hit_pct.toFixed(0)}%
-                </div>
+              <div title="Average 20-day result across these calls">
+                <div className="text-slate-500">Avg 20-day result</div>
+                <div className="font-mono">{fmtPct(err.avg_actual_pct)}</div>
               </div>
             </div>
             <div className="mt-1 text-[13px] text-slate-500">
-              Avg target {fmtPct(err.avg_expected_pct)} vs avg actual {fmtPct(err.avg_actual_pct)} over {err.n} calls
+              The target ({fmtPct(err.avg_expected_pct)} on average) is an upside goal, not the expected move. {err.n} calls
               {err.n < 30 ? " — too few to judge yet" : ""}.
             </div>
           </>

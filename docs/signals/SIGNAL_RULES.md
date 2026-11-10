@@ -38,6 +38,9 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
   reference only (at most 50% below spot), never "Target tier".
 - Owner mode is more conservative than Swing. Its stop sits below the Owner band.
 - Short-term stop = max(1.5 × ATR × prior VIX / 20, 4% of spot). Every BUY has stop < entry < target.
+- Short-term band BUY: stop 2 × ATR below price, ATR target 3 × ATR above (both wider for volatile names; R:R 1.5).
+  The stop no longer uses the 20-day swing low. A target is
+  an upside goal, not the expected move: show how often it was hit, never "missed the target by".
 - "Next level" = band top when price is above the band, band low when inside, same wording in both modes.
 - Margin of safety shown = (FV − price) / FV.
 
@@ -66,6 +69,9 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 - Already tested with no edge on S&P 500 large caps (don't re-propose without new data): composite score and price
   factors, point-in-time fundamentals, post-earnings drift, insider clusters, dip-timing for index funds.
 - Short-term target distance: closer targets hit more often but lower average P&L (2014–26), so they stay as is.
+- Short-term band stop width (2014–26, uptrend entries, 20 days): old stop was hit first 54% of the time. Stop 2× /
+  target 3× ATR: average +0.31→+0.45% (2014–19), +0.43→+0.63% (2020–26), losers 57→53%, average gain still above
+  average loss. Wider stops (2.5–3×) without a wider target made the average loss bigger than the average gain.
 
 ## Switched-off signals
 

@@ -62,6 +62,9 @@ export interface DailyCallRow {
   /** 20d actual minus target, percentage points. */
   miss_pp?: number | null;
   in_range?: boolean | null;
+  /** Within 20 days: short-term target / stop touched (1/0). */
+  hit_st_target?: number | boolean | null;
+  hit_st_stop?: number | boolean | null;
 }
 
 export interface ErrorSummary {
