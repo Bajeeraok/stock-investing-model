@@ -236,8 +236,12 @@ function LevelRows({
         {/* Nearest add first (highest ceiling) — tier ids are anchors (T1 MA200, T2 MOS,
             T3 stress), not an order, so listing by id read as "T2 sits above T1". */}
         {(() => {
-          const above = tiers.filter((t) => currentPrice && t.high > currentPrice);
-          const below = tiers.filter((t) => !(currentPrice && t.high > currentPrice)).sort((a, b) => b.high - a.high);
+          // Tiers above the margin-of-safety max add are "wait", not buy zones (same cap as the Owner band).
+          const capped = tiers.filter((t) => t.above_max_add);
+          const open = tiers.filter((t) => !t.above_max_add);
+          const maxAdd = (horizon.entry_zone as { max_add?: number | null } | undefined)?.max_add ?? null;
+          const above = open.filter((t) => currentPrice && t.high > currentPrice);
+          const below = open.filter((t) => !(currentPrice && t.high > currentPrice)).sort((a, b) => b.high - a.high);
           const rowCls =
             "grid grid-cols-[3.2rem_1fr_auto] items-center gap-2 px-2.5 py-1.5 rounded-lg bg-td-surface2/70 border border-td-line";
           return (
@@ -254,6 +258,22 @@ function LevelRows({
                     </span>
                   </span>
                   <span className="text-[11px] font-mono text-td-muted tabular-nums">now</span>
+                </div>
+              )}
+              {capped.length > 0 && (
+                <div className={rowCls}>
+                  <span className="text-[11px] font-mono font-bold uppercase tracking-wide text-td-muted">
+                    {capped.map((t) => t.id).join("·")}
+                  </span>
+                  <span className="text-[13px] font-mono font-semibold text-td-text tabular-nums">
+                    {maxAdd != null ? `max add ${fmt(maxAdd)}` : "above max add"}
+                    <span className="ml-1.5 text-[11px] font-td-sans font-medium text-td-muted normal-case">
+                      {capped.map((t) => TIER_ANCHOR[t.id] ?? t.id).join(", ")} sit above it — wait
+                    </span>
+                  </span>
+                  <span className="text-[11px] font-mono text-td-muted tabular-nums">
+                    {maxAdd != null ? pctFromSpot(maxAdd, currentPrice) : ""}
+                  </span>
                 </div>
               )}
               {below.map((t) => (
