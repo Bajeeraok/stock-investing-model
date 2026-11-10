@@ -59,9 +59,9 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 ## Data and tracking
 
 - Official 8 PM EOD snapshots are never overwritten by intraday runs.
-- Score against data the model had not seen. Keep each model version's record separate.
+- Score against data the model had not seen. Keep the current era's record separate from calls made before it.
 - HOLD is never scored right or wrong. ADD is right if price rose, TRIM/REDUCE/SELL/AVOID if it fell.
-- Bump `MODEL_VERSION` on any change to odds or gates.
+- Don't bump `MODEL_VERSION` for tuning changes. Every version since `TRACKING_ERA_SINCE` (2026.11.1) is scored as one model so history builds up. Log each change with its date in `signals/model_version.py`.
 
 ## Changing the model
 

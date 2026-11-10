@@ -5,12 +5,11 @@ point each is persisted — so win-rate/accuracy reporting can isolate the curre
 real performance instead of blending it with signals produced under earlier gate/band/
 regime logic.
 
-Bump this string whenever a change to gate thresholds, target-band math, regime
-classification, or entry-mode logic would materially change what a signal snapshot
-means (i.e. anything under signals/retail_action_payload.py, signals/target_bands.py,
-signals/hmm_regime.py, signals/tracking_gate.py). Cosmetic/display-only changes don't
-need a bump. Format is free-form but "YYYY.MM.N" (year, month, sequence within month)
-keeps versions sortable and dated at a glance.
+Frozen: do not bump MODEL_VERSION for tuning changes. Each bump split forward tracking
+into shards too small to judge (2026.11.1-11.7 shipped in 5 days), so every version from
+TRACKING_ERA_SINCE on is scored as one record via tracking_version(). Log tuning changes
+in the history below with their date instead. Start a new era only for a rebuild that
+makes old calls meaningless, and only with the owner's OK.
 
 History:
 - 2026.09.1 — HMM direction-blind |daily_return| feature fix + BEAR-probability floor,
@@ -95,6 +94,9 @@ from __future__ import annotations
 
 MODEL_VERSION = "2026.11.7"
 
+# Calls stamped with any version from here on are tracked as one model (MODEL_VERSION).
+TRACKING_ERA_SINCE = "2026.11.1"
+
 # First version whose horizon odds come from the pooled model + history blend (signals/pooled_odds.py).
 # Model check splits calls at this boundary; later versions changed only non-stock odds.
 ODDS_MODEL_SINCE = "2026.11.1"
@@ -105,6 +107,14 @@ def _version_key(v: str) -> tuple[int, ...] | None:
         return tuple(int(x) for x in str(v).split("."))
     except ValueError:
         return None
+
+
+def tracking_version(version: str | None) -> str | None:
+    """Version a call is scored under: MODEL_VERSION for the current era, else as stamped."""
+    k = _version_key(version) if version else None
+    if k is not None and k >= _version_key(TRACKING_ERA_SINCE):
+        return MODEL_VERSION
+    return version
 
 
 def odds_model_is_current(version: str | None) -> bool:

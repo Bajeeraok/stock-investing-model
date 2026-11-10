@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from signals.model_version import MODEL_VERSION
+from signals.model_version import MODEL_VERSION, tracking_version
 
 logger = logging.getLogger(__name__)
 
@@ -412,7 +412,7 @@ def get_forward_tracking(
                         "trim_score_triggered": trim_gate.get("trim_score_triggered"),
                         "trim_recommendation": trim_gate.get("trim_recommendation"),
                         "trim_gates_frozen": bool(row_work.get("trim_gates_frozen")),
-                        "model_version": row_work.get("model_version"),
+                        "model_version": tracking_version(row_work.get("model_version")),
                     }
                     records.append(rec)
                     signal_source_counts[signal_source] = signal_source_counts.get(signal_source, 0) + 1
@@ -472,7 +472,7 @@ def get_forward_tracking(
                     "hit_st_target": path.get("hit_st_target"),
                     "max_gain_pct": path.get("max_gain_pct"),
                     "max_drawdown_pct": path.get("max_drawdown_pct"),
-                    "model_version": row_work.get("model_version"),
+                    "model_version": tracking_version(row_work.get("model_version")),
                 }
                 if trim_m:
                     rec.update(trim_m)

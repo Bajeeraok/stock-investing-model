@@ -115,3 +115,12 @@ def test_model_version_missing_reports_as_legacy(monkeypatch, tmp_path):
     assert all(r.get("model_version") is None for r in out["records"])
     assert "legacy" in out["summary_by_model_version"]
     assert MODEL_VERSION not in out["summary_by_model_version"]
+
+
+def test_tracking_version_pools_current_era():
+    from signals.model_version import MODEL_VERSION, tracking_version
+
+    assert tracking_version("2026.11.1") == MODEL_VERSION
+    assert tracking_version("2026.11.4") == MODEL_VERSION
+    assert tracking_version("2026.10.2") == "2026.10.2"
+    assert tracking_version(None) is None

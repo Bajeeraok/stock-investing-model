@@ -36,7 +36,7 @@ from typing import Any
 import pandas as pd
 from pandas.tseries.offsets import BDay
 
-from signals.model_version import MODEL_VERSION
+from signals.model_version import MODEL_VERSION, tracking_version
 
 logger = logging.getLogger(__name__)
 
@@ -2251,7 +2251,7 @@ class PaperTradeLogger:
         # Per model-version breakdown so Analysis can isolate current logic vs legacy.
         by_mv: dict[str, dict[str, Any]] = {}
         for r in completed:
-            bucket = str(r.get("model_version") or "").strip() or "legacy"
+            bucket = str(tracking_version(r.get("model_version")) or "").strip() or "legacy"
             by_mv.setdefault(bucket, []).append(r)
         out["summary_by_model_version"] = {
             ver: {
