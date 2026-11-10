@@ -718,9 +718,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     try:
         catalyst = None
         if conf_snapshot_for_request:
+            # Catalyst lives on the top-level "nlp" pack; breakdown layers only carry score/weight.
             bd = conf_snapshot_for_request.get("breakdown") or {}
-            nlp = bd.get("nlp_sentiment") or bd.get("news") or {}
-            cat = nlp.get("catalyst")
+            cat = None
+            for nlp in (conf_snapshot_for_request.get("nlp"), bd.get("nlp_sentiment"), bd.get("news")):
+                if isinstance(nlp, dict) and isinstance(nlp.get("catalyst"), dict):
+                    cat = nlp["catalyst"]
+                    break
             if isinstance(cat, dict) and cat.get("active"):
                 catalyst = cat
         response["catalyst"] = catalyst
