@@ -6,6 +6,7 @@ import { earliestAvailableHorizon, useTickerTrackRecord, type TrackRecordHorizon
 import { fmtPct } from "./ReferenceDetailGrid";
 import LatestModelDailyCard from "../LatestModelDailyCard";
 import TrackErrorCard from "./TrackErrorCard";
+import LossScorecardCard from "./LossScorecardCard";
 
 function shortDay(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -91,6 +92,8 @@ export default function TrackRecordPanel({ ticker }: { ticker: string }) {
           this fills in as new EOD snapshots accumulate.
         </p>
       )}
+
+      {data && <LossScorecardCard data={data} />}
 
       {data && <TrackErrorCard data={data} />}
 

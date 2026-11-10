@@ -432,6 +432,100 @@ def aggregate_horizon_stats(
     return out
 
 
+LOSS_SCORECARD_MIN_N = 10
+LOSS_SCORECARD_HORIZONS: tuple[int, ...] = (5, 20)
+
+
+def _is_buy_call(sig: str) -> bool:
+    s = (sig or "").upper()
+    return "ADD" in s or "BUY" in s
+
+
+def _is_exit_call(sig: str) -> bool:
+    s = (sig or "").upper()
+    return s in TRIM_SIGNALS or any(x in s for x in ("TRIM", "REDUCE", "SELL", "AVOID"))
+
+
+def _avg(xs: list[float]) -> float | None:
+    return round(sum(xs) / len(xs), 2) if xs else None
+
+
+def build_loss_scorecard(rows: list[dict[str, Any]], horizon_days: int = 20) -> dict[str, Any] | None:
+    """Core principle check — losses small and rare, gains bigger (docs/signals/SIGNAL_RULES.md).
+
+    Buys (ADD/BUY calls): P&L per call, how often and how much they lost, worst loss and worst
+    dip along the way. Exits (TRIM/REDUCE/SELL/AVOID): drops avoided vs gains missed.
+    HOLD is not scored. Daily EOD calls, so windows overlap; small samples are noisy.
+    """
+    rs = [
+        r for r in _quality_rows(rows)
+        if r.get("horizon_days") == horizon_days
+        and r.get("forward_status") == "complete"
+        and r.get("actual_return_pct") is not None
+    ]
+    buy_rows = [r for r in rs if _is_buy_call(str(r.get("our_signal") or ""))]
+    exit_rows = [r for r in rs if not _is_buy_call(str(r.get("our_signal") or ""))
+                 and _is_exit_call(str(r.get("our_signal") or ""))]
+    if not buy_rows and not exit_rows:
+        return None
+    out: dict[str, Any] = {"horizon_days": horizon_days, "min_n": LOSS_SCORECARD_MIN_N}
+    if buy_rows:
+        rets = [float(r["actual_return_pct"]) for r in buy_rows]
+        losses = [x for x in rets if x < 0]
+        gains = [x for x in rets if x > 0]
+        dips = [float(r["max_drawdown_pct"]) for r in buy_rows if r.get("max_drawdown_pct") is not None]
+        avg_loss, avg_gain = _avg(losses), _avg(gains)
+        ratio = round(avg_gain / abs(avg_loss), 2) if avg_gain and avg_loss else None
+        out["buys"] = {
+            "n": len(rets),
+            "avg_pnl_pct": _avg(rets),
+            "loss_rate_pct": round(100.0 * len(losses) / len(rets), 1),
+            "avg_loss_pct": avg_loss,
+            "avg_gain_pct": avg_gain,
+            "gain_loss_ratio": ratio,
+            "worst_loss_pct": round(min(rets), 2),
+            "worst_dip_pct": round(min(dips), 2) if dips else None,
+        }
+        b = out["buys"]
+        if b["n"] < LOSS_SCORECARD_MIN_N:
+            out["buys_status"] = "too_few"
+        elif (b["avg_pnl_pct"] or 0) < 0:
+            out["buys_status"] = "losing"
+        elif not losses or (ratio is not None and ratio >= 1.0 and b["loss_rate_pct"] <= 50.0):
+            out["buys_status"] = "ok"
+        else:
+            out["buys_status"] = "weak"
+    if exit_rows:
+        rets = [float(r["actual_return_pct"]) for r in exit_rows]
+        avoided = [-x for x in rets if x < 0]
+        missed = [x for x in rets if x > 0]
+        out["exits"] = {
+            "n": len(rets),
+            "losses_avoided_n": len(avoided),
+            "avg_drop_avoided_pct": _avg(avoided),
+            "missed_gain_n": len(missed),
+            "avg_missed_gain_pct": _avg(missed),
+            "net_saved_pct": round(-sum(rets) / len(rets), 2),
+        }
+        e = out["exits"]
+        out["exits_status"] = (
+            "too_few" if e["n"] < LOSS_SCORECARD_MIN_N else ("costing" if e["net_saved_pct"] < 0 else "ok")
+        )
+    return out
+
+
+def build_loss_scorecards(
+    rows: list[dict[str, Any]], current_model_version: str | None = None
+) -> dict[str, Any] | None:
+    """{horizon: {current, all}} loss scorecards; current = this model version only."""
+    cur = [r for r in rows if str(r.get("model_version") or "legacy") == current_model_version] if current_model_version else []
+    out = {
+        str(h): {"current": build_loss_scorecard(cur, h), "all": build_loss_scorecard(rows, h)}
+        for h in LOSS_SCORECARD_HORIZONS
+    }
+    return out if any(v["current"] or v["all"] for v in out.values()) else None
+
+
 def aggregate_by_gates(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     buckets: dict[str, list[dict]] = {}
     for r in rows:

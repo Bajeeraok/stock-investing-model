@@ -889,6 +889,7 @@ def _build_by_ticker_index(
     from signals.forward_tracking_metrics import (
         _target_pct,
         build_error_summary,
+        build_loss_scorecards,
         build_prob_calibration,
         build_ticker_track_record,
         build_ticker_track_record_all_horizons,
@@ -956,6 +957,7 @@ def _build_by_ticker_index(
         }
         track["latest_call_date"] = track["daily_calls"][0]["date"] if track["daily_calls"] else None
         track["latest_model_daily"] = build_latest_model_daily(rows)
+        track["loss_scorecard"] = build_loss_scorecards(rows, MODEL_VERSION)
         out[tk] = track
     return out
 

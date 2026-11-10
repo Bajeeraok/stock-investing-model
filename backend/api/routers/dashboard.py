@@ -4399,6 +4399,14 @@ async def get_ticker_track_record(ticker: str):
         ).get("by_horizon")
     except Exception:
         out["by_horizon"] = None
+    try:
+        from signals.forward_tracking_metrics import build_loss_scorecards
+
+        out["loss_scorecard"] = build_loss_scorecards(
+            [r for r in records if str(r.get("ticker") or "").upper() == sym], MODEL_VERSION
+        )
+    except Exception:
+        out["loss_scorecard"] = None
 
     # Per-trade daily table (signal price, fill, target/stop, outcome, P&L) — the aggregate
     # win-rate fields above answer "was the model right overall"; this answers "show me",

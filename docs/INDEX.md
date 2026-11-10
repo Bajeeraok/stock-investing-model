@@ -12,6 +12,7 @@
 
 | You are asking about… | Read first |
 |------------------------|------------|
+| **Signal rules + core principle (read before any signal change)** | [`signals/SIGNAL_RULES.md`](signals/SIGNAL_RULES.md) |
 | Forward tracking, frozen gates, TRIM score, audit cohort | [`audit/SIGNAL_AUDIT_FORWARD_TRACKING.md`](audit/SIGNAL_AUDIT_FORWARD_TRACKING.md) |
 | Trim / exit gates (score + 2/4 confirmers) | [`signals/TRIM_GATE_DESIGN.md`](signals/TRIM_GATE_DESIGN.md) |
 | ST/MT/LT bands, entry zones, gates, retail verdict | [`signals/PRICE_BANDS_AND_GATES_REFERENCE.md`](signals/PRICE_BANDS_AND_GATES_REFERENCE.md) |

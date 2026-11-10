@@ -486,6 +486,49 @@ def rule_earnings_calendar(d: dict, c: _Collector, row: dict | None, today: date
         c.add("earnings_far_out", "info", f"Next earnings {ed} is {(ed - today).days} days away", date=str(ed))
 
 
+def _audit_loss_scorecard(c: "_Collector", hz: str, sc: Any) -> None:
+    """Core principle (docs/signals/SIGNAL_RULES.md): losses small and rare, gains bigger.
+    Judge the current model when it has enough calls, else all versions."""
+    if not isinstance(sc, dict):
+        return
+    for scope in ("current", "all"):
+        card = sc.get(scope)
+        if not isinstance(card, dict):
+            continue
+        b, e = card.get("buys") or {}, card.get("exits") or {}
+        lr, avg, worst = _f(b.get("loss_rate_pct")), _f(b.get("avg_pnl_pct")), _f(b.get("worst_loss_pct"))
+        if lr is not None and not (0 <= lr <= 100):
+            c.add("loss_scorecard_math", "error", f"{hz}d {scope}: buy loss rate {lr}%")
+        if avg is not None and worst is not None and worst > avg + 0.01:
+            c.add("loss_scorecard_math", "error", f"{hz}d {scope}: worst loss {worst}% above average {avg}%")
+        n_e, n_av, n_mi = e.get("n"), e.get("losses_avoided_n"), e.get("missed_gain_n")
+        if all(isinstance(x, int) for x in (n_e, n_av, n_mi)) and n_av + n_mi > n_e:
+            c.add("loss_scorecard_math", "error", f"{hz}d {scope}: {n_av}+{n_mi} exits > {n_e}")
+    card = next(
+        (sc.get(k) for k in ("current", "all")
+         if isinstance(sc.get(k), dict) and (sc[k].get("buys_status") not in (None, "too_few")
+                                            or sc[k].get("exits_status") not in (None, "too_few"))),
+        None,
+    )
+    if not card:
+        return
+    scope = "current model" if card is sc.get("current") else "all model versions"
+    b, e = card.get("buys") or {}, card.get("exits") or {}
+    if card.get("buys_status") == "losing":
+        c.add("buy_calls_losing_money", "warn",
+              f"{hz}d {scope}: {b.get('n')} buy calls average {b.get('avg_pnl_pct')}% "
+              f"(lost on {b.get('loss_rate_pct')}%, worst {b.get('worst_loss_pct')}%)",
+              horizon=hz, **{k: b.get(k) for k in ("n", "avg_pnl_pct", "loss_rate_pct", "worst_loss_pct")})
+    elif card.get("buys_status") == "weak":
+        c.add("buy_losses_bigger_than_gains", "info",
+              f"{hz}d {scope}: avg gain {b.get('avg_gain_pct')}% vs avg loss {b.get('avg_loss_pct')}%, "
+              f"lost on {b.get('loss_rate_pct')}% of {b.get('n')} buys", horizon=hz)
+    if card.get("exits_status") == "costing":
+        c.add("exit_calls_costing_money", "warn",
+              f"{hz}d {scope}: {e.get('n')} trim/avoid calls missed more gains than drops they avoided "
+              f"(net {e.get('net_saved_pct')}% per call)", horizon=hz, n=e.get("n"), net_saved_pct=e.get("net_saved_pct"))
+
+
 def audit_track_record(tr: dict, ticker: str, today: date | None = None) -> list[dict[str, Any]]:
     """Track tab: HOLD never scored, ADD/TRIM scored by direction, cumulative maths add up."""
     c = _Collector(ticker)
@@ -525,6 +568,8 @@ def audit_track_record(tr: dict, ticker: str, today: date | None = None) -> list
             c.add("track_calls_exceed_obs", "error", f"{hz}d: {n} scored calls but {obs} observations")
         if n == 0 and pct is not None:
             c.add("track_pct_without_calls", "error", f"{hz}d shows {pct}% right with no ADD/TRIM calls")
+    for hz, sc in (tr.get("loss_scorecard") or {}).items():
+        _audit_loss_scorecard(c, hz, sc)
     lm = tr.get("latest_model_daily") or {}
     m, h, s = _f(lm.get("model_cum_pct")), _f(lm.get("hold_cum_pct")), _f(lm.get("spy_cum_pct"))
     mvh, mvs = _f(lm.get("model_vs_hold_pct")), _f(lm.get("model_vs_spy_pct"))

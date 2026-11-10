@@ -128,6 +128,31 @@ export interface LatestModelDaily {
   rows: LatestModelDailyRow[];
 }
 
+export interface LossScorecard {
+  horizon_days: number;
+  min_n: number;
+  buys?: {
+    n: number;
+    avg_pnl_pct: number | null;
+    loss_rate_pct: number;
+    avg_loss_pct: number | null;
+    avg_gain_pct: number | null;
+    gain_loss_ratio: number | null;
+    worst_loss_pct: number;
+    worst_dip_pct: number | null;
+  };
+  buys_status?: "too_few" | "losing" | "weak" | "ok";
+  exits?: {
+    n: number;
+    losses_avoided_n: number;
+    avg_drop_avoided_pct: number | null;
+    missed_gain_n: number;
+    avg_missed_gain_pct: number | null;
+    net_saved_pct: number;
+  };
+  exits_status?: "too_few" | "costing" | "ok";
+}
+
 export interface TrackRecordResponse {
   latest_model_daily?: LatestModelDaily | null;
   available: boolean;
@@ -141,6 +166,7 @@ export interface TrackRecordResponse {
   legacy?: TrackRecordHorizonStats | null;
   by_horizon?: Record<string, { current?: TrackRecordHorizonStats | null; legacy?: TrackRecordHorizonStats | null }> | null;
   daily_trades?: DailyTradeRow[] | null;
+  loss_scorecard?: Record<string, { current?: LossScorecard | null; all?: LossScorecard | null }> | null;
   error_summary?: { horizon_days: number; current?: ErrorSummary | null; all?: ErrorSummary | null } | null;
   prob_calibration?: Record<string, Calibration | null> | null;
   prob_calibration_pooled?: Record<string, Calibration | null> | null;
