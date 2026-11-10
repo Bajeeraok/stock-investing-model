@@ -699,21 +699,6 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
     }
     # cross_asset was fetched in Phase 3 parallel block above
     response["cross_asset"] = cross_asset_result
-    response["investor_summary"] = _build_investor_summary(
-        ticker,
-        config,
-        response,
-        close_ticker=close_ticker,
-        signal_data=signal_data,
-        conf_snapshot=conf_snapshot_for_request,
-        close_spy=close_spy,
-    )
-    # Ensure 52w range is always 2 decimals (yfinance/merge can leave raw floats)
-    if response.get("high_52w") is not None:
-        response["high_52w"] = round(float(response["high_52w"]), 2)
-    if response.get("low_52w") is not None:
-        response["low_52w"] = round(float(response["low_52w"]), 2)
-
     # Catalyst detection — advisory payload from news headlines
     try:
         catalyst = None
@@ -730,6 +715,21 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         response["catalyst"] = catalyst
     except Exception:
         response["catalyst"] = None
+    response["investor_summary"] = _build_investor_summary(
+        ticker,
+        config,
+        response,
+        close_ticker=close_ticker,
+        signal_data=signal_data,
+        conf_snapshot=conf_snapshot_for_request,
+        close_spy=close_spy,
+    )
+    # Ensure 52w range is always 2 decimals (yfinance/merge can leave raw floats)
+    if response.get("high_52w") is not None:
+        response["high_52w"] = round(float(response["high_52w"]), 2)
+    if response.get("low_52w") is not None:
+        response["low_52w"] = round(float(response["low_52w"]), 2)
+
 
     # Post-earnings transition signal
     try:
@@ -1098,6 +1098,23 @@ def _institutional_conviction_context(
         return bundle.get("conviction_filter")
     except Exception:
         return None
+
+
+def _recent_move_headlines(conf_snapshot: dict | None, *, max_age_hours: float = 24.0, limit: int = 2) -> list[str]:
+    """Newest same-day news titles for "Why it moved", minus law-firm/13F filler."""
+    from signals.catalyst_detector import _article_age_hours, is_noise_headline
+
+    nlp = (conf_snapshot or {}).get("nlp") if isinstance(conf_snapshot, dict) else None
+    out: list[str] = []
+    for h in (nlp or {}).get("headlines") or []:
+        title = str((h or {}).get("title") or "").strip()
+        if not title or is_noise_headline(title) or title in out:
+            continue
+        if _article_age_hours(str(h.get("published") or "") or None) <= max_age_hours:
+            out.append(title)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _build_investor_summary(
@@ -1754,6 +1771,7 @@ def _build_investor_summary(
                 rsi=_safe_float(out.get("rsi")),
                 dxy_day_change_pct=dxy_day_change_pct,
                 cross_asset_badges=cross_asset_badges,
+                recent_headlines=_recent_move_headlines(conf_snapshot),
             )
             # Raw numbers alongside the narrative text, for UI stats that want the figure directly.
             move_narrative["day_change_pct"] = day_change_pct

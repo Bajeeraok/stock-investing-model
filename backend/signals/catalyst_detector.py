@@ -80,7 +80,7 @@ _WATCH_HINTS = {
 
 _EVENT_PATTERNS: list[tuple[re.Pattern, str, int]] = [
     # M&A / Deals (impact 3)
-    (re.compile(r"(acquir|acquisition|merger|buyout|takeover|buy.{0,10}(company|unit|division)|agreed to (buy|acquire)|deal (worth|valued))"), "M&A", 3),
+    (re.compile(r"(acquir|acquisition|merger|buyout|takeover|buy.{0,10}(company|unit|division)|agreed to (buy|acquire)(?!.{0,25}\b(stock|shares)\b)|deal (worth|valued))"), "M&A", 3),
     (re.compile(r"(preliminary agreement|manufacturing (deal|agreement|partnership)|foundry (deal|agreement|contract))"), "M&A", 3),
 
     # Major partnership / contract (impact 2-3)
@@ -88,8 +88,10 @@ _EVENT_PATTERNS: list[tuple[re.Pattern, str, int]] = [
     (re.compile(r"(strategic (partnership|alliance|agreement)|signs? (deal|contract|agreement) with)"), "PARTNERSHIP", 2),
 
     # FDA / regulatory approval (impact 3)
-    (re.compile(r"(fda (approv|clear|grant|accept)|eua|breakthrough therapy|priority review|regulatory (approv|clear))"), "FDA_APPROVAL", 3),
-    (re.compile(r"(antitrust|doj|ftc|eu commission|regulatory (action|probe|investigat|fine|block))"), "REGULATORY_ACTION", 3),
+    (re.compile(r"(fda (approv|clear|grant|accept)|\beua\b|breakthrough therapy|priority review|regulatory (approv|clear))"), "FDA_APPROVAL", 3),
+    (re.compile(r"(antitrust|\bdoj\b|\bftc\b|eu commission|regulatory (action|probe|investigat|fine|block))"), "REGULATORY_ACTION", 3),
+
+    (re.compile(r"((fresh|federal|us|u\.s\.|government|congressional|senate) (scrutiny|probe|investigation|inquiry)|\bprobe\b|subpoena|export (control|ban|curb|violation)|smuggl|espionage)"), "REGULATORY_ACTION", 2),
 
     # Earnings surprise (impact 2-3)
     (re.compile(r"(earnings|revenue|profit|eps).{0,25}(crush|smash|blow.?past|massive.?beat|blowout)"), "EARNINGS_BLOWOUT", 3),
@@ -115,8 +117,31 @@ _EVENT_PATTERNS: list[tuple[re.Pattern, str, int]] = [
     (re.compile(r"(fraud|sec (charges|sues|investigat)|criminal|indictment|class.?action)"), "LEGAL_RISK", 3),
 
     # IPO / spin-off (impact 2)
-    (re.compile(r"(ipo|spin.?off|goes public|direct listing)"), "IPO_SPINOFF", 2),
+    (re.compile(r"(spin.?off|split.?off)"), "IPO_SPINOFF", 2),
+    # A listed stock's own IPO is old news; "ipo" here is usually another company's (impact 1).
+    (re.compile(r"(\bipo\b|goes public|direct listing)"), "IPO_SPINOFF", 1),
 ]
+
+
+# Law-firm solicitations and 13F holdings filings: never a catalyst, whatever words they use.
+_NOISE_TITLE_RE = re.compile(
+    r"(investor alert|shareholder alert|lost money on|class action (notice|reminder)|law firm|\bllp\b"
+    r"|contact (the )?.{0,30}(law|firm|attorney)|reminds investors|investors (who|with) (lost|losses)"
+    r"|lead plaintiff|deadline alert|shares (purchased|sold|acquired|bought) by"
+    r"|(acquires|buys|sells|trims|raises|lowers|boosts|cuts) (a )?(new )?(stake|position|holdings) in"
+    r"|(position|stake|holdings) (raised|lowered|trimmed|boosted|increased|decreased))"
+)
+
+
+# "Reports next week: Wall Street expects..." is a preview, not a beat or miss.
+_EARNINGS_PREVIEW_RE = re.compile(
+    r"(reports? next week|ahead of (its |q\d )?earnings|earnings preview|what to expect|\bexpects?\b|expected to|to report|will report)"
+)
+_EARNINGS_RESULT_TYPES = {"EARNINGS_BLOWOUT", "EARNINGS_BEAT", "EARNINGS_MISS"}
+
+
+def is_noise_headline(title: str | None) -> bool:
+    return bool(title) and bool(_NOISE_TITLE_RE.search(str(title).lower()))
 
 
 @dataclass
@@ -173,8 +198,9 @@ def _classify_headline(title: str, body: str = "") -> list[tuple[str, int]]:
     combined = f"{title} {body}".lower()
     hits: list[tuple[str, int]] = []
     seen_types: set[str] = set()
+    preview = bool(_EARNINGS_PREVIEW_RE.search(title.lower()))
     for pattern, event_type, impact in _EVENT_PATTERNS:
-        if event_type in seen_types:
+        if event_type in seen_types or (preview and event_type in _EARNINGS_RESULT_TYPES):
             continue
         if pattern.search(combined):
             hits.append((event_type, impact))
@@ -216,10 +242,12 @@ def detect_catalysts(
         url = item.get("url") or item.get("link") or item.get("sourceUrl") or ""
 
         age = _article_age_hours(str(pub) if pub else None, now)
-        if age > max_age_hours:
+        if age > max_age_hours or is_noise_headline(title):
             continue
 
-        hits = _classify_headline(title, body)
+        # Title only: article bodies mention side stories (CEO changes, other firms' deals)
+        # and caused most false catalysts in live checks.
+        hits = _classify_headline(title)
         for event_type, impact in hits:
             if impact >= min_impact:
                 events.append(CatalystEvent(
@@ -321,7 +349,7 @@ def build_catalyst_note_cards(
         pub = item.get("published") or item.get("publishedDate") or item.get("published_at") or item.get("date")
         url = str(item.get("url") or item.get("link") or "")
         age = _article_age_hours(str(pub) if pub else None, now)
-        hits = _classify_headline(title, body)
+        hits = [] if is_noise_headline(title) else _classify_headline(title)
         if not hits:
             continue
         event_type, impact = max(hits, key=lambda h: h[1])

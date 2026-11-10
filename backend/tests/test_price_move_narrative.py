@@ -164,3 +164,13 @@ def test_dxy_comove_requires_opposite_direction():
         cross_asset_badges=["gold-sensitive"],
     )
     assert out["driver"] != "broad_market" or "dollar" not in out["headline"].lower()
+
+
+def test_unclear_move_lists_todays_headlines():
+    out = build_price_move_narrative(
+        ticker="NVDA", day_change_pct=-6.6, spy_day_change_pct=-0.8,
+        recent_headlines=["Why Nvidia Stock Fell Again on Tuesday", "Huang photo with alleged spy"],
+    )
+    assert out["driver"] == "unclear"
+    assert "SPY -0.8%" in out["headline"]
+    assert "Why Nvidia Stock Fell Again" in out["detail"]

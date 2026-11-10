@@ -126,6 +126,7 @@ def build_price_move_narrative(
     rsi: float | None = None,
     dxy_day_change_pct: float | None = None,
     cross_asset_badges: list[str] | None = None,
+    recent_headlines: list[str] | None = None,
 ) -> dict[str, Any]:
     """Classify and explain today's price move. Returns driver/headline/detail/citation."""
     sym = (ticker or "This stock").upper() if ticker else "This stock"
@@ -211,13 +212,21 @@ def build_price_move_narrative(
 
     # 5. No dominant driver identified — say so honestly rather than guess, but
     # volume/RSI are real, data-backed facts even when no catalyst was found.
+    news = [h.strip() for h in (recent_headlines or []) if isinstance(h, str) and h.strip()][:2]
+    news_phrase = ("Today's headlines: " + "; ".join(f"\u201c{h}\u201d" for h in news) + ".") if news else None
+    spy_part = f" (SPY {spy_day_change_pct:+.1f}%)" if spy_day_change_pct is not None else ""
     if move_desc and day_change_pct is not None and abs(day_change_pct) >= 1.0:
-        headline = f"{move_desc} without a clear stock-specific catalyst or broad-market co-move — likely technical (volume, positioning, or a smaller headline not yet classified)."
+        tail = (
+            "none of today's headlines matched a known catalyst type, so no single cause is confirmed."
+            if news
+            else "likely technical (volume, positioning, or a smaller headline not yet classified)."
+        )
+        headline = f"{move_desc}{spy_part} without a clear stock-specific catalyst or broad-market co-move — {tail}"
     else:
         headline = f"{sym}'s move today is modest — no dominant catalyst to flag."
     return {
         "driver": "unclear",
         "headline": headline,
-        "detail": _join_detail(vol_phrase, rsi_phrase),
+        "detail": _join_detail(news_phrase, vol_phrase, rsi_phrase),
         "citation": None,
     }

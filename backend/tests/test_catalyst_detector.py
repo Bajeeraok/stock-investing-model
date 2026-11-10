@@ -164,3 +164,29 @@ class TestCatalystNoteCards:
             ticker="SPY",
         )
         assert cards == []
+
+
+def test_law_firm_and_13f_filler_is_not_a_catalyst():
+    from signals.catalyst_detector import is_noise_headline
+
+    assert is_noise_headline("NVDA INVESTOR ALERT: Securities Class Action Filed, NVIDIA Corporation Investors with Substantial Losses")
+    assert is_noise_headline("NVIDIA Corporation Sued for Securities Law Violations - Contact the DJS Law Group to Discuss Your Rights")
+    assert is_noise_headline("Apple Inc. $AAPL Shares Purchased by Foster Victor Wealth Advisors LLC")
+    assert not is_noise_headline("SEC charges Acme executives with accounting fraud")
+
+
+def test_other_company_ipo_is_low_impact():
+    hits = dict(_classify_headline("Microsoft among 7 tech giants putting $26 billion into Anthropic's IPO"))
+    assert hits.get("IPO_SPINOFF") == 1
+    assert dict(_classify_headline("Acme announces spin-off of its cloud unit")).get("IPO_SPINOFF") == 2
+
+
+def test_earnings_preview_is_not_a_beat_and_probe_is_regulatory():
+    hits = dict(_classify_headline("Nvidia (NVDA) Reports Next Week: Wall Street Expects Earnings Growth", "earnings to top estimates"))
+    assert "EARNINGS_BEAT" not in hits
+    assert "REGULATORY_ACTION" in dict(_classify_headline("Nvidia Faces Fresh US Scrutiny on Megaspeed Probe"))
+
+
+def test_buying_another_companys_stock_is_not_m_and_a():
+    assert "M&A" not in dict(_classify_headline("Nvidia, Alphabet, and Micron Just Agreed to Buy $26 Billion of Stock in Anthropic"))
+    assert "M&A" in dict(_classify_headline("Acme agreed to acquire Widget Co for $4 billion"))
