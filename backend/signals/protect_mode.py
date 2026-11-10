@@ -1,11 +1,13 @@
 """
 Optional "protect" sizing for a stock the user already owns or wants to own.
 
-10y same-stock backtest (548 S&P 500 stocks, 2017–2026, scripts/timing_rules_backtest.py):
-half position below the stock's own 200-day average cut the median worst drawdown from
--52% to -41% (smaller drawdown for 93% of stocks) at a cost of ~2%/yr return; half position
-when SPY is risk-off cut it to -47% for ~0.8%/yr. Neither raised return, so this is a
-user choice (insurance), not a sell signal. Default guidance stays HOLD.
+Same-stock backtest over each stock's S&P 500 membership, 2000–2026 (601 stocks with price data,
+incl. the 2000–02 and 2008 crashes; scripts/protect_mode_backtest.py): half position below the
+stock's own 200-day average cut the median worst drawdown from -66% to -52% (smaller drawdown for
+95% of stocks) at a cost of ~1.5%/yr return; half position when SPY is risk-off cut it to -55% for
+~0.4%/yr. 2017–2026 alone: -53% to -41% for ~2.3%/yr. Neither raised return overall, so this is a
+user choice (insurance), not a sell signal. 381 of 1,097 former members (mostly delisted or acquired)
+have no free price history, so results lean toward survivors. Default guidance stays HOLD.
 """
 from __future__ import annotations
 
@@ -16,10 +18,11 @@ import pandas as pd
 from signals.alpha.core_satellite import regime_series
 
 EVIDENCE = {
-    "source": "scripts/timing_rules_backtest.py (548 S&P 500 stocks, 2017-2026, median stock)",
-    "buy_and_hold": {"cagr_pct": 8.0, "max_dd_pct": -52.3},
-    "half_below_own_200d": {"cagr_pct": 5.9, "max_dd_pct": -40.8},
-    "half_when_spy_risk_off": {"cagr_pct": 7.2, "max_dd_pct": -46.9},
+    "source": "scripts/protect_mode_backtest.py (601 S&P 500 stocks, 2000-2026, membership periods, median stock)",
+    "buy_and_hold": {"cagr_pct": 8.0, "max_dd_pct": -66.0},
+    "half_below_own_200d": {"cagr_pct": 6.5, "max_dd_pct": -52.0},
+    "half_when_spy_risk_off": {"cagr_pct": 7.6, "max_dd_pct": -55.0},
+    "survivorship_note": "381 of 1,097 members since 2000 lack free price data (mostly delisted or acquired)",
 }
 
 
@@ -69,9 +72,9 @@ def compute_protect_mode(
         "reasons": reasons,
         "headline": headline,
         "note": (
-            "Optional insurance, not a sell signal. Over 2017–2026 on S&P 500 stocks, halving the position "
-            "below the 200-day average cut the typical worst drop from about -52% to -41% but lowered "
-            "return by about 2% a year; buy-and-hold earned more."
+            "Optional insurance, not a sell signal. Over 2000–2026 on S&P 500 stocks, including the 2000–02 "
+            "and 2008 crashes, halving the position below the 200-day average cut the typical worst drop "
+            "from about -66% to -52% but lowered return by about 1.5% a year; buy-and-hold earned more."
         ),
         "evidence": EVIDENCE,
     }

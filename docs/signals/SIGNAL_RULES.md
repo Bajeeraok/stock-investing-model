@@ -28,7 +28,8 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 - An actionable entry needs every gate cleared. Price alerts say which gates are still locked.
 - REDUCE/SELL is for real risk or a plan's own stop/target, not a low score.
 - AVOID means don't open or add. It does not mean sell.
-- Protect mode is drawdown insurance, not a return booster.
+- Protect mode is drawdown insurance, not a return booster. 2000–26 S&P 500 (incl. 2000–02 and 2008): half position below
+  the 200-day average cut the typical worst drop −66% → −52% for ~1.5%/yr less return.
 - Entry bands are for staging or cheaper optional fills. They don't claim that waiting improves returns.
 - BTC-USD and ETH-USD use the crypto path. COIN and MSTR use the normal stock path.
 
