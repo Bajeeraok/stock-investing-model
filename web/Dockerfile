@@ -16,6 +16,11 @@ COPY . .
 # Build-time: backend URL for rewrites (use placeholder for standalone builds)
 ARG BACKEND_API_URL=http://localhost:8002
 ENV BACKEND_API_URL=$BACKEND_API_URL
+# Browser calls the backend directly (CORS allows this origin). Routing every user through the
+# /api proxy sends all traffic from one egress IP, which Railway's edge can rate-limit (429).
+# Override per environment via a Railway build variable; set empty to use the /api proxy.
+ARG NEXT_PUBLIC_API_URL=https://thrive-alpha-backend-production.up.railway.app
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build

@@ -118,6 +118,7 @@ import {
 import { RegimeValidationPanel } from "./dashboard/RegimeValidationPanel";
 import { LivePricesProvider } from "@/lib/LivePriceContext";
 import { useTickerDetailLayout } from "@/lib/useMediaQuery";
+import { apiUrl } from "@/lib/apiBase";
 
 const AUTO_REFRESH_MIN = 30;
 
@@ -1029,7 +1030,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     try {
       const asOfEtDate = data.as_of_date ? etDateParamFromIso(data.as_of_date) : "";
       const dateParam = asOfEtDate ? `?snapshot_date=${asOfEtDate}` : "";
-      const res = await fetch(`/api/eod/save-from-last-run${dateParam}`, { method: "POST" });
+      const res = await fetch(apiUrl(`/api/eod/save-from-last-run${dateParam}`), { method: "POST" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setEodMessage({ type: "err", text: json.detail || json.error || "Save failed" });

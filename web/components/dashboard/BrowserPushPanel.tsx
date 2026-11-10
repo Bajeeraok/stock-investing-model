@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { Bell, BellOff, Loader2 } from "lucide-react";
+import { apiUrl } from "@/lib/apiBase";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -34,7 +35,7 @@ export default function BrowserPushPanel() {
     const ok = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
     setSupported(ok);
     if (!ok) return;
-    fetch("/api/push/public-config", { cache: "no-store" })
+    fetch(apiUrl("/api/push/public-config"), { cache: "no-store" })
       .then((r) => r.json())
       .then((j: { enabled?: boolean; publicKey?: string | null }) => {
         setEnabledOnServer(!!j.enabled);
@@ -72,7 +73,7 @@ export default function BrowserPushPanel() {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToApplicationServerKey(publicKey),
       });
-      const res = await fetch("/api/push/subscribe", {
+      const res = await fetch(apiUrl("/api/push/subscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: sub.toJSON() }),
@@ -98,7 +99,7 @@ export default function BrowserPushPanel() {
       const sub = await reg?.pushManager.getSubscription();
       if (sub) {
         const ep = sub.endpoint;
-        await fetch("/api/push/unsubscribe", {
+        await fetch(apiUrl("/api/push/unsubscribe"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: ep }),
