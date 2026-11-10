@@ -65,3 +65,10 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 - Prefer simple recalibration over new features. Fewer than ~30 scored cases = "watch, not enough data".
 - Already tested with no edge on S&P 500 large caps (don't re-propose without new data): composite score and price
   factors, point-in-time fundamentals, post-earnings drift, insider clusters, dip-timing for index funds.
+- Short-term target distance: closer targets hit more often but lower average P&L (2014–26), so they stay as is.
+
+## Switched-off signals
+
+- **Velocity / tactical breakout** (RVOL ≥ 2× or upper Bollinger band): 2014–26 S&P 500 backtest, 5-day hold —
+  no better than holding the stock; with its stop/target, average ≈ 0% and 65% losers. Live paper: −5.2% over 74.
+  Shown as context only: no entry/target/stop, alert, paper trade or Hunter slot (`velocity_tactical.actionable`).

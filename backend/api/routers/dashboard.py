@@ -317,6 +317,7 @@ def _build_hunter_panel_payload(
     try:
         from config_loader import portfolio_tickers_from_config
         from signals.hunter_panel import build_hunter_panel
+        from signals.velocity_engine import velocity_actionable
 
         return build_hunter_panel(
             results or [],
@@ -324,6 +325,7 @@ def _build_hunter_panel_payload(
             watchlist_tickers=[str(t).upper() for t in (config.get("watchlist") or []) if t],
             signal_universe=signal_universe,
             as_of=as_of,
+            velocity_actionable=velocity_actionable(config),
         )
     except Exception as e:
         logger.debug("hunter_panel build failed: %s", e)

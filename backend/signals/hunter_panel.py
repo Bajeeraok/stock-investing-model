@@ -30,9 +30,9 @@ def _position_status(
     return "universe"
 
 
-def _hunter_reason(row: dict[str, Any]) -> HunterReason | None:
+def _hunter_reason(row: dict[str, Any], velocity_actionable: bool = True) -> HunterReason | None:
     track = str(row.get("track") or "").lower()
-    if track == "velocity" or row.get("velocity_triggered"):
+    if velocity_actionable and (track == "velocity" or row.get("velocity_triggered")):
         return "velocity"
     tier = str(row.get("readiness_tier") or "").lower()
     if tier == "go_ready":
@@ -44,10 +44,10 @@ def _hunter_reason(row: dict[str, Any]) -> HunterReason | None:
     return None
 
 
-def is_hunter_candidate(row: dict[str, Any]) -> bool:
+def is_hunter_candidate(row: dict[str, Any], velocity_actionable: bool = True) -> bool:
     if not isinstance(row, dict) or row.get("error"):
         return False
-    return _hunter_reason(row) is not None
+    return _hunter_reason(row, velocity_actionable) is not None
 
 
 HunterCall = Literal["buy", "tactical", "wait", "avoid"]
@@ -107,9 +107,10 @@ def _row_to_hunter_item(
     *,
     portfolio: set[str],
     watchlist: set[str],
+    velocity_actionable: bool = True,
 ) -> dict[str, Any]:
     ticker = str(row.get("ticker") or "").upper()
-    reason = _hunter_reason(row)
+    reason = _hunter_reason(row, velocity_actionable)
     assert reason is not None
     rs = row.get("retail_status") if isinstance(row.get("retail_status"), dict) else {}
     return {
@@ -145,15 +146,18 @@ def build_hunter_panel(
     watchlist_tickers: list[str] | None = None,
     signal_universe: list[str] | None = None,
     as_of: str | None = None,
+    velocity_actionable: bool = True,
 ) -> dict[str, Any]:
     """All hunter candidates from the latest signal run (no arbitrary cap)."""
     portfolio = {str(t).upper() for t in (portfolio_tickers or []) if t}
     watchlist = {str(t).upper() for t in (watchlist_tickers or []) if t}
     items: list[dict[str, Any]] = []
     for row in results or []:
-        if not is_hunter_candidate(row):
+        if not is_hunter_candidate(row, velocity_actionable):
             continue
-        item = _row_to_hunter_item(row, portfolio=portfolio, watchlist=watchlist)
+        item = _row_to_hunter_item(
+            row, portfolio=portfolio, watchlist=watchlist, velocity_actionable=velocity_actionable
+        )
         item["call"], item["call_reason"] = hunter_call(item)
         # Section the card is listed under: an "avoid" call never sits inside Almost ready /
         # GO (MSFT 3/4 gates + model AVOID read as "nearly a buy") — it gets its own section.

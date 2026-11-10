@@ -552,7 +552,7 @@ alerts:
   enable_ml_prob_alerts: true
   # 3/4 gates + ST verdict supports add — alerts/UI only (does not change primary GO)
   enable_readiness_alerts: true
-  enable_tactical_velocity_alerts: true
+  enable_tactical_velocity_alerts: false   # velocity has no edge (see velocity_tactical.actionable)
   tactical_min_gates: 2
   trim_approach_fraction: 0.95   # trim hint when price >= this fraction of each horizon target (below full target)
   email:
@@ -650,13 +650,16 @@ swing_tactical:
 # Velocity / tactical breakout track (P0) — does NOT change primary 4-gate GO
 velocity_tactical:
   enabled: true
+  # 2014–26 S&P 500 backtest: breakout days did no better than holding the stock 5 days; with the
+  # tactical stop/target, avg P&L ~0 and 65% losers. Shown as context only — no entry, alert or paper trade.
+  actionable: false
   rvol_min: 2.0                 # today's volume vs 20d avg
   bb_pct_b_min: 1.0             # at/above upper Bollinger band
   bb_pct_b_extended: 0.85
   min_velocity_score: 55        # 0–100 composite; requires rvol OR bb break when require_rvol_or_bb true
   horizon_trading_days: 5
   require_rvol_or_bb: true
-  log_paper_trades: true
+  log_paper_trades: false
   require_buy_side_for_paper: true   # skip REDUCE/TRIM/SELL velocity rows (long-only paper)
   skip_hard_lock_for_paper: true     # ticker page says "No new entries" on hard lock
   min_gates_for_paper: 2            # align with tactical_min_gates_for_alert (was 0 — logged hard_lock noise)

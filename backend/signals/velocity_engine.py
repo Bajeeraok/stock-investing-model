@@ -16,6 +16,7 @@ import pandas as pd
 def _default_cfg(config: dict | None) -> dict[str, Any]:
     base = {
         "enabled": True,
+        "actionable": True,
         "rvol_min": 2.0,
         "bb_pct_b_min": 1.0,
         "bb_pct_b_extended": 0.85,
@@ -27,6 +28,17 @@ def _default_cfg(config: dict | None) -> dict[str, Any]:
     if isinstance(vt, dict):
         base.update({k: vt[k] for k in base if k in vt})
     return base
+
+
+VELOCITY_CONTEXT_NOTE = (
+    "Breakout days (high volume / upper Bollinger band) did no better than holding the stock in a 2014–26 "
+    "S&P 500 backtest, so this is context only — no tactical entry, target or stop."
+)
+
+
+def velocity_actionable(config: dict | None) -> bool:
+    """False when velocity is context-only (no entries, alerts, paper trades or Hunter slot)."""
+    return bool(_default_cfg(config).get("actionable", True))
 
 
 def _bollinger_pct_b(close: pd.Series, window: int = 20, num_std: float = 2.0) -> float | None:
@@ -201,6 +213,14 @@ def align_tactical_entry_with_one_answer(
     """
     if not isinstance(tactical, dict):
         return tactical
+    if tactical.get("actionable") is False:
+        oa = one_answer if isinstance(one_answer, dict) else {}
+        tactical["action_today"] = str(oa.get("action_today") or "hold").strip().lower()
+        tactical["one_answer_verdict"] = oa.get("verdict")
+        tactical["entry_stance"] = "breakout_context"
+        tactical["stance_headline"] = "Momentum breakout (context only)"
+        tactical["stance_note"] = VELOCITY_CONTEXT_NOTE + " Follow One Answer for action today."
+        return tactical
     oa = one_answer if isinstance(one_answer, dict) else {}
     action = str(oa.get("action_today") or "hold").strip().lower()
     tactical["action_today"] = action
@@ -241,7 +261,9 @@ def build_tactical_ui_payload(row: dict[str, Any], *, config: dict | None = None
     min_score = int(cfg.get("min_velocity_score", 55))
     # Show panel when triggered OR score is in watch band (aligns with paper-trading tactical track visibility).
     show_panel = triggered or score >= max(40, min_score - 15)
-    return {
+    actionable = velocity_actionable(config)
+    out = {
+        "actionable": actionable,
         "active": triggered,
         "velocity_triggered": triggered,
         "show_panel": show_panel,
@@ -262,6 +284,10 @@ def build_tactical_ui_payload(row: dict[str, Any], *, config: dict | None = None
         "gates_total": row.get("gates_total") or 4,
         "go_no_go": row.get("go_no_go"),
     }
+    if not actionable:
+        for k in ("entry", "target_1", "target_2", "stop", "rr_ratio", "expiry_note"):
+            out[k] = None
+    return out
 
 
 def build_tactical_breakouts_from_results(
@@ -271,6 +297,8 @@ def build_tactical_breakouts_from_results(
     limit: int = 8,
 ) -> list[dict[str, Any]]:
     """Top velocity names for Overview strip (sorted by velocity_score desc)."""
+    if not velocity_actionable(config):
+        return []
     rows: list[dict[str, Any]] = []
     for r in results or []:
         if not isinstance(r, dict) or r.get("error") or not r.get("velocity_triggered"):

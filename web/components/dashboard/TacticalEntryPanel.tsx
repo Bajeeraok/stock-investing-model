@@ -4,6 +4,8 @@ import { clsx } from "clsx";
 import { Zap } from "lucide-react";
 
 export type TacticalEntryPayload = {
+  /** False = velocity is context only (backtest found no edge): no entry, target, stop or window. */
+  actionable?: boolean;
   active?: boolean;
   /** True when RVOL/BB rules fired (same as paper-trading tactical track). */
   velocity_triggered?: boolean;
@@ -116,7 +118,7 @@ export function TacticalEntryPanel({
             {payload.target_2 != null && <span>T2 ${payload.target_2.toFixed(2)}</span>}
             {payload.stop != null && <span>Stop ${payload.stop.toFixed(2)}</span>}
             {payload.rr_ratio != null && <span>R:R {payload.rr_ratio}×</span>}
-            <span className="text-td-owner/90">T+{horizon}d</span>
+            {payload.actionable !== false && <span className="text-td-owner/90">T+{horizon}d</span>}
           </div>
           {(payload.reasons?.length ?? 0) > 0 && !compact && (
             <p className="text-[13px] text-td-muted mt-1">{payload.reasons!.slice(0, 2).join(" · ")}</p>
