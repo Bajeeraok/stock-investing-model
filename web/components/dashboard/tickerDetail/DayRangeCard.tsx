@@ -25,8 +25,7 @@ export type DayRangePayload = {
 const usd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const pct = (p: number) => (p < 0.01 ? "<1%" : p > 0.99 ? ">99%" : `${Math.round(p * 100)}%`);
 
-function oddsTone(p: number, touched: boolean) {
-  if (touched) return "text-td-accent";
+function oddsTone(p: number) {
   if (p >= 0.5) return "text-td-accent";
   if (p >= 0.2) return "text-td-warn";
   return "text-td-muted";
@@ -83,8 +82,8 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
               <span className="text-td-muted">
                 {l.label} <span className="font-mono text-td-text">{usd(l.price)}</span>
               </span>
-              <span className={`font-semibold ${oddsTone(l.p_reach, l.touched)}`}>
-                {l.touched ? "Traded there today" : `${pct(l.p_reach)} chance ${live ? "before close" : "next session"}`}
+              <span className={`font-semibold ${oddsTone(l.p_reach)}`}>
+                {l.touched ? `Traded there earlier · ${pct(l.p_reach)} chance again` : `${pct(l.p_reach)} chance ${live ? "before close" : "next session"}`}
               </span>
             </li>
           ))}

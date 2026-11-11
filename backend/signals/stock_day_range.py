@@ -134,7 +134,8 @@ def build_day_range(
             touched = bool((below and lo is not None and lo <= p) or (not below and hi is not None and hi >= p))
             d = abs(math.log(p / anchor)) / sig
             rem = INTRA_REACH_K * math.sqrt(max(left, 1e-9))
-            prob = 1.0 if touched else min(0.99, 2 * (1 - _phi(d / rem))) if left > 0 else 0.0
+            # Forward odds from the current price; an earlier touch is reported separately.
+            prob = min(0.99, 2 * (1 - _phi(d / rem))) if left > 0 else 0.0
         else:
             prob = min(0.99, _pre_open_touch(abs(math.log(p / anchor)) / sig))
         lv_out.append({"label": lv.get("label"), "price": round(p, 2), "side": "below" if below else "above",

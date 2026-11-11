@@ -43,7 +43,7 @@ function rangeBlock(r: DayRangePayload): string[] {
     out.push(`Green close ${pct(r.p_close_green)} · red close ${pct(1 - r.p_close_green)} (vs ${usd(r.ref_close)})`);
   }
   for (const l of r.levels.filter((x) => x.label !== "Owner band top")) {
-    out.push(`${l.label} ${usd(l.price)}: ${l.touched ? "traded there today" : `${pct(l.p_reach)} chance ${live ? "today" : "next session"}`}`);
+    out.push(`${l.label} ${usd(l.price)}: ${l.touched ? `traded there earlier today · ${pct(l.p_reach)} chance again before close` : `${pct(l.p_reach)} chance ${live ? "today" : "next session"}`}`);
   }
   return out;
 }

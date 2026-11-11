@@ -27,7 +27,7 @@ def test_intraday_touched_level_and_green_odds():
     r = build_day_range(c, d, session=s, levels=[{"label": "band", "price": c[-1]}, {"label": "far", "price": c[-1] * 1.3}])
     assert r["phase"] == "intraday" and r["p_close_green"] > 0.9
     by = {x["label"]: x for x in r["levels"]}
-    assert by["band"]["touched"] and by["band"]["p_reach"] == 1.0
+    assert by["band"]["touched"] and by["band"]["p_reach"] < 0.5
     assert by["far"]["p_reach"] < 0.05
     assert r["close_high"] - r["close_low"] < (c[-1] * 0.04) * 2
 
