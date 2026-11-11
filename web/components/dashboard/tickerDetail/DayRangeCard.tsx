@@ -40,6 +40,27 @@ export const splitLevels = (d: DayRangePayload) => ({
   far: d.levels.filter((l) => l.p_reach < REACH_MIN),
 });
 
+/** Highest-probability lows (75% and 50% chance) and where they sit vs the entry bands. */
+export function likelyLow(d: DayRangePayload) {
+  const lad = d.ladder ?? [];
+  const hi = lad.find((x) => x.p === 0.75);
+  const mid = lad.find((x) => x.p === 0.5);
+  if (!hi) return null;
+  const lv = (label: string) => d.levels.find((l) => l.label === label)?.price;
+  const sLo = lv("Swing band low");
+  const sHi = lv("Swing band top");
+  const oHi = lv("Owner band top");
+  const where = (v: number) =>
+    oHi != null && v <= oHi
+      ? "inside the Owner band"
+      : sLo != null && sHi != null && v >= sLo && v <= sHi
+        ? "inside the Swing band"
+        : sHi != null && v > sHi
+          ? "above the Swing band"
+          : "outside the entry bands";
+  return { hi, mid, where: where(hi.dip) };
+}
+
 export const pct = (p: number) => (p < 0.01 ? "<1%" : p > 0.99 ? ">99%" : `${Math.round(p * 100)}%`);
 
 function oddsTone(p: number) {
@@ -58,6 +79,7 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
   const [lo50, hi50] = band50(data);
   const { near, far } = splitLevels(data);
   const when = live ? "before close" : "next session";
+  const ll = likelyLow(data);
   const hrs = data.minutes_left != null ? `${Math.floor(data.minutes_left / 60)}h ${data.minutes_left % 60}m left` : "";
 
   return (
@@ -69,6 +91,19 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
         </div>
         <span className="text-[12px] text-td-muted">{live ? hrs : `vs ${data.ref_date} close ${usd(data.ref_close)}`}</span>
       </div>
+
+      {ll && (
+        <div className="rounded-lg border border-td-accent/40 bg-td-accent/10 px-3 py-2 text-[13px]">
+          <div className="flex justify-between gap-2">
+            <span className="font-semibold text-td-text">Likely low {live ? "today" : "next session"}</span>
+            <span className="font-mono font-semibold text-td-accent">{usd(ll.hi.dip)}</span>
+          </div>
+          <p className="text-[12px] text-td-muted mt-0.5">
+            {pct(ll.hi.p)} chance it trades there {when} ({ll.where})
+            {ll.mid && <> · deeper {usd(ll.mid.dip)} at {pct(ll.mid.p)}</>}
+          </p>
+        </div>
+      )}
 
       <ul className="space-y-1 text-[13px]">
         <li className="flex justify-between gap-2">

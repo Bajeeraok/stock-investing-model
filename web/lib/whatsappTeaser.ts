@@ -1,5 +1,5 @@
 import type { InvestorDecisionSummary } from "@/components/dashboard/InvestorDecisionSummary";
-import { band50, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
+import { band50, likelyLow, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
 
 type Hz = { entry_zone?: { low?: number | null; high?: number | null } | null; stop_loss?: number | null; target?: number | null };
 type Retail = {
@@ -43,6 +43,10 @@ function rangeBlock(r: DayRangePayload): string[] {
     out.push(`Green close ${pct(r.p_close_green)} · red close ${pct(1 - r.p_close_green)} (vs ${usd(r.ref_close)})`);
   }
   const when = live ? "before close" : "next session";
+  const ll = likelyLow(r);
+  if (ll) {
+    out.push(`*Likely low ${live ? "today" : "next session"}: ${usd(ll.hi.dip)}* (${pct(ll.hi.p)} chance, ${ll.where})${ll.mid ? ` · deeper ${usd(ll.mid.dip)} at ${pct(ll.mid.p)}` : ""}`);
+  }
   for (const x of r.ladder ?? []) {
     out.push(`${pct(x.p)} chance ${when}: low reaches ${usd(x.dip)} · high reaches ${usd(x.pop)}`);
   }
