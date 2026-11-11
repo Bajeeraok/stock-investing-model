@@ -21,7 +21,9 @@ export function PortfolioDoctorRecommendations({
     );
   }
 
-  const { inputs, implied_cagr_pct, profile, trim, add } = recommendation;
+  const { inputs, implied_cagr_pct, profile } = recommendation;
+  const trim = recommendation.trim.filter((r, i, arr) => arr.findIndex((x) => x.ticker === r.ticker) === i);
+  const add = recommendation.add.filter((a, i, arr) => arr.findIndex((x) => x.ticker === a.ticker) === i);
 
   return (
     <div className="space-y-6">

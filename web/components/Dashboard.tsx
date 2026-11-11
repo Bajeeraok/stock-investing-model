@@ -957,6 +957,22 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     const held = new Set(mergedRows.map((h) => h.ticker));
     return effectiveSignals.filter((sig) => held.has(sig.ticker));
   }, [effectiveSignals, mergedRows]);
+  const heldRisk = useMemo(() => {
+    const held = new Set(mergedRows.map((h) => h.ticker));
+    const pick = <T extends { ticker: string }>(arr?: T[] | null): T[] | undefined => {
+      if (!arr) return undefined;
+      const seen = new Set<string>();
+      return arr.filter((x) => held.has(x.ticker) && !seen.has(x.ticker) && (seen.add(x.ticker), true));
+    };
+    const byH = data.exit_levels_by_horizon;
+    return {
+      positionSizing: pick(data.position_sizing),
+      drawdownSim: pick(data.drawdown_sim),
+      exitLevels: pick(data.exit_levels),
+      exitLevelsByHorizon: byH ? { short: pick(byH.short), medium: pick(byH.medium), long: pick(byH.long) } : undefined,
+      earningsImpacts: pick(data.earnings_impacts),
+    };
+  }, [mergedRows, data.position_sizing, data.drawdown_sim, data.exit_levels, data.exit_levels_by_horizon, data.earnings_impacts]);
   const [doctorOverride, setDoctorOverride] = useState<{ profile: string; recs: Record<string, PortfolioDoctorRecommendation> } | null>(null);
   useEffect(() => setDoctorOverride(null), [data.as_of_date]);
   const doctorRecs = doctorOverride?.recs ?? mergedDoctorRec;
@@ -1720,11 +1736,11 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                       </div>
                       <RiskDashboard
                         riskProfile={riskProfile}
-                        positionSizing={data.position_sizing}
-                        drawdownSim={data.drawdown_sim}
-                        exitLevels={data.exit_levels}
-                        exitLevelsByHorizon={data.exit_levels_by_horizon}
-                        earningsImpacts={data.earnings_impacts}
+                        positionSizing={heldRisk.positionSizing}
+                        drawdownSim={heldRisk.drawdownSim}
+                        exitLevels={heldRisk.exitLevels}
+                        exitLevelsByHorizon={heldRisk.exitLevelsByHorizon}
+                        earningsImpacts={heldRisk.earningsImpacts}
                         concentration={data.concentration}
                         portfolioValue={selectedReport?.total_value ?? 0}
                       />

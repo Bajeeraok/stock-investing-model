@@ -179,11 +179,12 @@ def generate_tier1_payload(
 
     print(f"  Fetching data for {len(tickers)} tickers...")
     market_data = {}
-    for ticker in tickers:
-        print(f"    {ticker}...", end="\r")
-        data = fetch_ticker_data(ticker)
-        if data:
-            market_data[ticker] = data
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for ticker, data in zip(tickers, pool.map(fetch_ticker_data, tickers)):
+            if data:
+                market_data[ticker] = data
 
     for h in holdings:
         if h.get("price") and h["ticker"] in market_data:

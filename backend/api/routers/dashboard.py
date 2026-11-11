@@ -2867,10 +2867,16 @@ def _compute_full_dashboard_sync() -> dict:
                 (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
                 "BULL",
             )
-            # Limit tickers to avoid long yfinance fetches
-            all_tickers = list(dict.fromkeys([h["ticker"] for h in holdings_for_tier1] + [s["ticker"] for s in signals_for_tier1]))[:15]
+            # Every held ticker (one row each); non-held signals are not sized here.
+            max_t1 = int((config.get("tier1") or {}).get("max_tickers", 80))
+            all_tickers = list(dict.fromkeys(h["ticker"] for h in holdings_for_tier1))[:max_t1]
             holdings_for_tier1 = [h for h in holdings_for_tier1 if h["ticker"] in all_tickers]
-            signals_for_tier1 = [s for s in signals_for_tier1 if s["ticker"] in all_tickers]
+            have_sig = {s["ticker"] for s in signals_for_tier1}
+            signals_for_tier1 = [s for s in signals_for_tier1 if s["ticker"] in all_tickers] + [
+                {"ticker": t, "score": 50.0, "confidence": 0.5, "win_rate": None, "avg_win_pct": 7.0, "avg_loss_pct": 4.0}
+                for t in all_tickers
+                if t not in have_sig
+            ]
             if holdings_for_tier1 or signals_for_tier1:
                 tier1_payload = generate_tier1_payload(
                     holdings=holdings_for_tier1,
