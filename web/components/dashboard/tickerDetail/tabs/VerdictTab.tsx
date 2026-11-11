@@ -13,6 +13,7 @@ import { NarrativeWaterfallCard } from "../NarrativeWaterfallCard";
 import { HorizonProjectionChart } from "../../HorizonProjectionChart";
 import { ReferenceDetailGrid } from "../ReferenceDetailGrid";
 import { CopyTradePlanButton } from "../../CopyTradePlanButton";
+import { WhatsAppShareButton } from "../../WhatsAppShareButton";
 import { WatchZoneCallout } from "../../zoneContextUX";
 import { ProtectModeCard } from "../../ProtectModeCard";
 import { SecondOpinionsCard } from "../../SecondOpinionsCard";
@@ -66,12 +67,20 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
       onOpenWhy={() => setModalTab("why")}
       onOpenTrack={() => setModalTab("track")}
       actionExtra={
-        <CopyTradePlanButton
-          ticker={detail.ticker}
-          summary={detail.investor_summary}
-          currentPrice={effectivePrice ?? 0}
-          mode={decisionMode}
-        />
+        <>
+          <CopyTradePlanButton
+            ticker={detail.ticker}
+            summary={detail.investor_summary}
+            currentPrice={effectivePrice ?? 0}
+            mode={decisionMode}
+          />
+          <WhatsAppShareButton
+            ticker={detail.ticker}
+            summary={detail.investor_summary}
+            currentPrice={effectivePrice ?? 0}
+            dayRange={detail.day_range}
+          />
+        </>
       }
     />
   ) : (
