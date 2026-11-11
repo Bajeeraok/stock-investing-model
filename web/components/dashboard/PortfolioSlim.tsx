@@ -39,7 +39,7 @@ const ORDER: ActionKind[] = ["trim", "over", "add", "noadd", "hold"];
 const REASON_TEXT: Record<string, string> = {
   extended: "overextended",
   plan_reduce: "plan says reduce",
-  stop_broken: "below swing stop",
+  stop_broken: "below Owner stop",
 };
 
 function usd(n: number | null | undefined, digits = 0): string {
@@ -111,7 +111,7 @@ export function mergeHoldings(
       action,
       overLimit,
       reason,
-      stop: sig?.swing_stop ?? null,
+      stop: g.find((h) => h.owner_stop != null)?.owner_stop ?? null,
       earningsDays: earningsDaysFrom(base, sig),
     });
   }
@@ -229,7 +229,7 @@ export function PortfolioHoldingsSlim({ holdings, onTickerClick, showAccounts }:
             <th className="px-3 py-2 font-medium text-right">Value</th>
             <th className="px-3 py-2 font-medium text-right">Gain</th>
             <th className="px-3 py-2 font-medium">Signal</th>
-            <th className="px-3 py-2 font-medium text-right" title="Swing stop from the ticker page">Stop</th>
+            <th className="px-3 py-2 font-medium text-right" title="Owner (long-term) stop from the ticker page">Owner stop</th>
           </tr>
         </thead>
         <tbody>

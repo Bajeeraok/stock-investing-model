@@ -471,6 +471,7 @@ def compute_signal_warm_sync(
             sell_max=sell_max_trim,
             signals_by_ticker=signals_by_ticker,
             trim_cfg=trim_cfg,
+            period=(config.get("data") or {}).get("period") or "2y",
         )
         portfolios_out[name] = rep
 

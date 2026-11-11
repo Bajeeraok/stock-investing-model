@@ -275,7 +275,7 @@ def trim_alert_meta(
         label_parts.append(f"score {float(score):.0f}")
 
     all_triggers = triggers + [t for t in gate_triggers if t not in triggers]
-    reason_text = {"extended": "overextended", "plan_reduce": "plan says reduce", "stop_broken": "below swing stop"}
+    reason_text = {"extended": "overextended", "plan_reduce": "plan says reduce", "stop_broken": "below Owner stop"}
     label_parts = [reason_text.get(r, r) for r in risk_reasons] + label_parts
     detail = " · ".join(label_parts) if label_parts else "Review sizing"
     if trim_passed is not None:
@@ -320,12 +320,30 @@ def enrich_signal_story_fields(
     row.update(patch)
 
 
+def _cached_owner_stop(ticker: str, period: str = "2y") -> float | None:
+    """Owner (long-term) stop from the last ticker-page build, so Portfolio matches the ticker page."""
+    try:
+        from signals.cache import cache_key, get_cached
+
+        for prefix in ("ticker_detail", "ticker_detail_last"):
+            d = get_cached(cache_key(prefix, ticker, period))
+            if isinstance(d, dict):
+                hz = d.get("horizons") or (d.get("investor_summary") or {}).get("horizons") or {}
+                stop = (hz.get("long") or {}).get("stop_loss")
+                if stop is not None:
+                    return round(float(stop), 2)
+    except Exception:
+        pass
+    return None
+
+
 def attach_trim_provenance_to_holdings(
     per_holding: list[dict[str, Any]],
     *,
     sell_max: float = 35.0,
     signals_by_ticker: dict[str, dict[str, Any]] | None = None,
     trim_cfg: dict[str, Any] | None = None,
+    period: str = "2y",
 ) -> None:
     """Mutates each holding with trim_* fields for UI (portfolio + Today's moves)."""
     from signals.trim_gates import trim_gates_config
@@ -347,6 +365,8 @@ def attach_trim_provenance_to_holdings(
             ):
                 if sig.get(fk) is not None:
                     h[fk] = sig[fk]
+        if tk and h.get("owner_stop") is None:
+            h["owner_stop"] = _cached_owner_stop(tk, period)
         meta = trim_alert_meta(h, sell_max=sell_max, trim_cfg=tg)
         for k in (
             "is_trim_candidate",

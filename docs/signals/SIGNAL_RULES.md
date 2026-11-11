@@ -29,7 +29,7 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 - REDUCE/SELL is for real risk or a plan's own stop/target, not a low score.
 - AVOID means don't open or add. It does not mean sell.
 - A trim needs a concrete risk: overextended (RSI ≥65 or rich vs the long-term band), plan REDUCE/SELL, or price below
-  the swing stop, plus 2/4 trim gates. A low score or AVOID alone shows as "Hold · don't add". There is no "urgent"
+  the Owner (long-term) stop, plus 2/4 trim gates. A low score or AVOID alone shows as "Hold · don't add". There is no "urgent"
   tier: in forward tracking (May–Nov 2026) 4/4-gate trims lost the most (−3.7% net, 43% helped) while 3/4 helped
   (+1.6%, 60%). Per-gate history isn't stored, so the extension-only effect is not yet measured.
 - Protect mode is drawdown insurance, not a return booster. 2000–26 S&P 500 (incl. 2000–02 and 2008): half position below

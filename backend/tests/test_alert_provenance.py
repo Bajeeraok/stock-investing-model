@@ -173,3 +173,12 @@ def test_build_trim_candidates_sorted():
     assert [r["ticker"] for r in rows] == ["B"]
     assert rows[0]["trim_primary_driver"]
     assert rows[0]["trim_risk_reasons"] == ["extended"]
+
+
+def test_trim_below_owner_stop():
+    base = {"ticker": "X", "score": 20, "action": "AVOID", "price": 90.0, "trim_gates_passed": 2, "trim_gate_cleared": True}
+    meta = trim_alert_meta({**base, "owner_stop": 95.0}, sell_max=35, trim_cfg={"enabled": True, "min_pass": 2})
+    assert meta["is_trim_candidate"]
+    assert meta["trim_risk_reasons"] == ["stop_broken"]
+    held = trim_alert_meta({**base, "owner_stop": 80.0, "swing_stop": 95.0}, sell_max=35, trim_cfg={"enabled": True, "min_pass": 2})
+    assert not held["is_trim_candidate"]

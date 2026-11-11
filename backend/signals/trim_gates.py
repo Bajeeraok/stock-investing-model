@@ -3,7 +3,7 @@ Trim / exit gates — parallel stack to buy gates (extension + deterioration, no
 
 Hybrid v1: four named gates, default min_pass=2 (not 4/4). Score trigger required for trim candidates.
 
-A trim also needs a real risk (overextended, plan REDUCE/SELL, or price below the swing stop). A low score or
+A trim also needs a real risk (overextended, plan REDUCE/SELL, or price below the Owner stop). A low score or
 AVOID alone means "hold, don't add" (docs/signals/SIGNAL_RULES.md). There is no "urgent" tier: 4/4-gate trims
 lost the most in forward tracking.
 
@@ -196,7 +196,7 @@ def trim_real_risk_reasons(row: dict[str, Any], gates: list[dict[str, Any]]) -> 
     if plan in TRIM_PLAN_ACTIONS:
         reasons.append("plan_reduce")
     close = _f(row.get("close") if row.get("close") is not None else row.get("price"))
-    stop = _f(row.get("swing_stop"))
+    stop = _f(row.get("owner_stop"))
     if close is not None and stop and close < stop:
         reasons.append("stop_broken")
     return reasons

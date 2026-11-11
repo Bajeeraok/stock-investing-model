@@ -1451,6 +1451,8 @@ export interface PortfolioHolding {
   trim_gates_pending?: boolean | null;
   /** Concrete risks behind a trim: extended | plan_reduce | stop_broken */
   trim_risk_reasons?: string[] | null;
+  /** Owner (long-term) stop from the last ticker-page build */
+  owner_stop?: number | null;
   earnings_note?: string | null;
   account?: string;
   cost_basis?: number;

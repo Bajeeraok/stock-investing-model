@@ -1888,6 +1888,7 @@ def _compute_full_dashboard_sync() -> dict:
             sell_max=sell_max_trim,
             signals_by_ticker=signals_by_ticker,
             trim_cfg=trim_cfg,
+            period=(config.get("data") or {}).get("period") or "2y",
         )
         portfolios_out[name] = rep
     report = portfolios_out.get("All") or (portfolios_out[portfolio_names[1]] if len(portfolio_names) > 1 else {})
