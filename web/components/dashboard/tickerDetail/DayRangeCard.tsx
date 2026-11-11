@@ -17,6 +17,7 @@ export type DayRangePayload = {
   phase: "intraday" | "next_session";
   ref_close: number;
   ref_date: string;
+  session_date?: string | null;
   sigma_pct: number;
   last?: number;
   minutes_left?: number;
@@ -100,7 +101,7 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <CalendarRange className="h-4 w-4 text-td-accent" aria-hidden />
-          <h3 className="text-sm font-semibold text-td-text">{live ? "Today's likely close" : "Next session range"}</h3>
+          <h3 className="text-sm font-semibold text-td-text">{live ? "Today's likely close" : `Next session range${data.session_date ? ` · ${sessionDay(data.session_date)}` : ""}`}</h3>
         </div>
         <span className="text-[12px] text-td-muted">{live ? hrs : `vs ${data.ref_date} close ${usd(data.ref_close)}`}</span>
       </div>
@@ -228,4 +229,8 @@ function trackedLine(d: DayRangePayload): string {
   return `Live record (${s.label}, ${s.n} day${s.n === 1 ? "" : "s"}): close inside 80% range ${s.in80_pct}%, 50% range ${s.in50_pct}%${
     low75?.hit_pct != null ? `, 75% levels reached ${low75.hit_pct}%` : ""
   }. `;
+}
+
+export function sessionDay(iso: string): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }

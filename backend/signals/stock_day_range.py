@@ -106,6 +106,21 @@ def scorecard(closes: list[float], dates: list[str], days: int = SCORE_DAYS) -> 
             "since": dates[len(closes) - len(rows)] if len(dates) == len(closes) else None}
 
 
+def _next_session(ref: str) -> str | None:
+    """First NYSE trading day after the reference close (the session being forecast)."""
+    try:
+        from datetime import date, timedelta
+
+        from signals.market_calendar import is_nyse_holiday
+
+        d = date.fromisoformat(str(ref)[:10]) + timedelta(days=1)
+        while d.weekday() >= 5 or is_nyse_holiday(d):
+            d += timedelta(days=1)
+        return d.isoformat()
+    except Exception:
+        return None
+
+
 def build_day_range(
     closes: list[float],
     dates: list[str],
@@ -127,6 +142,7 @@ def build_day_range(
         "phase": "intraday" if live else "next_session",
         "ref_close": round(ref, 2),
         "ref_date": dates[-1],
+        "session_date": _next_session(dates[-1]),
         "sigma_pct": round(sig * 100, 2),
     }
     if live:

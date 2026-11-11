@@ -34,7 +34,7 @@ function rangeBlock(r: DayRangePayload): string[] {
   const [lo50, hi50] = band50(r);
   const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
   const out = [
-    live ? `*Today's range* (as of ${time} ET)` : `*Next session range* (from ${usd(r.ref_close)} close)`,
+    live ? `*Today's range* (as of ${time} ET)` : `*Next session range*${r.session_date ? ` · ${new Date(`${r.session_date}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}` : ""} (from ${usd(r.ref_close)} close)`,
     `Most likely close: ${usd(r.close_mid)}`,
     `50% chance close: ${usd(lo50)}–${bare(hi50)}`,
     `80% chance close: ${usd(r.close_low)}–${bare(r.close_high)}`,
