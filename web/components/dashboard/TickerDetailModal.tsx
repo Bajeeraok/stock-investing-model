@@ -985,7 +985,7 @@ export function TickerDetailModal({
                       </span>
                     )}
                     {detail.levels_as_of ? (
-                      <span title={`Bands, stops and gates refresh at 10:30, 12:30, 2:30 and 3:30 ET; the price and today's odds stay live. Next refresh: ${detail.levels_as_of.next}.`}>
+                      <span title={`Bands, stops and gates refresh at 10:30, 12:30, 2:30 and 3:30 ET (also 10:00 when the stock gaps at the open); the price and today's odds stay live. Next refresh: ${detail.levels_as_of.next}.`}>
                         · levels as of {detail.levels_as_of.label}
                       </span>
                     ) : detail.price_history?.length ? (

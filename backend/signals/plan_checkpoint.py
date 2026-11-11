@@ -3,7 +3,7 @@ Entry bands and stops refresh at set times during the session, not on every pric
 
 A band rebuilt from the live price slides with it (a falling stock drags its swing band down and is
 never "reached"). So while the market is open, today's partial daily bar is pinned to the price at
-the latest checkpoint: the previous close until 10:30 ET, then 10:30, 12:30, 14:30 and 15:30. Live
+the latest checkpoint: the previous close until 10:30 ET (10:00 on gap days), then 10:30, 12:30, 14:30 and 15:30. Live
 price, alerts and day-range odds stay live; only the plan levels hold still between checkpoints.
 """
 from __future__ import annotations
@@ -11,9 +11,13 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Any, Callable
 
+import numpy as np
 import pandas as pd
 
 CHECKPOINTS_ET: tuple[tuple[int, int], ...] = ((10, 30), (12, 30), (14, 30), (15, 30))
+# Gap days only: an open more than one normal day's move from the prior close makes prev-close levels stale.
+GAP_CHECKPOINT_ET: tuple[int, int] = (10, 0)
+GAP_SIGMAS = 1.0
 
 _BAR_CACHE: dict[tuple[str, str], dict[str, float] | None] = {}
 
@@ -57,13 +61,30 @@ def _bars_until(ticker: str, now: datetime, cp: tuple[int, int]) -> dict[str, fl
             # A 5-min bar stamped t covers [t, t+5m); keep bars that closed by the checkpoint.
             m = m[(m.index.date == now.date()) & (m.index + pd.Timedelta(minutes=5) <= cut)]
             if not m.empty:
-                out = {"close": float(m["Close"].iloc[-1]), "high": float(m["High"].max()),
-                       "low": float(m["Low"].min())}
+                out = {"open": float(m["Open"].iloc[0]), "close": float(m["Close"].iloc[-1]),
+                       "high": float(m["High"].max()), "low": float(m["Low"].min())}
     except Exception:
         out = None
     if out is not None:
         _BAR_CACHE[key] = out
     return out
+
+
+def gap_size(prior: pd.Series, open_px: float | None) -> tuple[float, float] | None:
+    """(|gap| as a fraction, normal daily move from a 20-day EWMA of prior closes)."""
+    if open_px is None or prior is None or len(prior) < 22:
+        return None
+    r = np.log(prior.astype(float)).diff().dropna()
+    sigma = float(np.sqrt((r**2).ewm(span=20, adjust=False).mean().iloc[-1]))
+    prev = float(prior.iloc[-1])
+    if prev <= 0 or sigma <= 0:
+        return None
+    return abs(open_px / prev - 1), sigma
+
+
+def is_gap_day(prior: pd.Series, open_px: float | None) -> bool:
+    g = gap_size(prior, open_px)
+    return bool(g and g[0] > GAP_SIGMAS * g[1])
 
 
 def pin_session_bar(
@@ -82,8 +103,14 @@ def pin_session_bar(
     last_d = pd.Timestamp(close.index[-1]).date()
     if last_d != now.date():
         return close, volume, df, None
+    fn = bars_fn or _bars_until
     cp = latest_checkpoint(now)
-    bar = (bars_fn or _bars_until)(ticker, now, cp) if cp else None
+    bar = fn(ticker, now, cp) if cp else None
+    gap = False
+    if cp is None and (now.hour, now.minute) >= GAP_CHECKPOINT_ET:
+        early = fn(ticker, now, GAP_CHECKPOINT_ET)
+        if early and is_gap_day(close.iloc[:-1], early.get("open")):
+            cp, bar, gap = GAP_CHECKPOINT_ET, early, True
     if bar is None:
         # Before 10:30 (or no intraday bars): plan levels come from the previous close.
         prev = close.index[-2] if len(close) >= 2 else None
@@ -106,8 +133,9 @@ def pin_session_bar(
             df.loc[j, "low"] = bar["low"]
     later = [c for c in CHECKPOINTS_ET if c > cp]
     return close, volume, df, {
-        "label": _fmt(cp),
+        "label": _fmt(cp) + (" (gap open)" if gap else ""),
         "checkpoint": now.replace(hour=cp[0], minute=cp[1], second=0, microsecond=0).isoformat(timespec="minutes"),
         "price": round(bar["close"], 2),
         "next": _fmt(later[0]) if later else "after the close",
+        "gap": gap,
     }

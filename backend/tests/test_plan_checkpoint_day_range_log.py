@@ -75,3 +75,35 @@ def test_log_and_score_day(tmp_path, monkeypatch):
     assert m.score_day("2026-11-11", bars_fn=lambda t, d: (bars, 103.0)) == 0
     sc = m._load("2026-11-11")["scored"]["0920"]["AAA"]
     assert sc["in80"] and sc["low_after"] == 97.0
+
+
+def _long_series():
+    idx = pd.bdate_range("2026-09-01", "2026-11-11")
+    vals = [100.0 * (1.01 if i % 2 else 0.99) ** 1 for i in range(len(idx))]
+    close = pd.Series(vals, index=idx)
+    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99}, index=idx)
+    return close, df
+
+
+def test_gap_day_refreshes_at_1000():
+    c, df = _long_series()
+    prev = float(c.iloc[-2])
+    bar = {"open": prev * 1.08, "close": prev * 1.07, "high": prev * 1.09, "low": prev * 1.06}
+    c2, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 10, 5, tzinfo=ET),
+                                     bars_fn=lambda *a: bar)
+    assert meta["gap"] and meta["label"] == "10:00 AM ET (gap open)" and meta["next"] == "10:30 AM ET"
+    assert round(float(c2.iloc[-1]), 4) == round(prev * 1.07, 4)
+
+
+def test_no_gap_keeps_previous_close_until_1030():
+    c, df = _long_series()
+    prev = float(c.iloc[-2])
+    bar = {"open": prev * 1.002, "close": prev * 1.03, "high": prev * 1.03, "low": prev}
+    c2, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 10, 15, tzinfo=ET),
+                                     bars_fn=lambda *a: bar)
+    assert meta["checkpoint"] is None and float(c2.iloc[-1]) == prev
+    # Before 10:00 even a gap day uses the previous close.
+    bar["open"] = prev * 1.2
+    _, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 9, 50, tzinfo=ET),
+                                    bars_fn=lambda *a: bar)
+    assert meta["checkpoint"] is None
