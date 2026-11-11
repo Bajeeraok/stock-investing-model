@@ -252,6 +252,7 @@ export interface TickerDetail {
   daily_move_pct?: number | null;
   /** Last good build served while a fresh one builds in the background. */
   served_stale?: boolean;
+  levels_as_of?: { label: string; checkpoint: string | null; price?: number; next: string } | null;
   live_price_at?: string | null;
   price_history?: { date: string; close: number }[];
   returns: Record<string, number>;
@@ -983,7 +984,11 @@ export function TickerDetailModal({
                         · {new Date(detail.live_price_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
                       </span>
                     )}
-                    {detail.price_history?.length ? (
+                    {detail.levels_as_of ? (
+                      <span title={`Bands, stops and gates refresh at 10:30, 12:30, 2:30 and 3:30 ET; the price and today's odds stay live. Next refresh: ${detail.levels_as_of.next}.`}>
+                        · levels as of {detail.levels_as_of.label}
+                      </span>
+                    ) : detail.price_history?.length ? (
                       <span title="Bands, gates and scores come from this daily close; only the price is live">
                         · model{" "}
                         {new Date(`${detail.price_history[detail.price_history.length - 1].date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}

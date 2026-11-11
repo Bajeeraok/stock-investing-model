@@ -31,6 +31,11 @@ export type DayRangePayload = {
   levels: DayRangeLevel[];
   ladder?: { p: number; dip: number; pop: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
+  tracked?: {
+    days: number;
+    since: string | null;
+    slots: Record<string, { label: string; n: number; in80_pct: number | null; in50_pct: number | null; ladder: { p: number; hit_pct: number | null; n: number }[] }>;
+  } | null;
 };
 
 /** 50% close band; older payloads lack it, so derive from the 80% band. */
@@ -207,8 +212,20 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
             Last {data.scorecard.sessions} sessions: {data.scorecard.inside} closes inside the band ({data.scorecard.coverage_pct}%, target 80%).{" "}
           </>
         )}
+        {trackedLine(data)}
         Odds, not predictions. Wider around earnings. Doesn't change the signal.
       </p>
     </section>
   );
+}
+
+/** Live record: snapshots saved at 9:20/10:30/12:30/3:30 ET and scored after each close. */
+function trackedLine(d: DayRangePayload): string {
+  const slots = d.tracked?.slots;
+  const s = slots && (slots["0920"] ?? Object.values(slots)[0]);
+  if (!s || !s.n) return "Live tracking: snapshots saved at 9:20, 10:30, 12:30 and 3:30, scored after each close. ";
+  const low75 = s.ladder.find((x) => x.p === 0.75);
+  return `Live record (${s.label}, ${s.n} day${s.n === 1 ? "" : "s"}): close inside 80% range ${s.in80_pct}%, 50% range ${s.in50_pct}%${
+    low75?.hit_pct != null ? `, 75% levels reached ${low75.hit_pct}%` : ""
+  }. `;
 }

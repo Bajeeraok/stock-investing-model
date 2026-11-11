@@ -112,6 +112,28 @@ def _run_market_pulse_job() -> None:
         logger.exception("[market-scheduler] market pulse job failed")
 
 
+def _run_day_range_log_job(slot: str) -> None:
+    try:
+        from config_loader import load_config
+        from signals.day_range_log import log_slot
+
+        n = log_slot(slot, load_config())
+        logger.info("[market-scheduler] day range snapshot %s: %d tickers", slot, n)
+    except Exception:
+        logger.exception("[market-scheduler] day range snapshot %s failed", slot)
+
+
+def _run_day_range_score_job() -> None:
+    try:
+        from signals.day_range_log import score_pending
+        from signals.time_et import now_et
+
+        n = score_pending(now_et().date().isoformat(), include_today=True)
+        logger.info("[market-scheduler] day range scored %d snapshots", n)
+    except Exception:
+        logger.exception("[market-scheduler] day range scoring failed")
+
+
 def _run_signal_warm_job() -> None:
     if not _is_signal_warm_window():
         logger.info("[market-scheduler] signal warm skipped (outside 8:30–16:00 ET weekday window)")
@@ -234,6 +256,34 @@ def start() -> None:
             coalesce=True,
             misfire_grace_time=600,
         )
+
+    from signals.day_range_log import SLOTS as DAY_RANGE_SLOTS
+
+    for slot, (hour, minute) in DAY_RANGE_SLOTS.items():
+        _scheduler.add_job(
+            partial(_run_day_range_log_job, slot),
+            "cron",
+            minute=minute,
+            hour=hour,
+            day_of_week="mon-fri",
+            id=f"day_range_log_{slot}",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=600,
+        )
+    _scheduler.add_job(
+        _run_day_range_score_job,
+        "cron",
+        minute=20,
+        hour=16,
+        day_of_week="mon-fri",
+        id="day_range_score",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
 
     warm_step = _dashboard_warm_interval_min()
     quote_step = _dashboard_quote_tick_min()

@@ -185,6 +185,12 @@ def _fresh_day_range(ticker: str, detail: dict) -> dict | None:
             return hit
         r = compute_stock_day_range(ticker, detail.get("investor_summary"))
         if r:
+            try:
+                from signals.day_range_log import scorecard as live_scorecard
+
+                r["tracked"] = live_scorecard(ticker)
+            except Exception:
+                r["tracked"] = None
             set_cached(key, r, 120)
         return r
     except Exception:
@@ -360,6 +366,15 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         close_ticker, volume = fetch_ohlcv_with_volume(ticker, period)
         if close_ticker is None:
             close_ticker = fetch_ohlcv_safe(ticker, period)
+
+    # Plan levels refresh at checkpoints (prev close, 10:30, 12:30, 14:30, 15:30 ET), not every tick.
+    levels_as_of = None
+    try:
+        from signals.plan_checkpoint import pin_session_bar
+
+        close_ticker, volume, df_ticker, levels_as_of = pin_session_bar(ticker, close_ticker, volume, df_ticker)
+    except Exception:
+        levels_as_of = None
 
     # Fix 1: Compute benchmark from explicitly separate series so ticker and SPY never share data.
     ret_ticker = _returns_over_periods(close_ticker, periods) if close_ticker is not None else {}
@@ -680,6 +695,7 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
             ),
         },
         "ticker": ticker,
+        "levels_as_of": levels_as_of,
         "thesis": thesis_data.get("thesis", ""),
         "exit_condition": thesis_data.get("exit_condition", ""),
         "earnings": earnings,

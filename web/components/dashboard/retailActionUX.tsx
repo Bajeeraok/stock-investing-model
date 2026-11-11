@@ -2095,7 +2095,7 @@ export function LongTermTierLadder({
               <Target className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400" aria-hidden />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-bold text-slate-200">Owner band at today&apos;s price</span>
+                  <span className="text-sm font-bold text-slate-200">Owner band at current price</span>
                   <span className="text-[11px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
                     Current add zone
                   </span>

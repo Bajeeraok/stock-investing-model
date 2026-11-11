@@ -3956,6 +3956,16 @@ async def get_market_pulse(refresh: bool = Query(False)):
     return data
 
 
+@router.get("/day-range/scorecard")
+async def get_day_range_scorecard(ticker: str | None = Query(None)):
+    """Live-tracked per-stock day-range snapshots (9:20/10:30/12:30/3:30 ET) scored after each close."""
+    from starlette.concurrency import run_in_threadpool
+
+    from signals.day_range_log import scorecard
+
+    return await run_in_threadpool(scorecard, ticker)
+
+
 @router.get("/pre-market")
 async def get_pre_market(refresh: bool = Query(False)):
     """
