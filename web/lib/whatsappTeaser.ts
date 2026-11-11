@@ -14,10 +14,10 @@ type Retail = {
 const usd = (v?: number | null) => (v != null && v > 0 ? `$${v.toFixed(2)}` : "—");
 const bare = (v?: number | null) => (v != null && v > 0 ? v.toFixed(2) : "—");
 
-function line(h: Hz): string {
+function line(h: Hz, goalNote = ""): string {
   const z = h.entry_zone;
   const band = z?.low && z?.high ? `${usd(Math.min(z.low, z.high))}–${bare(Math.max(z.low, z.high))}` : "—";
-  return `Band ${band} · Stop ${usd(h.stop_loss)} · Goal ${usd(h.target)}`;
+  return `Band ${band} · Stop ${usd(h.stop_loss)} · Goal ${usd(h.target)}${h.target ? goalNote : ""}`;
 }
 
 function callWord(verdict: string, gateCleared: boolean): string {
@@ -48,15 +48,22 @@ function rangeBlock(r: DayRangePayload): string[] {
   return out;
 }
 
-function whyLine(ra: Retail, word: string): string {
-  const a = ra.assessment_pct;
-  const val =
-    a == null ? "" : a >= 15 ? `well below fair value (${a.toFixed(0)}% discount)` : a > 0 ? `${a.toFixed(0)}% below fair value` : `${Math.abs(a).toFixed(0)}% above fair value`;
+/** assessment_pct is upside to fair value (FV/price − 1); a discount is (FV − price)/FV. */
+function whyLine(ra: Retail, word: string, street: boolean): string {
+  const u = ra.assessment_pct;
+  const fv = street ? "Wall St fair value" : "fair value";
+  let val = "";
+  if (u != null && u > -100) {
+    const disc = (u / (1 + u / 100));
+    const prem = (100 / (1 + u / 100)) - 100;
+    val = u > 0 ? `${disc.toFixed(0)}% below ${fv}` : `${prem.toFixed(0)}% above ${fv}`;
+    if (u > 0 && disc >= 15) val = `well below ${fv} (${disc.toFixed(0)}% discount)`;
+  }
   const w = ra.regime_weather_status;
   const trend = w === "stormy" ? "trend stormy" : w === "mixed" ? "trend mixed" : w === "extended" ? "price stretched after a run" : w === "bull" ? "trend healthy" : "";
   const tail = word === "HOLD" ? "Wait." : word === "BUY" ? "Gates clear — staged entry with the stop set." : "";
   if (val && trend) {
-    const good = a != null && a > 0;
+    const good = u != null && u > 0;
     const bad = w !== "bull";
     return `${val}${good === bad ? ", but " : " and "}${trend}. ${tail}`.replace(/^./, (c) => c.toUpperCase()).trim();
   }
@@ -71,8 +78,10 @@ export function formatWhatsAppTeaser(
   dayRange?: DayRangePayload | null,
 ): string {
   const t = ticker.toUpperCase();
-  const s = summary as unknown as { horizons: Record<string, Hz>; retail_action?: Retail | null; one_answer?: { verdict?: string; bottom_line?: string } | null; overall_verdict?: string };
+  const s = summary as unknown as { horizons: Record<string, Hz>; retail_action?: Retail | null; fair_value?: number | null; fair_value_vs_external?: { street_anchor_usd?: number | null } | null; one_answer?: { verdict?: string; bottom_line?: string } | null; overall_verdict?: string };
   const ra = s.retail_action ?? {};
+  const ext = s.fair_value_vs_external;
+  const street = !!(ext?.street_anchor_usd && s.fair_value && Math.abs(ext.street_anchor_usd - s.fair_value) / s.fair_value < 0.01);
   const verdict = s.one_answer?.verdict || s.overall_verdict || "";
   const word = callWord(verdict, !!ra.gate_cleared);
   const title = (ra.action_title || "").trim();
@@ -82,9 +91,9 @@ export function formatWhatsAppTeaser(
   const L: string[] = ["Sharing as per my model — please use it as supplemental information.", ""];
   L.push(`*${t}* ${usd(price)} · ${date}`, call, "");
   L.push("*Swing (weeks)*", line(s.horizons.medium ?? {}), "");
-  L.push("*Long-term*", line(s.horizons.long ?? {}), "");
+  L.push("*Long-term*", line(s.horizons.long ?? {}, street ? " (Wall St-based)" : ""), "");
   if (dayRange) L.push(...rangeBlock(dayRange), "");
-  const why = whyLine(ra, word);
+  const why = whyLine(ra, word, street);
   if (why) L.push(`_Why:_ ${why}`);
   const next = ra.next_trigger?.headline?.trim();
   if (next && word === "HOLD") L.push(`_Next:_ ${next}.`);
