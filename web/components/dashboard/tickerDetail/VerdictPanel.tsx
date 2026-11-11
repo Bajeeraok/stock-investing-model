@@ -89,7 +89,7 @@ function gateUnlockLabel(g: TradingGateRow): string {
     return g.label.replace(/\s*\(.*\)$/, "");
   }
   if (g.id === "valuation") return "Valuation clears its margin of safety";
-  if (g.id === "regime") return "Weather gate flips to pass";
+  if (g.id === "regime") return "Trend-weather gate flips to pass";
   if (g.id === "momentum") return g.rsiStatus === "hot" ? "Momentum cools (RSI under 70)" : "Chart pattern firms up";
   if (g.id === "ml") return "ML confidence clears its floor";
   return `${g.label} clears`;

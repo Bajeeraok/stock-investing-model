@@ -114,7 +114,7 @@ def test_unlock_sequence_orders_blockers():
     # test_retail_action_payload.py) — keep two real blockers so ordering is exercised.
     gates = _gates(assessment_pct=27.0, regime_bull_pct=5.0, rsi=72.0)
     seq = build_unlock_sequence(gates, stock_bull_pct=5.0)
-    assert f"Market Weather ≥{REGIME_GATE}%" in seq
+    assert f"Trend weather ≥{REGIME_GATE}%" in seq
     assert "Momentum Chop" in seq
     assert f"≥{VALUATION_GATE_PASS_PCT:.0f}%" not in seq or "Valuation" in seq
 

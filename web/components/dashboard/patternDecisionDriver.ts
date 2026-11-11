@@ -16,32 +16,32 @@ export function marketWeatherFromRegimeBull(
   if (momentumExtended) {
     return {
       weather: "extended",
-      headline: "Market weather: momentum extended",
+      headline: "Trend weather: momentum extended",
       detail:
         "At/near highs with aligned MAs — HMM reads low bull % as pullback-risk, not a broken trend. Don't chase new entries.",
     };
   }
   if (regimeBullPct == null || Number.isNaN(Number(regimeBullPct))) {
-    return { weather: "unknown", headline: "Market weather", detail: "Regime data unavailable." };
+    return { weather: "unknown", headline: "Trend weather", detail: "Regime data unavailable." };
   }
   const rb = Number(regimeBullPct);
   if (rb >= 55) {
     return {
       weather: "favorable",
-      headline: "Market weather: favorable",
+      headline: "Trend weather: favorable",
       detail: "Backdrop skews bullish — tailwind for pattern confirmation.",
     };
   }
   if (rb >= 42) {
     return {
       weather: "mixed",
-      headline: "Market weather: mixed",
+      headline: "Trend weather: mixed",
       detail: "Transition / two-way tape — pattern scores stay noisy.",
     };
   }
   return {
     weather: "stormy",
-    headline: "Market weather: stormy",
+    headline: "Trend weather: stormy",
     detail: "Heavy non-bull weighting — weak pattern scores often reflect the tape, not the name.",
   };
 }

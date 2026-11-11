@@ -96,7 +96,7 @@ def setup_row(detail: dict, mode: str, model_ok: bool = False) -> dict | None:
     status, gp, gt = _entry_status(inv.get("retail_action") or {}, mode)
     gap = _band_gap_pct(h, price)
     blockers: list[str] = []
-    _labels = {"valuation": "Valuation", "regime": "Market weather", "momentum": "Momentum", "ml": "Model odds"}
+    _labels = {"valuation": "Valuation", "regime": "Trend weather", "momentum": "Momentum", "ml": "Model odds"}
     _gates = ((inv.get("retail_action") or {}).get("gates_by_mode") or {}).get(mode) or []
     gates_failing = [_labels[g["id"]] for g in _gates
                      if isinstance(g, dict) and g.get("id") in _labels and not g.get("pass")]
@@ -157,7 +157,7 @@ def setup_row(detail: dict, mode: str, model_ok: bool = False) -> dict | None:
 
 def dip_watch(scored: list[dict]) -> list[dict]:
     """Watch-only: would be a pick except Market weather fails (stock's trend not yet confirmed)."""
-    rows = [r for r in scored if r.get("gates_failing") == ["Market weather"]
+    rows = [r for r in scored if r.get("gates_failing") == ["Trend weather"]
             and r["edge_pct"] > 0 and all(b == "entry gates" for b in r["blockers"])]
     return rows[:NEXT_UP_N]
 

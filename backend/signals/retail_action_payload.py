@@ -560,7 +560,7 @@ def build_coherent_setup_story(
     story = ". ".join(parts[:4]).rstrip(".") + "."
     if regime_gate and not regime_gate.get("pass") and market_bull_pct and market_bull_pct >= REGIME_GATE:
         story += (
-            f" Watch for {sym}'s Market Weather gate to flip PASS (HMM bull ≥ {REGIME_GATE}%) — "
+            f" Watch for {sym}'s trend-weather gate to flip PASS (HMM bull ≥ {REGIME_GATE}%) — "
             "that's your entry trigger."
         )
         if regime_transition_days:
@@ -608,7 +608,7 @@ def build_next_trigger(
         if est_i is not None and est_i > 0:
             detail += f" Estimated resolution: ~{est_i} days based on transition regime read."
     return {
-        "headline": "Setup activates when Market Weather gate flips PASS",
+        "headline": "Setup activates when the trend-weather gate flips PASS",
         "detail": detail,
         "estimated_days": regime_transition_days,
     }
@@ -738,7 +738,7 @@ def build_trading_gates(
         },
         {
             "id": "regime",
-            "label": "MARKET WEATHER",
+            "label": "TREND WEATHER",
             "detail": _regime_gate_detail(
                 ticker=ticker,
                 stock_bull_pct=rb,
@@ -853,10 +853,10 @@ def build_dynamic_subtitle(
         if assessment_pct >= 5 and market_regime_bull_pct and market_regime_bull_pct >= REGIME_GATE:
             return (
                 "Valuation is attractive and the market tape is bullish, but this stock's own HMM regime "
-                "has not confirmed yet — wait for Market Weather to flip PASS before sizing."
+                "has not confirmed yet — wait for the trend-weather gate to flip PASS before sizing."
             )
         return (
-            "Valuation is highly attractive, but market weather on this name is stormy. "
+            "Valuation is highly attractive, but this stock's trend weather is stormy. "
             "Sit on your hands and wait for a cleaner dip."
             if assessment_pct >= 5
             else "Macro regime is risk-off — wait for bull tape before sizing new entries."
@@ -1067,7 +1067,7 @@ def derive_entry_mode(
         if inst.get("buy_the_dip"):
             inst_note = (
                 " Active managers accumulated during a down quarter (buy-the-dip on 13F) — "
-                "strong conviction filter; still wait for Market Weather / Momentum gates."
+                "strong conviction filter; still wait for Trend weather / Momentum gates."
             )
     elif inst_verdict == "concerns" and mode == "starter_only":
         inst_note = (
@@ -1103,7 +1103,7 @@ def build_unlock_sequence(
     steps: list[str] = []
     if not _gate_pass(gates, "regime"):
         bull = round(float(stock_bull_pct or 0))
-        steps.append(f"Market Weather ≥{REGIME_GATE}% (now {bull}%)")
+        steps.append(f"Trend weather ≥{REGIME_GATE}% (now {bull}%)")
     if not _gate_pass(gates, "momentum"):
         steps.append(
             f"Momentum Chop pass (RSI <{MOMENTUM_RSI_MAX:.0f}, pattern ≥{MOMENTUM_PATTERN_MIN:.0f})"

@@ -320,7 +320,7 @@ export function BestSetupsPanel({
             Dip watch ({m.dip_watch!.length}) · watch only, not a buy <span className="text-slate-400 group-open:hidden">› show</span>
           </summary>
           <p className="mt-1 mb-2 text-[12px] text-slate-400 leading-snug">
-            These pass every rule except Market weather: the stock&apos;s own trend hasn&apos;t confirmed a recovery yet.
+            These pass every rule except Trend weather: the stock&apos;s own trend hasn&apos;t confirmed a recovery yet.
             In tracked history, stocks blocked only by weather lagged SPY until it cleared, so wait for the gate to turn green.
           </p>
           <div className="space-y-1.5">

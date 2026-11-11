@@ -37,7 +37,7 @@ _LAYER_META: dict[str, tuple[str, str]] = {
 
 _GATE_META: dict[str, tuple[str, str]] = {
     "valuation": ("Valuation", "fundamentals"),
-    "regime": ("Market weather", "market"),
+    "regime": ("Trend weather", "market"),
     "momentum": ("Momentum & chart", "technical"),
     "ml": ("ML probability", "ml"),
 }
@@ -263,7 +263,7 @@ def _gate_plain_blocker(gate: dict[str, Any]) -> str:
     if gid == "valuation":
         return "price needs more margin of safety vs our fair-value model"
     if gid == "regime":
-        return "market weather (HMM regime) has not confirmed a bull read on this name"
+        return "trend weather (this stock's HMM regime) has not confirmed a bull read"
     if gid == "momentum":
         return "momentum is extended or chart structure is not ideal for chasing"
     if gid == "ml":

@@ -357,7 +357,7 @@ export function buildTradingGateRows(input: {
     },
     {
       id: "regime",
-      label: "MARKET WEATHER",
+      label: "TREND WEATHER",
       detail: regimeOk
         ? `${weather.headline} · HMM bull ${Math.round(input.regimeBullPct!)}%`
         : `Stormy Tape (HMM Regime Non-Bull · ${input.regimeBullPct != null ? Math.round(input.regimeBullPct) : "—"}%)`,

@@ -118,3 +118,12 @@ def test_trim_alert_meta_gated():
     )
     assert not blocked["is_trim_candidate"]
     assert blocked.get("trim_gates_pending")
+
+
+def test_rich_vs_fair_value_alone_is_not_extended():
+    def ext(**kw):
+        g = build_trim_gates(current_price=100, regime_bull_pct=50, pattern_score=50, short_ml_prob=0.5, **kw)
+        return next(x for x in g if x["id"] == "extension")["pass"]
+
+    assert ext(assessment_pct=-25, rsi=50) is False
+    assert ext(assessment_pct=10, rsi=70) is True

@@ -239,7 +239,7 @@ def test_coherent_story_and_next_trigger():
         regime_transition_days=7,
     )
     assert trig is not None
-    assert "Market Weather" in trig["headline"]
+    assert "trend-weather" in trig["headline"]
 
 
 def test_enrich_dashboard_signal_row():

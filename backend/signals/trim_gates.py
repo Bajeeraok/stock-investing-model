@@ -107,7 +107,9 @@ def build_trim_gates(
 
     ext_rsi = float(c.get("extension_rsi_min", 65))
     rich = assess < 0
-    extension_ok = rsi_val >= ext_rsi or rich
+    # Price above fair value alone is not a trim risk: on 2026 EOD snapshots it flipped sign
+    # between halves (rich names beat SPY by +4.5% / 20d in H2), while RSI >= 65 lagged SPY in both.
+    extension_ok = rsi_val >= ext_rsi
 
     regime_weak = rb is not None and rb < float(c.get("regime_bull_max", 45))
     pattern_weak = pat is not None and pat < float(c.get("pattern_weak_max", 40))
@@ -128,7 +130,7 @@ def build_trim_gates(
             "detail": (
                 f"Overextended · RSI {rsi_val:.0f} (≥{ext_rsi:.0f})"
                 if rsi_val >= ext_rsi
-                else f"Rich vs LT band ({assess:.1f}%)" if rich
+                else f"Not extended · RSI {rsi_val:.0f} (above fair value {-assess:.1f}%, not a trim signal)" if rich
                 else f"Not extended · RSI {rsi_val:.0f}"
             ),
             "pass": extension_ok,
