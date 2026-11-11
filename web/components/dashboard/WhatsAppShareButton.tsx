@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { Check, Share2 } from "lucide-react";
-import { apiUrl } from "@/lib/apiBase";
-import { formatWhatsAppTeaser, type PulseTrack } from "@/lib/whatsappTeaser";
+import { formatWhatsAppTeaser } from "@/lib/whatsappTeaser";
 import type { InvestorDecisionSummary } from "./InvestorDecisionSummary";
 import type { DayRangePayload } from "./tickerDetail/DayRangeCard";
 
@@ -27,19 +26,12 @@ async function copy(text: string) {
   }
 }
 
-/** Copies a short monospace teaser (signal, swing/long-term levels, today's range, SPY/QQQ record) for WhatsApp. */
+/** Copies a short monospace teaser (signal, swing/long-term levels, today's range) for WhatsApp. */
 export function WhatsAppShareButton({ ticker, summary, currentPrice, dayRange }: Props) {
   const [copied, setCopied] = useState(false);
 
   const handle = async () => {
-    let track: PulseTrack | null = null;
-    try {
-      const r = await fetch(apiUrl("/api/market-pulse"), { cache: "no-store" });
-      if (r.ok) track = (await r.json())?.scorecard?.summary ?? null;
-    } catch {
-      /* teaser still works without the track line */
-    }
-    await copy(formatWhatsAppTeaser(ticker, summary, currentPrice, dayRange, track));
+    await copy(formatWhatsAppTeaser(ticker, summary, currentPrice, dayRange));
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };

@@ -1,9 +1,6 @@
 import type { InvestorDecisionSummary } from "@/components/dashboard/InvestorDecisionSummary";
 import { pct, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
 
-/** SPY/QQQ said-vs-happened summary (from /api/market-pulse scorecard.summary). */
-export type PulseTrack = Record<string, { days: number; direction_hit_pct: number | null; direction_calls: number; range_coverage_pct: number | null }>;
-
 type Hz = { entry_zone?: { low?: number | null; high?: number | null } | null; stop_loss?: number | null; target?: number | null };
 type Retail = {
   action_title?: string;
@@ -72,7 +69,6 @@ export function formatWhatsAppTeaser(
   summary: InvestorDecisionSummary,
   price: number,
   dayRange?: DayRangePayload | null,
-  track?: PulseTrack | null,
 ): string {
   const t = ticker.toUpperCase();
   const s = summary as unknown as { horizons: Record<string, Hz>; retail_action?: Retail | null; one_answer?: { verdict?: string; bottom_line?: string } | null; overall_verdict?: string };
@@ -92,10 +88,6 @@ export function formatWhatsAppTeaser(
   if (why) L.push(`_Why:_ ${why}`);
   const next = ra.next_trigger?.headline?.trim();
   if (next && word === "HOLD") L.push(`_Next:_ ${next}.`);
-  const tr = track?.["10:30"] ?? track?.pre_open;
-  if (tr && tr.days > 0 && tr.direction_hit_pct != null) {
-    L.push(`_Model's SPY/QQQ day calls: direction right ${Math.round(tr.direction_hit_pct)}% over the last ${tr.days} days._`);
-  }
   L.push("_Educational, not advice._");
   return L.join("\n");
 }
