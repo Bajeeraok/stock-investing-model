@@ -7,6 +7,7 @@
  * existing portfolio_report / portfolio_risk_metrics / portfolio_stress payloads.
  */
 
+import { useState } from "react";
 import { clsx } from "clsx";
 import { ChevronRight } from "lucide-react";
 import type { PortfolioHolding, PortfolioReport, PortfolioRiskMetrics } from "@/app/page";
@@ -44,6 +45,13 @@ export function PortfolioValueCard({ report, limitPct }: { report: PortfolioRepo
   );
 }
 
+const TRIM_LABEL: Record<string, string> = {
+  consider_trim: "Trim",
+  urgent_trim: "Trim",
+  hold_no_add: "Hold · don't add",
+  watch: "Watch",
+};
+
 export function NeedsAttentionList({
   report,
   trimCandidates,
@@ -55,6 +63,7 @@ export function NeedsAttentionList({
   limitPct: number;
   onTickerClick?: (ticker: string) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const byTicker = new Map((report?.per_holding ?? []).map((h) => [h.ticker, h]));
   const items: { ticker: string; kind: string; detail: string; tone: "warn" | "crit" }[] = [];
   for (const t of report?.concentration_alert ?? []) {
@@ -70,7 +79,7 @@ export function NeedsAttentionList({
     if (items.some((i) => i.ticker === h.ticker)) continue;
     items.push({
       ticker: h.ticker,
-      kind: h.trim_recommendation || h.action || "Trim candidate",
+      kind: TRIM_LABEL[h.trim_recommendation ?? ""] ?? "Trim",
       detail: h.trim_detail || h.action_today || h.suggestion || (h.score != null ? `Score ${Math.round(h.score)}` : ""),
       tone: "crit",
     });
@@ -79,7 +88,7 @@ export function NeedsAttentionList({
   return (
     <section aria-label="Needs attention" className="space-y-2">
       <h3 className="text-[11.5px] font-semibold uppercase tracking-wider text-td-muted">Needs attention · {items.length}</h3>
-      {items.map((i) => (
+      {(showAll ? items : items.slice(0, 8)).map((i) => (
         <button
           key={`${i.kind}-${i.ticker}`}
           type="button"
@@ -97,6 +106,11 @@ export function NeedsAttentionList({
           <ChevronRight className="h-4 w-4 text-td-muted shrink-0" />
         </button>
       ))}
+      {items.length > 8 && (
+        <button type="button" onClick={() => setShowAll((v) => !v)} className="text-[12px] text-td-accent hover:underline">
+          {showAll ? "Show fewer" : `Show all ${items.length}`}
+        </button>
+      )}
     </section>
   );
 }
