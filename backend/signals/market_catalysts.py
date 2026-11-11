@@ -148,6 +148,11 @@ def _intraday_context(scheduled_today: list[dict], now: _dt.datetime | None = No
             from backports.zoneinfo import ZoneInfo  # type: ignore
         et = ZoneInfo("America/New_York")
         idx_et = hist.index.tz_convert(et) if hist.index.tz else hist.index.tz_localize("UTC").tz_convert(et)
+        today_mask = [ts.date() == now.date() for ts in idx_et]
+        if not any(today_mask):
+            return None
+        hist = hist[today_mask]
+        idx_et = idx_et[today_mask]
         open_bar = None
         for i, ts in enumerate(idx_et):
             if ts.hour == 9 and ts.minute >= 30:
