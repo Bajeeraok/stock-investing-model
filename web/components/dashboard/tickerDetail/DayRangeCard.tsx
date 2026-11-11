@@ -23,7 +23,7 @@ export type DayRangePayload = {
 };
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const pct = (p: number) => `${Math.round(p * 100)}%`;
+export const pct = (p: number) => (p < 0.01 ? "<1%" : p > 0.99 ? ">99%" : `${Math.round(p * 100)}%`);
 
 function oddsTone(p: number, touched: boolean) {
   if (touched) return "text-td-accent";
