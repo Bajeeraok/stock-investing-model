@@ -1977,6 +1977,10 @@ export function pickCurrentTargetTierId(
   if (spotPosition?.next_add_tier_id) {
     return spotPosition.next_add_tier_id;
   }
+  // Price already below the structural tiers: the owner band sits at spot, no tier is the target.
+  if (spotPosition?.state === "at_or_below_ceiling") return null;
+  // T3 is a stress level only, never a target tier.
+  tiers = tiers.filter((t) => t.id !== "T3");
   if (!tiers.length || !(price > 0)) return null;
   const active = tiers.find((t) => price >= t.low && price <= t.high);
   if (active) return active.id;
@@ -2071,6 +2075,8 @@ export function LongTermTierLadder({
   const spotGap = entryTiers.spot_position;
   const targetTierId = pickCurrentTargetTierId(entryTiers.tiers, currentPrice, entryTiers.spot_position);
   const sorted = [...entryTiers.tiers].sort((a, b) => b.low - a.low);
+  const spotBand =
+    spotGap?.state === "at_or_below_ceiling" && spotGap.spot_band?.low && spotGap.spot_band?.high ? spotGap.spot_band : null;
 
   return (
     <div className="mt-2 rounded-xl border border-violet-500/25 bg-gradient-to-b from-violet-950/30 to-slate-950/50 overflow-hidden">
@@ -2083,6 +2089,28 @@ export function LongTermTierLadder({
         </span>
       </div>
       <ul className="p-2 space-y-1.5">
+        {spotBand && (
+          <li className="rounded-lg border border-emerald-500/50 bg-emerald-500/10 ring-1 ring-emerald-500/30 px-3 py-2.5">
+            <div className="flex items-start gap-2">
+              <Target className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-bold text-slate-200">Owner band at today&apos;s price</span>
+                  <span className="text-[11px] uppercase font-black text-emerald-300 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/40">
+                    Current add zone
+                  </span>
+                </div>
+                <p className="text-sm font-mono text-slate-100 mt-0.5">
+                  ${spotBand.low.toFixed(2)} – ${spotBand.high.toFixed(2)}
+                </p>
+                <p className="text-[13px] text-slate-400 mt-1">
+                  Price fell below the T1/T2 bands but is still cheap enough on valuation. Scale in here only when the gates
+                  clear; partial size. Higher tiers below are references, not add levels.
+                </p>
+              </div>
+            </div>
+          </li>
+        )}
         {sorted.map((tier) => {
           const state = currentPrice > 0 ? tierPriceState(tier, currentPrice) : "above";
           const isInside = state === "active";
@@ -2094,7 +2122,7 @@ export function LongTermTierLadder({
             sizing: tier.description,
             mode: "",
           };
-          const irrelevant = isAbove && !isTarget;
+          const irrelevant = (isAbove && !isTarget) || (state === "below" && tier.id !== "T3");
 
           return (
             <li
@@ -2182,7 +2210,7 @@ export function LongTermTierLadder({
                         🔒 Price is above zone — needs ~{Math.abs(tier.drop_needed_pct).toFixed(0)}% pullback
                       </span>
                     ) : state === "below" ? (
-                      <span className="text-slate-500">Price is below this band (cheaper); entry still needs the gates and max add.</span>
+                      <span className="text-slate-500">Reference only: price ${currentPrice.toFixed(2)} is already below this band, so it is not an add level.</span>
                     ) : null}
                   </p>
                 </div>

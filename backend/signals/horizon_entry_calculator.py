@@ -483,7 +483,7 @@ def classify_spot_band_position(
             "trigger_kind": "at_or_below",
             "label": f"{gap_pct:.1f}% above {band_label} ceiling",
             "detail": (
-                f"Wait for price ≤ ${hi:.2f} (T1 ceiling). "
+                f"Wait for price ≤ ${hi:.2f} ({band_label} ceiling). "
                 f"Any print at or below that level counts — including gaps through ${lo:.2f}–${hi:.2f}."
             ),
         }

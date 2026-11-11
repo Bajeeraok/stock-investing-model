@@ -391,6 +391,7 @@ export interface HorizonSignalPayload {
       label?: string;
       detail?: string;
       below_all_within_mos?: boolean;
+      spot_band?: { low: number; high: number } | null;
       in_bridge_band?: boolean;
       bridge_band?: {
         low?: number;

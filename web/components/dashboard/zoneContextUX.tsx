@@ -18,6 +18,8 @@ export type ZoneContext = {
   floor_tier_id?: string | null;
   ceiling_tier_id?: string | null;
   next_add_tier_id?: string | null;
+  below_all_within_mos?: boolean;
+  spot_band?: { low: number; high: number } | null;
 };
 
 const REGIME_GATE = 60;
