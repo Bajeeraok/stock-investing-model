@@ -168,7 +168,27 @@ def get_ticker_detail(ticker: str, config: dict, *, allow_stale: bool = True) ->
             sync_header_gate_counts(out)
     except Exception:
         pass
+    if isinstance(out, dict):
+        out["day_range"] = _fresh_day_range(ticker, out)
     return out
+
+
+def _fresh_day_range(ticker: str, detail: dict) -> dict | None:
+    """Day range is time-sensitive: never serve it from a stale page build (2-min own cache)."""
+    try:
+        from signals.cache import cache_key, get_cached, set_cached
+        from signals.stock_day_range import compute_stock_day_range
+
+        key = cache_key("day_range", "v1", ticker)
+        hit = get_cached(key)
+        if isinstance(hit, dict):
+            return hit
+        r = compute_stock_day_range(ticker, detail.get("investor_summary"))
+        if r:
+            set_cached(key, r, 120)
+        return r
+    except Exception:
+        return detail.get("day_range")
 
 
 def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
