@@ -59,7 +59,7 @@ def ewma_sigmas(closes: list[float], span: int = SPAN) -> list[float | None]:
     return out
 
 
-LADDER_P = (0.75, 0.5, 0.25)
+LADDER_P = (0.75, 0.5, 0.25, 0.1)
 
 
 def _pre_open_move(p: float) -> float:

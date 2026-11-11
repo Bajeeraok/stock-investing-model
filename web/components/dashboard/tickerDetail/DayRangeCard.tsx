@@ -113,8 +113,8 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
         <div className="text-[13px]">
           <div className="grid grid-cols-3 gap-2 text-[12px] text-td-muted">
             <span>Chance {when}</span>
-            <span className="text-right">Dips to</span>
-            <span className="text-right">Pops to</span>
+            <span className="text-right">Low reaches</span>
+            <span className="text-right">High reaches</span>
           </div>
           {data.ladder.map((r) => (
             <div key={r.p} className="grid grid-cols-3 gap-2 font-mono">
@@ -123,6 +123,7 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
               <span className="text-right text-td-text">{usd(r.pop)}</span>
             </div>
           ))}
+          <p className="text-[12px] text-td-muted mt-1">Lower lows and higher highs are possible, just less likely.</p>
         </div>
       )}
 

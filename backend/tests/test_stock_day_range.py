@@ -60,9 +60,9 @@ def test_reach_ladder_matches_level_odds():
     session = {"last": 101.0, "minutes_since_open": 120, "low": 100.5, "high": 101.5}
     r = build_day_range(closes, dates, session=session)
     lad = r["ladder"]
-    assert [x["p"] for x in lad] == [0.75, 0.5, 0.25]
+    assert [x["p"] for x in lad] == [0.75, 0.5, 0.25, 0.1]
     assert lad[0]["dip"] > lad[1]["dip"] > lad[2]["dip"] and lad[0]["pop"] < lad[2]["pop"]
     chk = build_day_range(closes, dates, session=session, levels=[{"label": "x", "price": lad[1]["dip"]}])
     assert abs(chk["levels"][0]["p_reach"] - 0.5) <= 0.02
     pre = build_day_range(closes, dates)
-    assert len(pre["ladder"]) == 3 and pre["ladder"][2]["dip"] < 100 * math.exp(0.02 * ((-1) ** 79))
+    assert len(pre["ladder"]) == 4 and pre["ladder"][2]["dip"] < 100 * math.exp(0.02 * ((-1) ** 79))

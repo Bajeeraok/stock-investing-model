@@ -44,7 +44,7 @@ function rangeBlock(r: DayRangePayload): string[] {
   }
   const when = live ? "before close" : "next session";
   for (const x of r.ladder ?? []) {
-    out.push(`${pct(x.p)} chance ${when}: dips to ${usd(x.dip)} · pops to ${usd(x.pop)}`);
+    out.push(`${pct(x.p)} chance ${when}: low reaches ${usd(x.dip)} · high reaches ${usd(x.pop)}`);
   }
   const { near, far } = splitLevels(r);
   for (const l of near) {
