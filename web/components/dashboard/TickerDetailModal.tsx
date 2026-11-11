@@ -301,6 +301,7 @@ export interface TickerDetail {
    * when intraday data isn't available for this ticker. Distinct from any internal `vwap`
    * band-math input used elsewhere in the pipeline. */
   session_vwap?: { vwap: number; close_vs_vwap_pct: number; bars_used: number } | null;
+  day_range?: import("./tickerDetail/DayRangeCard").DayRangePayload | null;
   second_opinions?: import("./SecondOpinionsCard").SecondOpinionsPayload | null;
   position_advice?: import("./PositionAdviceCard").PositionAdvicePayload | null;
   beta?: number | null;

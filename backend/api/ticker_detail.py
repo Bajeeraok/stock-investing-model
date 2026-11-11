@@ -777,6 +777,13 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         response["session_vwap"] = None
 
     try:
+        from signals.stock_day_range import compute_stock_day_range
+
+        response["day_range"] = compute_stock_day_range(ticker, response.get("investor_summary"))
+    except Exception:
+        response["day_range"] = None
+
+    try:
         from signals.second_opinions import build_second_opinions
 
         response["second_opinions"] = build_second_opinions(config, ticker, df_ticker)

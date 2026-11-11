@@ -17,6 +17,7 @@ import { WatchZoneCallout } from "../../zoneContextUX";
 import { ProtectModeCard } from "../../ProtectModeCard";
 import { SecondOpinionsCard } from "../../SecondOpinionsCard";
 import { PositionAdviceCard } from "../../PositionAdviceCard";
+import { DayRangeCard } from "../DayRangeCard";
 import type { TabCtx } from "./tabCtx";
 
 export function VerdictTab({ ctx }: { ctx: TabCtx }) {
@@ -80,6 +81,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
       <p className="text-[13px] text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
     </section>
   )}
+  <DayRangeCard data={detail.day_range} price={effectivePrice} />
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
   <PositionAdviceCard data={detail.position_advice} />
   <SecondOpinionsCard data={detail.second_opinions} actionStatus={headerActionStatus} />
