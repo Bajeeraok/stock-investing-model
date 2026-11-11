@@ -52,7 +52,8 @@ function rangeBlock(r: DayRangePayload): string[] {
   }
   const { near, far } = splitLevels(r);
   for (const l of near) {
-    out.push(`${l.label} ${usd(l.price)}: ${l.touched ? `traded there earlier today · ${pct(l.p_reach)} chance again ${when}` : `${pct(l.p_reach)} chance ${when}`}`);
+    const close = l.p_close_beyond != null ? ` · ${pct(l.p_close_beyond)} chance it closes ${l.side === "below" ? "below" : "above"}` : "";
+    out.push(`${l.label} ${usd(l.price)}: ${l.touched ? `traded there earlier today · ${pct(l.p_reach)} chance it trades there again ${when}` : `${pct(l.p_reach)} chance it trades there ${when}`}${close}`);
   }
   if (far.length) out.push(`Out of reach ${live ? "today" : "next session"}: ${far.map((l) => `${l.label.toLowerCase()} ${usd(l.price)}`).join(" · ")}`);
   return out;

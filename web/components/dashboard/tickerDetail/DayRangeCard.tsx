@@ -4,7 +4,15 @@
 import React from "react";
 import { CalendarRange } from "lucide-react";
 
-export type DayRangeLevel = { label: string; price: number; side: "above" | "below"; p_reach: number; touched: boolean };
+export type DayRangeLevel = {
+  label: string;
+  price: number;
+  side: "above" | "below";
+  p_reach: number;
+  /** Chance the close finishes beyond the level (below it for "below", above it for "above"). */
+  p_close_beyond?: number;
+  touched: boolean;
+};
 export type DayRangePayload = {
   phase: "intraday" | "next_session";
   ref_close: number;
@@ -158,7 +166,10 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
               <span className="text-right text-td-text">{usd(r.pop)}</span>
             </div>
           ))}
-          <p className="text-[12px] text-td-muted mt-1">Lower lows and higher highs are possible, just less likely.</p>
+          <p className="text-[12px] text-td-muted mt-1">
+            Chance price trades there at any moment, not where it closes. A brief touch is about twice as likely as closing beyond
+            the same level. Lower lows and higher highs are possible, just less likely.
+          </p>
         </div>
       )}
 
@@ -169,8 +180,15 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
               <span className="text-td-muted">
                 {l.label} <span className="font-mono text-td-text">{usd(l.price)}</span>
               </span>
-              <span className={`font-semibold ${oddsTone(l.p_reach)}`}>
-                {l.touched ? `Traded there earlier · ${pct(l.p_reach)} chance again` : `${pct(l.p_reach)} chance ${when}`}
+              <span className="text-right">
+                <span className={`block font-semibold ${oddsTone(l.p_reach)}`}>
+                  {l.touched ? `Traded there earlier · ${pct(l.p_reach)} chance it trades there again` : `${pct(l.p_reach)} chance it trades there ${when}`}
+                </span>
+                {l.p_close_beyond != null && (
+                  <span className="block text-[12px] text-td-muted">
+                    {pct(l.p_close_beyond)} chance it closes {l.side === "below" ? "below" : "above"}
+                  </span>
+                )}
               </span>
             </li>
           ))}

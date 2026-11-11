@@ -167,8 +167,10 @@ def build_day_range(
             prob = min(0.99, 2 * (1 - _phi(d / rem))) if left > 0 else 0.0
         else:
             prob = min(0.99, _pre_open_touch(abs(math.log(p / anchor)) / sig))
+        z = math.log(p / anchor) / sd if sd > 0 else 0.0
+        p_close = _phi(z) if below else 1 - _phi(z)
         lv_out.append({"label": lv.get("label"), "price": round(p, 2), "side": "below" if below else "above",
-                       "p_reach": round(prob, 2), "touched": touched})
+                       "p_reach": round(prob, 2), "p_close_beyond": round(p_close, 2), "touched": touched})
     out["levels"] = sorted(lv_out, key=lambda x: -x["price"])
     out["ladder"] = reach_ladder(anchor, sig, left if live else None)
     out["scorecard"] = scorecard(closes, dates)

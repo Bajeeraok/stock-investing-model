@@ -66,3 +66,15 @@ def test_reach_ladder_matches_level_odds():
     assert abs(chk["levels"][0]["p_reach"] - 0.5) <= 0.02
     pre = build_day_range(closes, dates)
     assert len(pre["ladder"]) == 4 and pre["ladder"][2]["dip"] < 100 * math.exp(0.02 * ((-1) ** 79))
+
+
+def test_close_beyond_below_touch_odds():
+    import math
+    from signals.stock_day_range import build_day_range
+
+    closes = [100 * math.exp(0.02 * ((-1) ** i)) for i in range(80)]
+    dates = [f"d{i}" for i in range(80)]
+    session = {"last": 101.0, "minutes_since_open": 120, "low": 100.5, "high": 101.5}
+    r = build_day_range(closes, dates, session=session, levels=[{"label": "b", "price": 99.5}, {"label": "a", "price": 102.5}])
+    for lv in r["levels"]:
+        assert 0 < lv["p_close_beyond"] < lv["p_reach"]
