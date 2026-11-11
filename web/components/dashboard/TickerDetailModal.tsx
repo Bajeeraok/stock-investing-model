@@ -981,17 +981,18 @@ export function TickerDetailModal({
                     )}
                     {detail.live_price_at && (
                       <span className="font-mono">
-                        · {new Date(detail.live_price_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
+                        · Price as of {new Date(detail.live_price_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" })} ET
                       </span>
                     )}
                     {detail.levels_as_of ? (
                       <span title={`Bands, stops and gates refresh at 10:30, 12:30, 2:30 and 3:30 ET (also 10:00 when the stock gaps at the open); the price and today's odds stay live. Next refresh: ${detail.levels_as_of.next}.`}>
-                        · levels as of {detail.levels_as_of.label}
+                        · Signals as of {detail.levels_as_of.label}
                       </span>
                     ) : detail.price_history?.length ? (
-                      <span title="Bands, gates and scores come from this daily close; only the price is live">
-                        · model{" "}
-                        {new Date(`${detail.price_history[detail.price_history.length - 1].date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      <span title="Bands, stops, gates and scores come from this daily close; only the price is live">
+                        · Signals as of{" "}
+                        {new Date(`${detail.price_history[detail.price_history.length - 1].date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}{" "}
+                        close
                       </span>
                     ) : null}
                   </span>
