@@ -2239,21 +2239,29 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         tier1.low = entry_zone.low
     # Price fell through the higher tiers but is still under the full-size ceiling: the owner
     # band sits at spot (down to the swing floor); the lower tier stays a stress level only.
+    # Also covers a crash below T1/T2 (SNDK $993 vs T2 $1,400–$1,490): tiers above spot are
+    # already-cheaper references, never a "next add" higher than today's price.
     spot_band = (
         active_tier is None
         and bool(spot_position.get("below_all_within_mos"))
-        and display_tier.high < p
         and min_price_to_buy >= p
     )
     if spot_band:
         nearer = [v for v in (inp.medium_entry_low, inp.short_entry_low) if v is not None and 0 < v < p]
         el = _r(nearer[0]) if nearer else _r(p * (1 - LT_MOS_CAPPED_BAND_PCT / 100))
+        lower = [t for t in all_tiers if t.high < p]
+        upper = [t for t in all_tiers if t.low > p]
+        refs = []
+        if upper:
+            refs.append("price is already below {}".format("/".join(t.id for t in upper)))
+        if lower:
+            refs.append("; ".join("{} ${:.2f}–${:.2f} is a stress level only".format(t.id, t.low, t.high) for t in lower))
+        if lower:
+            display_tier = max(lower, key=lambda t: t.high)
         entry_zone = EntryZone(
             el,
             _r(p),
-            anchor="At spot — under the full-size ceiling ${:.2f}; {} ${:.2f}–${:.2f} is a stress level only".format(
-                min_price_to_buy, display_tier.id, display_tier.low, display_tier.high
-            ),
+            anchor="At spot — under the full-size ceiling ${:.2f}; {}".format(min_price_to_buy, "; ".join(refs)),
             quality="In Zone",
             quality_color=assess_color,
         )
@@ -2261,13 +2269,13 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
         spot_position["spot_band"] = {"low": entry_zone.low, "high": entry_zone.high}
         # The at-spot band is the plan; the lower tier is a stress reference, not a target.
         target_tid = None
+        spot_position["next_add_tier_id"] = None
         spot_position["detail"] = (
             "Spot ${:.2f} is below the higher tier bands but at/below the full-size ceiling ${:.2f}. "
-            "{} allocation is valuation-justified at spot; owner band ${:.2f}–${:.2f}. "
-            "{} (${:.2f}–${:.2f}) is a stress level only."
+            "{} allocation is valuation-justified at spot; owner band ${:.2f}–${:.2f}. {}."
         ).format(
             p, min_price_to_buy, "Full" if assess_verdict == "BUY" else "Partial",
-            entry_zone.low, entry_zone.high, display_tier.id, display_tier.low, display_tier.high,
+            entry_zone.low, entry_zone.high, "; ".join(refs).capitalize(),
         )
     if spot_position.get("state") == "between_tiers":
         detail = spot_position.get("detail")

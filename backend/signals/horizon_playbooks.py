@@ -359,10 +359,17 @@ def build_long_setup(
             )
     t1 = next((t for t in compact_tiers if t.get("id") == "T1"), None)
     if t1 and not active_id:
-        add_triggers.insert(
-            0,
-            f"T1 ceiling ≤ ${t1['high']:.2f} — owner trigger is at-or-below, not a ${t1['low']:.2f}–${t1['high']:.2f} window.",
-        )
+        if current_price is not None and float(current_price) < float(t1["low"]):
+            add_triggers.insert(
+                0,
+                f"Price ${float(current_price):.2f} is already below T1 (${t1['low']:.2f}–${t1['high']:.2f}) — "
+                "scale in the owner band at spot when the gates clear; higher tiers are not add levels.",
+            )
+        else:
+            add_triggers.insert(
+                0,
+                f"T1 ceiling ≤ ${t1['high']:.2f} — owner trigger is at-or-below, not a ${t1['low']:.2f}–${t1['high']:.2f} window.",
+            )
 
     exit_triggers = []
     if inv_price and current_price is not None and inv_price < float(current_price):

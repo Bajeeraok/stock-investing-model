@@ -1144,6 +1144,11 @@ def derive_zone_aware_action_title(
     state = (spot.get("state") or "").lower()
     tier_id = spot.get("tier_id") or spot.get("active_tier_id") or spot.get("next_add_tier_id")
 
+    if spot.get("spot_band"):
+        return ("ACCUMULATE · OWNER BAND" if gate_cleared else "OWNER BAND AT SPOT · WAIT FOR GATES"), (
+            "green" if gate_cleared else "yellow"
+        )
+
     if state in ("in_tier", "at_or_below_ceiling") and tier_id:
         tier = str(tier_id).upper()
         if gate_cleared:

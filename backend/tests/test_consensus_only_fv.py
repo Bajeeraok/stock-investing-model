@@ -51,3 +51,14 @@ def test_fell_through_higher_tiers_owner_band_sits_at_spot():
     assert "Full allocation" not in sp["detail"] and "stress level only" in sp["detail"]
     assert _tier(sig, "T3")["high"] < ez.low
     assert sig.entry_tiers["target_tier_id"] is None
+
+
+def test_crash_below_t1_t2_owner_band_at_spot_not_higher_tier():
+    """SNDK Nov-26: spot $993 under T2 $1,400–$1,490 and T1 $1,490–$1,647 — no add level above spot."""
+    sig = _lt(current_price=993.0, fair_value=2175.0, ma200=1568.0, week52_low=183.0,
+              fv_model_suppressed=True, fv_street_anchor_usd=2175.0, medium_entry_low=978.84)
+    ez, sp = sig.entry_zone, sig.entry_tiers["spot_position"]
+    assert ez.high <= 993.0 and ez.low == 978.84
+    assert sp.get("spot_band") and sp.get("next_add_tier_id") is None
+    assert "already below" in sp["detail"] and "1400" not in sp["detail"].replace(",", "")
+    assert sig.entry_tiers["target_tier_id"] is None
