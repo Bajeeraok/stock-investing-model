@@ -1149,7 +1149,13 @@ def derive_zone_aware_action_title(
             "green" if gate_cleared else "yellow"
         )
 
-    if state in ("in_tier", "at_or_below_ceiling") and tier_id:
+    if state == "at_or_below_ceiling":
+        below = str(spot.get("ceiling_tier_id") or "T1").upper()
+        if gate_cleared:
+            return "ACCUMULATE · AT SPOT", "green"
+        return f"BELOW {below} · WAIT FOR GATES", "yellow"
+
+    if state == "in_tier" and tier_id:
         tier = str(tier_id).upper()
         if gate_cleared:
             return f"ACCUMULATE · {tier}", "green"

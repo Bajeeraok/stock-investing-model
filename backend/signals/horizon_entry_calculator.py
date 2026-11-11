@@ -365,6 +365,19 @@ def classify_spot_tier_position(tiers: list[EntryTier], price: float) -> dict[st
     t1 = next((t for t in tiers if str(t.id).upper() == "T1"), None)
     if t1 is not None:
         t1_hi = max(t1.low, t1.high)
+        t1_lo = min(t1.low, t1.high)
+        if price < t1_lo - 1e-6:
+            return {
+                "state": "at_or_below_ceiling",
+                "ceiling_tier_id": "T1",
+                "ceiling": _r(t1_hi),
+                "next_add_tier_id": "T1",
+                "label": "Already below T1 (${:.2f}–${:.2f})".format(t1_lo, t1_hi),
+                "detail": (
+                    "Price is already below T1 (${:.2f}–${:.2f}) — it is not an add level above spot. "
+                    "Size by the owner band and max-add ceiling."
+                ).format(t1_lo, t1_hi),
+            }
         if price <= t1_hi + 1e-6:
             return {
                 "state": "at_or_below_ceiling",
@@ -2275,7 +2288,7 @@ def compute_long_term_entry(inp: LongTermInputs) -> HorizonSignal:
             "{} allocation is valuation-justified at spot; owner band ${:.2f}–${:.2f}. {}."
         ).format(
             p, min_price_to_buy, "Full" if assess_verdict == "BUY" else "Partial",
-            entry_zone.low, entry_zone.high, "; ".join(refs).capitalize(),
+            entry_zone.low, entry_zone.high, ("; ".join(refs)[:1].upper() + "; ".join(refs)[1:]),
         )
     if spot_position.get("state") == "between_tiers":
         detail = spot_position.get("detail")
