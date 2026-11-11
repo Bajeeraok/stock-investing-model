@@ -38,3 +38,14 @@ def test_scorecard_and_short_history():
     assert sc["sessions"] >= 20 and 0 <= sc["coverage_pct"] <= 100
     assert build_day_range(c[:10], d[:10]) is None
     assert ewma_sigmas([100.0])[0] is None
+
+
+def test_band50_inside_band80():
+    import math
+    from signals.stock_day_range import build_day_range
+
+    closes = [100 * math.exp(0.02 * ((-1) ** i)) for i in range(80)]
+    dates = [f"d{i}" for i in range(80)]
+    for session in (None, {"last": 101.0, "minutes_since_open": 120, "low": 99.0, "high": 102.0}):
+        r = build_day_range(closes, dates, session=session)
+        assert r["close_low"] < r["close_low50"] < r["close_mid"] < r["close_high50"] < r["close_high"]

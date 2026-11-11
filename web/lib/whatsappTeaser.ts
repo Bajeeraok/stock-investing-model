@@ -1,5 +1,5 @@
 import type { InvestorDecisionSummary } from "@/components/dashboard/InvestorDecisionSummary";
-import { pct, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
+import { band50, pct, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
 
 type Hz = { entry_zone?: { low?: number | null; high?: number | null } | null; stop_loss?: number | null; target?: number | null };
 type Retail = {
@@ -31,13 +31,13 @@ function callWord(verdict: string, gateCleared: boolean): string {
 
 function rangeBlock(r: DayRangePayload): string[] {
   const live = r.phase === "intraday";
-  const mid = r.close_mid;
-  const half = (v: number) => mid * Math.exp(Math.log(v / mid) * (0.6745 / 1.2816));
+  const [lo50, hi50] = band50(r);
   const time = new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" });
   const out = [
     live ? `*Today's range* (as of ${time} ET)` : `*Next session range* (from ${usd(r.ref_close)} close)`,
-    `Likely close (50%): ${usd(half(r.close_low))}–${bare(half(r.close_high))}`,
-    `Wider range (80%): ${usd(r.close_low)}–${bare(r.close_high)}`,
+    `Most likely close: ${usd(r.close_mid)}`,
+    `50% chance close: ${usd(lo50)}–${bare(hi50)}`,
+    `80% chance close: ${usd(r.close_low)}–${bare(r.close_high)}`,
   ];
   if (live && r.p_close_green != null) {
     out.push(`Green close ${pct(r.p_close_green)} · red close ${pct(1 - r.p_close_green)} (vs ${usd(r.ref_close)})`);

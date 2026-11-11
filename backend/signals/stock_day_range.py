@@ -21,6 +21,7 @@ from typing import Any
 
 SPAN = 20
 Z80 = 1.2816
+Z50 = 0.6745
 CLOSE_K = 0.97
 INTRA_K = 0.55
 INTRA_K_LATE = 0.65
@@ -111,6 +112,7 @@ def build_day_range(
             last=round(last, 2),
             minutes_left=int(left * SESSION_MIN),
             close_low=px(-Z80 * sd, last), close_mid=round(last, 2), close_high=px(Z80 * sd, last),
+            close_low50=px(-Z50 * sd, last), close_high50=px(Z50 * sd, last),
             p_close_green=round(_phi(math.log(last / ref) / sd), 2) if sd > 0 else (1.0 if last > ref else 0.0),
             day_low=session.get("low"), day_high=session.get("high"),
         )
@@ -118,6 +120,7 @@ def build_day_range(
     else:
         sd = CLOSE_K * sig
         out.update(close_low=px(-Z80 * sd, ref), close_mid=round(ref, 2), close_high=px(Z80 * sd, ref),
+                   close_low50=px(-Z50 * sd, ref), close_high50=px(Z50 * sd, ref),
                    p_close_green=None)
         anchor = ref
     lv_out = []

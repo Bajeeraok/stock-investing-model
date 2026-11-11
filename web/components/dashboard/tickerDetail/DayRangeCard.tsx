@@ -15,12 +15,21 @@ export type DayRangePayload = {
   close_low: number;
   close_mid: number;
   close_high: number;
+  close_low50?: number;
+  close_high50?: number;
   p_close_green: number | null;
   day_low?: number | null;
   day_high?: number | null;
   levels: DayRangeLevel[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
 };
+
+/** 50% close band; older payloads lack it, so derive from the 80% band. */
+export function band50(d: DayRangePayload): [number, number] {
+  if (d.close_low50 != null && d.close_high50 != null) return [d.close_low50, d.close_high50];
+  const f = (v: number) => d.close_mid * Math.exp(Math.log(v / d.close_mid) * (0.6745 / 1.2816));
+  return [f(d.close_low), f(d.close_high)];
+}
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export const pct = (p: number) => (p < 0.01 ? "<1%" : p > 0.99 ? ">99%" : `${Math.round(p * 100)}%`);
@@ -38,6 +47,7 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
   const lo = Math.min(data.close_low, data.day_low ?? data.close_low, spot);
   const hi = Math.max(data.close_high, data.day_high ?? data.close_high, spot);
   const pos = (v: number) => `${Math.max(0, Math.min(100, ((v - lo) / (hi - lo || 1)) * 100))}%`;
+  const [lo50, hi50] = band50(data);
   const hrs = data.minutes_left != null ? `${Math.floor(data.minutes_left / 60)}h ${data.minutes_left % 60}m left` : "";
 
   return (
@@ -50,16 +60,30 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
         <span className="text-[12px] text-td-muted">{live ? hrs : `vs ${data.ref_date} close ${usd(data.ref_close)}`}</span>
       </div>
 
+      <ul className="space-y-1 text-[13px]">
+        <li className="flex justify-between gap-2">
+          <span className="text-td-muted">Most likely close</span>
+          <span className="font-mono font-semibold text-td-text">{usd(data.close_mid)}</span>
+        </li>
+        <li className="flex justify-between gap-2">
+          <span className="text-td-muted">50% chance it closes in</span>
+          <span className="font-mono text-td-text">{usd(lo50)}–{usd(hi50)}</span>
+        </li>
+        <li className="flex justify-between gap-2">
+          <span className="text-td-muted">80% chance it closes in</span>
+          <span className="font-mono text-td-text">{usd(data.close_low)}–{usd(data.close_high)}</span>
+        </li>
+      </ul>
+
       <div>
-        <div className="flex justify-between font-mono text-[13px] text-td-text">
-          <span>{usd(data.close_low)}</span>
-          <span className="text-td-muted">80% of closes</span>
-          <span>{usd(data.close_high)}</span>
-        </div>
         <div className="relative h-2 mt-1.5 rounded-full bg-td-bg">
           <div
             className="absolute h-2 rounded-full bg-td-accent/30"
             style={{ left: pos(data.close_low), width: `calc(${pos(data.close_high)} - ${pos(data.close_low)})` }}
+          />
+          <div
+            className="absolute h-2 rounded-full bg-td-accent/60"
+            style={{ left: pos(lo50), width: `calc(${pos(hi50)} - ${pos(lo50)})` }}
           />
           <div className="absolute -top-1 h-4 w-0.5 bg-td-text" style={{ left: pos(spot) }} title={`Now ${usd(spot)}`} />
         </div>
