@@ -98,7 +98,7 @@ def test_gap_day_refreshes_at_1000():
 def test_no_gap_keeps_previous_close_until_1030():
     c, df = _long_series()
     prev = float(c.iloc[-2])
-    bar = {"open": prev * 1.002, "close": prev * 1.03, "high": prev * 1.03, "low": prev}
+    bar = {"open": prev * 1.002, "close": prev * 1.005, "high": prev * 1.006, "low": prev}
     c2, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 10, 15, tzinfo=ET),
                                      bars_fn=lambda *a: bar)
     assert meta["checkpoint"] is None and float(c2.iloc[-1]) == prev
@@ -107,3 +107,12 @@ def test_no_gap_keeps_previous_close_until_1030():
     _, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 9, 50, tzinfo=ET),
                                     bars_fn=lambda *a: bar)
     assert meta["checkpoint"] is None
+
+
+def test_run_after_open_counts_as_gap():
+    c, df = _long_series()
+    prev = float(c.iloc[-2])
+    bar = {"open": prev * 1.002, "close": prev * 1.06, "high": prev * 1.06, "low": prev}
+    _, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 10, 15, tzinfo=ET),
+                                    bars_fn=lambda *a: bar)
+    assert meta["gap"] and meta["label"] == "10:00 AM ET (gap open)"

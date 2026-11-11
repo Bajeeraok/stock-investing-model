@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 CHECKPOINTS_ET: tuple[tuple[int, int], ...] = ((10, 30), (12, 30), (14, 30), (15, 30))
-# Gap days only: an open more than one normal day's move from the prior close makes prev-close levels stale.
+# Gap days only: an open or 10:00 price over one normal day's move from the prior close makes prev-close levels stale.
 GAP_CHECKPOINT_ET: tuple[int, int] = (10, 0)
 GAP_SIGMAS = 1.0
 
@@ -82,9 +82,13 @@ def gap_size(prior: pd.Series, open_px: float | None) -> tuple[float, float] | N
     return abs(open_px / prev - 1), sigma
 
 
-def is_gap_day(prior: pd.Series, open_px: float | None) -> bool:
-    g = gap_size(prior, open_px)
-    return bool(g and g[0] > GAP_SIGMAS * g[1])
+def is_gap_day(prior: pd.Series, *prices: float | None) -> bool:
+    """True if any of the prices (the open, the 10:00 price) sits over one normal day's move from the prior close."""
+    for px in prices:
+        g = gap_size(prior, px)
+        if g and g[0] > GAP_SIGMAS * g[1]:
+            return True
+    return False
 
 
 def pin_session_bar(
@@ -109,7 +113,7 @@ def pin_session_bar(
     gap = False
     if cp is None and (now.hour, now.minute) >= GAP_CHECKPOINT_ET:
         early = fn(ticker, now, GAP_CHECKPOINT_ET)
-        if early and is_gap_day(close.iloc[:-1], early.get("open")):
+        if early and is_gap_day(close.iloc[:-1], early.get("open"), early.get("close")):
             cp, bar, gap = GAP_CHECKPOINT_ET, early, True
     if bar is None:
         # Before 10:30 (or no intraday bars): plan levels come from the previous close.
