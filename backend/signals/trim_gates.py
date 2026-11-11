@@ -3,6 +3,10 @@ Trim / exit gates — parallel stack to buy gates (extension + deterioration, no
 
 Hybrid v1: four named gates, default min_pass=2 (not 4/4). Score trigger required for trim candidates.
 
+A trim also needs a real risk (overextended, plan REDUCE/SELL, or price below the swing stop). A low score or
+AVOID alone means "hold, don't add" (docs/signals/SIGNAL_RULES.md). There is no "urgent" tier: 4/4-gate trims
+lost the most in forward tracking.
+
 Relationship to the buy-side momentum_chop gate (retail_action_payload.py, MOMENTUM_RSI_MAX):
 these RSI thresholds are deliberately NOT the same value and NOT sourced from that module —
 "is momentum too hot for a NEW entry" (buy-side, fails above 70, marginal 65-70) and "is an
@@ -19,6 +23,7 @@ import json
 from typing import Any
 
 TRIM_GATE_IDS = ("extension", "tape", "ml_momentum", "plan")
+TRIM_PLAN_ACTIONS = ("REDUCE", "SELL")
 
 DEFAULT_TRIM_CFG: dict[str, Any] = {
     "enabled": True,
@@ -114,7 +119,7 @@ def build_trim_gates(
     momentum_hot = rsi_val >= float(c.get("ml_momentum_rsi_hot", 55))
     ml_momentum_ok = ml_bear or macd_bear or momentum_hot
 
-    plan_ok = plan in ("REDUCE", "AVOID", "SELL") or "TRIM" in plan
+    plan_ok = plan in TRIM_PLAN_ACTIONS
 
     gates: list[dict[str, Any]] = [
         {
@@ -167,7 +172,9 @@ def build_trim_gates(
             "label": "PLAN ALIGN",
             "detail": (
                 f"7-layer {plan} aligns with trim"
-                if plan_ok and plan
+                if plan_ok
+                else "Plan AVOID = don't add, not a sell"
+                if plan == "AVOID"
                 else "Plan still HOLD/BUY — score-only trim trigger"
             ),
             "pass": plan_ok,
@@ -179,6 +186,22 @@ def build_trim_gates(
     return gates
 
 
+def trim_real_risk_reasons(row: dict[str, Any], gates: list[dict[str, Any]]) -> list[str]:
+    """Concrete risks that justify a trim. A low score or AVOID is not one of them."""
+    reasons: list[str] = []
+    ext = next((g for g in gates if isinstance(g, dict) and g.get("id") == "extension"), None)
+    if ext and ext.get("pass"):
+        reasons.append("extended")
+    plan = (row.get("plan_action") or row.get("action") or "").strip().upper()
+    if plan in TRIM_PLAN_ACTIONS:
+        reasons.append("plan_reduce")
+    close = _f(row.get("close") if row.get("close") is not None else row.get("price"))
+    stop = _f(row.get("swing_stop"))
+    if close is not None and stop and close < stop:
+        reasons.append("stop_broken")
+    return reasons
+
+
 def evaluate_trim_recommendation(
     row: dict[str, Any],
     gates: list[dict[str, Any]],
@@ -186,7 +209,7 @@ def evaluate_trim_recommendation(
     sell_max: float = 30.0,
     cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Summarize trim gate pass count and recommendation tier."""
+    """Summarize trim gates: consider_trim (real risk + gates), hold_no_add (weak only), or watch."""
     c = cfg or DEFAULT_TRIM_CFG
     min_pass = int(c.get("min_pass", 2))
     enabled = bool(c.get("enabled", True))
@@ -196,36 +219,30 @@ def evaluate_trim_recommendation(
     total = len(gates) or 4
     score_trig = score_trim_triggered(row, sell_max=sell_max)
     trim_gate_cleared = passed >= min_pass
+    reasons = trim_real_risk_reasons(row, gates)
+    weak = score_trig or not require_score
 
-    if not enabled:
-        return {
-            "trim_gates_enabled": False,
-            "trim_gates_passed": passed,
-            "trim_gates_total": total,
-            "trim_gate_cleared": True,
-            "trim_score_triggered": score_trig,
-            "trim_recommendation": "consider_trim" if score_trig else "watch",
-            "trim_gates": gates,
-        }
-
-    if score_trig and trim_gate_cleared:
-        rec = "urgent_trim" if passed >= total - 1 else "consider_trim"
+    if weak and reasons and (trim_gate_cleared or not enabled):
+        rec = "consider_trim"
     elif score_trig:
-        rec = "watch"
+        rec = "hold_no_add"
     else:
         rec = "watch"
 
-    return {
-        "trim_gates_enabled": True,
+    out = {
+        "trim_gates_enabled": enabled,
         "trim_gates_passed": passed,
         "trim_gates_total": total,
-        "trim_gate_cleared": trim_gate_cleared,
+        "trim_gate_cleared": trim_gate_cleared if enabled else True,
         "trim_score_triggered": score_trig,
         "trim_recommendation": rec,
+        "trim_risk_reasons": reasons,
         "trim_gates": gates,
-        "trim_min_pass": min_pass,
-        "trim_eligible": score_trig or not require_score,
     }
+    if enabled:
+        out["trim_min_pass"] = min_pass
+        out["trim_eligible"] = weak
+    return out
 
 
 def attach_trim_gates_to_row(

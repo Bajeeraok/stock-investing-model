@@ -185,6 +185,11 @@ def generate_tier1_payload(
         if data:
             market_data[ticker] = data
 
+    for h in holdings:
+        if h.get("price") and h["ticker"] in market_data:
+            # Pipeline price is fresher than the yfinance history fetched here.
+            market_data[h["ticker"]]["price"] = float(h["price"])
+
     sizing_engine  = PositionSizingEngine(portfolio_value, risk_tolerance)
     dd_simulator   = DrawdownSimulator()
     exit_engine    = ExitEngine()
@@ -288,9 +293,8 @@ def generate_tier1_payload(
         if ticker not in market_data:
             continue
         md = market_data[ticker]
-        entry_price = h.get("cost_basis") or md["price"]
-        if entry_price is None or (isinstance(entry_price, float) and entry_price != entry_price):
-            entry_price = md["price"]
+        # Exits for a held position are measured from today's price, not an old cost basis.
+        entry_price = md["price"]
         atr_exit = md.get("atr_14") or (md["price"] * 0.02)
         score = next((s["score"] for s in signals if s["ticker"] == ticker), 50)
         support_levels = md.get("support_levels") or []

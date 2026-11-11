@@ -4,7 +4,7 @@ import { ModelCheckPanel } from "./dashboard/ModelCheckPanel";
 import { BestSetupsPanel, BestSetupsTodayCard, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
+import { BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, FlaskConical, Mail, Terminal } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -14,6 +14,7 @@ import type {
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
 import { formatSnapshotAge, formatSnapshotEt, formatFreshnessLabel, isUsEquityRth } from "@/lib/dashboardCache";
 import { clsx } from "clsx";
+import { mergeHoldings, PortfolioActions, PortfolioHeader, PortfolioHoldingsSlim, PortfolioRiskSummary } from "@/components/dashboard/PortfolioSlim";
 import {
   AddTickerBar,
   CalibrationCurvePanel,
@@ -24,22 +25,14 @@ import {
   SubViewSwitch,
   migrateLegacyTab,
   type TabId,
-  PortfolioSummary,
-  PortfolioStressStrip,
   DataFreshnessBar,
   KnownLimitsPanel,
   ModelDisclaimer,
   SignalsHub,
-  PortfolioHeatMap,
-  PortfolioHoldings,
-  TrimCandidates,
   Opportunities,
   IncomeBookPanel,
   ThesisCheck,
   WhatChanged,
-  RegimeChart,
-  ScoreChart,
-  AnchorChartPanel,
   TickerDetailModal,
   ToggleSection,
   BacktestStatus,
@@ -49,7 +42,6 @@ import {
   ChatCopilot,
   AccuracyPriceTargetsWithBoundary,
   PortfolioDoctorRecommendations,
-  PortfolioRiskMetricsPanel,
   RiskProfileSelector,
   MarketReversalBanner,
   MarketScenarios,
@@ -65,16 +57,13 @@ import {
   PreMarketPanel,
   PreMarketStrip,
   type PreMarketData,
-  RiskDashboard,
   EodAndSystemPanel,
   ApiEndpointsPanel,
   InsiderFlowTracker,
-  TaxAwareExitPanel,
   AlertsPanel,
   MarketStatePanel,
   RetailMarketDecisionsPanel,
   TrackRecordPanel,
-  PortfolioDoctorPanel,
   BrowserPushPanel,
   EventRiskStrip,
   InstitutionalInsightsPanel,
@@ -110,10 +99,6 @@ import {
   deriveMarketWeather,
 } from "./dashboard/today/TodayFeed";
 import {
-  NeedsAttentionList,
-  PortfolioRegimeStrip,
-  PortfolioValueCard,
-  RiskManagementCard,
 } from "./dashboard/PortfolioOverviewCards";
 import { RegimeValidationPanel } from "./dashboard/RegimeValidationPanel";
 import { LivePricesProvider } from "@/lib/LivePriceContext";
@@ -284,15 +269,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const defaultPortfolio = portfolioNames[0] ?? "All";
   const [selectedPortfolio, setSelectedPortfolio] = useState(defaultPortfolio);
   const selectedReport = data.portfolios?.[selectedPortfolio] ?? data.portfolio;
-  const selectedTrimCandidates = (selectedReport?.per_holding ?? []).filter((h) => {
-    if (h.is_trim_candidate === true) return true;
-    if (h.is_trim_candidate === false) return false;
-    return (
-      (h.action ? h.action === "REDUCE" || h.action === "AVOID" : false) ||
-      (typeof h.suggestion === "string" && h.suggestion.toLowerCase().includes("trim")) ||
-      (h.score != null && h.score < 40)
-    );
-  });
   const preMarketFull: PreMarketData | null = (data.pre_market_full ?? null) as PreMarketData | null;
 
   const [activeTab, setActiveTabState] = useState<TabId>("today");
@@ -302,7 +278,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
   const [moreSub, setMoreSub] = useState<MoreSub>("markets");
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [riskReportKey, setRiskReportKey] = useState(0);
   const [overviewAlertCount, setOverviewAlertCount] = useState<number | null>(null);
   const [overviewAlertActionCount, setOverviewAlertActionCount] = useState(0);
   const marketQuadrant = data.retail_market_decisions?.market_context?.quadrant;
@@ -704,12 +679,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return lazySignals ?? [];
   }, [data.signals_deferred, data.signals, lazySignals]);
 
-  const scoreChartSignals = useMemo((): Signal[] => {
-    if (!data.signals_deferred && (data.signals?.length ?? 0) > 0) return data.signals ?? [];
-    if ((lazySignals?.length ?? 0) > 0) return lazySignals ?? [];
-    return (data.signal_scores ?? []) as Signal[];
-  }, [data.signals_deferred, data.signals, data.signal_scores, lazySignals]);
-
   const oppBundleEnabled = data.opportunities_bundle_enabled !== false;
   const mergedOpportunities = oppBundleEnabled ? (oppBundle?.opportunities ?? data.opportunities ?? []) : [];
   const setupEdges = bestSetupEdges(bestSetups.data);
@@ -949,6 +918,12 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
 
   const concentrationLimitPct = data.config?.concentration_alert_pct ?? 20;
 
+  const mergedHoldings = useMemo(() => {
+    const byTicker = new Map<string, Signal>();
+    for (const sig of effectiveSignals) if (sig?.ticker) byTicker.set(sig.ticker, sig);
+    return mergeHoldings(selectedReport?.per_holding ?? [], byTicker, concentrationLimitPct);
+  }, [selectedReport, effectiveSignals, concentrationLimitPct]);
+
   const marketWeather = useMemo(
     () =>
       deriveMarketWeather({
@@ -1005,13 +980,6 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
         .sort((a, b) => a.days_until - b.days_until)[0] ?? null,
     [heldEarnings],
   );
-
-  const openFullRiskReport = useCallback(() => {
-    setRiskReportKey((k) => k + 1);
-    window.setTimeout(() => {
-      document.getElementById("portfolio-risk-report")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
-  }, []);
 
   const exportSnapshot = () => {
     if (!data) return;
@@ -1424,82 +1392,22 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               )}
               <div className="grid gap-4 xl:grid-cols-2 items-start">
                 <div className="space-y-4 min-w-0">
-                  <PortfolioValueCard report={selectedReport} limitPct={concentrationLimitPct} />
-                  <NeedsAttentionList
-                    report={selectedReport}
-                    trimCandidates={selectedTrimCandidates}
-                    limitPct={concentrationLimitPct}
-                    onTickerClick={openTickerDetail}
-                  />
+                  <PortfolioHeader report={selectedReport} holdings={mergedHoldings} limitPct={concentrationLimitPct} />
+                  <PortfolioActions holdings={mergedHoldings} onTickerClick={openTickerDetail} showAccounts={selectedPortfolio === "All"} />
                 </div>
                 <div className="space-y-4 min-w-0">
-                  <RiskManagementCard
-                    totalValue={selectedReport?.total_value}
-                    metrics={data.portfolio_risk_metrics}
-                    stress={data.portfolio_stress}
-                    onOpenFull={openFullRiskReport}
-                  />
-                  <PortfolioRegimeStrip counts={selectedReport?.regime_counts} />
+                  <PortfolioRiskSummary report={selectedReport} holdings={mergedHoldings} />
                 </div>
               </div>
-              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={selectedReport?.per_holding?.length ?? 0} defaultOpen>
-                {(selectedReport?.per_holding?.length ?? 0) > 0 ? (
-                  <PortfolioHoldings
-                    holdings={selectedReport?.per_holding ?? []}
-                    onTickerClick={openTickerDetail}
-                    hideAccountColumn={selectedPortfolio !== "All"}
-                    addMinConfidence={data.config?.model_rules?.add_min_confidence ?? 70}
-                    trimMaxConfidence={data.config?.model_rules?.trim_max_confidence ?? 30}
-                  />
+              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={mergedHoldings.length} defaultOpen>
+                {mergedHoldings.length > 0 ? (
+                  <PortfolioHoldingsSlim holdings={mergedHoldings} onTickerClick={openTickerDetail} showAccounts={selectedPortfolio === "All"} />
                 ) : (
-                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
-                    <Wallet className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
-                    <p className="text-slate-400 text-sm">No holdings</p>
-                    <p className="text-slate-500 text-[13px] mt-1">Add portfolios in config or upload via Signals → add ticker.</p>
-                  </div>
+                  <p className="text-td-muted text-sm p-4 text-center">No holdings. Add portfolios in config or upload via Signals → add ticker.</p>
                 )}
               </ToggleSection>
-              <div id="portfolio-risk-report" className="scroll-mt-20">
-                <ToggleSection key={`risk-${riskReportKey}`} id="portfolio-risk" title="Risk management — full report" icon={<Shield />} defaultOpen={riskReportKey > 0}>
-                  <div className="space-y-6">
-                    {data.portfolio_stress?.scenarios?.length ? <PortfolioStressStrip stress={data.portfolio_stress} /> : null}
-                    <div>
-                      <p className="text-[13px] font-medium text-slate-400 uppercase tracking-wide mb-2">VaR / CVaR & correlation (holdings)</p>
-                      <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
-                    </div>
-                    <RiskDashboard
-                      riskProfile={data.risk_profile}
-                      positionSizing={data.position_sizing}
-                      drawdownSim={data.drawdown_sim}
-                      exitLevels={data.exit_levels}
-                      exitLevelsByHorizon={data.exit_levels_by_horizon}
-                      earningsImpacts={data.earnings_impacts}
-                      concentration={data.concentration}
-                      portfolioValue={selectedReport?.total_value ?? 0}
-                    />
-                  </div>
-                </ToggleSection>
-              </div>
-              <ToggleSection id="portfolio-tax-exit" title="Tax-Aware Exit Optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen>
-                <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={openTickerDetail} />
-              </ToggleSection>
-              <DecisionJournalPanel defaultOpen />
-              <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor — this week's actions" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen={false}>
-                <div className="mb-4">
-                  <RiskProfileSelector value={data.risk_profile} onChanged={() => onRefresh(true)} />
-                </div>
-                <PortfolioDoctorPanel
-                  data={data.portfolio_doctor_v2}
-                  portfolioRiskMetrics={data.portfolio_risk_metrics}
-                  portfolioBeta={data.portfolio_doctor_v2?.portfolio_beta}
-                  taxAwareExits={data.tax_aware_exits}
-                  totalValue={selectedReport?.total_value}
-                  holdingCount={selectedReport?.per_holding?.length}
-                  sectorExposure={selectedReport?.sector_allocation}
-                  holdings={selectedReport?.per_holding}
-                  onTickerClick={openTickerDetail}
-                />
-                <div className="mt-6 space-y-6">
+              <ToggleSection id="portfolio-more" title="Add ideas & performance" icon={<PieChart />} defaultOpen={false}>
+                <div className="space-y-6">
                   {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
                     <p className="text-[13px] text-slate-500">Loading add ideas (opportunity scan)…</p>
                   )}
@@ -1511,52 +1419,18 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     selectedPortfolio={selectedPortfolio}
                     onTickerClick={openTickerDetail}
                   />
+                  {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
+                    <div>
+                      <PerformanceVsBenchmark
+                        periods={data.performance_vs_benchmark?.periods ?? []}
+                        message={data.performance_vs_benchmark?.message}
+                        as_of={data.performance_vs_benchmark?.as_of}
+                      />
+                      <ModelDisclaimer className="mt-4 text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                    </div>
+                  )}
                 </div>
               </ToggleSection>
-              <ToggleSection id="portfolio-heatmap" title="Heat map" icon={<Activity />} defaultOpen={false}>
-                <PortfolioHeatMap
-                  holdings={selectedReport?.per_holding ?? []}
-                  regimeCounts={selectedReport?.regime_counts}
-                  onTickerClick={openTickerDetail}
-                />
-              </ToggleSection>
-              <ToggleSection id="portfolio-summary" title="Summary & regime mix" icon={<PieChart />} defaultOpen={false}>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <PortfolioSummary report={selectedReport} />
-                </div>
-                <div className="mt-4">
-                  <RegimeChart report={selectedReport} />
-                </div>
-              </ToggleSection>
-              <ToggleSection id="portfolio-trim" title="Consider Trim — detail" icon={<AlertTriangle />} badge={selectedTrimCandidates.length || undefined} defaultOpen={false}>
-                {selectedTrimCandidates.length > 0 ? (
-                  <TrimCandidates items={selectedTrimCandidates} onTickerClick={openTickerDetail} />
-                ) : (
-                  <div className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-6 text-center">
-                    <AlertTriangle className="h-8 w-8 text-slate-500 mx-auto mb-2 opacity-60" />
-                    <p className="text-slate-400 text-sm">No trim candidates</p>
-                    <p className="text-slate-500 text-[13px] mt-1">Positions with action REDUCE/AVOID (or score {'<'} 40 fallback) will appear here.</p>
-                  </div>
-                )}
-              </ToggleSection>
-              <ToggleSection id="portfolio-score-chart" title="Score chart" icon={<BarChart3 />} defaultOpen={false}>
-                <AnchorChartPanel
-                  title="Portfolio tape"
-                  hint="One shared chart surface — click a bar to open the ticker hub."
-                >
-                  <ScoreChart signals={scoreChartSignals} onTickerClick={openTickerDetail} embedded />
-                </AnchorChartPanel>
-              </ToggleSection>
-              {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
-                <ToggleSection id="portfolio-performance" title="Performance vs benchmark" icon={<PieChart />} defaultOpen={false}>
-                  <PerformanceVsBenchmark
-                    periods={data.performance_vs_benchmark?.periods ?? []}
-                    message={data.performance_vs_benchmark?.message}
-                    as_of={data.performance_vs_benchmark?.as_of}
-                  />
-                  <ModelDisclaimer className="mt-4 text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
-                </ToggleSection>
-              )}
             </div>
           )}
 
@@ -1751,12 +1625,20 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </div>
                 </div>
               )}
-              {moreSub === "model" && <ModelCheckPanel />}
+              {moreSub === "model" && (
+                <div className="space-y-4">
+                  <ModelCheckPanel />
+                  <DecisionJournalPanel />
+                </div>
+              )}
               {moreSub === "admin" && (
                 <div className="space-y-4 sm:space-y-6">
                   <p className="text-[13px] text-td-muted">
                     Model validation and data health — not decision inputs. Read-only on mobile.
                   </p>
+                  {data.risk_profile && (
+                    <RiskProfileSelector value={data.risk_profile} onChanged={() => onRefresh(true)} />
+                  )}
                   <div className="hidden md:flex flex-wrap items-center gap-2">
                     <button
                       type="button"

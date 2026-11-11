@@ -119,6 +119,31 @@ def _forward_tracking_params(config: dict) -> dict[str, int]:
 _TIER1_MAX_POSITION_PCT_BY_PROFILE = {"conservative": 15, "moderate": 20, "aggressive": 25}
 
 
+def _tier1_holdings_by_ticker(per_holding: list[dict]) -> list[dict]:
+    """One Tier 1 row per ticker: account rows summed, today's pipeline price, value-weighted cost basis."""
+    by: dict[str, dict] = {}
+    for h in per_holding or []:
+        tk = h.get("ticker")
+        val = float(h.get("value") or 0)
+        if not tk or val <= 0:
+            continue
+        row = by.setdefault(tk, {"ticker": tk, "value": 0.0, "price": None, "_cost": 0.0, "_qty": 0.0})
+        row["value"] += val
+        if h.get("price") is not None:
+            row["price"] = float(h["price"])
+        cb, qty = h.get("cost_basis"), h.get("quantity")
+        if cb is not None and qty:
+            row["_cost"] += float(cb) * float(qty)
+            row["_qty"] += float(qty)
+    out = []
+    for row in by.values():
+        row["cost_basis"] = round(row["_cost"] / row["_qty"], 2) if row["_qty"] else None
+        row.pop("_cost")
+        row.pop("_qty")
+        out.append(row)
+    return out
+
+
 def _tier1_lightweight_fallback(
     report: dict,
     results: list[dict],
@@ -2818,11 +2843,7 @@ def _compute_full_dashboard_sync() -> dict:
     tier1_payload = {}
     if generate_tier1_payload and report.get("per_holding") and report.get("total_value"):
         try:
-            holdings_for_tier1 = [
-                {"ticker": h["ticker"], "value": float(h.get("value") or 0), "cost_basis": h.get("cost_basis")}
-                for h in report["per_holding"]
-                if h.get("value") is not None and (h.get("value") or 0) > 0
-            ]
+            holdings_for_tier1 = _tier1_holdings_by_ticker(report["per_holding"])
             signals_for_tier1 = [
                 {
                     "ticker": r["ticker"],

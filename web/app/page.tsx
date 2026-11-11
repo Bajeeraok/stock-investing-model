@@ -1295,6 +1295,8 @@ export interface Signal {
   earnings_note?: string | null;
   /** Days until next earnings when known from pipeline */
   earnings_days_until?: number | null;
+  /** Swing plan hard stop (same as ticker page Swing tab) */
+  swing_stop?: number | null;
   /** True when within `earnings.caution_days` — extra score reduction applied */
   earnings_caution?: boolean;
   /** Dashboard-only FMP quality hint */
@@ -1447,6 +1449,8 @@ export interface PortfolioHolding {
   trim_gates?: Array<{ id: string; label: string; detail: string; pass: boolean }> | null;
   is_trim_candidate?: boolean | null;
   trim_gates_pending?: boolean | null;
+  /** Concrete risks behind a trim: extended | plan_reduce | stop_broken */
+  trim_risk_reasons?: string[] | null;
   earnings_note?: string | null;
   account?: string;
   cost_basis?: number;

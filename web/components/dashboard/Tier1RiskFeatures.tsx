@@ -5,12 +5,12 @@
  * All 5 Tier 1 risk management components for Thrive Alpha.
  *
  * Exports:
- *   PositionSizingPanel     â€” Feature 1: Kelly-based sizing
- *   DrawdownSimulator       â€” Feature 2: What-if loss scenarios
- *   ExitLevelsPanel         â€” Feature 3: Stop/take-profit engine
- *   EarningsImpactPanel     â€” Feature 4: Earnings risk assessment
- *   ConcentrationMonitor    â€” Feature 5: Correlation & concentration
- *   RiskDashboard           â€” Combined panel (all 5 in one ToggleSection each)
+ *   PositionSizingPanel     — Feature 1: Kelly-based sizing
+ *   DrawdownSimulator       — Feature 2: What-if loss scenarios
+ *   ExitLevelsPanel         — Feature 3: Stop/take-profit engine
+ *   EarningsImpactPanel     — Feature 4: Earnings risk assessment
+ *   ConcentrationMonitor    — Feature 5: Correlation & concentration
+ *   RiskDashboard           — Combined panel (all 5 in one ToggleSection each)
  *
  * Add to Dashboard.tsx Portfolio tab:
  *   import { RiskDashboard } from "./dashboard/Tier1RiskFeatures";
@@ -32,9 +32,9 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
 //  TYPES  (mirror Python dataclasses)
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
 
 export interface PositionSizingData {
   ticker:                  string;
@@ -126,9 +126,9 @@ export interface ConcentrationData {
   is_concentrated:       boolean;
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
 //  SHARED PRIMITIVES
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
 
 function Badge({ label, color }: { label: string; color: "green" | "amber" | "red" | "slate" | "blue" }) {
   const classes = {
@@ -201,9 +201,9 @@ function Collapsible({ title, children, defaultOpen = true, badgeEl }: {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  FEATURE 1 â€” POSITION SIZING PANEL
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+//  FEATURE 1 — POSITION SIZING PANEL
+// ─────────────────────────────────────────────────────────────
 
 export function PositionSizingPanel({
   items,
@@ -275,7 +275,7 @@ export function PositionSizingPanel({
             </p>
             {hasSize && (
               <p className="text-sm text-slate-400 mt-0.5">
-                {data.recommended_shares} shares Â· {(data.target_pct * 100).toFixed(1)}% of portfolio
+                {data.recommended_shares} shares · {(data.target_pct * 100).toFixed(1)}% of portfolio
               </p>
             )}
           </div>
@@ -348,9 +348,9 @@ export function PositionSizingPanel({
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  FEATURE 2 â€” DRAWDOWN SIMULATOR
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+//  FEATURE 2 — DRAWDOWN SIMULATOR
+// ─────────────────────────────────────────────────────────────
 
 export function DrawdownSimulatorPanel({ items, portfolioValue }: {
   items: DrawdownSimData[]; portfolioValue: number;
@@ -391,7 +391,7 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
       <div className="rounded-xl border border-slate-700/50 overflow-hidden">
         <div className="px-4 py-2 bg-slate-800/50 border-b border-slate-700/50">
           <p className="text-[13px] font-semibold text-slate-400 uppercase tracking-wider">
-            Loss Scenarios â€” Ask "Can I survive this?"
+            Loss Scenarios — Ask "Can I survive this?"
           </p>
         </div>
         <div className="divide-y divide-slate-700/40">
@@ -412,7 +412,7 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
                     <p className={clsx("text-base font-bold font-mono", pctColor)}>
                       {s.pct_change > 0 ? "+" : ""}{s.pct_change.toFixed(1)}%
                     </p>
-                    <p className="text-[13px] text-slate-500">â†’ ${s.price_target}</p>
+                    <p className="text-[13px] text-slate-500">→ ${s.price_target}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -439,8 +439,8 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-slate-700/40 bg-slate-800/20">
         <Info className="h-3.5 w-3.5 text-slate-600 shrink-0 mt-0.5" />
         <p className="text-[13px] text-slate-500">
-          Breakeven: <span className="text-slate-400 font-mono">${data.breakeven_price}</span> Â·
-          ATR(14): <span className="text-slate-400 font-mono">${data.atr_14}</span> Â·
+          Breakeven: <span className="text-slate-400 font-mono">${data.breakeven_price}</span> ·
+          ATR(14): <span className="text-slate-400 font-mono">${data.atr_14}</span> ·
           Historical max drawdown: <span className="text-slate-400">{data.historical_max_drawdown_pct.toFixed(0)}%</span>
         </p>
       </div>
@@ -448,9 +448,9 @@ export function DrawdownSimulatorPanel({ items, portfolioValue }: {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  FEATURE 3 â€” EXIT LEVELS PANEL
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+//  FEATURE 3 — EXIT LEVELS PANEL
+// ─────────────────────────────────────────────────────────────
 
 export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
   const [selected, setSelected] = useState(items[0]?.ticker ?? "");
@@ -459,12 +459,12 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
 
   const rrColor: "green" | "amber" | "red" = data.risk_reward_ratio >= 2 ? "green" : data.risk_reward_ratio >= 1.5 ? "amber" : "red";
   const levels = [
-    { label: "Invalidation", price: data.invalidation_price, color: "text-red-500",    note: "Thesis broken â€” exit immediately" },
+    { label: "Invalidation", price: data.invalidation_price, color: "text-red-500",    note: "Thesis broken — exit immediately" },
     { label: "Hard Stop",    price: data.stop_loss_hard,    color: "text-red-400",    note: "No-questions exit" },
     { label: "Soft Stop",    price: data.stop_loss_soft,    color: "text-amber-400",  note: "Review position" },
     { label: "Entry",        price: data.entry_price,       color: "text-slate-300",  note: "Your entry" },
-    { label: "Target 1",     price: data.take_profit_1,     color: "text-emerald-400",note: "Trim â…“" },
-    { label: "Target 2",     price: data.take_profit_2,     color: "text-emerald-300",note: "Trim â…“" },
+    { label: "Target 1",     price: data.take_profit_1,     color: "text-emerald-400",note: "Trim ⅓" },
+    { label: "Target 2",     price: data.take_profit_2,     color: "text-emerald-300",note: "Trim ⅓" },
     { label: "Target 3",     price: data.take_profit_3,     color: "text-emerald-200",note: "Full exit" },
   ].sort((a, b) => b.price - a.price);
 
@@ -528,12 +528,12 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
       </div>
 
       {/* Thesis checkpoints */}
-      <Collapsible title="Thesis checkpoints â€” verify regularly" defaultOpen>
+      <Collapsible title="Thesis checkpoints — verify regularly" defaultOpen>
         <ul className="space-y-2">
           {data.thesis_check_points.map((chk, i) => (
             <li key={i} className="flex items-start gap-2 text-[13px] text-slate-400">
               <span className="w-4 h-4 rounded border border-slate-600 shrink-0 mt-0.5 flex items-center justify-center">
-                <span className="text-slate-600 text-[13px]">âœ“</span>
+                <span className="text-slate-600 text-[13px]">✓</span>
               </span>
               {chk}
             </li>
@@ -544,9 +544,9 @@ export function ExitLevelsPanel({ items }: { items: ExitLevelsData[] }) {
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  FEATURE 4 â€” EARNINGS IMPACT PANEL
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+//  FEATURE 4 — EARNINGS IMPACT PANEL
+// ─────────────────────────────────────────────────────────────
 
 const EARNINGS_RISK_CONFIG = {
   Low:     { color: "text-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/25", badge: "green" as const },
@@ -579,12 +579,12 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
                   {isUrgent && <Badge label={`${data.days_to_earnings}d away`} color="red" />}
                 </div>
                 <p className="text-[13px] text-slate-500 mt-1">
-                  {data.next_earnings_date} Â· {data.days_to_earnings} days to earnings
+                  {data.next_earnings_date} · {data.days_to_earnings} days to earnings
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className={clsx("text-xl font-bold font-mono", cfg.color)}>
-                  Â±{data.expected_move_pct}%
+                  ±{data.expected_move_pct}%
                 </p>
                 <p className="text-[13px] text-slate-600">implied move</p>
               </div>
@@ -600,7 +600,7 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
               </div>
               <div className="text-center">
                 <p className="text-[13px] text-slate-600">Hist avg move</p>
-                <p className="text-base font-bold text-slate-300">Â±{data.historical_avg_move.toFixed(1)}%</p>
+                <p className="text-base font-bold text-slate-300">±{data.historical_avg_move.toFixed(1)}%</p>
               </div>
               <div className="text-center">
                 <p className="text-[13px] text-slate-600">IV percentile</p>
@@ -643,9 +643,9 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  FEATURE 5 â€” CONCENTRATION MONITOR
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+//  FEATURE 5 — CONCENTRATION MONITOR
+// ─────────────────────────────────────────────────────────────
 
 export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData }) {
   const scoreColor: "green" | "amber" | "red" = (
@@ -696,7 +696,7 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
                       <span className={overweight ? "text-amber-400" : "text-slate-400"}>{sector}</span>
                       <span className={clsx("font-mono", overweight ? "text-amber-400" : "text-slate-400")}>
                         {pct.toFixed(1)}%
-                        {overweight && " âš ï¸"}
+                        {overweight && " ⚠ï¸"}
                       </span>
                     </div>
                     <div className="h-1.5 rounded-full bg-slate-700/50 overflow-hidden">
@@ -730,7 +730,7 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
               )}>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-bold text-slate-300">{alert.ticker_a}</span>
-                  <span className="text-slate-600">â†”</span>
+                  <span className="text-slate-600">↔</span>
                   <span className="text-sm font-bold text-slate-300">{alert.ticker_b}</span>
                   <Badge
                     label={`${(alert.correlation * 100).toFixed(0)}% corr`}
@@ -778,9 +778,9 @@ export function ConcentrationMonitorPanel({ data }: { data: ConcentrationData })
   );
 }
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-//  COMBINED RISK DASHBOARD â€” drop into Portfolio tab
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─────────────────────────────────────────────────────────────
+//  COMBINED RISK DASHBOARD — drop into Portfolio tab
+// ─────────────────────────────────────────────────────────────
 
 type ExitHorizon = "short" | "medium" | "long";
 
@@ -837,7 +837,7 @@ export function RiskDashboard({
           {earningsUrgent > 0 && (
             <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[13px] text-amber-300">
               <Calendar className="h-3.5 w-3.5" />
-              {earningsUrgent} position{earningsUrgent > 1 ? "s" : ""} with earnings in â‰¤14 days
+              {earningsUrgent} position{earningsUrgent > 1 ? "s" : ""} with earnings in ≤14 days
             </div>
           )}
           {concAlert && (
@@ -867,7 +867,7 @@ export function RiskDashboard({
       {/* Feature 2 */}
       {drawdownSim?.length ? (
         <Collapsible
-          title="Drawdown Simulation â€” What If I'm Wrong?"
+          title="Drawdown Simulation — What If I'm Wrong?"
           badgeEl={<Badge label={`${drawdownSim.length} tickers`} color="amber" />}
         >
           <DrawdownSimulatorPanel items={drawdownSim} portfolioValue={portfolioValue} />
@@ -877,7 +877,7 @@ export function RiskDashboard({
       {/* Feature 3 */}
       {(effectiveExitLevels?.length || exitLevels?.length) ? (
         <Collapsible
-          title="Exit Levels â€” Stop Loss & Take Profit"
+          title="Exit Levels — Stop Loss & Take Profit"
           badgeEl={
             hasExitByHorizon ? (
               <div className="flex items-center gap-2 flex-wrap">
@@ -933,7 +933,7 @@ export function RiskDashboard({
       ) : null}
 
       <p className="text-[13px] text-slate-600 text-center pt-2">
-        Not financial advice. Sizing models are probabilistic â€” always verify with your own risk tolerance.
+        Not financial advice. Sizing models are probabilistic — always verify with your own risk tolerance.
       </p>
     </div>
   );

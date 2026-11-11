@@ -72,12 +72,34 @@ def test_attach_trim_gates_to_row():
     assert row.get("trim_score_triggered")
 
 
+def test_evaluate_trim_needs_real_risk():
+    weak_only = build_trim_gates(
+        current_price=100, assessment_pct=10, regime_bull_pct=0, pattern_score=10, short_ml_prob=0.2,
+        rsi=30, macd_hist=-1, regime="DOWN", plan_action="AVOID",
+    )
+    s1 = evaluate_trim_recommendation({"composite_buy": 5, "action": "AVOID"}, weak_only, sell_max=30)
+    assert s1["trim_gates_passed"] == 2
+    assert s1["trim_recommendation"] == "hold_no_add"
+
+    extended = build_trim_gates(
+        current_price=100, assessment_pct=10, regime_bull_pct=0, pattern_score=10, short_ml_prob=0.2,
+        rsi=72, macd_hist=-1, regime="DOWN", plan_action="REDUCE",
+    )
+    s2 = evaluate_trim_recommendation({"composite_buy": 5, "action": "REDUCE"}, extended, sell_max=30)
+    assert s2["trim_gates_passed"] == 4
+    assert s2["trim_recommendation"] == "consider_trim"
+    assert s2["trim_risk_reasons"] == ["extended", "plan_reduce"]
+
+    s3 = evaluate_trim_recommendation({"composite_buy": 60}, extended, sell_max=30)
+    assert s3["trim_recommendation"] == "watch"
+
+
 def test_trim_alert_meta_gated():
     meta = trim_alert_meta(
         {
             "ticker": "X",
             "score": 28,
-            "action": "AVOID",
+            "action": "REDUCE",
             "suggestion": "CONSIDER TRIM",
             "trim_gates_passed": 3,
             "trim_gates_total": 4,

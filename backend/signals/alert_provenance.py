@@ -199,6 +199,21 @@ def trim_alert_meta(
     trim_passed = holding.get("trim_gates_passed")
     trim_total = holding.get("trim_gates_total") or 4
     trim_gate_cleared = holding.get("trim_gate_cleared")
+    gates_list = [g for g in (holding.get("trim_gates") or []) if isinstance(g, dict)]
+    if gates_list:
+        # Re-score from today's plan so cached gates (where AVOID counted as plan alignment) follow the current rule.
+        from signals.trim_gates import TRIM_PLAN_ACTIONS
+
+        gates_list = [
+            {**g, "pass": action in TRIM_PLAN_ACTIONS} if g.get("id") == "plan" and action else g
+            for g in gates_list
+        ]
+        trim_passed = sum(1 for g in gates_list if g.get("pass"))
+        trim_total = len(gates_list)
+        trim_gate_cleared = trim_passed >= min_pass
+    from signals.trim_gates import trim_real_risk_reasons
+
+    risk_reasons = trim_real_risk_reasons(holding, gates_list)
     if trim_gate_cleared is None and trim_passed is not None:
         try:
             trim_gate_cleared = int(trim_passed) >= min_pass
@@ -206,8 +221,8 @@ def trim_alert_meta(
             trim_gate_cleared = False
 
     gate_triggers: list[str] = []
-    for g in holding.get("trim_gates") or []:
-        if isinstance(g, dict) and g.get("pass") and g.get("id"):
+    for g in gates_list:
+        if g.get("pass") and g.get("id"):
             gate_triggers.append(str(g["id"]))
 
     is_candidate = score_trigger
@@ -215,9 +230,19 @@ def trim_alert_meta(
         is_candidate = bool(trim_gate_cleared)
     elif gates_enabled and not require_score:
         is_candidate = bool(trim_gate_cleared)
+    # A low score / AVOID alone is "hold, don't add"; trimming needs a concrete risk.
+    is_candidate = is_candidate and bool(risk_reasons)
 
     if not is_candidate:
-        out: dict[str, Any] = {"is_trim_candidate": False}
+        out: dict[str, Any] = {
+            "is_trim_candidate": False,
+            "trim_recommendation": "hold_no_add" if score_trigger else "watch",
+            "trim_risk_reasons": risk_reasons,
+        }
+        if gates_list:
+            out["trim_gates_passed"] = trim_passed
+            out["trim_gates_total"] = trim_total
+            out["trim_gate_cleared"] = trim_gate_cleared
         if score_trigger and gates_enabled and not trim_gate_cleared:
             out["trim_gates_pending"] = True
             out["trim_gates_passed"] = trim_passed
@@ -250,6 +275,8 @@ def trim_alert_meta(
         label_parts.append(f"score {float(score):.0f}")
 
     all_triggers = triggers + [t for t in gate_triggers if t not in triggers]
+    reason_text = {"extended": "overextended", "plan_reduce": "plan says reduce", "stop_broken": "below swing stop"}
+    label_parts = [reason_text.get(r, r) for r in risk_reasons] + label_parts
     detail = " · ".join(label_parts) if label_parts else "Review sizing"
     if trim_passed is not None:
         detail = f"{detail} · trim gates {trim_passed}/{trim_total}"
@@ -264,7 +291,8 @@ def trim_alert_meta(
         "trim_gates_passed": trim_passed,
         "trim_gates_total": trim_total,
         "trim_gate_cleared": trim_gate_cleared,
-        "trim_recommendation": holding.get("trim_recommendation"),
+        "trim_recommendation": "consider_trim",
+        "trim_risk_reasons": risk_reasons,
     }
 
 
@@ -331,6 +359,7 @@ def attach_trim_provenance_to_holdings(
             "trim_gates_total",
             "trim_gate_cleared",
             "trim_recommendation",
+            "trim_risk_reasons",
             "trim_gates_pending",
         ):
             if k in meta:

@@ -99,7 +99,7 @@ def test_story_horizon_flip_only():
     assert out["story_change_horizon_flips"] == ["short"]
 
 
-def test_trim_plan_and_score():
+def test_trim_avoid_alone_is_hold_no_add():
     meta = trim_alert_meta(
         {
             "ticker": "MSFT",
@@ -113,27 +113,63 @@ def test_trim_plan_and_score():
         sell_max=35,
         trim_cfg={"enabled": True, "min_pass": 2},
     )
+    assert not meta["is_trim_candidate"]
+    assert meta["trim_recommendation"] == "hold_no_add"
+
+
+def test_trim_plan_reduce_and_score():
+    meta = trim_alert_meta(
+        {
+            "ticker": "MSFT",
+            "score": 32,
+            "action": "REDUCE",
+            "suggestion": "CONSIDER TRIM",
+            "trim_gates_passed": 3,
+            "trim_gates_total": 4,
+            "trim_gate_cleared": True,
+        },
+        sell_max=35,
+        trim_cfg={"enabled": True, "min_pass": 2},
+    )
     assert meta["is_trim_candidate"]
     assert meta["trim_source"] == "composite+plan"
     assert "plan_action" in meta["trim_triggers"]
+    assert meta["trim_recommendation"] == "consider_trim"
+    assert meta["trim_risk_reasons"] == ["plan_reduce"]
+
+
+def test_trim_cached_avoid_plan_gate_is_rescored():
+    gates = [
+        {"id": "extension", "pass": False},
+        {"id": "tape", "pass": True},
+        {"id": "ml_momentum", "pass": False},
+        {"id": "plan", "pass": True},
+    ]
+    meta = trim_alert_meta(
+        {"ticker": "X", "score": 20, "action": "AVOID", "trim_gates": gates},
+        sell_max=35,
+        trim_cfg={"enabled": True, "min_pass": 2},
+    )
+    assert not meta["is_trim_candidate"]
+    assert meta["trim_gates_passed"] == 1
 
 
 def test_build_trim_candidates_sorted():
+    extended = [
+        {"id": "extension", "pass": True},
+        {"id": "tape", "pass": True},
+        {"id": "ml_momentum", "pass": True},
+        {"id": "plan", "pass": False},
+    ]
     rows = build_trim_candidates_from_holdings(
         [
             {"ticker": "A", "score": 50, "action": "HOLD", "suggestion": "HOLD"},
-            {
-                "ticker": "B",
-                "score": 30,
-                "action": "AVOID",
-                "suggestion": "CONSIDER TRIM",
-                "trim_gates_passed": 3,
-                "trim_gate_cleared": True,
-            },
+            {"ticker": "B", "score": 30, "action": "AVOID", "suggestion": "CONSIDER TRIM", "trim_gates": extended},
+            {"ticker": "C", "score": 20, "action": "AVOID", "suggestion": "CONSIDER TRIM", "trim_gates_passed": 3, "trim_gate_cleared": True},
         ],
         sell_max=35,
         trim_cfg={"enabled": True, "min_pass": 2},
     )
-    assert len(rows) == 1
-    assert rows[0]["ticker"] == "B"
+    assert [r["ticker"] for r in rows] == ["B"]
     assert rows[0]["trim_primary_driver"]
+    assert rows[0]["trim_risk_reasons"] == ["extended"]
