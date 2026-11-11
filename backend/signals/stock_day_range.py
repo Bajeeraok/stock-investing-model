@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from datetime import datetime
+from statistics import NormalDist
 from typing import Any
 
 SPAN = 20
@@ -55,6 +56,31 @@ def ewma_sigmas(closes: list[float], span: int = SPAN) -> list[float | None]:
             mean += a * d
             var = (1 - a) * (var + a * d * d)
         out.append(math.sqrt(var) if n >= 10 and var > 0 else None)
+    return out
+
+
+LADDER_P = (0.75, 0.5, 0.25)
+
+
+def _pre_open_move(p: float) -> float:
+    """Inverse of _pre_open_touch: move (in sigmas) touched with probability p."""
+    for (x0, y0), (x1, y1) in zip(PRE_OPEN_TOUCH, PRE_OPEN_TOUCH[1:]):
+        if y1 <= p <= y0:
+            return x0 + (y0 - p) / (y0 - y1) * (x1 - x0)
+    return PRE_OPEN_TOUCH[-1][0]
+
+
+def reach_ladder(anchor: float, sig: float, left: float | None) -> list[dict[str, float]]:
+    """Dip/pop prices with a given chance of trading before the close (left=None: next session)."""
+    out = []
+    for p in LADDER_P:
+        if left is None:
+            m = _pre_open_move(p)
+        elif left > 0:
+            m = INTRA_REACH_K * math.sqrt(left) * NormalDist().inv_cdf(1 - p / 2)
+        else:
+            continue
+        out.append({"p": p, "dip": round(anchor * math.exp(-m * sig), 2), "pop": round(anchor * math.exp(m * sig), 2)})
     return out
 
 
@@ -144,6 +170,7 @@ def build_day_range(
         lv_out.append({"label": lv.get("label"), "price": round(p, 2), "side": "below" if below else "above",
                        "p_reach": round(prob, 2), "touched": touched})
     out["levels"] = sorted(lv_out, key=lambda x: -x["price"])
+    out["ladder"] = reach_ladder(anchor, sig, left if live else None)
     out["scorecard"] = scorecard(closes, dates)
     return out
 

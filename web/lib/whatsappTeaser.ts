@@ -1,5 +1,5 @@
 import type { InvestorDecisionSummary } from "@/components/dashboard/InvestorDecisionSummary";
-import { band50, pct, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
+import { band50, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
 
 type Hz = { entry_zone?: { low?: number | null; high?: number | null } | null; stop_loss?: number | null; target?: number | null };
 type Retail = {
@@ -42,9 +42,15 @@ function rangeBlock(r: DayRangePayload): string[] {
   if (live && r.p_close_green != null) {
     out.push(`Green close ${pct(r.p_close_green)} · red close ${pct(1 - r.p_close_green)} (vs ${usd(r.ref_close)})`);
   }
-  for (const l of r.levels.filter((x) => x.label !== "Owner band top")) {
-    out.push(`${l.label} ${usd(l.price)}: ${l.touched ? `traded there earlier today · ${pct(l.p_reach)} chance again before close` : `${pct(l.p_reach)} chance ${live ? "today" : "next session"}`}`);
+  const when = live ? "before close" : "next session";
+  for (const x of r.ladder ?? []) {
+    out.push(`${pct(x.p)} chance ${when}: dips to ${usd(x.dip)} · pops to ${usd(x.pop)}`);
   }
+  const { near, far } = splitLevels(r);
+  for (const l of near) {
+    out.push(`${l.label} ${usd(l.price)}: ${l.touched ? `traded there earlier today · ${pct(l.p_reach)} chance again ${when}` : `${pct(l.p_reach)} chance ${when}`}`);
+  }
+  if (far.length) out.push(`Out of reach ${live ? "today" : "next session"}: ${far.map((l) => `${l.label.toLowerCase()} ${usd(l.price)}`).join(" · ")}`);
   return out;
 }
 

@@ -49,3 +49,20 @@ def test_band50_inside_band80():
     for session in (None, {"last": 101.0, "minutes_since_open": 120, "low": 99.0, "high": 102.0}):
         r = build_day_range(closes, dates, session=session)
         assert r["close_low"] < r["close_low50"] < r["close_mid"] < r["close_high50"] < r["close_high"]
+
+
+def test_reach_ladder_matches_level_odds():
+    import math
+    from signals.stock_day_range import build_day_range
+
+    closes = [100 * math.exp(0.02 * ((-1) ** i)) for i in range(80)]
+    dates = [f"d{i}" for i in range(80)]
+    session = {"last": 101.0, "minutes_since_open": 120, "low": 100.5, "high": 101.5}
+    r = build_day_range(closes, dates, session=session)
+    lad = r["ladder"]
+    assert [x["p"] for x in lad] == [0.75, 0.5, 0.25]
+    assert lad[0]["dip"] > lad[1]["dip"] > lad[2]["dip"] and lad[0]["pop"] < lad[2]["pop"]
+    chk = build_day_range(closes, dates, session=session, levels=[{"label": "x", "price": lad[1]["dip"]}])
+    assert abs(chk["levels"][0]["p_reach"] - 0.5) <= 0.02
+    pre = build_day_range(closes, dates)
+    assert len(pre["ladder"]) == 3 and pre["ladder"][2]["dip"] < 100 * math.exp(0.02 * ((-1) ** 79))

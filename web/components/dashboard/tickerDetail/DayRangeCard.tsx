@@ -21,6 +21,7 @@ export type DayRangePayload = {
   day_low?: number | null;
   day_high?: number | null;
   levels: DayRangeLevel[];
+  ladder?: { p: number; dip: number; pop: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
 };
 
@@ -32,6 +33,13 @@ export function band50(d: DayRangePayload): [number, number] {
 }
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** Levels under this chance are grouped into one "out of reach" line. */
+export const REACH_MIN = 0.05;
+export const splitLevels = (d: DayRangePayload) => ({
+  near: d.levels.filter((l) => l.p_reach >= REACH_MIN),
+  far: d.levels.filter((l) => l.p_reach < REACH_MIN),
+});
+
 export const pct = (p: number) => (p < 0.01 ? "<1%" : p > 0.99 ? ">99%" : `${Math.round(p * 100)}%`);
 
 function oddsTone(p: number) {
@@ -48,6 +56,8 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
   const hi = Math.max(data.close_high, data.day_high ?? data.close_high, spot);
   const pos = (v: number) => `${Math.max(0, Math.min(100, ((v - lo) / (hi - lo || 1)) * 100))}%`;
   const [lo50, hi50] = band50(data);
+  const { near, far } = splitLevels(data);
+  const when = live ? "before close" : "next session";
   const hrs = data.minutes_left != null ? `${Math.floor(data.minutes_left / 60)}h ${data.minutes_left % 60}m left` : "";
 
   return (
@@ -99,19 +109,42 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
         </p>
       </div>
 
-      {data.levels.length > 0 && (
+      {data.ladder && data.ladder.length > 0 && (
+        <div className="text-[13px]">
+          <div className="grid grid-cols-3 gap-2 text-[12px] text-td-muted">
+            <span>Chance {when}</span>
+            <span className="text-right">Dips to</span>
+            <span className="text-right">Pops to</span>
+          </div>
+          {data.ladder.map((r) => (
+            <div key={r.p} className="grid grid-cols-3 gap-2 font-mono">
+              <span className={`font-semibold ${oddsTone(r.p)}`}>{pct(r.p)}</span>
+              <span className="text-right text-td-text">{usd(r.dip)}</span>
+              <span className="text-right text-td-text">{usd(r.pop)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {near.length > 0 && (
         <ul className="space-y-1.5">
-          {data.levels.map((l) => (
+          {near.map((l) => (
             <li key={`${l.label}-${l.price}`} className="flex items-center justify-between gap-2 text-[13px]">
               <span className="text-td-muted">
                 {l.label} <span className="font-mono text-td-text">{usd(l.price)}</span>
               </span>
               <span className={`font-semibold ${oddsTone(l.p_reach)}`}>
-                {l.touched ? `Traded there earlier · ${pct(l.p_reach)} chance again` : `${pct(l.p_reach)} chance ${live ? "before close" : "next session"}`}
+                {l.touched ? `Traded there earlier · ${pct(l.p_reach)} chance again` : `${pct(l.p_reach)} chance ${when}`}
               </span>
             </li>
           ))}
         </ul>
+      )}
+      {far.length > 0 && (
+        <p className="text-[12.5px] text-td-muted">
+          Out of reach {live ? "today" : "next session"} (&lt;5%):{" "}
+          {far.map((l) => `${l.label.toLowerCase()} ${usd(l.price)}`).join(" · ")}
+        </p>
       )}
 
       <p className="text-[12px] text-td-muted leading-relaxed">
