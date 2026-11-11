@@ -127,3 +127,11 @@ def test_rich_vs_fair_value_alone_is_not_extended():
 
     assert ext(assessment_pct=-25, rsi=50) is False
     assert ext(assessment_pct=10, rsi=70) is True
+
+
+def test_trim_candidates_one_row_per_ticker(monkeypatch):
+    import signals.alert_provenance as ap
+
+    monkeypatch.setattr(ap, "attach_trim_provenance_to_holdings", lambda *a, **k: None)
+    rows = [{"ticker": "AAPL", "is_trim_candidate": True, "score": 10}] * 2 + [{"ticker": "TTD", "is_trim_candidate": True}]
+    assert [r["ticker"] for r in ap.build_trim_candidates_from_holdings(rows)] == ["AAPL", "TTD"]

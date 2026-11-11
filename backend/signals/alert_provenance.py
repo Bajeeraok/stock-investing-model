@@ -401,9 +401,11 @@ def build_trim_candidates_from_holdings(
         trim_cfg=trim_cfg,
     )
     out: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for h in per_holding:
-        if not isinstance(h, dict) or not h.get("ticker"):
+        if not isinstance(h, dict) or not h.get("ticker") or h["ticker"] in seen:
             continue
         if h.get("is_trim_candidate"):
+            seen.add(h["ticker"])
             out.append(dict(h))
     return sorted(out, key=lambda x: (x.get("score") is None, x.get("score") or 0))
