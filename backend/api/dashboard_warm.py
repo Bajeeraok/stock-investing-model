@@ -296,6 +296,7 @@ def compute_signal_warm_sync(
         _holdings_from_config,
         _load_config,
         _opportunities_bundle_enabled,
+        _tier1_risk_payload,
     )
     from behavior.thesis import get_nudge, load_theses
     from behavior.what_changed import what_changed
@@ -723,6 +724,10 @@ def compute_signal_warm_sync(
         logger.debug("[dashboard-warm] retail_briefing: %s", e)
 
     merged = dict(cached)
+    try:
+        merged.update(_tier1_risk_payload(report, results, config, confidence_by_ticker))
+    except Exception as e:
+        logger.warning("[dashboard-warm] tier1 risk payload: %s", e)
     merged.update({
         "signals": results,
         "signal_scores": _build_signal_scores(results),

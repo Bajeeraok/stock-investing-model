@@ -144,6 +144,83 @@ def _tier1_holdings_by_ticker(per_holding: list[dict]) -> list[dict]:
     return out
 
 
+def _tier1_risk_payload(report: dict, results: list, config: dict, confidence_by_ticker: dict) -> dict[str, Any]:
+    """Position sizing / drawdown / exit levels for every held ticker (one row each)."""
+    # Tier 1 risk features (position sizing, drawdown, exits, earnings, concentration)
+    tier1_payload = {}
+    if generate_tier1_payload and report.get("per_holding") and report.get("total_value"):
+        try:
+            holdings_for_tier1 = _tier1_holdings_by_ticker(report["per_holding"])
+            signals_for_tier1 = [
+                {
+                    "ticker": r["ticker"],
+                    "score": float(r.get("composite_buy") or 50),
+                    "confidence": (
+                        float(confidence_by_ticker.get(r["ticker"], {}).get("confidence"))
+                        if isinstance(confidence_by_ticker.get(r["ticker"]), dict) and confidence_by_ticker.get(r["ticker"], {}).get("confidence") is not None
+                        else min(1.0, max(0, (r.get("composite_buy") or 50) / 100))
+                    ),
+                    # Let Tier1 engine derive win rate dynamically (avoids hardcoded 60%)
+                    "win_rate": None,
+                    "avg_win_pct": 7.0,
+                    "avg_loss_pct": 4.0,
+                }
+                for r in results
+                if not r.get("error") and r.get("ticker")
+            ]
+            portfolio_value_t1 = float(report.get("total_value") or 100_000)
+            regime_t1 = next(
+                (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
+                "BULL",
+            )
+            # Every held ticker (one row each); non-held signals are not sized here.
+            max_t1 = int((config.get("tier1") or {}).get("max_tickers", 80))
+            all_tickers = list(dict.fromkeys(h["ticker"] for h in holdings_for_tier1))[:max_t1]
+            holdings_for_tier1 = [h for h in holdings_for_tier1 if h["ticker"] in all_tickers]
+            have_sig = {s["ticker"] for s in signals_for_tier1}
+            signals_for_tier1 = [s for s in signals_for_tier1 if s["ticker"] in all_tickers] + [
+                {"ticker": t, "score": 50.0, "confidence": 0.5, "win_rate": None, "avg_win_pct": 7.0, "avg_loss_pct": 4.0}
+                for t in all_tickers
+                if t not in have_sig
+            ]
+            if holdings_for_tier1 or signals_for_tier1:
+                tier1_payload = generate_tier1_payload(
+                    holdings=holdings_for_tier1,
+                    signals=signals_for_tier1,
+                    portfolio_value=portfolio_value_t1,
+                    regime=regime_t1,
+                    risk_tolerance=RiskTolerance(get_risk_profile(config)),
+                    horizon="medium",
+                )
+                logger.info("[dashboard] Tier 1 risk payload: sizing=%d drawdown=%d exits=%d earnings=%d",
+                    len(tier1_payload.get("position_sizing", [])),
+                    len(tier1_payload.get("drawdown_sim", [])),
+                    len(tier1_payload.get("exit_levels", [])),
+                    len(tier1_payload.get("earnings_impacts", [])),
+                )
+        except Exception as e:
+            logger.warning("[dashboard] Tier 1 risk engine failed: %s", e)
+
+    if not tier1_payload.get("position_sizing") and report.get("per_holding") and report.get("total_value"):
+        try:
+            tier1_payload = _tier1_lightweight_fallback(
+                report,
+                results,
+                portfolio_value=float(report.get("total_value") or 0),
+                risk_profile=get_risk_profile(config),
+            )
+            if tier1_payload:
+                logger.info(
+                    "[dashboard] Tier 1 lightweight fallback: sizing=%d drawdown=%d earnings=%d",
+                    len(tier1_payload.get("position_sizing", [])),
+                    len(tier1_payload.get("drawdown_sim", [])),
+                    len(tier1_payload.get("earnings_impacts", [])),
+                )
+        except Exception as e:
+            logger.debug("[dashboard] Tier 1 fallback failed: %s", e)
+    return tier1_payload
+
+
 def _tier1_lightweight_fallback(
     report: dict,
     results: list[dict],
@@ -2840,78 +2917,7 @@ def _compute_full_dashboard_sync() -> dict:
         logger.debug("Auto EOD snapshot skipped: %s", e)
     logger.info("[dashboard] section: risk_sizing + save_last_run DONE (%.0f ms)", (time.perf_counter() - t0) * 1000)
 
-    # Tier 1 risk features (position sizing, drawdown, exits, earnings, concentration)
-    tier1_payload = {}
-    if generate_tier1_payload and report.get("per_holding") and report.get("total_value"):
-        try:
-            holdings_for_tier1 = _tier1_holdings_by_ticker(report["per_holding"])
-            signals_for_tier1 = [
-                {
-                    "ticker": r["ticker"],
-                    "score": float(r.get("composite_buy") or 50),
-                    "confidence": (
-                        float(confidence_by_ticker.get(r["ticker"], {}).get("confidence"))
-                        if isinstance(confidence_by_ticker.get(r["ticker"]), dict) and confidence_by_ticker.get(r["ticker"], {}).get("confidence") is not None
-                        else min(1.0, max(0, (r.get("composite_buy") or 50) / 100))
-                    ),
-                    # Let Tier1 engine derive win rate dynamically (avoids hardcoded 60%)
-                    "win_rate": None,
-                    "avg_win_pct": 7.0,
-                    "avg_loss_pct": 4.0,
-                }
-                for r in results
-                if not r.get("error") and r.get("ticker")
-            ]
-            portfolio_value_t1 = float(report.get("total_value") or 100_000)
-            regime_t1 = next(
-                (r.get("_global_market_regime") for r in results if not r.get("error") and r.get("_global_market_regime")),
-                "BULL",
-            )
-            # Every held ticker (one row each); non-held signals are not sized here.
-            max_t1 = int((config.get("tier1") or {}).get("max_tickers", 80))
-            all_tickers = list(dict.fromkeys(h["ticker"] for h in holdings_for_tier1))[:max_t1]
-            holdings_for_tier1 = [h for h in holdings_for_tier1 if h["ticker"] in all_tickers]
-            have_sig = {s["ticker"] for s in signals_for_tier1}
-            signals_for_tier1 = [s for s in signals_for_tier1 if s["ticker"] in all_tickers] + [
-                {"ticker": t, "score": 50.0, "confidence": 0.5, "win_rate": None, "avg_win_pct": 7.0, "avg_loss_pct": 4.0}
-                for t in all_tickers
-                if t not in have_sig
-            ]
-            if holdings_for_tier1 or signals_for_tier1:
-                tier1_payload = generate_tier1_payload(
-                    holdings=holdings_for_tier1,
-                    signals=signals_for_tier1,
-                    portfolio_value=portfolio_value_t1,
-                    regime=regime_t1,
-                    risk_tolerance=RiskTolerance(get_risk_profile(config)),
-                    horizon="medium",
-                )
-                logger.info("[dashboard] Tier 1 risk payload: sizing=%d drawdown=%d exits=%d earnings=%d",
-                    len(tier1_payload.get("position_sizing", [])),
-                    len(tier1_payload.get("drawdown_sim", [])),
-                    len(tier1_payload.get("exit_levels", [])),
-                    len(tier1_payload.get("earnings_impacts", [])),
-                )
-        except Exception as e:
-            logger.warning("[dashboard] Tier 1 risk engine failed: %s", e)
-
-    if not tier1_payload.get("position_sizing") and report.get("per_holding") and report.get("total_value"):
-        try:
-            tier1_payload = _tier1_lightweight_fallback(
-                report,
-                results,
-                portfolio_value=float(report.get("total_value") or 0),
-                risk_profile=get_risk_profile(config),
-            )
-            if tier1_payload:
-                logger.info(
-                    "[dashboard] Tier 1 lightweight fallback: sizing=%d drawdown=%d earnings=%d",
-                    len(tier1_payload.get("position_sizing", [])),
-                    len(tier1_payload.get("drawdown_sim", [])),
-                    len(tier1_payload.get("earnings_impacts", [])),
-                )
-        except Exception as e:
-            logger.debug("[dashboard] Tier 1 fallback failed: %s", e)
+    tier1_payload = _tier1_risk_payload(report, results, config, confidence_by_ticker)
 
     from signals.time_et import format_et_display, now_iso_et
 
