@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import type { PortfolioHolding, PortfolioReport, Signal } from "@/app/page";
+import { ExitLevelsPanel, type ExitLevelsData } from "./Tier1RiskFeatures";
 
 type ActionKind = "trim" | "over" | "add" | "noadd" | "hold";
 
@@ -257,6 +258,60 @@ export function PortfolioHoldingsSlim({ holdings, onTickerClick, showAccounts }:
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+type ExitHorizon = "short" | "medium" | "long";
+const EXIT_HORIZON_LABELS: Record<ExitHorizon, string> = {
+  short: "Short-term (~1 mo)",
+  medium: "Medium-term (3–6 mo)",
+  long: "Long-term (12–18 mo)",
+};
+
+/** Stops/targets per holding for the chosen horizon, one row per ticker in the selected account. */
+export function PortfolioExitLevels({
+  byHorizon,
+  fallback,
+  tickers,
+}: {
+  byHorizon?: Partial<Record<ExitHorizon, ExitLevelsData[]>> | null;
+  fallback?: ExitLevelsData[] | null;
+  tickers: string[];
+}) {
+  const [horizon, setHorizon] = useState<ExitHorizon>("long");
+  const items = useMemo(() => {
+    const held = new Set(tickers);
+    const seen = new Set<string>();
+    return (byHorizon?.[horizon] ?? fallback ?? []).filter((e) => {
+      if (!held.has(e.ticker) || seen.has(e.ticker)) return false;
+      seen.add(e.ticker);
+      return true;
+    });
+  }, [byHorizon, fallback, horizon, tickers]);
+  const hasHorizons = Boolean(byHorizon?.short?.length || byHorizon?.medium?.length || byHorizon?.long?.length);
+  return (
+    <div className="space-y-3">
+      {hasHorizons && (
+        <label className="flex items-center gap-2 text-sm text-td-muted">
+          Horizon
+          <select
+            value={horizon}
+            onChange={(e) => setHorizon(e.target.value as ExitHorizon)}
+            aria-label="Exit-level horizon"
+            className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none"
+          >
+            {(Object.keys(EXIT_HORIZON_LABELS) as ExitHorizon[]).map((h) => (
+              <option key={h} value={h}>{EXIT_HORIZON_LABELS[h]}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      {items.length > 0 ? (
+        <ExitLevelsPanel items={items} />
+      ) : (
+        <p className="text-td-muted text-sm">No exit levels for these holdings yet.</p>
+      )}
     </div>
   );
 }

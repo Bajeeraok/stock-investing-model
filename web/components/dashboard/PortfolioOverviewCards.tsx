@@ -79,7 +79,7 @@ export function NeedsAttentionList({
   return (
     <section aria-label="Needs attention" className="space-y-2">
       <h3 className="text-[11.5px] font-semibold uppercase tracking-wider text-td-muted">Needs attention · {items.length}</h3>
-      {items.slice(0, 6).map((i) => (
+      {items.map((i) => (
         <button
           key={`${i.kind}-${i.ticker}`}
           type="button"

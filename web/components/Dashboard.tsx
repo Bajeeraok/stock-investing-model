@@ -4,7 +4,7 @@ import { ModelCheckPanel } from "./dashboard/ModelCheckPanel";
 import { BestSetupsPanel, BestSetupsTodayCard, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, FlaskConical, Mail, Terminal } from "lucide-react";
+import { AlertTriangle, BarChart3, Bell, Calendar, ClipboardCheck, Database, RefreshCw, Save, Search, TrendingUp, Wallet, Target, FileText, Sparkles, HelpCircle, Globe, PieChart, Activity, Shield, FlaskConical, Mail, Terminal } from "lucide-react";
 import type {
   DashboardData,
   Signal,
@@ -14,7 +14,7 @@ import type {
 import { LIVE_SCORE_LINE } from "@/lib/modelSemantics";
 import { formatSnapshotAge, formatSnapshotEt, formatFreshnessLabel, isUsEquityRth } from "@/lib/dashboardCache";
 import { clsx } from "clsx";
-import { mergeHoldings, PortfolioActions, PortfolioHeader, PortfolioHoldingsSlim, PortfolioRiskSummary } from "@/components/dashboard/PortfolioSlim";
+import { mergeHoldings, PortfolioExitLevels, PortfolioHeader, PortfolioRiskSummary } from "@/components/dashboard/PortfolioSlim";
 import {
   AddTickerBar,
   CalibrationCurvePanel,
@@ -25,6 +25,18 @@ import {
   SubViewSwitch,
   migrateLegacyTab,
   type TabId,
+  PortfolioSummary,
+  PortfolioStressStrip,
+  PortfolioHeatMap,
+  PortfolioHoldings,
+  TrimCandidates,
+  RegimeChart,
+  ScoreChart,
+  AnchorChartPanel,
+  PortfolioRiskMetricsPanel,
+  RiskDashboard,
+  TaxAwareExitPanel,
+  PortfolioDoctorPanel,
   DataFreshnessBar,
   KnownLimitsPanel,
   ModelDisclaimer,
@@ -98,8 +110,7 @@ import {
   ThisWeekCard,
   deriveMarketWeather,
 } from "./dashboard/today/TodayFeed";
-import {
-} from "./dashboard/PortfolioOverviewCards";
+import { NeedsAttentionList, PortfolioRegimeStrip, RiskManagementCard } from "./dashboard/PortfolioOverviewCards";
 import { RegimeValidationPanel } from "./dashboard/RegimeValidationPanel";
 import { LivePricesProvider } from "@/lib/LivePriceContext";
 import { useTickerDetailLayout } from "@/lib/useMediaQuery";
@@ -200,7 +211,7 @@ function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "
 }
 
 type PlanSub = "income" | "opportunities";
-type MoreSub = "markets" | "model" | "admin";
+type MoreSub = "markets" | "portfolio" | "model" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
 const MORE_SUB_KEY = "thrive-more-sub";
 
@@ -353,7 +364,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       if (ps === "income" || ps === "opportunities") setPlanSub(ps);
       else if (ps === "setups") setPlanSub("opportunities");
       const ms = localStorage.getItem(MORE_SUB_KEY);
-      if (ms === "markets" || ms === "model" || ms === "admin") setMoreSub(ms);
+      if (ms === "markets" || ms === "portfolio" || ms === "model" || ms === "admin") setMoreSub(ms);
     } catch {
       /* ignore */
     }
@@ -924,6 +935,44 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
     return mergeHoldings(selectedReport?.per_holding ?? [], byTicker, concentrationLimitPct);
   }, [selectedReport, effectiveSignals, concentrationLimitPct]);
 
+  const mergedRows = useMemo(
+    () =>
+      mergedHoldings.map((m) => ({
+        ...m.base,
+        value: m.value,
+        pct: Math.round(m.pct * 10) / 10,
+        gain_loss: m.gainLoss ?? undefined,
+        gain_loss_pct: m.gainLossPct,
+        account: m.accounts.map((a) => a.account).join(" + ") || m.base.account,
+        is_trim_candidate: m.action === "trim",
+      })),
+    [mergedHoldings],
+  );
+  const mergedReport = useMemo(
+    () => (selectedReport ? { ...selectedReport, per_holding: mergedRows } : selectedReport),
+    [selectedReport, mergedRows],
+  );
+  const selectedTrimCandidates = useMemo(() => mergedRows.filter((h) => h.is_trim_candidate), [mergedRows]);
+  const scoreChartSignals = useMemo((): Signal[] => {
+    const held = new Set(mergedRows.map((h) => h.ticker));
+    return effectiveSignals.filter((sig) => held.has(sig.ticker));
+  }, [effectiveSignals, mergedRows]);
+  const [doctorOverride, setDoctorOverride] = useState<{ profile: string; recs: Record<string, PortfolioDoctorRecommendation> } | null>(null);
+  useEffect(() => setDoctorOverride(null), [data.as_of_date]);
+  const doctorRecs = doctorOverride?.recs ?? mergedDoctorRec;
+  const riskProfile = (doctorOverride?.profile ?? data.risk_profile) as typeof data.risk_profile;
+  const onRiskProfileChanged = useCallback(
+    (res: { profile: string; portfolio_doctor_recommendations?: Record<string, unknown> | null }) => {
+      if (res.portfolio_doctor_recommendations) {
+        setDoctorOverride({ profile: res.profile, recs: res.portfolio_doctor_recommendations as Record<string, PortfolioDoctorRecommendation> });
+      } else {
+        onRefresh(true);
+      }
+    },
+    [onRefresh],
+  );
+  const openPortfolioDetail = useCallback(() => openMore("portfolio"), [openMore]);
+
   const marketWeather = useMemo(
     () =>
       deriveMarketWeather({
@@ -1393,21 +1442,27 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
               <div className="grid gap-4 xl:grid-cols-2 items-start">
                 <div className="space-y-4 min-w-0">
                   <PortfolioHeader report={selectedReport} holdings={mergedHoldings} limitPct={concentrationLimitPct} />
-                  <PortfolioActions holdings={mergedHoldings} onTickerClick={openTickerDetail} showAccounts={selectedPortfolio === "All"} />
+                  <NeedsAttentionList
+                    report={mergedReport}
+                    trimCandidates={selectedTrimCandidates}
+                    limitPct={concentrationLimitPct}
+                    onTickerClick={openTickerDetail}
+                  />
                 </div>
                 <div className="space-y-4 min-w-0">
+                  <RiskManagementCard
+                    totalValue={selectedReport?.total_value}
+                    metrics={data.portfolio_risk_metrics}
+                    stress={data.portfolio_stress}
+                    onOpenFull={openPortfolioDetail}
+                  />
                   <PortfolioRiskSummary report={selectedReport} holdings={mergedHoldings} />
+                  <PortfolioRegimeStrip counts={selectedReport?.regime_counts} />
                 </div>
               </div>
-              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={mergedHoldings.length} defaultOpen>
-                {mergedHoldings.length > 0 ? (
-                  <PortfolioHoldingsSlim holdings={mergedHoldings} onTickerClick={openTickerDetail} showAccounts={selectedPortfolio === "All"} />
-                ) : (
-                  <p className="text-td-muted text-sm p-4 text-center">No holdings. Add portfolios in config or upload via Signals → add ticker.</p>
-                )}
-              </ToggleSection>
-              <ToggleSection id="portfolio-more" title="Add ideas & performance" icon={<PieChart />} defaultOpen={false}>
-                <div className="space-y-6">
+              <ToggleSection id="portfolio-doctor" title="Portfolio Doctor — allocation by risk profile" icon={<Target />} badge={doctorRecs?.[selectedPortfolio]?.trim?.length || undefined} defaultOpen>
+                <div className="space-y-4">
+                  <RiskProfileSelector value={riskProfile} onChanged={onRiskProfileChanged} />
                   {oppBundleEnabled && data.opportunities_deferred === true && oppLoading && (
                     <p className="text-[13px] text-slate-500">Loading add ideas (opportunity scan)…</p>
                   )}
@@ -1415,22 +1470,35 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                     <p className="text-[13px] text-amber-300/90">{oppFetchErr}</p>
                   )}
                   <PortfolioDoctorRecommendations
-                    recommendation={mergedDoctorRec?.[selectedPortfolio]}
+                    recommendation={doctorRecs?.[selectedPortfolio]}
                     selectedPortfolio={selectedPortfolio}
                     onTickerClick={openTickerDetail}
                   />
-                  {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
-                    <div>
-                      <PerformanceVsBenchmark
-                        periods={data.performance_vs_benchmark?.periods ?? []}
-                        message={data.performance_vs_benchmark?.message}
-                        as_of={data.performance_vs_benchmark?.as_of}
-                      />
-                      <ModelDisclaimer className="mt-4 text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
-                    </div>
-                  )}
                 </div>
               </ToggleSection>
+              <ToggleSection id="portfolio-holdings" title="Holdings" icon={<Wallet />} badge={mergedRows.length} defaultOpen>
+                {mergedRows.length > 0 ? (
+                  <PortfolioHoldings
+                    holdings={mergedRows}
+                    onTickerClick={openTickerDetail}
+                    hideAccountColumn={selectedPortfolio !== "All"}
+                    addMinConfidence={data.config?.model_rules?.add_min_confidence ?? 70}
+                    trimMaxConfidence={data.config?.model_rules?.trim_max_confidence ?? 30}
+                  />
+                ) : (
+                  <p className="text-td-muted text-sm p-4 text-center">No holdings. Add portfolios in config or upload via Signals → add ticker.</p>
+                )}
+              </ToggleSection>
+              <ToggleSection id="portfolio-exit-levels" title="Stops & targets by horizon" icon={<Shield />} defaultOpen={false}>
+                <PortfolioExitLevels
+                  byHorizon={data.exit_levels_by_horizon}
+                  fallback={data.exit_levels}
+                  tickers={mergedRows.map((h) => h.ticker)}
+                />
+              </ToggleSection>
+              <button type="button" onClick={openPortfolioDetail} className="text-[13px] text-td-accent hover:underline">
+                Full risk report, tax exits, heat map, trim detail and performance → More · Portfolio detail
+              </button>
             </div>
           )}
 
@@ -1442,6 +1510,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 onChange={setMoreSubPersist}
                 options={[
                   { id: "markets", label: "Markets" },
+                  { id: "portfolio", label: "Portfolio detail" },
                   { id: "model", label: "Model check" },
                   { id: "admin", label: "Admin" },
                 ]}
@@ -1625,20 +1694,102 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   </div>
                 </div>
               )}
-              {moreSub === "model" && (
+              {moreSub === "portfolio" && (
                 <div className="space-y-4">
-                  <ModelCheckPanel />
+                  {portfolioNames.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="portfolio-select-3" className="text-sm text-td-muted">Portfolio:</label>
+                      <select
+                        id="portfolio-select-3"
+                        value={selectedPortfolio}
+                        onChange={(e) => setSelectedPortfolio(e.target.value)}
+                        className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-slate-100 text-sm focus:border-emerald-500 focus:outline-none"
+                      >
+                        {portfolioNames.map((name) => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <ToggleSection id="portfolio-risk" title="Risk management — full report" icon={<Shield />} defaultOpen>
+                    <div className="space-y-6">
+                      {data.portfolio_stress?.scenarios?.length ? <PortfolioStressStrip stress={data.portfolio_stress} /> : null}
+                      <div>
+                        <p className="text-[13px] font-medium text-slate-400 uppercase tracking-wide mb-2">VaR / CVaR & correlation (holdings)</p>
+                        <PortfolioRiskMetricsPanel metrics={data.portfolio_risk_metrics} />
+                      </div>
+                      <RiskDashboard
+                        riskProfile={riskProfile}
+                        positionSizing={data.position_sizing}
+                        drawdownSim={data.drawdown_sim}
+                        exitLevels={data.exit_levels}
+                        exitLevelsByHorizon={data.exit_levels_by_horizon}
+                        earningsImpacts={data.earnings_impacts}
+                        concentration={data.concentration}
+                        portfolioValue={selectedReport?.total_value ?? 0}
+                      />
+                    </div>
+                  </ToggleSection>
+                  {data.portfolio_doctor_v2 && Object.keys(data.portfolio_doctor_v2).length > 0 && (
+                    <ToggleSection id="portfolio-doctor-v2" title="Portfolio Doctor — health & this week's actions" icon={<Target />} badge={data.portfolio_doctor_v2?.priority_actions?.total_actions || undefined} defaultOpen={false}>
+                      <PortfolioDoctorPanel
+                        data={data.portfolio_doctor_v2}
+                        portfolioRiskMetrics={data.portfolio_risk_metrics}
+                        portfolioBeta={data.portfolio_doctor_v2?.portfolio_beta}
+                        taxAwareExits={data.tax_aware_exits}
+                        totalValue={selectedReport?.total_value}
+                        holdingCount={mergedRows.length}
+                        sectorExposure={selectedReport?.sector_allocation}
+                        holdings={mergedRows}
+                        onTickerClick={openTickerDetail}
+                      />
+                    </ToggleSection>
+                  )}
+                  <ToggleSection id="portfolio-tax-exit" title="Tax-aware exit optimizer" icon={<Calendar />} badge={data.tax_aware_exits?.items?.length ?? 0} defaultOpen={false}>
+                    <TaxAwareExitPanel data={data.tax_aware_exits} onTickerClick={openTickerDetail} />
+                  </ToggleSection>
+                  <ToggleSection id="portfolio-trim" title="Trim detail" icon={<AlertTriangle />} badge={selectedTrimCandidates.length || undefined} defaultOpen={false}>
+                    {selectedTrimCandidates.length > 0 ? (
+                      <TrimCandidates items={selectedTrimCandidates} onTickerClick={openTickerDetail} />
+                    ) : (
+                      <p className="text-td-muted text-sm p-4 text-center">No trims: none of these holdings is overextended, below its Owner stop, or on a REDUCE/SELL plan.</p>
+                    )}
+                  </ToggleSection>
+                  <ToggleSection id="portfolio-heatmap" title="Heat map" icon={<Activity />} defaultOpen={false}>
+                    <PortfolioHeatMap holdings={mergedRows} regimeCounts={selectedReport?.regime_counts} onTickerClick={openTickerDetail} />
+                  </ToggleSection>
+                  <ToggleSection id="portfolio-summary" title="Summary & regime mix" icon={<PieChart />} defaultOpen={false}>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <PortfolioSummary report={mergedReport} />
+                    </div>
+                    <div className="mt-4">
+                      <RegimeChart report={mergedReport} />
+                    </div>
+                  </ToggleSection>
+                  <ToggleSection id="portfolio-score-chart" title="Score chart" icon={<BarChart3 />} defaultOpen={false}>
+                    <AnchorChartPanel title="Portfolio tape" hint="Click a bar to open the ticker page.">
+                      <ScoreChart signals={scoreChartSignals} onTickerClick={openTickerDetail} embedded />
+                    </AnchorChartPanel>
+                  </ToggleSection>
+                  {(data.performance_vs_benchmark?.periods?.length || data.performance_vs_benchmark?.message) && (
+                    <ToggleSection id="portfolio-performance" title="Performance vs benchmark" icon={<PieChart />} defaultOpen={false}>
+                      <PerformanceVsBenchmark
+                        periods={data.performance_vs_benchmark?.periods ?? []}
+                        message={data.performance_vs_benchmark?.message}
+                        as_of={data.performance_vs_benchmark?.as_of}
+                      />
+                      <ModelDisclaimer className="mt-4 text-[11px] text-slate-600 leading-snug flex items-start gap-1.5 max-w-4xl" />
+                    </ToggleSection>
+                  )}
                   <DecisionJournalPanel />
                 </div>
               )}
+              {moreSub === "model" && <ModelCheckPanel />}
               {moreSub === "admin" && (
                 <div className="space-y-4 sm:space-y-6">
                   <p className="text-[13px] text-td-muted">
                     Model validation and data health — not decision inputs. Read-only on mobile.
                   </p>
-                  {data.risk_profile && (
-                    <RiskProfileSelector value={data.risk_profile} onChanged={() => onRefresh(true)} />
-                  )}
                   <div className="hidden md:flex flex-wrap items-center gap-2">
                     <button
                       type="button"

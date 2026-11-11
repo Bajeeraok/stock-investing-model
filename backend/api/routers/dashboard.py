@@ -3748,7 +3748,31 @@ async def set_risk_profile_api(body: dict):
         raise HTTPException(
             status_code=400, detail="profile must be conservative, moderate, or aggressive"
         )
-    return {"ok": True, "profile": profile}
+    return {
+        "ok": True,
+        "profile": profile,
+        "portfolio_doctor_recommendations": _doctor_recs_from_cached_dashboard(),
+    }
+
+
+def _doctor_recs_from_cached_dashboard() -> dict | None:
+    """Re-run Doctor allocation on the cached dashboard so a profile change shows at once."""
+    try:
+        from signals.cache import get_cached_dashboard, get_last_dashboard_snapshot
+
+        cached = get_cached_dashboard() or get_last_dashboard_snapshot()
+        if not cached or not cached.get("portfolios"):
+            return None
+        return _doctor_recommendations_for_portfolios(
+            _load_config(),
+            cached["portfolios"],
+            [r for r in (cached.get("signals") or []) if isinstance(r, dict) and r.get("ticker")],
+            cached.get("opportunities") or [],
+            {},
+        )
+    except Exception as e:
+        logger.debug("risk-profile doctor recompute: %s", e)
+        return None
 
 
 @router.post("/portfolio/upload")

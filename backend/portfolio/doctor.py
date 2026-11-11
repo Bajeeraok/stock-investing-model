@@ -416,51 +416,64 @@ def allocation_recommendations(
     # ---- TRIM ----
     conf_map = confidence_by_ticker or {}
     trim_list = []
+    grouped: dict[str, dict] = {}
     for h in per_holding:
         if h.get("value") is None or h.get("value") <= 0 or total_value <= 0:
             continue
-        ticker = h["ticker"]
+        g = grouped.setdefault(h["ticker"], {"rows": [], "value": 0.0})
+        g["rows"].append(h)
+        g["value"] += float(h["value"])
+    reason_text = {"extended": "overextended", "plan_reduce": "plan says reduce", "stop_broken": "below Owner stop"}
+    for ticker, g in grouped.items():
+        rows = g["rows"]
+        h = rows[0]
         score = h.get("score")
         conf_data = conf_map.get(ticker)
         conf_val = conf_data.get("confidence") if conf_data and isinstance(conf_data, dict) else None
-        use_conf = conf_val is not None
-        if use_conf:
-            if conf_val > trim_conf_threshold:
-                continue
+        current_value = g["value"]
+        current_pct = round(100 * current_value / total_value, 1)
+        if any("is_trim_candidate" in r for r in rows):
+            # Same rule as the trim gates: a low score / AVOID alone is "hold, don't add".
+            has_risk = any(r.get("is_trim_candidate") for r in rows)
+            risk_reasons = sorted({x for r in rows for x in (r.get("trim_risk_reasons") or [])})
         else:
-            if score is None or score > trim_score_threshold:
-                continue
-        current_value = float(h["value"])
-        current_pct = (h.get("pct") or 0) or round(100 * current_value / total_value, 1)
+            if conf_val is not None:
+                has_risk = conf_val <= trim_conf_threshold
+            else:
+                has_risk = score is not None and score <= trim_score_threshold
+            risk_reasons = []
+        over_limit = current_pct > max_position_pct
+        if not has_risk and not over_limit:
+            continue
         r = results_by_ticker.get(ticker)
         sell_price = None
         if r:
             sell_price = r.get("suggested_sell_price")
             if sell_price is None and isinstance(r.get("st_band"), dict) and r["st_band"].get("high") is not None:
                 sell_price = r["st_band"]["high"]
-            if sell_price is not None:
-                sell_price = round(float(sell_price), 2)
             if sell_price is None and r.get("close") is not None:
-                sell_price = round(float(r["close"]), 2)
+                sell_price = r["close"]
         if sell_price is None:
             sell_price = h.get("price")
         if sell_price is not None:
             sell_price = round(float(sell_price), 2)
 
-        # Suggest trim: bring position to max_position_pct or trim 25/50/75% of excess (conservative = trim more)
-        target_pct = min(current_pct, max_position_pct)
-        trim_pct_of_position = 25
-        if current_pct > max_position_pct:
-            excess_pct = current_pct - max_position_pct
-            trim_pct_of_position = min(75, max(25, round(excess_pct / current_pct * 100, 0)))
+        excess_share = (current_pct - max_position_pct) / current_pct * 100 if over_limit else 0.0
+        if has_risk:
+            trim_pct_of_position = min(75, max(25, round(excess_share))) if over_limit else 25
+        else:
+            # Over the profile's cap only: trim back to the cap.
+            trim_pct_of_position = round(excess_share, 1)
         suggest_trim_pct = round(current_pct * (trim_pct_of_position / 100), 1)
         suggest_trim_dollars = round(current_value * (trim_pct_of_position / 100), 2)
-        if use_conf:
-            reason = f"7-layer confidence {conf_val*100:.0f}% ({conf_data.get('action') or 'N/A'}), regime {h.get('regime') or 'N/A'}"
-        else:
-            reason = f"Score {score:.0f}, regime {h.get('regime') or 'N/A'}"
-        if current_pct > max_position_pct:
-            reason += f"; position {current_pct}% > max {max_position_pct}%"
+        parts = []
+        if has_risk:
+            parts.append(", ".join(reason_text.get(x, x) for x in risk_reasons) or (
+                f"7-layer confidence {conf_val*100:.0f}%" if conf_val is not None else f"Score {score:.0f}"
+            ))
+        if over_limit:
+            parts.append(f"{current_pct}% of portfolio > {max_position_pct}% {risk_appetite} max")
+        accounts = sorted({str(x.get("account")) for x in rows if x.get("account")})
 
         trim_list.append({
             "ticker": ticker,
@@ -470,13 +483,16 @@ def allocation_recommendations(
             "suggest_trim_pct": suggest_trim_pct,
             "suggest_trim_dollars": suggest_trim_dollars,
             "sell_price": sell_price,
-            "reason": reason.strip(),
+            "reason": "; ".join(parts),
+            "risk_reasons": risk_reasons,
+            "over_limit": over_limit,
+            "accounts": accounts,
             "score": score,
             "regime": h.get("regime"),
             "confidence": round(conf_val * 100, 1) if conf_val is not None else None,
             "action": conf_data.get("action") if conf_data else None,
         })
-    trim_list.sort(key=lambda x: ((x.get("confidence") if x.get("confidence") is not None else x["score"] or 0), -x["current_value"]))
+    trim_list.sort(key=lambda x: -x["suggest_trim_dollars"])
 
     # ---- ADD: merge opportunities (dedupe by ticker, prefer higher confidence/score) ----
     portfolio_tickers = {h["ticker"] for h in per_holding}

@@ -22,7 +22,7 @@ export function RiskProfileSelector({
   onChanged,
 }: {
   value?: RiskProfile | null;
-  onChanged?: () => void;
+  onChanged?: (res: { profile: RiskProfile; portfolio_doctor_recommendations?: Record<string, unknown> | null }) => void;
 }) {
   const [pending, setPending] = useState<RiskProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function RiskProfileSelector({
       if (!res.ok || !json.ok) {
         throw new Error(json.detail || "Could not update risk profile");
       }
-      onChanged?.();
+      onChanged?.(json);
     } catch (e) {
       setPending(null);
       setError(e instanceof Error ? e.message : "Could not update risk profile");
