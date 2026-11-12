@@ -358,6 +358,52 @@ def compute_fair_value(
             else None
         )
 
+        # Asset managers with a backtested own-history P/E get a model FV instead of street.
+        if _fv_route and _fv_route.fv_suppressed and fv_result is None and current_price:
+            try:
+                from signals.fv_own_history import (
+                    MAX_STREET_GAP,
+                    OWN_HISTORY_PE_TICKERS,
+                    own_history_pe_fv,
+                )
+
+                _oh = (
+                    own_history_pe_fv(config, ticker)
+                    if ticker.upper() in OWN_HISTORY_PE_TICKERS
+                    else None
+                )
+            except Exception:
+                _oh = None
+            if _oh and (
+                not analyst_target
+                or analyst_target <= 0
+                or abs(_oh["fair_value"] / analyst_target - 1) <= MAX_STREET_GAP
+            ):
+                _ohfv = float(_oh["fair_value"])
+                _method = (
+                    f"Own-history P/E — {_oh['years']}y median {_oh['median_pe']}× "
+                    f"× TTM adj. EPS ${_oh['ttm_eps']:.2f}"
+                )
+                fv_result = FairValueResult(
+                    fair_value=_ohfv,
+                    stock_type="own_history_pe",
+                    method_used=_method,
+                    confidence="Medium",
+                    discount_pct=round((_ohfv - current_price) / current_price * 100, 1),
+                    analyst_target=analyst_target,
+                    notes=[
+                        f"{ticker.upper()} trades at a lasting premium to other asset managers, so its own "
+                        f"P/E history is the yardstick (usual range {_oh['pe_p25']}–{_oh['pe_p75']}× "
+                        f"over {_oh['months']} months)."
+                    ],
+                    bear_case=round(float(_oh["ttm_eps"]) * float(_oh["pe_p25"]), 2),
+                    methodology_summary=_method,
+                    fv_route_method_label="own_history_pe",
+                    fv_model_raw=_ohfv,
+                    fv_source="model",
+                )
+                fair_value = _ohfv
+
         # If suppressed, build a FairValueResult that surfaces the reason instead of a price
         if _fv_route and _fv_route.fv_suppressed and fv_result is None:
             _suppressed_fv = float(analyst_target) if analyst_target and analyst_target > 0 else 0.0
