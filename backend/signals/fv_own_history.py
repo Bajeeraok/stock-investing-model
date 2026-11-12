@@ -46,10 +46,15 @@ def own_history_pe(eps_rows: list[dict[str, Any]], px: pd.Series, *, years: int 
 
 
 def own_history_pe_fv(config: dict, ticker: str, *, years: int = 5) -> dict[str, Any] | None:
-    from signals.fetcher import fetch_ohlcv_safe
+    import yfinance as yf
+
     from signals.fmp_client import fetch_earnings_surprises
 
     rows, err = fetch_earnings_surprises(config, ticker, limit=80)
     if err or not rows:
         return None
-    return own_history_pe(rows, fetch_ohlcv_safe(ticker, "10y"), years=years)
+    # Unadjusted closes: dividend-adjusted history understates past P/E.
+    h = yf.Ticker(ticker).history(period="10y", auto_adjust=False)
+    if h is None or h.empty or "Close" not in h:
+        return None
+    return own_history_pe(rows, h["Close"], years=years)

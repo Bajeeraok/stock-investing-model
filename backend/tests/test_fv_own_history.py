@@ -32,3 +32,4 @@ def test_negative_ttm_eps_returns_none():
 def test_skips_forward_rows_without_actuals():
     rows = _rows() + [{"date": "2026-04-15", "eps_actual": None}]
     assert own_history_pe(rows, _px())["fair_value"] == 800.0
+
