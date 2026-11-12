@@ -84,3 +84,12 @@ def test_attach_writes_per_horizon_without_entry_echo():
     assert horizons["short"]["nearby_sr"]["next_support"]["price"] == 94.0
     assert horizons["medium"]["nearby_sr"]["next_resistance"]["price"] == 104.0
     assert horizons["long"]["nearby_sr"]["next_support"]["price"] == 94.0
+
+
+def test_breakdown_flips_old_low_and_prior_close_to_resistance():
+    closes = [180.0 - i * 0.5 for i in range(20)] + [173.73, 162.66]  # gap down below the 20d low
+    out = pick_nearby_sr(spot=164.6, horizon_key="medium", support_level=148.8, low_52w=148.8, closes=closes)
+    labels = {r["label"]: r["price"] for r in out["resistance_stack"]}
+    assert labels.get("Prior close (gap fill)") == 173.73
+    assert out["next_resistance"]["label"] == "Broken 20d low"
+    assert out["next_support"]["label"] == "52w low"

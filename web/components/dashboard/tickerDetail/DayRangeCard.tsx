@@ -32,6 +32,7 @@ export type DayRangePayload = {
   levels: DayRangeLevel[];
   ladder?: { p: number; dip: number; pop: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
+  reach_calibration?: { sessions: number; tickers: number; cases: number };
   tracked?: {
     days: number;
     since: string | null;
@@ -214,6 +215,11 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
           </>
         )}
         {trackedLine(data)}
+        {data.reach_calibration && (
+          <>
+            Trade-there odds checked against {data.reach_calibration.cases.toLocaleString()} past cases ({data.reach_calibration.tickers} stocks, {data.reach_calibration.sessions} sessions).{" "}
+          </>
+        )}
         Odds, not predictions. Wider around earnings. Doesn't change the signal.
       </p>
     </section>

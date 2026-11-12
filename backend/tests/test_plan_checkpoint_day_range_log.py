@@ -116,3 +116,56 @@ def test_run_after_open_counts_as_gap():
     _, _, _, meta = pin_session_bar("X", c, None, df, now=datetime(2026, 11, 11, 10, 15, tzinfo=ET),
                                     bars_fn=lambda *a: bar)
     assert meta["gap"] and meta["label"] == "10:00 AM ET (gap open)"
+
+
+def _bars(prices, lows=None):
+    idx = pd.date_range("2026-11-12 09:30", periods=len(prices), freq="5min", tz=ET)
+    lows = lows or prices
+    return pd.DataFrame({"Open": prices, "High": prices, "Low": lows, "Close": prices}, index=idx)
+
+
+def test_plan_event_big_move_and_cooldown():
+    from signals.plan_checkpoint import find_plan_event
+
+    now = datetime(2026, 11, 12, 11, 30, tzinfo=ET)
+    px = [100.0] * 12 + [95.0] * 6 + [90.0] * 6  # 10:30 -> -5%, 11:00 -> -10%
+    base = datetime(2026, 11, 12, 10, 0, tzinfo=ET)
+    ev = find_plan_event(_bars(px), now=now, base_time=base, base_px=100.0, sigma=0.04,
+                         stop_for=lambda k: None, base_key="k")
+    assert ev["reason"] == "big move" and ev["close"] == 90.0
+    assert ev["time"].hour == 11 and ev["time"].minute == 5
+    early = find_plan_event(_bars(px), now=datetime(2026, 11, 12, 10, 50, tzinfo=ET), base_time=base,
+                            base_px=100.0, sigma=0.04, stop_for=lambda k: None, base_key="k")
+    assert early["time"].minute == 35 and early["close"] == 95.0
+
+
+def test_plan_event_stop_break_and_quiet_day():
+    from signals.plan_checkpoint import find_plan_event
+
+    now = datetime(2026, 11, 12, 11, 0, tzinfo=ET)
+    px = [100.0] * 18
+    lows = [100.0] * 14 + [97.5] + [100.0] * 3
+    base = datetime(2026, 11, 12, 10, 0, tzinfo=ET)
+    ev = find_plan_event(_bars(px, lows), now=now, base_time=base, base_px=100.0, sigma=0.04,
+                         stop_for=lambda k: 98.0 if k == "k" else None, base_key="k")
+    assert ev["reason"] == "stop break" and ev["low"] == 97.5
+    assert find_plan_event(_bars(px), now=now, base_time=base, base_px=100.0, sigma=0.04,
+                           stop_for=lambda k: None, base_key="k") is None
+
+
+def test_pin_uses_event_rebuild():
+    c, v, df = _long_series_for_event()
+    px = [c.iloc[-2]] * 12 + [c.iloc[-2] * 0.85] * 6
+    c2, _, _, meta = pin_session_bar("X", c, v, df, now=datetime(2026, 11, 12, 11, 0, tzinfo=ET),
+                                     bars_fn=lambda *a: None, session_fn=lambda t, n: _bars(px))
+    assert meta["event"] == "big move" and meta["label"] == "10:35 AM ET (big move)"
+    assert abs(float(c2.iloc[-1]) - c.iloc[-2] * 0.85) < 1e-6
+
+
+def _long_series_for_event():
+    import numpy as np
+
+    idx = pd.bdate_range(end="2026-11-12", periods=40)
+    close = pd.Series(100 * np.exp(0.02 * np.array([(-1) ** i for i in range(40)])), index=idx)
+    df = pd.DataFrame({"close": close, "high": close, "low": close}, index=idx)
+    return close, close * 0 + 1000, df

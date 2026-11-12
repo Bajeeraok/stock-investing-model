@@ -170,6 +170,13 @@ def get_ticker_detail(ticker: str, config: dict, *, allow_stale: bool = True) ->
         pass
     if isinstance(out, dict):
         out["day_range"] = _fresh_day_range(ticker, out)
+        try:
+            from signals.plan_checkpoint import remember_plan_stop
+
+            if not out.get("served_stale"):
+                remember_plan_stop(ticker, out.get("levels_as_of"), (out.get("investor_summary") or {}).get("horizons"))
+        except Exception:
+            pass
     return out
 
 

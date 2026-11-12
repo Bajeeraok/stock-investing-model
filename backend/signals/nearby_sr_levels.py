@@ -132,14 +132,16 @@ def pick_nearby_sr(
         _add(bucket, price=price, label=label, spot=spot, side=side, min_away_pct=min_away)
 
     add(supports, price=swing_low, label=swing_lo_label, side="support")
-    add(supports, price=support_level, label="Named support", side="support")
+    if not (support_level and low_52w and abs(support_level / low_52w - 1) * 100 < _CLUSTER_PCT):
+        add(supports, price=support_level, label="Named support", side="support")
     add(supports, price=ma20, label="MA20", side="support")
     add(supports, price=ma50, label="MA50", side="support")
     add(supports, price=ma200, label="MA200", side="support")
     add(supports, price=low_52w, label="52w low", side="support")
 
     add(resists, price=swing_high, label=swing_hi_label, side="resistance")
-    add(resists, price=resistance_level, label="Named resistance", side="resistance")
+    if not (resistance_level and high_52w and abs(resistance_level / high_52w - 1) * 100 < _CLUSTER_PCT):
+        add(resists, price=resistance_level, label="Named resistance", side="resistance")
     add(resists, price=ma20, label="MA20", side="resistance")
     add(resists, price=ma50, label="MA50", side="resistance")
     add(resists, price=ma200, label="MA200", side="resistance")
@@ -155,6 +157,15 @@ def pick_nearby_sr(
             add(supports, price=px, label=lo_lab if i == 0 else prior_lo, side="support")
         for i, px in enumerate(p_hi[:2]):
             add(resists, price=px, label=hi_lab if i == 0 else prior_hi, side="resistance")
+
+    arr = [float(c) for c in (closes or []) if c is not None]
+    if len(arr) >= 21:
+        # After a breakdown / gap, the old floor and the pre-move close become overhead supply.
+        add(resists, price=min(arr[-21:-1]), label="Broken 20d low", side="resistance")
+        prev, last = arr[-2], arr[-1]
+        if prev > 0 and abs(last / prev - 1) >= 0.03:
+            add(resists if prev > spot else supports, price=prev, label="Prior close (gap fill)",
+                side="resistance" if prev > spot else "support")
 
     supports = _dedupe(supports, spot)
     resists = _dedupe(resists, spot)

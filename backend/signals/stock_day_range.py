@@ -28,6 +28,11 @@ INTRA_K = 0.55
 INTRA_K_LATE = 0.65
 INTRA_REACH_K = 0.57
 SESSION_MIN = 390
+# Intraday reach odds -> observed retouch rate of the day's low/high from 10:30/12:30/2:30/3:30
+# (24 large caps + SPY/QQQ, 59 sessions of 5-min bars, 11,328 cases; both ticker halves agree).
+REACH_CALIBRATION = ((0.0, 0.0), (0.01, 0.02), (0.12, 0.12), (0.29, 0.26), (0.5, 0.42),
+                     (0.7, 0.64), (0.87, 0.84), (0.97, 0.95), (1.0, 0.97))
+REACH_CALIBRATION_N = {"sessions": 59, "tickers": 24, "cases": 11328}
 SCORE_DAYS = 60
 PRE_OPEN_TOUCH = [(0.0, 1.0), (0.25, 0.689), (0.5, 0.529), (0.75, 0.384), (1.0, 0.271),
                   (1.5, 0.129), (2.0, 0.062), (2.5, 0.031), (3.5, 0.01)]
@@ -70,6 +75,22 @@ def _pre_open_move(p: float) -> float:
     return PRE_OPEN_TOUCH[-1][0]
 
 
+def calibrate_reach(p: float) -> float:
+    pts = REACH_CALIBRATION
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if p <= x1:
+            return y0 + (y1 - y0) * (p - x0) / (x1 - x0)
+    return pts[-1][1]
+
+
+def _uncalibrate_reach(q: float) -> float:
+    pts = REACH_CALIBRATION
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if q <= y1:
+            return x0 + (x1 - x0) * (q - y0) / (y1 - y0)
+    return pts[-1][0]
+
+
 def reach_ladder(anchor: float, sig: float, left: float | None) -> list[dict[str, float]]:
     """Dip/pop prices with a given chance of trading before the close (left=None: next session)."""
     out = []
@@ -77,7 +98,7 @@ def reach_ladder(anchor: float, sig: float, left: float | None) -> list[dict[str
         if left is None:
             m = _pre_open_move(p)
         elif left > 0:
-            m = INTRA_REACH_K * math.sqrt(left) * NormalDist().inv_cdf(1 - p / 2)
+            m = INTRA_REACH_K * math.sqrt(left) * NormalDist().inv_cdf(1 - _uncalibrate_reach(p) / 2)
         else:
             continue
         out.append({"p": p, "dip": round(anchor * math.exp(-m * sig), 2), "pop": round(anchor * math.exp(m * sig), 2)})
@@ -180,7 +201,7 @@ def build_day_range(
             d = abs(math.log(p / anchor)) / sig
             rem = INTRA_REACH_K * math.sqrt(max(left, 1e-9))
             # Forward odds from the current price; an earlier touch is reported separately.
-            prob = min(0.99, 2 * (1 - _phi(d / rem))) if left > 0 else 0.0
+            prob = calibrate_reach(min(0.99, 2 * (1 - _phi(d / rem)))) if left > 0 else 0.0
         else:
             prob = min(0.99, _pre_open_touch(abs(math.log(p / anchor)) / sig))
         z = math.log(p / anchor) / sd if sd > 0 else 0.0
@@ -189,6 +210,8 @@ def build_day_range(
                        "p_reach": round(prob, 2), "p_close_beyond": round(p_close, 2), "touched": touched})
     out["levels"] = sorted(lv_out, key=lambda x: -x["price"])
     out["ladder"] = reach_ladder(anchor, sig, left if live else None)
+    if live:
+        out["reach_calibration"] = REACH_CALIBRATION_N
     out["scorecard"] = scorecard(closes, dates)
     return out
 

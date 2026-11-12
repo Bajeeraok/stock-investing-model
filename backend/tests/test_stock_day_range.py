@@ -78,3 +78,13 @@ def test_close_beyond_below_touch_odds():
     r = build_day_range(closes, dates, session=session, levels=[{"label": "b", "price": 99.5}, {"label": "a", "price": 102.5}])
     for lv in r["levels"]:
         assert 0 < lv["p_close_beyond"] < lv["p_reach"]
+
+
+def test_reach_calibration_is_monotone_and_inverts():
+    from signals.stock_day_range import _uncalibrate_reach, calibrate_reach
+
+    xs = [i / 100 for i in range(101)]
+    ys = [calibrate_reach(x) for x in xs]
+    assert all(b >= a for a, b in zip(ys, ys[1:])) and abs(calibrate_reach(0.5) - 0.42) < 1e-9
+    for q in (0.1, 0.25, 0.5, 0.75):
+        assert abs(calibrate_reach(_uncalibrate_reach(q)) - q) < 1e-9
