@@ -56,8 +56,17 @@ function shortDate(iso: string | null | undefined): string {
 }
 
 /** The one plain sentence — derived from the same light/title the header badge shows. */
-export function plainVerdictSentence(light: Light, title: string, entryMode: string | null | undefined, held: boolean): string {
+export function plainVerdictSentence(
+  light: Light,
+  title: string,
+  entryMode: string | null | undefined,
+  held: boolean,
+  aboveBand = false,
+): string {
   const t = title.toUpperCase();
+  if (light === "green" && aboveBand) {
+    return held ? "Hold. Add only if price drops into the band." : "Wait for the band. Don't buy at today's price.";
+  }
   if (light === "green") {
     if (entryMode === "starter_only") return held ? "Add a starter slice only." : "Starter size only. Don't go full size.";
     return held ? "Add in stages. The setup is green." : "Buy in stages. The setup is green.";
@@ -399,7 +408,7 @@ export function VerdictPanel({
           {actionStatus.title}
         </p>
         <h3 className="mt-2 text-xl sm:text-2xl font-semibold text-td-text leading-tight text-balance">
-          {plainVerdictSentence(actionStatus.light, actionStatus.title, ra?.entry_mode, held)}
+          {plainVerdictSentence(actionStatus.light, actionStatus.title, ra?.entry_mode, held, hasBand && price != null && price > ez!.high)}
         </h3>
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           {alertLevel != null && price != null && (

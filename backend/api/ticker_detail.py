@@ -885,6 +885,8 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
                 entry_mode=(inv.get("retail_action") or {}).get("entry_mode"),
                 protect_mode=inv.get("protect_mode"),
                 horizons=inv.get("horizons"),
+                max_sizing_pct=(inv.get("retail_action") or {}).get("max_sizing_pct"),
+                full_go_via=(inv.get("retail_action") or {}).get("full_go_via"),
             )
         except Exception as exc:
             logger.debug("position_advice for %s: %s", ticker, exc)

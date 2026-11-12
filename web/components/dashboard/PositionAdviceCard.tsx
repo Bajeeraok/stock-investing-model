@@ -17,6 +17,7 @@ export interface PositionAdvicePayload {
   accounts: { account: string; shares: number; value: number }[];
   buy: {
     allowed: boolean;
+    at_band_only?: boolean;
     shares: number;
     dollars: number;
     new_weight_pct: number;
@@ -64,16 +65,16 @@ export function PositionAdviceCard({ data }: { data?: PositionAdvicePayload | nu
         )}
       </p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <div className={clsx("rounded-md border px-2.5 py-1.5", buy.allowed ? "border-td-accent/35 bg-td-accent/5" : "border-td-crit/30 bg-td-crit/5")}>
+        <div className={clsx("rounded-md border px-2.5 py-1.5", buy.at_band_only ? "border-td-warn/35 bg-td-warn/5" : buy.allowed ? "border-td-accent/35 bg-td-accent/5" : "border-td-crit/30 bg-td-crit/5")}>
           <div className="flex items-center justify-between gap-2">
             <p className="text-[13px] font-semibold text-td-text">Buy side</p>
-            <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide", buy.allowed ? "bg-td-accent/15 text-td-accent" : "bg-td-crit/15 text-td-crit")}>
-              {buy.allowed ? "Can add" : "Locked"}
+            <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide", buy.at_band_only ? "bg-td-warn/15 text-td-warn" : buy.allowed ? "bg-td-accent/15 text-td-accent" : "bg-td-crit/15 text-td-crit")}>
+              {buy.at_band_only ? "At band only" : buy.allowed ? "Can add" : "Locked"}
             </span>
           </div>
           {buy.allowed ? (
             <p className="text-sm text-td-text tabular-nums">
-              Up to <span className="font-mono">{buy.shares}</span> shares ({usd(buy.dollars)}) → {buy.new_weight_pct.toFixed(1)}% of book
+              {buy.at_band_only ? "In the band, up to " : "Up to "}<span className="font-mono">{buy.shares}</span> shares ({usd(buy.dollars)}) → {buy.new_weight_pct.toFixed(1)}% of book
             </p>
           ) : (
             <p className="text-sm text-td-text">No add now</p>

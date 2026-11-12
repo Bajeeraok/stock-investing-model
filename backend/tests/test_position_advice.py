@@ -55,3 +55,16 @@ def test_starter_and_protect_mode():
     assert a["buy"]["shares"] == int((20_000 - 2_000) * 0.25 // 200)
     pm = [o for o in a["sell"]["options"] if o["reason"] == "protect_mode"][0]
     assert pm["shares"] == 5
+
+
+def test_full_go_override_above_band_is_capped_and_band_only():
+    a = build_position_advice(
+        ticker="BAC", price=50.55, total_value=100_000, holding=None, risk_profile="conservative",
+        entry_mode="full_go", max_sizing_pct=50, full_go_via="market_regime_override",
+        horizons={"medium": {"stop_loss": 46.73, "entry_zone": {"low": 49.71, "high": 50.47}}},
+    )
+    b = a["buy"]
+    full = int(min(15_000, 1_000 / (50.55 - 46.73) * 50.55) // 50.55)
+    assert abs(b["shares"] - full // 2) <= 1
+    assert b["at_band_only"] and "All gates clear" not in b["note"]
+    assert "Trend weather" in b["note"] and "$49.71–$50.47" in b["note"]

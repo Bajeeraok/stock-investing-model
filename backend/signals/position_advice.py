@@ -62,6 +62,8 @@ def build_position_advice(
     entry_mode: str | None = None,
     protect_mode: dict | None = None,
     horizons: dict | None = None,
+    max_sizing_pct: float | None = None,
+    full_go_via: str | None = None,
 ) -> dict[str, Any] | None:
     p = _f(price)
     tv = _f(total_value)
@@ -87,9 +89,24 @@ def build_position_advice(
         risk_cap = (tv * risk_pct / 100.0) / (p - stop) * p
     full_add = min(room, risk_cap) if risk_cap is not None else room
     mode = str(entry_mode or "").lower()
+    ez = med.get("entry_zone") if isinstance(med.get("entry_zone"), dict) else {}
+    band_lo, band_hi = _f(ez.get("low")), _f(ez.get("high"))
+    above_band = bool(band_hi and p > band_hi * 1.0005)
+    band_txt = f"${band_lo:,.2f}–${band_hi:,.2f}" if band_lo and band_hi else "the entry band"
+    size_pct = _f(max_sizing_pct)
     if mode == "full_go":
-        allowed = full_add
-        buy_note = "All gates clear: build in 3 tranches inside the entry band."
+        allowed = full_add * (min(100.0, size_pct) / 100.0 if size_pct else 1.0)
+        if full_go_via == "market_regime_override":
+            buy_note = "Only Trend weather is blocked and the wider market is bull, so adds are open."
+        else:
+            buy_note = "All gates clear."
+        if size_pct and size_pct < 100:
+            buy_note += f" Size capped at ~{size_pct:.0f}% (fair value is Wall St's, not the model's)."
+        buy_note += (
+            f" Price is above the Swing band: build in 3 tranches only inside {band_txt}, nothing at today's price."
+            if above_band
+            else f" Build in 3 tranches inside {band_txt}."
+        )
     elif mode == "starter_only":
         allowed = full_add * STARTER_FRACTION
         buy_note = "Starter only: one small tranche now; the rest waits for all gates."
@@ -111,6 +128,9 @@ def build_position_advice(
             tranches.append({"tranche": i + 1, "shares": n, "dollars": round(n * p, 2)})
     buy = {
         "allowed": add_shares > 0,
+        "at_band_only": add_shares > 0 and mode == "full_go" and above_band,
+        "band_low": band_lo,
+        "band_high": band_hi,
         "shares": add_shares,
         "dollars": round(add_shares * p, 2),
         "new_weight_pct": round(100.0 * (value + add_shares * p) / (tv + 0.0), 2),
@@ -182,6 +202,8 @@ def position_advice_from_cache(
     entry_mode: str | None = None,
     protect_mode: dict | None = None,
     horizons: dict | None = None,
+    max_sizing_pct: float | None = None,
+    full_go_via: str | None = None,
 ) -> dict[str, Any] | None:
     try:
         from config_loader import get_risk_profile
@@ -207,4 +229,6 @@ def position_advice_from_cache(
         entry_mode=entry_mode,
         protect_mode=protect_mode,
         horizons=horizons,
+        max_sizing_pct=max_sizing_pct,
+        full_go_via=full_go_via,
     )
