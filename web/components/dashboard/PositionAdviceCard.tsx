@@ -18,6 +18,8 @@ export interface PositionAdvicePayload {
   buy: {
     allowed: boolean;
     at_band_only?: boolean;
+    band_low?: number | null;
+    band_high?: number | null;
     shares: number;
     dollars: number;
     new_weight_pct: number;
@@ -37,9 +39,20 @@ export interface PositionAdvicePayload {
 const usd = (n: number) => `$${Math.round(n).toLocaleString()}`;
 
 /** Buy-side and sell-side sizing from the user's real holdings (all accounts summed). */
-export function PositionAdviceCard({ data }: { data?: PositionAdvicePayload | null }) {
+export function PositionAdviceCard({ data, price }: { data?: PositionAdvicePayload | null; price?: number | null }) {
   if (!data) return null;
-  const { buy, sell } = data;
+  const { sell } = data;
+  // Advice is built at the plan checkpoint price; judge "above the band" with the live price.
+  const liveAbove =
+    data.entry_mode === "full_go" && data.buy.allowed && data.buy.band_high != null && price != null && price > data.buy.band_high * 1.0005;
+  const buy = {
+    ...data.buy,
+    at_band_only: !!data.buy.at_band_only || liveAbove,
+    note:
+      liveAbove && !data.buy.at_band_only
+        ? `${data.buy.note} Price is above the band now, so nothing at today's price.`
+        : data.buy.note,
+  };
   return (
     <div className="rounded-lg border border-td-info/25 bg-td-info/5 px-3 py-2 space-y-2">
       <div className="flex items-center gap-2">

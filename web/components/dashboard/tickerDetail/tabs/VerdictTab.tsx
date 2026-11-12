@@ -92,7 +92,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
   )}
   <DayRangeCard data={detail.day_range} price={effectivePrice} />
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
-  <PositionAdviceCard data={detail.position_advice} />
+  <PositionAdviceCard data={detail.position_advice} price={effectivePrice} />
   <SecondOpinionsCard data={detail.second_opinions} actionStatus={headerActionStatus} />
 
   {confidence && playbookStage3 && (
