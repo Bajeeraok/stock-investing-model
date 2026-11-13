@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
+# A volume mounted at DATA_ROOT can hide /app/data; keep the S&P 500 membership list outside it.
+RUN mkdir -p /app/seed && cp -r /app/data/universe /app/seed/universe
 
 # Railway sets PORT at runtime; fallback 8002 for local
 EXPOSE 8002

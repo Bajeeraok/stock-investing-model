@@ -127,8 +127,20 @@ def save_membership(df: pd.DataFrame, path: str | Path | None = None) -> Path:
     return p
 
 
+def membership_csv_path() -> Path:
+    """First existing copy: repo/image ``data/universe``, then DATA_ROOT, then the image seed copy."""
+    candidates = [DEFAULT_MEMBERSHIP_CSV, BACKEND_ROOT / "seed" / "universe" / "sp500_membership.csv"]
+    try:
+        from config_loader import get_data_root
+
+        candidates.insert(1, get_data_root() / "universe" / "sp500_membership.csv")
+    except Exception:
+        pass
+    return next((c for c in candidates if c.is_file()), DEFAULT_MEMBERSHIP_CSV)
+
+
 def load_membership(path: str | Path | None = None) -> pd.DataFrame:
-    d = pd.read_csv(Path(path or DEFAULT_MEMBERSHIP_CSV), dtype={"sector": str}, keep_default_na=False)
+    d = pd.read_csv(Path(path or membership_csv_path()), dtype={"sector": str}, keep_default_na=False)
     d["start_date"] = pd.to_datetime(d["start_date"])
     d["end_date"] = pd.to_datetime(d["end_date"].replace("", None))
     return d
