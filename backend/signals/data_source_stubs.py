@@ -7,7 +7,7 @@ from __future__ import annotations
 
 
 def get_tradingeconomics_calendar(config: dict, days: int = 7) -> tuple[list, str | None]:
-    """TradingEconomics economic calendar. Placeholder – add api_key to config."""
+    """TradingEconomics economic calendar. Unused: the app's calendar is signals.us_econ_calendar (FMP + Fed + TreasuryDirect)."""
     api_key = config.get("data", {}).get("tradingeconomics_api_key")
     if not api_key:
         return [], "No TradingEconomics API key (add data.tradingeconomics_api_key)"

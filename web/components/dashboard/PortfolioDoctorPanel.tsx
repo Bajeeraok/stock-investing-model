@@ -79,6 +79,48 @@ interface FactorExposure {
   per_holding?: { ticker: string; weight_pct: number; factors: Record<string, number> }[];
   dominant_factor?: string | null;
   note?: string | null;
+  ff_betas?: FfBetas;
+}
+interface FfBetas {
+  book_betas?: Record<string, number>;
+  labels?: Record<string, string>;
+  r2?: number | null;
+  alpha_ann_pct?: number | null;
+  through?: string | null;
+  flags?: string[];
+  note?: string | null;
+}
+
+function FfBetasCard({ ff }: { ff: FfBetas }) {
+  if (!ff.book_betas) return null;
+  return (
+    <div className="rounded-xl border border-slate-700/60 bg-slate-800/40 p-5">
+      <h4 className="text-[13px] font-bold text-slate-300 uppercase tracking-wider mb-1">Factor Risk (Fama–French)</h4>
+      <p className="text-[13px] text-slate-500 mb-3">
+        What the book moves with, from daily returns through {ff.through ?? "—"}
+        {ff.r2 != null && <> · factors explain {Math.round(ff.r2 * 100)}% of daily moves</>}
+      </p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {Object.entries(ff.book_betas).map(([k, b]) => {
+          const strong = k === "Mkt-RF" ? Math.abs(b - 1) >= 0.25 : Math.abs(b) >= 0.3;
+          return (
+            <div key={k} className="rounded-lg bg-slate-900/40 px-3 py-2">
+              <p className="text-[12px] text-slate-400">{ff.labels?.[k] ?? k}</p>
+              <p className={`text-[15px] font-semibold tabular-nums ${strong ? "text-amber-400" : "text-slate-200"}`}>
+                {b > 0 && k !== "Mkt-RF" ? "+" : ""}{b.toFixed(2)}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      {!!ff.flags?.length && (
+        <ul className="mt-3 space-y-1 text-[13px] text-amber-300">
+          {ff.flags.map((f) => <li key={f}>• {f}</li>)}
+        </ul>
+      )}
+      {ff.note && <p className="mt-3 text-[12px] text-slate-500 italic">{ff.note}</p>}
+    </div>
+  );
 }
 
 export interface PortfolioDoctorV2Data {
@@ -978,6 +1020,8 @@ export default function PortfolioDoctorPanel({
           )}
         </div>
       )}
+
+      {factor_exposure?.ff_betas?.book_betas && <FfBetasCard ff={factor_exposure.ff_betas} />}
 
       {/* ── LIQUIDITY ── */}
       {liquidity?.items && liquidity.items.length > 0 && liquidity.items.some(i => i.days_to_exit != null) && (

@@ -2004,19 +2004,13 @@ def _compute_full_dashboard_sync() -> dict:
     def _task_economic_calendar():
         try:
             from signals.cache import cached_economic_calendar
-            def _fetch_cal():
-                ev, _ = fetch_economic_calendar(config, 7)
-                return [e for e in (ev or [])[:30] if isinstance(e, dict)] if ev else []
-            cal = cached_economic_calendar(7, _fetch_cal) or []
+            from signals.us_econ_calendar import build_us_calendar
+
+            cal = cached_economic_calendar(-7, lambda: build_us_calendar(config, 7)) or []
             return ("economic_calendar", cal)
-        except Exception:
-            try:
-                events, _ = fetch_economic_calendar(config, 7)
-                cal = [e for e in events[:30] if isinstance(e, dict)] if events and isinstance(events, list) else []
-                return ("economic_calendar", cal)
-            except Exception as e:
-                logger.debug("economic_calendar failed: %s", e)
-                return ("economic_calendar", [])
+        except Exception as e:
+            logger.debug("economic_calendar failed: %s", e)
+            return ("economic_calendar", [])
 
     def _task_real_yield():
         try:
@@ -2516,6 +2510,11 @@ def _compute_full_dashboard_sync() -> dict:
                     factor_exposure = compute_factor_exposure(_pd_ph, _pd_tv, config)
                 except Exception as e:
                     logger.debug("factor_exposure: %s", e)
+                try:
+                    from portfolio.ff_factor_betas import compute_ff_betas
+                    factor_exposure["ff_betas"] = compute_ff_betas(_pd_ph)
+                except Exception as e:
+                    logger.debug("ff_betas: %s", e)
 
                 portfolio_doctor_v2 = {
                     "health": health,
