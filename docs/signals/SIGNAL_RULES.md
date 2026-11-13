@@ -113,9 +113,18 @@ out-of-sample trades:
 - Highlight rules never change BUY/HOLD/SELL. One becomes a gate only after an out-of-sample backtest and the owner's OK.
 - Wall St fallback fair values never count as the model's value for "rich vs value".
 - A hit is "new" on the first ET day it appears; a rule that stops hitting starts fresh.
+- Lynch "story changed" counts only real story events. A plan rebuild after a price move (`HORIZON SHIFT`) never counts.
+- On a ticker's Verdict tab, the margin-of-safety and quality-dip hits use that tab's own valuation gate (mode and entry
+  tier), not the list-view LT-band shortcut.
+- Model fair value stability (`backend/signals/fv_stability.py`): a move of more than 15% from the last accepted value is
+  held back unless TTM or forward EPS moved more than 3%, or the new value repeats (within 5%) on a later day.
 
 ## Switched-off signals
 
+- **Deep-dip starter exception** (Trend weather failing, 25%+ off the high, 15%+ below the 200-day; buy at RSI < 30 or
+  when RSI crosses back above 30; 60-day hold, 10 bps cost, S&P 500 2006–now): every version with a stop (15% or 25%)
+  failed the bar (no better than a random pick on the same days, 94–95% overfitting odds). The no-stop versions break
+  the stop-before-entry rule and fell 66–80% as strategies. `starter_only` stays off.
 - **Velocity / tactical breakout** (RVOL ≥ 2× or upper Bollinger band): 2014–26 S&P 500 backtest, 5-day hold —
   no better than holding the stock; with its stop/target, average ≈ 0% and 65% losers. Live paper: −5.2% over 74.
   Shown as context only: no entry/target/stop, alert, paper trade or Hunter slot (`velocity_tactical.actionable`).

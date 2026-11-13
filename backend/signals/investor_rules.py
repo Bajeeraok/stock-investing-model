@@ -131,7 +131,10 @@ def _hit_distribution(r: Row) -> str | None:
 
 def _hit_story_change(r: Row) -> str | None:
     s = r.get("story_change")
-    return str(s).replace("HORIZON SHIFT: ", "Plan changed: ") if s else None
+    # A plan rebuild after a price move (HORIZON SHIFT) is not a business story change.
+    if not s or str(s).startswith("HORIZON SHIFT") or r.get("story_change_source") == "horizon":
+        return None
+    return str(s)
 
 
 def _hit_sec_8k(r: Row) -> str | None:

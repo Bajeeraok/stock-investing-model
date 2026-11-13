@@ -244,7 +244,14 @@ export function InvestorRulesPanel({ onTickerClick }: { onTickerClick?: (t: stri
 }
 
 /** Compact "Investor rules hit" line for a ticker's Verdict tab. */
-export function TickerInvestorRules({ ticker }: { ticker: string }) {
+export function TickerInvestorRules({
+  ticker,
+  valuationGate,
+}: {
+  ticker: string;
+  /** The Verdict tab's own valuation gate (mode + entry tier aware); overrides the list-view proxy. */
+  valuationGate?: { pass: boolean; detail: string } | null;
+}) {
   const [hits, setHits] = useState<TickerRuleHit[] | null>(null);
   useEffect(() => {
     let alive = true;
@@ -256,7 +263,13 @@ export function TickerInvestorRules({ ticker }: { ticker: string }) {
       alive = false;
     };
   }, [ticker]);
-  if (!hits?.length) return null;
+  const shown = (hits ?? []).flatMap((h) => {
+    if (!valuationGate || (h.id !== "margin_of_safety" && h.id !== "quality_dip")) return [h];
+    if (!valuationGate.pass) return [];
+    if (h.id === "margin_of_safety") return [{ ...h, detail: valuationGate.detail || h.detail }];
+    return [h];
+  });
+  if (!shown.length) return null;
   return (
     <div className="rounded-lg border border-td-line bg-td-surface px-3 py-2 space-y-1.5">
       <div className="flex items-center gap-2">
@@ -264,7 +277,7 @@ export function TickerInvestorRules({ ticker }: { ticker: string }) {
         <p className="text-[13px] font-semibold uppercase tracking-wide text-td-text">Investor rules hit</p>
       </div>
       <ul className="space-y-1">
-        {hits.map((h) => (
+        {shown.map((h) => (
           <li key={h.id} className="text-[13px] leading-snug">
             <span className={clsx("font-semibold", GROUP_TONE[h.group])}>{h.rule}</span>{" "}
             <span className="text-td-muted">
