@@ -763,6 +763,16 @@ def compute_signal_warm_sync(
         "warm_kind": warm_kind,
     })
 
+    try:
+        from signals.cache import cached_economic_calendar
+        from signals.us_econ_calendar import build_us_calendar
+
+        cal = cached_economic_calendar(-7, lambda: build_us_calendar(config, 7))
+        if isinstance(cal, list):
+            merged["economic_calendar"] = cal
+    except Exception as e:
+        logger.debug("[dashboard-warm] economic_calendar: %s", e)
+
     set_cached_dashboard(merged)
     _write_panel_caches(config, results, as_of_date)
 
