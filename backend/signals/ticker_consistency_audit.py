@@ -8,6 +8,7 @@ deterministic so the same bug is caught every run; new bugs become new rules.
 from __future__ import annotations
 
 import json
+import os
 import logging
 import math
 import threading
@@ -467,6 +468,53 @@ def rule_fair_value(d: dict, c: _Collector, row: dict | None) -> None:
         c.add("fair_value_invalid", "error", f"Fair value ${fv}")
     elif p and (fv > p * 5 or fv < p * 0.2):
         c.add("fair_value_implausible", "warn", f"Fair value ${fv:.2f} vs price ${p:.2f}", fair_value=fv, price=p)
+    if row is None:
+        return
+    lfv = _f(row.get("lt_fair_value_mid"))
+    if lfv and fv > 0 and abs(_pct(lfv, fv)) > FV_JUMP_PCT:
+        c.add("list_vs_detail_fair_value", "warn", f"Signals list fair value ${lfv:.2f} vs page ${fv:.2f}",
+              list=lfv, detail=fv)
+    lg = next((g for g in ((row.get("retail_status") or {}).get("gates") or [])
+               if isinstance(g, dict) and g.get("id") == "valuation"), None)
+    dg = next((g for g in (_retail(d).get("gates") or []) if isinstance(g, dict) and g.get("id") == "valuation"), None)
+    if lg and dg and bool(lg.get("pass")) != bool(dg.get("pass")):
+        c.add("list_vs_detail_valuation_gate", "error",
+              f"Valuation gate: Signals list {'passes' if lg.get('pass') else 'fails'}, "
+              f"page {'passes' if dg.get('pass') else 'fails'}", list=lg.get("detail"), detail=dg.get("detail"))
+
+
+FV_JUMP_PCT = 15.0
+FV_EPS_CHANGE_PCT = 3.0
+
+
+def fair_value_inputs(detail: dict) -> dict | None:
+    inv = detail.get("investor_summary") or {}
+    fv = _f(inv.get("fair_value"))
+    if not fv or fv <= 0:
+        return None
+    meta = inv.get("fair_value_metadata") or {}
+    return {"fv": fv, "ttm_eps": _f(meta.get("ttm_eps")), "forward_eps": _f(meta.get("forward_eps"))}
+
+
+def fair_value_jumps(prev: dict, cur: dict) -> list[dict[str, Any]]:
+    """Day-over-day fair value moves over FV_JUMP_PCT while reported EPS stayed put."""
+    out = []
+    for t, c in cur.items():
+        p = prev.get(t)
+        if not p or not p.get("fv") or not c.get("fv"):
+            continue
+        move = _pct(c["fv"], p["fv"])
+        if abs(move) <= FV_JUMP_PCT:
+            continue
+        eps_moved = any(
+            c.get(k) is not None and p.get(k) and abs(_pct(c[k], p[k])) > FV_EPS_CHANGE_PCT
+            for k in ("ttm_eps", "forward_eps")
+        )
+        if not eps_moved:
+            out.append({"ticker": t, "rule": "fair_value_jump", "severity": "error",
+                        "message": f"Fair value ${p['fv']:.2f} -> ${c['fv']:.2f} ({move:+.0f}%) with no EPS change",
+                        "values": {"prev": p["fv"], "now": c["fv"], "move_pct": round(move, 1)}})
+    return out
 
 
 def rule_earnings_calendar(d: dict, c: _Collector, row: dict | None, today: date | None = None) -> None:
@@ -704,6 +752,81 @@ def load_latest_report() -> dict | None:
         return None
 
 
+def latest_eod_date() -> str | None:
+    try:
+        from signals.cache import build_eod_snapshot_index
+
+        snaps = build_eod_snapshot_index()
+        return str(snaps[0]["date"]) if snaps else None
+    except Exception:
+        return None
+
+
+def report_eod_date(report: dict | None) -> str | None:
+    if not report:
+        return None
+    if report.get("eod_date"):
+        return str(report["eod_date"])
+    try:  # older reports: the ET date the audit finished
+        from zoneinfo import ZoneInfo
+
+        return datetime.fromisoformat(str(report["generated_at"])).astimezone(ZoneInfo("America/New_York")).date().isoformat()
+    except Exception:
+        return None
+
+
+def audit_missing(report: dict | None, eod: str | None) -> bool:
+    done = report_eod_date(report)
+    return bool(eod) and (done is None or done < eod)
+
+
+def catch_up_if_missing() -> bool:
+    """After a restart: tonight's EOD snapshot exists but its audit (and Best setups) never finished."""
+    if _RUN_LOCK.locked() or not audit_missing(load_latest_report(), latest_eod_date()):
+        return False
+    logger.info("[ticker-audit] catch-up: audit for latest EOD missing")
+    return start_background_audit()
+
+
+MAX_ALERT_TICKERS = 8
+
+
+def error_alert_text(report: dict) -> tuple[str, str] | None:
+    errs = [f for f in report.get("findings") or [] if f.get("severity") == "error"]
+    if not errs:
+        return None
+    tickers = sorted({str(f.get("ticker")) for f in errs})
+    rules: dict[str, int] = {}
+    for f in errs:
+        rules[f["rule"]] = rules.get(f["rule"], 0) + 1
+    top = ", ".join(f"{k} {v}" for k, v in sorted(rules.items(), key=lambda kv: -kv[1])[:3])
+    names = ", ".join(tickers[:MAX_ALERT_TICKERS]) + (f" +{len(tickers) - MAX_ALERT_TICKERS} more" if len(tickers) > MAX_ALERT_TICKERS else "")
+    return f"Model audit: {len(errs)} errors on {len(tickers)} tickers", f"{names}. Top: {top}. See Analysis → Ticker audit."
+
+
+def publish_error_alert(report: dict) -> bool:
+    txt = error_alert_text(report)
+    if txt is None or "PYTEST_CURRENT_TEST" in os.environ:
+        return False
+    title, msg = txt
+    day = report.get("eod_date") or date.today().isoformat()
+    try:
+        from alerts.events import AlertEvent, AlertEventStore
+        from config_loader import get_data_root
+
+        AlertEventStore(get_data_root()).append_events([AlertEvent.create(
+            ticker="MODEL", alert_type="model_audit", severity="warning", title=title, message=msg,
+            payload={"counts": report.get("counts"), "eod_date": day}, dedupe_key=f"model_audit:{day}",
+        )])
+        from api.routers.push import broadcast_web_push
+
+        broadcast_web_push(title, msg, "/")
+        return True
+    except Exception:
+        logger.exception("[ticker-audit] error alert failed")
+        return False
+
+
 def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict | None = None) -> dict | None:
     if not _RUN_LOCK.acquire(blocking=False):
         logger.info("[ticker-audit] already running")
@@ -713,6 +836,7 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
         from config_loader import load_config
 
         config = config or load_config()
+        eod_date = latest_eod_date()
         rows: dict[str, dict] = {}
         full_universe = tickers is None
         if tickers is None:
@@ -747,13 +871,20 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
             except Exception as exc:
                 findings.append({"ticker": t, "rule": "track_unavailable", "severity": "info",
                                  "message": f"Track check skipped: {str(exc)[:120]}", "values": {}})
+        fvs = {str(dt.get("ticker") or "").upper(): fv for dt in details if (fv := fair_value_inputs(dt))}
+        prev = load_latest_report() or {}
+        findings.extend(fair_value_jumps(prev.get("fair_values") or {}, fvs))
         report = summarize(findings, list(tickers))
         report["duration_s"] = round(time.time() - t0, 1)
+        report["fair_values"] = fvs if full_universe else {**(prev.get("fair_values") or {}), **fvs}
+        report["eod_date"] = eod_date
         p = _report_path()
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(report, default=str))
         (p.parent / f"ticker_consistency_{date.today().isoformat()}.json").write_text(json.dumps(report, default=str))
         logger.info("[ticker-audit] %d tickers, %s in %.0fs", len(tickers), report["counts"], report["duration_s"])
+        if full_universe:
+            publish_error_alert(report)
         if full_universe:  # a spot-check of a few tickers must not replace the full Best setups list
             try:
                 from signals.best_setups import build_report, publish_new_picks, save_report

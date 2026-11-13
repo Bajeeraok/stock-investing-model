@@ -290,6 +290,12 @@ def startup():
             logger.info("[startup] stale EOD session catch-up queued=%s (delay=%.0fs)", queued, delay_s)
         except Exception as e:
             logger.warning("[startup] EOD catch-up failed: %s", e)
+        try:
+            from signals.ticker_consistency_audit import catch_up_if_missing
+
+            logger.info("[startup] ticker audit catch-up queued=%s", catch_up_if_missing())
+        except Exception as e:
+            logger.warning("[startup] ticker audit catch-up failed: %s", e)
 
     threading.Thread(target=_startup_eod_catchup, name="eod-catchup", daemon=True).start()
     try:
