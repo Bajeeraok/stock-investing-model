@@ -79,7 +79,7 @@ class SafeJSONResponse(JSONResponse):
         ).encode("utf-8")
 
 logger.info("Backend: importing dashboard router...")
-from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2, push, income_book, dev_tools, article_ingest, alpha
+from api.routers import dashboard, chat, alerts, scanner, signal_diagnostics, thrive_phase2, push, income_book, dev_tools, article_ingest, alpha, investor_rules
 from api import eod_scheduler
 
 logger.info("Backend: imports complete.")
@@ -148,6 +148,7 @@ app.include_router(signal_diagnostics.router, prefix="/api", tags=["signal-diagn
 app.include_router(push.router, prefix="/api", tags=["push"])
 app.include_router(article_ingest.router, prefix="/api", tags=["ingest"])
 app.include_router(alpha.router, prefix="/api", tags=["alpha"])
+app.include_router(investor_rules.router, prefix="/api", tags=["investor-rules"])
 
 
 def _warm_dashboard_background():

@@ -78,6 +78,16 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
   target 3× ATR: average +0.31→+0.45% (2014–19), +0.43→+0.63% (2020–26), losers 57→53%, average gain still above
   average loss. Wider stops (2.5–3×) without a wider target made the average loss bigger than the average gain.
 
+## Investor rulebook (Plan · Investor rules)
+
+- `backend/signals/investor_rules.py` lists rules from well-known investors (Graham/Buffett, Lynch, Templeton, Paul Tudor
+  Jones, Druckenmiller, O'Neil/Minervini, Dalio, Marks, Bogle, Swensen) with live hits on the signals-panel tickers and
+  market events (VIX, SPY vs 200-day, 2s10s curve, high-yield spread). `GET /api/investor-rules[?ticker=]`.
+- Each rule is tagged `in_model` (already a gate, stop or cap), `highlight` (flag only) or `habit` (process).
+- Highlight rules never change BUY/HOLD/SELL. One becomes a gate only after an out-of-sample backtest and the owner's OK.
+- Wall St fallback fair values never count as the model's value for "rich vs value".
+- A hit is "new" on the first ET day it appears; a rule that stops hitting starts fresh.
+
 ## Switched-off signals
 
 - **Velocity / tactical breakout** (RVOL ≥ 2× or upper Bollinger band): 2014–26 S&P 500 backtest, 5-day hold —

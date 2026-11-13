@@ -1,6 +1,7 @@
 "use client";
 
 import { ModelCheckPanel } from "./dashboard/ModelCheckPanel";
+import { InvestorRulesPanel } from "./dashboard/InvestorRulesPanel";
 import { BestSetupsPanel, BestSetupsTodayCard, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -210,7 +211,7 @@ function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "
   else window.history.replaceState(state, "", url);
 }
 
-type PlanSub = "income" | "opportunities";
+type PlanSub = "income" | "opportunities" | "rules";
 type MoreSub = "markets" | "portfolio" | "model" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
 const MORE_SUB_KEY = "thrive-more-sub";
@@ -361,7 +362,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       saved = localStorage.getItem("thrive-tab");
       urlTab = new URLSearchParams(window.location.search).get("tab");
       const ps = localStorage.getItem(PLAN_SUB_KEY);
-      if (ps === "income" || ps === "opportunities") setPlanSub(ps);
+      if (ps === "income" || ps === "opportunities" || ps === "rules") setPlanSub(ps);
       else if (ps === "setups") setPlanSub("opportunities");
       const ms = localStorage.getItem(MORE_SUB_KEY);
       if (ms === "markets" || ms === "portfolio" || ms === "model" || ms === "admin") setMoreSub(ms);
@@ -1356,8 +1357,10 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 options={[
                   { id: "income", label: "Income sleeve" },
                   { id: "opportunities", label: "Opportunities", badge: oppCountForBadge },
+                  { id: "rules", label: "Investor rules" },
                 ]}
               />
+              {planSub === "rules" && <InvestorRulesPanel onTickerClick={openTickerDetail} />}
               {planSub === "income" && (
                 <div className="space-y-4">
                   <IncomeBookPanel onTickerClick={openTickerDetail} />
