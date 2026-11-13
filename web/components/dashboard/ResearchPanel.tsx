@@ -482,6 +482,13 @@ function History({ onLoad }: { onLoad: (r: RunRow) => void }) {
     if (!res.ok) setErr((await res.json().catch(() => ({}))).detail || `Error ${res.status}`);
     load();
   };
+  const remove = async (r: RunRow) => {
+    if (!window.confirm(`Delete "${r.label || r.rule_text}"? It stops showing on Best setups and in alerts, but still counts as a try of this idea.`)) return;
+    setErr("");
+    const res = await fetch(apiUrl(`/api/research/runs/${r.id}`), { method: "DELETE" });
+    if (!res.ok) setErr((await res.json().catch(() => ({}))).detail || `Error ${res.status}`);
+    load();
+  };
   if (!runs) return <p className="text-[13px] text-td-muted">Loading…</p>;
   if (!runs.length) return <p className="text-[13px] text-td-muted">No tests yet. Every rule test is saved here, and each retry of the same idea counts as another try.</p>;
   return (
@@ -507,6 +514,7 @@ function History({ onLoad }: { onLoad: (r: RunRow) => void }) {
                 {(r.promotion?.passes || r.approved) && (
                   <button className={clsx("ml-2 hover:underline", r.approved ? "text-emerald-400" : "text-td-accent")} onClick={() => toggle(r)}>{r.approved ? "Approved ✓ (undo)" : "Approve for Best setups"}</button>
                 )}
+                <button className="ml-2 text-td-muted hover:text-red-400 hover:underline" onClick={() => remove(r)}>Delete</button>
               </td>
             </tr>
           ))}</tbody>

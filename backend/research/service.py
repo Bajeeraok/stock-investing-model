@@ -70,22 +70,46 @@ def _log_path():
     return panel_dir() / "runs.jsonl"
 
 
-def read_runs(limit: int | None = None) -> list[dict]:
+def _deleted_path():
+    return _log_path().with_name("runs_deleted.json")
+
+
+def deleted_ids() -> set[str]:
+    p = _deleted_path()
+    try:
+        return set(json.loads(p.read_text())) if p.exists() else set()
+    except Exception:
+        return set()
+
+
+def delete_run(run_id: str) -> bool:
+    """Hide a run from History, badges and alerts. It still counts as a try of its idea."""
+    if not any(r.get("id") == run_id for r in read_runs()):
+        return False
+    ids = deleted_ids() | {run_id}
+    _deleted_path().write_text(json.dumps(sorted(ids)))
+    return True
+
+
+def read_runs(limit: int | None = None, include_deleted: bool = False) -> list[dict]:
     p = _log_path()
     if not p.exists():
         return []
+    gone = set() if include_deleted else deleted_ids()
     out = []
     for line in p.read_text().splitlines():
         try:
-            out.append(json.loads(line))
+            r = json.loads(line)
         except Exception:
             continue
+        if r.get("id") not in gone:
+            out.append(r)
     return out[-limit:] if limit else out
 
 
 def family_trials(family: str) -> tuple[int, list[dict]]:
     """(trials so far for this idea, monthly returns of its distinct earlier variants)."""
-    runs = [r for r in read_runs() if r.get("family") == family]
+    runs = [r for r in read_runs(include_deleted=True) if r.get("family") == family]
     seen, months = set(), []
     for r in runs:
         h = r.get("hash")

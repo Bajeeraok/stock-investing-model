@@ -119,3 +119,20 @@ def test_rule_alerts_skip_without_panel(env):
     import research.alerts as ra
 
     assert ra.publish_rule_alerts(rows={"as_of": "2017-09-06", "modes": {}}, tickers=["AAA"]) == 0
+
+
+def test_deleted_run_hidden_but_still_counts_as_try(tmp_path, monkeypatch):
+    import json as _json
+    import research.panel as rp
+    import research.service as svc
+
+    monkeypatch.setattr(rp, "panel_dir", lambda: tmp_path)
+    rows = [{"id": "a", "family": "f", "hash": "h1", "rule": {"field": "rsi14", "op": "<", "value": 30}},
+            {"id": "b", "family": "f", "hash": "h2", "rule": {"field": "rsi14", "op": "<", "value": 25}}]
+    (tmp_path / "runs.jsonl").write_text("\n".join(_json.dumps(r) for r in rows))
+    assert svc.delete_run("a") and not svc.delete_run("zzz")
+    assert [r["id"] for r in svc.read_runs()] == ["b"]
+    assert len(svc.read_runs(include_deleted=True)) == 2
+    assert svc.family_trials("f")[0] == 2
+    from research.integration import saved_rules
+    assert [r["id"] for r in saved_rules()] == ["b"]

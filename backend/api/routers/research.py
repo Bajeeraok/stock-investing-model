@@ -135,7 +135,7 @@ def backtest(body: BacktestIn):
 
     def run():
         n_prev, variants = service.family_trials(fam)
-        already = any(r.get("hash") == h for r in service.read_runs() if r.get("family") == fam)
+        already = any(r.get("hash") == h for r in service.read_runs(include_deleted=True) if r.get("family") == fam)
         n_trials = n_prev if already else n_prev + 1
         res = _bt(fc, body.rule, hold_days=body.hold_days, stop_pct=body.stop_pct, target_pct=body.target_pct,
                   cost_bps=body.cost_bps, entry=body.entry, split_date=body.split_date, start=body.start, end=body.end,
@@ -209,6 +209,17 @@ def unapprove_run(run_id: str):
     from research.integration import unapprove
 
     return {"approved": False, "removed": unapprove(run_id)}
+
+
+@router.delete("/research/runs/{run_id}")
+def delete_run(run_id: str):
+    from research import service
+    from research.integration import unapprove
+
+    unapprove(run_id)
+    if not service.delete_run(run_id):
+        raise HTTPException(404, "run not found")
+    return {"deleted": run_id}
 
 
 @router.get("/research/rule-hits")
