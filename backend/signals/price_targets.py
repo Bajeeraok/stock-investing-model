@@ -414,8 +414,9 @@ def _fetch_macro_context(config: dict | None) -> dict:
     Returns:
         vix         — current VIX level (fear index)
         yield_10y   — current 10Y Treasury yield (^TNX)
-        yield_2y    — current 2Y Treasury yield (^IRX)
-        yield_curve — 10Y - 2Y spread (positive = normal, negative = inverted)
+        yield_3m    — 13-week T-bill yield (^IRX)
+        yield_2y    — 2Y Treasury yield (FRED DGS2, needs key)
+        yield_curve — 10Y − 2Y spread when FRED is available, else 10Y − 3M (``yield_curve_basis``)
         fed_rate    — latest Fed Funds rate from FRED (needs key)
         cpi_yoy     — latest CPI year-over-year % from FRED (needs key)
         dxy         — DXY USD index current level
@@ -426,7 +427,7 @@ def _fetch_macro_context(config: dict | None) -> dict:
     _YF_MACRO = {
         "vix":       "^VIX",
         "yield_10y": "^TNX",
-        "yield_2y":  "^IRX",
+        "yield_3m":  "^IRX",
         "dxy":       "DX-Y.NYB",
     }
     try:
@@ -447,10 +448,6 @@ def _fetch_macro_context(config: dict | None) -> dict:
     except Exception:
         pass
 
-    # Yield curve spread
-    if "yield_10y" in ctx and "yield_2y" in ctx:
-        ctx["yield_curve"] = round(ctx["yield_10y"] - ctx["yield_2y"], 3)
-
     # ── FRED (key required, free) ────────────────────────────────────────────
     if config:
         try:
@@ -461,6 +458,9 @@ def _fetch_macro_context(config: dict | None) -> dict:
                 ff = get_latest_value(config, "FEDFUNDS")
                 if ff is not None:
                     ctx["fed_rate"] = round(ff, 3)
+                t2 = get_latest_value(config, "DGS2")
+                if t2 is not None:
+                    ctx["yield_2y"] = round(float(t2), 3)
                 # CPI (monthly, compute YoY manually from last 13 observations)
                 try:
                     from datetime import date, timedelta
@@ -477,6 +477,13 @@ def _fetch_macro_context(config: dict | None) -> dict:
                     pass
         except Exception:
             pass
+
+    if "yield_10y" in ctx and "yield_2y" in ctx:
+        ctx["yield_curve"] = round(ctx["yield_10y"] - ctx["yield_2y"], 3)
+        ctx["yield_curve_basis"] = "10y-2y"
+    elif "yield_10y" in ctx and "yield_3m" in ctx:
+        ctx["yield_curve"] = round(ctx["yield_10y"] - ctx["yield_3m"], 3)
+        ctx["yield_curve_basis"] = "10y-3m"
 
     return ctx
 
@@ -1240,7 +1247,9 @@ def run_price_targets(
             "vix":         macro.get("vix"),
             "yield_10y":   macro.get("yield_10y"),
             "yield_2y":    macro.get("yield_2y"),
+            "yield_3m":    macro.get("yield_3m"),
             "yield_curve": macro.get("yield_curve"),
+            "yield_curve_basis": macro.get("yield_curve_basis"),
             "fed_rate":    macro.get("fed_rate"),
             "cpi_yoy":     macro.get("cpi_yoy"),
             "dxy":         macro.get("dxy"),

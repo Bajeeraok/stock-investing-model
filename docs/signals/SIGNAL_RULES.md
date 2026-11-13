@@ -78,6 +78,18 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
   target 3× ATR: average +0.31→+0.45% (2014–19), +0.43→+0.63% (2020–26), losers 57→53%, average gain still above
   average loss. Wider stops (2.5–3×) without a wider target made the average loss bigger than the average gain.
 
+### Promotion bar for new gates
+
+A highlight or experimental rule becomes a gate only if `signals.statistical_validation.promotion_check` passes on
+out-of-sample trades:
+
+- 30+ cases, and positive average return after round-trip costs (default 10 bp per trade, more for small caps).
+- t-stat ≥ 3 (Harvey, Liu & Zhu), with Newey–West errors when holding periods overlap.
+- Deflated Sharpe ≥ 0.95, counting every variant tried (Bailey & López de Prado).
+- Chance of backtest overfitting (CSCV) ≤ 50% when a grid of variants was tested.
+- Beats the baseline it would replace.
+- Walk-forward splits run forward in time with a purge gap, so no embargo is needed. Any k-fold split must add one.
+
 ## Investor rulebook (Plan · Investor rules)
 
 - `backend/signals/investor_rules.py` lists rules from well-known investors (Graham/Buffett, Lynch, Templeton, Paul Tudor

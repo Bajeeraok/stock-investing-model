@@ -404,3 +404,132 @@ def validate_signal_quality(
     results["overall_quality"] = "GOOD" if len([a for a in quality_assessment if "good" in a.lower()]) >= 2 else "ACCEPTABLE" if len([a for a in quality_assessment if "acceptable" in a.lower()]) >= 2 else "NEEDS_IMPROVEMENT"
     
     return results
+
+
+# ── Promotion checks: a rule must clear these before it can become a gate ──────────────
+# Harvey, Liu & Zhu (2016) t ≥ 3 hurdle; Bailey & López de Prado (2014) deflated Sharpe;
+# Bailey, Borwein, López de Prado & Zhu (2017) probability of backtest overfitting (CSCV).
+
+PROMOTION_MIN_T = 3.0
+PROMOTION_MIN_DSR = 0.95
+PROMOTION_MAX_PBO = 0.5
+PROMOTION_MIN_N = 30
+DEFAULT_COST_BPS = 10.0  # round trip, per trade
+
+
+def newey_west_t_stat(returns: list[float] | np.ndarray, lags: int = 0) -> float | None:
+    """t-stat of the mean with Newey–West (HAC) standard error; ``lags`` ≈ holding period − 1 for overlapping returns."""
+    x = np.asarray(returns, dtype=float)
+    x = x[np.isfinite(x)]
+    n = len(x)
+    if n < 3:
+        return None
+    d = x - x.mean()
+    var = float(d @ d) / n
+    for k in range(1, min(lags, n - 1) + 1):
+        w = 1.0 - k / (lags + 1.0)
+        var += 2.0 * w * float(d[k:] @ d[:-k]) / n
+    if var <= 0:
+        return None
+    return float(x.mean() / np.sqrt(var / n))
+
+
+def deflated_sharpe_ratio(
+    returns: list[float] | np.ndarray,
+    n_trials: int,
+    trial_sharpe_std: float | None = None,
+) -> dict[str, Any]:
+    """Probability the true per-period Sharpe is > 0 after correcting for ``n_trials`` tried variants, skew and fat tails."""
+    from scipy.stats import kurtosis, norm, skew
+
+    x = np.asarray(returns, dtype=float)
+    x = x[np.isfinite(x)]
+    n = len(x)
+    if n < 10 or np.std(x, ddof=1) == 0:
+        return {"dsr": None, "sharpe": None, "sr0": None, "n": n}
+    sr = float(x.mean() / np.std(x, ddof=1))
+    g3 = float(skew(x))
+    g4 = float(kurtosis(x, fisher=False))
+    n_trials = max(1, int(n_trials))
+    if n_trials > 1:
+        sd = trial_sharpe_std if trial_sharpe_std is not None else 1.0 / np.sqrt(n - 1)
+        emc = 0.5772156649
+        sr0 = sd * ((1 - emc) * norm.ppf(1 - 1.0 / n_trials) + emc * norm.ppf(1 - 1.0 / (n_trials * np.e)))
+    else:
+        sr0 = 0.0
+    denom = np.sqrt(max(1e-12, 1 - g3 * sr + (g4 - 1) / 4.0 * sr * sr))
+    dsr = float(norm.cdf((sr - sr0) * np.sqrt(n - 1) / denom))
+    return {"dsr": round(dsr, 4), "sharpe": round(sr, 4), "sr0": round(float(sr0), 4), "n": n}
+
+
+def probability_of_backtest_overfitting(perf: np.ndarray, n_splits: int = 16) -> float | None:
+    """CSCV PBO. ``perf`` is T×N (periods × strategy variants). Share of splits where the in-sample best is below median out of sample."""
+    from itertools import combinations
+
+    m = np.asarray(perf, dtype=float)
+    if m.ndim != 2 or m.shape[1] < 2:
+        return None
+    s = n_splits - (n_splits % 2)
+    if s < 2 or m.shape[0] < s * 2:
+        return None
+    blocks = np.array_split(np.arange(m.shape[0]), s)
+
+    def score(rows: np.ndarray) -> np.ndarray:
+        sub = m[rows]
+        sd = sub.std(axis=0, ddof=1)
+        sd[sd == 0] = np.inf
+        return sub.mean(axis=0) / sd
+
+    lambdas = []
+    for combo in combinations(range(s), s // 2):
+        is_rows = np.concatenate([blocks[i] for i in combo])
+        oos_rows = np.concatenate([blocks[i] for i in range(s) if i not in combo])
+        best = int(np.argmax(score(is_rows)))
+        oos = score(oos_rows)
+        rank = (oos < oos[best]).sum() + 0.5 * ((oos == oos[best]).sum() - 1)
+        w = (rank + 1) / (len(oos) + 1)
+        lambdas.append(np.log(w / (1 - w)))
+    return round(float(np.mean(np.array(lambdas) <= 0)), 4)
+
+
+def promotion_check(
+    trade_returns_pct: list[float],
+    *,
+    n_trials: int,
+    holding_bars: int = 1,
+    cost_bps: float = DEFAULT_COST_BPS,
+    variant_matrix: np.ndarray | None = None,
+    baseline_returns_pct: list[float] | None = None,
+) -> dict[str, Any]:
+    """
+    Gate for turning a highlight/experimental rule into a model gate (docs/signals/SIGNAL_RULES.md).
+    ``trade_returns_pct`` are out-of-sample per-trade gross returns in %. Costs are subtracted first.
+    ``n_trials`` = every variant tried (thresholds, windows, tickers subsets) — be honest, it drives the deflation.
+    """
+    net = np.asarray(trade_returns_pct, dtype=float) - cost_bps / 100.0
+    net = net[np.isfinite(net)]
+    out: dict[str, Any] = {"n": int(len(net)), "cost_bps": cost_bps, "n_trials": int(n_trials)}
+    out["mean_net_pct"] = round(float(net.mean()), 4) if len(net) else None
+    t = newey_west_t_stat(net, lags=max(0, holding_bars - 1))
+    out["t_stat"] = round(t, 3) if t is not None else None
+    out["deflated_sharpe"] = deflated_sharpe_ratio(net, n_trials)
+    out["pbo"] = probability_of_backtest_overfitting(variant_matrix) if variant_matrix is not None else None
+    if baseline_returns_pct is not None and len(baseline_returns_pct):
+        out["beats_baseline_pct"] = round(float(net.mean() - np.nanmean(baseline_returns_pct)), 4)
+    fails = []
+    if out["n"] < PROMOTION_MIN_N:
+        fails.append(f"only {out['n']} cases (need {PROMOTION_MIN_N}+)")
+    if out["mean_net_pct"] is None or out["mean_net_pct"] <= 0:
+        fails.append("average return after costs is not positive")
+    if t is None or t < PROMOTION_MIN_T:
+        fails.append(f"t-stat {out['t_stat']} below {PROMOTION_MIN_T}")
+    dsr = out["deflated_sharpe"].get("dsr")
+    if dsr is None or dsr < PROMOTION_MIN_DSR:
+        fails.append(f"deflated Sharpe {dsr} below {PROMOTION_MIN_DSR}")
+    if out["pbo"] is not None and out["pbo"] > PROMOTION_MAX_PBO:
+        fails.append(f"overfitting chance {out['pbo']:.0%} above {PROMOTION_MAX_PBO:.0%}")
+    if out.get("beats_baseline_pct") is not None and out["beats_baseline_pct"] <= 0:
+        fails.append("does not beat the baseline")
+    out["passes"] = not fails
+    out["fails"] = fails
+    return out

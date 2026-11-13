@@ -103,6 +103,7 @@ export interface MacroContext {
   yield_10y:   number | null;
   yield_2y:    number | null;
   yield_curve: number | null;
+  yield_curve_basis?: "10y-2y" | "10y-3m" | null;
   fed_rate:    number | null;
   cpi_yoy:     number | null;
   dxy:         number | null;
@@ -260,7 +261,8 @@ function MacroContextBar({ ctx }: { ctx: MacroContext }) {
   }
   if (ctx.yield_curve != null) {
     const c = ctx.yield_curve < 0 ? "text-td-crit" : "text-td-accent";
-    const label = ctx.yield_curve < 0 ? "Curve ⚠️" : "Curve";
+    const basis = ctx.yield_curve_basis ? ` ${ctx.yield_curve_basis}` : "";
+    const label = ctx.yield_curve < 0 ? `Curve${basis} ⚠️` : `Curve${basis}`;
     items.push({ label, value: `${ctx.yield_curve > 0 ? "+" : ""}${ctx.yield_curve.toFixed(2)}%`, color: c });
   }
   if (ctx.fed_rate != null) {
