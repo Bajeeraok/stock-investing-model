@@ -134,6 +134,16 @@ def _hit_story_change(r: Row) -> str | None:
     return str(s).replace("HORIZON SHIFT: ", "Plan changed: ") if s else None
 
 
+def _hit_sec_8k(r: Row) -> str | None:
+    ev = [e for e in (r.get("sec_8k") or []) if e.get("story")]
+    if not ev:
+        return None
+    e = ev[0]
+    labels = [lab for lab, c in zip(e.get("labels") or [], [c for c in e.get("items") or [] if c != "9.01"]) if c in e["story"]]
+    more = f" (+{len(ev) - 1} more)" if len(ev) > 1 else ""
+    return f"{'SEVERE · ' if any(x.get('severe') for x in ev) else ''}8-K {e.get('date')}: {', '.join(labels) or 'material event'}{more}"
+
+
 # ── market checks: (market dict) -> detail or None ────────────────────────────────────
 
 def _m_fear(m: dict) -> str | None:
@@ -243,6 +253,10 @@ RULES: list[dict[str, Any]] = [
      "rule": "Sell when the story changes, not when the price wiggles.",
      "applied": "in_model", "how": "Plan change alerts when a horizon's playbook flips; review the thesis before acting.",
      "evidence": "Story-change log in What changed.", "check": _hit_story_change},
+    {"id": "sec_8k_story", "group": "trim", "who": "Peter Lynch · SEC filings",
+     "rule": "A material filing can change the story before the price does.",
+     "applied": "highlight", "how": "Flag only: an 8-K in the last 7 days with a story item (officer change, restructuring, impairment, deal closed, auditor change, restatement, delisting). Read the filing before acting.",
+     "evidence": "Not tested in our data yet; event categories need an event study before any gate.", "check": _hit_sec_8k},
     {"id": "complacency", "group": "market", "who": "Howard Marks",
      "rule": "When everyone is carefree, be cautious. Low fear means low margin for error.",
      "applied": "highlight", "how": "Market flag: VIX ≤ 13. Tighten adds, don't sell on this alone.",

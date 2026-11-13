@@ -156,6 +156,10 @@ def _run_eod_job() -> None:
             import threading
             from signals.sp500_scan import run_scan as _sp500_scan
             threading.Thread(target=_sp500_scan, daemon=True, name="sp500-scan").start()
+            from signals.cache import get_signals_panel as _gsp
+            from signals.edgar_8k import run_scan as _8k_scan
+            _tk = [str(r.get("ticker")) for r in ((_gsp() or {}).get("signals") or []) if isinstance(r, dict) and r.get("ticker")]
+            threading.Thread(target=lambda: _8k_scan(_tk), daemon=True, name="edgar-8k").start()
         except Exception:
             logger.exception("[eod-scheduler] S&P 500 scan failed to start")
         # New snapshot → recompute forward tracking now (daily 1d calls, per-ticker index)

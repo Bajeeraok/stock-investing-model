@@ -66,6 +66,30 @@ def _save_seen(seen: dict[str, str]) -> None:
         logger.debug("investor-rules seen write: %s", e)
 
 
+_8k_running = False
+
+
+def _load_8k(tickers: list[str]) -> dict[str, Any]:
+    """Latest 8-K feed; kicks off a background fetch when none is cached (nightly EOD refreshes it)."""
+    global _8k_running
+    from signals.edgar_8k import load_latest, run_scan
+
+    out = load_latest()
+    if out is None and not _8k_running and tickers:
+        import threading
+
+        def _run():
+            global _8k_running
+            try:
+                run_scan([t for t in tickers if t])
+            finally:
+                _8k_running = False
+
+        _8k_running = True
+        threading.Thread(target=_run, daemon=True, name="edgar-8k").start()
+    return out or {}
+
+
 def build_investor_rules_payload() -> dict[str, Any]:
     from config_loader import load_config
     from signals.cache import get_cached, get_signals_panel, set_cached
@@ -75,14 +99,23 @@ def build_investor_rules_payload() -> dict[str, Any]:
     sp = get_signals_panel() or {}
     rows = [r for r in (sp.get("signals") or []) if isinstance(r, dict)]
     as_of = sp.get("as_of")
+    filings = _load_8k([str(r.get("ticker") or "") for r in rows])
     cached = get_cached(_PAYLOAD_KEY)
-    if isinstance(cached, dict) and cached.get("signals_as_of") == as_of and cached.get("n_tickers") == len(rows):
+    if (
+        isinstance(cached, dict)
+        and cached.get("signals_as_of") == as_of
+        and cached.get("n_tickers") == len(rows)
+        and cached.get("filings_as_of") == filings.get("as_of")
+    ):
         return cached
+    ev = filings.get("events") or {}
+    rows = [{**r, "sec_8k": ev.get(str(r.get("ticker") or "").upper())} if ev.get(str(r.get("ticker") or "").upper()) else r for r in rows]
     market = market_inputs(rows, _macro_factors(load_config()))
     seen = _load_seen()
     out = evaluate_rules(rows, market, first_seen=seen, today=str(today_est()))
     _save_seen(seen)
     out["signals_as_of"] = as_of
+    out["filings_as_of"] = filings.get("as_of")
     set_cached(_PAYLOAD_KEY, out, 10 * 60)
     return out
 
