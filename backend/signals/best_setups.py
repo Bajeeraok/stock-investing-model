@@ -228,7 +228,11 @@ def build_report(details: list[dict], as_of: date | None = None, previous: dict 
         "new_count": new_count,
         "model_proven": trusted,
         "modes": modes,
+        "_rows": {m: {r["ticker"]: {k: r.get(k) for k in _ROW_KEYS} for r in rs} for m, rs in rows.items()},
     }
+
+
+_ROW_KEYS = ("price", "status", "gates_failing", "band_low", "band_high", "band_gap_pct", "stop", "target", "rr", "qualified", "blockers")
 
 
 def publish_new_picks(report: dict) -> int:
@@ -270,9 +274,22 @@ def _dir() -> Path:
 def save_report(report: dict) -> None:
     d = _dir()
     d.mkdir(parents=True, exist_ok=True)
+    report = dict(report)
+    rows = report.pop("_rows", None)
+    if rows is not None:
+        (d / "rows.json").write_text(json.dumps({"as_of": report.get("as_of"), "modes": rows}, default=str))
     blob = json.dumps(report, default=str)
     (d / "latest.json").write_text(blob)
     (d / f"best_setups_{report['as_of']}.json").write_text(blob)
+
+
+def load_rows() -> dict | None:
+    """Every scanned ticker's plan row from the last build (not just the ranked lists)."""
+    p = _dir() / "rows.json"
+    try:
+        return json.loads(p.read_text()) if p.exists() else None
+    except Exception:
+        return None
 
 
 def load_latest() -> dict | None:

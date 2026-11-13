@@ -1,0 +1,185 @@
+{
+  "timestamp": "2026-11-01T09:12:47.249920-05:00",
+  "composite_score": -0.5017,
+  "bias": "STRONG BEAR",
+  "confidence": 1.0,
+  "minutes_to_open": 0,
+  "top_bullish": [
+    "Gold: -3.29%",
+    "Ethereum: +0.59%",
+    "Bitcoin: +0.58%"
+  ],
+  "top_bearish": [
+    "S&P 500 Futures (ES=F): -1.81% (ES=F)",
+    "Nasdaq Futures (NQ=F): -3.48% (NQ=F)",
+    "Asia close (EWJ proxy): -2.14%"
+  ],
+  "key_risks": [
+    "Pre-market composite bearish \u2014 consider reducing size into open."
+  ],
+  "sector_plays": {},
+  "rotation_risk_premarket": "Medium",
+  "message": "Pre-market STRONG BEAR (-0.50) | 0m to open | \u2191 Gold | \u2193 S&P 500 Futures (ES=F)",
+  "signals": [
+    {
+      "name": "10Y Treasury yield",
+      "category": "rates",
+      "score": 0.24,
+      "weight": 0.12,
+      "raw_value": "4.93% (-1.20% chg)",
+      "direction": "Bullish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "VIX level + direction",
+      "category": "volatility",
+      "score": -0.12,
+      "weight": 0.1,
+      "raw_value": "VIX 19.4 (+2.2)",
+      "direction": "Neutral",
+      "confidence": 1.0,
+      "note": "Level and intraday direction scored separately then combined."
+    },
+    {
+      "name": "DXY",
+      "category": "currency",
+      "score": 0.16,
+      "weight": 0.04,
+      "raw_value": "-0.16%",
+      "direction": "Bullish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "USD/JPY (Yen inverted)",
+      "category": "currency",
+      "score": -0.02,
+      "weight": 0.04,
+      "raw_value": "-0.02%",
+      "direction": "Neutral",
+      "confidence": 1.0,
+      "note": "USD/JPY up = yen weakening = risk-on = bullish."
+    },
+    {
+      "name": "S&P 500 Futures (ES=F)",
+      "category": "futures",
+      "score": -1,
+      "weight": 0.175,
+      "raw_value": "-1.81% (ES=F)",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Nasdaq Futures (NQ=F)",
+      "category": "futures",
+      "score": -1,
+      "weight": 0.175,
+      "raw_value": "-3.48% (NQ=F)",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Copper",
+      "category": "commodity",
+      "score": -0.75,
+      "weight": 0.033,
+      "raw_value": "-1.50%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Gold",
+      "category": "commodity",
+      "score": 1,
+      "weight": 0.033,
+      "raw_value": "-3.29%",
+      "direction": "Bullish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Crude Oil (non-linear)",
+      "category": "commodity",
+      "score": -0.2,
+      "weight": 0.034,
+      "raw_value": "+2.08%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": "Strong rise = inflation concern."
+    },
+    {
+      "name": "Europe (EWG proxy)",
+      "category": "international",
+      "score": -0.625,
+      "weight": 0.1,
+      "raw_value": "-1.25%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Asia close (EWJ proxy)",
+      "category": "international",
+      "score": -1,
+      "weight": 0.1,
+      "raw_value": "-2.14%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Bitcoin",
+      "category": "crypto",
+      "score": 0.29,
+      "weight": 0.015,
+      "raw_value": "+0.58%",
+      "direction": "Bullish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "Ethereum",
+      "category": "crypto",
+      "score": 0.295,
+      "weight": 0.01,
+      "raw_value": "+0.59%",
+      "direction": "Bullish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "AAPL",
+      "category": "megacap",
+      "score": -0.615,
+      "weight": 0.008,
+      "raw_value": "-1.23%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "MSFT",
+      "category": "megacap",
+      "score": -0.775,
+      "weight": 0.007,
+      "raw_value": "-1.55%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    },
+    {
+      "name": "NVDA",
+      "category": "megacap",
+      "score": -1,
+      "weight": 0.01,
+      "raw_value": "-4.22%",
+      "direction": "Bearish",
+      "confidence": 1.0,
+      "note": ""
+    }
+  ]
+}

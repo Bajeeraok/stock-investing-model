@@ -247,6 +247,9 @@ def run_in_background(kind: str = "update") -> bool:
             m = build() if kind == "build" else update()
             _status.update(state="ready", finished=time.time(), error=None, last=m.get("as_of"))
             logger.info("[research-panel] %s done: %s tickers through %s", kind, m.get("n_tickers"), m.get("as_of"))
+            from research.alerts import publish_safely
+
+            publish_safely()
         except Exception as e:
             logger.exception("[research-panel] %s failed", kind)
             _status.update(state="error", error=str(e), finished=time.time())

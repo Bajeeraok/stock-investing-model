@@ -761,6 +761,9 @@ def run_ticker_consistency_audit(tickers: list[str] | None = None, config: dict 
                 bs = build_report(details)
                 save_report(bs)
                 publish_new_picks(bs)
+                from research.alerts import publish_safely
+
+                publish_safely()
             except Exception:
                 logger.exception("[ticker-audit] best setups build failed")
         try:

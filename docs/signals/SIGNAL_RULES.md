@@ -99,6 +99,10 @@ out-of-sample trades:
   targets and BUY/HOLD/SELL are unchanged (`backend/research/integration.py`, `best_setups.rank`).
 - "Our 125" in the screener and event study limits Research to the tracked tickers. They were chosen with hindsight,
   so promotion backtests stay on point-in-time S&P 500 members.
+- Research alerts (`backend/research/alerts.py`): after the 8 PM panel update and Best setups build, a rule that is
+  approved or clears the promotion bar sends one alert per tracked ticker on the day it turns on (off the session
+  before, on at the last close). The alert gives the Best setups band, stop and gate status; when gates are blocked it
+  says "watch, gates blocked". Alerts never change gates or BUY/HOLD/SELL.
 
 ## Investor rulebook (Plan · Investor rules)
 

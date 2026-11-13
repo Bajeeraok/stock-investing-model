@@ -89,3 +89,33 @@ def test_missing_panel_leaves_report_unchanged(env, monkeypatch):
     out = ri.annotate_best_setups(rep)
     assert out["modes"]["swing"]["picks"][0]["research"] == []
     assert ri.annotate_best_setups(None) is None
+
+
+def test_rule_alerts_only_strong_rules_on_turn_on_day(env, monkeypatch):
+    import research.alerts as ra
+    from alerts.events import AlertEventStore
+
+    stored = []
+    monkeypatch.setattr(AlertEventStore, "append_events", lambda self, evs: stored.extend(evs))
+    fc = FeatureCache(_panel())
+    idx = fc.p.close.index
+    last, prev = float(fc.p.close["AAA"].iloc[-1]), float(fc.p.close["AAA"].iloc[-2])
+    thr = (last + prev) / 2
+    turns_on = {"field": "price", "op": ">" if last > prev else "<", "value": round(thr, 4)}
+    env += [_run("strong", turns_on, True), _run("weak", {**turns_on, "value": round(thr, 4) + 1e-5}, False), _run("always", RULE_ON, True, ts=2)]
+    rows = {"as_of": str(idx[-1].date()), "modes": {"swing": {"AAA": {
+        "price": last, "status": None, "gates_failing": ["Trend weather"], "band_low": 1.0, "band_high": 2.0,
+        "band_gap_pct": 5.0, "stop": 0.5, "target": 3.0}}}}
+    assert ra.publish_rule_alerts(fc=fc, rows={**rows, "as_of": "1999-01-01"}, tickers=["AAA"]) == 0
+    assert ra.publish_rule_alerts(fc=fc, rows=rows, tickers=["AAA", "BBB"]) == 1
+    ev = stored[0]
+    assert ev.ticker == "AAA" and ev.payload["run_id"] == "strong" and not ev.payload["gates_clear"]
+    assert "gates blocked (Trend weather)" in ev.message and "above band" in ev.message
+    assert ra.publish_rule_alerts(fc=fc, rows=rows, tickers=["AAA"]) == 0
+    assert ra.publish_rule_alerts(fc=fc, rows=None, tickers=["AAA"]) == 0
+
+
+def test_rule_alerts_skip_without_panel(env):
+    import research.alerts as ra
+
+    assert ra.publish_rule_alerts(rows={"as_of": "2017-09-06", "modes": {}}, tickers=["AAA"]) == 0
