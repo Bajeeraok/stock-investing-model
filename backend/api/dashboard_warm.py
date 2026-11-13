@@ -773,6 +773,17 @@ def compute_signal_warm_sync(
     except Exception as e:
         logger.debug("[dashboard-warm] economic_calendar: %s", e)
 
+    try:
+        pd2 = merged.get("portfolio_doctor_v2")
+        if isinstance(pd2, dict) and (report or {}).get("per_holding"):
+            from portfolio.ff_factor_betas import compute_ff_betas_daily
+
+            fe = dict(pd2.get("factor_exposure") or {})
+            fe["ff_betas"] = compute_ff_betas_daily(report["per_holding"])
+            merged["portfolio_doctor_v2"] = {**pd2, "factor_exposure": fe}
+    except Exception as e:
+        logger.debug("[dashboard-warm] ff_betas: %s", e)
+
     set_cached_dashboard(merged)
     _write_panel_caches(config, results, as_of_date)
 

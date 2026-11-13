@@ -155,3 +155,18 @@ def compute_ff_betas(per_holding: list[dict], factors: pd.DataFrame | None = Non
         "coverage_pct": round(tot, 1),
         "note": "Fama–French 5 factors + momentum, last 252 trading days. Betas near 0 = neutral; Market 1.0 = moves with the S&P. Explains risk only, never an entry gate.",
     }
+
+
+_DAILY_MEMO: dict[tuple, dict[str, Any]] = {}
+
+
+def compute_ff_betas_daily(per_holding: list[dict]) -> dict[str, Any]:
+    """compute_ff_betas, memoised per day and holdings mix (warm refresh runs many times a day)."""
+    from datetime import date as _date
+
+    mix = tuple(sorted((h.get("ticker"), round(float(h.get("pct") or 0), 1)) for h in per_holding if h.get("ticker")))
+    key = (_date.today().isoformat(), mix)
+    if key not in _DAILY_MEMO:
+        _DAILY_MEMO.clear()
+        _DAILY_MEMO[key] = compute_ff_betas(per_holding)
+    return _DAILY_MEMO[key]
