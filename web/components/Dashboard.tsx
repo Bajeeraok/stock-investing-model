@@ -2,6 +2,7 @@
 
 import { ModelCheckPanel } from "./dashboard/ModelCheckPanel";
 import { InvestorRulesPanel } from "./dashboard/InvestorRulesPanel";
+import { ResearchPanel } from "./dashboard/ResearchPanel";
 import { BestSetupsPanel, BestSetupsTodayCard, bestSetupEdges, useBestSetups } from "./dashboard/BestSetupsPanel";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -212,7 +213,7 @@ function writeTickerUrl(ticker: string | null, view: DetailTab, mode: "push" | "
 }
 
 type PlanSub = "income" | "opportunities" | "rules";
-type MoreSub = "markets" | "portfolio" | "model" | "admin";
+type MoreSub = "markets" | "portfolio" | "model" | "research" | "admin";
 const PLAN_SUB_KEY = "thrive-plan-sub";
 const MORE_SUB_KEY = "thrive-more-sub";
 
@@ -365,7 +366,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
       if (ps === "income" || ps === "opportunities" || ps === "rules") setPlanSub(ps);
       else if (ps === "setups") setPlanSub("opportunities");
       const ms = localStorage.getItem(MORE_SUB_KEY);
-      if (ms === "markets" || ms === "portfolio" || ms === "model" || ms === "admin") setMoreSub(ms);
+      if (ms === "markets" || ms === "portfolio" || ms === "model" || ms === "research" || ms === "admin") setMoreSub(ms);
     } catch {
       /* ignore */
     }
@@ -1531,6 +1532,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                   { id: "markets", label: "Markets" },
                   { id: "portfolio", label: "Portfolio detail" },
                   { id: "model", label: "Model check" },
+                  { id: "research", label: "Research" },
                   { id: "admin", label: "Admin" },
                 ]}
               />
@@ -1804,6 +1806,7 @@ export function Dashboard({ data, onRefresh, loading, isRefreshing = false, stal
                 </div>
               )}
               {moreSub === "model" && <ModelCheckPanel />}
+              {moreSub === "research" && <ResearchPanel onTickerClick={openTickerDetail} />}
               {moreSub === "admin" && (
                 <div className="space-y-4 sm:space-y-6">
                   <p className="text-[13px] text-td-muted">
