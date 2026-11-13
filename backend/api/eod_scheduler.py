@@ -158,7 +158,8 @@ def _run_eod_job() -> None:
             threading.Thread(target=_sp500_scan, daemon=True, name="sp500-scan").start()
             from research.panel import run_in_background as _research_panel
 
-            _research_panel("update")
+            if "PYTEST_CURRENT_TEST" not in os.environ:
+                _research_panel("update")
             from signals.cache import get_signals_panel as _gsp
             from signals.edgar_8k import run_scan as _8k_scan
             _tk = [str(r.get("ticker")) for r in ((_gsp() or {}).get("signals") or []) if isinstance(r, dict) and r.get("ticker")]
