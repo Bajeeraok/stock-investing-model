@@ -24,7 +24,7 @@ from research.features import BENCH, FeatureCache
 logger = logging.getLogger(__name__)
 
 MAX_EVENTS = 20000
-MAX_TICKERS_REMOTE = 60
+MAX_TICKERS_REMOTE = 130
 FRED_RELEASES = {"cpi": (10, "CPI release"), "jobs": (50, "Jobs report"), "gdp": (53, "GDP release"), "ppi": (46, "PPI release")}
 
 

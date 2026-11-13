@@ -19,6 +19,7 @@ class ScreenIn(BaseModel):
     limit: int = Field(200, ge=1, le=500)
     include_etfs: bool = False
     as_of: Optional[str] = None
+    universe: str = "sp500"
 
 
 class BacktestIn(BaseModel):
@@ -46,25 +47,28 @@ class EventIn(BaseModel):
     pre: int = Field(5, ge=0, le=20)
     post: int = Field(20, ge=1, le=60)
     include_etfs: bool = False
+    universe: str = "custom"
 
 
 def _fc():
     from research import panel
-    from research.features import FeatureCache
+    from research.integration import get_fc
 
-    p = panel.load()
-    if p is None:
+    fc = get_fc()
+    if fc is None:
         if panel.run_in_background("build"):
             logger.info("[research] panel missing; build started")
         raise HTTPException(503, "Research data is being built (about a minute). Try again shortly.")
-    key = p.meta.get("built_at")
-    if _FC.get("key") != key:
-        _FC.clear()
-        _FC.update(key=key, fc=FeatureCache(p))
-    return _FC["fc"]
+    return fc
 
 
-_FC: dict[str, Any] = {}
+def _ours() -> list[str]:
+    from research.integration import tracked_tickers
+
+    t = tracked_tickers()
+    if not t:
+        raise HTTPException(503, "The tracked ticker list isn't loaded yet. Try again shortly.")
+    return t
 
 
 def _rule_err(e: Exception):
@@ -107,7 +111,8 @@ def screen(body: ScreenIn):
 
     fc = _fc()
     try:
-        return _screen(fc, body.rule, body.columns, body.sort, body.desc, body.limit, body.include_etfs, body.as_of)
+        only = _ours() if body.universe == "ours" else None
+        return _screen(fc, body.rule, body.columns, body.sort, body.desc, body.limit, body.include_etfs, body.as_of, only=only)
     except (RuleError, ValueError, KeyError) as e:
         _rule_err(e)
 
@@ -154,9 +159,10 @@ def event_study(body: EventIn):
         except RuleError as e:
             _rule_err(e)
     fc = _fc()
-    params = body.model_dump()
-    params["panel"] = fc.p.meta.get("built_at")
-    kw = body.model_dump(exclude={"source"})
+    kw = body.model_dump(exclude={"source", "universe"})
+    if body.universe == "ours":
+        kw["tickers"] = _ours()
+    params = body.model_dump() | {"tickers": kw["tickers"], "panel": fc.p.meta.get("built_at")}
     return service.submit("event_study", params, lambda: _run(fc, load_config(), body.source, **kw))
 
 
@@ -178,5 +184,37 @@ def runs(limit: int = 100):
     fams: dict[str, int] = {}
     for r in rows:
         fams[r.get("family")] = fams.get(r.get("family"), 0) + 1
-    out = [{k: v for k, v in r.items() if k != "monthly"} | {"family_runs": fams.get(r.get("family"), 0)} for r in rows[-limit:]]
-    return {"runs": out[::-1], "total": len(rows)}
+    from research.integration import load_approved
+
+    approved = load_approved()
+    out = [{k: v for k, v in r.items() if k != "monthly"} | {"family_runs": fams.get(r.get("family"), 0), "approved": r.get("id") in approved}
+           for r in rows[-limit:]]
+    return {"runs": out[::-1], "total": len(rows), "approved": len(approved)}
+
+
+@router.post("/research/runs/{run_id}/approve")
+def approve_run(run_id: str):
+    from research.integration import approve
+
+    try:
+        return {"approved": True, **approve(run_id)}
+    except KeyError:
+        raise HTTPException(404, "run not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/research/runs/{run_id}/approve")
+def unapprove_run(run_id: str):
+    from research.integration import unapprove
+
+    return {"approved": False, "removed": unapprove(run_id)}
+
+
+@router.get("/research/rule-hits")
+def rule_hits(ticker: Optional[str] = None):
+    from research.integration import rule_hits as _hits
+
+    fc = _fc()
+    h = _hits([ticker] if ticker else None, fc=fc)
+    return {"as_of": str(fc.p.close.index[-1].date()), "hits": h}

@@ -162,11 +162,15 @@ def dip_watch(scored: list[dict]) -> list[dict]:
     return rows[:NEXT_UP_N]
 
 
-def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]]:
+def rank(rows_by_mode: dict[str, list[dict]], boosted: set[str] | None = None) -> dict[str, dict[str, list[dict]]]:
+    """``boosted``: tickers where an approved Research rule is on. They sort first; gates are unchanged."""
+    boosted = boosted or set()
     out: dict[str, dict[str, list[dict]]] = {}
     for mode, rows in rows_by_mode.items():
         scored = [r for r in rows if r.get("edge_pct") is not None]
-        scored.sort(key=lambda r: (r["edge_pct"], r.get("chance") or 0), reverse=True)
+        for r in scored:
+            r["research_boost"] = r["ticker"] in boosted
+        scored.sort(key=lambda r: (r["research_boost"], r["edge_pct"], r.get("chance") or 0), reverse=True)
         picks = [r for r in scored if r["qualified"]][:TOP_N]
         # Next up: positive edge, one blocker away (not the model score itself).
         nxt = [r for r in scored if not r["qualified"] and r["edge_pct"] > 0 and len(r["blockers"]) == 1]
@@ -177,7 +181,8 @@ def rank(rows_by_mode: dict[str, list[dict]]) -> dict[str, dict[str, list[dict]]
     return out
 
 
-def build_report(details: list[dict], as_of: date | None = None, previous: dict | None = None) -> dict:
+def build_report(details: list[dict], as_of: date | None = None, previous: dict | None = None,
+                 boosted: set[str] | None = None) -> dict:
     rows: dict[str, list[dict]] = {m: [] for m in MODES}
     try:
         from signals.model_odds_check import load_model_check, model_trusted
@@ -200,7 +205,14 @@ def build_report(details: list[dict], as_of: date | None = None, previous: dict 
             if r:
                 rows[m].append(r)
     day = (as_of or _market_today()).isoformat()
-    modes = rank(rows)
+    if boosted is None:
+        try:
+            from research.integration import approved_hit_tickers, load_approved
+
+            boosted = approved_hit_tickers() if load_approved() else set()
+        except Exception:
+            boosted = set()
+    modes = rank(rows, boosted)
     prev = previous if previous is not None else load_latest()
     prev_modes = (prev or {}).get("modes") or {} if (prev or {}).get("as_of") != day else {}
     new_count = 0

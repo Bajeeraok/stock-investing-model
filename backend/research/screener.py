@@ -20,7 +20,9 @@ def _clean(v):
 
 
 def screen(fc: FeatureCache, rule: dict, columns: list[str] | None = None, sort: str | None = None,
-           desc: bool = True, limit: int = 200, include_etfs: bool = False, as_of: str | None = None) -> dict[str, Any]:
+           desc: bool = True, limit: int = 200, include_etfs: bool = False, as_of: str | None = None,
+           only: list[str] | None = None) -> dict[str, Any]:
+    """``only`` restricts to a fixed ticker list (e.g. our tracked tickers) instead of that day's index members."""
     p = fc.p
     idx = len(p.close.index) - 1 if not as_of else int(p.close.index.searchsorted(as_of, side="right")) - 1
     if idx < 0:
@@ -33,6 +35,10 @@ def screen(fc: FeatureCache, rule: dict, columns: list[str] | None = None, sort:
     hit = evaluate(rule, fc, rows).iloc[-1]
     members = p.members.iloc[idx]
     etfs = set(p.etfs)
+    if only is not None:
+        want = {t.upper() for t in only}
+        members = members.index.to_series().isin(want) & p.close.iloc[idx].notna()
+        include_etfs = True
     ok = hit & (members | False)
     tickers = [t for t in hit.index[ok] if include_etfs or t not in etfs]
     date = p.close.index[idx]
@@ -52,5 +58,7 @@ def screen(fc: FeatureCache, rule: dict, columns: list[str] | None = None, sort:
         "universe_n": universe_n,
         "columns": cols,
         "rows": out[: min(limit, MAX_ROWS)],
+        "universe": "ours" if only is not None else "sp500",
+        "universe_requested": len(only) if only is not None else None,
         "truncated": len(out) > min(limit, MAX_ROWS),
     }

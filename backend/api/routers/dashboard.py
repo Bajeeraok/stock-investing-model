@@ -4334,6 +4334,12 @@ async def get_best_setups():
     from signals.best_setups import apply_live, load_latest, load_live, track_record
 
     report = apply_live(load_latest(), load_live())
+    try:
+        from research.integration import annotate_best_setups
+
+        report = await run_in_threadpool(annotate_best_setups, report)
+    except Exception:
+        logger.exception("best-setups research annotation failed")
     hit = _BEST_SETUPS_TRACK.get("v")
     if hit is None or _time.time() - _BEST_SETUPS_TRACK.get("ts", 0) > 3600 or \
             _BEST_SETUPS_TRACK.get("as_of") != (report or {}).get("as_of"):

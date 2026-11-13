@@ -36,6 +36,45 @@ interface SetupRow {
   blockers: string[];
   gates_failing?: string[];
   live?: { qualified: boolean; price: number | null; reasons: string[] } | null;
+  research?: ResearchBadge[];
+  research_boost?: boolean;
+}
+
+interface ResearchBadge {
+  run_id: string;
+  rule_text: string;
+  label?: string | null;
+  approved: boolean;
+  passes: boolean;
+  oos_n?: number | null;
+  oos_mean?: number | null;
+  oos_win?: number | null;
+  t_stat?: number | null;
+  hold_days?: number | null;
+  as_of: string;
+}
+
+function ResearchLine({ badges }: { badges?: ResearchBadge[] }) {
+  if (!badges?.length) return null;
+  const shown = badges.slice(0, 3);
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px]">
+      <span className="text-slate-400">Research rules on:</span>
+      {shown.map((b) => (
+        <span
+          key={b.run_id}
+          title={`After-split record: ${b.oos_n ?? 0} trades, avg ${b.oos_mean ?? "–"}% after costs, win ${b.oos_win ?? "–"}%, t ${b.t_stat ?? "–"}${b.hold_days ? `, ${b.hold_days}-day hold` : ""}. As of ${b.as_of}.`}
+        >
+          <Pill tone={b.approved ? "green" : b.passes ? "blue" : "slate"}>
+            {b.approved ? "Approved · " : b.passes ? "Clears bar · " : "Watch · "}
+            {b.label || b.rule_text}
+            {b.oos_n ? ` · ${b.oos_n} trades, ${b.oos_mean != null && b.oos_mean > 0 ? "+" : ""}${b.oos_mean ?? "–"}%` : ""}
+          </Pill>
+        </span>
+      ))}
+      {badges.length > shown.length && <span className="text-slate-400">+{badges.length - shown.length} more</span>}
+    </div>
+  );
 }
 
 interface ModelCheck {
@@ -130,6 +169,7 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
             {r.edge_pct.toFixed(1)}%
           </Pill>
         )}
+        {r.research_boost && <Pill tone="green">Approved rule: ranked up</Pill>}
         {nextUp &&
           r.blockers.map((b) => (
             <Pill key={b} tone="red">
@@ -184,6 +224,7 @@ function Row({ r, onTickerClick, nextUp }: { r: SetupRow; onTickerClick?: (t: st
       <div className="mt-1 text-[12px] text-slate-400 font-mono tabular-nums">
         Band {usd(r.band_low)}–{usd(r.band_high)} · stop {usd(r.stop)} · target {usd(r.target)}
       </div>
+      <ResearchLine badges={r.research} />
     </button>
   );
 }

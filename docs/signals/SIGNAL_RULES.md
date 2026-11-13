@@ -90,6 +90,16 @@ out-of-sample trades:
 - Beats the baseline it would replace.
 - Walk-forward splits run forward in time with a purge gap, so no embargo is needed. Any k-fold split must add one.
 
+### Research rules on Best setups
+
+- Every saved Research rule (More → Research) shows as a badge on Best setups rows where it is on at the last panel close,
+  with its out-of-sample record. Badges are information only.
+- A Research run can be approved (`POST /api/research/runs/{id}/approve`) only if its promotion check passed. Approved
+  rules that are on for a ticker sort it first within Picks / Next up / Dip watch. Qualification, gates, bands, stops,
+  targets and BUY/HOLD/SELL are unchanged (`backend/research/integration.py`, `best_setups.rank`).
+- "Our 125" in the screener and event study limits Research to the tracked tickers. They were chosen with hindsight,
+  so promotion backtests stay on point-in-time S&P 500 members.
+
 ## Investor rulebook (Plan · Investor rules)
 
 - `backend/signals/investor_rules.py` lists rules from well-known investors (Graham/Buffett, Lynch, Templeton, Paul Tudor

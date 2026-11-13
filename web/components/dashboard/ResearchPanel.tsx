@@ -308,26 +308,41 @@ function SimpleTable({ rows, cols, onSort, sort }: { rows: Record<string, unknow
   );
 }
 
+function UniversePick({ value, onChange, custom }: { value: string; onChange: (v: string) => void; custom?: boolean }) {
+  return (
+    <label className="text-[13px] text-td-muted inline-flex items-center gap-1">Universe
+      <select className={inputCls} value={value} onChange={(e) => onChange(e.target.value)}>
+        {custom ? <option value="custom">Tickers I list</option> : <option value="sp500">S&amp;P 500 members (+ETFs)</option>}
+        <option value="ours">Our 125 tracked tickers</option>
+      </select>
+    </label>
+  );
+}
+
+const OURS_NOTE = "Our tracked tickers were picked with hindsight, so results on them look better than they would on the whole market. Use the S&P 500 for backtests that count.";
+
 function Screener({ fields, sectors, onTicker, onTest }: { fields: FieldDef[]; sectors: string[]; onTicker?: (t: string) => void; onTest: (r: Rule) => void }) {
   const [conds, setConds] = useState<Cond[]>(PRESETS[1].conds);
   const [join, setJoin] = useState<"all" | "any">("all");
   const [etfs, setEtfs] = useState(false);
-  const [res, setRes] = useState<{ as_of: string; n_matches: number; universe_n: number; columns: string[]; rows: Record<string, unknown>[] } | null>(null);
+  const [universe, setUniverse] = useState<"sp500" | "ours">("sp500");
+  const [res, setRes] = useState<{ as_of: string; n_matches: number; universe_n: number; universe?: string; universe_requested?: number | null; columns: string[]; rows: Record<string, unknown>[] } | null>(null);
   const [sort, setSort] = useState("");
   const [desc, setDesc] = useState(true);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const run = useCallback(async (s = sort, d = desc) => {
     setErr(""); setBusy(true);
-    try { setRes(await postJson("/api/research/screen", { rule: toRule(conds, join), include_etfs: etfs, sort: s || null, desc: d, limit: 500 })); }
+    try { setRes(await postJson("/api/research/screen", { rule: toRule(conds, join), include_etfs: etfs, universe, sort: s || null, desc: d, limit: 500 })); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
-  }, [conds, join, etfs, sort, desc]);
+  }, [conds, join, etfs, universe, sort, desc]);
   const label = (k: string) => fields.find((f) => f.name === k)?.label || k;
   return (
     <div className="space-y-3">
       <RuleBuilder fields={fields} sectors={sectors} conds={conds} setConds={setConds} join={join} setJoin={setJoin} />
       <div className="flex flex-wrap items-center gap-3">
-        <label className="text-[13px] text-td-muted inline-flex items-center gap-1"><input type="checkbox" checked={etfs} onChange={(e) => setEtfs(e.target.checked)} /> Include ETFs</label>
+        <UniversePick value={universe} onChange={(v) => setUniverse(v as "sp500" | "ours")} />
+        {universe === "sp500" && <label className="text-[13px] text-td-muted inline-flex items-center gap-1"><input type="checkbox" checked={etfs} onChange={(e) => setEtfs(e.target.checked)} /> Include ETFs</label>}
         <button className={btnCls} onClick={() => run()} disabled={busy || !conds.length}><Play className="h-4 w-4" /> {busy ? "Screening…" : "Screen"}</button>
         <button className={btnCls} onClick={() => onTest(toRule(conds, join))} disabled={!conds.length}><FlaskConical className="h-4 w-4" /> Test this rule</button>
         {res && <button className={btnCls} onClick={() => downloadCsv(`screen_${res.as_of}.csv`, res.rows)}><Download className="h-4 w-4" /> CSV</button>}
@@ -335,7 +350,11 @@ function Screener({ fields, sectors, onTicker, onTest }: { fields: FieldDef[]; s
       {err && <p className="text-[13px] text-red-400">{err}</p>}
       {res && (
         <>
-          <p className="text-[13px] text-td-muted">{res.n_matches} of {res.universe_n} match, close of {res.as_of}. A watch list, not buy signals.</p>
+          <p className="text-[13px] text-td-muted">
+            {res.n_matches} of {res.universe_n} match, close of {res.as_of}.{" "}
+            {res.universe === "ours" ? `Our tracked tickers only (${res.universe_n} of ${res.universe_requested} have price history here). ` : ""}
+            A watch list, not buy signals.
+          </p>
           <div className="overflow-x-auto max-h-[32rem]">
             <table className="w-full text-[13px]">
               <thead className="sticky top-0 bg-td-surface"><tr className="text-td-muted text-left">
@@ -368,6 +387,7 @@ function EventStudy({ fields, sectors }: { fields: FieldDef[]; sectors: string[]
   const [conds, setConds] = useState<Cond[]>([c("gap_pct", "<", "-5")]);
   const [join, setJoin] = useState<"all" | "any">("all");
   const [tickers, setTickers] = useState("AAPL, MSFT, NVDA, AMZN, GOOGL, META, JPM, BAC, XOM, UNH");
+  const [universe, setUniverse] = useState<"custom" | "ours">("custom");
   const [items, setItems] = useState<string[]>(["5.02"]);
   const [kind, setKind] = useState("beat");
   const [thr, setThr] = useState("5");
@@ -380,7 +400,7 @@ function EventStudy({ fields, sectors }: { fields: FieldDef[]; sectors: string[]
     setErr(""); setRes(null);
     try {
       const tk = tickers.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-      const body = { source, rule: source === "rule" ? toRule(conds, join) : null, tickers: tk, items, kind, threshold_pct: Number(thr), release, pre: Number(win.pre), post: Number(win.post) };
+      const body = { source, rule: source === "rule" ? toRule(conds, join) : null, tickers: universe === "ours" ? null : tk, universe: source === "rule" && universe !== "ours" ? "custom" : universe, items, kind, threshold_pct: Number(thr), release, pre: Number(win.pre), post: Number(win.post) };
       setRes(await runJob<EsResult>("/api/research/event-study", body, setBusy));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(""); }
   };
@@ -412,8 +432,13 @@ function EventStudy({ fields, sectors }: { fields: FieldDef[]; sectors: string[]
       {source === "macro" && (
         <select className={inputCls} value={release} onChange={(e) => setRelease(e.target.value)}><option value="cpi">CPI</option><option value="jobs">Jobs report</option><option value="ppi">PPI</option><option value="gdp">GDP</option></select>
       )}
-      {source !== "rule" && (
-        <label className="flex flex-col gap-1 text-[13px] text-td-muted">Tickers{source === "macro" ? " (blank = SPY)" : " (up to 60)"}
+      <div className="flex flex-wrap items-center gap-2">
+        <UniversePick value={universe} onChange={(v) => setUniverse(v as "custom" | "ours")} custom />
+        {source === "rule" && universe === "custom" && <span className="text-[12px] text-td-muted">Rule studies use S&amp;P 500 members on each date.</span>}
+      </div>
+      {universe === "ours" && <p className="text-[12px] text-td-warn">{OURS_NOTE}</p>}
+      {source !== "rule" && universe === "custom" && (
+        <label className="flex flex-col gap-1 text-[13px] text-td-muted">Tickers{source === "macro" ? " (blank = SPY)" : " (up to 130)"}
           <input className={inputCls} value={tickers} onChange={(e) => setTickers(e.target.value)} />
         </label>
       )}
@@ -444,16 +469,26 @@ function EventStudy({ fields, sectors }: { fields: FieldDef[]; sectors: string[]
   );
 }
 
-interface RunRow { id: string; ts: number; label?: string; rule: Rule; rule_text: string; params: Record<string, unknown>; family_runs: number; oos: Stats; promotion: { passes?: boolean; t_stat?: Num; dsr?: Num; pbo?: Num; n?: number }; portfolio: { cagr?: Num; spy_cagr?: Num } }
+interface RunRow { id: string; ts: number; label?: string; rule: Rule; rule_text: string; params: Record<string, unknown>; family_runs: number; approved?: boolean; oos: Stats; promotion: { passes?: boolean; t_stat?: Num; dsr?: Num; pbo?: Num; n?: number }; portfolio: { cagr?: Num; spy_cagr?: Num } }
 
 function History({ onLoad }: { onLoad: (r: RunRow) => void }) {
   const [runs, setRuns] = useState<RunRow[] | null>(null);
-  useEffect(() => { fetch(apiUrl("/api/research/runs?limit=200")).then((r) => r.json()).then((j) => setRuns(j.runs || [])).catch(() => setRuns([])); }, []);
+  const [err, setErr] = useState("");
+  const load = useCallback(() => { fetch(apiUrl("/api/research/runs?limit=200")).then((r) => r.json()).then((j) => setRuns(j.runs || [])).catch(() => setRuns([])); }, []);
+  useEffect(load, [load]);
+  const toggle = async (r: RunRow) => {
+    setErr("");
+    const res = await fetch(apiUrl(`/api/research/runs/${r.id}/approve`), { method: r.approved ? "DELETE" : "POST" });
+    if (!res.ok) setErr((await res.json().catch(() => ({}))).detail || `Error ${res.status}`);
+    load();
+  };
   if (!runs) return <p className="text-[13px] text-td-muted">Loading…</p>;
   if (!runs.length) return <p className="text-[13px] text-td-muted">No tests yet. Every rule test is saved here, and each retry of the same idea counts as another try.</p>;
   return (
     <div className="space-y-2">
       <button className={btnCls} onClick={() => downloadCsv("research_runs.csv", runs.map((r) => ({ when: new Date(r.ts * 1000).toISOString(), name: r.label, rule: r.rule_text, ...r.params, oos_n: r.oos?.n, oos_avg: r.oos?.mean, oos_win: r.oos?.win_rate, t: r.promotion?.t_stat, dsr: r.promotion?.dsr, pbo: r.promotion?.pbo, passes: r.promotion?.passes })))}><Download className="h-4 w-4" /> CSV</button>
+      <p className="text-[12px] text-td-muted">Every saved rule shows as a badge on Best setups when it is on for a ticker. Only rules that clear the bar can be approved, and only approved rules move a pick up the Best setups list. Entry gates, stops and BUY/HOLD/SELL never change.</p>
+      {err && <p className="text-[13px] text-red-400">{err}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-[13px]">
           <thead><tr className="text-td-muted text-left">{["When", "Rule", "Hold/stop", "After split: trades, avg, win", "t", "DSR", "Tries", "Bar", ""].map((h) => <th key={h} className="py-1 pr-3 font-normal">{h}</th>)}</tr></thead>
@@ -467,7 +502,12 @@ function History({ onLoad }: { onLoad: (r: RunRow) => void }) {
               <td className="py-1 pr-3 tabular-nums">{fmt(r.promotion?.dsr, 2)}</td>
               <td className="py-1 pr-3 tabular-nums">{r.family_runs}</td>
               <td className={clsx("py-1 pr-3", r.promotion?.passes ? "text-emerald-400" : "text-td-warn")}>{r.promotion?.passes ? "Clears" : "Watch"}</td>
-              <td className="py-1 pr-3"><button className="text-td-accent hover:underline" onClick={() => onLoad(r)}>Open</button></td>
+              <td className="py-1 pr-3 whitespace-nowrap">
+                <button className="text-td-accent hover:underline" onClick={() => onLoad(r)}>Open</button>
+                {(r.promotion?.passes || r.approved) && (
+                  <button className={clsx("ml-2 hover:underline", r.approved ? "text-emerald-400" : "text-td-accent")} onClick={() => toggle(r)}>{r.approved ? "Approved ✓ (undo)" : "Approve for Best setups"}</button>
+                )}
+              </td>
             </tr>
           ))}</tbody>
         </table>
