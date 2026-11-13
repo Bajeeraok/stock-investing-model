@@ -124,7 +124,78 @@ function RuleCard({ r, onTickerClick }: { r: Rule; onTickerClick?: (t: string) =
   );
 }
 
+interface Sp500Scan {
+  as_of?: string;
+  n_scanned: number;
+  status?: string;
+  rule_hits?: Record<string, { count: number; hits: { ticker: string; detail: string }[] }>;
+  leaders?: { ticker: string; sector?: string; mom_12_1: number; rs_6m_vs_spy?: number; drawdown_52w: number }[];
+  note?: string;
+}
+
+const SCAN_LABEL: Record<string, string> = {
+  trend_template: "Uptrend template",
+  below_200d: "Below 200-day",
+  overextended: "Overextended",
+  distribution: "Heavy-volume drop",
+};
+
+function Sp500ScanCard({ scan, onTickerClick }: { scan: Sp500Scan; onTickerClick?: (t: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (!scan.n_scanned) return <p className="text-[13px] text-td-muted">S&P 500 scan is building. Check back in a minute.</p>;
+  const sel = open && scan.rule_hits?.[open];
+  return (
+    <section className="space-y-2">
+      <h3 className="text-[13px] font-bold uppercase tracking-wide text-td-info">S&P 500 + ETFs scan · {scan.n_scanned} tickers</h3>
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(scan.rule_hits ?? {}).map(([id, v]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setOpen(open === id ? null : id)}
+            className={clsx("rounded-md border px-2 py-1 text-[12px] tabular-nums", open === id ? "border-td-accent text-td-accent" : "border-td-line text-td-text")}
+          >
+            {SCAN_LABEL[id] ?? id}: <span className="font-semibold">{v.count}</span>
+          </button>
+        ))}
+      </div>
+      {sel && (
+        <div className="flex flex-wrap gap-1">
+          {sel.hits.map((h) => (
+            <button key={h.ticker} type="button" title={h.detail} onClick={() => onTickerClick?.(h.ticker)} className="rounded border border-td-line bg-td-surface2 px-1.5 py-0.5 text-[11px] font-semibold hover:border-td-accent">
+              {h.ticker}
+            </button>
+          ))}
+        </div>
+      )}
+      {!!scan.leaders?.length && (
+        <div className="rounded-lg border border-td-line bg-td-surface px-3 py-2.5 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <AppliedPill applied="highlight" />
+            <p className="text-[14px] font-semibold text-td-text">Momentum leaders (watch list)</p>
+          </div>
+          <p className="text-[12px] text-td-muted">O'Neil · Jegadeesh & Titman. {scan.note}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {scan.leaders.map((l) => (
+              <button key={l.ticker} type="button" onClick={() => onTickerClick?.(l.ticker)} title={`${l.sector ?? ""} · ${l.drawdown_52w}% off high`} className="rounded-md border border-td-line bg-td-surface2 px-2 py-0.5 text-[12px] tabular-nums hover:border-td-accent">
+                <span className="font-semibold text-td-text">{l.ticker}</span> <span className="text-td-accent">{l.mom_12_1 > 0 ? "+" : ""}{l.mom_12_1.toFixed(0)}%</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function InvestorRulesPanel({ onTickerClick }: { onTickerClick?: (t: string) => void }) {
+  const [scan, setScan] = useState<Sp500Scan | null>(null);
+  useEffect(() => {
+    fetch(apiUrl("/api/investor-rules/sp500"))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j && setScan(j))
+      .catch(() => {});
+  }, []);
   const [data, setData] = useState<RulesPayload | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
@@ -166,6 +237,7 @@ export function InvestorRulesPanel({ onTickerClick }: { onTickerClick?: (t: stri
           </section>
         );
       })}
+      {scan && <Sp500ScanCard scan={scan} onTickerClick={onTickerClick} />}
       <p className="text-[12px] text-td-muted">Education, not personal advice. Rules are paraphrased from each investor's public writing and interviews.</p>
     </div>
   );

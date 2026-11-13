@@ -95,3 +95,28 @@ def get_investor_rules(ticker: Optional[str] = Query(None)):
 
         return {"ticker": ticker.upper(), "hits": rules_for_ticker(out, ticker), "signals_as_of": out.get("signals_as_of")}
     return out
+
+
+_scan_running = False
+
+
+@router.get("/investor-rules/sp500")
+def get_sp500_scan():
+    """Nightly S&P 500 + ETF scan (price-only rules + momentum leaders). Kicks off a scan when none exists."""
+    global _scan_running
+    from signals.sp500_scan import load_latest, run_scan
+
+    out = load_latest()
+    if out is None and not _scan_running:
+        import threading
+
+        def _run():
+            global _scan_running
+            try:
+                run_scan()
+            finally:
+                _scan_running = False
+
+        _scan_running = True
+        threading.Thread(target=_run, daemon=True, name="sp500-scan").start()
+    return out or {"status": "building", "n_scanned": 0}

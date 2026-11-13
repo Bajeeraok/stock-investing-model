@@ -152,6 +152,12 @@ def _run_eod_job() -> None:
             ).start()
         except Exception:
             logger.exception("[eod-scheduler] estimates snapshot failed to start")
+        try:
+            import threading
+            from signals.sp500_scan import run_scan as _sp500_scan
+            threading.Thread(target=_sp500_scan, daemon=True, name="sp500-scan").start()
+        except Exception:
+            logger.exception("[eod-scheduler] S&P 500 scan failed to start")
         # New snapshot → recompute forward tracking now (daily 1d calls, per-ticker index)
         # instead of waiting for someone to open Analysis/Track and hit the staleness check.
         try:
