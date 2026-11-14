@@ -45,3 +45,18 @@ def test_horizon_shift_is_not_lynch_story_change():
     assert _hit_story_change({"story_change": "Guidance cut: FY revenue lowered",
                               "story_change_source": "fundamental"}) == "Guidance cut: FY revenue lowered"
     assert _hit_story_change({}) is None
+
+
+def test_last_accepted_fallback_age(tmp_path, monkeypatch):
+    import json
+    from datetime import date
+
+    import signals.fv_stability as fs
+
+    p = tmp_path / "fv_stability.json"
+    p.write_text(json.dumps({"ORCL": {"fv": 185.76, "eps": [1, 2], "date": "2026-11-13"}}))
+    monkeypatch.setattr(fs, "_path", lambda: p)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    assert fs.last_accepted("orcl", today=date(2026, 11, 14)) == 185.76
+    assert fs.last_accepted("ORCL", today=date(2026, 12, 1)) is None
+    assert fs.last_accepted("NOPE", today=date(2026, 11, 14)) is None

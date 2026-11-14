@@ -337,6 +337,10 @@ def add_target_bands(row: dict[str, Any]) -> dict[str, Any]:
     # unrelated fair-value numbers could disagree by 20%+ for the same ticker/day depending on
     # which surface (Signals table vs ticker-detail modal) you looked at.
     fv = row.get("fair_value")
+    if fv is None and row.get("ticker"):
+        from signals.fv_stability import last_accepted
+
+        fv = last_accepted(str(row["ticker"]))
     bear_case = row.get("fair_value_bear_case")
 
     lt_low = lt_high = None

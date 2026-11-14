@@ -75,3 +75,23 @@ def apply(ticker: str, raw: float | None, trailing_eps: float | None, forward_ep
     except Exception:
         logger.exception("[fv-stability] %s", t)
         return raw, None
+
+
+MAX_FALLBACK_AGE_DAYS = 10
+
+
+def last_accepted(ticker: str, today: date | None = None) -> float | None:
+    """Last accepted model fair value (<= MAX_FALLBACK_AGE_DAYS old), for days the pipeline returns nothing."""
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        return None
+    try:
+        p = _path()
+        st = (json.loads(p.read_text()) if p.exists() else {}).get(ticker.upper()) or {}
+        fv, d = st.get("fv"), st.get("date")
+        if not fv or not d:
+            return None
+        age = ((today or date.today()) - date.fromisoformat(d)).days
+        return round(float(fv), 2) if 0 <= age <= MAX_FALLBACK_AGE_DAYS else None
+    except Exception:
+        logger.exception("[fv-stability] last_accepted %s", ticker)
+        return None
