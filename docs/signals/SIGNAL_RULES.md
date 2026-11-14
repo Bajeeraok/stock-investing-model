@@ -119,6 +119,10 @@ out-of-sample trades:
 - Model fair value stability (`backend/signals/fv_stability.py`): a move of more than 15% from the last accepted value is
   held back unless TTM or forward EPS moved more than 3%, or the new value repeats (within 5%) on a later day.
 
+- `full_go` requires every primary gate (valuation, regime, momentum, ML) to pass. The old "stock regime catching up
+  to a bull market" path that granted full_go with the regime gate failing is now a locked watch
+  (`regime_catch_up_watch`).
+
 ## Switched-off signals
 
 - **Deep-dip starter exception** (Trend weather failing, 25%+ off the high, 15%+ below the 200-day; buy at RSI < 30 or

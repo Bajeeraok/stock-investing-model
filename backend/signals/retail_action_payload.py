@@ -925,9 +925,9 @@ def derive_entry_mode(
     starter_only measured -0.65% expectancy / 43.5% hit — the losing slice was
     "valuation OK, price above band" entries. starter_only now REQUIRES an
     actionable zone (in_band / in_tier / bridge); valuation support alone is a
-    WAIT, not a starter. full_go additionally opens when the ONLY failed
-    primary gate is the stock's own regime while the broader market tape is
-    bull — the documented "name lagging a bull market" catch-up state.
+    WAIT, not a starter. When the ONLY failed primary gate is the stock's own
+    regime while the broader market is constructive, entries stay locked and
+    the headline says so (regime_catch_up_watch) — full_go needs every gate.
     """
     val_full = _gate_pass(gates, "valuation")
     val_starter = assessment_pct >= VALUATION_GATE_PARTIAL_PCT
@@ -954,14 +954,17 @@ def derive_entry_mode(
 
     full_go_via: str | None = None
     detail_note: str | None = None
+    regime_catch_up = False
     if assessment_pct < 0 or verdict in ("AVOID", "REDUCE", "SELL"):
         mode: EntryMode = "hard_lock"
     elif gate_cleared and val_full and tech_ok:
         mode = "full_go"
         full_go_via = "all_gates"
     elif val_full and only_regime_blocked and market_ok:
-        mode = "full_go"
-        full_go_via = "market_regime_override"
+        # Catch-up watch: only the stock's own regime fails while the market is
+        # constructive. Entries still need every primary gate, so this stays locked.
+        mode = "hard_lock"
+        regime_catch_up = True
     elif in_zone and val_starter:
         # Gate-fail slice audit: starters with FAILED valuation were -0.65% expectancy
         # (698/1,160 rows); starters with PASSING valuation and only timing gates
@@ -1040,7 +1043,13 @@ def derive_entry_mode(
         max_pct = 0
         label = "HARD LOCK"
         headline = "No new entries"
-        if assessment_pct < 0:
+        if regime_catch_up:
+            headline = "Watch — only the stock's Trend weather gate blocks"
+            detail = (
+                "Valuation, momentum and ML pass and the broader market is constructive. "
+                "Adds unlock once the stock's own regime clears."
+            )
+        elif assessment_pct < 0:
             detail = "Rich vs model fair value — hold or trim only; no adds at this price."
         elif detail_note:
             detail = detail_note
@@ -1090,6 +1099,7 @@ def derive_entry_mode(
         ),
         "tech_gates_pass": tech_ok,
         "full_go_via": full_go_via,
+        "regime_catch_up_watch": regime_catch_up,
         "institutional_conviction_verdict": inst_verdict if inst else None,
     }
 
