@@ -1327,7 +1327,11 @@ def _build_investor_summary(
     # broad-index-ETF sanity cap internally — only the LT-band-derived last-resort
     # fallback (specific to this endpoint's `response` shape) still belongs here.
     if fair_value is None or fair_value <= 0:
-        fair_value = _safe_float(response.get("lt_band", {}).get("high")) if isinstance(response.get("lt_band"), dict) else None
+        # Same fallback as the Signals list (_assessment_from_lt_band): LT band midpoint.
+        # The band high made no-earnings ETFs look cheap and flipped the valuation gate.
+        _ltb = response.get("lt_band") if isinstance(response.get("lt_band"), dict) else {}
+        _lo, _hi = _safe_float(_ltb.get("low")), _safe_float(_ltb.get("high"))
+        fair_value = (_lo + _hi) / 2 if _lo and _hi and _hi > _lo > 0 else _hi
     if fair_value is None or fair_value <= 0:
         fair_value = current_price * 1.15
 
