@@ -367,10 +367,15 @@ def run_signals(
         # bullish regardless of this ticker's own state.
         regime_bull_pct: float | None = None
         try:
-            from signals.hmm_regime import get_hmm_regime
-            _hmm_out = get_hmm_regime(ticker, close, volume)
-            if _hmm_out and not _hmm_out.get("error") and _hmm_out.get("bull_probability") is not None:
-                regime_bull_pct = round(float(_hmm_out["bull_probability"]) * 100.0, 1)
+            from signals.hmm_regime import MIN_BARS_TO_FIT, get_hmm_regime
+            if close is not None and len(close) < MIN_BARS_TO_FIT:
+                # Too little history for a stock HMM (recent IPO): neutral 50%, as the ticker
+                # page uses. The market-wide proxy passed SPCX's weather gate on the list only.
+                regime_bull_pct = 50.0
+            else:
+                _hmm_out = get_hmm_regime(ticker, close, volume)
+                if _hmm_out and not _hmm_out.get("error") and _hmm_out.get("bull_probability") is not None:
+                    regime_bull_pct = round(float(_hmm_out["bull_probability"]) * 100.0, 1)
         except Exception:
             pass  # graceful — falls back to market-wide proxy in enrich_dashboard_signal_row
 
