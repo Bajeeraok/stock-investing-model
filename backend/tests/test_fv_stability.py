@@ -60,3 +60,22 @@ def test_last_accepted_fallback_age(tmp_path, monkeypatch):
     assert fs.last_accepted("orcl", today=date(2026, 11, 14)) == 185.76
     assert fs.last_accepted("ORCL", today=date(2026, 12, 1)) is None
     assert fs.last_accepted("NOPE", today=date(2026, 11, 14)) is None
+
+
+def test_apply_seeds_from_eod_history_when_state_empty(monkeypatch):
+    import signals.fv_stability as fs
+
+    saved = {}
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(fs, "_load", lambda: dict(saved))
+    monkeypatch.setattr(fs, "_save", lambda d: saved.update(d))
+    monkeypatch.setattr(fs, "_seed_reference", lambda t, today: {"fv": 107.5, "eps": [None, None], "date": "2026-11-12"})
+    monkeypatch.setattr(fs, "_session_today", lambda: "2026-11-13")
+    fv, note = fs.apply("INTC", 46.81, -2.35, 1.50)
+    assert fv == 107.5 and note
+    # Same session (e.g. a weekend rerun) never confirms the outlier.
+    fv, _ = fs.apply("INTC", 46.81, -2.35, 1.50)
+    assert fv == 107.5
+    monkeypatch.setattr(fs, "_session_today", lambda: "2026-11-16")
+    fv, note = fs.apply("INTC", 46.5, -2.35, 1.50)
+    assert fv == 46.5 and note is None

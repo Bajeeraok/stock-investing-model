@@ -117,7 +117,7 @@ out-of-sample trades:
 - On a ticker's Verdict tab, the margin-of-safety and quality-dip hits use that tab's own valuation gate (mode and entry
   tier), not the list-view LT-band shortcut.
 - Model fair value stability (`backend/signals/fv_stability.py`): a move of more than 15% from the last accepted value is
-  held back unless TTM or forward EPS moved more than 3%, or the new value repeats (within 5%) on a later day.
+  held back unless TTM or forward EPS moved more than 3%, or the new value repeats (within 5%) in a later market session (weekend or same-session reruns do not count). This applies to every route (model or analyst consensus). State is kept in Redis; with no state, the median of the last 5 EOD snapshots is the reference.
 
 - `full_go` requires every primary gate (valuation, regime, momentum, ML) to pass. The old "stock regime catching up
   to a bull market" path that granted full_go with the regime gate failing is now a locked watch
