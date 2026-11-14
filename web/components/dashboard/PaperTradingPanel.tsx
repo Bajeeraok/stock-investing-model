@@ -132,8 +132,11 @@ export function PaperTradingPanel({ data }: { data: DashboardData }) {
   const [signalFilter, setSignalFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [modeFilter, setModeFilter] = useState<ModeFilter>("ALL");
-  // Defaults to current gate/band/regime logic version (not "All") — same as ForwardTracking.
-  const [versionFilter, setVersionFilter] = useState(currentModelVersion);
+  // Defaults to current gate/band/regime logic version (not "All") — same as ForwardTracking —
+  // unless that version has no trades yet, so the table never opens empty with history present.
+  const [versionFilter, setVersionFilter] = useState(() =>
+    allRecent.some((r: any) => rowModelVersion(r) === currentModelVersion) ? currentModelVersion : "",
+  );
 
   const uniqueTickers = useMemo(
     () => Array.from(new Set(allRecent.map((r: any) => (r.ticker || "").toUpperCase()))).sort(),
