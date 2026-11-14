@@ -590,17 +590,20 @@ def compute_fair_value(
                 existing.append(_cap_note)
                 fv_result.notes = existing
 
-    _model_fv = fv_result is not None and not getattr(fv_result, "fv_suppressed", False) and \
-        "consensus" not in str(getattr(fv_result, "method_used", "") or "")
-    if fair_value is not None and _model_fv:
-        from signals.fv_stability import apply as _stabilize
+    # Stabilize whatever route produced the value: flapping data also flips the route
+    # (model <-> analyst consensus <-> none), which moved ORCL/INTC/HUM 40-120% in a day.
+    from signals.fv_stability import apply as _stabilize, last_accepted as _last_accepted
 
+    if fair_value is not None and fair_value > 0:
         # Reported EPS, not the normalized one: normalization flaps when the quarterly fetch is rate-limited.
         _held, _note = _stabilize(ticker, fair_value, _safe_float((info or {}).get("trailingEps")), forward_eps)
         if _note and _held:
             fair_value = _held
-            fv_result.fair_value = _held
-            fv_result.notes = list(getattr(fv_result, "notes", []) or []) + [_note]
+            if fv_result is not None:
+                fv_result.fair_value = _held
+                fv_result.notes = list(getattr(fv_result, "notes", []) or []) + [_note]
+    elif not (_fv_route and _fv_route.fv_suppressed):
+        fair_value = _last_accepted(ticker)
 
     return FairValuePipelineResult(
         fair_value=fair_value,
