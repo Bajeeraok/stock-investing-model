@@ -94,3 +94,11 @@ def test_scan_limit_entry_on_later_eod_touch(tmp_path):
         assert float(rows[0]["reference_entry_price"]) == 490.0
         assert rows[0]["entry_price_source"] == "limit_touch"
         assert rows[0]["date"] == "2026-05-01"
+
+
+def test_full_go_hold_row_is_paperable():
+    from signals.paper_trade_logger import _is_paperable_row
+
+    assert _is_paperable_row({"signal": "HOLD", "entry_mode": "full_go"}, require_actionable=True)
+    assert not _is_paperable_row({"signal": "HOLD", "entry_mode": "hard_lock"}, require_actionable=True)
+    assert not _is_paperable_row({"signal": "REDUCE", "entry_mode": "full_go"}, require_actionable=True)

@@ -304,12 +304,16 @@ def _is_paperable_row(row: dict[str, Any], *, require_actionable: bool) -> bool:
     starter_only rows that were capped to WATCH still qualify via signal_uncapped /
     signal_gate_capped so partial-size starters are not dropped from the track.
     """
-    from signals.tracking_gate import _is_starter_only_row
+    from signals.tracking_gate import _is_starter_only_row, _row_entry_mode
 
     sig = str(row.get("signal") or row.get("short_suggestion") or "HOLD")
     if not require_actionable:
         return True
     if _is_actionable_signal(sig):
+        return True
+    # HOLD is the default display word (2026.10.2), so a full_go entry shows HOLD;
+    # the entry mode, not the word, marks it as an add.
+    if _row_entry_mode(row) == "full_go" and not _is_bearish_signal(sig):
         return True
     if _is_starter_only_row(row):
         uncapped = str(row.get("signal_uncapped") or "").upper()

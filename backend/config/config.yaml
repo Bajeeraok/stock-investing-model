@@ -632,7 +632,7 @@ paper_trading:
   # Prefer suggested_buy_price when available so fill ≠ ST stop floor (cleaner R:R / stop stats).
   reference_entry: suggested_buy_price   # suggested_buy_price | st_band_low | support_level
   limit_max_wait_days: 10         # business days after GO signal to wait for limit touch
-  require_actionable_signal: true # BUY / STRONG BUY / HOLD-ADD only (skip GO+HOLD rows)
+  require_actionable_signal: true # BUY / STRONG BUY / HOLD-ADD, or entry_mode full_go (HOLD is the default word)
   benchmark_ticker: SPY
   execution:
     mode: next_session            # close_to_close (legacy) | next_session (more realistic fills)
