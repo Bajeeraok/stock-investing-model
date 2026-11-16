@@ -26,6 +26,8 @@ ODDS_GAP_PTS = 30.0
 TOP_N = 10
 NEXT_UP_N = 8
 TRACK_DAYS = 180
+# Picks dated before this used the regime catch-up shortcut (full go with Trend weather failing).
+RULES_FIX_DATE = "2026-11-14"
 _DIR = "best_setups"
 
 
@@ -479,12 +481,31 @@ def dip_watch_record(hist: list[dict], fetch, bars_cache: dict, mode: str) -> di
     }
 
 
+def _summary(rows: list[dict]) -> dict:
+    closed = [r for r in rows if r["result"] in ("target", "stop", "expired")]
+    wins = [r for r in closed if r["result"] == "target"]
+    vs = [r["vs_spy_pts"] for r in rows if r.get("vs_spy_pts") is not None]
+    return {
+        "picks": len(rows),
+        "closed": len(closed),
+        "target_first_pct": round(100.0 * len(wins) / len(closed)) if closed else None,
+        "avg_return_pct": round(sum(r["return_pct"] for r in rows) / len(rows), 2) if rows else None,
+        "avg_vs_spy_pts": round(sum(vs) / len(vs), 2) if vs else None,
+        "beat_spy_pct": round(100.0 * sum(1 for v in vs if v > 0) / len(vs)) if vs else None,
+    }
+
+
 def track_record(fetch=None) -> dict:
-    """Forward results of every saved pick (one per ticker/mode/day)."""
+    """Forward results of every saved pick (one per ticker/mode/day), vs SPY over the same sessions.
+    Headline numbers cover picks made under the current rules; earlier picks are reported separately."""
     if fetch is None:
         from signals.fetcher import fetch_ohlcv_dataframe as fetch
     hist = _history()
     bars_cache: dict[str, Any] = {}
+    try:
+        bars_cache["SPY"] = fetch("SPY", "2y")
+    except Exception:
+        bars_cache["SPY"] = None
     out: dict[str, Any] = {}
     for mode, cfg in MODES.items():
         rows = []
@@ -505,15 +526,17 @@ def track_record(fetch=None) -> dict:
                         bars_cache[t] = None
                 oc = pick_outcome(pk, day, bars_cache[t], cfg["window"])
                 if oc:
-                    rows.append({"date": day, "ticker": t, **oc})
+                    spy, _ = _fwd_return(bars_cache["SPY"], day, oc["sessions"])
+                    rows.append({"date": day, "ticker": t, **oc, "spy_pct": spy,
+                                 "vs_spy_pts": None if spy is None else round(oc["return_pct"] - spy, 2),
+                                 "pre_fix": day < RULES_FIX_DATE})
             prev = cur
-        closed = [r for r in rows if r["result"] in ("target", "stop", "expired")]
-        wins = [r for r in closed if r["result"] == "target"]
+        current = [r for r in rows if not r["pre_fix"]]
+        earlier = [r for r in rows if r["pre_fix"]]
         out[mode] = {
-            "picks": len(rows),
-            "closed": len(closed),
-            "target_first_pct": round(100.0 * len(wins) / len(closed)) if closed else None,
-            "avg_return_pct": round(sum(r["return_pct"] for r in rows) / len(rows), 2) if rows else None,
+            **_summary(current),
+            "rules_since": RULES_FIX_DATE,
+            "before_fix": _summary(earlier) if earlier else None,
             "recent": rows[-15:][::-1],
             "dip_watch": dip_watch_record(hist, fetch, bars_cache, mode),
         }

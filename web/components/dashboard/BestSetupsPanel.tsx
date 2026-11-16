@@ -89,6 +89,10 @@ interface ModeTrack {
   closed: number;
   target_first_pct: number | null;
   avg_return_pct: number | null;
+  avg_vs_spy_pts?: number | null;
+  beat_spy_pct?: number | null;
+  rules_since?: string;
+  before_fix?: { picks: number; closed: number; avg_return_pct: number | null; avg_vs_spy_pts: number | null } | null;
   dip_watch?: {
     names: number;
     closed: number;
@@ -311,7 +315,7 @@ export function BestSetupsPanel({
       </p>
 
       <div className="rounded-md border border-slate-700/60 bg-slate-800/30 px-3 py-2 text-[13px] text-slate-300 flex flex-wrap gap-x-4 gap-y-1">
-        <span className="font-semibold text-slate-200">List track record</span>
+        <span className="font-semibold text-slate-200">List track record{tr?.rules_since ? ` · current rules since ${tr.rules_since}` : ""}</span>
         {tr && tr.picks > 0 ? (
           <>
             <span>{tr.picks} picks</span>
@@ -325,9 +329,25 @@ export function BestSetupsPanel({
                 {tr.avg_return_pct != null ? `${tr.avg_return_pct > 0 ? "+" : ""}${tr.avg_return_pct.toFixed(1)}%` : "–"}
               </b>
             </span>
+            {tr.avg_vs_spy_pts != null && (
+              <span>
+                vs SPY same days{" "}
+                <b className={clsx(tr.avg_vs_spy_pts >= 0 ? "text-emerald-300" : "text-rose-300")}>
+                  {tr.avg_vs_spy_pts > 0 ? "+" : ""}{tr.avg_vs_spy_pts.toFixed(1)} pts
+                </b>
+                {tr.beat_spy_pct != null ? ` (beat SPY ${tr.beat_spy_pct}%)` : ""}
+              </span>
+            )}
           </>
         ) : (
-          <span className="text-slate-400">Starts with tonight&apos;s picks; results appear as they play out.</span>
+          <span className="text-slate-400">No picks under the current rules yet; results appear as they play out.</span>
+        )}
+        {tr?.before_fix && tr.before_fix.picks > 0 && (
+          <span className="w-full text-[12px] text-slate-400">
+            Before {tr.rules_since} (stocks with Trend weather failing could be listed): {tr.before_fix.picks} picks, avg{" "}
+            {tr.before_fix.avg_return_pct != null ? `${tr.before_fix.avg_return_pct > 0 ? "+" : ""}${tr.before_fix.avg_return_pct.toFixed(1)}%` : "–"}
+            {tr.before_fix.avg_vs_spy_pts != null ? `, ${tr.before_fix.avg_vs_spy_pts > 0 ? "+" : ""}${tr.before_fix.avg_vs_spy_pts.toFixed(1)} pts vs SPY` : ""}.
+          </span>
         )}
       </div>
 
