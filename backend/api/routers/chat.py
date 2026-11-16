@@ -133,7 +133,6 @@ def _call_anthropic(api_key: str, question: str, full_context: str) -> str:
     msg = client.messages.create(
         model=os.getenv("ANTHROPIC_CHAT_MODEL", "claude-haiku-4-5-20251001"),
         max_tokens=500,
-        temperature=0.3,
         system=full_context,
         messages=[{"role": "user", "content": question}],
     )
