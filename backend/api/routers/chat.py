@@ -117,13 +117,42 @@ def _build_context(dashboard_snapshot: dict | None) -> str:
     return f"Last run signals:\n" + "\n".join(rows) + f"\n\nConfig: buy_min={cfg.get('buy_min', 70)} sell_max={cfg.get('sell_max', 30)}"
 
 
+_anthropic_client = None
+_anthropic_client_key: str | None = None
+
+
+def _call_anthropic(api_key: str, question: str, full_context: str) -> str:
+    import anthropic
+
+    global _anthropic_client, _anthropic_client_key
+    with _openai_lock:
+        if _anthropic_client is None or _anthropic_client_key != api_key:
+            _anthropic_client = anthropic.Anthropic(api_key=api_key)
+            _anthropic_client_key = api_key
+        client = _anthropic_client
+    msg = client.messages.create(
+        model=os.getenv("ANTHROPIC_CHAT_MODEL", "claude-haiku-4-5-20251001"),
+        max_tokens=500,
+        temperature=0.3,
+        system=full_context,
+        messages=[{"role": "user", "content": question}],
+    )
+    return "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
+
+
 def _call_llm(question: str, context: str) -> str:
-    """Call OpenAI (or compatible) API. Returns answer or raises."""
-    api_key = os.getenv("OPENAI_API_KEY") or load_config().get("data", {}).get("openai_api_key")
+    """Anthropic (same key as the ticker Why section), falling back to OpenAI if only that key is set."""
+    data_cfg = load_config().get("data", {})
+    full_context = f"{SYSTEM_PROMPT}\n\n```\n{context}\n```"
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY") or data_cfg.get("anthropic_api_key")
+    if anthropic_key:
+        return _call_anthropic(anthropic_key, question, full_context)
+
+    api_key = os.getenv("OPENAI_API_KEY") or data_cfg.get("openai_api_key")
     if not api_key:
         return (
-            "Chat requires an OpenAI API key. Set OPENAI_API_KEY in the environment or "
-            "add data.openai_api_key to config.yaml. This copilot explains your model's outputs using your data."
+            "Chat requires an Anthropic API key. Set ANTHROPIC_API_KEY in the environment or "
+            "add data.anthropic_api_key to config.yaml. This copilot explains your model's outputs using your data."
         )
 
     try:
@@ -137,14 +166,9 @@ def _call_llm(question: str, context: str) -> str:
             _openai_client = OpenAI(api_key=api_key)
             _openai_client_key = api_key
         client = _openai_client
-    full_context = f"{SYSTEM_PROMPT}\n\n```\n{context}\n```"
-    messages = [
-        {"role": "system", "content": full_context},
-        {"role": "user", "content": question},
-    ]
     resp = client.chat.completions.create(
         model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
-        messages=messages,
+        messages=[{"role": "system", "content": full_context}, {"role": "user", "content": question}],
         max_tokens=500,
         temperature=0.3,
     )
