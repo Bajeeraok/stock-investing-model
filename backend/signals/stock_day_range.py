@@ -251,13 +251,13 @@ def levels_from_summary(summary: dict | None) -> list[dict[str, Any]]:
 
 
 def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datetime | None = None) -> dict | None:
-    """Live fetch (daily 6mo + today's 5-min bars) → build_day_range. None on any data gap."""
+    """Live fetch (daily 1y + today's 5-min bars) → build_day_range. None on any data gap."""
     import yfinance as yf
     from zoneinfo import ZoneInfo
 
     now = now or datetime.now(ZoneInfo("America/New_York"))
     t = yf.Ticker(ticker)
-    d = t.history(period="6mo", interval="1d", auto_adjust=False)
+    d = t.history(period="1y", interval="1d", auto_adjust=False)
     if d is None or d.empty:
         return None
     idx = d.index.tz_convert("America/New_York") if d.index.tz is not None else d.index
@@ -288,5 +288,11 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
                            "open": float(m["Open"].iloc[0]),
                            "low": float(m["Low"].min()),
                            "minutes_since_open": (now.hour * 60 + now.minute) - (9 * 60 + 30)}
-    return build_day_range([c for _, c in rows], [x.isoformat() for x, _ in rows],
-                           session=session, levels=levels_from_summary(summary), premarket=premarket)
+    closes = [c for _, c in rows]
+    out = build_day_range(closes, [x.isoformat() for x, _ in rows],
+                          session=session, levels=levels_from_summary(summary), premarket=premarket)
+    if out is not None:
+        from signals.bounce_zone import bounce_zone
+
+        out["bounce_zone"] = bounce_zone(closes)
+    return out

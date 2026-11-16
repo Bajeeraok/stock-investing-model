@@ -186,7 +186,7 @@ def _fresh_day_range(ticker: str, detail: dict) -> dict | None:
         from signals.cache import cache_key, get_cached, set_cached
         from signals.stock_day_range import compute_stock_day_range
 
-        key = cache_key("day_range", "v1", ticker)
+        key = cache_key("day_range", "v2", ticker)
         hit = get_cached(key)
         if isinstance(hit, dict):
             return hit

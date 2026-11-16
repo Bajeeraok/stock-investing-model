@@ -122,3 +122,16 @@ def test_ladder_close_odds_never_exceed_touch_odds():
                {"session": {"last": c[-1], "high": c[-1], "low": c[-1], "minutes_since_open": 30}}):
         for r in build_day_range(c, d, **kw)["ladder"]:
             assert r["close_below"] <= r["p"] and r["close_above"] <= r["p"]
+
+
+def test_bounce_zone_only_for_dips_and_ordered():
+    from signals.bounce_zone import bounce_zone
+
+    up = [100 * math.exp(0.001 * i + 0.02 * (1 if i % 2 else -1)) for i in range(260)]
+    assert bounce_zone(up) is None
+    assert bounce_zone(up[:150]) is None
+    dip = up[:220] + [up[219] * math.exp(-0.01 * k + 0.02 * (1 if k % 2 else -1)) for k in range(1, 41)]
+    z = bounce_zone(dip)
+    assert z is not None and z["drawdown_pct"] <= -15
+    assert z["low"] < z["mid"] < z["high"] < z["ref_close"]
+    assert z["test"]["coverage_pct"] > 80

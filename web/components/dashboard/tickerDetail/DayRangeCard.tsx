@@ -41,6 +41,16 @@ export type DayRangePayload = {
   ladder?: { p: number; dip: number; pop: number; close_below?: number; close_above?: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
   reach_calibration?: { sessions: number; tickers: number; cases: number };
+  bounce_zone?: {
+    ref_close: number;
+    drawdown_pct: number;
+    ma50: number;
+    low: number;
+    mid: number;
+    high: number;
+    horizon_days: number;
+    test: { from: string; coverage_pct: number; median_err_pct: number; limit_fill_pct: number; ret_limit_pct: number; ret_now_pct: number; ret_missed_pct: number };
+  } | null;
   tracked?: {
     days: number;
     since: string | null;
@@ -264,6 +274,8 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
         Odds, not predictions. Wider around earnings. Doesn't change the signal.
       </p>
 
+      {data.bounce_zone && <BounceZone z={data.bounce_zone} />}
+
       {data.tracked?.history && data.tracked.history.length > 0 && (
         <div className="text-[12px]">
           <p className="text-td-muted mb-1">9:20 forecast vs actual (predicted → actual)</p>
@@ -312,4 +324,23 @@ function trackedLine(d: DayRangePayload): string {
 
 export function sessionDay(iso: string): string {
   return new Date(`${iso}T12:00:00`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function BounceZone({ z }: { z: NonNullable<DayRangePayload["bounce_zone"]> }) {
+  const t = z.test;
+  return (
+    <div className="rounded-lg border border-td-line p-3 text-[12.5px] space-y-1">
+      <p className="text-td-text font-semibold">Bounce zone · next ~{z.horizon_days} sessions · not a reason to wait</p>
+      <p className="text-td-muted">
+        {Math.abs(z.drawdown_pct).toFixed(0)}% off its 1-year high and below the 50-day ({usd(z.ma50)}). From the {usd(z.ref_close)} close, the
+        low usually lands near <span className="font-mono text-td-text">{usd(z.mid)}</span>, 80% zone{" "}
+        <span className="font-mono text-td-text">{usd(z.low)}–{usd(z.high)}</span>.
+      </p>
+      <p className="text-td-muted">
+        Tested {t.from}–now: the zone caught the low {t.coverage_pct}% of the time, typical miss {t.median_err_pct}%. Waiting for {usd(z.mid)} filled{" "}
+        {t.limit_fill_pct}% and made +{t.ret_limit_pct}% at 60 days vs +{t.ret_now_pct}% buying now; the ones that never dipped made +{t.ret_missed_pct}%.
+        Stage entries with a stop instead.
+      </p>
+    </div>
+  );
 }

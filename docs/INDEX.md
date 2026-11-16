@@ -20,6 +20,7 @@
 | Entry band touch % / timing | `backend/signals/entry_band_touch.py`, `build_entry_band_touch_rates.py` |
 | FMP keys, endpoints, field mapping | [`data/FMP_DATA_MAPPING.md`](data/FMP_DATA_MAPPING.md), [`data/DATA_SOURCES.md`](data/DATA_SOURCES.md) |
 | API/dashboard JSON shapes | [`data/DATA_CONTRACT.md`](data/DATA_CONTRACT.md) |
+| **Past research results (read before re-running a big analysis)** | [`research/README.md`](research/README.md) |
 | Backtest scripts, hit rates, walk-forward limits | [`signals/BACKTEST_SIGNALS.md`](signals/BACKTEST_SIGNALS.md), [`backend/BACKTEST_DATA.md`](backend/BACKTEST_DATA.md) |
 | Direction/range accuracy, EOD validation | [`signals/VALIDATING_MODEL_PREDICTIONS.md`](signals/VALIDATING_MODEL_PREDICTIONS.md), [`signals/MODEL_VALIDATION.md`](signals/MODEL_VALIDATION.md) |
 | Rotation, breadth, RS step-down | [`signals/ROTATION_AND_PROBABILITY_ANALYSIS.md`](signals/ROTATION_AND_PROBABILITY_ANALYSIS.md) |

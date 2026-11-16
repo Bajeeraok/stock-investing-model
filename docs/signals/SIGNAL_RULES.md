@@ -63,6 +63,7 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 ## Data and tracking
 
 - Official 8 PM EOD snapshots are never overwritten by intraday runs.
+- Day range (open, low, close ranges) and the dip-stock bounce zone are display only: never a gate, never a reason to wait.
 - Score against data the model had not seen. Keep the current era's record separate from calls made before it.
 - HOLD is never scored right or wrong. ADD is right if price rose, TRIM/REDUCE/SELL/AVOID if it fell.
 - Don't bump `MODEL_VERSION` for tuning changes. Every version since `TRACKING_ERA_SINCE` (2026.11.1) is scored as one model so history builds up. Log each change with its date in `signals/model_version.py`.
@@ -70,6 +71,7 @@ to judge. The audit raises `buy_calls_losing_money`, `exit_calls_costing_money` 
 ## Changing the model
 
 - Changes are proposed with out-of-sample evidence (sample size, baseline) and shipped only after the owner's OK.
+- Write every big analysis (including "tested, not shipped") to `docs/research/findings/` with its script, and add it to `docs/research/README.md`.
 - Prefer simple recalibration over new features. Fewer than ~30 scored cases = "watch, not enough data".
 - Already tested with no edge on S&P 500 large caps (don't re-propose without new data): composite score and price
   factors, point-in-time fundamentals, post-earnings drift, insider clusters, dip-timing for index funds.
