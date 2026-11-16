@@ -11,6 +11,11 @@ Calibration (125 tracked tickers):
   • Touch odds before the open use the empirical 10y touch rate of a level m·σ20 from the prior
     close (fat tails: a 2σ level traded 6.2% of days vs 2% for a normal); intraday uses the
     reflection rule 2·(1−Φ(d / (0.57·σ√left))).
+  • Pre-open with a pre-market price (4:00–9:30 ET): centre on it, not the prior close, with
+    0.80 × σ20 for the close band and 0.85 × the touch moves (fitted vs prev-close k on 60 days
+    of 5-min bars, 125 tickers: the ratio held at 0.79–0.84 in both halves). Out of sample: close
+    error 2.7% → 2.1%, error of the 50% low 1.4% → 0.9%; on gap days (>1σ) 80% band coverage
+    45% → 63% and low error 3.8% → 1.2%.
 Probabilities, not predictions. Display only — never feeds the buy/sell signal.
 """
 from __future__ import annotations
@@ -27,6 +32,8 @@ CLOSE_K = 0.97
 INTRA_K = 0.55
 INTRA_K_LATE = 0.65
 INTRA_REACH_K = 0.57
+PRE_K = 0.80
+PRE_MOVE_K = 0.85
 SESSION_MIN = 390
 # Intraday reach odds -> observed retouch rate of the day's low/high from 10:30/12:30/2:30/3:30
 # (24 large caps + SPY/QQQ, 59 sessions of 5-min bars, 11,328 cases; both ticker halves agree).
@@ -91,12 +98,12 @@ def _uncalibrate_reach(q: float) -> float:
     return pts[-1][0]
 
 
-def reach_ladder(anchor: float, sig: float, left: float | None) -> list[dict[str, float]]:
+def reach_ladder(anchor: float, sig: float, left: float | None, pre_k: float = 1.0) -> list[dict[str, float]]:
     """Dip/pop prices with a given chance of trading before the close (left=None: next session)."""
     out = []
     for p in LADDER_P:
         if left is None:
-            m = _pre_open_move(p)
+            m = pre_k * _pre_open_move(p)
         elif left > 0:
             m = INTRA_REACH_K * math.sqrt(left) * NormalDist().inv_cdf(1 - _uncalibrate_reach(p) / 2)
         else:
@@ -148,9 +155,11 @@ def build_day_range(
     *,
     session: dict[str, float] | None = None,
     levels: list[dict[str, Any]] | None = None,
+    premarket: float | None = None,
 ) -> dict[str, Any] | None:
     """closes/dates: completed daily sessions (oldest first), excluding today's partial bar.
-    session: {last, high, low, minutes_since_open} while the market is open, else None."""
+    session: {last, high, low, minutes_since_open} while the market is open, else None.
+    premarket: last pre-market trade before the open (centres the next-session forecast)."""
     if len(closes) < 25 or len(closes) != len(dates):
         return None
     sig = ewma_sigmas(closes)[-1]
@@ -181,11 +190,13 @@ def build_day_range(
         )
         anchor = last
     else:
-        sd = CLOSE_K * sig
-        out.update(close_low=px(-Z80 * sd, ref), close_mid=round(ref, 2), close_high=px(Z80 * sd, ref),
-                   close_low50=px(-Z50 * sd, ref), close_high50=px(Z50 * sd, ref),
-                   p_close_green=None)
-        anchor = ref
+        pre = float(premarket) if premarket and 0.6 < premarket / ref < 1.6 else None
+        anchor = pre or ref
+        sd = (PRE_K if pre else CLOSE_K) * sig
+        out.update(close_low=px(-Z80 * sd, anchor), close_mid=round(anchor, 2), close_high=px(Z80 * sd, anchor),
+                   close_low50=px(-Z50 * sd, anchor), close_high50=px(Z50 * sd, anchor),
+                   p_close_green=None, premarket=round(pre, 2) if pre else None)
+    move_k = PRE_MOVE_K if not live and out.get("premarket") else 1.0
     lv_out = []
     seen = set()
     for lv in levels or []:
@@ -203,13 +214,13 @@ def build_day_range(
             # Forward odds from the current price; an earlier touch is reported separately.
             prob = calibrate_reach(min(0.99, 2 * (1 - _phi(d / rem)))) if left > 0 else 0.0
         else:
-            prob = min(0.99, _pre_open_touch(abs(math.log(p / anchor)) / sig))
+            prob = min(0.99, _pre_open_touch(abs(math.log(p / anchor)) / sig / move_k))
         z = math.log(p / anchor) / sd if sd > 0 else 0.0
         p_close = _phi(z) if below else 1 - _phi(z)
         lv_out.append({"label": lv.get("label"), "price": round(p, 2), "side": "below" if below else "above",
                        "p_reach": round(prob, 2), "p_close_beyond": round(p_close, 2), "touched": touched})
     out["levels"] = sorted(lv_out, key=lambda x: -x["price"])
-    out["ladder"] = reach_ladder(anchor, sig, left if live else None)
+    out["ladder"] = reach_ladder(anchor, sig, left if live else None, move_k)
     if live:
         out["reach_calibration"] = REACH_CALIBRATION_N
     out["scorecard"] = scorecard(closes, dates)
@@ -239,8 +250,20 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
     idx = d.index.tz_convert("America/New_York") if d.index.tz is not None else d.index
     today = now.date()
     in_session = now.weekday() < 5 and (9, 30) <= (now.hour, now.minute) < (16, 0)
-    rows = [(ts.date(), float(c)) for ts, c in zip(idx, d["Close"]) if c == c and (not in_session or ts.date() < today)]
-    session = None
+    pre_open = now.weekday() < 5 and (4, 0) <= (now.hour, now.minute) < (9, 30)
+    rows = [(ts.date(), float(c)) for ts, c in zip(idx, d["Close"])
+            if c == c and (not (in_session or pre_open) or ts.date() < today)]
+    session = premarket = None
+    if pre_open:
+        try:
+            m = t.history(period="1d", interval="5m", prepost=True, auto_adjust=False)
+            if m is not None and not m.empty:
+                mi = m.index.tz_convert("America/New_York") if m.index.tz is not None else m.index
+                m = m.set_axis(mi)
+                m = m[(m.index.date == today) & (m.index.hour * 60 + m.index.minute < 570)]["Close"].dropna()
+                premarket = float(m.iloc[-1]) if not m.empty else None
+        except Exception:
+            premarket = None
     if in_session:
         m = t.history(period="1d", interval="5m", auto_adjust=False)
         if m is not None and not m.empty:
@@ -252,4 +275,4 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
                            "low": float(m["Low"].min()),
                            "minutes_since_open": (now.hour * 60 + now.minute) - (9 * 60 + 30)}
     return build_day_range([c for _, c in rows], [x.isoformat() for x, _ in rows],
-                           session=session, levels=levels_from_summary(summary))
+                           session=session, levels=levels_from_summary(summary), premarket=premarket)

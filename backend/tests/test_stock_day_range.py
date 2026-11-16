@@ -88,3 +88,17 @@ def test_reach_calibration_is_monotone_and_inverts():
     assert all(b >= a for a, b in zip(ys, ys[1:])) and abs(calibrate_reach(0.5) - 0.42) < 1e-9
     for q in (0.1, 0.25, 0.5, 0.75):
         assert abs(calibrate_reach(_uncalibrate_reach(q)) - q) < 1e-9
+
+
+def test_premarket_centres_next_session_and_narrows():
+    c, d = _series()
+    base = build_day_range(c, d)
+    pre = c[-1] * 0.97
+    r = build_day_range(c, d, premarket=pre)
+    assert r["phase"] == "next_session" and r["premarket"] == round(pre, 2) and r["close_mid"] == round(pre, 2)
+    assert r["ref_close"] == base["ref_close"]
+    assert (r["close_high"] - r["close_low"]) / pre < (base["close_high"] - base["close_low"]) / c[-1]
+    assert r["ladder"][0]["dip"] < pre < r["ladder"][0]["pop"]
+    assert build_day_range(c, d, premarket=c[-1] * 3)["premarket"] is None
+    live = build_day_range(c, d, premarket=pre, session={"last": c[-1], "high": c[-1], "low": c[-1], "minutes_since_open": 30})
+    assert live["phase"] == "intraday" and live["close_mid"] == round(c[-1], 2)

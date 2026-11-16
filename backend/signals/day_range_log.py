@@ -43,7 +43,7 @@ def _save(day: str, data: dict) -> None:
 
 def compact(r: dict) -> dict:
     keep = ("phase", "ref_close", "ref_date", "sigma_pct", "last", "minutes_left", "close_low", "close_mid",
-            "close_high", "close_low50", "close_high50", "p_close_green", "ladder")
+            "close_high", "close_low50", "close_high50", "p_close_green", "ladder", "premarket")
     out = {k: r.get(k) for k in keep if r.get(k) is not None}
     out["levels"] = [{k: lv.get(k) for k in ("label", "price", "side", "p_reach", "p_close_beyond")}
                      for lv in r.get("levels") or []]

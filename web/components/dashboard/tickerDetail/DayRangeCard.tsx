@@ -27,6 +27,7 @@ export type DayRangePayload = {
   close_low50?: number;
   close_high50?: number;
   p_close_green: number | null;
+  premarket?: number | null;
   day_low?: number | null;
   day_high?: number | null;
   levels: DayRangeLevel[];
@@ -55,11 +56,13 @@ export const splitLevels = (d: DayRangePayload) => ({
   far: d.levels.filter((l) => l.p_reach < REACH_MIN),
 });
 
-/** Highest-probability lows (75% and 50% chance) and where they sit vs the entry bands. */
+/** Highest-probability lows (75% and 50% chance) and where they sit vs the entry bands.
+ *  Intraday, a dip above the low already printed today is not a new low, so skip to deeper rungs. */
 export function likelyLow(d: DayRangePayload) {
-  const lad = d.ladder ?? [];
-  const hi = lad.find((x) => x.p === 0.75);
-  const mid = lad.find((x) => x.p === 0.5);
+  const soFar = d.phase === "intraday" && d.day_low != null ? d.day_low : null;
+  const lad = (d.ladder ?? []).filter((x) => soFar == null || x.dip < soFar);
+  const hi = soFar == null ? lad.find((x) => x.p === 0.75) : lad[0];
+  const mid = soFar == null ? lad.find((x) => x.p === 0.5) : lad[1];
   if (!hi) return null;
   const lv = (label: string) => d.levels.find((l) => l.label === label)?.price;
   const sLo = lv("Swing band low");
@@ -73,7 +76,7 @@ export function likelyLow(d: DayRangePayload) {
         : sHi != null && v > sHi
           ? "above the Swing band"
           : "outside the entry bands";
-  return { hi, mid, where: where(hi.dip) };
+  return { hi, mid, where: where(hi.dip), soFar };
 }
 
 export const pct = (p: number) => (p < 0.01 ? "<1%" : p > 0.99 ? ">99%" : `${Math.round(p * 100)}%`);
@@ -104,13 +107,15 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
           <CalendarRange className="h-4 w-4 text-td-accent" aria-hidden />
           <h3 className="text-sm font-semibold text-td-text">{live ? "Today's likely close" : `Next session range${data.session_date ? ` · ${sessionDay(data.session_date)}` : ""}`}</h3>
         </div>
-        <span className="text-[12px] text-td-muted">{live ? hrs : `vs ${data.ref_date} close ${usd(data.ref_close)}`}</span>
+        <span className="text-[12px] text-td-muted">
+          {live ? hrs : data.premarket != null ? `from pre-market ${usd(data.premarket)} · ${data.ref_date} close ${usd(data.ref_close)}` : `vs ${data.ref_date} close ${usd(data.ref_close)}`}
+        </span>
       </div>
 
       {ll && (
         <div className="rounded-lg border border-td-accent/40 bg-td-accent/10 px-3 py-2 text-[13px]">
           <div className="flex justify-between gap-2">
-            <span className="font-semibold text-td-text">Likely low {live ? "today" : "next session"}</span>
+            <span className="font-semibold text-td-text">{ll.soFar != null ? `Low so far ${usd(ll.soFar)} · next low` : `Likely low ${live ? "today" : "next session"}`}</span>
             <span className="font-mono font-semibold text-td-accent">{usd(ll.hi.dip)}</span>
           </div>
           <p className="text-[12px] text-td-muted mt-0.5">
