@@ -27,6 +27,7 @@ Revisit — what would make us look again (e.g. 30+ days of live tracking).
 
 | Date | Finding | Status |
 |---|---|---|
+| 2026-11-16 | [Post-earnings move: size and direction](findings/2026-11-16-earnings-move.md) | Tested; build proposed |
 | 2026-11-16 | [Bounce zone for dip stocks](findings/2026-11-16-bounce-zone.md) | Shipped, display only |
 | 2026-11-16 | [Day range: pre-market anchor and predicted open](findings/2026-11-16-day-range-premarket-open.md) | Shipped, display only |
 | 2026-11-14 | [Fair value swings (INTC, NOW, APP, HUM, ORCL…)](findings/2026-11-14-fair-value-swings.md) | Fixed |
