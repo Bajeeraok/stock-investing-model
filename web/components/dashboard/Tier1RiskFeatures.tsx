@@ -586,7 +586,7 @@ export function EarningsImpactPanel({ items }: { items: EarningsImpactData[] }) 
                 <p className={clsx("text-xl font-bold font-mono", cfg.color)}>
                   ±{data.expected_move_pct}%
                 </p>
-                <p className="text-[13px] text-slate-600">implied move</p>
+                <p className="text-[13px] text-slate-600">expected move (volatility-based)</p>
               </div>
             </div>
 

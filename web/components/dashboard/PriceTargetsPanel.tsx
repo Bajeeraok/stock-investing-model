@@ -146,6 +146,27 @@ export interface EarningsTarget {
     abs_move_pct: number;
   }>;
   method_note?: string;
+  report_timing?: "amc" | "bmo" | null;
+  typical_move_pct?: number;
+  move50_pct?: number;
+  move80_pct?: number;
+  range50_low?: number;
+  range50_high?: number;
+  range80_low?: number;
+  range80_high?: number;
+  direction_note?: string;
+  options_move?: { move_pct: number; expiry: string; strike: number } | null;
+  tracked?: {
+    rows: Array<{
+      report: string;
+      pre_date: string;
+      move50_pct: number;
+      move80_pct: number;
+      options?: { move_pct: number } | null;
+      scored?: { actual_move_pct: number; in50: boolean; in80: boolean; in_options: boolean | null };
+    }>;
+    all: { scored: number; in50_pct: number | null; in80_pct: number | null; in_options_pct: number | null };
+  } | null;
   /** Set when spot is far above model FV — upside band is volatility only. */
   valuation_context?: string;
   is_tactical_only?: boolean;
@@ -387,45 +408,79 @@ function EarningsBanner({ info }: { info: EarningsInfo }) {
 function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }) {
   if (!et.available) return null;
   const hitRatePct = et.calibration_hit_rate != null ? et.calibration_hit_rate * 100 : null;
-  const biasLabel = normalizeToneLabel(et.bias);
-  const biasTone =
-    biasLabel === "Constructive" ? "text-td-accent" :
-    biasLabel === "Cautionary" ? "text-td-warn" :
-    "text-td-warn";
+  const hasRange = et.range80_low != null && et.range80_high != null;
+  const when = et.report_timing === "amc" ? "after the close" : et.report_timing === "bmo" ? "before the open" : null;
+  const tr = et.tracked;
 
   return (
     <div className="bg-td-info/5 border border-td-info/20 rounded-xl px-3.5 py-3 space-y-2.5">
       <div className="flex items-center gap-2">
         <Target size={11} className="text-td-info" />
         <span className="text-[11px] font-semibold text-td-info uppercase tracking-widest">
-          Earnings Event Target (1-Day Reaction)
+          Earnings Move (1-Day Reaction)
         </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {et.next_earnings_date && (
+        <p className="text-[12px] text-td-muted">
+          Reports {et.next_earnings_date}{when ? ` ${when}` : ""}. Range is from the close before the report to the close of the first session after it.
+        </p>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div>
-          <p className="text-[11px] text-td-muted">Expected Move</p>
-          <p className="text-sm font-mono font-bold text-td-info">{fmtPct(et.expected_move_pct)}</p>
+          <p className="text-[11px] text-td-muted">Typical move</p>
+          <p className="text-sm font-mono font-bold text-td-info">±{fmtPct(et.expected_move_pct).replace(/^[+]/, "")}</p>
         </div>
+        {hasRange ? (
+          <>
+            <div>
+              <p className="text-[11px] text-td-muted">50% range (±{et.move50_pct}%)</p>
+              <p className="text-sm font-mono font-bold text-td-text">{fmt(et.range50_low)}–{fmt(et.range50_high)}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-td-muted">80% range (±{et.move80_pct}%)</p>
+              <p className="text-sm font-mono font-bold text-td-text">{fmt(et.range80_low)}–{fmt(et.range80_high)}</p>
+            </div>
+          </>
+        ) : (
+          <div>
+            <p className="text-[11px] text-td-muted">Range</p>
+            <p className="text-sm font-mono font-bold text-td-text">{fmt(et.downside_target)}–{fmt(et.upside_target)}</p>
+          </div>
+        )}
         <div>
-          <p className="text-[11px] text-td-muted">Upside</p>
-          <p className="text-sm font-mono font-bold text-td-accent">{fmt(et.upside_target)}</p>
-        </div>
-        <div>
-          <p className="text-[11px] text-td-muted">Downside</p>
-          <p className="text-sm font-mono font-bold text-td-crit">{fmt(et.downside_target)}</p>
-        </div>
-        <div>
-          <p className="text-[11px] text-td-muted">Bias</p>
-          <p className={clsx("text-[13px] font-semibold", biasTone)}>
-            {biasLabel === "Unavailable" ? "Neutral" : biasLabel}
-            {et.bias_prob_pct != null ? ` (${Math.round(et.bias_prob_pct)}%)` : ""}
+          <p className="text-[11px] text-td-muted">Options market</p>
+          <p className="text-sm font-mono font-bold text-td-text">
+            {et.options_move ? `±${et.options_move.move_pct}%` : "—"}
           </p>
-        </div>
-        <div>
-          <p className="text-[11px] text-td-muted">Directional</p>
-          <p className="text-sm font-mono font-bold text-td-text">{fmt(et.directional_target)}</p>
+          {et.options_move && (
+            <p className="text-[11px] text-td-muted">straddle, {et.options_move.expiry} expiry</p>
+          )}
         </div>
       </div>
+      <p className="text-[12px] text-td-muted">
+        <span className="text-td-text font-semibold">Direction: no edge.</span>{" "}
+        {et.direction_note ?? "No tested signal predicted up vs down better than a coin flip."}
+      </p>
+      {tr && (tr.rows.length > 0 || tr.all.scored > 0) && (
+        <div className="rounded-lg border border-td-line/40 bg-td-surface/30 px-2.5 py-2 space-y-1">
+          <p className="text-[11px] text-td-muted uppercase tracking-widest">Live record (forecast logged 3:50 PM before the report)</p>
+          {tr.all.scored > 0 && (
+            <p className="text-[12px] text-td-muted">
+              All stocks, {tr.all.scored} reports scored: inside 50% range {tr.all.in50_pct ?? "—"}%, inside 80% range {tr.all.in80_pct ?? "—"}%
+              {tr.all.in_options_pct != null ? `, inside options move ${tr.all.in_options_pct}%` : ""}.
+            </p>
+          )}
+          {tr.rows.slice().reverse().map((r) => (
+            <div key={r.report} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="text-td-muted">{r.report.slice(0, 10)}</span>
+              <span className="font-mono text-td-muted">±{r.move50_pct}% / ±{r.move80_pct}%{r.options ? ` · opt ±${r.options.move_pct}%` : ""}</span>
+              <span className={clsx("font-mono", !r.scored ? "text-td-muted" : r.scored.in80 ? "text-td-accent" : "text-td-crit")}>
+                {r.scored ? `${r.scored.actual_move_pct >= 0 ? "+" : ""}${r.scored.actual_move_pct.toFixed(1)}% ${r.scored.in80 ? "inside" : "outside"}` : "pending"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[13px]">
         <div>
           <span className="text-td-muted">Current</span>{" "}
@@ -436,12 +491,8 @@ function EarningsTargetCard({ et, price }: { et: EarningsTarget; price: number }
           <span className="font-mono text-td-text">{et.historical_events ?? 0}</span>
         </div>
         <div>
-          <span className="text-td-muted">Hit Rate</span>{" "}
+          <span className="text-td-muted">Inside 80% (own past)</span>{" "}
           <span className="font-mono text-td-text">{hitRatePct != null ? `${Math.round(hitRatePct)}%` : "—"}</span>
-        </div>
-        <div>
-          <span className="text-td-muted">Confidence</span>{" "}
-          <span className="font-mono text-td-text">{et.confidence_pct != null ? `${et.confidence_pct}%` : "—"}</span>
         </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[13px]">

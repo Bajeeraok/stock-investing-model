@@ -52,3 +52,10 @@ it after the report. Display only.
 
 **Revisit.** After ~30 logged reports: compare blend vs options straddle coverage; retest direction with
 estimate revisions or the options skew if that data becomes available.
+
+## Implemented (2026-11-16, display only)
+
+- `backend/signals/earnings_move.py`: corrected reaction window, blended typical move, 50%/80% bands, ATM straddle move.
+- `backend/signals/price_targets.py::_compute_earnings_target_block`: uses it; `bias` is always Neutral, `directional_target` null.
+- `backend/signals/earnings_log.py`: logs forecasts 3:50 PM ET before each report, scores after the reaction close (`DATA_ROOT/earnings_log.json`).
+- Revisit after 30+ scored reports: compare 80% coverage and size error vs the options straddle.

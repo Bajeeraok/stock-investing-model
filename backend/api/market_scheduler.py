@@ -123,6 +123,25 @@ def _run_day_range_log_job(slot: str) -> None:
         logger.exception("[market-scheduler] day range snapshot %s failed", slot)
 
 
+def _run_earnings_log_job() -> None:
+    try:
+        from config_loader import load_config
+        from signals.earnings_log import log_upcoming
+
+        logger.info("[market-scheduler] earnings forecasts logged: %d", log_upcoming(load_config()))
+    except Exception:
+        logger.exception("[market-scheduler] earnings forecast log failed")
+
+
+def _run_earnings_score_job() -> None:
+    try:
+        from signals.earnings_log import score_pending
+
+        logger.info("[market-scheduler] earnings forecasts scored: %d", score_pending())
+    except Exception:
+        logger.exception("[market-scheduler] earnings scoring failed")
+
+
 def _run_day_range_score_job() -> None:
     try:
         from signals.day_range_log import score_pending
@@ -279,6 +298,30 @@ def start() -> None:
         hour=16,
         day_of_week="mon-fri",
         id="day_range_score",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    _scheduler.add_job(
+        _run_earnings_log_job,
+        "cron",
+        minute=50,
+        hour=15,
+        day_of_week="mon-fri",
+        id="earnings_log",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=600,
+    )
+    _scheduler.add_job(
+        _run_earnings_score_job,
+        "cron",
+        minute=25,
+        hour=16,
+        day_of_week="mon-fri",
+        id="earnings_score",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
