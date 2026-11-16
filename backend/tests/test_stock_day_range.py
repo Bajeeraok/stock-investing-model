@@ -102,3 +102,23 @@ def test_premarket_centres_next_session_and_narrows():
     assert build_day_range(c, d, premarket=c[-1] * 3)["premarket"] is None
     live = build_day_range(c, d, premarket=pre, session={"last": c[-1], "high": c[-1], "low": c[-1], "minutes_since_open": 30})
     assert live["phase"] == "intraday" and live["close_mid"] == round(c[-1], 2)
+
+
+def test_predicted_open_band():
+    c, d = _series()
+    pre = c[-1] * 0.98
+    r = build_day_range(c, d, premarket=pre)
+    assert r["open_mid"] == round(pre, 2) and r["open_low"] < r["open_low50"] < pre < r["open_high50"] < r["open_high"]
+    no_pre = build_day_range(c, d)
+    assert no_pre["open_mid"] == round(c[-1], 2)
+    assert (no_pre["open_high"] - no_pre["open_low"]) / c[-1] > (r["open_high"] - r["open_low"]) / pre
+    live = build_day_range(c, d, session={"last": c[-1], "high": c[-1], "low": c[-1], "minutes_since_open": 30})
+    assert "open_mid" not in live
+
+
+def test_ladder_close_odds_never_exceed_touch_odds():
+    c, d = _series()
+    for kw in ({}, {"premarket": c[-1] * 0.98},
+               {"session": {"last": c[-1], "high": c[-1], "low": c[-1], "minutes_since_open": 30}}):
+        for r in build_day_range(c, d, **kw)["ladder"]:
+            assert r["close_below"] <= r["p"] and r["close_above"] <= r["p"]

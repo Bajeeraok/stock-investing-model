@@ -28,16 +28,21 @@ export type DayRangePayload = {
   close_high50?: number;
   p_close_green: number | null;
   premarket?: number | null;
+  open_mid?: number;
+  open_low?: number;
+  open_high?: number;
+  open_low50?: number;
+  open_high50?: number;
   day_low?: number | null;
   day_high?: number | null;
   levels: DayRangeLevel[];
-  ladder?: { p: number; dip: number; pop: number }[];
+  ladder?: { p: number; dip: number; pop: number; close_below?: number; close_above?: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
   reach_calibration?: { sessions: number; tickers: number; cases: number };
   tracked?: {
     days: number;
     since: string | null;
-    slots: Record<string, { label: string; n: number; in80_pct: number | null; in50_pct: number | null; ladder: { p: number; hit_pct: number | null; n: number }[] }>;
+    slots: Record<string, { label: string; n: number; in80_pct: number | null; in50_pct: number | null; open_n?: number; open_in80_pct?: number | null; avg_abs_open_err_pct?: number; ladder: { p: number; hit_pct: number | null; n: number }[] }>;
   } | null;
 };
 
@@ -126,6 +131,15 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
       )}
 
       <ul className="space-y-1 text-[13px]">
+        {!live && data.open_mid != null && (
+          <li className="flex justify-between gap-2">
+            <span className="text-td-muted">Predicted open</span>
+            <span className="font-mono text-td-text">
+              <span className="font-semibold">{usd(data.open_mid)}</span>
+              {data.open_low != null && data.open_high != null && <span className="text-td-muted"> · 80% {usd(data.open_low)}–{usd(data.open_high)}</span>}
+            </span>
+          </li>
+        )}
         <li className="flex justify-between gap-2">
           <span className="text-td-muted">Most likely close</span>
           <span className="font-mono font-semibold text-td-text">{usd(data.close_mid)}</span>
@@ -174,8 +188,14 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
           {data.ladder.map((r) => (
             <div key={r.p} className="grid grid-cols-3 gap-2 font-mono">
               <span className={`font-semibold ${oddsTone(r.p)}`}>{pct(r.p)}</span>
-              <span className="text-right text-td-text">{usd(r.dip)}</span>
-              <span className="text-right text-td-text">{usd(r.pop)}</span>
+              <span className="text-right text-td-text">
+                {usd(r.dip)}
+                {r.close_below != null && <span className="block text-[11px] text-td-muted">closes below {pct(r.close_below)}</span>}
+              </span>
+              <span className="text-right text-td-text">
+                {usd(r.pop)}
+                {r.close_above != null && <span className="block text-[11px] text-td-muted">closes above {pct(r.close_above)}</span>}
+              </span>
             </div>
           ))}
           <p className="text-[12px] text-td-muted mt-1">
@@ -237,9 +257,10 @@ function trackedLine(d: DayRangePayload): string {
   const s = slots && (slots["0920"] ?? Object.values(slots)[0]);
   if (!s || !s.n) return "Live tracking: snapshots saved at 9:20, 10:30, 12:30 and 3:30, scored after each close. ";
   const low75 = s.ladder.find((x) => x.p === 0.75);
+  const open = s.open_n ? `, open inside 80% range ${s.open_in80_pct}% (avg miss ${s.avg_abs_open_err_pct}%)` : "";
   return `Live record (${s.label}, ${s.n} day${s.n === 1 ? "" : "s"}): close inside 80% range ${s.in80_pct}%, 50% range ${s.in50_pct}%${
     low75?.hit_pct != null ? `, 75% levels reached ${low75.hit_pct}%` : ""
-  }. `;
+  }${open}. `;
 }
 
 export function sessionDay(iso: string): string {

@@ -43,7 +43,8 @@ def _save(day: str, data: dict) -> None:
 
 def compact(r: dict) -> dict:
     keep = ("phase", "ref_close", "ref_date", "sigma_pct", "last", "minutes_left", "close_low", "close_mid",
-            "close_high", "close_low50", "close_high50", "p_close_green", "ladder", "premarket")
+            "close_high", "close_low50", "close_high50", "p_close_green", "ladder", "premarket",
+            "open_mid", "open_low", "open_high", "open_low50", "open_high50")
     out = {k: r.get(k) for k in keep if r.get(k) is not None}
     out["levels"] = [{k: lv.get(k) for k in ("label", "price", "side", "p_reach", "p_close_beyond")}
                      for lv in r.get("levels") or []]
@@ -91,8 +92,8 @@ def log_slot(slot: str, config: dict, *, tickers: list[str] | None = None, now: 
     return len(snaps)
 
 
-def score_snapshot(snap: dict, *, low: float, high: float, close: float) -> dict:
-    """Score one snapshot against the low/high traded after it and the official close."""
+def score_snapshot(snap: dict, *, low: float, high: float, close: float, open_: float | None = None) -> dict:
+    """Score one snapshot against the low/high traded after it, the official close and (pre-open) the open."""
     lo80, hi80 = snap.get("close_low"), snap.get("close_high")
     lo50, hi50 = snap.get("close_low50"), snap.get("close_high50")
     mid = snap.get("close_mid")
@@ -105,6 +106,11 @@ def score_snapshot(snap: dict, *, low: float, high: float, close: float) -> dict
                    for r in snap.get("ladder") or []],
         "levels": [],
     }
+    omid = snap.get("open_mid")
+    if omid and open_:
+        out.update(open=round(open_, 2), open_err_pct=round((open_ / omid - 1) * 100, 2),
+                   open_in80=snap["open_low"] <= open_ <= snap["open_high"] if snap.get("open_low") else None,
+                   open_in50=snap["open_low50"] <= open_ <= snap["open_high50"] if snap.get("open_low50") else None)
     for lv in snap.get("levels") or []:
         p, below = lv.get("price"), lv.get("side") == "below"
         if not p:
@@ -158,8 +164,10 @@ def score_day(day: str, *, bars_fn=None) -> int:
                 after = m[[(x.hour, x.minute) >= (h, mi) for x in m.index]]
                 if after.empty:
                     continue
+                reg = m[[(x.hour, x.minute) >= (9, 30) for x in m.index]]
                 scored.setdefault(slot, {})[t] = score_snapshot(
-                    by_t[t], low=float(after["Low"].min()), high=float(after["High"].max()), close=close)
+                    by_t[t], low=float(after["Low"].min()), high=float(after["High"].max()), close=close,
+                    open_=float(reg["Open"].iloc[0]) if not reg.empty and "Open" in reg else None)
                 n += 1
     _save(day, data)
     return n
@@ -200,6 +208,12 @@ def aggregate(days_data: list[dict], ticker: str | None = None) -> dict[str, Any
                                            / max(1, sum(r.get("close_err_pct") is not None for r in rows)), 2),
             "ladder": [{"p": p, "hit_pct": pct(v), "n": len(v)} for p, v in sorted(ladder.items(), reverse=True)],
         }
+        opens = [r for r in rows if r.get("open_err_pct") is not None]
+        if opens:
+            out[slot].update(open_n=len(opens),
+                             open_in80_pct=pct([r["open_in80"] for r in opens if r.get("open_in80") is not None]),
+                             open_in50_pct=pct([r["open_in50"] for r in opens if r.get("open_in50") is not None]),
+                             avg_abs_open_err_pct=round(sum(abs(r["open_err_pct"]) for r in opens) / len(opens), 2))
     return out
 
 

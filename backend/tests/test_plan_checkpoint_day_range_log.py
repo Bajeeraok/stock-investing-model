@@ -169,3 +169,15 @@ def _long_series_for_event():
     close = pd.Series(100 * np.exp(0.02 * np.array([(-1) ** i for i in range(40)])), index=idx)
     df = pd.DataFrame({"close": close, "high": close, "low": close}, index=idx)
     return close, close * 0 + 1000, df
+
+
+def test_open_prediction_scored_and_aggregated():
+    from signals.day_range_log import aggregate, score_snapshot
+
+    snap = {"close_low": 95, "close_high": 105, "close_mid": 100, "open_mid": 98.0,
+            "open_low": 97.0, "open_high": 99.0, "open_low50": 97.6, "open_high50": 98.4}
+    r = score_snapshot(snap, low=96.0, high=101.0, close=99.0, open_=98.5)
+    assert r["open_in80"] and not r["open_in50"] and r["open_err_pct"] == 0.51
+    assert "open_err_pct" not in score_snapshot(snap, low=96.0, high=101.0, close=99.0)
+    agg = aggregate([{"scored": {"0920": {"X": r}}}])["0920"]
+    assert agg["open_n"] == 1 and agg["open_in80_pct"] == 100 and agg["avg_abs_open_err_pct"] == 0.51

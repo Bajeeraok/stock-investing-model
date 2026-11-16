@@ -16,6 +16,9 @@ Calibration (125 tracked tickers):
     of 5-min bars, 125 tickers: the ratio held at 0.79–0.84 in both halves). Out of sample: close
     error 2.7% → 2.1%, error of the 50% low 1.4% → 0.9%; on gap days (>1σ) 80% band coverage
     45% → 63% and low error 3.8% → 1.2%.
+  • Predicted open = last pre-market trade (mean error 0.41% vs 1.44% from the prior close, same
+    60 days); open band ±0.19σ (80%) / ±0.17σ (50%), or ±0.61σ / ±0.56σ around the prior close
+    when there is no pre-market print. Both halves agreed within 0.01.
 Probabilities, not predictions. Display only — never feeds the buy/sell signal.
 """
 from __future__ import annotations
@@ -34,6 +37,7 @@ INTRA_K_LATE = 0.65
 INTRA_REACH_K = 0.57
 PRE_K = 0.80
 PRE_MOVE_K = 0.85
+OPEN_K = {True: (0.19, 0.17), False: (0.61, 0.56)}  # (80%, 50%) × σ20; key: has pre-market
 SESSION_MIN = 390
 # Intraday reach odds -> observed retouch rate of the day's low/high from 10:30/12:30/2:30/3:30
 # (24 large caps + SPY/QQQ, 59 sessions of 5-min bars, 11,328 cases; both ticker halves agree).
@@ -196,6 +200,9 @@ def build_day_range(
         out.update(close_low=px(-Z80 * sd, anchor), close_mid=round(anchor, 2), close_high=px(Z80 * sd, anchor),
                    close_low50=px(-Z50 * sd, anchor), close_high50=px(Z50 * sd, anchor),
                    p_close_green=None, premarket=round(pre, 2) if pre else None)
+        k80, k50 = OPEN_K[bool(pre)]
+        out.update(open_mid=round(anchor, 2), open_low=px(-Z80 * k80 * sig, anchor), open_high=px(Z80 * k80 * sig, anchor),
+                   open_low50=px(-Z50 * k50 * sig, anchor), open_high50=px(Z50 * k50 * sig, anchor))
     move_k = PRE_MOVE_K if not live and out.get("premarket") else 1.0
     lv_out = []
     seen = set()
@@ -221,6 +228,11 @@ def build_day_range(
                        "p_reach": round(prob, 2), "p_close_beyond": round(p_close, 2), "touched": touched})
     out["levels"] = sorted(lv_out, key=lambda x: -x["price"])
     out["ladder"] = reach_ladder(anchor, sig, left if live else None, move_k)
+    if sd > 0:
+        # Same close distribution as the bands: a touch is always at least as likely as closing beyond.
+        for r in out["ladder"]:
+            r["close_below"] = round(_phi(math.log(r["dip"] / anchor) / sd), 2)
+            r["close_above"] = round(1 - _phi(math.log(r["pop"] / anchor) / sd), 2)
     if live:
         out["reach_calibration"] = REACH_CALIBRATION_N
     out["scorecard"] = scorecard(closes, dates)
