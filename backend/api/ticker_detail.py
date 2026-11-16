@@ -198,6 +198,14 @@ def _fresh_day_range(ticker: str, detail: dict) -> dict | None:
                 r["tracked"] = live_scorecard(ticker)
             except Exception:
                 r["tracked"] = None
+            if r.get("phase") == "intraday":
+                try:
+                    from signals.day_range_log import today_open_forecast
+                    from signals.time_et import now_et
+
+                    r["open_forecast"] = today_open_forecast(ticker, now_et().date().isoformat())
+                except Exception:
+                    r["open_forecast"] = None
             set_cached(key, r, 120)
         return r
     except Exception:

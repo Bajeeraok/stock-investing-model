@@ -28,6 +28,8 @@ export type DayRangePayload = {
   close_high50?: number;
   p_close_green: number | null;
   premarket?: number | null;
+  day_open?: number | null;
+  open_forecast?: { open_mid: number; open_low?: number; open_high?: number } | null;
   open_mid?: number;
   open_low?: number;
   open_high?: number;
@@ -42,6 +44,7 @@ export type DayRangePayload = {
   tracked?: {
     days: number;
     since: string | null;
+    history?: { date: string; open_pred?: number | null; open?: number | null; low_pred?: number | null; low?: number | null; close_pred?: number | null; close?: number | null; in50?: boolean | null; in80?: boolean | null }[];
     slots: Record<string, { label: string; n: number; in80_pct: number | null; in50_pct: number | null; open_n?: number; open_in80_pct?: number | null; avg_abs_open_err_pct?: number; ladder: { p: number; hit_pct: number | null; n: number }[] }>;
   } | null;
 };
@@ -137,6 +140,19 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
             <span className="font-mono text-td-text">
               <span className="font-semibold">{usd(data.open_mid)}</span>
               {data.open_low != null && data.open_high != null && <span className="text-td-muted"> · 80% {usd(data.open_low)}–{usd(data.open_high)}</span>}
+            </span>
+          </li>
+        )}
+        {live && data.day_open != null && (
+          <li className="flex justify-between gap-2">
+            <span className="text-td-muted">Open</span>
+            <span className="font-mono text-td-text">
+              <span className="font-semibold">{usd(data.day_open)}</span>
+              {data.open_forecast?.open_mid != null && (
+                <span className="text-td-muted">
+                  {" "}· predicted {usd(data.open_forecast.open_mid)} ({missPct(data.day_open, data.open_forecast.open_mid)})
+                </span>
+              )}
             </span>
           </li>
         )}
@@ -247,8 +263,39 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
         )}
         Odds, not predictions. Wider around earnings. Doesn't change the signal.
       </p>
+
+      {data.tracked?.history && data.tracked.history.length > 0 && (
+        <div className="text-[12px]">
+          <p className="text-td-muted mb-1">9:20 forecast vs actual (predicted → actual)</p>
+          <div className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-x-2 text-td-muted">
+            <span>Day</span>
+            <span className="text-right">Open</span>
+            <span className="text-right">Low (75%)</span>
+            <span className="text-right">Close</span>
+          </div>
+          {data.tracked.history.map((h) => (
+            <div key={h.date} className="grid grid-cols-[3.5rem_1fr_1fr_1fr] gap-x-2 font-mono">
+              <span className="text-td-muted">{h.date.slice(5)}</span>
+              <span className="text-right text-td-text">{pair(h.open_pred, h.open)}</span>
+              <span className="text-right text-td-text">{pair(h.low_pred, h.low)}</span>
+              <span className={`text-right ${h.in80 === false ? "text-td-warn" : "text-td-text"}`}>
+                {pair(h.close_pred, h.close)}
+                {h.in50 ? " ●" : h.in80 ? " ○" : h.in80 === false ? " ×" : ""}
+              </span>
+            </div>
+          ))}
+          <p className="text-td-muted mt-1">● inside the 50% close range · ○ inside 80% · × outside</p>
+        </div>
+      )}
     </section>
   );
+}
+
+const short = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(2));
+const pair = (p: number | null | undefined, a: number | null | undefined) => `${short(p)} → ${short(a)}`;
+function missPct(actual: number, pred: number): string {
+  const m = (actual / pred - 1) * 100;
+  return `${m >= 0 ? "+" : ""}${m.toFixed(2)}%`;
 }
 
 /** Live record: snapshots saved at 9:20/10:30/12:30/3:30 ET and scored after each close. */

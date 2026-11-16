@@ -191,6 +191,7 @@ def build_day_range(
             close_low50=px(-Z50 * sd, last), close_high50=px(Z50 * sd, last),
             p_close_green=round(_phi(math.log(last / ref) / sd), 2) if sd > 0 else (1.0 if last > ref else 0.0),
             day_low=session.get("low"), day_high=session.get("high"),
+            day_open=round(float(session["open"]), 2) if session.get("open") else None,
         )
         anchor = last
     else:
@@ -284,6 +285,7 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
             m = m[m.index.date == today]
             if not m.empty:
                 session = {"last": float(m["Close"].iloc[-1]), "high": float(m["High"].max()),
+                           "open": float(m["Open"].iloc[0]),
                            "low": float(m["Low"].min()),
                            "minutes_since_open": (now.hour * 60 + now.minute) - (9 * 60 + 30)}
     return build_day_range([c for _, c in rows], [x.isoformat() for x, _ in rows],

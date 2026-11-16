@@ -229,12 +229,38 @@ def _recent_days(limit: int = 60) -> list[dict]:
     for p in sorted(_dir().glob("*.json"))[-limit:]:
         d = _load(p.stem)
         if d.get("scored"):
-            days.append({"date": p.stem, "scored": d["scored"]})
+            days.append({"date": p.stem, "scored": d["scored"], "pre": (d.get("snapshots") or {}).get("0920") or {}})
     _AGG_CACHE.update(ts=_t.time(), days=days)
     return days
 
 
+def history(days_data: list[dict], ticker: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Per-day 9:20 forecast vs actual open / low / close, newest first."""
+    out = []
+    for d in reversed(days_data):
+        snap, sc = (d.get("pre") or {}).get(ticker), ((d.get("scored") or {}).get("0920") or {}).get(ticker)
+        if not snap or not sc:
+            continue
+        low75 = next((r["dip"] for r in snap.get("ladder") or [] if r.get("p") == 0.75), None)
+        out.append({"date": d["date"], "open_pred": snap.get("open_mid"), "open": sc.get("open"),
+                    "low_pred": low75, "low": sc.get("low_after"), "close_pred": snap.get("close_mid"),
+                    "close": sc.get("close"), "in50": sc.get("in50"), "in80": sc.get("in80")})
+        if len(out) >= limit:
+            break
+    return out
+
+
+def today_open_forecast(ticker: str, day: str) -> dict[str, Any] | None:
+    snap = ((_load(day).get("snapshots") or {}).get("0920") or {}).get(ticker.upper())
+    if not snap or snap.get("open_mid") is None:
+        return None
+    return {k: snap.get(k) for k in ("open_mid", "open_low", "open_high", "open_low50", "open_high50", "premarket")}
+
+
 def scorecard(ticker: str | None = None) -> dict[str, Any]:
     days = _recent_days()
-    return {"days": len(days), "since": days[0]["date"] if days else None,
-            "slots": aggregate(days, ticker.upper() if ticker else None)}
+    out = {"days": len(days), "since": days[0]["date"] if days else None,
+           "slots": aggregate(days, ticker.upper() if ticker else None)}
+    if ticker:
+        out["history"] = history(days, ticker.upper())
+    return out

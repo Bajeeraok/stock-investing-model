@@ -181,3 +181,17 @@ def test_open_prediction_scored_and_aggregated():
     assert "open_err_pct" not in score_snapshot(snap, low=96.0, high=101.0, close=99.0)
     agg = aggregate([{"scored": {"0920": {"X": r}}}])["0920"]
     assert agg["open_n"] == 1 and agg["open_in80_pct"] == 100 and agg["avg_abs_open_err_pct"] == 0.51
+
+
+def test_history_pairs_forecast_with_actual():
+    from signals.day_range_log import history
+
+    days = [
+        {"date": "2026-11-13", "pre": {"NVDA": {"open_mid": 170.0, "close_mid": 166.0, "ladder": [{"p": 0.75, "dip": 165.0}]}},
+         "scored": {"0920": {"NVDA": {"open": 169.9, "low_after": 158.4, "close": 162.85, "in50": False, "in80": True}}}},
+        {"date": "2026-11-16", "pre": {"NVDA": {"close_mid": 162.85}}, "scored": {}},
+    ]
+    h = history(days, "NVDA")
+    assert len(h) == 1 and h[0]["date"] == "2026-11-13"
+    assert h[0]["open_pred"] == 170.0 and h[0]["open"] == 169.9 and h[0]["low_pred"] == 165.0 and h[0]["low"] == 158.4
+    assert h[0]["in80"] and not h[0]["in50"]
