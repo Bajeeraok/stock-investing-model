@@ -1,8 +1,39 @@
 "use client";
 
 /** Today's likely close range + chance price trades at the entry band / stop. Display only. */
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { CalendarRange } from "lucide-react";
+import { apiUrl } from "@/lib/apiBase";
+import { isUsEquityRth } from "@/lib/dashboardCache";
+
+const LIVE_REFRESH_MS = 60_000;
+
+/** During market hours, refetch just the day-range card every minute (1-min bars server-side). */
+export function useLiveDayRange(ticker: string | undefined, initial?: DayRangePayload | null) {
+  const [data, setData] = useState<DayRangePayload | null | undefined>(initial);
+  useEffect(() => setData(initial), [initial]);
+  useEffect(() => {
+    if (!ticker) return;
+    const ac = new AbortController();
+    const tick = async () => {
+      if (!isUsEquityRth() || document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(apiUrl(`/api/ticker/${encodeURIComponent(ticker)}/day-range`), { signal: ac.signal, cache: "no-store" });
+        if (!res.ok) return;
+        const j: { day_range?: DayRangePayload | null } = await res.json();
+        if (j.day_range) setData(j.day_range);
+      } catch {
+        /* keep the last good card */
+      }
+    };
+    const id = setInterval(tick, LIVE_REFRESH_MS);
+    return () => {
+      ac.abort();
+      clearInterval(id);
+    };
+  }, [ticker]);
+  return data;
+}
 
 export type DayRangeLevel = {
   label: string;
@@ -109,7 +140,8 @@ function oddsTone(p: number) {
   return "text-td-muted";
 }
 
-export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; price?: number | null }) {
+export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRangePayload | null; price?: number | null; ticker?: string }) {
+  const data = useLiveDayRange(ticker, initial);
   if (!data) return null;
   const live = data.phase === "intraday";
   const spot = price ?? data.last ?? data.ref_close;

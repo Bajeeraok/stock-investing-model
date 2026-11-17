@@ -4181,6 +4181,21 @@ async def get_sector_map():
     return data
 
 
+@router.get("/ticker/{ticker}/day-range")
+async def get_ticker_day_range(ticker: str):
+    """Just the live day-range card (1-min bars, 1-min cache) so the page can refresh it each minute."""
+    from starlette.concurrency import run_in_threadpool
+
+    from api.ticker_detail import _fresh_day_range
+    from signals.cache import cache_key, get_cached
+
+    t = ticker.upper()
+    period = (_load_config().get("data", {}) or {}).get("period", "2y") or "2y"
+    detail = get_cached(cache_key("ticker_detail", t, period)) or get_cached(cache_key("ticker_detail_last", t, period))
+    r = await run_in_threadpool(_fresh_day_range, t, detail if isinstance(detail, dict) else {})
+    return {"ticker": t, "day_range": r}
+
+
 @router.get("/ticker/{ticker}/intraday")
 async def get_ticker_intraday(
     ticker: str,

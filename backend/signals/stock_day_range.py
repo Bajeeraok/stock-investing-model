@@ -258,14 +258,31 @@ def levels_from_summary(summary: dict | None) -> list[dict[str, Any]]:
     return [x for x in out if isinstance(x["price"], (int, float))]
 
 
+_DAILY: dict[str, tuple[float, Any]] = {}
+DAILY_TTL_S = 900
+
+
+def _daily(t, ticker: str):
+    """1y daily bars, reused for 15 min (only today's intraday bars change minute to minute)."""
+    import time
+
+    hit = _DAILY.get(ticker)
+    if hit and time.time() - hit[0] < DAILY_TTL_S:
+        return hit[1]
+    d = t.history(period="1y", interval="1d", auto_adjust=False)
+    if d is not None and not d.empty:
+        _DAILY[ticker] = (time.time(), d)
+    return d
+
+
 def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datetime | None = None) -> dict | None:
-    """Live fetch (daily 1y + today's 5-min bars) → build_day_range. None on any data gap."""
+    """Live fetch (daily 1y + today's 1-min bars) → build_day_range. None on any data gap."""
     import yfinance as yf
     from zoneinfo import ZoneInfo
 
     now = now or datetime.now(ZoneInfo("America/New_York"))
     t = yf.Ticker(ticker)
-    d = t.history(period="1y", interval="1d", auto_adjust=False)
+    d = _daily(t, ticker)
     if d is None or d.empty:
         return None
     idx = d.index.tz_convert("America/New_York") if d.index.tz is not None else d.index
@@ -286,7 +303,9 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
         except Exception:
             premarket = None
     if in_session:
-        m = t.history(period="1d", interval="5m", auto_adjust=False)
+        m = t.history(period="1d", interval="1m", auto_adjust=False)
+        if m is None or m.empty:
+            m = t.history(period="1d", interval="5m", auto_adjust=False)
         if m is not None and not m.empty:
             mi = m.index.tz_convert("America/New_York") if m.index.tz is not None else m.index
             m = m.set_axis(mi)

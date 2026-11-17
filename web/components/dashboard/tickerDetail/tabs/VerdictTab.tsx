@@ -91,7 +91,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
       <p className="text-[13px] text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
     </section>
   )}
-  <DayRangeCard data={detail.day_range} price={effectivePrice} />
+  <DayRangeCard data={detail.day_range} price={effectivePrice} ticker={detail.ticker} />
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
   <PositionAdviceCard data={detail.position_advice} price={effectivePrice} />
   <TickerInvestorRules ticker={detail.ticker} valuationGate={ctx.tradingGates.find((g) => g.id === "valuation") ?? null} />

@@ -143,3 +143,35 @@ def test_intraday_new_low_odds_below_printed_low():
     r = build_day_range(c, d, session=s)
     assert 0 < r["p_new_high"] < r["p_new_low"] < 0.99
     assert r["p_close_below_day"] < r["p_new_low"]
+
+
+def test_daily_history_reused_within_ttl(monkeypatch):
+    import pandas as pd
+    from signals import stock_day_range as sdr
+
+    calls = []
+
+    class T:
+        def history(self, **kw):
+            calls.append(kw)
+            return pd.DataFrame({"Close": [1.0]})
+
+    sdr._DAILY.pop("ZZZ", None)
+    sdr._daily(T(), "ZZZ")
+    sdr._daily(T(), "ZZZ")
+    assert len(calls) == 1
+    monkeypatch.setattr(sdr, "DAILY_TTL_S", -1)
+    sdr._daily(T(), "ZZZ")
+    assert len(calls) == 2
+
+
+def test_day_range_endpoint(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import api.ticker_detail as td
+    from api.main import app
+
+    monkeypatch.setattr(td, "_fresh_day_range", lambda t, d: {"phase": "intraday", "ticker": t})
+    r = TestClient(app).get("/api/ticker/nvda/day-range")
+    assert r.status_code == 200
+    assert r.json() == {"ticker": "NVDA", "day_range": {"phase": "intraday", "ticker": "NVDA"}}

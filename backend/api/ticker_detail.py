@@ -181,7 +181,7 @@ def get_ticker_detail(ticker: str, config: dict, *, allow_stale: bool = True) ->
 
 
 def _fresh_day_range(ticker: str, detail: dict) -> dict | None:
-    """Day range is time-sensitive: never serve it from a stale page build (2-min own cache)."""
+    """Day range is time-sensitive: never serve it from a stale page build (1-min own cache)."""
     try:
         from signals.cache import cache_key, get_cached, set_cached
         from signals.stock_day_range import compute_stock_day_range
@@ -206,7 +206,7 @@ def _fresh_day_range(ticker: str, detail: dict) -> dict | None:
                     r["open_forecast"] = today_open_forecast(ticker, now_et().date().isoformat())
                 except Exception:
                     r["open_forecast"] = None
-            set_cached(key, r, 120)
+            set_cached(key, r, 55)
         return r
     except Exception:
         return detail.get("day_range")
