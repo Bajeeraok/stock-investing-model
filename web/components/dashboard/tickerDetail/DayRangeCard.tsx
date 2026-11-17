@@ -111,6 +111,27 @@ export const splitLevels = (d: DayRangePayload) => ({
 
 /** Highest-probability lows (75% and 50% chance) and where they sit vs the entry bands.
  *  Intraday, a dip above the low already printed today is not a new low, so skip to deeper rungs. */
+/** Ladder for today's full low/high. Intraday, a level the session already traded is 100% reached,
+ * so the low at any chance is never above the low so far (and the high never below the high so far). */
+export function dayLadder(d: DayRangePayload) {
+  const live = d.phase === "intraday";
+  const lo = live ? d.day_low ?? null : null;
+  const hi = live ? d.day_high ?? null : null;
+  return (d.ladder ?? []).map((r) => {
+    const dipReached = lo != null && r.dip >= lo;
+    const popReached = hi != null && r.pop <= hi;
+    return {
+      ...r,
+      dip: dipReached ? (lo as number) : r.dip,
+      pop: popReached ? (hi as number) : r.pop,
+      dipReached,
+      popReached,
+      close_below: dipReached ? d.p_close_below_day ?? r.close_below : r.close_below,
+      close_above: popReached ? d.p_close_above_day ?? r.close_above : r.close_above,
+    };
+  });
+}
+
 export function likelyLow(d: DayRangePayload) {
   const soFar = d.phase === "intraday" && d.day_low != null ? d.day_low : null;
   const lad = (d.ladder ?? []).filter((x) => soFar == null || x.dip < soFar);
@@ -255,25 +276,25 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
       {data.ladder && data.ladder.length > 0 && (
         <div className="text-[13px]">
           <div className="grid grid-cols-3 gap-2 text-[12px] text-td-muted">
-            <span>Chance {live ? "from now to close" : when}</span>
+            <span>Chance {live ? "for today's low / high" : when}</span>
             <span className="text-right">Low reaches</span>
             <span className="text-right">High reaches</span>
           </div>
-          {data.ladder.map((r) => (
+          {dayLadder(data).map((r) => (
             <div key={r.p} className="grid grid-cols-3 gap-2 font-mono">
               <span className={`font-semibold ${oddsTone(r.p)}`}>{pct(r.p)}</span>
-              <span className={`text-right ${live && data.day_low != null && r.dip > data.day_low ? "text-td-muted" : "text-td-text"}`}>
+              <span className={`text-right ${r.dipReached ? "text-td-muted" : "text-td-text"}`}>
                 {usd(r.dip)}
-                {live && data.day_low != null && r.dip > data.day_low ? (
-                  <span className="block text-[11px] text-td-muted">above today&apos;s low</span>
+                {r.dipReached ? (
+                  <span className="block text-[11px] text-td-muted">already reached</span>
                 ) : (
                   r.close_below != null && <span className="block text-[11px] text-td-muted">closes below {pct(r.close_below)}</span>
                 )}
               </span>
-              <span className={`text-right ${live && data.day_high != null && r.pop < data.day_high ? "text-td-muted" : "text-td-text"}`}>
+              <span className={`text-right ${r.popReached ? "text-td-muted" : "text-td-text"}`}>
                 {usd(r.pop)}
-                {live && data.day_high != null && r.pop < data.day_high ? (
-                  <span className="block text-[11px] text-td-muted">below today&apos;s high</span>
+                {r.popReached ? (
+                  <span className="block text-[11px] text-td-muted">already reached</span>
                 ) : (
                   r.close_above != null && <span className="block text-[11px] text-td-muted">closes above {pct(r.close_above)}</span>
                 )}
@@ -282,7 +303,7 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
           ))}
           <p className="text-[12px] text-td-muted mt-1">
             {live && data.day_low != null && data.day_high != null && (
-              <>Today so far {usd(data.day_low)}–{usd(data.day_high)}; greyed levels already traded. </>
+              <>Today so far {usd(data.day_low)}–{usd(data.day_high)}; the day&apos;s low can only go lower from here, so it is at or below the low so far at every chance. </>
             )}
             Chance price trades there at any moment, not where it closes. A brief touch is about twice as likely as closing beyond
             the same level. Lower lows and higher highs are possible, just less likely.

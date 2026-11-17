@@ -1,5 +1,5 @@
 import type { InvestorDecisionSummary } from "@/components/dashboard/InvestorDecisionSummary";
-import { band50, likelyLow, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
+import { band50, dayLadder, likelyLow, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
 
 type Hz = { entry_zone?: { low?: number | null; high?: number | null } | null; stop_loss?: number | null; target?: number | null };
 type Retail = {
@@ -49,8 +49,8 @@ function rangeBlock(r: DayRangePayload): string[] {
   } else if (ll && ll.soFar != null) {
     out.push(`*Today's low so far: ${usd(ll.soFar)}*${r.p_new_low != null ? ` (${pct(r.p_new_low)} chance of a new low ${when})` : ""}`);
   }
-  for (const x of r.ladder ?? []) {
-    out.push(`${pct(x.p)} chance ${when}: low reaches ${usd(x.dip)} · high reaches ${usd(x.pop)}`);
+  for (const x of dayLadder(r)) {
+    out.push(`${pct(x.p)} chance ${when}: low reaches ${usd(x.dip)}${x.dipReached ? " (reached)" : ""} · high reaches ${usd(x.pop)}${x.popReached ? " (reached)" : ""}`);
   }
   const { near, far } = splitLevels(r);
   for (const l of near) {
