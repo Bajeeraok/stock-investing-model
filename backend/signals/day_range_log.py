@@ -44,7 +44,8 @@ def _save(day: str, data: dict) -> None:
 def compact(r: dict) -> dict:
     keep = ("phase", "ref_close", "ref_date", "sigma_pct", "last", "minutes_left", "close_low", "close_mid",
             "close_high", "close_low50", "close_high50", "p_close_green", "ladder", "premarket",
-            "open_mid", "open_low", "open_high", "open_low50", "open_high50")
+            "open_mid", "open_low", "open_high", "open_low50", "open_high50",
+            "opt_low80", "opt_high80", "opt_sd_pct", "opt_expiry")
     out = {k: r.get(k) for k in keep if r.get(k) is not None}
     out["levels"] = [{k: lv.get(k) for k in ("label", "price", "side", "p_reach", "p_close_beyond")}
                      for lv in r.get("levels") or []]
@@ -106,6 +107,11 @@ def score_snapshot(snap: dict, *, low: float, high: float, close: float, open_: 
                    for r in snap.get("ladder") or []],
         "levels": [],
     }
+    olo, ohi = snap.get("opt_low80"), snap.get("opt_high80")
+    if olo and ohi:
+        out["opt_in80"] = olo <= close <= ohi
+        if lo80 and hi80 and hi80 > lo80:
+            out["opt_width_ratio"] = round((ohi - olo) / (hi80 - lo80), 2)
     omid = snap.get("open_mid")
     if omid and open_:
         out.update(open=round(open_, 2), open_err_pct=round((open_ / omid - 1) * 100, 2),
@@ -208,6 +214,13 @@ def aggregate(days_data: list[dict], ticker: str | None = None) -> dict[str, Any
                                            / max(1, sum(r.get("close_err_pct") is not None for r in rows)), 2),
             "ladder": [{"p": p, "hit_pct": pct(v), "n": len(v)} for p, v in sorted(ladder.items(), reverse=True)],
         }
+        opt = [r for r in rows if r.get("opt_in80") is not None]
+        if opt:
+            # Same rows for both, so the options range and ours are compared like for like.
+            out[slot].update(opt_n=len(opt), opt_in80_pct=pct([r["opt_in80"] for r in opt]),
+                             ours_in80_same_pct=pct([r["in80"] for r in opt if r.get("in80") is not None]),
+                             opt_width_ratio=round(sum(r.get("opt_width_ratio") or 0 for r in opt)
+                                                   / max(1, sum(r.get("opt_width_ratio") is not None for r in opt)), 2))
         opens = [r for r in rows if r.get("open_err_pct") is not None]
         if opens:
             out[slot].update(open_n=len(opens),

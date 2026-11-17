@@ -73,6 +73,11 @@ export type DayRangePayload = {
   p_close_below_day?: number | null;
   p_close_above_day?: number | null;
   levels: DayRangeLevel[];
+  /** Options market's 80% close range (nearest-expiry ATM straddle), shown beside ours. Display only. */
+  opt_low80?: number | null;
+  opt_high80?: number | null;
+  opt_sd_pct?: number | null;
+  opt_expiry?: string | null;
   ladder?: { p: number; dip: number; pop: number; close_below?: number; close_above?: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
   reach_calibration?: { sessions: number; tickers: number; cases: number };
@@ -90,7 +95,7 @@ export type DayRangePayload = {
     days: number;
     since: string | null;
     history?: { date: string; open_pred?: number | null; open?: number | null; low_pred?: number | null; low?: number | null; close_pred?: number | null; close?: number | null; in50?: boolean | null; in80?: boolean | null }[];
-    slots: Record<string, { label: string; n: number; in80_pct: number | null; in50_pct: number | null; open_n?: number; open_in80_pct?: number | null; avg_abs_open_err_pct?: number; ladder: { p: number; hit_pct: number | null; n: number }[] }>;
+    slots: Record<string, { label: string; n: number; in80_pct: number | null; in50_pct: number | null; open_n?: number; open_in80_pct?: number | null; avg_abs_open_err_pct?: number; opt_n?: number; opt_in80_pct?: number | null; ours_in80_same_pct?: number | null; opt_width_ratio?: number; ladder: { p: number; hit_pct: number | null; n: number }[] }>;
   } | null;
 };
 
@@ -111,6 +116,40 @@ export const splitLevels = (d: DayRangePayload) => ({
 
 /** Highest-probability lows (75% and 50% chance) and where they sit vs the entry bands.
  *  Intraday, a dip above the low already printed today is not a new low, so skip to deeper rungs. */
+/** Plain-English read of the whole card: where it likely closes, what the options market adds, key strikes. */
+export function plainSummary(d: DayRangePayload): string[] {
+  const live = d.phase === "intraday";
+  const when = live ? "by the close" : "next session";
+  const out: string[] = [
+    `Most likely close near ${usd(d.close_mid)}; 4 in 5 chance it closes ${live ? "today" : "next session"} between ${usd(d.close_low)} and ${usd(d.close_high)}.`,
+  ];
+  if (live && d.day_low != null && d.p_new_low != null) {
+    out.push(
+      d.p_new_low < 0.1
+        ? `Today's low so far is ${usd(d.day_low)}; only ${pct(d.p_new_low)} chance it goes lower before the close.`
+        : `Today's low so far is ${usd(d.day_low)}; ${pct(d.p_new_low)} chance it breaks below it before the close.`,
+    );
+  }
+  if (d.opt_low80 != null && d.opt_high80 != null && d.close_high > d.close_low) {
+    const r = (d.opt_high80 - d.opt_low80) / (d.close_high - d.close_low);
+    out.push(
+      r >= 1.5
+        ? `Options traders are pricing a much bigger move than usual (${r.toFixed(1)}× our range, ${usd(d.opt_low80)}–${usd(d.opt_high80)}). That usually means an event such as earnings: expect wider swings, so use smaller size or a wider stop.`
+        : r <= 0.67
+          ? `Options traders expect a calmer day than our estimate (${usd(d.opt_low80)}–${usd(d.opt_high80)}).`
+          : `Options traders expect a similar range (${usd(d.opt_low80)}–${usd(d.opt_high80)}), which backs up this forecast.`,
+    );
+  }
+  for (const l of d.levels) {
+    if (!l.label.startsWith("Options")) continue;
+    const put = l.label.includes("put");
+    out.push(
+      `${usd(l.price)} has the most ${put ? "put" : "call"} open interest nearby. Stocks often ${put ? "find buyers near such a strike (possible support)" : "stall below such a strike (possible ceiling)"}, but it is not a guarantee; ${pct(l.p_reach)} chance it trades there ${when}.`,
+    );
+  }
+  return out;
+}
+
 /** Ladder for today's full low/high. Intraday, a level the session already traded is 100% reached,
  * so the low at any chance is never above the low so far (and the high never below the high so far). */
 export function dayLadder(d: DayRangePayload) {
@@ -187,6 +226,15 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
         </span>
       </div>
 
+      <div className="rounded-lg border border-td-line bg-td-surface/60 px-3 py-2 text-[13px] text-td-text">
+        <p className="text-[12px] font-semibold text-td-muted mb-0.5">In plain English</p>
+        <ul className="list-disc pl-4 space-y-0.5">
+          {plainSummary(data).map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      </div>
+
       {ll && (
         <div className="rounded-lg border border-td-accent/40 bg-td-accent/10 px-3 py-2 text-[13px]">
           <div className="flex justify-between gap-2">
@@ -247,6 +295,25 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
           <span className="text-td-muted">80% chance it closes in</span>
           <span className="font-mono text-td-text">{usd(data.close_low)}–{usd(data.close_high)}</span>
         </li>
+        {data.opt_low80 != null && data.opt_high80 != null && (
+          <li className="flex justify-between gap-2">
+            <span className="text-td-muted">Options market 80%</span>
+            <span className="font-mono text-td-text">
+              {usd(data.opt_low80)}–{usd(data.opt_high80)}
+              {data.close_high > data.close_low && (
+                <span className="text-td-muted">
+                  {" "}· {((data.opt_high80 - data.opt_low80) / (data.close_high - data.close_low)).toFixed(1)}× ours
+                </span>
+              )}
+            </span>
+          </li>
+        )}
+        {data.opt_low80 != null && (
+          <li className="text-[12px] text-td-muted">
+            Options line: the range the options market is paying for, from the nearest-expiry at-the-money call + put
+            {data.opt_expiry ? ` (expires ${data.opt_expiry})` : ""}. Wider than ours usually means traders expect news.
+          </li>
+        )}
       </ul>
 
       <div>
@@ -397,9 +464,10 @@ function trackedLine(d: DayRangePayload): string {
   if (!s || !s.n) return "Live tracking: snapshots saved at 9:20, 10:30, 12:30 and 3:30, scored after each close. ";
   const low75 = s.ladder.find((x) => x.p === 0.75);
   const open = s.open_n ? `, open inside 80% range ${s.open_in80_pct}% (avg miss ${s.avg_abs_open_err_pct}%)` : "";
+  const opt = s.opt_n ? `, options 80% range ${s.opt_in80_pct}% vs ours ${s.ours_in80_same_pct}% on the same ${s.opt_n}` : "";
   return `Live record (${s.label}, ${s.n} day${s.n === 1 ? "" : "s"}): close inside 80% range ${s.in80_pct}%, 50% range ${s.in50_pct}%${
     low75?.hit_pct != null ? `, 75% levels reached ${low75.hit_pct}%` : ""
-  }${open}. `;
+  }${open}${opt}. `;
 }
 
 export function sessionDay(iso: string): string {

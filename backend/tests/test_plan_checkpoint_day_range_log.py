@@ -195,3 +195,13 @@ def test_history_pairs_forecast_with_actual():
     assert len(h) == 1 and h[0]["date"] == "2026-11-13"
     assert h[0]["open_pred"] == 170.0 and h[0]["open"] == 169.9 and h[0]["low_pred"] == 165.0 and h[0]["low"] == 158.4
     assert h[0]["in80"] and not h[0]["in50"]
+
+
+def test_options_range_scored_against_ours_on_same_rows():
+    from signals.day_range_log import aggregate, score_snapshot
+
+    snap = {"close_low": 98.0, "close_high": 102.0, "close_mid": 100.0, "opt_low80": 96.0, "opt_high80": 104.0}
+    sc = score_snapshot(snap, low=97.0, high=103.0, close=103.0)
+    assert sc["opt_in80"] is True and sc["in80"] is False and sc["opt_width_ratio"] == 2.0
+    agg = aggregate([{"scored": {"0920": {"X": sc}}}])["0920"]
+    assert (agg["opt_n"], agg["opt_in80_pct"], agg["ours_in80_same_pct"]) == (1, 100, 0)

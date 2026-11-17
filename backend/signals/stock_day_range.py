@@ -24,7 +24,7 @@ Probabilities, not predictions. Display only — never feeds the buy/sell signal
 from __future__ import annotations
 
 import math
-from datetime import datetime
+from datetime import date, datetime
 from statistics import NormalDist
 from typing import Any
 
@@ -316,9 +316,22 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
                            "low": float(m["Low"].min()),
                            "minutes_since_open": (now.hour * 60 + now.minute) - (9 * 60 + 30)}
     closes = [c for _, c in rows]
-    out = build_day_range(closes, [x.isoformat() for x, _ in rows],
-                          session=session, levels=levels_from_summary(summary), premarket=premarket)
+    from signals import options_levels as ol
+
+    opt = None
+    nxt = _next_session(rows[-1][0].isoformat()) if rows else None
+    if closes and (in_session or nxt):
+        anchor = (session or {}).get("last") or premarket or closes[-1]
+        sday = today if in_session else date.fromisoformat(nxt)
+        opt = ol.fetch(t, ticker, float(anchor), sday, now_day=today)
+    out = build_day_range(closes, [x.isoformat() for x, _ in rows], session=session,
+                          levels=levels_from_summary(summary) + ol.wall_levels(opt),
+                          premarket=premarket)
     if out is not None:
+        live_left = out["minutes_left"] / SESSION_MIN if out.get("phase") == "intraday" else None
+        if out.get("session_date"):
+            out.update(ol.day_range_fields(opt, out.get("last") or out["close_mid"],
+                                           session_day=date.fromisoformat(out["session_date"]), live_left=live_left))
         from signals.bounce_zone import bounce_zone
 
         out["bounce_zone"] = bounce_zone(closes)

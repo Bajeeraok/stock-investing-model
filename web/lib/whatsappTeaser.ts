@@ -1,5 +1,5 @@
 import type { InvestorDecisionSummary } from "@/components/dashboard/InvestorDecisionSummary";
-import { band50, dayLadder, likelyLow, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
+import { band50, dayLadder, likelyLow, plainSummary, pct, splitLevels, type DayRangePayload } from "@/components/dashboard/tickerDetail/DayRangeCard";
 
 type Hz = { entry_zone?: { low?: number | null; high?: number | null } | null; stop_loss?: number | null; target?: number | null };
 type Retail = {
@@ -39,6 +39,8 @@ function rangeBlock(r: DayRangePayload): string[] {
     `50% chance close: ${usd(lo50)}–${bare(hi50)}`,
     `80% chance close: ${usd(r.close_low)}–${bare(r.close_high)}`,
   ];
+  if (r.opt_low80 != null && r.opt_high80 != null) out.push(`Options market 80%: ${usd(r.opt_low80)}–${bare(r.opt_high80)}`);
+  out.push("_In plain English:_", ...plainSummary(r).map((x) => `• ${x}`));
   if (live && r.p_close_green != null) {
     out.push(`Green close ${pct(r.p_close_green)} · red close ${pct(1 - r.p_close_green)} (vs ${usd(r.ref_close)})`);
   }
