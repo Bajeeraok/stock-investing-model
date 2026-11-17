@@ -173,6 +173,8 @@ def rank(rows_by_mode: dict[str, list[dict]], boosted: set[str] | None = None) -
         for r in scored:
             r["research_boost"] = r["ticker"] in boosted
         scored.sort(key=lambda r: (r["research_boost"], r["edge_pct"], r.get("chance") or 0), reverse=True)
+        for i, r in enumerate(scored, 1):
+            r["rank"] = i
         picks = [r for r in scored if r["qualified"]][:TOP_N]
         # Next up: positive edge, one blocker away (not the model score itself).
         nxt = [r for r in scored if not r["qualified"] and r["edge_pct"] > 0 and len(r["blockers"]) == 1]
@@ -234,7 +236,10 @@ def build_report(details: list[dict], as_of: date | None = None, previous: dict 
     }
 
 
-_ROW_KEYS = ("price", "status", "gates_failing", "band_low", "band_high", "band_gap_pct", "stop", "target", "rr", "qualified", "blockers")
+# Saved for every scanned ticker each night (rows_<as_of>.json) so the ranking itself can be backtested.
+_ROW_KEYS = ("price", "status", "gates_passed", "gates_total", "gates_failing", "band_low", "band_high", "band_gap_pct",
+             "stop", "target", "target_pct", "stop_pct", "rr", "model_prob", "model_proven", "hist_prob", "hist_basis",
+             "chance", "edge_pct", "target_first_pct", "stop_first_pct", "duration", "qualified", "blockers", "rank")
 
 
 def publish_new_picks(report: dict) -> int:
@@ -279,7 +284,9 @@ def save_report(report: dict) -> None:
     report = dict(report)
     rows = report.pop("_rows", None)
     if rows is not None:
-        (d / "rows.json").write_text(json.dumps({"as_of": report.get("as_of"), "modes": rows}, default=str))
+        rblob = json.dumps({"as_of": report.get("as_of"), "modes": rows}, default=str)
+        (d / "rows.json").write_text(rblob)
+        (d / f"rows_{report['as_of']}.json").write_text(rblob)
     blob = json.dumps(report, default=str)
     (d / "latest.json").write_text(blob)
     (d / f"best_setups_{report['as_of']}.json").write_text(blob)
@@ -290,6 +297,21 @@ def load_rows() -> dict | None:
     p = _dir() / "rows.json"
     try:
         return json.loads(p.read_text()) if p.exists() else None
+    except Exception:
+        return None
+
+
+def row_days() -> list[str]:
+    """Dates with a saved full row set (every scanned ticker, both modes)."""
+    d = _dir()
+    return sorted(p.stem.replace("rows_", "") for p in d.glob("rows_*.json")) if d.exists() else []
+
+
+def load_rows_for(day: str) -> dict | None:
+    if day not in row_days():
+        return None
+    try:
+        return json.loads((_dir() / f"rows_{day}.json").read_text())
     except Exception:
         return None
 

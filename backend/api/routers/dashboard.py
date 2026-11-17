@@ -4353,6 +4353,27 @@ async def get_best_setups():
     return {"available": report is not None, "report": report, "track": hit, "model_check": load_model_check()}
 
 
+@router.get("/best-setups/rows")
+async def list_best_setups_rows():
+    """Dates with a saved nightly row set (every scanned ticker's plan, edge, chance and rank)."""
+    from signals.best_setups import row_days
+
+    days = row_days()
+    return {"count": len(days), "dates": days}
+
+
+@router.get("/best-setups/rows/{day}")
+async def get_best_setups_rows(day: str):
+    from fastapi import HTTPException
+
+    from signals.best_setups import load_rows_for
+
+    data = load_rows_for(day)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No Best setups rows saved for {day}")
+    return data
+
+
 @router.get("/model-check")
 async def get_model_check():
     """All tracked stocks: did the model's odds come true for its exact +N% question, per horizon?"""
