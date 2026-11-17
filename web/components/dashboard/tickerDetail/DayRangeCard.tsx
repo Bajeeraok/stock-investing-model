@@ -37,6 +37,10 @@ export type DayRangePayload = {
   open_high50?: number;
   day_low?: number | null;
   day_high?: number | null;
+  p_new_low?: number | null;
+  p_new_high?: number | null;
+  p_close_below_day?: number | null;
+  p_close_above_day?: number | null;
   levels: DayRangeLevel[];
   ladder?: { p: number; dip: number; pop: number; close_below?: number; close_above?: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
@@ -81,7 +85,7 @@ export function likelyLow(d: DayRangePayload) {
   const lad = (d.ladder ?? []).filter((x) => soFar == null || x.dip < soFar);
   const hi = soFar == null ? lad.find((x) => x.p === 0.75) : lad[0];
   const mid = soFar == null ? lad.find((x) => x.p === 0.5) : lad[1];
-  if (!hi) return null;
+  if (!hi) return soFar != null ? { hi: null, mid: null, where: "", soFar } : null;
   const lv = (label: string) => d.levels.find((l) => l.label === label)?.price;
   const sLo = lv("Swing band low");
   const sHi = lv("Swing band top");
@@ -133,12 +137,24 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
       {ll && (
         <div className="rounded-lg border border-td-accent/40 bg-td-accent/10 px-3 py-2 text-[13px]">
           <div className="flex justify-between gap-2">
-            <span className="font-semibold text-td-text">{ll.soFar != null ? `Low so far ${usd(ll.soFar)} · next low` : `Likely low ${live ? "today" : "next session"}`}</span>
-            <span className="font-mono font-semibold text-td-accent">{usd(ll.hi.dip)}</span>
+            <span className="font-semibold text-td-text">
+              {ll.soFar != null ? (ll.hi ? `Low so far ${usd(ll.soFar)} · next low` : "Today's low so far") : `Likely low ${live ? "today" : "next session"}`}
+            </span>
+            <span className="font-mono font-semibold text-td-accent">{usd(ll.hi ? ll.hi.dip : (ll.soFar as number))}</span>
           </div>
           <p className="text-[12px] text-td-muted mt-0.5">
-            {pct(ll.hi.p)} chance it trades there {when} ({ll.where})
-            {ll.mid && <> · deeper {usd(ll.mid.dip)} at {pct(ll.mid.p)}</>}
+            {ll.hi ? (
+              <>
+                {pct(ll.hi.p)} chance it trades there {when} ({ll.where})
+                {ll.mid && <> · deeper {usd(ll.mid.dip)} at {pct(ll.mid.p)}</>}
+              </>
+            ) : (
+              <>
+                Already traded there.
+                {data.p_new_low != null && <> {pct(data.p_new_low)} chance of a new low below it {when}</>}
+                {data.p_close_below_day != null && <> · {pct(data.p_close_below_day)} it closes below it</>}.
+              </>
+            )}
           </p>
         </div>
       )}
@@ -207,24 +223,35 @@ export function DayRangeCard({ data, price }: { data?: DayRangePayload | null; p
       {data.ladder && data.ladder.length > 0 && (
         <div className="text-[13px]">
           <div className="grid grid-cols-3 gap-2 text-[12px] text-td-muted">
-            <span>Chance {when}</span>
+            <span>Chance {live ? "from now to close" : when}</span>
             <span className="text-right">Low reaches</span>
             <span className="text-right">High reaches</span>
           </div>
           {data.ladder.map((r) => (
             <div key={r.p} className="grid grid-cols-3 gap-2 font-mono">
               <span className={`font-semibold ${oddsTone(r.p)}`}>{pct(r.p)}</span>
-              <span className="text-right text-td-text">
+              <span className={`text-right ${live && data.day_low != null && r.dip > data.day_low ? "text-td-muted" : "text-td-text"}`}>
                 {usd(r.dip)}
-                {r.close_below != null && <span className="block text-[11px] text-td-muted">closes below {pct(r.close_below)}</span>}
+                {live && data.day_low != null && r.dip > data.day_low ? (
+                  <span className="block text-[11px] text-td-muted">above today&apos;s low</span>
+                ) : (
+                  r.close_below != null && <span className="block text-[11px] text-td-muted">closes below {pct(r.close_below)}</span>
+                )}
               </span>
-              <span className="text-right text-td-text">
+              <span className={`text-right ${live && data.day_high != null && r.pop < data.day_high ? "text-td-muted" : "text-td-text"}`}>
                 {usd(r.pop)}
-                {r.close_above != null && <span className="block text-[11px] text-td-muted">closes above {pct(r.close_above)}</span>}
+                {live && data.day_high != null && r.pop < data.day_high ? (
+                  <span className="block text-[11px] text-td-muted">below today&apos;s high</span>
+                ) : (
+                  r.close_above != null && <span className="block text-[11px] text-td-muted">closes above {pct(r.close_above)}</span>
+                )}
               </span>
             </div>
           ))}
           <p className="text-[12px] text-td-muted mt-1">
+            {live && data.day_low != null && data.day_high != null && (
+              <>Today so far {usd(data.day_low)}–{usd(data.day_high)}; greyed levels already traded. </>
+            )}
             Chance price trades there at any moment, not where it closes. A brief touch is about twice as likely as closing beyond
             the same level. Lower lows and higher highs are possible, just less likely.
           </p>

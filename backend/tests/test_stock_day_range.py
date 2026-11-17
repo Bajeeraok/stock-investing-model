@@ -135,3 +135,11 @@ def test_bounce_zone_only_for_dips_and_ordered():
     assert z is not None and z["drawdown_pct"] <= -15
     assert z["low"] < z["mid"] < z["high"] < z["ref_close"]
     assert z["test"]["coverage_pct"] > 80
+
+
+def test_intraday_new_low_odds_below_printed_low():
+    c, d = _series()
+    s = {"last": c[-1] * 0.98, "high": c[-1] * 0.995, "low": c[-1] * 0.975, "minutes_since_open": 250}
+    r = build_day_range(c, d, session=s)
+    assert 0 < r["p_new_high"] < r["p_new_low"] < 0.99
+    assert r["p_close_below_day"] < r["p_new_low"]

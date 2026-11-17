@@ -236,6 +236,14 @@ def build_day_range(
             r["close_above"] = round(1 - _phi(math.log(r["pop"] / anchor) / sd), 2)
     if live:
         out["reach_calibration"] = REACH_CALIBRATION_N
+        # The day's low/high can only extend past what already printed: odds of a new low/high by the close.
+        rem = INTRA_REACH_K * math.sqrt(max(left, 1e-9))
+        for key, lvl in (("new_low", session.get("low")), ("new_high", session.get("high"))):
+            if lvl and lvl > 0 and left > 0:
+                d = abs(math.log(lvl / anchor)) / sig
+                out[f"p_{key}"] = round(calibrate_reach(min(0.99, 2 * (1 - _phi(d / rem)))), 2)
+                z = math.log(lvl / anchor) / sd if sd > 0 else 0.0
+                out[f"p_close_{'below' if key == 'new_low' else 'above'}_day"] = round(_phi(z) if key == "new_low" else 1 - _phi(z), 2)
     out["scorecard"] = scorecard(closes, dates)
     return out
 

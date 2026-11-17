@@ -44,8 +44,10 @@ function rangeBlock(r: DayRangePayload): string[] {
   }
   const when = live ? "before close" : "next session";
   const ll = likelyLow(r);
-  if (ll) {
+  if (ll && ll.hi) {
     out.push(`*${ll.soFar != null ? `Low so far ${usd(ll.soFar)} · next low` : `Likely low ${live ? "today" : "next session"}`}: ${usd(ll.hi.dip)}* (${pct(ll.hi.p)} chance, ${ll.where})${ll.mid ? ` · deeper ${usd(ll.mid.dip)} at ${pct(ll.mid.p)}` : ""}`);
+  } else if (ll && ll.soFar != null) {
+    out.push(`*Today's low so far: ${usd(ll.soFar)}*${r.p_new_low != null ? ` (${pct(r.p_new_low)} chance of a new low ${when})` : ""}`);
   }
   for (const x of r.ladder ?? []) {
     out.push(`${pct(x.p)} chance ${when}: low reaches ${usd(x.dip)} · high reaches ${usd(x.pop)}`);
