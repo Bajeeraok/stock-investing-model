@@ -42,6 +42,8 @@ class AlertType(str, Enum):
     PROTECT_MODE_OFF = "PROTECT_MODE_OFF"
     # SPY/QQQ newly below MA50 after a >=3% 5-day drop — "consider protect mode", not a sell call
     RISK_OFF_WARNING = "RISK_OFF_WARNING"
+    # Price traded down to the re-check level (50/200-day) on a name we are not buying — not a BUY
+    RECHECK_LEVEL_TOUCHED = "RECHECK_LEVEL_TOUCHED"
 
 
 class ScanTier(str, Enum):

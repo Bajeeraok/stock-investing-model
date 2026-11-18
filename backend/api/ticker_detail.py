@@ -748,6 +748,21 @@ def _fetch_ticker_detail_impl(ticker: str, config: dict) -> dict:
         **signal_data,
         **fmp_data,
     }
+    try:
+        from signals.recheck_level import recheck_level
+
+        _cl = close_ticker.dropna() if close_ticker is not None else None
+        response["recheck_level"] = recheck_level(
+            float(_cl.iloc[-1]) if _cl is not None and len(_cl) else None,
+            signal_data.get("ma50"),
+            signal_data.get("ma200"),
+            list(_cl.values) if _cl is not None else None,
+            signal=(dashboard_row or {}).get("signal"),
+            gates_passed=signal_data.get("gates_passed"),
+            gates_total=(dashboard_row or {}).get("gates_total"),
+        )
+    except Exception:
+        response["recheck_level"] = None
     # cross_asset was fetched in Phase 3 parallel block above
     response["cross_asset"] = cross_asset_result
     # Catalyst detection — advisory payload from news headlines

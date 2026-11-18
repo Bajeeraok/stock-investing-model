@@ -400,6 +400,8 @@ def sync_horizon_levels_from_signal_results(data_root: Path, results: list[dict]
                 "tactical_t1",
                 "tactical_t2",
                 "tactical_stop",
+                "recheck_price",
+                "signal",
             ):
                 if r.get(k) is not None:
                     payload[k] = r.get(k)

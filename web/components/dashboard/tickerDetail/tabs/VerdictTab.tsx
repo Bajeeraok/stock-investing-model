@@ -45,6 +45,26 @@ function EarningsSoonLine({ et, onOpen }: { et?: EarningsTarget | null; onOpen: 
   );
 }
 
+type Recheck = { price: number | null; basis: string | null; stop: number | null; max_loss_pct: number | null; gates: string | null; note: string };
+
+/** Pullback level kept visible when we are not buying; never a BUY. */
+function RecheckLine({ r }: { r?: Recheck | null }) {
+  if (!r) return null;
+  return (
+    <section className="rounded-xl border border-td-line bg-td-surface/60 px-4 py-3 text-[13px] text-td-text">
+      {r.price != null ? (
+        <>
+          <span className="font-semibold">Not a BUY. Price where we'd re-check: {usd(r.price)}</span> ({r.basis})
+          {r.stop != null ? `; stop ${usd(r.stop)}${r.max_loss_pct != null ? `, max loss ${r.max_loss_pct}%` : ""}` : ""}.
+          {r.gates ? ` Today ${r.gates}.` : ""} You'll get an alert if price trades there; check the gates before adding.
+        </>
+      ) : (
+        <>{r.note}</>
+      )}
+    </section>
+  );
+}
+
 export function VerdictTab({ ctx }: { ctx: TabCtx }) {
   const {
     ticker,
@@ -115,6 +135,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
     </section>
   )}
   <EarningsSoonLine et={priceTargets?.earnings_target} onOpen={() => setModalTab("why")} />
+  <RecheckLine r={(detail as any).recheck_level} />
   <DayRangeCard data={detail.day_range} price={effectivePrice} ticker={detail.ticker} />
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
   <PositionAdviceCard data={detail.position_advice} price={effectivePrice} />

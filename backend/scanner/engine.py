@@ -97,6 +97,7 @@ ALERT_COLORS = {
     AlertType.ML_PROB_CROSSED: "#3B82F6",
     AlertType.SETUP_ALMOST_READY: "#A78BFA",
     AlertType.TACTICAL_VELOCITY: "#7C3AED",
+    AlertType.RECHECK_LEVEL_TOUCHED: "#94A3B8",
 }
 
 ALERT_EMOJIS = {
@@ -121,6 +122,7 @@ ALERT_EMOJIS = {
     AlertType.ML_PROB_CROSSED: "📈",
     AlertType.SETUP_ALMOST_READY: "🟡",
     AlertType.TACTICAL_VELOCITY: "⚡",
+    AlertType.RECHECK_LEVEL_TOUCHED: "🔎",
 }
 
 # Alert types that are EOD-appropriate — fire at most once per day.
@@ -135,6 +137,7 @@ DIGEST_ALERT_TYPES = frozenset({
 # UI filter tracks — accumulate = swing/build; tactical = quick in/out (velocity, earnings, flow)
 ACCUMULATE_ALERT_TYPES = frozenset({
     AlertType.ENTRY_ZONE_ENTERED,
+    AlertType.RECHECK_LEVEL_TOUCHED,
     AlertType.STOP_HIT,
     AlertType.STOP_APPROACHING,
     AlertType.TARGET_HIT,
@@ -573,6 +576,7 @@ def _build_retail_alert(
     """Build a retail quick-decision alert with one-line plain English and optional actionable text."""
     pr = ScanPriority.HIGH if alert_type in (
         AlertType.ENTRY_ZONE_ENTERED,
+        AlertType.RECHECK_LEVEL_TOUCHED,
         AlertType.STOP_HIT,
         AlertType.ML_PROB_CROSSED,
     ) else ScanPriority.MEDIUM
@@ -678,6 +682,30 @@ def evaluate_retail_alerts(
 
         # Resolve entry_mode once per ticker — used to gate zone alerts
         entry_mode = _resolve_entry_mode(ticker, readiness_cache)
+
+        # Re-check level (50/200-day) on names we are not buying: one heads-up when price trades down to it.
+        _rd = (readiness_cache or {}).get(ticker.upper()) or {}
+        _rc = _rd.get("recheck_price")
+        if (
+            (in_wl or in_portfolio) and _rc and price and last_price
+            and str(_rd.get("signal") or "").upper() not in ("BUY", "STRONG BUY")
+            and float(last_price) > float(_rc) >= float(price)
+        ):
+            _rc = float(_rc)
+            _g = f"{_rd.get('gates_passed')}/{_rd.get('gates_total')} gates pass" if _rd.get("gates_total") else "gates not clear"
+            alerts.append(_build_retail_alert(
+                ticker,
+                AlertType.RECHECK_LEVEL_TOUCHED,
+                f"{ticker} at re-check price ${_rc:.2f} — not a BUY",
+                f"{ticker} traded down to ${price:.2f}, at its re-check price ${_rc:.2f} (50/200-day average). "
+                f"Still not a BUY ({_g}). Open the ticker to see the gates, stop and max loss before deciding.",
+                snap.scan_tier,
+                {"price": price, "recheckPrice": _rc, "entryMode": entry_mode},
+                actionable=f"Re-check {ticker}: gates, stop and max loss first. Not a BUY.",
+                one_liner=f"{ticker} at re-check price ${_rc:.2f} (not a BUY)",
+                dedupe_extra=f"recheck:{_rc:.2f}",
+                priority_override=ScanPriority.MEDIUM,
+            ))
 
         # Watchlist-only tickers (not portfolio holdings) get reduced alert verbosity:
         # only full_go zone entries are surfaced. Earnings/RSI/ML alerts are suppressed
@@ -1208,6 +1236,7 @@ class AlertDeduplicator:
             AlertType.KELLY_REDUCTION: 1440,
             AlertType.EARNINGS_SOON: 1440,
             AlertType.ENTRY_ZONE_ENTERED: 120,
+            AlertType.RECHECK_LEVEL_TOUCHED: 360,
             AlertType.STOP_HIT: 60,
             AlertType.STOP_APPROACHING: 60,
             AlertType.TARGET_HIT: 120,

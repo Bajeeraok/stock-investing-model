@@ -850,6 +850,7 @@ def _eod_payload(results: list[dict], include_price_targets: bool = True) -> dic
                 row["mt_band"] = r["mt_band"]
             row["support_level"] = r.get("support_level")
             row["suggested_buy_price"] = r.get("suggested_buy_price")
+        row["recheck_price"] = r.get("recheck_price")
         if r.get("lt_band") is not None:
             row["lt_band"] = r.get("lt_band")
         if r.get("lt_fair_value_mid") is not None:
