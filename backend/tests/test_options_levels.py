@@ -36,3 +36,29 @@ def test_day_range_fields_spread_over_sessions():
     late = ol.day_range_fields(opt, 100.0, session_day=date(2026, 11, 18), live_left=0.25)
     assert late["opt_sd_pct"] < one["opt_sd_pct"]
     assert ol.day_range_fields(None, 100.0, session_day=date(2026, 11, 18), live_left=None) == {}
+
+
+def _gamma_chain():
+    strikes = [90.0, 95.0, 100.0, 105.0, 110.0]
+    iv = [0.4] * 5
+    calls = pd.DataFrame({"strike": strikes, "openInterest": [0, 0, 100, 5000, 100], "impliedVolatility": iv})
+    puts = pd.DataFrame({"strike": strikes, "openInterest": [100, 5000, 100, 0, 0], "impliedVolatility": iv})
+    return calls, puts
+
+
+def test_gamma_flip_between_put_and_call_heavy_strikes():
+    c, p = _gamma_chain()
+    g = ol.gamma_levels([(c, p, 5 / 252)], 100.0)
+    assert 95 < g["gamma_flip"] < 105
+    assert set(g["gamma_strikes"]) >= {95.0, 105.0}
+    assert ol.gamma_levels([], 100.0) == {}
+
+
+def test_score_gamma_reach_hold_and_placebo():
+    snap = {"last": 100.0, "sigma_pct": 2.0, "gamma_flip": 98.0, "gamma_strikes": [103.0]}
+    rows = ol.score_gamma(snap, low=97.5, high=101.0, close=100.5)
+    flip, strike = rows
+    assert flip["res"] == [True, True]          # touched 98 from above, closed above
+    assert strike["res"] == [False, False]      # never reached 103
+    assert len(flip["placebo"]) == 2
+    assert ol.score_gamma({"last": 100.0}, low=1, high=2, close=1) == []

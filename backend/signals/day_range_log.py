@@ -45,7 +45,8 @@ def compact(r: dict) -> dict:
     keep = ("phase", "ref_close", "ref_date", "sigma_pct", "last", "minutes_left", "close_low", "close_mid",
             "close_high", "close_low50", "close_high50", "p_close_green", "ladder", "premarket",
             "open_mid", "open_low", "open_high", "open_low50", "open_high50",
-            "opt_low80", "opt_high80", "opt_sd_pct", "opt_expiry", "event")
+            "opt_low80", "opt_high80", "opt_sd_pct", "opt_expiry", "event",
+            "gamma_flip", "gamma_strikes", "gamma_at_spot")
     out = {k: r.get(k) for k in keep if r.get(k) is not None}
     out["levels"] = [{k: lv.get(k) for k in ("label", "price", "side", "p_reach", "p_close_beyond")}
                      for lv in r.get("levels") or []]
@@ -112,6 +113,10 @@ def score_snapshot(snap: dict, *, low: float, high: float, close: float, open_: 
         out["opt_in80"] = olo <= close <= ohi
         if lo80 and hi80 and hi80 > lo80:
             out["opt_width_ratio"] = round((ohi - olo) / (hi80 - lo80), 2)
+    if snap.get("gamma_flip") or snap.get("gamma_strikes"):
+        from signals.options_levels import score_gamma
+
+        out["gamma"] = score_gamma(snap, low=low, high=high, close=close)
     omid = snap.get("open_mid")
     if omid and open_:
         out.update(open=round(open_, 2), open_err_pct=round((open_ / omid - 1) * 100, 2),
@@ -221,12 +226,29 @@ def aggregate(days_data: list[dict], ticker: str | None = None) -> dict[str, Any
                              ours_in80_same_pct=pct([r["in80"] for r in opt if r.get("in80") is not None]),
                              opt_width_ratio=round(sum(r.get("opt_width_ratio") or 0 for r in opt)
                                                    / max(1, sum(r.get("opt_width_ratio") is not None for r in opt)), 2))
+        g = [x for r in rows for x in r.get("gamma") or []]
+        if g:
+            out[slot]["gamma"] = gamma_summary(g)
         opens = [r for r in rows if r.get("open_err_pct") is not None]
         if opens:
             out[slot].update(open_n=len(opens),
                              open_in80_pct=pct([r["open_in80"] for r in opens if r.get("open_in80") is not None]),
                              open_in50_pct=pct([r["open_in50"] for r in opens if r.get("open_in50") is not None]),
                              avg_abs_open_err_pct=round(sum(abs(r["open_err_pct"]) for r in opens) / len(opens), 2))
+    return out
+
+
+def gamma_summary(g: list[dict]) -> dict[str, Any]:
+    """Reach and hold rates of gamma levels vs placebo levels ±0.35σ away (hold = reached, close stayed on its side)."""
+    def rates(pairs: list[list[bool]]) -> dict[str, Any]:
+        hit = [h for r, h in pairs if r]
+        return {"n": len(pairs), "reach_pct": round(100 * sum(r for r, _ in pairs) / len(pairs)) if pairs else None,
+                "hold_pct": round(100 * sum(hit) / len(hit)) if hit else None, "touched": len(hit)}
+    out: dict[str, Any] = {}
+    for kind in ("flip", "strike"):
+        xs = [x for x in g if x.get("kind") == kind]
+        if xs:
+            out[kind] = {"real": rates([x["res"] for x in xs]), "placebo": rates([p for x in xs for p in x["placebo"]])}
     return out
 
 

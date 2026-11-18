@@ -390,6 +390,7 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
         if out.get("session_date"):
             out.update(ol.day_range_fields(opt, out.get("last") or out["close_mid"],
                                            session_day=date.fromisoformat(out["session_date"]), live_left=live_left))
+        out.update(ol.gamma_fields(opt))
         from signals.bounce_zone import bounce_zone
 
         out["bounce_zone"] = bounce_zone(closes)
