@@ -33,3 +33,17 @@ Swing-list first touch (t1 vs stop, 63 sessions): 32 target (+3.6%), 42 stop (�
 - **Live record now split:** headline = picks since the Nov 14 fix; earlier picks are shown separately, all vs SPY.
 
 **Revisit:** when full go has 30+ entries with complete 60-session windows, or after 30+ list picks under the current rules. Consider saving the Best setups rows (target/stop/edge) in the EOD snapshot so the ranking can be tested.
+
+## Rerun 2026-11-18 ("all 4 gates passed → BUY?")
+
+Prompted by AMZN: 0 BUY in 75 calls while it rose from $240.35 (Nov 2) to $267.74 (Nov 18); all 4 gates passed on 11 of those days. Same script on 166 snapshots (through 2026-11-17).
+
+| Group | Entries | vs SPY (20 sessions) | Beat SPY | NW t |
+|---|---|---|---|---|
+| Full go | 49 | +0.5 | 57% | 0.33 |
+| Swing-list proxy | 46 | +1.1 | 59% | 1.52 |
+| Hard lock | 453 | −2.6 | 43% | −3.63 |
+
+Swing-list first touch: 32 target (+3.7%), 48 stop (−2.2%), about +0.1% per trade. Counting every full-go day instead of each run once gave +2.7 pts vs same-day peers (t 2.5), but those rows overlap and repeat the same tickers.
+
+**Decision:** not promoted. "All gates passed → BUY" fails t ≥ 3 by a wide margin; full go has only existed since 2026-08-26, and no full-go entry has a complete 60-session window yet. Gates still clearly help on the avoid side (hard lock t −3.6).
