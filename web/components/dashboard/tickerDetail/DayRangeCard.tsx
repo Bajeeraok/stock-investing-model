@@ -1,10 +1,11 @@
 "use client";
 
 /** Today's likely close range + chance price trades at the entry band / stop. Display only. */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { CalendarRange } from "lucide-react";
 import { apiUrl } from "@/lib/apiBase";
 import { isUsEquityRth } from "@/lib/dashboardCache";
+import { ShareImageButton } from "./ShareImageButton";
 
 const LIVE_REFRESH_MS = 60_000;
 
@@ -210,6 +211,7 @@ function oddsTone(p: number) {
 
 export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRangePayload | null; price?: number | null; ticker?: string }) {
   const data = useLiveDayRange(ticker, initial);
+  const cardRef = useRef<HTMLElement>(null);
   if (!data) return null;
   const live = data.phase === "intraday";
   const spot = price ?? data.last ?? data.ref_close;
@@ -223,14 +225,19 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
   const hrs = data.minutes_left != null ? `${Math.floor(data.minutes_left / 60)}h ${data.minutes_left % 60}m left` : "";
 
   return (
-    <section className="rounded-xl border border-td-line bg-td-surface/60 p-4 space-y-3">
+    <section ref={cardRef} className="rounded-xl border border-td-line bg-td-surface/60 p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <CalendarRange className="h-4 w-4 text-td-accent" aria-hidden />
-          <h3 className="text-sm font-semibold text-td-text">{live ? "Today's likely close" : `Next session range${data.session_date ? ` · ${sessionDay(data.session_date)}` : ""}`}</h3>
+          <h3 className="text-sm font-semibold text-td-text">{ticker ? `${ticker} · ` : ""}{live ? "Today's likely close" : `Next session range${data.session_date ? ` · ${sessionDay(data.session_date)}` : ""}`}</h3>
         </div>
         <span className="text-[12px] text-td-muted">
           {live ? hrs : data.premarket != null ? `from pre-market ${usd(data.premarket)} · ${data.ref_date} close ${usd(data.ref_close)}` : `vs ${data.ref_date} close ${usd(data.ref_close)}`}
+          {ticker && (
+            <span className="ml-2 align-middle">
+              <ShareImageButton target={cardRef} fileName={`${ticker}-day-range`} />
+            </span>
+          )}
         </span>
       </div>
 
