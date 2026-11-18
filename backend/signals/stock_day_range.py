@@ -37,6 +37,10 @@ INTRA_K_LATE = 0.65
 INTRA_REACH_K = 0.57
 PRE_K = 0.80
 PRE_MOVE_K = 0.85
+# Earnings reaction day (docs/research/findings/2026-11-18-earnings-day-range.md): the normal bands held only
+# 32% (before the report) / 46% (after it, from the open) of 3,223 reaction closes. Before the report use the
+# earnings 80% move; after it, σ20 × 2.20 (fit pre-2021, 79.5% on 2,105 reports 2021+).
+EVENT_POST_K = 2.20
 OPEN_K = {True: (0.19, 0.17), False: (0.61, 0.56)}  # (80%, 50%) × σ20; key: has pre-market
 SESSION_MIN = 390
 # Intraday reach odds -> observed retouch rate of the day's low/high from 10:30/12:30/2:30/3:30
@@ -160,6 +164,7 @@ def build_day_range(
     session: dict[str, float] | None = None,
     levels: list[dict[str, Any]] | None = None,
     premarket: float | None = None,
+    event: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """closes/dates: completed daily sessions (oldest first), excluding today's partial bar.
     session: {last, high, low, minutes_since_open} while the market is open, else None.
@@ -171,13 +176,23 @@ def build_day_range(
     if not sig or ref <= 0:
         return None
     live = bool(session and session.get("last") and 0 <= session.get("minutes_since_open", -1) < SESSION_MIN)
+    raw_sig = sig
+    if event and event.get("move80"):
+        has_pre = bool(not live and premarket and 0.6 < premarket / ref < 1.6)
+        if event.get("reported") and (live or has_pre):
+            scale = EVENT_POST_K
+        else:
+            scale = max(1.0, math.log(1 + event["move80"]) / Z80 / ((PRE_K if has_pre else CLOSE_K) * sig))
+        sig *= scale
+        event = {**event, "scale": round(scale, 2)}
     px = lambda lr, base: round(base * math.exp(lr), 2)
     out: dict[str, Any] = {
         "phase": "intraday" if live else "next_session",
         "ref_close": round(ref, 2),
         "ref_date": dates[-1],
         "session_date": _next_session(dates[-1]),
-        "sigma_pct": round(sig * 100, 2),
+        "sigma_pct": round(raw_sig * 100, 2),
+        "event": event if event and event.get("scale") else None,
     }
     if live:
         last = float(session["last"])
@@ -275,6 +290,48 @@ def _daily(t, ticker: str):
     return d
 
 
+_EARN: dict[str, tuple[float, Any]] = {}
+EARN_TTL_S = 6 * 3600
+
+
+def _earnings_event(t, ticker: str, d, rows, session_day: str | None, now: datetime) -> dict | None:
+    """Earnings report whose first reaction close is the forecast session, with its 80% move (else None)."""
+    import time
+
+    import pandas as pd
+
+    from signals.earnings_log import pre_close_date
+    from signals.earnings_move import _naive, forecast, report_timing
+
+    if not rows or not session_day or ticker.endswith("-USD"):
+        return None
+    try:
+        hit = _EARN.get(ticker)
+        if hit and time.time() - hit[0] < EARN_TTL_S:
+            ed = hit[1]
+        else:
+            ed = t.get_earnings_dates(limit=8)
+            _EARN[ticker] = (time.time(), ed)
+        if ed is None or ed.empty:
+            return None
+        last = rows[-1][0]
+        for ts in ed.index:
+            pre = pre_close_date(ts)
+            if pre != last or _next_session(pre.isoformat()) != session_day:
+                continue
+            idx = d.index.tz_convert("America/New_York") if d.index.tz is not None else d.index
+            close = pd.Series(d["Close"].values, index=idx)
+            close = close[[x.date() <= last for x in idx]]
+            f = forecast(close, ed[ed.index < ts], float(rows[-1][1]))
+            if not f:
+                return None
+            return {"type": "earnings", "report": _naive(ts).isoformat(), "timing": report_timing(ts),
+                    "move80": f["move80_pct"] / 100, "reported": _naive(now) >= _naive(ts)}
+    except Exception:
+        return None
+    return None
+
+
 def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datetime | None = None) -> dict | None:
     """Live fetch (daily 1y + today's 1-min bars) → build_day_range. None on any data gap."""
     import yfinance as yf
@@ -324,9 +381,10 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
         anchor = (session or {}).get("last") or premarket or closes[-1]
         sday = today if in_session else date.fromisoformat(nxt)
         opt = ol.fetch(t, ticker, float(anchor), sday, now_day=today)
+    event = _earnings_event(t, ticker, d, rows, nxt, now)
     out = build_day_range(closes, [x.isoformat() for x, _ in rows], session=session,
                           levels=levels_from_summary(summary) + ol.wall_levels(opt),
-                          premarket=premarket)
+                          premarket=premarket, event=event)
     if out is not None:
         live_left = out["minutes_left"] / SESSION_MIN if out.get("phase") == "intraday" else None
         if out.get("session_date"):

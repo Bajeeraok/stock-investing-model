@@ -175,3 +175,33 @@ def test_day_range_endpoint(monkeypatch):
     r = TestClient(app).get("/api/ticker/nvda/day-range")
     assert r.status_code == 200
     assert r.json() == {"ticker": "NVDA", "day_range": {"phase": "intraday", "ticker": "NVDA"}}
+
+
+def _flat_closes(n=60, vol=0.01):
+    import math
+    return [100 * math.exp(vol * (1 if i % 2 else -1) * 0.5) for i in range(n)], \
+        [f"2026-0{1 + i // 28}-{1 + i % 28:02d}" for i in range(n)]
+
+
+def test_earnings_event_before_report_uses_earnings_move():
+    import math
+
+    from signals.stock_day_range import Z80, build_day_range
+
+    c, d = _flat_closes()
+    base = build_day_range(c, d)
+    ev = build_day_range(c, d, event={"type": "earnings", "move80": 0.10, "reported": False})
+    assert ev["event"]["scale"] > 1 and base["event"] is None
+    assert abs(math.log(ev["close_high"] / ev["close_mid"]) - math.log(1.10)) < 0.002
+    assert ev["sigma_pct"] == base["sigma_pct"]
+
+
+def test_earnings_event_after_report_scales_sigma():
+    from signals.stock_day_range import EVENT_POST_K, build_day_range
+
+    c, d = _flat_closes()
+    sess = {"last": 100.0, "high": 101.0, "low": 99.0, "open": 100.0, "minutes_since_open": 60}
+    base = build_day_range(c, d, session=sess)
+    ev = build_day_range(c, d, session=sess, event={"type": "earnings", "move80": 0.10, "reported": True})
+    assert ev["event"]["scale"] == EVENT_POST_K
+    assert abs((ev["close_high"] - 100) / (base["close_high"] - 100) - EVENT_POST_K) < 0.05

@@ -21,6 +21,29 @@ import { PositionAdviceCard } from "../../PositionAdviceCard";
 import { DayRangeCard } from "../DayRangeCard";
 import { TickerInvestorRules } from "../../InvestorRulesPanel";
 import type { TabCtx } from "./tabCtx";
+import type { EarningsTarget } from "../../PriceTargetsPanel";
+
+const usd = (v: number) => `$${v.toFixed(2)}`;
+
+/** One plain line when a report is within 7 days; full card lives on the Why tab. */
+function EarningsSoonLine({ et, onOpen }: { et?: EarningsTarget | null; onOpen: () => void }) {
+  const days = et?.days_until_earnings;
+  if (!et?.available || days == null || days < 0 || days > 7 || et.range80_low == null || et.range80_high == null) return null;
+  const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
+  const timing = et.report_timing === "amc" ? " after the close" : et.report_timing === "bmo" ? " before the open" : "";
+  return (
+    <section className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[13px] text-td-text">
+      <span className="font-semibold">Earnings {when}{timing}.</span>{" "}
+      Usual reaction about ±{et.typical_move_pct ?? et.expected_move_pct}%; 4 in 5 chance the first close after it lands
+      between {usd(et.range80_low)} and {usd(et.range80_high)}
+      {et.options_move ? ` (options market ±${et.options_move.move_pct}%)` : ""}. Direction: no edge, so size for a move
+      either way.{" "}
+      <button type="button" onClick={onOpen} className="underline text-td-accent">
+        Details
+      </button>
+    </section>
+  );
+}
 
 export function VerdictTab({ ctx }: { ctx: TabCtx }) {
   const {
@@ -91,6 +114,7 @@ export function VerdictTab({ ctx }: { ctx: TabCtx }) {
       <p className="text-[13px] text-slate-500 mt-1">Try refreshing the dashboard or check if the ticker is in your watchlist.</p>
     </section>
   )}
+  <EarningsSoonLine et={priceTargets?.earnings_target} onOpen={() => setModalTab("why")} />
   <DayRangeCard data={detail.day_range} price={effectivePrice} ticker={detail.ticker} />
   <ProtectModeCard data={detail.investor_summary?.protect_mode} />
   <PositionAdviceCard data={detail.position_advice} price={effectivePrice} />

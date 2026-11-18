@@ -78,6 +78,7 @@ export type DayRangePayload = {
   opt_high80?: number | null;
   opt_sd_pct?: number | null;
   opt_expiry?: string | null;
+  event?: { type: "earnings"; report: string; timing?: string | null; move80: number; reported: boolean; scale: number } | null;
   ladder?: { p: number; dip: number; pop: number; close_below?: number; close_above?: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
   reach_calibration?: { sessions: number; tickers: number; cases: number };
@@ -123,6 +124,13 @@ export function plainSummary(d: DayRangePayload): string[] {
   const out: string[] = [
     `Most likely close near ${usd(d.close_mid)}; 4 in 5 chance it closes ${live ? "today" : "next session"} between ${usd(d.close_low)} and ${usd(d.close_high)}.`,
   ];
+  if (d.event?.type === "earnings") {
+    out.push(
+      d.event.reported
+        ? `Earnings reaction day: swings run about ${d.event.scale.toFixed(1)}× a normal day, so these ranges are widened to match (in tests the normal range caught only 46% of these closes).`
+        : `Earnings report before this close: ranges use the earnings move (±${(d.event.move80 * 100).toFixed(1)}% for 4 in 5 reports), not a normal day. Direction is a coin flip.`,
+    );
+  }
   if (live && d.day_low != null && d.p_new_low != null) {
     out.push(
       d.p_new_low < 0.1
