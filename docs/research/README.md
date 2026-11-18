@@ -27,6 +27,7 @@ Revisit — what would make us look again (e.g. 30+ days of live tracking).
 
 | Date | Finding | Status |
 |---|---|---|
+| 2026-11-18 | [Yesterday's high/low/close as support/resistance](findings/2026-11-18-prior-day-levels.md) | Tested, not shipped |
 | 2026-11-18 | [Day range on earnings reaction days](findings/2026-11-18-earnings-day-range.md) | Shipped (display only) |
 | 2026-11-16 | [Post-earnings move: size and direction](findings/2026-11-16-earnings-move.md) | Shipped (display only) |
 | 2026-11-16 | [Best setups / full-go forward test](findings/2026-11-16-best-setups-forward-test.md) | Tested; not proven, record split at fix |
