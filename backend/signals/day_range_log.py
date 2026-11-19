@@ -45,7 +45,7 @@ def compact(r: dict) -> dict:
     keep = ("phase", "ref_close", "ref_date", "sigma_pct", "last", "minutes_left", "close_low", "close_mid",
             "close_high", "close_low50", "close_high50", "p_close_green", "ladder", "premarket",
             "open_mid", "open_low", "open_high", "open_low50", "open_high50",
-            "opt_low80", "opt_high80", "opt_sd_pct", "opt_expiry", "event",
+            "opt_low80", "opt_high80", "opt_sd_pct", "opt_expiry", "event", "blend",
             "gamma_flip", "gamma_strikes", "gamma_at_spot")
     out = {k: r.get(k) for k in keep if r.get(k) is not None}
     out["levels"] = [{k: lv.get(k) for k in ("label", "price", "side", "p_reach", "p_close_beyond")}

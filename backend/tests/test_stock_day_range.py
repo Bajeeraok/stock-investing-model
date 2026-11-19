@@ -205,3 +205,21 @@ def test_earnings_event_after_report_scales_sigma():
     ev = build_day_range(c, d, session=sess, event={"type": "earnings", "move80": 0.10, "reported": True})
     assert ev["event"]["scale"] == EVENT_POST_K
     assert abs((ev["close_high"] - 100) / (base["close_high"] - 100) - EVENT_POST_K) < 0.05
+
+
+def test_blend_scales_bands_for_tested_tickers_only():
+    import math
+
+    from signals.stock_day_range import OPT_SCALE, Z80, _blend, build_day_range
+
+    c, d = _series()
+    base = build_day_range(c, d)
+    ours = math.log(base["close_high"] / base["close_mid"]) / Z80
+    fields = {"opt_sd_pct": round(ours * 2 * 100 / OPT_SCALE, 2)}
+    b = _blend(base, fields, "NVDA")
+    assert abs(b["scale"] - 1.5) < 0.01 and b["ours_high80"] == base["close_high"]
+    assert _blend(base, fields, "XYZ") is None
+    assert _blend({**base, "event": {"type": "earnings"}}, fields, "NVDA") is None
+    wide = build_day_range(c, d, sig_scale=b["scale"])
+    assert abs(math.log(wide["close_high"] / wide["close_mid"]) / Z80 / ours - 1.5) < 0.01
+    assert wide["sigma_pct"] == base["sigma_pct"]

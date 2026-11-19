@@ -79,6 +79,7 @@ export type DayRangePayload = {
   opt_high80?: number | null;
   opt_sd_pct?: number | null;
   opt_expiry?: string | null;
+  blend?: { scale: number; ours_pct: number; opt_pct: number; ours_low80: number; ours_high80: number } | null;
   event?: { type: "earnings"; report: string; timing?: string | null; move80: number; reported: boolean; scale: number } | null;
   ladder?: { p: number; dip: number; pop: number; close_below?: number; close_above?: number }[];
   scorecard?: { sessions: number; inside: number; coverage_pct: number } | null;
@@ -139,8 +140,15 @@ export function plainSummary(d: DayRangePayload): string[] {
         : `Today's low so far is ${usd(d.day_low)}; ${pct(d.p_new_low)} chance it breaks below it before the close.`,
     );
   }
-  if (d.opt_low80 != null && d.opt_high80 != null && d.close_high > d.close_low) {
-    const r = (d.opt_high80 - d.opt_low80) / (d.close_high - d.close_low);
+  if (d.blend) {
+    out.push(
+      `This range blends our estimate (±${d.blend.ours_pct.toFixed(1)}%) with what options traders are pricing (±${d.blend.opt_pct.toFixed(1)}%). Over two years of tests the blend held more closes in jumpy weeks than our estimate alone.`,
+    );
+  }
+  const oursLo = d.blend?.ours_low80 ?? d.close_low;
+  const oursHi = d.blend?.ours_high80 ?? d.close_high;
+  if (d.opt_low80 != null && d.opt_high80 != null && oursHi > oursLo) {
+    const r = (d.opt_high80 - d.opt_low80) / (oursHi - oursLo);
     out.push(
       r >= 1.5
         ? `Options traders are pricing a much bigger move than usual (${r.toFixed(1)}× our range, ${usd(d.opt_low80)}–${usd(d.opt_high80)}). That usually means an event such as earnings: expect wider swings, so use smaller size or a wider stop.`
@@ -315,11 +323,19 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
             <span className="text-td-muted">Options market 80%</span>
             <span className="font-mono text-td-text">
               {usd(data.opt_low80)}–{usd(data.opt_high80)}
-              {data.close_high > data.close_low && (
+              {(data.blend?.ours_high80 ?? data.close_high) > (data.blend?.ours_low80 ?? data.close_low) && (
                 <span className="text-td-muted">
-                  {" "}· {((data.opt_high80 - data.opt_low80) / (data.close_high - data.close_low)).toFixed(1)}× ours
+                  {" "}· {((data.opt_high80 - data.opt_low80) / ((data.blend?.ours_high80 ?? data.close_high) - (data.blend?.ours_low80 ?? data.close_low))).toFixed(1)}× ours
                 </span>
               )}
+            </span>
+          </li>
+        )}
+        {data.blend && (
+          <li className="flex justify-between gap-2">
+            <span className="text-td-muted">How this range is built</span>
+            <span className="font-mono text-td-text">
+              Blend: ours ±{data.blend.ours_pct.toFixed(1)}%, options ±{data.blend.opt_pct.toFixed(1)}%
             </span>
           </li>
         )}
@@ -350,7 +366,12 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
               {data.day_low != null && data.day_high != null && <> · day so far {usd(data.day_low)}–{usd(data.day_high)}</>}
             </>
           ) : (
-            <>Sized by this stock's typical daily move (±{data.sigma_pct.toFixed(1)}%). Before the open, up or down is close to a coin flip.</>
+            <>
+              {data.blend
+                ? "Sized by a blend of this stock's typical daily move and the options market's price for the day."
+                : `Sized by this stock's typical daily move (±${data.sigma_pct.toFixed(1)}%).`}{" "}
+              Before the open, up or down is close to a coin flip.
+            </>
           )}
         </p>
       </div>

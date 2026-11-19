@@ -32,6 +32,10 @@ SPAN = 20
 Z80 = 1.2816
 Z50 = 0.6745
 CLOSE_K = 0.97
+# Options/EWMA 50/50 blend: passed out of sample on these 10 (2y Polygon backtest, t 4.25, DSR 1.0;
+# docs/research/findings/2026-11-18-options-range-backtest.md). OPT_SCALE fit on year 1.
+BLEND_TICKERS = frozenset({"SPY", "QQQ", "AAPL", "MSFT", "NVDA", "AMZN", "TSLA", "META", "GOOGL", "AMD"})
+OPT_SCALE = 0.88
 INTRA_K = 0.55
 INTRA_K_LATE = 0.65
 INTRA_REACH_K = 0.57
@@ -165,6 +169,7 @@ def build_day_range(
     levels: list[dict[str, Any]] | None = None,
     premarket: float | None = None,
     event: dict[str, Any] | None = None,
+    sig_scale: float = 1.0,
 ) -> dict[str, Any] | None:
     """closes/dates: completed daily sessions (oldest first), excluding today's partial bar.
     session: {last, high, low, minutes_since_open} while the market is open, else None.
@@ -185,6 +190,7 @@ def build_day_range(
             scale = max(1.0, math.log(1 + event["move80"]) / Z80 / ((PRE_K if has_pre else CLOSE_K) * sig))
         sig *= scale
         event = {**event, "scale": round(scale, 2)}
+    sig *= sig_scale
     px = lambda lr, base: round(base * math.exp(lr), 2)
     out: dict[str, Any] = {
         "phase": "intraday" if live else "next_session",
@@ -332,6 +338,20 @@ def _earnings_event(t, ticker: str, d, rows, session_day: str | None, now: datet
     return None
 
 
+def _blend(out: dict, fields: dict, ticker: str) -> dict | None:
+    """Scale for averaging our sd with the (scaled) options sd. Skipped on earnings days (own tested widening)."""
+    if ticker.upper() not in BLEND_TICKERS or out.get("event") or not fields.get("opt_sd_pct"):
+        return None
+    mid, hi = out.get("close_mid"), out.get("close_high")
+    if not mid or not hi or hi <= mid:
+        return None
+    ours = math.log(hi / mid) / Z80
+    opt = fields["opt_sd_pct"] / 100 * OPT_SCALE
+    scale = min(1.8, max(0.6, (ours + opt) / (2 * ours)))
+    return {"scale": round(scale, 3), "ours_pct": round(Z80 * ours * 100, 2), "opt_pct": round(Z80 * opt * 100, 2),
+            "ours_low80": out["close_low"], "ours_high80": hi}
+
+
 def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datetime | None = None) -> dict | None:
     """Live fetch (daily 1y + today's 1-min bars) → build_day_range. None on any data gap."""
     import yfinance as yf
@@ -382,14 +402,21 @@ def compute_stock_day_range(ticker: str, summary: dict | None = None, now: datet
         sday = today if in_session else date.fromisoformat(nxt)
         opt = ol.fetch(t, ticker, float(anchor), sday, now_day=today)
     event = _earnings_event(t, ticker, d, rows, nxt, now)
-    out = build_day_range(closes, [x.isoformat() for x, _ in rows], session=session,
-                          levels=levels_from_summary(summary) + ol.wall_levels(opt),
-                          premarket=premarket, event=event)
+    args = dict(session=session, levels=levels_from_summary(summary) + ol.wall_levels(opt), premarket=premarket, event=event)
+    out = build_day_range(closes, [x.isoformat() for x, _ in rows], **args)
     if out is not None:
         live_left = out["minutes_left"] / SESSION_MIN if out.get("phase") == "intraday" else None
+        fields = {}
         if out.get("session_date"):
-            out.update(ol.day_range_fields(opt, out.get("last") or out["close_mid"],
-                                           session_day=date.fromisoformat(out["session_date"]), live_left=live_left))
+            fields = ol.day_range_fields(opt, out.get("last") or out["close_mid"],
+                                         session_day=date.fromisoformat(out["session_date"]), live_left=live_left)
+        blended = _blend(out, fields, ticker)
+        if blended:
+            b = build_day_range(closes, [x.isoformat() for x, _ in rows], **args, sig_scale=blended["scale"])
+            if b is not None:
+                b["blend"] = blended
+                out = b
+        out.update(fields)
         out.update(ol.gamma_fields(opt))
         from signals.bounce_zone import bounce_zone
 
