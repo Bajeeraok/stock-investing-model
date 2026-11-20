@@ -78,23 +78,49 @@ def build(close: list[float], dates: list[str], vix: list[float], vix3m: list[fl
     return out
 
 
+def fear_score(d) -> dict[str, Any] | None:
+    """CNN-style fear score 0-100 (high = fear): mean trailing-1y percentile of 6 inputs. Mood only: no 20-day edge
+    (docs/research/findings/2026-11-20-fear-score.md)."""
+    import pandas as pd
+
+    s = d["SPY"]
+    r = lambda x, n: x / x.shift(n) - 1  # noqa: E731
+    comp = pd.DataFrame({"VIX level": d["^VIX"], "VIX curve": d["^VIX"] / d["^VIX3M"],
+                         "Below 125-day average": -(s / s.rolling(125).mean() - 1),
+                         "Junk bonds lagging": -(r(d["HYG"], 20) - r(d["IEF"], 20)),
+                         "Bonds beating stocks": r(d["TLT"], 20) - r(s, 20),
+                         "Drop from 60-day high": -(s / s.rolling(60).max() - 1)}).dropna().iloc[-253:]
+    if len(comp) < 253:
+        return None
+    parts = {k: round(float((comp[k].iloc[:-1] < comp[k].iloc[-1]).mean() * 100)) for k in comp}
+    score = round(sum(parts.values()) / len(parts))
+    label = ("Extreme fear" if score >= 80 else "Fear" if score >= 60 else "Neutral" if score > 40
+             else "Greed" if score > 20 else "Extreme greed")
+    return {"score": score, "label": label, "parts": parts}
+
+
 def compute() -> dict[str, Any] | None:
     from signals.cache import cache_key, get_cached, set_cached
 
-    key = cache_key("storm_tracker", "v1")
+    key = cache_key("storm_tracker", "v2")
     hit = get_cached(key)
     if isinstance(hit, dict):
         return hit
     try:
         import yfinance as yf
 
-        d = yf.download(["SPY", "^VIX", "^VIX3M"], start="2000-01-01", auto_adjust=True, progress=False)["Close"]
-        d = d.dropna(subset=["SPY", "^VIX"])
+        raw = yf.download(["SPY", "^VIX", "^VIX3M", "HYG", "IEF", "TLT"], start="2000-01-01", auto_adjust=True,
+                          progress=False)["Close"]
+        d = raw.dropna(subset=["SPY", "^VIX"])
         out = build([float(x) for x in d["SPY"]], [i.date().isoformat() for i in d.index], [float(x) for x in d["^VIX"]],
                     [float(x) if x == x else None for x in d["^VIX3M"]])
     except Exception as e:
         logger.warning("storm tracker failed: %s", e)
         return None
     if out:
+        try:
+            out["fear"] = fear_score(raw.dropna())
+        except Exception as e:
+            logger.warning("fear score failed: %s", e)
         set_cached(key, out, 6 * 3600)
     return out

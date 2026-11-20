@@ -425,6 +425,7 @@ type StormData = {
   as_of: string; spy: number; ma50: number; drawdown_pct: number; vix: number; vix_curve_inverted: boolean; active: boolean;
   spell?: StormSpell;
   past: { n: number; median_days: number; over_by_pct: Record<string, number>; deep_n: number; deep_median_days: number | null; spy_20d_after_median_pct: number | null; spy_20d_after_up_pct: number | null };
+  fear?: { score: number; label: string; parts: Record<string, number> } | null;
   recent_spells: { start: string; end: string; days: number; max_drawdown_pct: number; max_vix: number; spy_20d_after_pct: number | null }[];
 };
 
@@ -461,6 +462,12 @@ function StormMeter() {
             : ""}{" "}
         History, not a forecast: nothing we tested predicts the exact turn, so buys wait for the trend to recover.
       </p>
+      {d.fear && (
+        <p className="mt-1 leading-snug">
+          <b>Fear score {d.fear.score}/100 · {d.fear.label}.</b> Mood, not a timing signal: in our 2017–2026 test, high fear
+          was followed by a higher average 20-day return but fewer up periods, so there's no reliable edge.
+        </p>
+      )}
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-1 text-[11.5px] font-semibold text-td-accent">
         {open ? "Hide details" : "What it's built from ›"}
       </button>
@@ -475,6 +482,12 @@ function StormMeter() {
             {d.past.over_by_pct["40"]}% / {d.past.over_by_pct["60"]}%. Spells that fell 10%+ ({d.past.deep_n}): median {d.past.deep_median_days} sessions.
             {d.past.spy_20d_after_median_pct != null && ` 20 sessions after a spell ended, SPY was up ${d.past.spy_20d_after_up_pct}% of the time (median ${d.past.spy_20d_after_median_pct}%).`}
           </p>
+          {d.fear && (
+            <p>
+              Fear score inputs (higher = more fearful than the past year):{" "}
+              {Object.entries(d.fear.parts).map(([k, v]) => `${k} ${v}`).join(" · ")}.
+            </p>
+          )}
           <div className="rounded-lg border border-td-line/70 px-2.5 py-2">
             <p className="font-semibold text-[12px]">How to read this (vs CNN Fear &amp; Greed)</p>
             <ul className="mt-1 space-y-0.5 list-disc pl-4">
