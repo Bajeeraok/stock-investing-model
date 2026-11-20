@@ -475,6 +475,15 @@ function StormMeter() {
             {d.past.over_by_pct["40"]}% / {d.past.over_by_pct["60"]}%. Spells that fell 10%+ ({d.past.deep_n}): median {d.past.deep_median_days} sessions.
             {d.past.spy_20d_after_median_pct != null && ` 20 sessions after a spell ended, SPY was up ${d.past.spy_20d_after_up_pct}% of the time (median ${d.past.spy_20d_after_median_pct}%).`}
           </p>
+          <div className="rounded-lg border border-td-line/70 px-2.5 py-2">
+            <p className="font-semibold text-[12px]">How to read this (vs CNN Fear &amp; Greed)</p>
+            <ul className="mt-1 space-y-0.5 list-disc pl-4">
+              <li><b>Fear &amp; Greed</b> is a mood snapshot: a 0–100 score from momentum, new highs vs lows, breadth, put/call, junk-bond demand, VIX and safe-haven flows. It tells you how scared the market is today.</li>
+              <li><b>Storm meter</b> is a clock with history: how many days SPY has been below its 50-day average, how deep the drop is, and how long the {d.past.n} similar spells since 2000 lasted.</li>
+              <li><b>Overlap:</b> both use VIX and momentum. Extreme fear often shows up near lows, but neither tells you the exact day it turns.</li>
+              <li><b>How to use it:</b> it sets expectations (weeks, not days) and explains why buys stay locked. When the trend recovers, the weather gate opens on its own; you may miss the first few percent of the rebound in exchange for not catching a falling knife.</li>
+            </ul>
+          </div>
           <ul className="space-y-0.5 font-mono text-[11.5px] text-td-muted">
             {d.recent_spells.slice(0, 6).map((r) => (
               <li key={r.start}>
