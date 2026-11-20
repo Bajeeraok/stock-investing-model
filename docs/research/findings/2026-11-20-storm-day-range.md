@@ -22,10 +22,23 @@ its 60-day high, or when VIX > 25; mixes of span-5 and span-20 σ (25/50/75%, ma
 | PBO (23 variants) | — | 0.28 |
 
 Best test variant (×1.1 when VIX > 25) gained only 0.04%. Every storm/skew widening ≥1.2 lost.
-On storm days the baseline misses are symmetric: 7.7% of closes below the range, 7.9% above. Rebound days are as big
+On storm days the baseline misses are symmetric: 11.0% of closes below the range, 11.8% above. Rebound days are as big
 as drop days, so widening only the downside or shifting the centre down does not help.
 
-**Verdict.** Nothing passes; not shipped. Storm days run ~3 points under 80% coverage, and single-day crashes
+**Holdout 2000–2014 (never used to pick; 53–63 tickers with data, 3,733 days, 1,383 storm days; incl. 2000–02, 2008).**
+
+| | Baseline | Best train variant |
+|---|---|---|
+| 80% coverage, all days | 78.6% | 77.0% |
+| Storm days | 76.7% | 75.4% |
+| Bad weeks | 63.4% | 62.8% |
+| Sep 2008 – Mar 2009 | 75.3% | 74.1% |
+| Interval score gain / HAC t | — | −0.33% / −6.18 |
+
+Best holdout variant (×1.1 when SPY is in a storm and 7%+ off its high): +0.03%, t 0.41. Storm-day misses again
+symmetric (11.3% below, 12.1% above). Rerun with `DATA=d00.pkl VIX=vix00.pkl` (yfinance from 1999).
+
+**Verdict.** Nothing passes; not shipped. Storm days run ~3 points under 80% coverage in both periods, and single-day crashes
 (NVDA −14%, a ~4–5σ day) sit outside any range that is right on normal days. The same-morning options range
 (blend live on 10 tickers since 2026-11-19) is the tested fix; its live review is 2026-12-21.
 
