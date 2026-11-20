@@ -217,8 +217,23 @@ function oddsTone(p: number) {
   return "text-td-muted";
 }
 
+/** True while the Storm meter's SPY-below-50-day spell is active (shared 6h-cached endpoint). */
+function useStormActive(): boolean {
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch(apiUrl("/api/storm-tracker"), { signal: ac.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setActive(Boolean(j?.active)))
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
+  return active;
+}
+
 export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRangePayload | null; price?: number | null; ticker?: string }) {
   const data = useLiveDayRange(ticker, initial);
+  const stormy = useStormActive();
   const cardRef = useRef<HTMLElement>(null);
   if (!data) return null;
   const live = data.phase === "intraday";
@@ -281,6 +296,13 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
             )}
           </p>
         </div>
+      )}
+
+      {stormy && (
+        <p className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[13px] text-amber-200">
+          <b>Stormy market:</b> expect about 1 in 4 closes outside the 80% range, in either direction. Since 2000, on
+          stormy days the 80% range held about 77% of closes, with misses split evenly between big drops and big rebounds.
+        </p>
       )}
 
       <ul className="space-y-1 text-[13px]">
