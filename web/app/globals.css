@@ -16,7 +16,7 @@
   --td-surface2: 22 28 43;
   --td-line: 38 47 66;
   --td-text: 232 235 242;
-  --td-muted: 134 144 166;
+  --td-muted: 178 186 204;
   --td-accent: 0 200 150;        /* fintech.green #00C896 */
   --td-accent-ink: 189 245 216;
   --td-accent-weak: 17 51 39;
@@ -41,7 +41,7 @@
   --td-surface2: 22 28 43;
   --td-line: 38 47 66;
   --td-text: 232 235 242;
-  --td-muted: 134 144 166;
+  --td-muted: 178 186 204;
   --td-accent: 0 200 150;        /* fintech.green #00C896 */
   --td-accent-ink: 189 245 216;
   --td-accent-weak: 17 51 39;
@@ -80,3 +80,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .td-slide-in { animation: none; }
 }
+
+/* Readability floor for explanatory text: small grey copy read like a disclaimer. */
+.text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\] { font-size: 12.5px; line-height: 1.45; }
+.text-\[12px\], .text-\[12\.5px\] { font-size: 13px; line-height: 1.5; }
+.text-slate-500 { color: rgb(170 178 196); }
+.text-slate-400 { color: rgb(190 197 212); }

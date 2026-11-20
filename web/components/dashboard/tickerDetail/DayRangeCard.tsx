@@ -404,13 +404,13 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
               </span>
             </div>
           ))}
-          <p className="text-[12px] text-td-muted mt-1">
+          <ul className="mt-2 space-y-1 text-[13px] text-td-text/90 leading-snug">
             {live && data.day_low != null && data.day_high != null && (
-              <>Today so far {usd(data.day_low)}–{usd(data.day_high)}; the day&apos;s low can only go lower from here, so it is at or below the low so far at every chance. </>
+              <li><b>Today so far:</b> {usd(data.day_low)}–{usd(data.day_high)}. New lows or highs can only extend past these.</li>
             )}
-            Chance price trades there at any moment, not where it closes. A brief touch is about twice as likely as closing beyond
-            the same level. Lower lows and higher highs are possible, just less likely.
-          </p>
+            <li><b>What the odds mean:</b> the chance price trades there at any moment today, not where it closes.</li>
+            <li><b>Touch vs close:</b> a brief touch is about twice as likely as closing beyond the same level.</li>
+          </ul>
         </div>
       )}
 
@@ -442,20 +442,22 @@ export function DayRangeCard({ data: initial, price, ticker }: { data?: DayRange
         </p>
       )}
 
-      <p className="text-[12px] text-td-muted leading-relaxed">
+      <ul className="space-y-1 text-[13px] text-td-text/90 leading-snug border-t border-td-line/60 pt-2">
         {data.scorecard && (
-          <>
-            Last {data.scorecard.sessions} sessions: {data.scorecard.inside} closes inside the band ({data.scorecard.coverage_pct}%, target 80%).{" "}
-          </>
+          <li>
+            <b>Track record:</b> last {data.scorecard.sessions} sessions, {data.scorecard.inside} closes landed inside the 80% range
+            ({data.scorecard.coverage_pct}%; target 80%).
+          </li>
         )}
-        {trackedLine(data)}
+        {trackedLine(data) && <li><b>Live record:</b> {trackedLine(data)}</li>}
         {data.reach_calibration && (
-          <>
-            Trade-there odds checked against {data.reach_calibration.cases.toLocaleString()} past cases ({data.reach_calibration.tickers} stocks, {data.reach_calibration.sessions} sessions).{" "}
-          </>
+          <li>
+            <b>How the odds were checked:</b> {data.reach_calibration.cases.toLocaleString()} past cases ({data.reach_calibration.tickers} stocks,{" "}
+            {data.reach_calibration.sessions} sessions).
+          </li>
         )}
-        Odds, not predictions. Wider around earnings. Doesn't change the signal.
-      </p>
+        <li><b>Keep in mind:</b> these are odds, not predictions. Ranges widen around earnings. This card doesn&apos;t change BUY/HOLD/SELL.</li>
+      </ul>
 
       {data.bounce_zone && <BounceZone z={data.bounce_zone} />}
 
