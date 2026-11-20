@@ -29,6 +29,7 @@ Revisit — what would make us look again (e.g. 30+ days of live tracking).
 |---|---|---|
 | 2026-11-18 | [Widening the day range when VIX jumps](findings/2026-11-18-vix-day-range.md) | Tested, not shipped |
 | 2026-11-18 | [Options-implied day range vs our EWMA range](findings/2026-11-18-options-range-backtest.md) | Passes bar (10 tickers), not shipped |
+| 2026-11-20 | [Fear & Greed-style fear score as a 20-day SPY signal](findings/2026-11-20-fear-score.md) | Tested, not shipped |
 | 2026-11-18 | [Yesterday's high/low/close as support/resistance](findings/2026-11-18-prior-day-levels.md) | Tested, not shipped |
 | 2026-11-18 | [Day range on earnings reaction days](findings/2026-11-18-earnings-day-range.md) | Shipped (display only) |
 | 2026-11-16 | [Post-earnings move: size and direction](findings/2026-11-16-earnings-move.md) | Shipped (display only) |
