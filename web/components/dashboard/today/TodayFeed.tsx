@@ -420,6 +420,75 @@ export function ThisWeekCard({
 
 // ── Weather teaser + catalyst strip ─────────────────────────────────────────
 
+type StormSpell = { start: string; days: number; max_drawdown_pct: number; past_ended_by_now_pct: number; remaining_median_days: number | null; similar_n: number; similar_remaining_median_days: number | null };
+type StormData = {
+  as_of: string; spy: number; ma50: number; drawdown_pct: number; vix: number; vix_curve_inverted: boolean; active: boolean;
+  spell?: StormSpell;
+  past: { n: number; median_days: number; over_by_pct: Record<string, number>; deep_n: number; deep_median_days: number | null; spy_20d_after_median_pct: number | null; spy_20d_after_up_pct: number | null };
+  recent_spells: { start: string; end: string; days: number; max_drawdown_pct: number; max_vix: number; spy_20d_after_pct: number | null }[];
+};
+
+/** Storm meter: today's SPY-below-50-day spell vs every spell since 2000. History, not a timing signal. */
+function StormMeter() {
+  const [d, setD] = useState<StormData | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch(apiUrl("/api/storm-tracker"), { signal: ac.signal, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setD(j && j.past ? j : null))
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
+  if (!d?.active || !d.spell) return null;
+  const sp = d.spell;
+  const pctDone = Math.max(2, Math.min(100, sp.past_ended_by_now_pct));
+  return (
+    <div className="mt-2 rounded-xl border border-td-line bg-td-surface/50 px-3 py-2 text-sm text-td-text/90">
+      <div className="flex justify-between text-[12px] font-semibold">
+        <span>Storm meter · day {sp.days} (since {sp.start})</span>
+        <span className="text-td-muted">{d.past.n} past spells since 2000</span>
+      </div>
+      <div className="mt-1.5 h-2 rounded-full bg-td-line/60" aria-label={`${sp.past_ended_by_now_pct}% of past spells were over by now`}>
+        <div className="h-2 rounded-full bg-amber-400" style={{ width: `${pctDone}%` }} />
+      </div>
+      <p className="mt-1.5 leading-snug">
+        {sp.past_ended_by_now_pct}% of past stormy spells were over by day {sp.days}.
+        {sp.similar_remaining_median_days != null && sp.similar_n >= 5
+          ? ` Spells this long and this deep usually ran about ${sp.similar_remaining_median_days} more sessions (${sp.similar_n} cases).`
+          : sp.remaining_median_days != null
+            ? ` Those still going at this point usually ran about ${sp.remaining_median_days} more sessions.`
+            : ""}{" "}
+        History, not a forecast: nothing we tested predicts the exact turn, so buys wait for the trend to recover.
+      </p>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="mt-1 text-[11.5px] font-semibold text-td-accent">
+        {open ? "Hide details" : "What it's built from ›"}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1 text-[12.5px] leading-snug">
+          <p>
+            SPY {d.spy.toFixed(2)} vs 50-day average {d.ma50.toFixed(2)} · {sp.max_drawdown_pct}% from its recent high · VIX {d.vix}
+            {d.vix_curve_inverted ? " (above 3-month VIX: traders pay up for near-term protection)" : " (below 3-month VIX: near-term fear easing)"}.
+          </p>
+          <p>
+            All spells: median {d.past.median_days} sessions; over within 10/20/40/60 sessions: {d.past.over_by_pct["10"]}% / {d.past.over_by_pct["20"]}% /{" "}
+            {d.past.over_by_pct["40"]}% / {d.past.over_by_pct["60"]}%. Spells that fell 10%+ ({d.past.deep_n}): median {d.past.deep_median_days} sessions.
+            {d.past.spy_20d_after_median_pct != null && ` 20 sessions after a spell ended, SPY was up ${d.past.spy_20d_after_up_pct}% of the time (median ${d.past.spy_20d_after_median_pct}%).`}
+          </p>
+          <ul className="space-y-0.5 font-mono text-[11.5px] text-td-muted">
+            {d.recent_spells.slice(0, 6).map((r) => (
+              <li key={r.start}>
+                {r.start} → {r.end}: {r.days}d, {r.max_drawdown_pct}%, VIX max {r.max_vix}
+                {r.spy_20d_after_pct != null ? `, +20d ${r.spy_20d_after_pct}%` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MarketWeatherTeaser({
   weather,
   onOpen,
@@ -446,6 +515,7 @@ export function MarketWeatherTeaser({
         </span>
         {weather.detail && <span className="mt-1 block text-sm text-td-text/80 leading-snug">{weather.detail}</span>}
       </button>
+      <StormMeter />
       {cautions.length > 0 && (
         <div className="mt-1.5">
           <button

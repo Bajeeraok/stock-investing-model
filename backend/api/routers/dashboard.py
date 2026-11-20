@@ -4047,6 +4047,16 @@ async def get_pre_market(refresh: bool = Query(False)):
     )
 
 
+@router.get("/storm-tracker")
+async def get_storm_tracker():
+    """Storm meter: current SPY-below-50-day spell vs past spells since 2000 (display only)."""
+    from starlette.concurrency import run_in_threadpool
+
+    from signals.storm_tracker import compute
+
+    return jsonable_encoder(await run_in_threadpool(compute) or {})
+
+
 @router.get("/market-state")
 async def get_market_state():
     """
